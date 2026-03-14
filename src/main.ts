@@ -1,6 +1,6 @@
-import { Notice, Plugin } from "obsidian";
+import { Notice, Plugin, type TAbstractFile } from "obsidian";
 import { LilbeeClient } from "./api";
-import { ServerManager, vaultPort, type ServerState } from "./server-manager";
+import { HEALTH_STATE, HealthDetector, type HealthState } from "./health-detector";
 import { LilbeeSettingTab } from "./settings";
 import { DEFAULT_SETTINGS, SSE_EVENT, type LilbeeSettings, type SSEEvent, type SyncDone } from "./types";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
@@ -9,10 +9,13 @@ import { SearchModal } from "./views/search-modal";
 export default class LilbeePlugin extends Plugin {
     settings: LilbeeSettings = { ...DEFAULT_SETTINGS };
     api: LilbeeClient = new LilbeeClient(DEFAULT_SETTINGS.serverUrl);
+    ollamaDetector: HealthDetector | null = null;
+    serverDetector: HealthDetector | null = null;
+    activeModel = "";
+    activeVisionModel = "";
+    statusBarEl: HTMLElement | null = null;
     private syncTimeout: ReturnType<typeof setTimeout> | null = null;
-    private statusBarEl: HTMLElement | null = null;
     private autoSyncRefs: { id: string }[] = [];
-    private serverManager: ServerManager | null = null;
 
     async onload(): Promise<void> {
         await this.loadSettings();
@@ -20,12 +23,7 @@ export default class LilbeePlugin extends Plugin {
 
         // Status bar
         this.statusBarEl = this.addStatusBarItem();
-        this.statusBarEl.setText("lilbee: ready");
-
-        // Managed server
-        if (this.settings.manageServer) {
-            this.startManagedServer();
-        }
+        this.setStatusReady();
 
         // Register views
         this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
@@ -44,7 +42,6 @@ export default class LilbeePlugin extends Plugin {
             id: "lilbee:ask",
             name: "Ask a question",
             callback: () => {
-                // Quick ask via search modal in ask mode
                 const modal = new SearchModal(this.app, this, "ask");
                 modal.open();
             },
@@ -54,6 +51,29 @@ export default class LilbeePlugin extends Plugin {
             id: "lilbee:chat",
             name: "Open chat",
             callback: () => this.activateChatView(),
+        });
+
+        this.addCommand({
+            id: "lilbee:add-file",
+            name: "Add current file to lilbee",
+            checkCallback: (checking) => {
+                const file = this.app.workspace.getActiveFile();
+                if (!file) return false;
+                if (!checking) void this.addToLilbee(file);
+                return true;
+            },
+        });
+
+        this.addCommand({
+            id: "lilbee:add-folder",
+            name: "Add current folder to lilbee",
+            checkCallback: (checking) => {
+                const file = this.app.workspace.getActiveFile();
+                const folder = file?.parent;
+                if (!folder) return false;
+                if (!checking) void this.addToLilbee(folder);
+                return true;
+            },
         });
 
         this.addCommand({
@@ -77,6 +97,33 @@ export default class LilbeePlugin extends Plugin {
             },
         });
 
+        // File explorer context menu
+        this.registerEvent(
+            this.app.workspace.on("file-menu" as any, (menu: any, file: TAbstractFile) => {
+                menu.addItem((item: any) => {
+                    item.setTitle("Add to lilbee")
+                        .setIcon("plus-circle")
+                        .onClick(() => this.addToLilbee(file));
+                });
+            }),
+        );
+
+        // Fetch models to populate activeModel
+        this.fetchActiveModel();
+
+        // Health detectors — check once on startup, then only on operation failure
+        this.serverDetector = new HealthDetector({
+            url: `${this.settings.serverUrl}/api/health`,
+            onStateChange: (state) => this.onServerHealthChange(state),
+        });
+        void this.serverDetector.check();
+
+        this.ollamaDetector = new HealthDetector({
+            url: this.settings.ollamaUrl,
+            onStateChange: (state) => this.onOllamaStateChange(state),
+        });
+        void this.ollamaDetector.check();
+
         // Auto-sync watcher
         if (this.settings.syncMode === "auto") {
             this.registerAutoSync();
@@ -87,7 +134,6 @@ export default class LilbeePlugin extends Plugin {
         if (this.syncTimeout) {
             clearTimeout(this.syncTimeout);
         }
-        this.stopManagedServer();
     }
 
     async loadSettings(): Promise<void> {
@@ -98,55 +144,135 @@ export default class LilbeePlugin extends Plugin {
         await this.saveData(this.settings);
         this.api = new LilbeeClient(this.settings.serverUrl);
         this.updateAutoSync();
+        this.recreateDetectors();
     }
 
-    private startManagedServer(): void {
-        const adapter = this.app.vault.adapter as any;
-        const vaultPath: string = adapter.getBasePath();
-        const dataDir = `${vaultPath}/.lilbee`;
-        const port = vaultPort(vaultPath);
+    private updateStatusBar(text: string): void {
+        if (!this.statusBarEl) return;
+        const model = this.activeModel ? ` (${this.activeModel})` : "";
+        this.statusBarEl.setText(`${text}${model}`);
+    }
 
-        this.settings.serverUrl = `http://127.0.0.1:${port}`;
-        this.api = new LilbeeClient(this.settings.serverUrl);
+    private setStatusReady(): void {
+        this.updateStatusBar("lilbee: ready");
+    }
 
-        this.serverManager = new ServerManager({
-            binaryPath: this.settings.binaryPath,
-            dataDir,
-            host: "127.0.0.1",
-            port,
-            onStateChange: (state, detail) => this.onServerStateChange(state, detail),
+    fetchActiveModel(): void {
+        this.api.listModels().then((models) => {
+            this.activeModel = models.chat.active;
+            this.activeVisionModel = models.vision.active;
+            this.setStatusReady();
+        }).catch(() => {});
+    }
+
+    async addExternalFiles(paths: string[]): Promise<void> {
+        if (!this.statusBarEl || paths.length === 0) return;
+        const label = paths.length === 1 ? paths[0].split("/").pop() : `${paths.length} files`;
+        new Notice(`lilbee: adding ${label}...`);
+        await this.runAdd(paths);
+    }
+
+    async addToLilbee(file: TAbstractFile): Promise<void> {
+        if (!this.statusBarEl) return;
+        const adapter = this.app.vault.adapter as unknown as { getBasePath(): string };
+        const absolutePath = `${adapter.getBasePath()}/${file.path}`;
+        new Notice(`lilbee: adding ${file.name ?? file.path}...`);
+        await this.runAdd([absolutePath]);
+    }
+
+    private async runAdd(paths: string[]): Promise<void> {
+        this.updateStatusBar("lilbee: adding...");
+
+        try {
+            let lastEvent: SSEEvent | null = null;
+            for await (const event of this.api.addFiles(paths, false, this.activeVisionModel || undefined)) {
+                this.handleProgressEvent(event);
+                lastEvent = event;
+            }
+
+            if (lastEvent?.event === SSE_EVENT.DONE) {
+                const done = lastEvent.data as SyncDone;
+                const parts: string[] = [];
+                if (done.added.length > 0) parts.push(`${done.added.length} added`);
+                if (done.failed.length > 0) parts.push(`${done.failed.length} failed`);
+                new Notice(parts.length > 0
+                    ? `lilbee: ${parts.join(", ")}`
+                    : "lilbee: nothing new to add");
+            }
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "cannot connect to server";
+            new Notice(`lilbee: add failed — ${msg}`);
+            await this.checkHealthOnError();
+            return;
+        }
+
+        this.setStatusReady();
+    }
+
+    private handleProgressEvent(event: SSEEvent): void {
+        if (!this.statusBarEl) return;
+        switch (event.event) {
+            case SSE_EVENT.FILE_START: {
+                const data = event.data as { file: string; current_file: number; total_files: number };
+                this.updateStatusBar(`lilbee: indexing ${data.current_file}/${data.total_files} — ${data.file}`);
+                break;
+            }
+            case SSE_EVENT.EXTRACT: {
+                const data = event.data as { file: string; page: number; total_pages: number };
+                this.updateStatusBar(`lilbee: extracting ${data.file} (page ${data.page}/${data.total_pages})`);
+                break;
+            }
+            case SSE_EVENT.EMBED: {
+                const data = event.data as { file: string; chunk: number; total_chunks: number };
+                this.updateStatusBar(`lilbee: embedding ${data.file} (${data.chunk}/${data.total_chunks} chunks)`);
+                break;
+            }
+            case SSE_EVENT.PROGRESS: {
+                const data = event.data as { file: string; current: number; total: number };
+                this.updateStatusBar(`lilbee: indexing ${data.current}/${data.total} — ${data.file}`);
+                break;
+            }
+        }
+    }
+
+    private recreateDetectors(): void {
+        this.serverDetector = new HealthDetector({
+            url: `${this.settings.serverUrl}/api/health`,
+            onStateChange: (state) => this.onServerHealthChange(state),
         });
 
-        this.serverManager.start().catch(() => {});
+        this.ollamaDetector = new HealthDetector({
+            url: this.settings.ollamaUrl,
+            onStateChange: (state) => this.onOllamaStateChange(state),
+        });
     }
 
-    private stopManagedServer(): void {
-        if (!this.serverManager) return;
-        this.serverManager.stop().catch(() => {});
-        this.serverManager = null;
+    /** Run after an operation fails to update status bar if server/ollama went down. */
+    private async checkHealthOnError(): Promise<void> {
+        await this.serverDetector?.check();
+        await this.ollamaDetector?.check();
     }
 
-    async restartServer(): Promise<void> {
-        if (!this.serverManager) return;
-        await this.serverManager.restart();
-    }
-
-    private onServerStateChange(state: ServerState, detail?: string): void {
+    private onOllamaStateChange(state: HealthState): void {
         if (!this.statusBarEl) return;
-        switch (state) {
-            case "stopped":
-                this.statusBarEl.setText("lilbee: stopped");
-                break;
-            case "starting":
-                this.statusBarEl.setText("lilbee: starting...");
-                break;
-            case "ready":
-                this.statusBarEl.setText("lilbee: ready");
-                break;
-            case "error":
-                this.statusBarEl.setText("lilbee: error");
-                new Notice(`lilbee: ${detail ?? "server error"}`);
-                break;
+        if (state === HEALTH_STATE.UNREACHABLE) {
+            this.updateStatusBar("lilbee: ready (Ollama offline)");
+            new Notice(
+                "Ollama is not running. Sync, ask, and chat require Ollama.\n" +
+                    "Start Ollama or install it from https://ollama.com",
+            );
+        } else if (state === HEALTH_STATE.REACHABLE) {
+            this.setStatusReady();
+        }
+    }
+
+    private onServerHealthChange(state: HealthState): void {
+        if (!this.statusBarEl) return;
+        if (state === HEALTH_STATE.UNREACHABLE) {
+            this.updateStatusBar("lilbee: server offline");
+            new Notice("lilbee server is not running. Start it with: lilbee serve");
+        } else if (state === HEALTH_STATE.REACHABLE) {
+            this.setStatusReady();
         }
     }
 
@@ -159,9 +285,6 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private unregisterAutoSync(): void {
-        // Obsidian's registerEvent() ties cleanup to plugin unload only —
-        // there is no unregisterEvent(). Clearing refs prevents re-registration
-        // but existing listeners remain active until the plugin is reloaded.
         this.autoSyncRefs = [];
     }
 
@@ -204,21 +327,12 @@ export default class LilbeePlugin extends Plugin {
 
     async triggerSync(): Promise<void> {
         if (!this.statusBarEl) return;
-        this.statusBarEl.setText("lilbee: syncing...");
+        this.updateStatusBar("lilbee: syncing...");
 
         try {
             let lastEvent: SSEEvent | null = null;
-            for await (const event of this.api.syncStream()) {
-                if (event.event === SSE_EVENT.PROGRESS) {
-                    const data = event.data as {
-                        file: string;
-                        current: number;
-                        total: number;
-                    };
-                    this.statusBarEl.setText(
-                        `lilbee: indexing ${data.current}/${data.total} — ${data.file}`,
-                    );
-                }
+            for await (const event of this.api.syncStream(!!this.activeVisionModel)) {
+                this.handleProgressEvent(event);
                 lastEvent = event;
             }
 
@@ -235,8 +349,10 @@ export default class LilbeePlugin extends Plugin {
             }
         } catch {
             new Notice("lilbee: sync failed — cannot connect to server");
+            await this.checkHealthOnError();
+            return;
         }
 
-        this.statusBarEl.setText("lilbee: ready");
+        this.setStatusReady();
     }
 }

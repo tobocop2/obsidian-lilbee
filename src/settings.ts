@@ -1,4 +1,5 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { HEALTH_STATE } from "./health-detector";
 import type LilbeePlugin from "./main";
 import { SSE_EVENT } from "./types";
 import type { ModelInfo, ModelsResponse, PullProgress } from "./types";
@@ -15,7 +16,26 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        // Server URL
+        // Server warning banner
+        if (this.plugin.serverDetector?.state === HEALTH_STATE.UNREACHABLE) {
+            const warning = containerEl.createDiv({ cls: "lilbee-server-warning" });
+            warning.createEl("p", {
+                text: "lilbee server is not running. Start it with: lilbee serve",
+            });
+        }
+
+        // Ollama warning banner
+        if (this.plugin.ollamaDetector?.state === HEALTH_STATE.UNREACHABLE) {
+            const warning = containerEl.createDiv({ cls: "lilbee-ollama-warning" });
+            warning.createEl("p", {
+                text: "Ollama is not running. Sync, ask, and chat will not work.",
+            });
+            warning.createEl("p", {
+                text: "Start Ollama or install it from ollama.com",
+            });
+        }
+
+        // Connection settings
         new Setting(containerEl)
             .setName("Server URL")
             .setDesc("Address of the lilbee HTTP server")
@@ -29,7 +49,39 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }),
             );
 
-        // Top K
+        new Setting(containerEl)
+            .setName("Ollama URL")
+            .setDesc("Address of the Ollama server")
+            .addText((text) =>
+                text
+                    .setPlaceholder("http://127.0.0.1:11434")
+                    .setValue(this.plugin.settings.ollamaUrl)
+                    .onChange(async (value) => {
+                        this.plugin.settings.ollamaUrl = value;
+                        await this.plugin.saveSettings();
+                    }),
+            );
+
+        // Models section
+        containerEl.createEl("h3", { text: "Models" });
+        containerEl.createEl("p", {
+            text: "Manage chat and vision models. Requires the lilbee server to be running.",
+            cls: "setting-item-description",
+        });
+
+        const modelsContainer = containerEl.createDiv("lilbee-models-container");
+        new Setting(containerEl)
+            .setName("Refresh models")
+            .setDesc("Fetch available models from the server")
+            .addButton((btn) =>
+                btn.setButtonText("Refresh").onClick(async () => {
+                    await this.loadModels(modelsContainer);
+                }),
+            );
+
+        this.loadModels(modelsContainer);
+
+        // General settings
         new Setting(containerEl)
             .setName("Results count")
             .setDesc("Number of search results to return")
@@ -44,43 +96,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }),
             );
 
-        // Manage server
-        new Setting(containerEl)
-            .setName("Manage server")
-            .setDesc("Start and stop the lilbee server with Obsidian")
-            .addToggle((toggle) =>
-                toggle.setValue(this.plugin.settings.manageServer).onChange(async (value) => {
-                    this.plugin.settings.manageServer = value;
-                    await this.plugin.saveSettings();
-                    this.display();
-                }),
-            );
-
-        if (this.plugin.settings.manageServer) {
-            new Setting(containerEl)
-                .setName("Binary path")
-                .setDesc("Path to the lilbee binary (leave empty to auto-detect)")
-                .addText((text) =>
-                    text
-                        .setPlaceholder("auto-detect")
-                        .setValue(this.plugin.settings.binaryPath)
-                        .onChange(async (value) => {
-                            this.plugin.settings.binaryPath = value;
-                            await this.plugin.saveSettings();
-                        }),
-                );
-
-            new Setting(containerEl)
-                .setName("Restart server")
-                .setDesc("Restart the managed lilbee server")
-                .addButton((btn) =>
-                    btn.setButtonText("Restart").onClick(async () => {
-                        await this.plugin.restartServer();
-                    }),
-                );
-        }
-
-        // Sync mode
+        // Sync settings
         new Setting(containerEl)
             .setName("Sync mode")
             .setDesc("How vault changes are synced to the knowledge base")
@@ -92,11 +108,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     .onChange(async (value) => {
                         this.plugin.settings.syncMode = value as "manual" | "auto";
                         await this.plugin.saveSettings();
-                        this.display(); // refresh to show/hide debounce
+                        this.display();
                     }),
             );
 
-        // Sync debounce (only when auto)
         if (this.plugin.settings.syncMode === "auto") {
             new Setting(containerEl)
                 .setName("Sync debounce")
@@ -114,27 +129,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         }),
                 );
         }
-
-        // Model sections
-        containerEl.createEl("h3", { text: "Models" });
-        containerEl.createEl("p", {
-            text: "Manage chat and vision models. Requires the lilbee server to be running.",
-            cls: "setting-item-description",
-        });
-
-        // Load models button + model sections
-        const modelsContainer = containerEl.createDiv("lilbee-models-container");
-        new Setting(containerEl)
-            .setName("Refresh models")
-            .setDesc("Fetch available models from the server")
-            .addButton((btn) =>
-                btn.setButtonText("Refresh").onClick(async () => {
-                    await this.loadModels(modelsContainer);
-                }),
-            );
-
-        // Auto-load models
-        this.loadModels(modelsContainer);
     }
 
     private async loadModels(container: HTMLElement): Promise<void> {
@@ -160,7 +154,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const section = container.createDiv("lilbee-model-section");
         section.createEl("h4", { text: label });
 
-        // Active model dropdown
         const activeSetting = new Setting(section)
             .setName(`Active ${type} model`)
             .setDesc(catalog.active || (type === "vision" ? "Disabled" : "Not set"));
@@ -191,7 +184,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 }),
         );
 
-        // Catalog table
         const catalogEl = section.createDiv("lilbee-model-catalog");
         const table = catalogEl.createEl("table");
         const header = table.createEl("tr");
@@ -231,17 +223,21 @@ export class LilbeeSettingTab extends PluginSettingTab {
                             if (data.total > 0) {
                                 const pct = Math.round((data.completed / data.total) * 100);
                                 progress.textContent = `${pct}%`;
+                                if (this.plugin.statusBarEl) {
+                                    this.plugin.statusBarEl.setText(
+                                        `lilbee: pulling ${model.name} — ${pct}%`,
+                                    );
+                                }
                             }
                         }
                     }
                     new Notice(`Model ${model.name} pulled successfully`);
-                    // Auto-select the pulled model
                     if (type === "chat") {
                         await this.plugin.api.setChatModel(model.name);
                     } else {
                         await this.plugin.api.setVisionModel(model.name);
                     }
-                    // Refresh the models display
+                    this.plugin.fetchActiveModel();
                     const modelsContainer = this.containerEl.querySelector(
                         ".lilbee-models-container",
                     );

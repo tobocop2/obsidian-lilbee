@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Notice } from "obsidian";
 import { App, WorkspaceLeaf } from "./__mocks__/obsidian";
+import { SSE_EVENT } from "../src/types";
 
 vi.mock("../src/api", () => ({
     LilbeeClient: vi.fn().mockImplementation(() => ({
@@ -9,23 +10,27 @@ vi.mock("../src/api", () => ({
         search: vi.fn(),
         ask: vi.fn(),
         chatStream: vi.fn(),
-        listModels: vi.fn(),
+        listModels: vi.fn().mockRejectedValue(new Error("offline")),
         pullModel: vi.fn(),
         setChatModel: vi.fn(),
         setVisionModel: vi.fn(),
         health: vi.fn(),
+        addFiles: vi.fn(),
     })),
 }));
 
-vi.mock("../src/server-manager", () => ({
-    ServerManager: vi.fn().mockImplementation(() => ({
-        start: vi.fn().mockResolvedValue(undefined),
-        stop: vi.fn().mockResolvedValue(undefined),
-        restart: vi.fn().mockResolvedValue(undefined),
-        state: "stopped",
-    })),
-    vaultPort: vi.fn().mockReturnValue(7500),
-}));
+vi.mock("../src/health-detector", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("../src/health-detector")>();
+    return {
+        ...actual,
+        HealthDetector: vi.fn().mockImplementation(() => ({
+            startPolling: vi.fn(),
+            stopPolling: vi.fn(),
+            check: vi.fn().mockResolvedValue("unknown"),
+            state: "unknown",
+        })),
+    };
+});
 
 // We also need to mock the views to avoid loading heavy deps
 vi.mock("../src/views/chat-view", () => ({
@@ -40,7 +45,6 @@ vi.mock("../src/views/search-modal", () => ({
 async function createPlugin() {
     const { default: LilbeePlugin } = await import("../src/main");
     const app = new App();
-    // Plugin constructor calls super(app, manifest)
     const plugin = new LilbeePlugin(app as any, {
         id: "lilbee",
         name: "lilbee",
@@ -72,19 +76,86 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerView).toHaveBeenCalled();
         });
 
-        it("adds all five commands", async () => {
+        it("adds all seven commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(5);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(7);
             const ids = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map(
                 (c: any[]) => c[0].id,
             );
             expect(ids).toContain("lilbee:search");
             expect(ids).toContain("lilbee:ask");
             expect(ids).toContain("lilbee:chat");
+            expect(ids).toContain("lilbee:add-file");
+            expect(ids).toContain("lilbee:add-folder");
             expect(ids).toContain("lilbee:sync");
             expect(ids).toContain("lilbee:status");
+        });
+
+        it("add-file command returns false when no active file", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "lilbee:add-file",
+            )![0];
+            expect(cmd.checkCallback(true)).toBe(false);
+        });
+
+        it("add-file command returns true when active file exists", async () => {
+            const plugin = await createPlugin();
+            plugin.app.workspace.getActiveFile = vi.fn().mockReturnValue({ path: "test.md", name: "test.md" });
+            await plugin.onload();
+            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "lilbee:add-file",
+            )![0];
+            expect(cmd.checkCallback(true)).toBe(true);
+        });
+
+        it("add-file command calls addToLilbee when not checking", async () => {
+            const plugin = await createPlugin();
+            const file = { path: "test.md", name: "test.md" };
+            plugin.app.workspace.getActiveFile = vi.fn().mockReturnValue(file);
+            await plugin.onload();
+            const addSpy = vi.spyOn(plugin as any, "addToLilbee").mockResolvedValue(undefined);
+            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "lilbee:add-file",
+            )![0];
+            cmd.checkCallback(false);
+            expect(addSpy).toHaveBeenCalledWith(file);
+        });
+
+        it("add-folder command returns false when no active file", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "lilbee:add-folder",
+            )![0];
+            expect(cmd.checkCallback(true)).toBe(false);
+        });
+
+        it("add-folder command returns false when file has no parent", async () => {
+            const plugin = await createPlugin();
+            plugin.app.workspace.getActiveFile = vi.fn().mockReturnValue({ path: "test.md", parent: null });
+            await plugin.onload();
+            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "lilbee:add-folder",
+            )![0];
+            expect(cmd.checkCallback(true)).toBe(false);
+        });
+
+        it("add-folder command calls addToLilbee with parent folder when not checking", async () => {
+            const plugin = await createPlugin();
+            const folder = { path: "notes", name: "notes" };
+            const file = { path: "notes/test.md", parent: folder };
+            plugin.app.workspace.getActiveFile = vi.fn().mockReturnValue(file);
+            await plugin.onload();
+            const addSpy = vi.spyOn(plugin as any, "addToLilbee").mockResolvedValue(undefined);
+            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "lilbee:add-folder",
+            )![0];
+            cmd.checkCallback(false);
+            expect(addSpy).toHaveBeenCalledWith(folder);
         });
 
         it("sets status bar text to 'lilbee: ready'", async () => {
@@ -93,18 +164,20 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready");
         });
 
-        it("with manual sync mode: does not register vault events", async () => {
+        it("with manual sync mode: registers only file-menu event (no vault events)", async () => {
             const plugin = await createPlugin();
             plugin.loadData = vi.fn().mockResolvedValue({ syncMode: "manual" });
             await plugin.onload();
-            expect(plugin.registerEvent).not.toHaveBeenCalled();
+            // 1 for file-menu
+            expect(plugin.registerEvent).toHaveBeenCalledTimes(1);
         });
 
-        it("with auto sync mode: registers vault events for create/modify/delete/rename", async () => {
+        it("with auto sync mode: registers vault events + file-menu", async () => {
             const plugin = await createPlugin();
             plugin.loadData = vi.fn().mockResolvedValue({ syncMode: "auto" });
             await plugin.onload();
-            expect(plugin.registerEvent).toHaveBeenCalledTimes(4);
+            // 4 vault events + 1 file-menu = 5
+            expect(plugin.registerEvent).toHaveBeenCalledTimes(5);
         });
 
         it("recreates API client with loaded serverUrl", async () => {
@@ -112,7 +185,6 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             plugin.loadData = vi.fn().mockResolvedValue({ serverUrl: "http://custom:9999" });
             await plugin.onload();
-            // LilbeeClient should have been called with the custom URL
             expect(LilbeeClient).toHaveBeenCalledWith("http://custom:9999");
         });
     });
@@ -122,7 +194,6 @@ describe("LilbeePlugin", () => {
             vi.useFakeTimers();
             const plugin = await createPlugin();
             await plugin.onload();
-            // Schedule a debounced sync
             (plugin as any).debouncedSync();
             expect((plugin as any).syncTimeout).not.toBeNull();
             const clearSpy = vi.spyOn(globalThis, "clearTimeout");
@@ -144,7 +215,6 @@ describe("LilbeePlugin", () => {
             await plugin.loadSettings();
             expect(plugin.settings.topK).toBe(15);
             expect(plugin.settings.syncMode).toBe("auto");
-            // Default preserved for unset fields
             expect(plugin.settings.serverUrl).toBe("http://127.0.0.1:7433");
         });
 
@@ -189,14 +259,13 @@ describe("LilbeePlugin", () => {
             plugin.loadData = vi.fn().mockResolvedValue({ syncMode: "manual" });
             await plugin.onload();
 
-            // Confirm no vault events registered initially
-            expect(plugin.registerEvent).not.toHaveBeenCalled();
+            expect(plugin.registerEvent).toHaveBeenCalledTimes(1);
 
-            // Switch to auto and save
             plugin.settings.syncMode = "auto";
             await plugin.saveSettings();
 
-            expect(plugin.registerEvent).toHaveBeenCalledTimes(4);
+            // 1 file-menu + 4 vault events = 5
+            expect(plugin.registerEvent).toHaveBeenCalledTimes(5);
         });
 
         it("clears autoSyncRefs when switching from auto to manual", async () => {
@@ -204,10 +273,8 @@ describe("LilbeePlugin", () => {
             plugin.loadData = vi.fn().mockResolvedValue({ syncMode: "auto" });
             await plugin.onload();
 
-            // autoSyncRefs should be populated after auto-sync registration
             expect((plugin as any).autoSyncRefs.length).toBe(4);
 
-            // Switch to manual and save
             plugin.settings.syncMode = "manual";
             await plugin.saveSettings();
 
@@ -221,7 +288,6 @@ describe("LilbeePlugin", () => {
 
             const callsBefore = (plugin.registerEvent as ReturnType<typeof vi.fn>).mock.calls.length;
 
-            // Save again with auto still active — should not register again
             await plugin.saveSettings();
 
             expect((plugin.registerEvent as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsBefore);
@@ -312,7 +378,6 @@ describe("LilbeePlugin", () => {
             (plugin as any).debouncedSync();
             vi.advanceTimersByTime(500);
 
-            // Should only fire once (the second call)
             expect(triggerSpy).toHaveBeenCalledTimes(1);
         });
     });
@@ -342,7 +407,7 @@ describe("LilbeePlugin", () => {
             };
 
             async function* withProgress() {
-                yield { event: "progress", data: { file: "notes.md", current: 1, total: 5 } };
+                yield { event: SSE_EVENT.PROGRESS, data: { file: "notes.md", current: 1, total: 5 } };
             }
             plugin.api.syncStream = vi.fn().mockReturnValue(withProgress());
 
@@ -357,7 +422,7 @@ describe("LilbeePlugin", () => {
 
             async function* withDone() {
                 yield {
-                    event: "done",
+                    event: SSE_EVENT.DONE,
                     data: {
                         added: ["a.md"],
                         updated: ["b.md"],
@@ -384,7 +449,7 @@ describe("LilbeePlugin", () => {
 
             async function* withEmptyDone() {
                 yield {
-                    event: "done",
+                    event: SSE_EVENT.DONE,
                     data: { added: [], updated: [], removed: [], failed: [], unchanged: 10 },
                 };
             }
@@ -400,7 +465,7 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
 
             async function* withProgress() {
-                yield { event: "progress", data: { file: "x.md", current: 1, total: 1 } };
+                yield { event: SSE_EVENT.PROGRESS, data: { file: "x.md", current: 1, total: 1 } };
             }
             plugin.api.syncStream = vi.fn().mockReturnValue(withProgress());
 
@@ -409,7 +474,7 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.length).toBe(0);
         });
 
-        it("shows error Notice and resets status bar on API error", async () => {
+        it("shows error Notice on API error and runs health check", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
@@ -417,10 +482,14 @@ describe("LilbeePlugin", () => {
                 throw new Error("connection refused");
             });
 
+            const serverCheck = vi.spyOn(plugin.serverDetector!, "check").mockResolvedValue("unreachable");
+            const ollamaCheck = vi.spyOn(plugin.ollamaDetector!, "check").mockResolvedValue("unreachable");
+
             await plugin.triggerSync();
 
             expect(Notice.instances.some((n) => n.message.includes("sync failed"))).toBe(true);
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready");
+            expect(serverCheck).toHaveBeenCalled();
+            expect(ollamaCheck).toHaveBeenCalled();
         });
 
         it("returns early when statusBarEl is null", async () => {
@@ -428,7 +497,6 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             (plugin as any).statusBarEl = null;
 
-            // syncStream should never be called if we return early
             const syncStreamSpy = vi.spyOn(plugin.api, "syncStream");
             await plugin.triggerSync();
 
@@ -464,7 +532,6 @@ describe("LilbeePlugin", () => {
             const cb = await getCommandCallback(plugin, "lilbee:ask");
             cb?.();
 
-            // Should be called with 'ask' as third argument
             const calls = (SearchModal as ReturnType<typeof vi.fn>).mock.calls;
             const askCall = calls.find((c: any[]) => c[2] === "ask");
             expect(askCall).toBeDefined();
@@ -532,148 +599,603 @@ describe("LilbeePlugin", () => {
 
             await plugin.onload();
 
-            // Each registerEvent call comes from app.vault.on; we need to trigger them.
-            // registerEvent is called with the result of vault.on; the vault.on mock returns
-            // { id: "mock-vault-event" }. We need to capture the callbacks passed to vault.on.
             const vaultOnCalls = (plugin.app.vault.on as ReturnType<typeof vi.fn>).mock.calls as Array<[string, () => void]>;
             expect(vaultOnCalls.length).toBe(4);
 
-            // Trigger the callback from the first vault.on call
             vaultOnCalls[0][1]();
             expect(debouncedSpy).toHaveBeenCalledTimes(1);
         });
     });
 
-    describe("managed server", () => {
-        it("onload() with manageServer: true creates ServerManager and starts it", async () => {
-            const { ServerManager } = await import("../src/server-manager");
+    describe("health detectors", () => {
+        it("onload creates two HealthDetectors and checks once on startup", async () => {
+            const { HealthDetector } = await import("../src/health-detector");
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ manageServer: true });
             await plugin.onload();
 
-            expect(ServerManager).toHaveBeenCalled();
-            const instance = (ServerManager as ReturnType<typeof vi.fn>).mock.results[0].value;
-            expect(instance.start).toHaveBeenCalled();
+            expect(HealthDetector).toHaveBeenCalledTimes(2);
+            const instances = (HealthDetector as ReturnType<typeof vi.fn>).mock.results;
+            expect(instances[0].value.check).toHaveBeenCalledTimes(1);
+            expect(instances[1].value.check).toHaveBeenCalledTimes(1);
         });
 
-        it("onload() with manageServer: false skips ServerManager", async () => {
-            const { ServerManager } = await import("../src/server-manager");
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ manageServer: false });
-            (ServerManager as ReturnType<typeof vi.fn>).mockClear();
-            await plugin.onload();
-
-            expect(ServerManager).not.toHaveBeenCalled();
-        });
-
-        it("onunload() stops managed server", async () => {
-            const { ServerManager } = await import("../src/server-manager");
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ manageServer: true });
-            await plugin.onload();
-
-            const instance = (ServerManager as ReturnType<typeof vi.fn>).mock.results[0].value;
-            plugin.onunload();
-
-            expect(instance.stop).toHaveBeenCalled();
-        });
-
-        it("onunload() does not crash when no server manager", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ manageServer: false });
-            await plugin.onload();
-            expect(() => plugin.onunload()).not.toThrow();
-        });
-
-        it("status bar updates per server state", async () => {
-            const { ServerManager } = await import("../src/server-manager");
-            let onStateChange: (state: string, detail?: string) => void = () => {};
-            (ServerManager as ReturnType<typeof vi.fn>).mockImplementation((opts: any) => {
-                onStateChange = opts.onStateChange;
+        it("onOllamaStateChange('unreachable') updates status bar and shows Notice", async () => {
+            const { HealthDetector } = await import("../src/health-detector");
+            const onStateChanges: Array<(state: string) => void> = [];
+            (HealthDetector as ReturnType<typeof vi.fn>).mockImplementation((opts: any) => {
+                onStateChanges.push(opts.onStateChange);
                 return {
-                    start: vi.fn().mockResolvedValue(undefined),
-                    stop: vi.fn().mockResolvedValue(undefined),
-                    restart: vi.fn().mockResolvedValue(undefined),
-                    state: "stopped",
+                    check: vi.fn().mockResolvedValue("unknown"),
+                    state: "unknown",
                 };
             });
 
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ manageServer: true });
             await plugin.onload();
 
-            onStateChange("starting");
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: starting...");
+            // Second detector is Ollama (index 1)
+            onStateChanges[1]("unreachable");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready (Ollama offline)");
+            expect(Notice.instances.some((n) => n.message.includes("Ollama is not running"))).toBe(true);
+        });
 
-            onStateChange("ready");
+        it("onOllamaStateChange('reachable') restores status bar to ready", async () => {
+            const { HealthDetector } = await import("../src/health-detector");
+            const onStateChanges: Array<(state: string) => void> = [];
+            (HealthDetector as ReturnType<typeof vi.fn>).mockImplementation((opts: any) => {
+                onStateChanges.push(opts.onStateChange);
+                return {
+                    check: vi.fn().mockResolvedValue("unknown"),
+                    state: "unknown",
+                };
+            });
+
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            onStateChanges[1]("reachable");
             expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready");
-
-            onStateChange("error", "port in use");
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: error");
-            expect(Notice.instances.some((n) => n.message.includes("port in use"))).toBe(true);
-
-            onStateChange("stopped");
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: stopped");
         });
 
-        it("error Notice uses default message when detail is undefined", async () => {
-            const { ServerManager } = await import("../src/server-manager");
-            let onStateChange: (state: string, detail?: string) => void = () => {};
-            (ServerManager as ReturnType<typeof vi.fn>).mockImplementation((opts: any) => {
-                onStateChange = opts.onStateChange;
+        it("onOllamaStateChange no-ops when statusBarEl is null", async () => {
+            const { HealthDetector } = await import("../src/health-detector");
+            const onStateChanges: Array<(state: string) => void> = [];
+            (HealthDetector as ReturnType<typeof vi.fn>).mockImplementation((opts: any) => {
+                onStateChanges.push(opts.onStateChange);
                 return {
-                    start: vi.fn().mockResolvedValue(undefined),
-                    stop: vi.fn().mockResolvedValue(undefined),
-                    restart: vi.fn().mockResolvedValue(undefined),
-                    state: "stopped",
+                    check: vi.fn().mockResolvedValue("unknown"),
+                    state: "unknown",
                 };
             });
 
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ manageServer: true });
-            await plugin.onload();
-
-            onStateChange("error");
-            expect(Notice.instances.some((n) => n.message.includes("server error"))).toBe(true);
-        });
-
-        it("restartServer() calls serverManager.restart()", async () => {
-            const { ServerManager } = await import("../src/server-manager");
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ manageServer: true });
-            await plugin.onload();
-
-            const instance = (ServerManager as ReturnType<typeof vi.fn>).mock.results[0].value;
-            await plugin.restartServer();
-            expect(instance.restart).toHaveBeenCalled();
-        });
-
-        it("restartServer() no-ops when no server manager", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ manageServer: false });
-            await plugin.onload();
-            await expect(plugin.restartServer()).resolves.not.toThrow();
-        });
-
-        it("onServerStateChange no-ops when statusBarEl is null", async () => {
-            const { ServerManager } = await import("../src/server-manager");
-            let onStateChange: (state: string, detail?: string) => void = () => {};
-            (ServerManager as ReturnType<typeof vi.fn>).mockImplementation((opts: any) => {
-                onStateChange = opts.onStateChange;
-                return {
-                    start: vi.fn().mockResolvedValue(undefined),
-                    stop: vi.fn().mockResolvedValue(undefined),
-                    restart: vi.fn().mockResolvedValue(undefined),
-                    state: "stopped",
-                };
-            });
-
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ manageServer: true });
             await plugin.onload();
             (plugin as any).statusBarEl = null;
 
-            expect(() => onStateChange("error", "test")).not.toThrow();
+            expect(() => onStateChanges[1]("unreachable")).not.toThrow();
+        });
+
+        it("onServerHealthChange('unreachable') updates status bar and shows Notice", async () => {
+            const { HealthDetector } = await import("../src/health-detector");
+            const onStateChanges: Array<(state: string) => void> = [];
+            (HealthDetector as ReturnType<typeof vi.fn>).mockImplementation((opts: any) => {
+                onStateChanges.push(opts.onStateChange);
+                return {
+                    check: vi.fn().mockResolvedValue("unknown"),
+                    state: "unknown",
+                };
+            });
+
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            // First detector is server (index 0)
+            onStateChanges[0]("unreachable");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: server offline");
+            expect(Notice.instances.some((n) => n.message.includes("lilbee server is not running"))).toBe(true);
+        });
+
+        it("onServerHealthChange('reachable') restores status bar to ready", async () => {
+            const { HealthDetector } = await import("../src/health-detector");
+            const onStateChanges: Array<(state: string) => void> = [];
+            (HealthDetector as ReturnType<typeof vi.fn>).mockImplementation((opts: any) => {
+                onStateChanges.push(opts.onStateChange);
+                return {
+                    check: vi.fn().mockResolvedValue("unknown"),
+                    state: "unknown",
+                };
+            });
+
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            onStateChanges[0]("reachable");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready");
+        });
+
+        it("onServerHealthChange no-ops when statusBarEl is null", async () => {
+            const { HealthDetector } = await import("../src/health-detector");
+            const onStateChanges: Array<(state: string) => void> = [];
+            (HealthDetector as ReturnType<typeof vi.fn>).mockImplementation((opts: any) => {
+                onStateChanges.push(opts.onStateChange);
+                return {
+                    check: vi.fn().mockResolvedValue("unknown"),
+                    state: "unknown",
+                };
+            });
+
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).statusBarEl = null;
+
+            expect(() => onStateChanges[0]("unreachable")).not.toThrow();
+        });
+
+        it("saveSettings recreates both detectors", async () => {
+            const { HealthDetector } = await import("../src/health-detector");
+            const onStateChanges: Array<(state: string) => void> = [];
+            (HealthDetector as ReturnType<typeof vi.fn>).mockImplementation((opts: any) => {
+                onStateChanges.push(opts.onStateChange);
+                return {
+                    check: vi.fn().mockResolvedValue("unknown"),
+                    state: "unknown",
+                };
+            });
+
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const callsBefore = (HealthDetector as ReturnType<typeof vi.fn>).mock.calls.length;
+            const oldServer = (HealthDetector as ReturnType<typeof vi.fn>).mock.results[0].value;
+            const oldOllama = (HealthDetector as ReturnType<typeof vi.fn>).mock.results[1].value;
+
+            plugin.settings.ollamaUrl = "http://remote:11434";
+            await plugin.saveSettings();
+
+            // Old detectors are simply replaced (no polling to stop)
+            const callsAfter = (HealthDetector as ReturnType<typeof vi.fn>).mock.calls.length;
+            expect(callsAfter).toBe(callsBefore + 2);
+
+            // Verify new detector callbacks work
+            const latestServerChange = onStateChanges[onStateChanges.length - 2];
+            latestServerChange("reachable");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready");
+
+            const latestOllamaChange = onStateChanges[onStateChanges.length - 1];
+            latestOllamaChange("reachable");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready");
+        });
+
+        it("triggerSync checks health on failure", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.syncStream = vi.fn().mockImplementation(() => {
+                throw new Error("connection refused");
+            });
+
+            const serverCheck = vi.spyOn(plugin.serverDetector!, "check").mockResolvedValue("unreachable");
+            const ollamaCheck = vi.spyOn(plugin.ollamaDetector!, "check").mockResolvedValue("unreachable");
+
+            await plugin.triggerSync();
+
+            expect(Notice.instances.some((n) => n.message.includes("sync failed"))).toBe(true);
+            expect(serverCheck).toHaveBeenCalled();
+            expect(ollamaCheck).toHaveBeenCalled();
+        });
+
+        it("triggerSync proceeds normally when server is up", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* noEvents() {}
+            plugin.api.syncStream = vi.fn().mockReturnValue(noEvents());
+
+            await plugin.triggerSync();
+            expect(plugin.api.syncStream).toHaveBeenCalled();
+        });
+    });
+
+    describe("file-menu integration", () => {
+        it("registers file-menu event on load", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const workspaceOnCalls = (plugin.app.workspace.on as ReturnType<typeof vi.fn>).mock.calls as Array<[string, ...unknown[]]>;
+            const fileMenuCall = workspaceOnCalls.find((c) => c[0] === "file-menu");
+            expect(fileMenuCall).toBeDefined();
+        });
+
+        it("file-menu callback invokes addToLilbee", async () => {
+            const plugin = await createPlugin();
+            const addSpy = vi.spyOn(plugin as any, "addToLilbee").mockResolvedValue(undefined);
+            await plugin.onload();
+
+            const workspaceOnCalls = (plugin.app.workspace.on as ReturnType<typeof vi.fn>).mock.calls as Array<[string, ...unknown[]]>;
+            const fileMenuCall = workspaceOnCalls.find((c) => c[0] === "file-menu");
+            const callback = fileMenuCall![1] as (menu: any, file: any) => void;
+
+            let menuItemCallback: (() => void) | null = null;
+            const fakeMenu = {
+                addItem: (cb: (item: any) => void) => {
+                    const fakeItem = {
+                        setTitle: () => fakeItem,
+                        setIcon: () => fakeItem,
+                        onClick: (fn: () => void) => { menuItemCallback = fn; return fakeItem; },
+                    };
+                    cb(fakeItem);
+                },
+            };
+            const fakeFile = { path: "notes/test.md", name: "test.md" };
+            callback(fakeMenu, fakeFile);
+
+            expect(menuItemCallback).not.toBeNull();
+            menuItemCallback!();
+            expect(addSpy).toHaveBeenCalledWith(fakeFile);
+        });
+
+        it("addToLilbee calls api.addFiles with absolute path", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+
+            await (plugin as any).addToLilbee({ path: "notes/test.md", name: "test.md" });
+
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(["/test/vault/notes/test.md"], false, undefined);
+        });
+
+        it("addToLilbee shows summary Notice on done event", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* withDone() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: { added: ["test.md"], updated: [], removed: [], failed: [], unchanged: 0 },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withDone());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(Notice.instances.some((n) => n.message.includes("1 added"))).toBe(true);
+        });
+
+        it("addToLilbee shows error Notice and checks health on API failure", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.addFiles = vi.fn().mockImplementation(() => {
+                throw new Error("connection refused");
+            });
+
+            const serverCheck = vi.spyOn(plugin.serverDetector!, "check").mockResolvedValue("unreachable");
+            const ollamaCheck = vi.spyOn(plugin.ollamaDetector!, "check").mockResolvedValue("unreachable");
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(Notice.instances.some((n) => n.message.includes("add failed"))).toBe(true);
+            expect(serverCheck).toHaveBeenCalled();
+            expect(ollamaCheck).toHaveBeenCalled();
+        });
+
+        it("addToLilbee returns early when statusBarEl is null", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).statusBarEl = null;
+
+            const addFilesSpy = vi.spyOn(plugin.api, "addFiles");
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(addFilesSpy).not.toHaveBeenCalled();
+        });
+
+        it("addToLilbee shows 'nothing new' Notice when done has empty arrays", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* emptyDone() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: { added: [], updated: [], removed: [], failed: [], unchanged: 1 },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(emptyDone());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(Notice.instances.some((n) => n.message.includes("adding test.md"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message.includes("nothing new to add"))).toBe(true);
+        });
+
+        it("addToLilbee falls back to path when name is undefined", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+
+            await (plugin as any).addToLilbee({ path: "deep/test.md" });
+
+            expect(Notice.instances.some((n) => n.message.includes("adding deep/test.md"))).toBe(true);
+        });
+
+        it("runAdd shows error message from Error instance", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.addFiles = vi.fn().mockImplementation(() => {
+                throw new Error("server returned 500");
+            });
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(Notice.instances.some((n) => n.message.includes("server returned 500"))).toBe(true);
+        });
+
+        it("runAdd shows fallback message for non-Error throw", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.addFiles = vi.fn().mockImplementation(() => {
+                throw "string error";
+            });
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(Notice.instances.some((n) => n.message.includes("cannot connect to server"))).toBe(true);
+        });
+
+        it("addToLilbee shows failed count in Notice", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* withFailed() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: { added: [], updated: [], removed: [], failed: ["bad.pdf"], unchanged: 0 },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withFailed());
+
+            await (plugin as any).addToLilbee({ path: "bad.pdf", name: "bad.pdf" });
+
+            expect(Notice.instances.some((n) => n.message.includes("1 failed"))).toBe(true);
+        });
+    });
+
+    describe("addExternalFiles()", () => {
+        it("calls api.addFiles with the given absolute paths", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf", "/tmp/notes.md"]);
+
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(["/home/user/doc.pdf", "/tmp/notes.md"], false, undefined);
+        });
+
+        it("passes vision model when activeVisionModel is set", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeVisionModel = "minicpm-v:latest";
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+
+            await plugin.addExternalFiles(["/home/user/scan.pdf"]);
+
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(
+                ["/home/user/scan.pdf"], false, "minicpm-v:latest",
+            );
+        });
+
+        it("returns early when paths array is empty", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.api.addFiles = vi.fn();
+
+            await plugin.addExternalFiles([]);
+
+            expect(plugin.api.addFiles).not.toHaveBeenCalled();
+        });
+
+        it("returns early when statusBarEl is null", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).statusBarEl = null;
+            plugin.api.addFiles = vi.fn();
+
+            await plugin.addExternalFiles(["/some/file.pdf"]);
+
+            expect(plugin.api.addFiles).not.toHaveBeenCalled();
+        });
+
+        it("shows summary Notice on done event", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* withDone() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: { added: ["doc.pdf"], updated: [], removed: [], failed: [], unchanged: 0 },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withDone());
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+
+            expect(Notice.instances.some((n) => n.message.includes("1 added"))).toBe(true);
+        });
+
+        it("shows error Notice on API failure", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.addFiles = vi.fn().mockImplementation(() => {
+                throw new Error("connection refused");
+            });
+
+            await plugin.addExternalFiles(["/some/file.pdf"]);
+
+            expect(Notice.instances.some((n) => n.message.includes("add failed"))).toBe(true);
+        });
+
+        it("shows failed count in Notice", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* withFailed() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: { added: [], updated: [], removed: [], failed: ["bad.pdf"], unchanged: 0 },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withFailed());
+
+            await plugin.addExternalFiles(["/home/user/bad.pdf"]);
+
+            expect(Notice.instances.some((n) => n.message.includes("1 failed"))).toBe(true);
+        });
+    });
+
+    describe("granular progress events", () => {
+        it("file_start updates status bar with file-level progress", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const statusTexts: string[] = [];
+            const origSetText = (plugin as any).statusBarEl!.setText.bind((plugin as any).statusBarEl);
+            (plugin as any).statusBarEl!.setText = (text: string) => {
+                statusTexts.push(text);
+                origSetText(text);
+            };
+
+            async function* withFileStart() {
+                yield { event: SSE_EVENT.FILE_START, data: { file: "paper.pdf", current_file: 3, total_files: 10 } };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(withFileStart());
+
+            await plugin.triggerSync();
+
+            expect(statusTexts.some((t) => t.includes("3/10") && t.includes("paper.pdf"))).toBe(true);
+        });
+
+        it("extract updates status bar with page-level progress", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const statusTexts: string[] = [];
+            const origSetText = (plugin as any).statusBarEl!.setText.bind((plugin as any).statusBarEl);
+            (plugin as any).statusBarEl!.setText = (text: string) => {
+                statusTexts.push(text);
+                origSetText(text);
+            };
+
+            async function* withExtract() {
+                yield { event: SSE_EVENT.EXTRACT, data: { file: "paper.pdf", page: 5, total_pages: 50 } };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(withExtract());
+
+            await plugin.triggerSync();
+
+            expect(statusTexts.some((t) => t.includes("extracting") && t.includes("page 5/50"))).toBe(true);
+        });
+
+        it("embed updates status bar with chunk-level progress", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const statusTexts: string[] = [];
+            const origSetText = (plugin as any).statusBarEl!.setText.bind((plugin as any).statusBarEl);
+            (plugin as any).statusBarEl!.setText = (text: string) => {
+                statusTexts.push(text);
+                origSetText(text);
+            };
+
+            async function* withEmbed() {
+                yield { event: SSE_EVENT.EMBED, data: { file: "paper.pdf", chunk: 30, total_chunks: 100 } };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(withEmbed());
+
+            await plugin.triggerSync();
+
+            expect(statusTexts.some((t) => t.includes("embedding") && t.includes("30/100"))).toBe(true);
+        });
+
+        it("handleProgressEvent no-ops when statusBarEl is null", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).statusBarEl = null;
+
+            expect(() => {
+                (plugin as any).handleProgressEvent({ event: SSE_EVENT.FILE_START, data: { file: "x", current_file: 1, total_files: 1 } });
+            }).not.toThrow();
+        });
+    });
+
+    describe("active model in status bar", () => {
+        it("fetchActiveModel sets activeModel and updates status bar", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.listModels = vi.fn().mockResolvedValue({
+                chat: { active: "qwen3:8b", installed: ["qwen3:8b"], catalog: [] },
+                vision: { active: "", installed: [], catalog: [] },
+            });
+
+            plugin.fetchActiveModel();
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(plugin.activeModel).toBe("qwen3:8b");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready (qwen3:8b)");
+        });
+
+        it("fetchActiveModel silently fails on API error", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
+
+            plugin.fetchActiveModel();
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(plugin.activeModel).toBe("");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready");
+        });
+
+        it("status bar includes model name during sync", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            const statusTexts: string[] = [];
+            const origSetText = (plugin as any).statusBarEl!.setText.bind((plugin as any).statusBarEl);
+            (plugin as any).statusBarEl!.setText = (text: string) => {
+                statusTexts.push(text);
+                origSetText(text);
+            };
+
+            async function* noEvents() {}
+            plugin.api.syncStream = vi.fn().mockReturnValue(noEvents());
+
+            await plugin.triggerSync();
+
+            expect(statusTexts.some((t) => t.includes("syncing") && t.includes("llama3"))).toBe(true);
+        });
+
+        it("updateStatusBar no-ops when statusBarEl is null", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).statusBarEl = null;
+
+            expect(() => {
+                (plugin as any).updateStatusBar("test");
+            }).not.toThrow();
         });
     });
 });
