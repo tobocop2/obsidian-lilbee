@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { LilbeeClient } from "../src/api";
+import { LilbeeClient, OllamaClient } from "../src/api";
 import type { Message } from "../src/types";
 
 const BASE_URL = "http://localhost:7433";
@@ -186,6 +186,24 @@ describe("askStream()", () => {
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
         expect(body.top_k).toBe(0);
     });
+
+    it("includes options in request body when provided", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.askStream("q", 5, undefined, { temperature: 0.5 }));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.options).toEqual({ temperature: 0.5 });
+    });
+
+    it("omits options when empty object provided", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.askStream("q", 5, undefined, {}));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.options).toBeUndefined();
+    });
 });
 
 describe("chat()", () => {
@@ -249,6 +267,33 @@ describe("chatStream()", () => {
 
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
         expect(body.top_k).toBe(0);
+    });
+
+    it("includes options in request body when provided", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.chatStream("q", [], 5, undefined, { temperature: 0.7, top_k: 40 }));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.options).toEqual({ temperature: 0.7, top_k: 40 });
+    });
+
+    it("omits options when empty object provided", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.chatStream("q", [], 5, undefined, {}));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.options).toBeUndefined();
+    });
+
+    it("omits options when not provided", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.chatStream("q", [], 5));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.options).toBeUndefined();
     });
 });
 
@@ -602,5 +647,200 @@ describe("assertOk", () => {
         } as unknown as Response);
 
         await expect(client.status()).rejects.toThrow("Server responded 503: ");
+    });
+});
+
+/** Build a fake fetch response whose body is a ReadableStream emitting NDJSON lines. */
+function ndjsonResponse(lines: string[]): Response {
+    const encoder = new TextEncoder();
+    let index = 0;
+    const reader = {
+        read: vi.fn(async () => {
+            if (index < lines.length) {
+                return { done: false, value: encoder.encode(lines[index++]) };
+            }
+            return { done: true, value: undefined };
+        }),
+    };
+    return {
+        ok: true,
+        text: () => Promise.resolve(""),
+        body: { getReader: () => reader },
+    } as unknown as Response;
+}
+
+describe("OllamaClient", () => {
+    const OLLAMA_URL = "http://localhost:11434";
+    let ollama: OllamaClient;
+
+    beforeEach(() => {
+        ollama = new OllamaClient(OLLAMA_URL);
+    });
+
+    describe("pull()", () => {
+        it("POSTs to {baseUrl}/api/pull with model name and stream: true", async () => {
+            fetchMock.mockResolvedValue(ndjsonResponse([
+                '{"status":"pulling manifest"}\n',
+            ]));
+
+            await collect(ollama.pull("llama3"));
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${OLLAMA_URL}/api/pull`,
+                expect.objectContaining({
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: "llama3", stream: true }),
+                }),
+            );
+        });
+
+        it("yields OllamaPullProgress objects from NDJSON response", async () => {
+            fetchMock.mockResolvedValue(ndjsonResponse([
+                '{"status":"pulling manifest"}\n{"status":"downloading","completed":50,"total":100}\n',
+                '{"status":"success"}\n',
+            ]));
+
+            const results = await collect(ollama.pull("llama3"));
+
+            expect(results).toEqual([
+                { status: "pulling manifest" },
+                { status: "downloading", completed: 50, total: 100 },
+                { status: "success" },
+            ]);
+        });
+
+        it("throws on non-ok response", async () => {
+            fetchMock.mockResolvedValue({
+                ok: false,
+                status: 404,
+                text: () => Promise.resolve("model not found"),
+            } as unknown as Response);
+
+            await expect(collect(ollama.pull("nonexistent"))).rejects.toThrow(
+                "Ollama responded 404: model not found",
+            );
+        });
+
+        it("passes signal to fetch", async () => {
+            fetchMock.mockResolvedValue(ndjsonResponse([]));
+            const controller = new AbortController();
+
+            await collect(ollama.pull("llama3", controller.signal));
+
+            const init = fetchMock.mock.calls[0][1] as RequestInit;
+            expect(init.signal).toBe(controller.signal);
+        });
+
+        it("throws when response.body is null", async () => {
+            fetchMock.mockResolvedValue({
+                ok: true,
+                text: () => Promise.resolve(""),
+                body: null,
+            } as unknown as Response);
+
+            await expect(collect(ollama.pull("llama3"))).rejects.toThrow("Response body is null");
+        });
+
+        it("skips malformed JSON lines", async () => {
+            fetchMock.mockResolvedValue(ndjsonResponse([
+                '{"status":"ok"}\nnot-valid-json\n{"status":"done"}\n',
+            ]));
+
+            const results = await collect(ollama.pull("llama3"));
+
+            expect(results).toEqual([
+                { status: "ok" },
+                { status: "done" },
+            ]);
+        });
+
+        it("handles trailing NDJSON line without newline", async () => {
+            fetchMock.mockResolvedValue(ndjsonResponse([
+                '{"status":"success"}',
+            ]));
+
+            const results = await collect(ollama.pull("llama3"));
+
+            expect(results).toEqual([{ status: "success" }]);
+        });
+
+        it("skips malformed trailing buffer", async () => {
+            fetchMock.mockResolvedValue(ndjsonResponse([
+                '{"status":"ok"}\nnot-json',
+            ]));
+
+            const results = await collect(ollama.pull("llama3"));
+
+            expect(results).toEqual([{ status: "ok" }]);
+        });
+    });
+
+    describe("delete()", () => {
+        it("DELETEs to {baseUrl}/api/delete with model name", async () => {
+            fetchMock.mockResolvedValue({
+                ok: true,
+                text: () => Promise.resolve(""),
+            } as unknown as Response);
+
+            await ollama.delete("llama3");
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${OLLAMA_URL}/api/delete`,
+                expect.objectContaining({
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: "llama3" }),
+                }),
+            );
+        });
+
+        it("throws on non-ok response", async () => {
+            fetchMock.mockResolvedValue({
+                ok: false,
+                status: 404,
+                text: () => Promise.resolve("model not found"),
+            } as unknown as Response);
+
+            await expect(ollama.delete("nonexistent")).rejects.toThrow(
+                "Ollama responded 404: model not found",
+            );
+        });
+
+        it("succeeds without returning anything on ok response", async () => {
+            fetchMock.mockResolvedValue({
+                ok: true,
+                text: () => Promise.resolve(""),
+            } as unknown as Response);
+
+            const result = await ollama.delete("llama3");
+
+            expect(result).toBeUndefined();
+        });
+    });
+});
+
+describe("fetchWithRetry() — signal and AbortError", () => {
+    it("sets caller-provided signal on fetch init", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ status: "ok" }));
+        const controller = new AbortController();
+
+        await client.fetchWithRetry(
+            `${BASE_URL}/api/health`,
+            {},
+            { signal: controller.signal },
+        );
+
+        const init = fetchMock.mock.calls[0][1] as RequestInit;
+        expect(init.signal).toBe(controller.signal);
+    });
+
+    it("AbortError is thrown immediately without retrying", async () => {
+        const abortError = new Error("The operation was aborted");
+        abortError.name = "AbortError";
+        fetchMock.mockRejectedValue(abortError);
+
+        await expect(client.health()).rejects.toThrow("The operation was aborted");
+        expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 });

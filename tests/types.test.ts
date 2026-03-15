@@ -14,6 +14,7 @@ import type {
     SSEEvent,
     Message,
     LilbeeSettings,
+    GenerationOptions,
 } from "../src/types";
 
 describe("DEFAULT_SETTINGS", () => {
@@ -35,7 +36,7 @@ describe("DEFAULT_SETTINGS", () => {
 
     it("is a plain object with exactly the expected keys", () => {
         const keys = Object.keys(DEFAULT_SETTINGS).sort();
-        expect(keys).toEqual(["ollamaUrl", "serverUrl", "syncDebounceMs", "syncMode", "topK"].sort());
+        expect(keys).toEqual(["num_ctx", "ollamaUrl", "repeat_penalty", "seed", "serverUrl", "syncDebounceMs", "syncMode", "temperature", "topK", "top_k_sampling", "top_p"].sort());
     });
 });
 
@@ -233,6 +234,13 @@ describe("LilbeeSettings interface", () => {
             topK: 3,
             syncMode: "manual",
             syncDebounceMs: 2000,
+            ollamaUrl: "http://127.0.0.1:11434",
+            temperature: null,
+            top_p: null,
+            top_k_sampling: null,
+            repeat_penalty: null,
+            num_ctx: null,
+            seed: null,
         };
         expect(s.syncMode).toBe("manual");
     });
@@ -243,6 +251,13 @@ describe("LilbeeSettings interface", () => {
             topK: 3,
             syncMode: "auto",
             syncDebounceMs: 2000,
+            ollamaUrl: "http://127.0.0.1:11434",
+            temperature: null,
+            top_p: null,
+            top_k_sampling: null,
+            repeat_penalty: null,
+            num_ctx: null,
+            seed: null,
         };
         expect(s.syncMode).toBe("auto");
     });

@@ -2,8 +2,10 @@ import { JSON_HEADERS, SSE_EVENT } from "./types";
 import type {
     AskResponse,
     DocumentResult,
+    GenerationOptions,
     Message,
     ModelsResponse,
+    OllamaPullProgress,
     SSEEvent,
     StatusResponse,
 } from "./types";
@@ -32,7 +34,7 @@ export class LilbeeClient {
     async fetchWithRetry(
         url: string,
         init?: RequestInit,
-        opts?: { stream?: boolean },
+        opts?: { stream?: boolean; signal?: AbortSignal },
     ): Promise<Response> {
         const maxAttempts = RETRY_COUNT + 1;
         let lastError: unknown;
@@ -42,7 +44,9 @@ export class LilbeeClient {
             }
             try {
                 const fetchInit = { ...init };
-                if (!opts?.stream) {
+                if (opts?.signal) {
+                    fetchInit.signal = opts.signal;
+                } else if (!opts?.stream) {
                     const controller = new AbortController();
                     fetchInit.signal = controller.signal;
                     setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
@@ -51,6 +55,9 @@ export class LilbeeClient {
             } catch (err) {
                 lastError = err;
                 if (err instanceof Error && err.message.startsWith("Server responded")) {
+                    throw err;
+                }
+                if (err instanceof Error && err.name === "AbortError") {
                     throw err;
                 }
             }
@@ -84,15 +91,22 @@ export class LilbeeClient {
         return res.json();
     }
 
-    async *askStream(question: string, topK?: number): AsyncGenerator<SSEEvent> {
+    async *askStream(
+        question: string,
+        topK?: number,
+        signal?: AbortSignal,
+        options?: GenerationOptions,
+    ): AsyncGenerator<SSEEvent> {
+        const body: Record<string, unknown> = { question, top_k: topK ?? 0 };
+        if (options && Object.keys(options).length > 0) body.options = options;
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/ask/stream`,
             {
                 method: "POST",
                 headers: JSON_HEADERS,
-                body: JSON.stringify({ question, top_k: topK ?? 0 }),
+                body: JSON.stringify(body),
             },
-            { stream: true },
+            { stream: true, signal },
         );
         yield* this.parseSSE(res);
     }
@@ -110,15 +124,19 @@ export class LilbeeClient {
         question: string,
         history: Message[],
         topK?: number,
+        signal?: AbortSignal,
+        options?: GenerationOptions,
     ): AsyncGenerator<SSEEvent> {
+        const body: Record<string, unknown> = { question, history, top_k: topK ?? 0 };
+        if (options && Object.keys(options).length > 0) body.options = options;
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/chat/stream`,
             {
                 method: "POST",
                 headers: JSON_HEADERS,
-                body: JSON.stringify({ question, history, top_k: topK ?? 0 }),
+                body: JSON.stringify(body),
             },
-            { stream: true },
+            { stream: true, signal },
         );
         yield* this.parseSSE(res);
     }
@@ -221,6 +239,71 @@ export class LilbeeClient {
                     }
                     currentEvent = SSE_EVENT.MESSAGE;
                 }
+            }
+        }
+    }
+}
+
+export class OllamaClient {
+    constructor(private baseUrl: string) {}
+
+    async *pull(model: string, signal?: AbortSignal): AsyncGenerator<OllamaPullProgress> {
+        const res = await fetch(`${this.baseUrl}/api/pull`, {
+            method: "POST",
+            headers: JSON_HEADERS,
+            body: JSON.stringify({ name: model, stream: true }),
+            signal,
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            throw new Error(`Ollama responded ${res.status}: ${text}`);
+        }
+        yield* this.parseNDJSON(res);
+    }
+
+    async delete(model: string): Promise<void> {
+        const res = await fetch(`${this.baseUrl}/api/delete`, {
+            method: "DELETE",
+            headers: JSON_HEADERS,
+            body: JSON.stringify({ name: model }),
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            throw new Error(`Ollama responded ${res.status}: ${text}`);
+        }
+    }
+
+    private async *parseNDJSON(response: Response): AsyncGenerator<OllamaPullProgress> {
+        if (!response.body) {
+            throw new Error("Response body is null");
+        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            const lines = buffer.split("\n");
+            buffer = lines.pop()!;
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                try {
+                    yield JSON.parse(trimmed) as OllamaPullProgress;
+                } catch {
+                    // skip malformed lines
+                }
+            }
+        }
+        if (buffer.trim()) {
+            try {
+                yield JSON.parse(buffer.trim()) as OllamaPullProgress;
+            } catch {
+                // skip
             }
         }
     }

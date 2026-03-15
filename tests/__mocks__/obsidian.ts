@@ -82,7 +82,7 @@ export class MockElement {
         }
     }
 
-    addEventListener(event: string, handler: Function): void {
+    addEventListener(event: string, handler: Function, _options?: unknown): void {
         if (!this._listeners[event]) this._listeners[event] = [];
         this._listeners[event].push(handler);
     }
@@ -153,6 +153,9 @@ export class App {
             getBasePath: vi.fn().mockReturnValue("/test/vault"),
         },
         getFiles: vi.fn().mockReturnValue([]),
+        getAbstractFileByPath: vi.fn().mockReturnValue(null),
+        createFolder: vi.fn().mockResolvedValue(undefined),
+        create: vi.fn().mockResolvedValue(undefined),
     };
 }
 
