@@ -1,9 +1,18 @@
-import { Notice, Plugin, type TAbstractFile } from "obsidian";
+import { type Menu, type MenuItem, Notice, Plugin, type TAbstractFile } from "obsidian";
 import { LilbeeClient } from "./api";
 import { LilbeeSettingTab } from "./settings";
 import { DEFAULT_SETTINGS, SSE_EVENT, type LilbeeSettings, type SSEEvent, type SyncDone } from "./types";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
 import { SearchModal } from "./views/search-modal";
+
+function summarizeSyncResult(done: SyncDone): string {
+    const parts: string[] = [];
+    if (done.added.length > 0) parts.push(`${done.added.length} added`);
+    if (done.updated.length > 0) parts.push(`${done.updated.length} updated`);
+    if (done.removed.length > 0) parts.push(`${done.removed.length} removed`);
+    if (done.failed.length > 0) parts.push(`${done.failed.length} failed`);
+    return parts.join(", ");
+}
 
 export default class LilbeePlugin extends Plugin {
     settings: LilbeeSettings = { ...DEFAULT_SETTINGS };
@@ -11,6 +20,7 @@ export default class LilbeePlugin extends Plugin {
     activeModel = "";
     activeVisionModel = "";
     statusBarEl: HTMLElement | null = null;
+    onProgress: ((event: SSEEvent) => void) | null = null;
     private syncTimeout: ReturnType<typeof setTimeout> | null = null;
     private autoSyncRefs: { id: string }[] = [];
 
@@ -18,17 +28,30 @@ export default class LilbeePlugin extends Plugin {
         await this.loadSettings();
         this.api = new LilbeeClient(this.settings.serverUrl);
 
-        // Status bar
         this.statusBarEl = this.addStatusBarItem();
         this.setStatusReady();
-
-        // Register views
         this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
-
-        // Settings tab
         this.addSettingTab(new LilbeeSettingTab(this.app, this));
+        this.registerCommands();
 
-        // Commands
+        this.registerEvent(
+            this.app.workspace.on("file-menu" as any, (menu: Menu, file: TAbstractFile) => {
+                menu.addItem((item: MenuItem) => {
+                    item.setTitle("Add to lilbee")
+                        .setIcon("plus-circle")
+                        .onClick(() => this.addToLilbee(file));
+                });
+            }),
+        );
+
+        this.fetchActiveModel();
+
+        if (this.settings.syncMode === "auto") {
+            this.registerAutoSync();
+        }
+    }
+
+    private registerCommands(): void {
         this.addCommand({
             id: "lilbee:search",
             name: "Search knowledge base",
@@ -38,10 +61,7 @@ export default class LilbeePlugin extends Plugin {
         this.addCommand({
             id: "lilbee:ask",
             name: "Ask a question",
-            callback: () => {
-                const modal = new SearchModal(this.app, this, "ask");
-                modal.open();
-            },
+            callback: () => new SearchModal(this.app, this, "ask").open(),
         });
 
         this.addCommand({
@@ -93,25 +113,6 @@ export default class LilbeePlugin extends Plugin {
                 }
             },
         });
-
-        // File explorer context menu
-        this.registerEvent(
-            this.app.workspace.on("file-menu" as any, (menu: any, file: TAbstractFile) => {
-                menu.addItem((item: any) => {
-                    item.setTitle("Add to lilbee")
-                        .setIcon("plus-circle")
-                        .onClick(() => this.addToLilbee(file));
-                });
-            }),
-        );
-
-        // Fetch models to populate activeModel
-        this.fetchActiveModel();
-
-        // Auto-sync watcher
-        if (this.settings.syncMode === "auto") {
-            this.registerAutoSync();
-        }
     }
 
     onunload(): void {
@@ -163,24 +164,24 @@ export default class LilbeePlugin extends Plugin {
         await this.runAdd([absolutePath]);
     }
 
+    private emitProgress(event: SSEEvent): void {
+        if (this.onProgress) this.onProgress(event);
+    }
+
     private async runAdd(paths: string[]): Promise<void> {
         this.updateStatusBar("lilbee: adding...");
 
         try {
             let lastEvent: SSEEvent | null = null;
             for await (const event of this.api.addFiles(paths, false, this.activeVisionModel || undefined)) {
-                this.handleProgressEvent(event);
+                this.emitProgress(event);
                 lastEvent = event;
             }
 
             if (lastEvent?.event === SSE_EVENT.DONE) {
-                const done = lastEvent.data as SyncDone;
-                const parts: string[] = [];
-                if (done.added.length > 0) parts.push(`${done.added.length} added`);
-                if (done.failed.length > 0) parts.push(`${done.failed.length} failed`);
-                new Notice(parts.length > 0
-                    ? `lilbee: ${parts.join(", ")}`
-                    : "lilbee: nothing new to add");
+                this.emitProgress(lastEvent);
+                const summary = summarizeSyncResult(lastEvent.data as SyncDone);
+                new Notice(summary ? `lilbee: ${summary}` : "lilbee: nothing new to add");
             }
         } catch (err) {
             const msg = err instanceof Error ? err.message : "cannot connect to server";
@@ -189,32 +190,6 @@ export default class LilbeePlugin extends Plugin {
         }
 
         this.setStatusReady();
-    }
-
-    private handleProgressEvent(event: SSEEvent): void {
-        if (!this.statusBarEl) return;
-        switch (event.event) {
-            case SSE_EVENT.FILE_START: {
-                const data = event.data as { file: string; current_file: number; total_files: number };
-                this.updateStatusBar(`lilbee: indexing ${data.current_file}/${data.total_files} — ${data.file}`);
-                break;
-            }
-            case SSE_EVENT.EXTRACT: {
-                const data = event.data as { file: string; page: number; total_pages: number };
-                this.updateStatusBar(`lilbee: extracting ${data.file} (page ${data.page}/${data.total_pages})`);
-                break;
-            }
-            case SSE_EVENT.EMBED: {
-                const data = event.data as { file: string; chunk: number; total_chunks: number };
-                this.updateStatusBar(`lilbee: embedding ${data.file} (${data.chunk}/${data.total_chunks} chunks)`);
-                break;
-            }
-            case SSE_EVENT.PROGRESS: {
-                const data = event.data as { file: string; current: number; total: number };
-                this.updateStatusBar(`lilbee: indexing ${data.current}/${data.total} — ${data.file}`);
-                break;
-            }
-        }
     }
 
     private updateAutoSync(): void {
@@ -273,20 +248,14 @@ export default class LilbeePlugin extends Plugin {
         try {
             let lastEvent: SSEEvent | null = null;
             for await (const event of this.api.syncStream(!!this.activeVisionModel)) {
-                this.handleProgressEvent(event);
+                this.emitProgress(event);
                 lastEvent = event;
             }
 
             if (lastEvent?.event === SSE_EVENT.DONE) {
-                const done = lastEvent.data as SyncDone;
-                const parts: string[] = [];
-                if (done.added.length > 0) parts.push(`${done.added.length} added`);
-                if (done.updated.length > 0) parts.push(`${done.updated.length} updated`);
-                if (done.removed.length > 0) parts.push(`${done.removed.length} removed`);
-                if (done.failed.length > 0) parts.push(`${done.failed.length} failed`);
-                if (parts.length > 0) {
-                    new Notice(`lilbee: synced — ${parts.join(", ")}`);
-                }
+                this.emitProgress(lastEvent);
+                const summary = summarizeSyncResult(lastEvent.data as SyncDone);
+                if (summary) new Notice(`lilbee: synced — ${summary}`);
             }
         } catch {
             new Notice("lilbee: sync failed — cannot connect to server");

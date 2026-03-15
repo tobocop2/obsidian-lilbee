@@ -68,6 +68,10 @@ export class MockElement {
         this.textContent = text;
     }
 
+    setAttribute(name: string, value: string): void {
+        this.attributes[name] = value;
+    }
+
     addClass(cls: string): void {
         cls.split(" ").forEach(c => this.classList.add(c));
     }
@@ -288,6 +292,11 @@ export const MarkdownRenderer = {
     },
 };
 
+export function setIcon(el: MockElement, icon: string): void {
+    el.textContent = icon;
+    el.attributes["data-icon"] = icon;
+}
+
 export class Notice {
     message: string;
     duration: number | undefined;
@@ -302,8 +311,10 @@ export class Notice {
 
 export class Setting {
     private _el: MockElement;
+    settingEl: MockElement;
     constructor(el: MockElement) {
         this._el = el;
+        this.settingEl = el;
     }
     setName(_name: string): this { return this; }
     setDesc(_desc: string): this { return this; }
