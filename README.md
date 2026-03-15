@@ -101,6 +101,14 @@ Text extraction powered by [Kreuzberg](https://github.com/Goldziher/kreuzberg), 
 | Text | `.md`, `.txt`, `.html`, `.rst` |
 | Code | `.py`, `.js`, `.ts`, `.go`, `.rs`, `.java`, and [150+ more](https://github.com/Goldziher/tree-sitter-language-pack) |
 
+## Build your own integration
+
+lilbee is local-first, but the REST API it exposes is not tied to any specific model. The search endpoint returns relevant document chunks without calling a language model — so if you'd rather use a frontier model like ChatGPT or Claude instead of a local one, you can. Index your documents with lilbee, query the search API, and feed the results into whatever LLM you prefer.
+
+This plugin is a full working example of a client built on that API. Use it as a reference if you want to build your own.
+
+See the [lilbee README](https://github.com/tobocop2/lilbee) for more on the API.
+
 ## Troubleshooting
 
 | Problem | Fix |
