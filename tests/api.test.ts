@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { LilbeeClient, OllamaClient } from "../src/api";
+import { LilbeeClient, OllamaClient, parseModelParameters } from "../src/api";
 import type { Message } from "../src/types";
 
 const BASE_URL = "http://localhost:7433";
@@ -817,6 +817,112 @@ describe("OllamaClient", () => {
 
             expect(result).toBeUndefined();
         });
+    });
+
+    describe("show()", () => {
+        it("POSTs to {baseUrl}/api/show and returns parsed model defaults", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({
+                parameters: "temperature 0.6\ntop_p 0.9\ntop_k 40\nrepeat_penalty 1.1\nnum_ctx 4096\nseed 42",
+                model_info: {},
+            }));
+
+            const defaults = await ollama.show("llama3");
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${OLLAMA_URL}/api/show`,
+                expect.objectContaining({
+                    method: "POST",
+                    body: JSON.stringify({ name: "llama3" }),
+                }),
+            );
+            expect(defaults).toEqual({
+                temperature: 0.6,
+                top_p: 0.9,
+                top_k: 40,
+                repeat_penalty: 1.1,
+                num_ctx: 4096,
+                seed: 42,
+            });
+        });
+
+        it("throws on non-ok response", async () => {
+            fetchMock.mockResolvedValue({
+                ok: false,
+                status: 404,
+                text: () => Promise.resolve("model not found"),
+            } as unknown as Response);
+
+            await expect(ollama.show("nonexistent")).rejects.toThrow(
+                "Ollama responded 404: model not found",
+            );
+        });
+
+        it("falls back to model_info for context_length when parameters lacks num_ctx", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({
+                parameters: "temperature 0.7",
+                model_info: { "llama3.context_length": 8192 },
+            }));
+
+            const defaults = await ollama.show("llama3");
+            expect(defaults.num_ctx).toBe(8192);
+            expect(defaults.temperature).toBe(0.7);
+        });
+
+        it("handles missing parameters field", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({
+                model_info: { "llama3.context_length": 4096 },
+            }));
+
+            const defaults = await ollama.show("llama3");
+            expect(defaults.num_ctx).toBe(4096);
+        });
+    });
+});
+
+describe("parseModelParameters()", () => {
+    it("parses multiline parameter string", () => {
+        const result = parseModelParameters(
+            "temperature 0.8\ntop_p 0.95\nnum_ctx 2048",
+            {},
+        );
+        expect(result).toEqual({
+            temperature: 0.8,
+            top_p: 0.95,
+            num_ctx: 2048,
+        });
+    });
+
+    it("ignores unknown parameter keys", () => {
+        const result = parseModelParameters("mirostat 2\ntemperature 0.5", {});
+        expect(result).toEqual({ temperature: 0.5 });
+    });
+
+    it("ignores lines with missing values", () => {
+        const result = parseModelParameters("temperature\ntop_p 0.9", {});
+        expect(result).toEqual({ top_p: 0.9 });
+    });
+
+    it("ignores non-numeric values", () => {
+        const result = parseModelParameters("temperature abc", {});
+        expect(result).toEqual({});
+    });
+
+    it("uses model_info context_length when num_ctx not in parameters", () => {
+        const result = parseModelParameters("", {
+            "model.context_length": 131072,
+        });
+        expect(result).toEqual({ num_ctx: 131072 });
+    });
+
+    it("prefers parameters num_ctx over model_info context_length", () => {
+        const result = parseModelParameters("num_ctx 4096", {
+            "model.context_length": 131072,
+        });
+        expect(result).toEqual({ num_ctx: 4096 });
+    });
+
+    it("returns empty object for empty inputs", () => {
+        expect(parseModelParameters("", {})).toEqual({});
     });
 });
 

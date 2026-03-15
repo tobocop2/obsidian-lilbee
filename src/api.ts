@@ -5,6 +5,7 @@ import type {
     GenerationOptions,
     Message,
     ModelsResponse,
+    OllamaModelDefaults,
     OllamaPullProgress,
     SSEEvent,
     StatusResponse,
@@ -244,6 +245,37 @@ export class LilbeeClient {
     }
 }
 
+const PARAM_KEY_MAP: Record<string, keyof OllamaModelDefaults> = {
+    temperature: "temperature",
+    top_p: "top_p",
+    top_k: "top_k",
+    repeat_penalty: "repeat_penalty",
+    num_ctx: "num_ctx",
+    seed: "seed",
+};
+
+export function parseModelParameters(
+    parameters: string,
+    modelInfo: Record<string, unknown>,
+): OllamaModelDefaults {
+    const defaults: OllamaModelDefaults = {};
+    for (const line of parameters.split("\n")) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 2) continue;
+        const key = PARAM_KEY_MAP[parts[0]];
+        if (key) {
+            const num = Number(parts[1]);
+            if (!isNaN(num)) defaults[key] = num;
+        }
+    }
+    const ctxKey = Object.keys(modelInfo).find((k) => k.endsWith(".context_length"));
+    if (ctxKey && !defaults.num_ctx) {
+        const val = Number(modelInfo[ctxKey]);
+        if (!isNaN(val) && val > 0) defaults.num_ctx = val;
+    }
+    return defaults;
+}
+
 export class OllamaClient {
     constructor(private baseUrl: string) {}
 
@@ -259,6 +291,20 @@ export class OllamaClient {
             throw new Error(`Ollama responded ${res.status}: ${text}`);
         }
         yield* this.parseNDJSON(res);
+    }
+
+    async show(model: string): Promise<OllamaModelDefaults> {
+        const res = await fetch(`${this.baseUrl}/api/show`, {
+            method: "POST",
+            headers: JSON_HEADERS,
+            body: JSON.stringify({ name: model }),
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            throw new Error(`Ollama responded ${res.status}: ${text}`);
+        }
+        const data = await res.json();
+        return parseModelParameters(data.parameters ?? "", data.model_info ?? {});
     }
 
     async delete(model: string): Promise<void> {

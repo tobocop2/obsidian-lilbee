@@ -1,6 +1,6 @@
 import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
-import type { ModelCatalog, ModelInfo, ModelsResponse } from "./types";
+import type { ModelCatalog, ModelInfo, ModelsResponse, OllamaModelDefaults } from "./types";
 
 const CHECK_TIMEOUT_MS = 5000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
@@ -33,8 +33,7 @@ export function buildModelOptions(
     }
 
     const catalogNames = new Set(catalog.catalog.map((m) => m.name));
-    const sortedCatalog = [...catalog.catalog].sort((a, b) => a.name.localeCompare(b.name));
-    for (const model of sortedCatalog) {
+    for (const model of catalog.catalog) {
         const suffix = model.installed ? "" : " (not installed)";
         options[model.name] = `${model.name}${suffix}`;
     }
@@ -55,8 +54,20 @@ export function buildModelOptions(
 
 export { SEPARATOR_KEY, SEPARATOR_LABEL };
 
+type GenKey = "temperature" | "top_p" | "top_k_sampling" | "repeat_penalty" | "num_ctx" | "seed";
+const GEN_DEFAULTS_MAP: Record<GenKey, keyof OllamaModelDefaults> = {
+    temperature: "temperature",
+    top_p: "top_p",
+    top_k_sampling: "top_k",
+    repeat_penalty: "repeat_penalty",
+    num_ctx: "num_ctx",
+    seed: "seed",
+};
+
 export class LilbeeSettingTab extends PluginSettingTab {
     plugin: LilbeePlugin;
+    private pulling = false;
+    private genInputs: Map<GenKey, HTMLInputElement> = new Map();
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app, plugin);
@@ -70,8 +81,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderConnectionSettings(containerEl);
         this.renderModelsSection(containerEl);
         this.renderGeneralSettings(containerEl);
-        this.renderGenerationSettings(containerEl);
         this.renderSyncSettings(containerEl);
+        this.renderGenerationSettings(containerEl);
+        this.loadModelDefaults();
     }
 
     private renderConnectionSettings(containerEl: HTMLElement): void {
@@ -123,7 +135,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private renderModelsSection(containerEl: HTMLElement): void {
         containerEl.createEl("h3", { text: "Models" });
         containerEl.createEl("p", {
-            text: "Manage chat and vision models. Requires the lilbee server to be running.",
+            text: "Curated catalog — see ollama.com/library for the full model list. Requires the lilbee server.",
             cls: "setting-item-description",
         });
 
@@ -157,9 +169,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private renderGenerationSettings(containerEl: HTMLElement): void {
-        containerEl.createEl("h3", { text: "Generation" });
+        const details = containerEl.createEl("details", { cls: "lilbee-generation-details" });
+        const modelLabel = this.plugin.activeModel || "no model selected";
+        details.createEl("summary", { text: `Advanced settings (${modelLabel})` });
 
-        const fields: { key: keyof Pick<import("./types").LilbeeSettings, "temperature" | "top_p" | "top_k_sampling" | "repeat_penalty" | "num_ctx" | "seed">; name: string; desc: string; integer: boolean }[] = [
+        this.genInputs.clear();
+        const fields: { key: GenKey; name: string; desc: string; integer: boolean }[] = [
             { key: "temperature", name: "Temperature", desc: "Controls randomness (0.0–2.0)", integer: false },
             { key: "top_p", name: "Top P", desc: "Nucleus sampling threshold (0.0–1.0)", integer: false },
             { key: "top_k_sampling", name: "Top K (sampling)", desc: "Limits token choices per step", integer: true },
@@ -169,12 +184,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
         ];
 
         for (const field of fields) {
-            new Setting(containerEl)
+            new Setting(details)
                 .setName(field.name)
                 .setDesc(field.desc)
-                .addText((text) =>
+                .addText((text) => {
                     text
-                        .setPlaceholder("Model default")
+                        .setPlaceholder("Not set")
                         .setValue(this.plugin.settings[field.key] !== null ? String(this.plugin.settings[field.key]) : "")
                         .onChange(async (value) => {
                             const trimmed = value.trim();
@@ -187,9 +202,26 @@ export class LilbeeSettingTab extends PluginSettingTab {
                                 }
                             }
                             await this.plugin.saveSettings();
-                        }),
-                );
+                        });
+                    this.genInputs.set(field.key, text.inputEl);
+                });
         }
+    }
+
+    private loadModelDefaults(): void {
+        const model = this.plugin.activeModel;
+        if (!model) return;
+        this.plugin.ollama.show(model).then((defaults) => {
+            for (const [key, inputEl] of this.genInputs) {
+                const ollamaKey = GEN_DEFAULTS_MAP[key];
+                const val = defaults[ollamaKey];
+                if (val !== undefined) {
+                    inputEl.placeholder = String(val);
+                }
+            }
+        }).catch(() => {
+            // Ollama unreachable — leave "Not set" placeholders
+        });
     }
 
     private renderSyncSettings(containerEl: HTMLElement): void {
@@ -316,6 +348,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 await this.plugin.api.setVisionModel(value);
             }
             new Notice(`${label} set to ${value || "disabled"}`);
+            this.display();
         } catch {
             new Notice(`Failed to set ${type} model`);
         }
@@ -326,8 +359,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
         type: "chat" | "vision",
         container: HTMLElement,
     ): Promise<void> {
+        if (this.pulling) return;
+        this.pulling = true;
         new Notice(`Pulling ${model.name}...`);
         const controller = new AbortController();
+        const banner = container.createDiv("lilbee-pull-banner");
+        const label = banner.createEl("span", { text: `Pulling ${model.name}...` });
+        const cancelBtn = banner.createEl("button", { text: "Cancel", cls: "lilbee-pull-banner-cancel" });
+        cancelBtn.addEventListener("click", () => controller.abort(), { once: true });
         try {
             for await (const progress of this.plugin.ollama.pull(
                 model.name,
@@ -335,6 +374,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             )) {
                 if (progress.total && progress.completed !== undefined) {
                     const pct = Math.round((progress.completed / progress.total) * 100);
+                    label.textContent = `Pulling ${model.name} — ${pct}%`;
                     if (this.plugin.statusBarEl) {
                         this.plugin.statusBarEl.setText(
                             `lilbee: pulling ${model.name} — ${pct}%`,
@@ -349,16 +389,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
             }
             new Notice(`Model ${model.name} pulled and activated`);
             this.plugin.fetchActiveModel();
-            const modelsContainer = this.containerEl.querySelector(`.${CLS_MODELS_CONTAINER}`);
-            if (modelsContainer instanceof HTMLElement) {
-                await this.loadModels(modelsContainer);
-            }
+            this.display();
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
                 new Notice("Pull cancelled");
             } else {
                 new Notice(`Failed to pull ${model.name}`);
             }
+        } finally {
+            banner.remove();
+            this.pulling = false;
         }
     }
 
@@ -391,13 +431,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
         model: ModelInfo,
         type: "chat" | "vision",
     ): Promise<void> {
+        if (this.pulling) return;
+        this.pulling = true;
         const controller = new AbortController();
-        (btn as HTMLButtonElement).disabled = true;
         btn.textContent = "Cancel";
-        (btn as HTMLButtonElement).disabled = false;
         btn.addEventListener("click", () => controller.abort(), { once: true });
+        const progress = actionCell.createDiv("lilbee-pull-progress");
         try {
-            const progress = actionCell.createDiv("lilbee-pull-progress");
             for await (const p of this.plugin.ollama.pull(
                 model.name,
                 controller.signal,
@@ -417,10 +457,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 await this.plugin.api.setVisionModel(model.name);
             }
             this.plugin.fetchActiveModel();
-            const modelsContainer = this.containerEl.querySelector(`.${CLS_MODELS_CONTAINER}`);
-            if (modelsContainer instanceof HTMLElement) {
-                await this.loadModels(modelsContainer);
-            }
+            this.display();
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
                 new Notice("Pull cancelled");
@@ -429,6 +466,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
             }
             (btn as HTMLButtonElement).disabled = false;
             btn.textContent = "Pull";
+        } finally {
+            progress.remove();
+            this.pulling = false;
         }
     }
 

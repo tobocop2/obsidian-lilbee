@@ -77,6 +77,15 @@ export interface OllamaPullProgress {
     digest?: string;
 }
 
+export interface OllamaModelDefaults {
+    temperature?: number;
+    top_p?: number;
+    top_k?: number;
+    repeat_penalty?: number;
+    num_ctx?: number;
+    seed?: number;
+}
+
 export interface SSEEvent {
     event: string;
     data: unknown;

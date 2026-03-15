@@ -97,8 +97,7 @@
 .lilbee-chat-toolbar {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: var(--size-4-1, 4px);
+    gap: var(--size-4-2, 8px);
     padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
     border-bottom: 1px solid var(--background-modifier-border);
     background-color: var(--background-secondary);
@@ -120,21 +119,14 @@
     color: var(--text-normal);
 }
 
-.lilbee-connection-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    background-color: var(--text-faint);
-    margin-right: auto;
+.lilbee-toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
 }
 
-.lilbee-connection-dot.connected {
-    background-color: var(--color-green, #2d7a4f);
-}
-
-.lilbee-connection-dot.disconnected {
-    background-color: var(--color-red, #e93147);
+.lilbee-toolbar-spacer {
+    flex: 1;
 }
 
 .lilbee-progress-banner {
@@ -514,6 +506,42 @@
 .lilbee-toolbar-icon svg {
     width: 14px;
     height: 14px;
+}
+
+.lilbee-generation-details summary {
+    cursor: pointer;
+    font-weight: var(--font-semibold, 600);
+    padding: var(--size-4-2, 8px) 0;
+    color: var(--text-normal);
+}
+
+.lilbee-pull-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 6px);
+    margin: var(--size-4-2, 8px) 0;
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+}
+
+.lilbee-pull-banner-cancel {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 2px var(--size-4-2, 8px);
+    font-size: var(--font-smallest, 10px);
+}
+
+.lilbee-pull-banner-cancel:hover {
+    color: var(--text-error);
+    border-color: var(--text-error);
 }
 
 .lilbee-health-ok { color: var(--text-success); }

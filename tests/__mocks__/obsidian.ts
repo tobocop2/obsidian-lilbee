@@ -345,7 +345,8 @@ export class Setting {
 
 class MockTextComponent {
     private _onChange: ((v: string) => void) | null = null;
-    setPlaceholder(_p: string): this { return this; }
+    inputEl: { placeholder: string } = { placeholder: "" };
+    setPlaceholder(p: string): this { this.inputEl.placeholder = p; return this; }
     setValue(_v: string): this { return this; }
     onChange(cb: (v: string) => void): this { this._onChange = cb; return this; }
     triggerChange(v: string): void { this._onChange?.(v); }

@@ -93,7 +93,6 @@ export class ChatView extends ItemView {
     private streamController: AbortController | null = null;
     private pullController: AbortController | null = null;
     private progressCancelBtn: HTMLElement | null = null;
-    private connectionDot: HTMLElement | null = null;
     private progressBanner: HTMLElement | null = null;
     private progressLabel: HTMLElement | null = null;
     private progressBar: HTMLElement | null = null;
@@ -143,26 +142,29 @@ export class ChatView extends ItemView {
     private createToolbar(container: HTMLElement): void {
         const toolbar = container.createDiv({ cls: "lilbee-chat-toolbar" });
 
-        this.connectionDot = toolbar.createDiv({ cls: "lilbee-connection-dot" });
-        this.pingHealth();
-
-        const chatIcon = toolbar.createDiv({ cls: "lilbee-toolbar-icon" });
+        const chatGroup = toolbar.createDiv({ cls: "lilbee-toolbar-group" });
+        const chatIcon = chatGroup.createDiv({ cls: "lilbee-toolbar-icon" });
         setIcon(chatIcon, "message-circle");
+        chatIcon.setAttribute("title", "Chat model");
 
-        this.chatSelectEl = toolbar.createEl("select", {
+        this.chatSelectEl = chatGroup.createEl("select", {
             cls: "lilbee-chat-model-select",
         }) as HTMLSelectElement;
         this.attachChatListener(this.chatSelectEl);
 
-        const visionIcon = toolbar.createDiv({ cls: "lilbee-toolbar-icon" });
+        const visionGroup = toolbar.createDiv({ cls: "lilbee-toolbar-group" });
+        const visionIcon = visionGroup.createDiv({ cls: "lilbee-toolbar-icon" });
         setIcon(visionIcon, "eye");
+        visionIcon.setAttribute("title", "Vision model");
 
-        this.visionSelectEl = toolbar.createEl("select", {
+        this.visionSelectEl = visionGroup.createEl("select", {
             cls: "lilbee-chat-vision-select",
         }) as HTMLSelectElement;
         this.attachVisionListener(this.visionSelectEl);
 
         this.fetchAndFillSelectors();
+
+        toolbar.createDiv({ cls: "lilbee-toolbar-spacer" });
 
         const saveBtn = toolbar.createEl("button", { cls: "lilbee-chat-save" });
         setIcon(saveBtn, "save");
@@ -229,31 +231,15 @@ export class ChatView extends ItemView {
         });
     }
 
-    private pingHealth(): void {
-        this.plugin.api.health().then(() => {
-            this.setConnectionStatus(true);
-        }).catch(() => {
-            this.setConnectionStatus(false);
-        });
-    }
-
-    private setConnectionStatus(connected: boolean): void {
-        if (!this.connectionDot) return;
-        this.connectionDot.removeClass("connected", "disconnected");
-        this.connectionDot.addClass(connected ? "connected" : "disconnected");
-    }
-
     private fetchAndFillSelectors(): void {
         this.plugin.api.listModels().then((models) => {
             this.chatCatalog = models.chat;
             this.visionCatalog = models.vision;
             if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl, models.chat, "chat");
             if (this.visionSelectEl) this.fillSelectOptions(this.visionSelectEl, models.vision, "vision");
-            this.setConnectionStatus(true);
         }).catch(() => {
             if (this.chatSelectEl) this.chatSelectEl.createEl("option", { text: "(offline)" });
             if (this.visionSelectEl) this.visionSelectEl.createEl("option", { text: "(offline)" });
-            this.setConnectionStatus(false);
         });
     }
 
@@ -419,7 +405,6 @@ export class ChatView extends ItemView {
                 this.streamController.signal,
                 genOpts,
             )) {
-                this.setConnectionStatus(true);
                 this.handleStreamEvent(event, textEl, assistantBubble, state, revealContent, scheduleRender);
             }
         } catch (err) {
@@ -433,7 +418,6 @@ export class ChatView extends ItemView {
                 }
             } else {
                 revealContent();
-                this.setConnectionStatus(false);
                 textEl.textContent = "Server unavailable — retries exhausted. Is lilbee running?";
                 textEl.addClass("lilbee-chat-error");
             }

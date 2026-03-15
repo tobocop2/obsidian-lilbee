@@ -54,7 +54,6 @@ function makePlugin(): LilbeePlugin {
             setChatModel: vi.fn().mockResolvedValue({ model: "phi3" }),
             setVisionModel: vi.fn().mockResolvedValue({ model: "" }),
             pullModel: vi.fn(),
-            health: vi.fn().mockResolvedValue({ status: "ok", version: "1.0.0" }),
         },
         ollama: {
             pull: vi.fn(),
@@ -150,9 +149,14 @@ describe("ChatView.onOpen — DOM structure", () => {
         expect(addBtn!.attributes["data-icon"]).toBe("paperclip");
     });
 
-    it("creates a connection dot in the toolbar", () => {
-        const dot = container.find("lilbee-connection-dot");
-        expect(dot).not.toBeNull();
+    it("creates toolbar groups for icon+select pairs", () => {
+        const groups = container.findAll("lilbee-toolbar-group");
+        expect(groups.length).toBe(2);
+    });
+
+    it("creates a spacer div in the toolbar", () => {
+        const spacer = container.find("lilbee-toolbar-spacer");
+        expect(spacer).not.toBeNull();
     });
 
     it("creates a progress banner (hidden by default)", () => {
@@ -990,82 +994,62 @@ describe("VaultFilePickerModal", () => {
     });
 });
 
-describe("ChatView — connection dot", () => {
-    it("sets connected class when health succeeds", async () => {
+describe("ChatView — toolbar groups and tooltips", () => {
+    it("groups chat icon+select in first toolbar group", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
-        await tick();
-
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const dot = container.find("lilbee-connection-dot")!;
-        expect(dot.classList.contains("connected")).toBe(true);
+        const groups = container.findAll("lilbee-toolbar-group");
+        expect(groups.length).toBe(2);
+        const chatGroup = groups[0];
+        expect(chatGroup.find("lilbee-toolbar-icon")).not.toBeNull();
+        expect(chatGroup.find("lilbee-chat-model-select")).not.toBeNull();
     });
 
-    it("sets disconnected class when health fails", async () => {
+    it("groups vision icon+select in second toolbar group", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.health = vi.fn().mockRejectedValue(new Error("offline"));
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
-        await tick();
-
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const dot = container.find("lilbee-connection-dot")!;
-        expect(dot.classList.contains("disconnected")).toBe(true);
+        const groups = container.findAll("lilbee-toolbar-group");
+        const visionGroup = groups[1];
+        expect(visionGroup.find("lilbee-toolbar-icon")).not.toBeNull();
+        expect(visionGroup.find("lilbee-chat-vision-select")).not.toBeNull();
     });
 
-    it("updates to connected on successful chat stream", async () => {
+    it("chat icon has title tooltip", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.health = vi.fn().mockRejectedValue(new Error("offline"));
-        const { mockFn, done } = makeStream([
-            { event: SSE_EVENT.TOKEN, data: "hi" },
-            { event: SSE_EVENT.DONE, data: {} },
-        ]);
-        plugin.api.chatStream = mockFn;
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
-        await tick();
-
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const textarea = container.find("lilbee-chat-textarea")!;
-        textarea.value = "test";
-
-        container.find("lilbee-chat-send")!.trigger("click");
-        await done;
-        await tick();
-
-        const dot = container.find("lilbee-connection-dot")!;
-        expect(dot.classList.contains("connected")).toBe(true);
+        const groups = container.findAll("lilbee-toolbar-group");
+        const chatIcon = groups[0].find("lilbee-toolbar-icon")!;
+        expect(chatIcon.attributes["title"]).toBe("Chat model");
     });
 
-    it("updates to disconnected on chat stream failure", async () => {
+    it("vision icon has title tooltip", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        let resolveThrown!: () => void;
-        const thrown = new Promise<void>((r) => { resolveThrown = r; });
-        plugin.api.chatStream = vi.fn().mockReturnValue(
-            (async function* () {
-                resolveThrown();
-                throw new Error("network");
-            })(),
-        );
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
-        await tick();
-
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const textarea = container.find("lilbee-chat-textarea")!;
-        textarea.value = "test";
+        const groups = container.findAll("lilbee-toolbar-group");
+        const visionIcon = groups[1].find("lilbee-toolbar-icon")!;
+        expect(visionIcon.attributes["title"]).toBe("Vision model");
+    });
 
-        container.find("lilbee-chat-send")!.trigger("click");
-        await thrown;
-        await tick();
-
-        const dot = container.find("lilbee-connection-dot")!;
-        expect(dot.classList.contains("disconnected")).toBe(true);
+    it("spacer div separates groups from buttons", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const spacer = container.find("lilbee-toolbar-spacer");
+        expect(spacer).not.toBeNull();
     });
 });
 
@@ -1326,21 +1310,6 @@ describe("ChatView.onOpen — add file button opens menu", () => {
 });
 
 describe("ChatView — branch coverage for guards", () => {
-    it("setConnectionStatus does nothing when connectionDot is null (before onOpen)", () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        // connectionDot is null before onOpen — call via health rejection path
-        plugin.api.health = vi.fn().mockRejectedValue(new Error("offline"));
-        // Force populateModelSelector to not crash
-        plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
-        // Trigger onOpen which calls pingHealth → setConnectionStatus
-        // But first null out the internal dot by accessing private field
-        (view as any).connectionDot = null;
-        expect(() => (view as any).setConnectionStatus(true)).not.toThrow();
-        expect(() => (view as any).setConnectionStatus(false)).not.toThrow();
-    });
-
     it("scheduleRender dedup: second call while pending is a no-op", async () => {
         Notice.clear();
         const plugin = makePlugin();
@@ -2114,16 +2083,19 @@ describe("ChatView.sendMessage — passes generation options", () => {
 });
 
 describe("ChatView.createToolbar — toolbar icons", () => {
-    it("renders message-circle icon before chat select", async () => {
+    it("renders message-circle and eye icons inside toolbar groups", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const toolbar = container.find("lilbee-chat-toolbar")!;
-        const icons = toolbar.findAll("lilbee-toolbar-icon");
-        expect(icons.length).toBe(2);
-        expect(icons[0].attributes["data-icon"]).toBe("message-circle");
-        expect(icons[1].attributes["data-icon"]).toBe("eye");
+        const groups = container.findAll("lilbee-toolbar-group");
+        expect(groups.length).toBe(2);
+        const chatIcon = groups[0].find("lilbee-toolbar-icon")!;
+        const visionIcon = groups[1].find("lilbee-toolbar-icon")!;
+        expect(chatIcon.attributes["data-icon"]).toBe("message-circle");
+        expect(visionIcon.attributes["data-icon"]).toBe("eye");
+        expect(chatIcon.attributes["title"]).toBe("Chat model");
+        expect(visionIcon.attributes["title"]).toBe("Vision model");
     });
 });
