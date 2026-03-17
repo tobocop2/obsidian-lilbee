@@ -6,6 +6,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Obsidian](https://img.shields.io/badge/Obsidian-Plugin-7c3aed?logo=obsidian&logoColor=white)](https://obsidian.md)
 
+> **⚠️ This plugin is not usable yet.** It's under active development and will be ready soon.
+
 Talk to your vault. Ask questions about your notes, PDFs, code, spreadsheets, and images — and get answers grounded in what you've actually written, with source citations. Save conversations back to your vault as markdown. Everything runs locally on your machine via [Ollama](https://ollama.com), so your documents never leave your computer.
 
 ## Demo
