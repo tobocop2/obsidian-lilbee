@@ -30,7 +30,7 @@ jobs:
         run: |
           PCT=$(node -p "require('./coverage/coverage-summary.json').total.lines.pct")
           COLOR=$(node -p "const p=require('./coverage/coverage-summary.json').total.lines.pct; p===100?'brightgreen':p>=90?'green':p>=70?'yellow':'red'")
-          npx badge-maker --label coverage --message "${PCT}%" --color "$COLOR" > coverage/badge.svg
+          npx badge-maker coverage "${PCT}%" ":${COLOR}" > coverage/badge.svg
       - name: Assemble site
         run: |
           mkdir -p _site
