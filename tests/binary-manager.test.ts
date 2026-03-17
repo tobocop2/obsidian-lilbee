@@ -1,6 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { node, getPlatformAssetName, getLatestRelease, checkForUpdate, BinaryManager } from "../src/binary-manager";
-import { EventEmitter } from "events";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                           */
@@ -18,44 +17,14 @@ function stubPlatform(platform: string, arch: string) {
     };
 }
 
-/** Create a mock ReadableStream reader that yields the given Uint8Array chunks. */
-function mockReader(chunks: Uint8Array[]) {
-    let index = 0;
-    return {
-        read: vi.fn(async () => {
-            if (index < chunks.length) {
-                return { done: false, value: chunks[index++] };
-            }
-            return { done: true, value: undefined };
-        }),
-    };
+/** Build a fake requestUrl response for release API calls. */
+function releaseResponse(json: unknown) {
+    return { status: 200, json, arrayBuffer: new ArrayBuffer(0), headers: {} };
 }
 
-/** Create a mock file stream (EventEmitter with write/end). Emits "finish" on end(). */
-function mockFileStream() {
-    const emitter = new EventEmitter();
-    const stream = Object.assign(emitter, {
-        write: vi.fn(),
-        end: vi.fn(() => {
-            // Emit finish asynchronously so the promise handler is registered first
-            queueMicrotask(() => emitter.emit("finish"));
-        }),
-    });
-    return stream;
-}
-
-/** Build a fake fetch Response for download tests. */
-function downloadResponse(chunks: Uint8Array[], contentLength?: number): Response {
-    const headers = new Headers();
-    if (contentLength !== undefined) {
-        headers.set("content-length", String(contentLength));
-    }
-    return {
-        ok: true,
-        status: 200,
-        headers,
-        body: { getReader: () => mockReader(chunks) },
-    } as unknown as Response;
+/** Build a fake requestUrl response for binary download. */
+function downloadResponse(data: Uint8Array) {
+    return { status: 200, json: {}, arrayBuffer: data.buffer, headers: {} };
 }
 
 /* ------------------------------------------------------------------ */
@@ -110,38 +79,29 @@ describe("getLatestRelease", () => {
 
     it("returns tag and assetUrl on success", async () => {
         restore = stubPlatform("darwin", "arm64");
-        vi.spyOn(node, "fetch").mockResolvedValue({
-            ok: true,
-            json: () =>
-                Promise.resolve({
-                    tag_name: "v1.0.0",
-                    assets: [{ name: "lilbee-macos-arm64", browser_download_url: "https://example.com/download" }],
-                }),
-        } as unknown as Response);
+        vi.spyOn(node, "requestUrl").mockResolvedValue(releaseResponse({
+            tag_name: "v1.0.0",
+            assets: [{ name: "lilbee-macos-arm64", browser_download_url: "https://example.com/download" }],
+        }));
 
         const release = await getLatestRelease();
         expect(release).toEqual({ tag: "v1.0.0", assetUrl: "https://example.com/download" });
     });
 
-    it("throws when GitHub API returns non-ok response", async () => {
-        vi.spyOn(node, "fetch").mockResolvedValue({
-            ok: false,
-            status: 403,
-        } as unknown as Response);
+    it("throws when GitHub API returns error status", async () => {
+        vi.spyOn(node, "requestUrl").mockResolvedValue({
+            status: 403, json: {}, arrayBuffer: new ArrayBuffer(0), headers: {},
+        });
 
         await expect(getLatestRelease()).rejects.toThrow("GitHub API responded 403");
     });
 
     it("throws when asset is not found in release", async () => {
         restore = stubPlatform("darwin", "arm64");
-        vi.spyOn(node, "fetch").mockResolvedValue({
-            ok: true,
-            json: () =>
-                Promise.resolve({
-                    tag_name: "v2.0.0",
-                    assets: [{ name: "some-other-asset", browser_download_url: "https://example.com/other" }],
-                }),
-        } as unknown as Response);
+        vi.spyOn(node, "requestUrl").mockResolvedValue(releaseResponse({
+            tag_name: "v2.0.0",
+            assets: [{ name: "some-other-asset", browser_download_url: "https://example.com/other" }],
+        }));
 
         await expect(getLatestRelease()).rejects.toThrow('No asset "lilbee-macos-arm64" in release v2.0.0');
     });
@@ -217,22 +177,17 @@ describe("BinaryManager", () => {
         it("downloads binary when it does not exist", async () => {
             restore = stubPlatform("darwin", "arm64");
             const mgr = new BinaryManager("/plugins/lilbee");
-            const chunk = new Uint8Array([1, 2, 3]);
-            const fStream = mockFileStream();
+            const data = new Uint8Array([1, 2, 3]);
 
             // existsSync: first call (binaryExists) => false, second call (binDir check in download) => true
             vi.spyOn(node, "existsSync").mockReturnValueOnce(false).mockReturnValueOnce(true);
-            vi.spyOn(node, "fetch")
-                .mockResolvedValueOnce({
-                    ok: true,
-                    json: () =>
-                        Promise.resolve({
-                            tag_name: "v1.0.0",
-                            assets: [{ name: "lilbee-macos-arm64", browser_download_url: "https://example.com/dl" }],
-                        }),
-                } as unknown as Response)
-                .mockResolvedValueOnce(downloadResponse([chunk]));
-            vi.spyOn(node, "createWriteStream").mockReturnValue(fStream as any);
+            vi.spyOn(node, "requestUrl")
+                .mockResolvedValueOnce(releaseResponse({
+                    tag_name: "v1.0.0",
+                    assets: [{ name: "lilbee-macos-arm64", browser_download_url: "https://example.com/dl" }],
+                }))
+                .mockResolvedValueOnce(downloadResponse(data));
+            vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
             vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "", stderr: "" });
 
@@ -249,13 +204,12 @@ describe("BinaryManager", () => {
     describe("download", () => {
         it("creates binDir when it does not exist", async () => {
             restore = stubPlatform("linux", "x64");
-            const chunk = new Uint8Array([10, 20]);
-            const fStream = mockFileStream();
+            const data = new Uint8Array([10, 20]);
 
             vi.spyOn(node, "existsSync").mockReturnValue(false);
             vi.spyOn(node, "mkdirSync").mockImplementation(() => undefined as any);
-            vi.spyOn(node, "fetch").mockResolvedValue(downloadResponse([chunk]));
-            vi.spyOn(node, "createWriteStream").mockReturnValue(fStream as any);
+            vi.spyOn(node, "requestUrl").mockResolvedValue(downloadResponse(data));
+            vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
 
             const mgr = new BinaryManager("/plugins/lilbee");
@@ -266,13 +220,12 @@ describe("BinaryManager", () => {
 
         it("skips mkdir when binDir already exists", async () => {
             restore = stubPlatform("linux", "x64");
-            const chunk = new Uint8Array([10, 20]);
-            const fStream = mockFileStream();
+            const data = new Uint8Array([10, 20]);
 
             vi.spyOn(node, "existsSync").mockReturnValue(true);
             vi.spyOn(node, "mkdirSync").mockImplementation(() => undefined as any);
-            vi.spyOn(node, "fetch").mockResolvedValue(downloadResponse([chunk]));
-            vi.spyOn(node, "createWriteStream").mockReturnValue(fStream as any);
+            vi.spyOn(node, "requestUrl").mockResolvedValue(downloadResponse(data));
+            vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
 
             const mgr = new BinaryManager("/plugins/lilbee");
@@ -281,62 +234,34 @@ describe("BinaryManager", () => {
             expect(node.mkdirSync).not.toHaveBeenCalled();
         });
 
-        it("writes stream data and calls chmod on non-win32", async () => {
+        it("writes binary data and calls chmod on non-win32", async () => {
             restore = stubPlatform("linux", "x64");
-            const chunk1 = new Uint8Array([1, 2, 3]);
-            const chunk2 = new Uint8Array([4, 5, 6]);
-            const fStream = mockFileStream();
+            const data = new Uint8Array([1, 2, 3, 4, 5, 6]);
 
             vi.spyOn(node, "existsSync").mockReturnValue(true);
-            vi.spyOn(node, "fetch").mockResolvedValue(downloadResponse([chunk1, chunk2], 6));
-            vi.spyOn(node, "createWriteStream").mockReturnValue(fStream as any);
+            vi.spyOn(node, "requestUrl").mockResolvedValue(downloadResponse(data));
+            vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
 
             const onProgress = vi.fn();
             const mgr = new BinaryManager("/plugins/lilbee");
             await mgr.download("https://example.com/dl", onProgress);
 
-            expect(fStream.write).toHaveBeenCalledTimes(2);
-            expect(fStream.write).toHaveBeenCalledWith(chunk1);
-            expect(fStream.write).toHaveBeenCalledWith(chunk2);
-            expect(fStream.end).toHaveBeenCalled();
+            expect(node.writeFileSync).toHaveBeenCalledWith(mgr.binaryPath, expect.any(Buffer));
+            const writtenBuffer = (node.writeFileSync as ReturnType<typeof vi.fn>).mock.calls[0][1] as Buffer;
+            expect([...writtenBuffer]).toEqual([1, 2, 3, 4, 5, 6]);
             expect(node.chmodSync).toHaveBeenCalledWith(mgr.binaryPath, 0o755);
-            // Progress with percentages
-            expect(onProgress).toHaveBeenCalledWith("Downloading lilbee binary... 50%");
-            expect(onProgress).toHaveBeenCalledWith("Downloading lilbee binary... 100%");
-            expect(onProgress).toHaveBeenCalledWith("Download complete.");
-        });
-
-        it("skips percentage progress when content-length is absent", async () => {
-            restore = stubPlatform("linux", "x64");
-            const chunk = new Uint8Array([1, 2, 3]);
-            const fStream = mockFileStream();
-
-            vi.spyOn(node, "existsSync").mockReturnValue(true);
-            // No content-length header
-            vi.spyOn(node, "fetch").mockResolvedValue(downloadResponse([chunk]));
-            vi.spyOn(node, "createWriteStream").mockReturnValue(fStream as any);
-            vi.spyOn(node, "chmodSync").mockImplementation(() => {});
-
-            const onProgress = vi.fn();
-            const mgr = new BinaryManager("/plugins/lilbee");
-            await mgr.download("https://example.com/dl", onProgress);
-
-            // Should not have any percentage-based progress calls
-            const percentageCalls = onProgress.mock.calls.filter((c: string[]) => c[0].includes("%"));
-            expect(percentageCalls).toHaveLength(0);
             expect(onProgress).toHaveBeenCalledWith("Downloading lilbee binary...");
             expect(onProgress).toHaveBeenCalledWith("Download complete.");
         });
 
         it("calls xattr on darwin", async () => {
             restore = stubPlatform("darwin", "arm64");
-            const chunk = new Uint8Array([1]);
-            const fStream = mockFileStream();
+            const data = new Uint8Array([1]);
 
             vi.spyOn(node, "existsSync").mockReturnValue(true);
-            vi.spyOn(node, "fetch").mockResolvedValue(downloadResponse([chunk]));
-            vi.spyOn(node, "createWriteStream").mockReturnValue(fStream as any);
+            vi.spyOn(node, "requestUrl").mockResolvedValue(downloadResponse(data));
+            vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
             const execSpy = vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "", stderr: "" });
 
@@ -348,12 +273,11 @@ describe("BinaryManager", () => {
 
         it("treats xattr failure as non-fatal on darwin", async () => {
             restore = stubPlatform("darwin", "arm64");
-            const chunk = new Uint8Array([1]);
-            const fStream = mockFileStream();
+            const data = new Uint8Array([1]);
 
             vi.spyOn(node, "existsSync").mockReturnValue(true);
-            vi.spyOn(node, "fetch").mockResolvedValue(downloadResponse([chunk]));
-            vi.spyOn(node, "createWriteStream").mockReturnValue(fStream as any);
+            vi.spyOn(node, "requestUrl").mockResolvedValue(downloadResponse(data));
+            vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
             vi.spyOn(node, "execFile").mockRejectedValue(new Error("xattr not found"));
 
@@ -364,12 +288,11 @@ describe("BinaryManager", () => {
 
         it("skips chmod on win32", async () => {
             restore = stubPlatform("win32", "x64");
-            const chunk = new Uint8Array([1]);
-            const fStream = mockFileStream();
+            const data = new Uint8Array([1]);
 
             vi.spyOn(node, "existsSync").mockReturnValue(true);
-            vi.spyOn(node, "fetch").mockResolvedValue(downloadResponse([chunk]));
-            vi.spyOn(node, "createWriteStream").mockReturnValue(fStream as any);
+            vi.spyOn(node, "requestUrl").mockResolvedValue(downloadResponse(data));
+            vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
 
             const mgr = new BinaryManager("/plugins/lilbee");
@@ -380,12 +303,11 @@ describe("BinaryManager", () => {
 
         it("does not call xattr on non-darwin platforms", async () => {
             restore = stubPlatform("linux", "x64");
-            const chunk = new Uint8Array([1]);
-            const fStream = mockFileStream();
+            const data = new Uint8Array([1]);
 
             vi.spyOn(node, "existsSync").mockReturnValue(true);
-            vi.spyOn(node, "fetch").mockResolvedValue(downloadResponse([chunk]));
-            vi.spyOn(node, "createWriteStream").mockReturnValue(fStream as any);
+            vi.spyOn(node, "requestUrl").mockResolvedValue(downloadResponse(data));
+            vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
             const execSpy = vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "", stderr: "" });
 
@@ -395,59 +317,24 @@ describe("BinaryManager", () => {
             expect(execSpy).not.toHaveBeenCalled();
         });
 
-        it("throws when download response is not ok", async () => {
+        it("throws when download response has error status", async () => {
             restore = stubPlatform("linux", "x64");
             vi.spyOn(node, "existsSync").mockReturnValue(true);
-            vi.spyOn(node, "fetch").mockResolvedValue({
-                ok: false,
-                status: 404,
-            } as unknown as Response);
+            vi.spyOn(node, "requestUrl").mockResolvedValue({
+                status: 404, json: {}, arrayBuffer: new ArrayBuffer(0), headers: {},
+            });
 
             const mgr = new BinaryManager("/plugins/lilbee");
             await expect(mgr.download("https://example.com/dl")).rejects.toThrow("Download failed: 404");
         });
 
-        it("throws when download response has no body", async () => {
-            restore = stubPlatform("linux", "x64");
-            vi.spyOn(node, "existsSync").mockReturnValue(true);
-            vi.spyOn(node, "fetch").mockResolvedValue({
-                ok: true,
-                status: 200,
-                body: null,
-                headers: new Headers(),
-            } as unknown as Response);
-
-            const mgr = new BinaryManager("/plugins/lilbee");
-            await expect(mgr.download("https://example.com/dl")).rejects.toThrow("Download response has no body");
-        });
-
-        it("rejects when fileStream emits error", async () => {
-            restore = stubPlatform("linux", "x64");
-            const chunk = new Uint8Array([1]);
-            const emitter = new EventEmitter();
-            const fStream = Object.assign(emitter, {
-                write: vi.fn(),
-                end: vi.fn(() => {
-                    queueMicrotask(() => emitter.emit("error", new Error("disk full")));
-                }),
-            });
-
-            vi.spyOn(node, "existsSync").mockReturnValue(true);
-            vi.spyOn(node, "fetch").mockResolvedValue(downloadResponse([chunk]));
-            vi.spyOn(node, "createWriteStream").mockReturnValue(fStream as any);
-
-            const mgr = new BinaryManager("/plugins/lilbee");
-            await expect(mgr.download("https://example.com/dl")).rejects.toThrow("disk full");
-        });
-
         it("works without onProgress callback", async () => {
             restore = stubPlatform("linux", "x64");
-            const chunk = new Uint8Array([1]);
-            const fStream = mockFileStream();
+            const data = new Uint8Array([1]);
 
             vi.spyOn(node, "existsSync").mockReturnValue(true);
-            vi.spyOn(node, "fetch").mockResolvedValue(downloadResponse([chunk], 1));
-            vi.spyOn(node, "createWriteStream").mockReturnValue(fStream as any);
+            vi.spyOn(node, "requestUrl").mockResolvedValue(downloadResponse(data));
+            vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
 
             const mgr = new BinaryManager("/plugins/lilbee");

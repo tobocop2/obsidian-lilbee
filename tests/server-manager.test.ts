@@ -89,7 +89,7 @@ describe("ServerManager", () => {
 
             const startPromise = mgr.start();
             // Health poll setTimeout — advance past it
-            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(1000);
             await startPromise;
 
             expect(spawnSpy).toHaveBeenCalledOnce();
@@ -113,7 +113,7 @@ describe("ServerManager", () => {
         it("no-ops when child already exists", async () => {
             const mgr = new ServerManager(defaultOpts());
             const p1 = mgr.start();
-            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(1000);
             await p1;
 
             // Second call should return immediately without spawning again
@@ -129,8 +129,8 @@ describe("ServerManager", () => {
             );
 
             const startPromise = mgr.start();
-            // 30 attempts * 500ms each = 15000ms
-            await vi.advanceTimersByTimeAsync(15_000);
+            // 60 attempts * 1000ms each = 60000ms
+            await vi.advanceTimersByTimeAsync(60_000);
             await startPromise;
 
             expect(mgr.state).toBe("error");
@@ -141,7 +141,7 @@ describe("ServerManager", () => {
             const mgr = new ServerManager(defaultOpts());
 
             const startPromise = mgr.start();
-            await vi.advanceTimersByTimeAsync(15_000);
+            await vi.advanceTimersByTimeAsync(60_000);
             await startPromise;
 
             expect(mgr.state).toBe("error");
@@ -167,7 +167,7 @@ describe("ServerManager", () => {
 
             const mgr = new ServerManager(defaultOpts());
             const p1 = mgr.start();
-            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(1000);
             await p1;
 
             // Make kill emit exit asynchronously
@@ -188,7 +188,7 @@ describe("ServerManager", () => {
         it("sends SIGKILL after grace period if process does not exit", async () => {
             const mgr = new ServerManager(defaultOpts());
             const p1 = mgr.start();
-            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(1000);
             await p1;
 
             const stopPromise = mgr.stop();
@@ -204,7 +204,7 @@ describe("ServerManager", () => {
         it("clears pending restart timer", async () => {
             const mgr = new ServerManager(defaultOpts());
             const p1 = mgr.start();
-            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(1000);
             await p1;
 
             // Simulate crash to trigger restart timer
@@ -225,7 +225,7 @@ describe("ServerManager", () => {
 
             const mgr = new ServerManager(defaultOpts());
             const p1 = mgr.start();
-            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(1000);
             await p1;
 
             // Let execFile resolve, then emit exit so stop() can finish
@@ -258,7 +258,7 @@ describe("ServerManager", () => {
 
             const mgr = new ServerManager(defaultOpts());
             const p1 = mgr.start();
-            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(1000);
             await p1;
 
             const stopPromise = mgr.stop();
@@ -278,7 +278,7 @@ describe("ServerManager", () => {
         it("calls stop then start and resets crash count", async () => {
             const mgr = new ServerManager(defaultOpts());
             const p1 = mgr.start();
-            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(1000);
             await p1;
 
             // Simulate a crash to increment crashCount
@@ -289,7 +289,7 @@ describe("ServerManager", () => {
             spawnSpy.mockReturnValue(child2 as any);
 
             const restartPromise = mgr.restart();
-            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(1000);
             await restartPromise;
 
             expect(mgr.state).toBe("ready");
@@ -308,7 +308,7 @@ describe("ServerManager", () => {
             );
 
             const p1 = mgr.start();
-            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(1000);
             await p1;
 
             // Prepare a new child for the restart
@@ -329,7 +329,7 @@ describe("ServerManager", () => {
             const mgr = new ServerManager(defaultOpts());
 
             const p1 = mgr.start();
-            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(1000);
             await p1;
             // spawn call #1 done, crashCount = 0
 
@@ -365,7 +365,7 @@ describe("ServerManager", () => {
         it("stop() during restart delay cancels the pending restart", async () => {
             const mgr = new ServerManager(defaultOpts());
             const p1 = mgr.start();
-            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(1000);
             await p1;
 
             // Crash triggers restart timer
@@ -432,7 +432,7 @@ describe("ServerManager", () => {
             );
 
             const p = mgr.start();
-            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(1000);
             await p;
 
             expect(stateChanges).toEqual(["starting", "ready"]);
@@ -445,7 +445,7 @@ describe("ServerManager", () => {
             );
 
             const p1 = mgr.start();
-            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(1000);
             await p1;
 
             stateChanges.length = 0;
@@ -466,7 +466,7 @@ describe("ServerManager", () => {
             const mgr = new ServerManager(defaultOpts());
             // Should not throw when setState is called without a callback
             const p = mgr.start();
-            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(1000);
             await p;
             expect(mgr.state).toBe("ready");
         });
