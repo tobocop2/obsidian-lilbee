@@ -1,6 +1,7 @@
 import { type Menu, type MenuItem, Notice, Plugin, type TAbstractFile } from "obsidian";
 import { LilbeeClient, OllamaClient } from "./api";
-import { BinaryManager } from "./binary-manager";
+import { BinaryManager, getLatestRelease, checkForUpdate } from "./binary-manager";
+import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { LilbeeSettingTab } from "./settings";
 import { DEFAULT_SETTINGS, SERVER_MODE, SSE_EVENT, type LilbeeSettings, type ServerMode, type ServerState, type SSEEvent, type SyncDone } from "./types";
@@ -77,6 +78,14 @@ export default class LilbeePlugin extends Plugin {
         const binaryPath = await this.downloadBinary(downloadNotice, needsDownload);
         if (!binaryPath) return;
 
+        if (needsDownload && !this.settings.lilbeeVersion) {
+            try {
+                const release = await getLatestRelease();
+                this.settings.lilbeeVersion = release.tag;
+                await this.saveData(this.settings);
+            } catch { /* version tracking is best-effort */ }
+        }
+
         try {
             this.serverManager = new ServerManager({
                 binaryPath,
@@ -112,6 +121,44 @@ export default class LilbeePlugin extends Plugin {
             this.showError("failed to download server", err);
             return null;
         }
+    }
+
+    async checkForUpdate(): Promise<{ available: boolean; release?: ReleaseInfo }> {
+        const release = await getLatestRelease();
+        if (checkForUpdate(this.settings.lilbeeVersion, release.tag)) {
+            return { available: true, release };
+        }
+        return { available: false };
+    }
+
+    async updateServer(release: ReleaseInfo, onProgress?: (msg: string) => void): Promise<void> {
+        const pluginDir = this.getPluginDir();
+        if (!this.binaryManager) {
+            this.binaryManager = new BinaryManager(pluginDir);
+        }
+
+        // Stop the running server first
+        if (this.serverManager) {
+            onProgress?.("Stopping server...");
+            await this.serverManager.stop();
+            this.serverManager = null;
+        }
+
+        // Download the new binary (overwrites the old one)
+        onProgress?.("Downloading...");
+        await this.binaryManager.download(release.assetUrl, onProgress);
+
+        // Save the new version
+        this.settings.lilbeeVersion = release.tag;
+        await this.saveData(this.settings);
+
+        // Restart if in managed mode
+        if (this.settings.serverMode === SERVER_MODE.MANAGED) {
+            onProgress?.("Starting server...");
+            await this.startManagedServer();
+        }
+
+        onProgress?.("Update complete.");
     }
 
     private showError(label: string, err: unknown): void {

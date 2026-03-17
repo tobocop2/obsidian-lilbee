@@ -147,38 +147,67 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName("Server port")
-            .setDesc("Port for the managed lilbee server")
+            .setDesc("Port for the managed server. Leave blank for automatic.")
             .addText((text) =>
                 text
-                    .setPlaceholder("7433")
-                    .setValue(String(this.plugin.settings.serverPort))
+                    .setPlaceholder("Auto")
+                    .setValue(this.plugin.settings.serverPort !== null ? String(this.plugin.settings.serverPort) : "")
                     .onChange(async (value) => {
-                        const num = parseInt(value, 10);
-                        if (!isNaN(num) && num > 0 && num <= 65535) {
-                            this.plugin.settings.serverPort = num;
-                            await this.plugin.saveSettings();
+                        const trimmed = value.trim();
+                        if (trimmed === "" || trimmed === "0") {
+                            this.plugin.settings.serverPort = null;
+                        } else {
+                            const num = parseInt(trimmed, 10);
+                            if (!isNaN(num) && num > 0 && num <= 65535) {
+                                this.plugin.settings.serverPort = num;
+                            }
                         }
+                        await this.plugin.saveSettings();
                     }),
             );
 
-        new Setting(containerEl)
-            .setName("Check for updates")
-            .setDesc("Check if a newer lilbee binary is available")
-            .addButton((btn) =>
-                btn.setButtonText("Check").onClick(async () => {
-                    try {
-                        const { getLatestRelease, checkForUpdate } = await import("./binary-manager");
-                        const release = await getLatestRelease();
-                        if (checkForUpdate(this.plugin.settings.lilbeeVersion, release.tag)) {
-                            new Notice(`lilbee: update available (${release.tag})`);
-                        } else {
-                            new Notice("lilbee: already up to date");
-                        }
-                    } catch {
-                        new Notice("lilbee: could not check for updates");
+        const updateSetting = new Setting(containerEl)
+            .setName("Server version")
+            .setDesc(this.plugin.settings.lilbeeVersion || "Unknown");
+
+        updateSetting.addButton((checkBtn) =>
+            checkBtn.setButtonText("Check for updates").onClick(async () => {
+                checkBtn.setDisabled(true);
+                checkBtn.setButtonText("Checking...");
+                try {
+                    const result = await this.plugin.checkForUpdate();
+                    if (result.available && result.release) {
+                        const release = result.release;
+                        checkBtn.setButtonText(`Update to ${release.tag}`);
+                        checkBtn.setDisabled(false);
+                        checkBtn.onClick(async () => {
+                            checkBtn.setDisabled(true);
+                            checkBtn.setButtonText("Updating...");
+                            try {
+                                await this.plugin.updateServer(release, (msg) => {
+                                    checkBtn.setButtonText(msg);
+                                });
+                                new Notice(`lilbee: updated to ${release.tag}`);
+                                this.display();
+                            } catch (err) {
+                                new Notice("lilbee: update failed");
+                                console.error("[lilbee] update failed:", err);
+                                checkBtn.setButtonText("Check for updates");
+                                checkBtn.setDisabled(false);
+                            }
+                        });
+                    } else {
+                        new Notice("lilbee: already up to date");
+                        checkBtn.setButtonText("Check for updates");
+                        checkBtn.setDisabled(false);
                     }
-                }),
-            );
+                } catch {
+                    new Notice("lilbee: could not check for updates");
+                    checkBtn.setButtonText("Check for updates");
+                    checkBtn.setDisabled(false);
+                }
+            }),
+        );
     }
 
     private renderExternalSettings(containerEl: HTMLElement): void {

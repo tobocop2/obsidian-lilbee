@@ -1,13 +1,13 @@
 import { requestUrl } from "obsidian";
 import { execFile, spawn } from "child_process";
-import { existsSync, mkdirSync, chmodSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, chmodSync, writeFileSync, readFileSync, unlinkSync } from "fs";
 import { join } from "path";
 import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
 
 /** Exported for test mocking. */
-export const node = { spawn, execFile: execFileAsync, existsSync, mkdirSync, chmodSync, writeFileSync, requestUrl, fetch: globalThis.fetch.bind(globalThis) };
+export const node = { spawn, execFile: execFileAsync, existsSync, mkdirSync, chmodSync, writeFileSync, readFileSync, unlinkSync, requestUrl, fetch: globalThis.fetch.bind(globalThis) };
 
 const GITHUB_REPO = "tobocop2/lilbee";
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;

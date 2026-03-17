@@ -1900,7 +1900,7 @@ describe("managed mode settings", () => {
     });
 
     it("port field ignores invalid values", async () => {
-        const plugin = makePlugin({ serverMode: "managed" });
+        const plugin = makePlugin({ serverMode: "managed", serverPort: 7433 });
         (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
         const tab = makeTab(plugin);
 
@@ -1909,6 +1909,30 @@ describe("managed mode settings", () => {
         await textOnChanges[0]("abc");
 
         expect(plugin.settings.serverPort).toBe(7433); // unchanged
+    });
+
+    it("port field sets to null when empty string is entered", async () => {
+        const plugin = makePlugin({ serverMode: "managed", serverPort: 7433 });
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+        await textOnChanges[0]("");
+
+        expect(plugin.settings.serverPort).toBe(null);
+    });
+
+    it("port field sets to null when 0 is entered", async () => {
+        const plugin = makePlugin({ serverMode: "managed", serverPort: 7433 });
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+        await textOnChanges[0]("0");
+
+        expect(plugin.settings.serverPort).toBe(null);
     });
 
     it("check for updates button shows 'update available' when newer version exists", async () => {

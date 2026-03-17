@@ -8,11 +8,13 @@ const HEALTH_POLL_MAX_ATTEMPTS = 60;
 const STOP_GRACE_MS = 5000;
 const CRASH_RESTART_DELAY_MS = 3000;
 const MAX_CRASH_RESTARTS = 3;
+const PORT_FILE_POLL_INTERVAL_MS = 200;
+const PORT_FILE_MAX_ATTEMPTS = 150;
 
 export interface ServerManagerOptions {
     binaryPath: string;
     dataDir: string;
-    port: number;
+    port: number | null;
     ollamaUrl: string;
     onStateChange?: (state: ServerState) => void;
 }
@@ -24,6 +26,7 @@ export class ServerManager {
     private crashCount = 0;
     private stopping = false;
     private restartTimer: ReturnType<typeof setTimeout> | null = null;
+    private _actualPort: number | null = null;
 
     constructor(opts: ServerManagerOptions) {
         this.opts = opts;
@@ -34,7 +37,27 @@ export class ServerManager {
     }
 
     get serverUrl(): string {
-        return `http://127.0.0.1:${this.opts.port}`;
+        const port = this._actualPort ?? this.opts.port;
+        return `http://127.0.0.1:${port}`;
+    }
+
+    private get portFilePath(): string {
+        return `${this.opts.dataDir}/server.port`;
+    }
+
+    private async waitForPortFile(): Promise<void> {
+        for (let i = 0; i < PORT_FILE_MAX_ATTEMPTS; i++) {
+            if (node.existsSync(this.portFilePath)) {
+                const content = node.readFileSync(this.portFilePath, "utf-8").trim();
+                const port = parseInt(content, 10);
+                if (!isNaN(port) && port > 0 && port <= 65535) {
+                    this._actualPort = port;
+                    return;
+                }
+            }
+            await new Promise((r) => setTimeout(r, PORT_FILE_POLL_INTERVAL_MS));
+        }
+        throw new Error("Port file not found within timeout");
     }
 
     private setState(s: ServerState): void {
@@ -45,14 +68,19 @@ export class ServerManager {
     async start(): Promise<void> {
         if (this.child) return;
         this.stopping = false;
+        this._actualPort = null;
         this.setState(SERVER_STATE.STARTING);
 
         const args = [
             "serve",
             "--host", "127.0.0.1",
-            "--port", String(this.opts.port),
-            "--data-dir", this.opts.dataDir,
         ];
+
+        if (this.opts.port !== null) {
+            args.push("--port", String(this.opts.port));
+        }
+
+        args.push("--data-dir", this.opts.dataDir);
 
         const env = { ...process.env, OLLAMA_HOST: this.opts.ollamaUrl };
 
@@ -82,6 +110,11 @@ export class ServerManager {
         });
 
         try {
+            if (this.opts.port === null) {
+                await this.waitForPortFile();
+            } else {
+                this._actualPort = this.opts.port;
+            }
             await this.waitForReady();
             this.crashCount = 0;
             this.setState(SERVER_STATE.READY);
@@ -141,6 +174,14 @@ export class ServerManager {
 
         this.child = null;
         this.setState(SERVER_STATE.STOPPED);
+
+        if (node.existsSync(this.portFilePath)) {
+            try {
+                node.unlinkSync(this.portFilePath);
+            } catch {
+                // ignore cleanup errors
+            }
+        }
     }
 
     async restart(): Promise<void> {
@@ -153,7 +194,10 @@ export class ServerManager {
         this.opts.ollamaUrl = url;
     }
 
-    updatePort(port: number): void {
+    updatePort(port: number | null): void {
         this.opts.port = port;
+        if (port !== null) {
+            this._actualPort = port;
+        }
     }
 }

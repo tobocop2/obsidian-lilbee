@@ -4,7 +4,13 @@
 
 ### Prerequisites
 
-- **[Ollama](https://ollama.com)** — must be installed and running. The embedding model is pulled automatically on first sync.
+**[Ollama](https://ollama.com)** must be installed and running before you use the plugin. Ollama is a free app that runs AI models locally on your computer — it's what powers lilbee's search and chat. Download it from [ollama.com](https://ollama.com) and open it. You don't need to use the terminal or run any commands — just make sure it's running in the background.
+
+The plugin manages the models for you:
+
+- **Embedding model** — converts your documents into a searchable format. Downloaded automatically the first time you sync.
+- **Chat model** — the AI that reads your documents and writes answers. The plugin shows a list of recommended models and downloads your pick with one click.
+- **Vision model** *(optional)* — lets lilbee "read" images and scanned PDFs that don't have selectable text. Enable it in settings if you need it.
 
 ### Install via BRAT
 
@@ -17,10 +23,12 @@
 
 When you enable the plugin for the first time:
 
-1. It downloads the lilbee server binary from GitHub to `.obsidian/plugins/lilbee/bin/`
+1. It downloads the lilbee server binary from GitHub to `.obsidian/plugins/lilbee/bin/` and records the installed version
 2. On macOS, it clears the quarantine flag (`xattr -cr`) so the binary can run without Gatekeeper blocking it
 3. It starts the server on `127.0.0.1:7433` and shows progress in the status bar
 4. Once the server is ready, the status bar shows `lilbee: ready`
+
+To update the server later, go to Settings → lilbee → **Check for updates**. If a newer release exists, the button changes to **Update to vX.Y.Z** — clicking it stops the server, downloads the new binary, and restarts automatically.
 
 If the download or startup fails, the status bar shows `lilbee: error`. Check that you have an internet connection (for the initial download) and that Ollama is running.
 
@@ -75,8 +83,8 @@ When using **managed mode**, the status bar shows `lilbee: ready`. When using **
 | Setting | Description |
 |---------|-------------|
 | **Server status** | Shows the current state with a colored indicator (green = ready, yellow = starting, red = error) |
-| **Server port** | Port for the managed server (default: 7433) |
-| **Check for updates** | Check if a newer lilbee binary is available on GitHub |
+| **Server port** | Port for the managed server (default: 7433). Leave blank for automatic port selection. |
+| **Server version** | Shows the installed lilbee version. Click **Check for updates** to query GitHub — if a newer release exists, the button changes to **Update to vX.Y.Z**. Clicking it stops the server, downloads the new binary, and restarts automatically. |
 
 ### External server settings
 
@@ -93,14 +101,18 @@ When using **managed mode**, the status bar shows `lilbee: ready`. When using **
 
 ### Models
 
-The models section shows curated catalogs for chat and vision models. You can:
+The models section lets you pick which AI models lilbee uses. There are two dropdowns:
 
-- **Select a model** from the dropdown — if it's not installed, the plugin pulls it automatically with progress
+- **Chat model** — the AI that answers your questions. It reads the relevant passages from your documents and writes a response. You need a chat model selected to use the chat sidebar or the "Ask a question" command.
+- **Vision model** — an optional model that can "see" images and scanned PDFs. If you have documents that are photographs, screenshots, or scanned pages without selectable text, a vision model converts them to text so they become searchable. Leave this set to "Disabled" if you don't need it.
+
+The plugin shows a curated list of recommended models for each type. If a model isn't downloaded yet, selecting it starts the download automatically — you'll see a progress bar. You can also:
+
 - **Pull** any model from the catalog manually
 - **Delete** installed models you no longer need
 - **Refresh** to re-fetch the catalog from the server
 
-Models installed via Ollama that aren't in the curated catalog still appear in the dropdown under "Other...".
+Models you've installed directly through Ollama (outside of this plugin) also appear in the dropdown under "Other...".
 
 ### General
 

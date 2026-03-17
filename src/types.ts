@@ -135,7 +135,7 @@ export interface LilbeeSettings {
     num_ctx: number | null;
     seed: number | null;
     serverMode: ServerMode;
-    serverPort: number;
+    serverPort: number | null;
     lilbeeVersion: string;
 }
 

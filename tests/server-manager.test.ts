@@ -49,6 +49,9 @@ describe("ServerManager", () => {
     let spawnSpy: ReturnType<typeof vi.spyOn>;
     let fetchSpy: ReturnType<typeof vi.spyOn>;
     let execFileSpy: ReturnType<typeof vi.spyOn>;
+    let existsSyncSpy: ReturnType<typeof vi.spyOn>;
+    let readFileSyncSpy: ReturnType<typeof vi.spyOn>;
+    let unlinkSyncSpy: ReturnType<typeof vi.spyOn>;
     let child: MockChild;
 
     beforeEach(() => {
@@ -57,6 +60,9 @@ describe("ServerManager", () => {
         spawnSpy = vi.spyOn(node, "spawn").mockReturnValue(child as any);
         fetchSpy = vi.spyOn(node, "fetch").mockResolvedValue({ ok: true } as any);
         execFileSpy = vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "", stderr: "" } as any);
+        existsSyncSpy = vi.spyOn(node, "existsSync").mockReturnValue(true);
+        readFileSyncSpy = vi.spyOn(node, "readFileSync").mockReturnValue("9999");
+        unlinkSyncSpy = vi.spyOn(node, "unlinkSync").mockImplementation(() => {});
     });
 
     afterEach(() => {
@@ -108,6 +114,43 @@ describe("ServerManager", () => {
             expect(mgr.state).toBe("ready");
             expect(stateChanges).toContain("starting");
             expect(stateChanges).toContain("ready");
+        });
+
+        it("in dynamic port mode (port: null), reads port from file and sets state to ready", async () => {
+            const stateChanges: string[] = [];
+            const mgr = new ServerManager(
+                defaultOpts({ port: null, onStateChange: (s) => stateChanges.push(s) }),
+            );
+
+            const startPromise = mgr.start();
+            await vi.advanceTimersByTimeAsync(200);
+            await startPromise;
+
+            expect(spawnSpy).toHaveBeenCalledOnce();
+            const [bin, args] = spawnSpy.mock.calls[0] as any[];
+            expect(bin).toBe("/usr/local/bin/lilbee");
+            expect(args).toEqual([
+                "serve",
+                "--host", "127.0.0.1",
+                "--data-dir", "/tmp/data",
+            ]);
+            expect(existsSyncSpy).toHaveBeenCalled();
+            expect(readFileSyncSpy).toHaveBeenCalled();
+
+            expect(mgr.state).toBe("ready");
+            expect(stateChanges).toContain("starting");
+            expect(stateChanges).toContain("ready");
+        });
+
+        it("in dynamic port mode, sets state to error when port file times out", async () => {
+            existsSyncSpy.mockReturnValue(false);
+            const mgr = new ServerManager(defaultOpts({ port: null }));
+
+            const startPromise = mgr.start();
+            await vi.advanceTimersByTimeAsync(30_000);
+            await startPromise;
+
+            expect(mgr.state).toBe("error");
         });
 
         it("no-ops when child already exists", async () => {
@@ -270,6 +313,44 @@ describe("ServerManager", () => {
 
             Object.defineProperty(process, "platform", { value: originalPlatform });
         });
+
+        it("cleans up port file on stop", async () => {
+            const mgr = new ServerManager(defaultOpts());
+            const p1 = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p1;
+
+            child.kill = vi.fn(() => {
+                setTimeout(() => child._emit("exit", 0, null), 10);
+            });
+
+            const stopPromise = mgr.stop();
+            await vi.advanceTimersByTimeAsync(50);
+            await stopPromise;
+
+            expect(unlinkSyncSpy).toHaveBeenCalled();
+        });
+
+        it("handles port file cleanup failure gracefully on stop", async () => {
+            unlinkSyncSpy.mockImplementation(() => {
+                throw new Error("permission denied");
+            });
+
+            const mgr = new ServerManager(defaultOpts());
+            const p1 = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p1;
+
+            child.kill = vi.fn(() => {
+                setTimeout(() => child._emit("exit", 0, null), 10);
+            });
+
+            const stopPromise = mgr.stop();
+            await vi.advanceTimersByTimeAsync(50);
+            await stopPromise;
+
+            expect(mgr.state).toBe("stopped");
+        });
     });
 
     // ── restart() ───────────────────────────────────────────────────
@@ -419,6 +500,13 @@ describe("ServerManager", () => {
             const mgr = new ServerManager(defaultOpts());
             mgr.updatePort(8080);
             expect(mgr.serverUrl).toBe("http://127.0.0.1:8080");
+        });
+
+        it("sets _actualPort when given explicit port, allowing serverUrl to work in dynamic mode", () => {
+            const mgr = new ServerManager(defaultOpts());
+            mgr.updatePort(9000);
+            mgr.updatePort(null);
+            expect(mgr.serverUrl).toBe("http://127.0.0.1:9000");
         });
     });
 
