@@ -146,6 +146,7 @@ export class LilbeeClient {
         paths: string[],
         force = false,
         visionModel?: string,
+        signal?: AbortSignal,
     ): AsyncGenerator<SSEEvent> {
         const body: Record<string, unknown> = { paths, force };
         if (visionModel) body.vision_model = visionModel;
@@ -156,12 +157,12 @@ export class LilbeeClient {
                 headers: JSON_HEADERS,
                 body: JSON.stringify(body),
             },
-            { stream: true },
+            { stream: true, signal },
         );
         yield* this.parseSSE(res);
     }
 
-    async *syncStream(forceVision = false): AsyncGenerator<SSEEvent> {
+    async *syncStream(forceVision = false, signal?: AbortSignal): AsyncGenerator<SSEEvent> {
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/sync`,
             {
@@ -169,7 +170,7 @@ export class LilbeeClient {
                 headers: JSON_HEADERS,
                 body: JSON.stringify({ force_vision: forceVision }),
             },
-            { stream: true },
+            { stream: true, signal },
         );
         yield* this.parseSSE(res);
     }

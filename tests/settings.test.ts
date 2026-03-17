@@ -5,6 +5,16 @@ import { LilbeeSettingTab, buildModelOptions, deduplicateLatest, SEPARATOR_KEY, 
 import type { LilbeeSettings, ModelCatalog, ModelsResponse } from "../src/types";
 import { DEFAULT_SETTINGS } from "../src/types";
 
+const mockGetLatestRelease = vi.fn();
+const mockCheckForUpdate = vi.fn();
+
+vi.mock("../src/binary-manager", () => ({
+    getLatestRelease: (...args: any[]) => mockGetLatestRelease(...args),
+    checkForUpdate: (...args: any[]) => mockCheckForUpdate(...args),
+    BinaryManager: vi.fn(),
+    node: {},
+}));
+
 function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
     const settings: LilbeeSettings = { ...DEFAULT_SETTINGS, ...overrides };
     const api = {
@@ -222,7 +232,7 @@ describe("LilbeeSettingTab", () => {
 
     describe("serverUrl setting onChange", () => {
         it("updates plugin settings and calls saveSettings", async () => {
-            const plugin = makePlugin();
+            const plugin = makePlugin({ serverMode: "external" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
@@ -248,14 +258,14 @@ describe("LilbeeSettingTab", () => {
 
     describe("syncMode dropdown onChange", () => {
         it("updates syncMode, saves, and re-renders display", async () => {
-            const plugin = makePlugin({ syncMode: "manual" });
+            const plugin = makePlugin({ serverMode: "external", syncMode: "manual" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
             const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
 
-            await dropdownOnChanges[0]("auto");
+            await dropdownOnChanges[1]("auto");
 
             expect(plugin.settings.syncMode).toBe("auto");
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -1452,7 +1462,7 @@ describe("LilbeeSettingTab", () => {
 
         it("auto-checks both endpoints on display", async () => {
             globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
-            const plugin = makePlugin();
+            const plugin = makePlugin({ serverMode: "external" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
 
@@ -1470,7 +1480,7 @@ describe("LilbeeSettingTab", () => {
 
         it("Test button calls checkEndpoint", async () => {
             globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
-            const plugin = makePlugin();
+            const plugin = makePlugin({ serverMode: "external" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
 
@@ -1856,4 +1866,140 @@ describe("deduplicateLatest()", () => {
         ]);
         expect(result).toEqual(["mistral:7b", "llama3:8b", "phi3:latest"]);
     });
+});
+
+describe("managed mode settings", () => {
+    it("server mode dropdown onChange updates serverMode and re-renders", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
+        const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
+
+        // dropdownOnChanges[0] is the server mode dropdown
+        await dropdownOnChanges[0]("external");
+
+        expect(plugin.settings.serverMode).toBe("external");
+        expect(plugin.saveSettings).toHaveBeenCalled();
+        expect(displaySpy).toHaveBeenCalled();
+    });
+
+    it("port field onChange updates serverPort", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+        // In managed mode: textOnChanges[0] = port, textOnChanges[1] = ollama URL, then gen settings
+        await textOnChanges[0]("9999");
+
+        expect(plugin.settings.serverPort).toBe(9999);
+        expect(plugin.saveSettings).toHaveBeenCalled();
+    });
+
+    it("port field ignores invalid values", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+        await textOnChanges[0]("abc");
+
+        expect(plugin.settings.serverPort).toBe(7433); // unchanged
+    });
+
+    it("check for updates button shows 'update available' when newer version exists", async () => {
+        Notice.clear();
+        mockGetLatestRelease.mockResolvedValue({ tag: "v0.2.0", assetUrl: "https://example.com" });
+        mockCheckForUpdate.mockReturnValue(true);
+
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+
+        await buttonOnClicks[0]();
+
+        expect(Notice.instances.some((n) => n.message.includes("update available"))).toBe(true);
+    });
+
+    it("check for updates button shows 'already up to date' when no update", async () => {
+        Notice.clear();
+        mockGetLatestRelease.mockResolvedValue({ tag: "v0.1.0", assetUrl: "https://example.com" });
+        mockCheckForUpdate.mockReturnValue(false);
+
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+
+        await buttonOnClicks[0]();
+
+        expect(Notice.instances.some((n) => n.message.includes("already up to date"))).toBe(true);
+    });
+
+    it("check for updates button shows error on failure", async () => {
+        Notice.clear();
+        mockGetLatestRelease.mockRejectedValue(new Error("network error"));
+
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+
+        await buttonOnClicks[0]();
+
+        expect(Notice.instances.some((n) => n.message.includes("could not check"))).toBe(true);
+    });
+
+    it("renders server status indicator in managed mode", () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+        tab.display();
+
+        const statusEl = tab.containerEl.find("lilbee-server-status");
+        expect(statusEl).not.toBeNull();
+        const dot = statusEl!.find("lilbee-server-dot");
+        expect(dot).not.toBeNull();
+    });
+
+    it("renders server state from serverManager when present", () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).serverManager = { state: "ready" };
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+        tab.display();
+
+        const statusEl = tab.containerEl.find("lilbee-server-status");
+        const stateSpan = statusEl!.children.find((c) => c.tagName === "SPAN");
+        expect(stateSpan!.textContent).toBe("ready");
+        const dot = statusEl!.find("lilbee-server-dot");
+        expect(dot!.classList.contains("is-ready")).toBe(true);
+    });
+
+    it("Reset to managed button resets serverMode and serverUrl", async () => {
+        const plugin = makePlugin({ serverMode: "external", serverUrl: "http://remote:9999" });
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+
+        // In external mode: buttons are [Test (server), Reset to managed, Test (ollama), Refresh]
+        // Find the "Reset to managed" click — it's the one that sets serverMode back
+        const resetButton = buttonOnClicks.find((_btn, i) => i === 1);
+        expect(resetButton).toBeDefined();
+        await resetButton!();
+
+        expect(plugin.settings.serverMode).toBe("managed");
+        expect(plugin.settings.serverUrl).toBe("http://127.0.0.1:7433");
+        expect(plugin.saveSettings).toHaveBeenCalled();
+    });
+
 });

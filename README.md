@@ -1,6 +1,10 @@
 # lilbee for Obsidian
 
-> **Work in progress** — the first release is coming soon. The plugin is not usable yet.
+[![CI](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml/badge.svg)](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml)
+[![Coverage](https://tobocop2.github.io/obsidian-lilbee/coverage/badge.svg)](https://tobocop2.github.io/obsidian-lilbee/coverage/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Obsidian](https://img.shields.io/badge/Obsidian-Plugin-7c3aed?logo=obsidian&logoColor=white)](https://obsidian.md)
 
 Talk to your vault. Ask questions about your notes, PDFs, code, spreadsheets, and images — and get answers grounded in what you've actually written, with source citations. Save conversations back to your vault as markdown. Everything runs locally on your machine via [Ollama](https://ollama.com), so your documents never leave your computer.
 
@@ -18,106 +22,33 @@ Attaching a scanned 1998 Star Wars: X-Wing Collector's Edition manual (PDF with 
 
 ---
 
-## What you can do
-
-- **Chat with your vault** — ask questions and get answers from your actual notes, with sources you can click through to
-- **Attach anything** — drop PDFs, code files, images, or folders into a conversation to talk about them
-- **Search by meaning** — find content by what it's about, not just keywords, with live results as you type
-- **Quick answers** — ask a one-off question and get a synthesized answer with sources
-- **Save conversations** — export any chat to your vault as markdown
-- **Scan images and PDFs** — OCR extracts text from scanned documents so you can chat about them too
-- **Stay in control** — stop generation mid-stream, cancel syncs, switch models on the fly
-- **Fully local** — everything runs on your machine. Nothing is sent to the cloud.
-
-## Prerequisites
-
-1. **[Ollama](https://ollama.com)** — local LLM runtime (embedding model auto-pulled on first sync)
-2. **[lilbee](https://github.com/tobocop2/lilbee)** — `pip install lilbee` or `uv tool install lilbee`
-
 ## Quick start
 
-1. Start Ollama (`ollama serve`)
-2. Initialize and start lilbee in your vault:
-   ```bash
-   cd /path/to/your/vault
-   lilbee init && lilbee serve
-   ```
-3. Copy `main.js`, `manifest.json`, `styles.css` into `.obsidian/plugins/lilbee/`
+1. Install [Ollama](https://ollama.com) and start it
+2. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) if you don't have it (Settings → Community plugins → Browse → search "BRAT")
+3. In Obsidian, open the command palette (`Cmd/Ctrl + P`) → **BRAT: Plugins: Add a beta plugin for testing** → paste `tobocop2/obsidian-lilbee` → Add Plugin
 4. Enable "lilbee" in Settings → Community plugins
-5. **Sync vault** from the command palette to index your documents
-6. **Open chat** and start talking to your vault
+5. **Open chat** and start attaching files to talk about them — or **Sync vault** to index everything at once
 
-## Commands
+The plugin downloads and manages the lilbee server automatically — no terminal, no pip, no manual setup.
 
-All commands available via `Ctrl/Cmd + P` → "lilbee":
+## How it works
 
-| Command | Description |
-|---------|-------------|
-| Search knowledge base | Semantic search with live results |
-| Ask a question | Single answer with source citations |
-| Open chat | Multi-turn chat sidebar |
-| Sync vault | Index new/changed files, remove deleted |
-| Add current file | Index the active file |
-| Add current folder | Index all files in the active folder |
-| Show status | Document and chunk counts |
+On first launch, the plugin downloads a pre-built [lilbee](https://github.com/tobocop2/lilbee) server binary from GitHub Releases into `.obsidian/plugins/lilbee/bin/` and runs it in the background. Syncing sends your documents to this local server, which chunks and embeds them using Ollama. When you search or chat, the server retrieves the most relevant chunks and passes them to the LLM for a grounded response.
 
-Right-click any file or folder in the file explorer to **Add to lilbee** from the context menu.
+Everything stays on your machine. The server, models, embeddings, and your documents all run and live locally.
 
-## Chat
+> **macOS users:** The binary is unsigned (Apple charges [$99/year](https://developer.apple.com/support/enrollment/) for that). The plugin clears the quarantine flag via [`xattr -cr`](https://support.apple.com/en-us/102445) automatically. See the [lilbee source](https://github.com/tobocop2/lilbee) if you want to audit the build.
 
-The chat sidebar is where most of the action happens:
+## Documentation
 
-- **Streaming responses** with full markdown rendering and expandable source citations
-- **Attach files** — drag in PDFs, code, images, or whole folders to talk about them
-- **Save to vault** — export the conversation as a markdown file in your vault
-- **Stop generation** mid-stream if the answer is going off track
-- **Model selectors** — switch chat and vision models without leaving the conversation
-- **Connection indicator** — green when connected, red when the server is unreachable
-- **Inline progress** for sync/indexing with cancel support
-
-## Settings
-
-Settings → Community plugins → lilbee:
-
-| Section | Settings |
-|---------|----------|
-| **Connection** | Server URL, Ollama URL (both with Test button) |
-| **Models** | Chat and vision model dropdowns with curated catalog, pull/delete, auto-pull with progress |
-| **General** | Results count (1–20) |
-| **Sync** | Manual or auto mode (with configurable debounce) |
-| **Advanced** | Temperature, top_p, top_k, repeat_penalty, context length, seed — defaults loaded live from the active model |
-
-## Supported formats
-
-Text extraction powered by [Kreuzberg](https://github.com/Goldziher/kreuzberg), code chunking by [tree-sitter](https://tree-sitter.github.io/tree-sitter/). This list is not exhaustive — Kreuzberg supports additional formats beyond what's listed here.
-
-| Format | Extensions |
-|--------|-----------|
-| PDF | `.pdf` (embedded text + OCR fallback for scanned pages) |
-| Office | `.docx`, `.xlsx`, `.pptx` |
-| eBook | `.epub` |
-| Images | `.png`, `.jpg`, `.jpeg`, `.tiff`, `.bmp`, `.webp` (requires vision model) |
-| Data | `.csv`, `.tsv`, `.xml`, `.json`, `.jsonl`, `.yaml`, `.yml` |
-| Text | `.md`, `.txt`, `.html`, `.rst` |
-| Code | `.py`, `.js`, `.ts`, `.go`, `.rs`, `.java`, and [150+ more](https://github.com/Goldziher/tree-sitter-language-pack) |
+See **[Usage Guide](docs/usage.md)** for the full reference — all commands, settings, chat features, supported formats, troubleshooting, and advanced configuration.
 
 ## Build your own integration
 
-lilbee is local-first, but the REST API it exposes is not tied to any specific model. The search endpoint returns relevant document chunks without calling a language model — so if you'd rather use a frontier model like ChatGPT or Claude instead of a local one, you can. Index your documents with lilbee, query the search API, and feed the results into whatever LLM you prefer.
+lilbee exposes a REST API that isn't tied to any specific model. The search endpoint returns relevant chunks without calling an LLM — so you can index locally with lilbee and feed results into a frontier model like ChatGPT or Claude if you prefer. This plugin is a full working example of a client built on that API.
 
-This plugin is a full working example of a client built on that API. Use it as a reference if you want to build your own.
-
-See the [lilbee README](https://github.com/tobocop2/lilbee) for more on the API.
-
-## Troubleshooting
-
-| Problem | Fix |
-|---------|-----|
-| Red connection dot | Start the server: `lilbee serve` in your vault directory |
-| No search results | Run **Sync vault** to index your documents |
-| Sync fails | Ensure Ollama is running — sync needs the embedding model |
-
-[Open an issue](https://github.com/tobocop2/obsidian-lilbee/issues) for bugs or feature requests.
+See the [lilbee README](https://github.com/tobocop2/lilbee) for the API docs.
 
 ## License
 

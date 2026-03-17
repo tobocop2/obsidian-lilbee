@@ -105,6 +105,23 @@ export interface GenerationOptions {
     seed?: number;
 }
 
+export type ServerState = "stopped" | "downloading" | "starting" | "ready" | "error";
+
+export const SERVER_STATE: Record<string, ServerState> = {
+    STOPPED: "stopped",
+    DOWNLOADING: "downloading",
+    STARTING: "starting",
+    READY: "ready",
+    ERROR: "error",
+} as const;
+
+export type ServerMode = "managed" | "external";
+
+export const SERVER_MODE: Record<string, ServerMode> = {
+    MANAGED: "managed",
+    EXTERNAL: "external",
+} as const;
+
 export interface LilbeeSettings {
     serverUrl: string;
     topK: number;
@@ -117,6 +134,9 @@ export interface LilbeeSettings {
     repeat_penalty: number | null;
     num_ctx: number | null;
     seed: number | null;
+    serverMode: ServerMode;
+    serverPort: number;
+    lilbeeVersion: string;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -131,6 +151,9 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     repeat_penalty: null,
     num_ctx: null,
     seed: null,
+    serverMode: "managed",
+    serverPort: 7433,
+    lilbeeVersion: "",
 };
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */

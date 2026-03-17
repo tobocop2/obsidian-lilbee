@@ -64,6 +64,7 @@ function makePlugin(): LilbeePlugin {
         activeVisionModel: "",
         fetchActiveModel: vi.fn(),
         onProgress: null,
+        cancelSync: vi.fn(),
         app: {
             vault: {
                 getAbstractFileByPath: vi.fn().mockReturnValue(null),
@@ -162,7 +163,7 @@ describe("ChatView.onOpen — DOM structure", () => {
     it("creates a progress banner (hidden by default)", () => {
         const banner = container.find("lilbee-progress-banner");
         expect(banner).not.toBeNull();
-        expect(banner!.style.display).toBe("none");
+        expect(banner!.dataset.hidden).toBe("");
     });
 
     it("creates a messages div with class 'lilbee-chat-messages'", () => {
@@ -1068,13 +1069,12 @@ describe("ChatView — progress banner", () => {
             data: { file: "paper.pdf", current_file: 3, total_files: 10 },
         });
 
-        expect(banner.style.display).toBe("");
-        const label = container.find("lilbee-progress-label")!;
+        expect(banner.dataset.hidden).toBeUndefined();
+        const label = container.find("lilbee-progress-top-label")!;
         expect(label.textContent).toContain("3/10");
-        expect(label.textContent).toContain("paper.pdf");
     });
 
-    it("handleProgress shows banner on extract event", async () => {
+    it("handleProgress updates sub-label on extract event", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
@@ -1086,12 +1086,12 @@ describe("ChatView — progress banner", () => {
         });
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const label = container.find("lilbee-progress-label")!;
-        expect(label.textContent).toContain("Extracting");
-        expect(label.textContent).toContain("page 5/50");
+        const subLabel = container.find("lilbee-progress-sub-label")!;
+        expect(subLabel.textContent).toContain("Extracting");
+        expect(subLabel.textContent).toContain("page 5/50");
     });
 
-    it("handleProgress shows banner on embed event", async () => {
+    it("handleProgress updates sub-label on embed event", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
@@ -1103,9 +1103,9 @@ describe("ChatView — progress banner", () => {
         });
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const label = container.find("lilbee-progress-label")!;
-        expect(label.textContent).toContain("Embedding");
-        expect(label.textContent).toContain("30/100");
+        const subLabel = container.find("lilbee-progress-sub-label")!;
+        expect(subLabel.textContent).toContain("Embedding");
+        expect(subLabel.textContent).toContain("30/100");
     });
 
     it("handleProgress shows banner on progress event", async () => {
@@ -1120,7 +1120,7 @@ describe("ChatView — progress banner", () => {
         });
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const label = container.find("lilbee-progress-label")!;
+        const label = container.find("lilbee-progress-top-label")!;
         expect(label.textContent).toContain("2/5");
         expect(label.textContent).toContain("notes.md");
     });
@@ -1144,7 +1144,7 @@ describe("ChatView — progress banner", () => {
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         const banner = container.find("lilbee-progress-banner")!;
-        expect(banner.style.display).toBe("none");
+        expect(banner.dataset.hidden).toBe("");
     });
 
     it("handleProgress no-ops when progressBanner is null (before onOpen)", () => {
@@ -1171,7 +1171,8 @@ describe("ChatView — progress banner", () => {
 
         view.handleProgress({ event: "unknown_event", data: {} });
 
-        expect(banner.style.display).toBe("none");
+        // Banner stays hidden (data-hidden attribute still present)
+        expect(banner.dataset.hidden).toBe("");
     });
 
     it("handleProgress shows pull-specific label on pull event", async () => {
@@ -1182,23 +1183,15 @@ describe("ChatView — progress banner", () => {
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         const banner = container.find("lilbee-progress-banner")!;
-        const label = container.find("lilbee-progress-label")!;
+        const label = container.find("lilbee-progress-top-label")!;
 
         view.handleProgress({
             event: SSE_EVENT.PULL,
             data: { model: "mistral", current: 50, total: 100 },
         });
 
-        expect(banner.style.display).toBe("");
-        expect(label.textContent).toBe("Pulling mistral — 50%");
-    });
-
-    it("showProgress no-ops when progressBanner is null", () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        // Before onOpen, banner elements are null
-        expect(() => view.showProgress("test", 1, 2)).not.toThrow();
+        expect(banner.dataset.hidden).toBeUndefined();
+        expect(label.textContent).toBe("Pulling model — 50%");
     });
 
     it("hideProgress no-ops when progressBanner is null", () => {
@@ -1206,6 +1199,78 @@ describe("ChatView — progress banner", () => {
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         expect(() => view.hideProgress()).not.toThrow();
+    });
+
+    it("handleProgress with missing data fields uses fallback values", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+
+        // FILE_START with missing fields
+        view.handleProgress({ event: SSE_EVENT.FILE_START, data: {} });
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const label = container.find("lilbee-progress-top-label")!;
+        expect(label.textContent).toContain("0/0");
+
+        // EXTRACT with missing fields
+        view.handleProgress({ event: SSE_EVENT.EXTRACT, data: {} });
+        const subLabel = container.find("lilbee-progress-sub-label")!;
+        expect(subLabel.textContent).toContain("0/0");
+
+        // EMBED with missing fields
+        view.handleProgress({ event: SSE_EVENT.EMBED, data: {} });
+        expect(subLabel.textContent).toContain("0/0");
+
+        // PROGRESS with missing fields
+        view.handleProgress({ event: SSE_EVENT.PROGRESS, data: {} });
+        expect(label.textContent).toContain("0/0");
+
+        // PULL with missing fields (tests ?? fallback)
+        view.handleProgress({ event: SSE_EVENT.PULL, data: {} });
+        expect(label.textContent).toContain("0%");
+    });
+
+    it("updateSubLabel no-ops before onOpen", () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        // EXTRACT before onOpen — progressSubLabel is null
+        expect(() => {
+            view.handleProgress({ event: SSE_EVENT.EXTRACT, data: { file: "x", page: 1, total_pages: 1 } });
+        }).not.toThrow();
+    });
+
+    it("showFileProgress with total=0 sets bar width to 0%", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+
+        view.handleProgress({ event: SSE_EVENT.FILE_START, data: { current_file: 0, total_files: 0 } });
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const bar = container.find("lilbee-progress-bar")!;
+        expect(bar.style.width).toBe("0%");
+    });
+
+    it("cancel button aborts pullController when set", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+
+        // Simulate a pullController being set
+        const controller = new AbortController();
+        (view as any).pullController = controller;
+        const abortSpy = vi.spyOn(controller, "abort");
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const cancelBtn = container.find("lilbee-progress-cancel")!;
+        cancelBtn.trigger("click");
+
+        expect(abortSpy).toHaveBeenCalled();
+        expect((plugin as any).cancelSync).toHaveBeenCalled();
     });
 });
 
@@ -1240,8 +1305,10 @@ describe("ChatView — onProgress registration", () => {
         });
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const label = container.find("lilbee-progress-label")!;
+        const label = container.find("lilbee-progress-top-label")!;
         expect(label.textContent).toContain("1/2");
+        const banner = container.find("lilbee-progress-banner")!;
+        expect(banner.dataset.hidden).toBeUndefined();
     });
 });
 
@@ -1690,7 +1757,7 @@ describe("ChatView — cancel chat stream (stop button)", () => {
 });
 
 describe("ChatView — cancel model pull", () => {
-    it("progress cancel button is hidden by default", async () => {
+    it("progress cancel button exists in banner", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
@@ -1699,53 +1766,22 @@ describe("ChatView — cancel model pull", () => {
         const container = view.containerEl.children[1] as unknown as MockElement;
         const cancelBtn = container.find("lilbee-progress-cancel")!;
         expect(cancelBtn).not.toBeNull();
-        expect(cancelBtn.style.display).toBe("none");
+        expect(cancelBtn.tagName).toBe("BUTTON");
     });
 
-    it("cancel button becomes visible during pull and hidden after", async () => {
+    it("cancel button calls both pullController.abort and plugin.cancelSync", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3"],
-                catalog: [
-                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
-                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
-                ],
-            },
-            vision: { active: "", installed: [], catalog: [] },
-        });
-
-        let resolveWait!: () => void;
-        const waitPromise = new Promise<void>((r) => { resolveWait = r; });
-        async function* fakePull() {
-            yield { status: "pulling", completed: 50, total: 100 };
-            await waitPromise;
-            yield { status: "success" };
-        }
-        plugin.ollama.pull = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue({ model: "phi3" });
-
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
-        await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         const cancelBtn = container.find("lilbee-progress-cancel")!;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
-        await tick();
 
-        // During pull, cancel button should be visible
-        expect(cancelBtn.style.display).toBe("");
+        // Trigger cancel click
+        cancelBtn.trigger("click");
 
-        resolveWait();
-        await new Promise((r) => setTimeout(r, 50));
-
-        // After pull completes, cancel button should be hidden
-        expect(cancelBtn.style.display).toBe("none");
+        expect((plugin as any).cancelSync).toHaveBeenCalled();
     });
 
     it("clicking cancel button during pull aborts and shows Pull cancelled Notice", async () => {

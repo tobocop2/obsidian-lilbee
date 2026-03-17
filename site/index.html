@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lilbee for Obsidian — talk to your vault</title>
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --purple: #a78bfa;
+    --dim: #6d5daa;
+    --faint: #3b3566;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Courier New', monospace;
+    background: var(--bg);
+    color: var(--purple);
+    min-height: 100vh;
+    padding: 2rem;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.12) 2px,
+      rgba(0, 0, 0, 0.12) 4px
+    );
+    pointer-events: none;
+    z-index: 999;
+  }
+  pre { font: inherit; white-space: pre; }
+  a { color: var(--purple); text-decoration: none; }
+  a:hover { text-shadow: 0 0 8px rgba(167, 139, 250, 0.5); }
+  .dim { color: var(--dim); }
+  .faint { color: var(--faint); }
+  .cursor {
+    display: inline-block;
+    width: 0.6em;
+    height: 1.1em;
+    background: var(--purple);
+    vertical-align: text-bottom;
+    animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  h1 {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+  }
+
+  .layout {
+    display: flex;
+    gap: 3rem;
+    align-items: flex-start;
+  }
+  .main { flex: 0 1 auto; min-width: 0; }
+  .bee-art {
+    flex: 0 0 auto;
+    font-size: 7px;
+    line-height: 1.1;
+    color: var(--dim);
+    text-shadow: 0 0 4px rgba(167, 139, 250, 0.15);
+    user-select: none;
+    padding-top: 1rem;
+  }
+
+  .bee-sm { display: none; }
+  @media (max-width: 900px) {
+    .bee-art { display: none; }
+    .bee-sm { display: inline; color: var(--dim); }
+  }
+  .link-dots { }
+  .link-desc { }
+  @media (max-width: 600px) {
+    body { padding: 1rem; font-size: 11px; }
+    .link-dots, .link-desc { display: none; }
+  }
+  .main pre { overflow-x: auto; }
+</style>
+</head>
+<body>
+<h1>lilbee for Obsidian</h1>
+<div class="layout">
+<div class="main"><pre><span class="bee-sm">
+      \)  (/
+     _{    }_
+    / /o  o\ \
+    \  \__/  /
+     '-____-'
+
+</span>888 d8b 888 888
+888 Y8P 888 888
+888     888 888
+888 888 888 88888b.  .d88b.  .d88b.
+888 888 888 888 "88bd8P  Y8bd8P  Y8b
+888 888 888 888  88888888888888888888
+888 888 888 888 d88PY8b.    Y8b.
+888 888 888 88888P"  "Y8888  "Y8888
+
+<span class="dim">for Obsidian — talk to your vault</span>
+
+<span class="faint">════════════════════════════════════════════</span>
+
+ <a href="https://github.com/tobocop2/obsidian-lilbee">[1] GitHub</a><span class="link-dots"> <span class="faint">··············</span></span><span class="link-desc"> <span class="dim">source code</span></span>
+ <a href="https://github.com/tobocop2/lilbee">[2] lilbee CLI</a><span class="link-dots"> <span class="faint">··········</span></span><span class="link-desc"> <span class="dim">Python backend</span></span>
+ <a href="coverage/">[3] Coverage</a><span class="link-dots"> <span class="faint">············</span></span><span class="link-desc"> <span class="dim">100% tested</span></span>
+ <a href="https://github.com/tobocop2/obsidian-lilbee#quick-start">[4] Install via BRAT</a><span class="link-dots"> <span class="faint">····</span></span><span class="link-desc"> <span class="dim">beta install</span></span>
+
+<span class="faint">════════════════════════════════════════════</span>
+
+ <span class="dim">talk to your vault — local, private,
+ grounded in your notes</span>
+
+<span class="faint">────────────────────────────────────────────</span>
+
+ <span class="dim">&gt;</span> chat with your vault via Ollama
+ <span class="dim">&gt;</span> semantic search across notes, PDFs, code
+ <span class="dim">&gt;</span> attach anything — PDFs, images, 150+ code langs
+ <span class="dim">&gt;</span> OCR for scanned documents
+ <span class="dim">&gt;</span> inline progress with cancel support
+ <span class="dim">&gt;</span> save conversations back to your vault
+ <span class="dim">&gt;</span> runs local — nothing leaves your machine
+
+<span class="faint">──── built with lilbee ─────────────────────</span>
+
+ <a href="https://tobocop2.github.io/lilbee/">lilbee</a><span class="link-dots"> <span class="faint">···················</span></span><span class="link-desc"> <span class="dim">local knowledge base backend</span></span>
+
+<span class="faint">──── install ────────────────────────────────</span>
+
+ <span class="dim">1.</span> Install <a href="https://github.com/TfTHacker/obsidian42-brat">BRAT</a> from Community Plugins
+ <span class="dim">2.</span> BRAT → Add Beta Plugin →
+    <span class="dim">tobocop2/obsidian-lilbee</span>
+ <span class="dim">3.</span> Enable "lilbee" in Community Plugins
+ <span class="dim">4.</span> Install <a href="https://ollama.com">Ollama</a> + <a href="https://github.com/tobocop2/lilbee">lilbee CLI</a>:
+
+ <span class="faint">$</span> pip install lilbee
+ <span class="faint">$</span> cd /path/to/vault
+ <span class="faint">$</span> lilbee init && lilbee serve<span class="cursor"></span>
+
+<span class="faint">════════════════════════════════════════════</span>
+ <span class="faint"><a href="https://github.com/tobocop2/obsidian-lilbee">lilbee for Obsidian</a> — <a href="https://opensource.org/licenses/MIT">MIT License</a></span>
+</pre></div>
+<aside class="bee-art" aria-hidden="true"><pre>
+     %           %
+         %           %
+            %           %
+               %          %
+                 %          %
+                   %          %                   :::
+                    %          %                ::::::
+                 %%%%%%  %%%%%%%%%            ::::::::
+              %%%%%ZZZZ%%%%%%   %%%ZZZZ     ::::::::::         ::::::
+             %%%ZZZZZ%%%%%%%%%%%%%%ZZZZZZ  :::::::::::    :::::::::::::::::
+             ZZZ%ZZZ%%%%%%%%%%%%%%%ZZZZZZZ::::::::::***:::::::::::::::::::::
+          ZZZ%ZZZZZZ%%%%%%%%%%%%%%ZZZZZZZZZ::::::***:::::::::::::::::::::::
+        ZZZ%ZZZZZZZZZZ%%%%%%%%%%ZZZZZZ%ZZZZ:::***:::::::::::::::::::::::
+       ZZ%ZZZZZZZZZZZZZZZZZZZZZZZ%%%%% %ZZZ:**::::::::::::::::::::::
+      ZZ%ZZZZZZZZZZZZZZZZZZZZZ%%%%% | | %ZZZ *:::::::::::::::::::
+      Z%ZZZZZZZZZZZZZZZZZ%%%%%%%%%%%%%%%ZZZ::::::::::::::::::::::::::
+       ZZZZZZZZZZZ%%%%%ZZZZZZZZZZZZZZZZZZZ%%%%:::ZZZZ:::::::::::::::::
+         ZZZZ%%%%%ZZZZZZZZZZZZZZZZZZ%%%%%ZZZ%%ZZZ%ZZ%%*:::::::::::
+            ZZZZZZZZZZZZZZZZZZ%%%%%%%%%ZZZZZZZZZZ%ZZ%:::*:::::::
+            *:::%%%%%%%%%%%%%%%%%%%%%%%ZZZZZZZZZZ%%%*::::*::::
+          *:::::::%%%%%%%%%%%%%%%%%%%%%%%ZZZZZ%%      *:::Z
+         **:ZZZZ:::%%%%%%%%%%%%%%%%%%%%%%%%%%%ZZ      ZZZZZ
+        *:ZZZZZZZ       %%%%%%%%%%%%%%%%%%%%%ZZZZ    ZZZZZZZ
+       *::::ZZZZZZ         %%%%%%%%%%%%%%%ZZZZZZZ      ZZZ
+        *::ZZZZZZ           Z%%%%%%%%%%%ZZZZZZZ%%
+          ZZZZ              ZZZZZZZZZZZZZZZZ%%%%%
+                           %%%ZZZZZZZZZZZ%%%%%%%%
+                          Z%%%%%%%%%%%%%%%%%%%%%
+                          ZZ%%%%%%%%%%%%%%%%%%%
+                          %ZZZZZZZZZZZZZZZZZZZ
+                          %%ZZZZZZZZZZZZZZZZZ
+                           %%%%%%%%%%%%%%%%
+                            %%%%%%%%%%%%%
+                             %%%%%%%%%
+                              ZZZZ
+                              ZZZ
+                             ZZ
+                            Z
+</pre></aside>
+</div>
+</body>
+</html>
