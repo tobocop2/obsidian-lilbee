@@ -3,7 +3,7 @@ import { LilbeeClient, OllamaClient } from "./api";
 import { BinaryManager } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { LilbeeSettingTab } from "./settings";
-import { DEFAULT_SETTINGS, SSE_EVENT, type LilbeeSettings, type ServerState, type SSEEvent, type SyncDone } from "./types";
+import { DEFAULT_SETTINGS, SERVER_MODE, SSE_EVENT, type LilbeeSettings, type ServerMode, type ServerState, type SSEEvent, type SyncDone } from "./types";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
 import { SearchModal } from "./views/search-modal";
 
@@ -29,7 +29,7 @@ export default class LilbeePlugin extends Plugin {
     syncController: AbortController | null = null;
     private syncTimeout: ReturnType<typeof setTimeout> | null = null;
     private autoSyncRefs: { id: string }[] = [];
-    private previousServerMode: "managed" | "external" = "managed";
+    private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
 
     async onload(): Promise<void> {
         await this.loadSettings();
@@ -50,7 +50,7 @@ export default class LilbeePlugin extends Plugin {
             }),
         );
 
-        if (this.settings.serverMode === "managed") {
+        if (this.settings.serverMode === SERVER_MODE.MANAGED) {
             await this.startManagedServer();
         } else {
             this.api = new LilbeeClient(this.settings.serverUrl);
@@ -196,8 +196,8 @@ export default class LilbeePlugin extends Plugin {
         this.previousServerMode = this.settings.serverMode;
         await this.saveData(this.settings);
 
-        if (this.settings.serverMode === "managed") {
-            if (previousMode !== "managed") {
+        if (this.settings.serverMode === SERVER_MODE.MANAGED) {
+            if (previousMode !== SERVER_MODE.MANAGED) {
                 void this.startManagedServer();
             } else if (this.serverManager) {
                 this.serverManager.updateOllamaUrl(this.settings.ollamaUrl);
@@ -205,7 +205,7 @@ export default class LilbeePlugin extends Plugin {
                 this.api = new LilbeeClient(this.serverManager.serverUrl);
             }
         } else {
-            if (previousMode === "managed") {
+            if (previousMode === SERVER_MODE.MANAGED) {
                 void this.serverManager?.stop();
                 this.serverManager = null;
                 this.binaryManager = null;
@@ -224,7 +224,8 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private setStatusReady(): void {
-        this.updateStatusBar("lilbee: ready");
+        const suffix = this.settings.serverMode === SERVER_MODE.EXTERNAL ? " [external]" : "";
+        this.updateStatusBar(`lilbee: ready${suffix}`);
     }
 
     fetchActiveModel(): void {

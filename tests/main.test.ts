@@ -189,10 +189,10 @@ describe("LilbeePlugin", () => {
             expect(addSpy).toHaveBeenCalledWith(folder);
         });
 
-        it("sets status bar text to 'lilbee: ready'", async () => {
+        it("sets status bar text to 'lilbee: ready [external]' in external mode", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
         });
 
         it("with manual sync mode: registers only file-menu event (no vault events)", async () => {
@@ -414,7 +414,7 @@ describe("LilbeePlugin", () => {
     });
 
     describe("triggerSync()", () => {
-        it("updates status bar during sync and resets to 'ready'", async () => {
+        it("updates status bar during sync and resets to ready", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
@@ -423,7 +423,7 @@ describe("LilbeePlugin", () => {
 
             await plugin.triggerSync();
 
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
         });
 
         it("emits progress events to onProgress callback", async () => {
@@ -1005,7 +1005,7 @@ describe("LilbeePlugin", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             expect(plugin.activeModel).toBe("qwen3:8b");
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready (qwen3:8b)");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external] (qwen3:8b)");
         });
 
         it("fetchActiveModel silently fails on API error", async () => {
@@ -1018,7 +1018,7 @@ describe("LilbeePlugin", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             expect(plugin.activeModel).toBe("");
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready");
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
         });
 
         it("status bar includes model name during sync", async () => {
@@ -1224,6 +1224,20 @@ describe("LilbeePlugin", () => {
             plugin.onunload();
 
             expect(mockServerStop).toHaveBeenCalled();
+        });
+    });
+
+    describe("external mode status bar label", () => {
+        it("shows [external] in external mode", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
+        });
+
+        it("does not show [external] in managed mode", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            expect((plugin as any).statusBarEl?.textContent).not.toContain("[external]");
         });
     });
 });

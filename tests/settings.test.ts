@@ -1983,4 +1983,23 @@ describe("managed mode settings", () => {
         const dot = statusEl!.find("lilbee-server-dot");
         expect(dot!.classList.contains("is-ready")).toBe(true);
     });
+
+    it("Reset to managed button resets serverMode and serverUrl", async () => {
+        const plugin = makePlugin({ serverMode: "external", serverUrl: "http://remote:9999" });
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+
+        // In external mode: buttons are [Test (server), Reset to managed, Test (ollama), Refresh]
+        // Find the "Reset to managed" click — it's the one that sets serverMode back
+        const resetButton = buttonOnClicks.find((_btn, i) => i === 1);
+        expect(resetButton).toBeDefined();
+        await resetButton!();
+
+        expect(plugin.settings.serverMode).toBe("managed");
+        expect(plugin.settings.serverUrl).toBe("http://127.0.0.1:7433");
+        expect(plugin.saveSettings).toHaveBeenCalled();
+    });
+
 });

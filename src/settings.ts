@@ -1,6 +1,7 @@
 import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
-import type { ModelCatalog, ModelInfo, ModelsResponse, OllamaModelDefaults } from "./types";
+import { DEFAULT_SETTINGS, SERVER_MODE } from "./types";
+import type { ModelCatalog, ModelInfo, ModelsResponse, OllamaModelDefaults, ServerMode } from "./types";
 
 const CHECK_TIMEOUT_MS = 5000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
@@ -92,17 +93,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc("How the lilbee server is managed")
             .addDropdown((dropdown) =>
                 dropdown
-                    .addOption("managed", "Managed (built-in)")
-                    .addOption("external", "External (manual)")
+                    .addOption(SERVER_MODE.MANAGED, "Managed (built-in)")
+                    .addOption(SERVER_MODE.EXTERNAL, "External (manual)")
                     .setValue(this.plugin.settings.serverMode)
                     .onChange(async (value) => {
-                        this.plugin.settings.serverMode = value as "managed" | "external";
+                        this.plugin.settings.serverMode = value as ServerMode;
                         await this.plugin.saveSettings();
                         this.display();
                     }),
             );
 
-        if (this.plugin.settings.serverMode === "managed") {
+        if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED) {
             this.renderManagedSettings(containerEl);
         } else {
             this.renderExternalSettings(containerEl);
@@ -202,6 +203,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 await this.checkEndpoint(`${this.plugin.settings.serverUrl}/api/health`, serverStatusEl);
             }),
         );
+
+        new Setting(containerEl)
+            .setName("Switch to managed server")
+            .setDesc("Stop using an external server and start the built-in one")
+            .addButton((btn) =>
+                btn.setButtonText("Reset to managed").onClick(async () => {
+                    this.plugin.settings.serverMode = SERVER_MODE.MANAGED;
+                    this.plugin.settings.serverUrl = DEFAULT_SETTINGS.serverUrl;
+                    await this.plugin.saveSettings();
+                    this.display();
+                }),
+            );
     }
 
     private renderModelsSection(containerEl: HTMLElement): void {

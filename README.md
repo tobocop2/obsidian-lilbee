@@ -1,5 +1,11 @@
 # lilbee for Obsidian
 
+[![CI](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml/badge.svg)](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml)
+[![Coverage](https://tobocop2.github.io/obsidian-lilbee/coverage/badge.svg)](https://tobocop2.github.io/obsidian-lilbee/coverage/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Obsidian](https://img.shields.io/badge/Obsidian-Plugin-7c3aed?logo=obsidian&logoColor=white)](https://obsidian.md)
+
 > **Work in progress** — the first release is coming soon. The plugin is not usable yet.
 
 Talk to your vault. Ask questions about your notes, PDFs, code, spreadsheets, and images — and get answers grounded in what you've actually written, with source citations. Save conversations back to your vault as markdown. Everything runs locally on your machine via [Ollama](https://ollama.com), so your documents never leave your computer.

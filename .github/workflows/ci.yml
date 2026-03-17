@@ -1,0 +1,47 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Generate coverage badge
+        run: |
+          PCT=$(node -p "require('./coverage/coverage-summary.json').total.lines.pct")
+          COLOR=$(node -p "const p=require('./coverage/coverage-summary.json').total.lines.pct; p===100?'brightgreen':p>=90?'green':p>=70?'yellow':'red'")
+          npx badge-maker --label coverage --message "${PCT}%" --color "$COLOR" > coverage/badge.svg
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp site/index.html _site/
+          cp -r coverage _site/coverage
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        id: deployment
+        uses: actions/deploy-pages@v4

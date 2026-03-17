@@ -1,5 +1,5 @@
 import { vi, describe, it, expect } from "vitest";
-import { DEFAULT_SETTINGS, SSE_EVENT, JSON_HEADERS } from "../src/types";
+import { DEFAULT_SETTINGS, SSE_EVENT, JSON_HEADERS, SERVER_MODE } from "../src/types";
 import type {
     Excerpt,
     DocumentResult,
@@ -275,6 +275,13 @@ describe("SSE_EVENT constants", () => {
         expect(SSE_EVENT.EXTRACT).toBe("extract");
         expect(SSE_EVENT.EMBED).toBe("embed");
         expect(SSE_EVENT.FILE_DONE).toBe("file_done");
+    });
+});
+
+describe("SERVER_MODE constants", () => {
+    it("has MANAGED and EXTERNAL values", () => {
+        expect(SERVER_MODE.MANAGED).toBe("managed");
+        expect(SERVER_MODE.EXTERNAL).toBe("external");
     });
 });
 
