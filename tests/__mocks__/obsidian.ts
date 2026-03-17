@@ -15,6 +15,7 @@ export class MockElement {
     classList: { list: string[]; add: (...classes: string[]) => void; remove: (...classes: string[]) => void; contains: (cls: string) => boolean };
     style: Record<string, string> = {};
     attributes: Record<string, string> = {};
+    dataset: Record<string, string> = {};
     _listeners: Record<string, Function[]> = {};
     value: string = "";
     disabled: boolean = false;

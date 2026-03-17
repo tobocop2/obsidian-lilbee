@@ -25,39 +25,14 @@ export const electronDialog = {
 
 export const VIEW_TYPE_CHAT = "lilbee-chat";
 
-interface ProgressInfo {
-    label: string;
-    current: number;
-    total: number;
+export interface ProgressState {
+    fileIndex: number;
+    fileTotal: number;
+    fileName: string;
+    subLabel: string;
+    subCurrent: number;
+    subTotal: number;
 }
-
-const PROGRESS_EXTRACTORS: Record<string, (data: any) => ProgressInfo> = {
-    [SSE_EVENT.FILE_START]: (d) => ({
-        label: `Indexing ${d.current_file}/${d.total_files} — ${d.file}`,
-        current: d.current_file,
-        total: d.total_files,
-    }),
-    [SSE_EVENT.EXTRACT]: (d) => ({
-        label: `Extracting ${d.file} (page ${d.page}/${d.total_pages})`,
-        current: d.page,
-        total: d.total_pages,
-    }),
-    [SSE_EVENT.EMBED]: (d) => ({
-        label: `Embedding ${d.file} (${d.chunk}/${d.total_chunks} chunks)`,
-        current: d.chunk,
-        total: d.total_chunks,
-    }),
-    [SSE_EVENT.PROGRESS]: (d) => ({
-        label: `Indexing ${d.current}/${d.total} — ${d.file}`,
-        current: d.current,
-        total: d.total,
-    }),
-    [SSE_EVENT.PULL]: (d) => ({
-        label: `Pulling ${d.model} — ${Math.round((d.current / d.total) * 100)}%`,
-        current: d.current,
-        total: d.total,
-    }),
-};
 
 export function buildGenerationOptions(settings: {
     temperature: number | null;
@@ -94,7 +69,8 @@ export class ChatView extends ItemView {
     private pullController: AbortController | null = null;
     private progressCancelBtn: HTMLElement | null = null;
     private progressBanner: HTMLElement | null = null;
-    private progressLabel: HTMLElement | null = null;
+    private progressTopLabel: HTMLElement | null = null;
+    private progressSubLabel: HTMLElement | null = null;
     private progressBar: HTMLElement | null = null;
     private chatCatalog: ModelCatalog | null = null;
     private visionCatalog: ModelCatalog | null = null;
@@ -180,16 +156,19 @@ export class ChatView extends ItemView {
 
     private createProgressBanner(container: HTMLElement): void {
         this.progressBanner = container.createDiv({ cls: "lilbee-progress-banner" });
-        this.progressBanner.style.display = "none";
+        this.progressBanner.dataset.hidden = "";
         const row = this.progressBanner.createDiv({ cls: "lilbee-progress-row" });
-        this.progressLabel = row.createDiv({ cls: "lilbee-progress-label" });
+        this.progressTopLabel = row.createDiv({ cls: "lilbee-progress-top-label" });
         this.progressCancelBtn = row.createEl("button", { cls: "lilbee-progress-cancel" });
         setIcon(this.progressCancelBtn, "x");
         this.progressCancelBtn.setAttribute("aria-label", "Cancel");
-        this.progressCancelBtn.style.display = "none";
-        this.progressCancelBtn.addEventListener("click", () => this.pullController?.abort());
+        this.progressCancelBtn.addEventListener("click", () => {
+            this.pullController?.abort();
+            this.plugin.cancelSync();
+        });
         const barContainer = this.progressBanner.createDiv({ cls: "lilbee-progress-bar-container" });
         this.progressBar = barContainer.createDiv({ cls: "lilbee-progress-bar" });
+        this.progressSubLabel = this.progressBanner.createDiv({ cls: "lilbee-progress-sub-label" });
     }
 
     private createInputArea(container: HTMLElement): void {
@@ -306,7 +285,6 @@ export class ChatView extends ItemView {
     private autoPullAndSet(model: { name: string }, type: "chat" | "vision"): void {
         new Notice(`Pulling ${model.name}...`);
         this.pullController = new AbortController();
-        if (this.progressCancelBtn) this.progressCancelBtn.style.display = "";
         (async () => {
             try {
                 for await (const progress of this.plugin.ollama.pull(
@@ -315,7 +293,7 @@ export class ChatView extends ItemView {
                 )) {
                     if (progress.total && progress.completed !== undefined) {
                         const pct = Math.round((progress.completed / progress.total) * 100);
-                        this.showProgress(
+                        this.showPullProgress(
                             `Pulling ${model.name} — ${pct}%`,
                             progress.completed,
                             progress.total,
@@ -342,7 +320,6 @@ export class ChatView extends ItemView {
                 this.hideProgress();
             } finally {
                 this.pullController = null;
-                if (this.progressCancelBtn) this.progressCancelBtn.style.display = "none";
             }
         })();
     }
@@ -507,30 +484,69 @@ export class ChatView extends ItemView {
     }
 
     handleProgress(event: SSEEvent): void {
-        if (event.event === SSE_EVENT.DONE) {
-            this.hideProgress();
-            return;
+        const data = event.data as Record<string, unknown>;
+
+        switch (event.event) {
+            case SSE_EVENT.FILE_START: {
+                const fileIndex = Number(data.current_file ?? 0);
+                const fileTotal = Number(data.total_files ?? 0);
+                this.showFileProgress(`Syncing ${fileIndex}/${fileTotal} files`, fileIndex, fileTotal, "");
+                break;
+            }
+            case SSE_EVENT.EXTRACT: {
+                const page = Number(data.page ?? 0);
+                const totalPages = Number(data.total_pages ?? 0);
+                this.updateSubLabel(`Extracting page ${page}/${totalPages} — ${data.file ?? ""}`);
+                break;
+            }
+            case SSE_EVENT.EMBED: {
+                const chunk = Number(data.chunk ?? 0);
+                const totalChunks = Number(data.total_chunks ?? 0);
+                this.updateSubLabel(`Embedding chunk ${chunk}/${totalChunks} — ${data.file ?? ""}`);
+                break;
+            }
+            case SSE_EVENT.PROGRESS: {
+                const current = Number(data.current ?? 0);
+                const total = Number(data.total ?? 0);
+                this.showFileProgress(`Indexing ${current}/${total} — ${data.file ?? ""}`, current, total, "");
+                break;
+            }
+            case SSE_EVENT.PULL: {
+                const current = Number(data.current ?? 0);
+                const total = Number(data.total ?? 0);
+                const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+                this.showFileProgress(`Pulling model — ${pct}%`, current, total, "");
+                break;
+            }
+            case SSE_EVENT.DONE:
+                this.hideProgress();
+                break;
         }
-
-        const extractor = PROGRESS_EXTRACTORS[event.event];
-        if (!extractor) return;
-
-        const info = extractor(event.data);
-        this.showProgress(info.label, info.current, info.total);
     }
 
-    showProgress(label: string, current: number, total: number): void {
-        if (!this.progressBanner || !this.progressLabel || !this.progressBar) return;
-        this.progressBanner.style.display = "";
-        this.progressLabel.textContent = label;
-        this.progressBar.style.width = `${Math.round((current / total) * 100)}%`;
+    private showFileProgress(topLabel: string, current: number, total: number, subLabel: string): void {
+        if (!this.progressBanner || !this.progressTopLabel || !this.progressBar || !this.progressSubLabel) return;
+        delete this.progressBanner.dataset.hidden;
+        this.progressTopLabel.textContent = topLabel;
+        this.progressBar.style.width = total > 0 ? `${Math.round((current / total) * 100)}%` : "0%";
+        this.progressSubLabel.textContent = subLabel;
+    }
+
+    private showPullProgress(label: string, current: number, total: number): void {
+        this.showFileProgress(label, current, total, "");
+    }
+
+    private updateSubLabel(text: string): void {
+        if (!this.progressSubLabel) return;
+        this.progressSubLabel.textContent = text;
     }
 
     hideProgress(): void {
-        if (!this.progressBanner || !this.progressBar) return;
-        this.progressBanner.style.display = "none";
+        if (!this.progressBanner || !this.progressBar || !this.progressSubLabel) return;
+        this.progressBanner.dataset.hidden = "";
         this.progressBar.style.width = "0%";
-        if (this.progressCancelBtn) this.progressCancelBtn.style.display = "none";
+        if (this.progressTopLabel) this.progressTopLabel.textContent = "";
+        this.progressSubLabel.textContent = "";
     }
 
     private async saveToVault(): Promise<void> {

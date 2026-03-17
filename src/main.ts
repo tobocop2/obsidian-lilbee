@@ -1,7 +1,9 @@
 import { type Menu, type MenuItem, Notice, Plugin, type TAbstractFile } from "obsidian";
 import { LilbeeClient, OllamaClient } from "./api";
+import { BinaryManager } from "./binary-manager";
+import { ServerManager } from "./server-manager";
 import { LilbeeSettingTab } from "./settings";
-import { DEFAULT_SETTINGS, SSE_EVENT, type LilbeeSettings, type SSEEvent, type SyncDone } from "./types";
+import { DEFAULT_SETTINGS, SSE_EVENT, type LilbeeSettings, type ServerState, type SSEEvent, type SyncDone } from "./types";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
 import { SearchModal } from "./views/search-modal";
 
@@ -22,16 +24,18 @@ export default class LilbeePlugin extends Plugin {
     activeVisionModel = "";
     statusBarEl: HTMLElement | null = null;
     onProgress: ((event: SSEEvent) => void) | null = null;
+    binaryManager: BinaryManager | null = null;
+    serverManager: ServerManager | null = null;
+    syncController: AbortController | null = null;
     private syncTimeout: ReturnType<typeof setTimeout> | null = null;
     private autoSyncRefs: { id: string }[] = [];
+    private previousServerMode: "managed" | "external" = "managed";
 
     async onload(): Promise<void> {
         await this.loadSettings();
-        this.api = new LilbeeClient(this.settings.serverUrl);
         this.ollama = new OllamaClient(this.settings.ollamaUrl);
 
         this.statusBarEl = this.addStatusBarItem();
-        this.setStatusReady();
         this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
         this.addSettingTab(new LilbeeSettingTab(this.app, this));
         this.registerCommands();
@@ -46,11 +50,69 @@ export default class LilbeePlugin extends Plugin {
             }),
         );
 
-        this.fetchActiveModel();
+        if (this.settings.serverMode === "managed") {
+            await this.startManagedServer();
+        } else {
+            this.api = new LilbeeClient(this.settings.serverUrl);
+            this.setStatusReady();
+            this.fetchActiveModel();
+        }
 
         if (this.settings.syncMode === "auto") {
             this.registerAutoSync();
         }
+    }
+
+    private async startManagedServer(): Promise<void> {
+        const pluginDir = this.getPluginDir();
+        this.binaryManager = new BinaryManager(pluginDir);
+        this.updateStatusBar("lilbee: downloading...");
+
+        try {
+            const binaryPath = await this.binaryManager.ensureBinary((msg) => {
+                this.updateStatusBar(`lilbee: ${msg}`);
+            });
+
+            const dataDir = `${pluginDir}/server-data`;
+            this.serverManager = new ServerManager({
+                binaryPath,
+                dataDir,
+                port: this.settings.serverPort,
+                ollamaUrl: this.settings.ollamaUrl,
+                onStateChange: (state) => this.handleServerStateChange(state),
+            });
+
+            this.updateStatusBar("lilbee: starting...");
+            await this.serverManager.start();
+            this.api = new LilbeeClient(this.serverManager.serverUrl);
+            this.fetchActiveModel();
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "unknown error";
+            new Notice(`lilbee: failed to start server — ${msg}`);
+            this.updateStatusBar("lilbee: error");
+        }
+    }
+
+    private handleServerStateChange(state: ServerState): void {
+        switch (state) {
+            case "ready":
+                this.setStatusReady();
+                break;
+            case "starting":
+                this.updateStatusBar("lilbee: starting...");
+                break;
+            case "error":
+                this.updateStatusBar("lilbee: error");
+                break;
+            case "stopped":
+                this.updateStatusBar("lilbee: stopped");
+                break;
+        }
+    }
+
+    private getPluginDir(): string {
+        const adapter = this.app.vault.adapter as unknown as { getBasePath(): string };
+        return `${adapter.getBasePath()}/.obsidian/plugins/lilbee`;
     }
 
     private registerCommands(): void {
@@ -121,15 +183,36 @@ export default class LilbeePlugin extends Plugin {
         if (this.syncTimeout) {
             clearTimeout(this.syncTimeout);
         }
+        void this.serverManager?.stop();
     }
 
     async loadSettings(): Promise<void> {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        this.previousServerMode = this.settings.serverMode;
     }
 
     async saveSettings(): Promise<void> {
+        const previousMode = this.previousServerMode;
+        this.previousServerMode = this.settings.serverMode;
         await this.saveData(this.settings);
-        this.api = new LilbeeClient(this.settings.serverUrl);
+
+        if (this.settings.serverMode === "managed") {
+            if (previousMode !== "managed") {
+                void this.startManagedServer();
+            } else if (this.serverManager) {
+                this.serverManager.updateOllamaUrl(this.settings.ollamaUrl);
+                this.serverManager.updatePort(this.settings.serverPort);
+                this.api = new LilbeeClient(this.serverManager.serverUrl);
+            }
+        } else {
+            if (previousMode === "managed") {
+                void this.serverManager?.stop();
+                this.serverManager = null;
+                this.binaryManager = null;
+            }
+            this.api = new LilbeeClient(this.settings.serverUrl);
+        }
+
         this.ollama = new OllamaClient(this.settings.ollamaUrl);
         this.updateAutoSync();
     }
@@ -171,13 +254,23 @@ export default class LilbeePlugin extends Plugin {
         if (this.onProgress) this.onProgress(event);
     }
 
+    cancelSync(): void {
+        this.syncController?.abort();
+        this.syncController = null;
+    }
+
     private async runAdd(paths: string[]): Promise<void> {
         this.updateStatusBar("lilbee: adding...");
+        this.syncController = new AbortController();
 
         try {
             let lastEvent: SSEEvent | null = null;
-            for await (const event of this.api.addFiles(paths, false, this.activeVisionModel || undefined)) {
+            for await (const event of this.api.addFiles(paths, false, this.activeVisionModel || undefined, this.syncController.signal)) {
                 this.emitProgress(event);
+                if (event.event === SSE_EVENT.FILE_START) {
+                    const d = event.data as { current_file: number; total_files: number };
+                    this.updateStatusBar(`lilbee: adding ${d.current_file}/${d.total_files}`);
+                }
                 lastEvent = event;
             }
 
@@ -187,12 +280,16 @@ export default class LilbeePlugin extends Plugin {
                 new Notice(summary ? `lilbee: ${summary}` : "lilbee: nothing new to add");
             }
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "cannot connect to server";
-            new Notice(`lilbee: add failed — ${msg}`);
-            return;
+            if (err instanceof Error && err.name === "AbortError") {
+                new Notice("lilbee: add cancelled");
+            } else {
+                const msg = err instanceof Error ? err.message : "cannot connect to server";
+                new Notice(`lilbee: add failed — ${msg}`);
+            }
+        } finally {
+            this.syncController = null;
+            this.setStatusReady();
         }
-
-        this.setStatusReady();
     }
 
     private updateAutoSync(): void {
@@ -247,11 +344,16 @@ export default class LilbeePlugin extends Plugin {
     async triggerSync(): Promise<void> {
         if (!this.statusBarEl) return;
         this.updateStatusBar("lilbee: syncing...");
+        this.syncController = new AbortController();
 
         try {
             let lastEvent: SSEEvent | null = null;
-            for await (const event of this.api.syncStream(!!this.activeVisionModel)) {
+            for await (const event of this.api.syncStream(!!this.activeVisionModel, this.syncController.signal)) {
                 this.emitProgress(event);
+                if (event.event === SSE_EVENT.FILE_START) {
+                    const d = event.data as { current_file: number; total_files: number };
+                    this.updateStatusBar(`lilbee: syncing ${d.current_file}/${d.total_files}`);
+                }
                 lastEvent = event;
             }
 
@@ -260,11 +362,15 @@ export default class LilbeePlugin extends Plugin {
                 const summary = summarizeSyncResult(lastEvent.data as SyncDone);
                 if (summary) new Notice(`lilbee: synced — ${summary}`);
             }
-        } catch {
-            new Notice("lilbee: sync failed — cannot connect to server");
-            return;
+        } catch (err) {
+            if (err instanceof Error && err.name === "AbortError") {
+                new Notice("lilbee: sync cancelled");
+            } else {
+                new Notice("lilbee: sync failed — cannot connect to server");
+            }
+        } finally {
+            this.syncController = null;
+            this.setStatusReady();
         }
-
-        this.setStatusReady();
     }
 }

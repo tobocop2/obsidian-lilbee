@@ -33,7 +33,41 @@ vi.mock("../src/views/search-modal", () => ({
     SearchModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
 }));
 
-async function createPlugin() {
+const mockEnsureBinary = vi.fn().mockResolvedValue("/fake/bin/lilbee");
+const mockServerStart = vi.fn().mockResolvedValue(undefined);
+const mockServerStop = vi.fn().mockResolvedValue(undefined);
+const mockUpdateOllamaUrl = vi.fn();
+const mockUpdatePort = vi.fn();
+let mockServerOpts: any = null;
+
+vi.mock("../src/binary-manager", () => ({
+    BinaryManager: vi.fn().mockImplementation(() => ({
+        ensureBinary: mockEnsureBinary,
+        binaryPath: "/fake/bin/lilbee",
+        binaryExists: vi.fn().mockReturnValue(true),
+    })),
+    getLatestRelease: vi.fn(),
+    checkForUpdate: vi.fn(),
+    node: { spawn: vi.fn(), execFile: vi.fn(), existsSync: vi.fn(), mkdirSync: vi.fn(), chmodSync: vi.fn(), createWriteStream: vi.fn(), fetch: vi.fn() },
+}));
+
+vi.mock("../src/server-manager", () => ({
+    ServerManager: vi.fn().mockImplementation((opts: any) => {
+        mockServerOpts = opts;
+        return {
+            start: mockServerStart,
+            stop: mockServerStop,
+            restart: vi.fn(),
+            updateOllamaUrl: mockUpdateOllamaUrl,
+            updatePort: mockUpdatePort,
+            get serverUrl() { return `http://127.0.0.1:${opts.port}`; },
+            get state() { return "ready"; },
+            opts,
+        };
+    }),
+}));
+
+async function createPlugin(overrideData?: Record<string, unknown>) {
     const { default: LilbeePlugin } = await import("../src/main");
     const app = new App();
     const plugin = new LilbeePlugin(app as any, {
@@ -44,6 +78,12 @@ async function createPlugin() {
         author: "test",
         description: "test",
     } as any);
+    // Default to external mode so tests don't attempt to download/spawn a binary
+    if (overrideData) {
+        plugin.loadData = vi.fn().mockResolvedValue(overrideData);
+    } else {
+        plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external" });
+    }
     return plugin;
 }
 
@@ -157,7 +197,7 @@ describe("LilbeePlugin", () => {
 
         it("with manual sync mode: registers only file-menu event (no vault events)", async () => {
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ syncMode: "manual" });
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "manual" });
             await plugin.onload();
             // 1 for file-menu
             expect(plugin.registerEvent).toHaveBeenCalledTimes(1);
@@ -165,7 +205,7 @@ describe("LilbeePlugin", () => {
 
         it("with auto sync mode: registers vault events + file-menu", async () => {
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ syncMode: "auto" });
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
             await plugin.onload();
             // 4 vault events + 1 file-menu = 5
             expect(plugin.registerEvent).toHaveBeenCalledTimes(5);
@@ -174,7 +214,7 @@ describe("LilbeePlugin", () => {
         it("recreates API client with loaded serverUrl", async () => {
             const { LilbeeClient } = await import("../src/api");
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverUrl: "http://custom:9999" });
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", serverUrl: "http://custom:9999" });
             await plugin.onload();
             expect(LilbeeClient).toHaveBeenCalledWith("http://custom:9999");
         });
@@ -202,7 +242,7 @@ describe("LilbeePlugin", () => {
     describe("loadSettings()", () => {
         it("merges saved data over defaults", async () => {
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ topK: 15, syncMode: "auto" });
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", topK: 15, syncMode: "auto" });
             await plugin.loadSettings();
             expect(plugin.settings.topK).toBe(15);
             expect(plugin.settings.syncMode).toBe("auto");
@@ -210,7 +250,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("uses defaults when loadData returns null/empty", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "external" });
             plugin.loadData = vi.fn().mockResolvedValue(null);
             await plugin.loadSettings();
             expect(plugin.settings.topK).toBe(5);
@@ -247,7 +287,7 @@ describe("LilbeePlugin", () => {
     describe("updateAutoSync()", () => {
         it("registers vault events when switching from manual to auto", async () => {
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ syncMode: "manual" });
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "manual" });
             await plugin.onload();
 
             expect(plugin.registerEvent).toHaveBeenCalledTimes(1);
@@ -261,7 +301,7 @@ describe("LilbeePlugin", () => {
 
         it("clears autoSyncRefs when switching from auto to manual", async () => {
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ syncMode: "auto" });
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
             await plugin.onload();
 
             expect((plugin as any).autoSyncRefs.length).toBe(4);
@@ -274,7 +314,7 @@ describe("LilbeePlugin", () => {
 
         it("does not re-register events when already in auto mode", async () => {
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ syncMode: "auto" });
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
             await plugin.onload();
 
             const callsBefore = (plugin.registerEvent as ReturnType<typeof vi.fn>).mock.calls.length;
@@ -346,7 +386,7 @@ describe("LilbeePlugin", () => {
         it("schedules triggerSync after debounce delay", async () => {
             vi.useFakeTimers();
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ syncDebounceMs: 1000 });
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncDebounceMs: 1000 });
             await plugin.onload();
 
             const triggerSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
@@ -360,7 +400,7 @@ describe("LilbeePlugin", () => {
         it("cancels previous timer when called again", async () => {
             vi.useFakeTimers();
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ syncDebounceMs: 500 });
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncDebounceMs: 500 });
             await plugin.onload();
 
             const triggerSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
@@ -575,7 +615,7 @@ describe("LilbeePlugin", () => {
     describe("registerAutoSync()", () => {
         it("vault event callbacks call debouncedSync", async () => {
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ syncMode: "auto" });
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
 
             const debouncedSpy = vi.spyOn(plugin as any, "debouncedSync").mockImplementation(() => {});
 
@@ -636,7 +676,7 @@ describe("LilbeePlugin", () => {
 
             await (plugin as any).addToLilbee({ path: "notes/test.md", name: "test.md" });
 
-            expect(plugin.api.addFiles).toHaveBeenCalledWith(["/test/vault/notes/test.md"], false, undefined);
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(["/test/vault/notes/test.md"], false, undefined, expect.any(AbortSignal));
         });
 
         it("addToLilbee shows summary Notice on done event", async () => {
@@ -764,7 +804,7 @@ describe("LilbeePlugin", () => {
 
             await plugin.addExternalFiles(["/home/user/doc.pdf", "/tmp/notes.md"]);
 
-            expect(plugin.api.addFiles).toHaveBeenCalledWith(["/home/user/doc.pdf", "/tmp/notes.md"], false, undefined);
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(["/home/user/doc.pdf", "/tmp/notes.md"], false, undefined, expect.any(AbortSignal));
         });
 
         it("passes vision model when activeVisionModel is set", async () => {
@@ -778,7 +818,7 @@ describe("LilbeePlugin", () => {
             await plugin.addExternalFiles(["/home/user/scan.pdf"]);
 
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
-                ["/home/user/scan.pdf"], false, "minicpm-v:latest",
+                ["/home/user/scan.pdf"], false, "minicpm-v:latest", expect.any(AbortSignal),
             );
         });
 
@@ -818,6 +858,20 @@ describe("LilbeePlugin", () => {
             await plugin.addExternalFiles(["/home/user/doc.pdf"]);
 
             expect(Notice.instances.some((n) => n.message.includes("1 added"))).toBe(true);
+        });
+
+        it("updates status bar on FILE_START during addExternalFiles", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* withFileStart() {
+                yield { event: SSE_EVENT.FILE_START, data: { file: "doc.pdf", current_file: 2, total_files: 5 } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withFileStart());
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+
+            expect((plugin as any).statusBarEl?.textContent).toContain("ready");
         });
 
         it("shows error Notice on API failure", async () => {
@@ -995,6 +1049,181 @@ describe("LilbeePlugin", () => {
             expect(() => {
                 (plugin as any).updateStatusBar("test");
             }).not.toThrow();
+        });
+    });
+
+    describe("managed server mode", () => {
+        it("onload in managed mode creates binaryManager and serverManager", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+
+            expect(plugin.binaryManager).not.toBeNull();
+            expect(plugin.serverManager).not.toBeNull();
+            expect(mockEnsureBinary).toHaveBeenCalled();
+            expect(mockServerStart).toHaveBeenCalled();
+        });
+
+        it("managed mode shows error Notice when startManagedServer fails", async () => {
+            mockEnsureBinary.mockRejectedValueOnce(new Error("download failed"));
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+
+            expect(Notice.instances.some((n) => n.message.includes("failed to start server"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message.includes("download failed"))).toBe(true);
+        });
+
+        it("managed mode shows error Notice with 'unknown error' for non-Error throw", async () => {
+            mockEnsureBinary.mockRejectedValueOnce("string error");
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+
+            expect(Notice.instances.some((n) => n.message.includes("unknown error"))).toBe(true);
+        });
+
+        it("handleServerStateChange updates status bar for all states", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+
+            const stateChange = mockServerOpts?.onStateChange;
+            expect(stateChange).toBeDefined();
+
+            stateChange("ready");
+            expect((plugin as any).statusBarEl?.textContent).toContain("ready");
+
+            stateChange("starting");
+            expect((plugin as any).statusBarEl?.textContent).toContain("starting");
+
+            stateChange("error");
+            expect((plugin as any).statusBarEl?.textContent).toContain("error");
+
+            stateChange("stopped");
+            expect((plugin as any).statusBarEl?.textContent).toContain("stopped");
+        });
+
+        it("ensureBinary progress callback updates status bar", async () => {
+            let progressCb: ((msg: string) => void) | undefined;
+            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+                progressCb = cb;
+                cb?.("Downloading...");
+                return "/fake/bin/lilbee";
+            });
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+
+            expect(progressCb).toBeDefined();
+        });
+    });
+
+    describe("saveSettings mode switching", () => {
+        it("managed → external: stops server and nulls managers", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+
+            expect(plugin.serverManager).not.toBeNull();
+
+            plugin.settings.serverMode = "external";
+            await plugin.saveSettings();
+
+            expect(mockServerStop).toHaveBeenCalled();
+            expect(plugin.serverManager).toBeNull();
+            expect(plugin.binaryManager).toBeNull();
+        });
+
+        it("external → managed: starts managed server", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+
+            expect(plugin.serverManager).toBeNull();
+
+            plugin.settings.serverMode = "managed";
+            await plugin.saveSettings();
+
+            // startManagedServer is called via void (fire-and-forget)
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(plugin.binaryManager).not.toBeNull();
+        });
+
+        it("managed → managed with serverManager: updates port and ollama url", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+
+            plugin.settings.ollamaUrl = "http://custom:11434";
+            plugin.settings.serverPort = 9999;
+            await plugin.saveSettings();
+
+            expect(mockUpdateOllamaUrl).toHaveBeenCalledWith("http://custom:11434");
+            expect(mockUpdatePort).toHaveBeenCalledWith(9999);
+        });
+    });
+
+    describe("cancelSync()", () => {
+        it("aborts the sync controller and nulls it", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.syncController = new AbortController();
+            const abortSpy = vi.spyOn(plugin.syncController, "abort");
+
+            plugin.cancelSync();
+
+            expect(abortSpy).toHaveBeenCalled();
+            expect(plugin.syncController).toBeNull();
+        });
+
+        it("no-ops when syncController is null", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.syncController = null;
+
+            expect(() => plugin.cancelSync()).not.toThrow();
+        });
+    });
+
+    describe("AbortError handling", () => {
+        it("runAdd shows 'add cancelled' on AbortError", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const abortError = new Error("Aborted");
+            abortError.name = "AbortError";
+            plugin.api.addFiles = vi.fn().mockImplementation(async function* () {
+                throw abortError;
+            });
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(Notice.instances.some((n) => n.message.includes("add cancelled"))).toBe(true);
+        });
+
+        it("triggerSync shows 'sync cancelled' on AbortError", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const abortError = new Error("Aborted");
+            abortError.name = "AbortError";
+            plugin.api.syncStream = vi.fn().mockImplementation(async function* () {
+                throw abortError;
+            });
+
+            await plugin.triggerSync();
+
+            expect(Notice.instances.some((n) => n.message.includes("sync cancelled"))).toBe(true);
+        });
+    });
+
+    describe("onunload with serverManager", () => {
+        it("calls serverManager.stop on unload", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+
+            mockServerStop.mockClear();
+            plugin.onunload();
+
+            expect(mockServerStop).toHaveBeenCalled();
         });
     });
 });

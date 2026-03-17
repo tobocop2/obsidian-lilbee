@@ -137,10 +137,26 @@
     background-color: var(--background-secondary);
     border-bottom: 1px solid var(--background-modifier-border);
     flex-shrink: 0;
+    transition: opacity 150ms ease;
+    opacity: 1;
 }
 
-.lilbee-progress-label {
+.lilbee-progress-banner[data-hidden] {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.lilbee-progress-top-label {
     font-size: var(--font-smallest, 10px);
+    color: var(--text-normal);
+    font-weight: var(--font-medium, 500);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.lilbee-progress-sub-label {
+    font-size: 9px;
     color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
@@ -159,7 +175,36 @@
     background-color: var(--interactive-accent);
     border-radius: 2px;
     width: 0%;
-    transition: width 0.3s ease;
+    transition: width 200ms ease-out;
+}
+
+.lilbee-server-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.lilbee-server-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--text-muted);
+}
+
+.lilbee-server-dot.is-ready {
+    background-color: var(--color-green, #2d7a4f);
+}
+
+.lilbee-server-dot.is-error {
+    background-color: var(--text-error);
+}
+
+.lilbee-server-dot.is-starting {
+    background-color: var(--color-yellow, #e0a526);
+}
+
+.lilbee-server-dot.is-downloading {
+    background-color: var(--color-yellow, #e0a526);
 }
 
 .lilbee-chat-messages {
@@ -447,7 +492,7 @@
     gap: 4px;
 }
 
-.lilbee-progress-row .lilbee-progress-label {
+.lilbee-progress-row .lilbee-progress-top-label {
     flex: 1;
 }
 

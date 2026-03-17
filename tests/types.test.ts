@@ -36,7 +36,7 @@ describe("DEFAULT_SETTINGS", () => {
 
     it("is a plain object with exactly the expected keys", () => {
         const keys = Object.keys(DEFAULT_SETTINGS).sort();
-        expect(keys).toEqual(["num_ctx", "ollamaUrl", "repeat_penalty", "seed", "serverUrl", "syncDebounceMs", "syncMode", "temperature", "topK", "top_k_sampling", "top_p"].sort());
+        expect(keys).toEqual(["lilbeeVersion", "num_ctx", "ollamaUrl", "repeat_penalty", "seed", "serverMode", "serverPort", "serverUrl", "syncDebounceMs", "syncMode", "temperature", "topK", "top_k_sampling", "top_p"].sort());
     });
 });
 

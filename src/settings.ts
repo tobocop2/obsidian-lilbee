@@ -87,27 +87,26 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private renderConnectionSettings(containerEl: HTMLElement): void {
-        const serverSetting = new Setting(containerEl)
-            .setName("Server URL")
-            .setDesc("Address of the lilbee HTTP server")
-            .addText((text) =>
-                text
-                    .setPlaceholder("http://127.0.0.1:7433")
-                    .setValue(this.plugin.settings.serverUrl)
+        new Setting(containerEl)
+            .setName("Server mode")
+            .setDesc("How the lilbee server is managed")
+            .addDropdown((dropdown) =>
+                dropdown
+                    .addOption("managed", "Managed (built-in)")
+                    .addOption("external", "External (manual)")
+                    .setValue(this.plugin.settings.serverMode)
                     .onChange(async (value) => {
-                        this.plugin.settings.serverUrl = value;
+                        this.plugin.settings.serverMode = value as "managed" | "external";
                         await this.plugin.saveSettings();
+                        this.display();
                     }),
             );
 
-        const serverStatusEl = serverSetting.settingEl.createEl("span", { cls: "lilbee-health-status" });
-        void this.checkEndpoint(`${this.plugin.settings.serverUrl}/api/health`, serverStatusEl);
-
-        serverSetting.addButton((btn) =>
-            btn.setButtonText("Test").onClick(async () => {
-                await this.checkEndpoint(`${this.plugin.settings.serverUrl}/api/health`, serverStatusEl);
-            }),
-        );
+        if (this.plugin.settings.serverMode === "managed") {
+            this.renderManagedSettings(containerEl);
+        } else {
+            this.renderExternalSettings(containerEl);
+        }
 
         const ollamaSetting = new Setting(containerEl)
             .setName("Ollama URL")
@@ -128,6 +127,79 @@ export class LilbeeSettingTab extends PluginSettingTab {
         ollamaSetting.addButton((btn) =>
             btn.setButtonText("Test").onClick(async () => {
                 await this.checkEndpoint(this.plugin.settings.ollamaUrl, ollamaStatusEl);
+            }),
+        );
+    }
+
+    private renderManagedSettings(containerEl: HTMLElement): void {
+        const statusSetting = new Setting(containerEl)
+            .setName("Server status")
+            .setDesc("Current state of the managed lilbee server");
+
+        const statusEl = statusSetting.settingEl.createDiv({ cls: "lilbee-server-status" });
+        const dot = statusEl.createDiv({ cls: "lilbee-server-dot" });
+        const stateText = statusEl.createEl("span");
+
+        const serverState = this.plugin.serverManager?.state ?? "stopped";
+        stateText.textContent = serverState;
+        dot.classList.add(`is-${serverState}`);
+
+        new Setting(containerEl)
+            .setName("Server port")
+            .setDesc("Port for the managed lilbee server")
+            .addText((text) =>
+                text
+                    .setPlaceholder("7433")
+                    .setValue(String(this.plugin.settings.serverPort))
+                    .onChange(async (value) => {
+                        const num = parseInt(value, 10);
+                        if (!isNaN(num) && num > 0 && num <= 65535) {
+                            this.plugin.settings.serverPort = num;
+                            await this.plugin.saveSettings();
+                        }
+                    }),
+            );
+
+        new Setting(containerEl)
+            .setName("Check for updates")
+            .setDesc("Check if a newer lilbee binary is available")
+            .addButton((btn) =>
+                btn.setButtonText("Check").onClick(async () => {
+                    try {
+                        const { getLatestRelease, checkForUpdate } = await import("./binary-manager");
+                        const release = await getLatestRelease();
+                        if (checkForUpdate(this.plugin.settings.lilbeeVersion, release.tag)) {
+                            new Notice(`lilbee: update available (${release.tag})`);
+                        } else {
+                            new Notice("lilbee: already up to date");
+                        }
+                    } catch {
+                        new Notice("lilbee: could not check for updates");
+                    }
+                }),
+            );
+    }
+
+    private renderExternalSettings(containerEl: HTMLElement): void {
+        const serverSetting = new Setting(containerEl)
+            .setName("Server URL")
+            .setDesc("Address of the lilbee HTTP server")
+            .addText((text) =>
+                text
+                    .setPlaceholder("http://127.0.0.1:7433")
+                    .setValue(this.plugin.settings.serverUrl)
+                    .onChange(async (value) => {
+                        this.plugin.settings.serverUrl = value;
+                        await this.plugin.saveSettings();
+                    }),
+            );
+
+        const serverStatusEl = serverSetting.settingEl.createEl("span", { cls: "lilbee-health-status" });
+        void this.checkEndpoint(`${this.plugin.settings.serverUrl}/api/health`, serverStatusEl);
+
+        serverSetting.addButton((btn) =>
+            btn.setButtonText("Test").onClick(async () => {
+                await this.checkEndpoint(`${this.plugin.settings.serverUrl}/api/health`, serverStatusEl);
             }),
         );
     }
@@ -415,18 +487,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         if (model.installed) {
             actionCell.createEl("span", { text: "Installed", cls: "lilbee-installed" });
-            const deleteBtn = actionCell.createEl("button", { cls: "lilbee-model-delete" });
+            const deleteBtn = actionCell.createEl("button", { cls: "lilbee-model-delete" }) as HTMLButtonElement;
             setIcon(deleteBtn, "trash-2");
             deleteBtn.setAttribute("aria-label", "Delete model");
             deleteBtn.addEventListener("click", () => this.deleteModel(deleteBtn, model, type));
         } else {
-            const btn = actionCell.createEl("button", { text: "Pull" });
+            const btn = actionCell.createEl("button", { text: "Pull" }) as HTMLButtonElement;
             btn.addEventListener("click", () => this.pullModel(btn, actionCell, model, type));
         }
     }
 
     private async pullModel(
-        btn: HTMLElement,
+        btn: HTMLButtonElement,
         actionCell: HTMLElement,
         model: ModelInfo,
         type: "chat" | "vision",
@@ -464,7 +536,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             } else {
                 new Notice(`Failed to pull ${model.name}`);
             }
-            (btn as HTMLButtonElement).disabled = false;
+            btn.disabled = false;
             btn.textContent = "Pull";
         } finally {
             progress.remove();
@@ -473,11 +545,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private async deleteModel(
-        btn: HTMLElement,
+        btn: HTMLButtonElement,
         model: ModelInfo,
         type: "chat" | "vision",
     ): Promise<void> {
-        (btn as HTMLButtonElement).disabled = true;
+        btn.disabled = true;
         try {
             await this.plugin.ollama.delete(model.name);
             new Notice(`Deleted ${model.name}`);
@@ -495,7 +567,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             }
         } catch {
             new Notice(`Failed to delete ${model.name}`);
-            (btn as HTMLButtonElement).disabled = false;
+            btn.disabled = false;
         }
     }
 }

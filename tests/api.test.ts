@@ -755,6 +755,19 @@ describe("OllamaClient", () => {
             ]);
         });
 
+        it("skips blank lines between NDJSON entries", async () => {
+            fetchMock.mockResolvedValue(ndjsonResponse([
+                '{"status":"ok"}\n\n\n{"status":"done"}\n',
+            ]));
+
+            const results = await collect(ollama.pull("llama3"));
+
+            expect(results).toEqual([
+                { status: "ok" },
+                { status: "done" },
+            ]);
+        });
+
         it("handles trailing NDJSON line without newline", async () => {
             fetchMock.mockResolvedValue(ndjsonResponse([
                 '{"status":"success"}',
@@ -875,6 +888,13 @@ describe("OllamaClient", () => {
 
             const defaults = await ollama.show("llama3");
             expect(defaults.num_ctx).toBe(4096);
+        });
+
+        it("handles missing both parameters and model_info fields", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({}));
+
+            const defaults = await ollama.show("llama3");
+            expect(defaults).toEqual({});
         });
     });
 });
