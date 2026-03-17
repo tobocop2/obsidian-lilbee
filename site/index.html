@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>lilbee for Obsidian — talk to your vault</title>
+<title>lilbee for Obsidian — chat with your documents privately</title>
 <style>
   :root {
     --bg: #1e1e2e;
@@ -105,45 +105,53 @@
 888 888 888 888 d88PY8b.    Y8b.
 888 888 888 88888P"  "Y8888  "Y8888
 
-<span class="dim">for Obsidian — talk to your vault</span>
+<span class="dim">  __            ___  _       _    _ _
+ / _|___ _ _   / _ \| |__ __(_)__| (_)__ _ _ _
+|  _/ _ \ '_| | (_) | '_ (_-&lt; / _` | / _` | ' \
+|_| \___/_|    \___/|_.__/__/_\__,_|_\__,_|_||_|</span>
+
+<span class="dim">chat with your documents privately</span>
 
 <span class="faint">════════════════════════════════════════════</span>
 
- <a href="https://github.com/tobocop2/obsidian-lilbee">[1] GitHub</a><span class="link-dots"> <span class="faint">··············</span></span><span class="link-desc"> <span class="dim">source code</span></span>
- <a href="https://github.com/tobocop2/lilbee">[2] lilbee CLI</a><span class="link-dots"> <span class="faint">··········</span></span><span class="link-desc"> <span class="dim">Python backend</span></span>
- <a href="coverage/">[3] Coverage</a><span class="link-dots"> <span class="faint">············</span></span><span class="link-desc"> <span class="dim">100% tested</span></span>
- <a href="https://github.com/tobocop2/obsidian-lilbee#quick-start">[4] Install via BRAT</a><span class="link-dots"> <span class="faint">····</span></span><span class="link-desc"> <span class="dim">beta install</span></span>
+ <a href="https://github.com/tobocop2/obsidian-lilbee">[1] GitHub</a><span class="link-dots"> <span class="faint">··············</span></span><span class="link-desc"> <span class="dim">source &amp; README</span></span>
+ <a href="https://github.com/tobocop2/obsidian-lilbee#quick-start">[2] Quick start</a><span class="link-dots"> <span class="faint">·········</span></span><span class="link-desc"> <span class="dim">install in 4 steps</span></span>
+ <a href="https://github.com/tobocop2/obsidian-lilbee/blob/main/docs/usage.md">[3] Usage guide</a><span class="link-dots"> <span class="faint">·········</span></span><span class="link-desc"> <span class="dim">commands, settings, formats</span></span>
+ <a href="coverage/">[4] Coverage</a><span class="link-dots"> <span class="faint">············</span></span><span class="link-desc"> <span class="dim">100% tested</span></span>
 
 <span class="faint">════════════════════════════════════════════</span>
 
- <span class="dim">talk to your vault — local, private,
- grounded in your notes</span>
-
-<span class="faint">────────────────────────────────────────────</span>
-
- <span class="dim">&gt;</span> chat with your vault via Ollama
- <span class="dim">&gt;</span> semantic search across notes, PDFs, code
- <span class="dim">&gt;</span> attach anything — PDFs, images, 150+ code langs
- <span class="dim">&gt;</span> OCR for scanned documents
- <span class="dim">&gt;</span> inline progress with cancel support
+ <span class="dim">&gt;</span> ask questions, get answers from your docs
+ <span class="dim">&gt;</span> search across notes, PDFs, and code
+ <span class="dim">&gt;</span> attach anything — PDFs, images, Word, Excel
+ <span class="dim">&gt;</span> read scanned documents and images with OCR
  <span class="dim">&gt;</span> save conversations back to your vault
- <span class="dim">&gt;</span> runs local — nothing leaves your machine
+ <span class="dim">&gt;</span> one-click model download and server updates
+ <span class="dim">&gt;</span> 100% local — nothing leaves your machine
 
-<span class="faint">──── built with lilbee ─────────────────────</span>
+<span class="faint">────</span> <span class="dim">what you need</span> <span class="faint">─────────────────────────</span>
 
- <a href="https://tobocop2.github.io/lilbee/">lilbee</a><span class="link-dots"> <span class="faint">···················</span></span><span class="link-desc"> <span class="dim">local knowledge base backend</span></span>
+ <span class="dim">1.</span> <a href="https://ollama.com">Ollama</a> <span class="dim">— runs AI models locally on
+    your machine. free, no account needed.</span>
 
-<span class="faint">──── install ────────────────────────────────</span>
+ <span class="dim">2.</span> <a href="https://obsidian.md">Obsidian</a>
 
- <span class="dim">1.</span> Install <a href="https://github.com/TfTHacker/obsidian42-brat">BRAT</a> from Community Plugins
- <span class="dim">2.</span> BRAT → Add Beta Plugin →
+<span class="faint">────</span> <span class="dim">install</span> <span class="faint">────────────────────────────────</span>
+
+ <span class="dim">1.</span> Install + open <a href="https://ollama.com">Ollama</a>
+ <span class="dim">2.</span> Install <a href="https://github.com/TfTHacker/obsidian42-brat">BRAT</a> from Community Plugins
+ <span class="dim">3.</span> BRAT → Add Beta Plugin →
     <span class="dim">tobocop2/obsidian-lilbee</span>
- <span class="dim">3.</span> Enable "lilbee" in Community Plugins
- <span class="dim">4.</span> Install <a href="https://ollama.com">Ollama</a> + <a href="https://github.com/tobocop2/lilbee">lilbee CLI</a>:
+ <span class="dim">4.</span> Enable "lilbee" in Community Plugins
 
- <span class="faint">$</span> pip install lilbee
- <span class="faint">$</span> cd /path/to/vault
- <span class="faint">$</span> lilbee init && lilbee serve<span class="cursor"></span>
+ <span class="dim">the plugin downloads the server and models
+ automatically — no terminal needed.</span><span class="cursor"></span>
+
+<span class="faint">────</span> <span class="dim">built on</span> <span class="faint">──────────────────────────────</span>
+
+ <a href="https://tobocop2.github.io/lilbee/">lilbee</a> <span class="dim">— a local-first knowledge base you
+ can chat with, search, and plug into any
+ tool. this plugin is built on top of it.</span>
 
 <span class="faint">════════════════════════════════════════════</span>
  <span class="faint"><a href="https://github.com/tobocop2/obsidian-lilbee">lilbee for Obsidian</a> — <a href="https://opensource.org/licenses/MIT">MIT License</a></span>

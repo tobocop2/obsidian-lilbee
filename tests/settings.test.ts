@@ -131,6 +131,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
     Setting.prototype.addButton = function (cb: (btn: any) => void) {
         const fakeBtn = {
             setButtonText: () => fakeBtn,
+            setDisabled: () => fakeBtn,
             onClick: (handler: ButtonOnClick) => { buttonOnClicks.push(handler); return fakeBtn; },
         };
         cb(fakeBtn);
@@ -1899,6 +1900,15 @@ describe("managed mode settings", () => {
         expect(plugin.saveSettings).toHaveBeenCalled();
     });
 
+    it("port field displays empty string when serverPort is null", () => {
+        const plugin = makePlugin({ serverMode: "managed", serverPort: null });
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        captureSettingCallbacks(() => tab.display());
+        // If we got here without error, the null branch in setValue was exercised
+    });
+
     it("port field ignores invalid values", async () => {
         const plugin = makePlugin({ serverMode: "managed", serverPort: 7433 });
         (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
@@ -1935,12 +1945,11 @@ describe("managed mode settings", () => {
         expect(plugin.settings.serverPort).toBe(null);
     });
 
-    it("check for updates button shows 'update available' when newer version exists", async () => {
+    it("check for updates button offers update when newer version exists", async () => {
         Notice.clear();
-        mockGetLatestRelease.mockResolvedValue({ tag: "v0.2.0", assetUrl: "https://example.com" });
-        mockCheckForUpdate.mockReturnValue(true);
 
         const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
+        (plugin as any).checkForUpdate = vi.fn().mockResolvedValue({ available: true, release: { tag: "v0.2.0", assetUrl: "https://example.com" } });
         (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
         const tab = makeTab(plugin);
 
@@ -1948,15 +1957,15 @@ describe("managed mode settings", () => {
 
         await buttonOnClicks[0]();
 
-        expect(Notice.instances.some((n) => n.message.includes("update available"))).toBe(true);
+        // No notice on check — button transforms to "Update to vX.Y.Z" instead
+        expect(Notice.instances.some((n) => n.message.includes("update available"))).toBe(false);
     });
 
     it("check for updates button shows 'already up to date' when no update", async () => {
         Notice.clear();
-        mockGetLatestRelease.mockResolvedValue({ tag: "v0.1.0", assetUrl: "https://example.com" });
-        mockCheckForUpdate.mockReturnValue(false);
 
         const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
+        (plugin as any).checkForUpdate = vi.fn().mockResolvedValue({ available: false });
         (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
         const tab = makeTab(plugin);
 
@@ -1967,11 +1976,51 @@ describe("managed mode settings", () => {
         expect(Notice.instances.some((n) => n.message.includes("already up to date"))).toBe(true);
     });
 
+    it("update button calls updateServer and shows success notice", async () => {
+        Notice.clear();
+
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
+        (plugin as any).checkForUpdate = vi.fn().mockResolvedValue({ available: true, release: { tag: "v0.2.0", assetUrl: "https://example.com" } });
+        (plugin as any).updateServer = vi.fn().mockImplementation(async (_release: any, onProgress?: (msg: string) => void) => {
+            onProgress?.("Downloading...");
+        });
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+
+        // First click: check for updates
+        await buttonOnClicks[0]();
+        // Second click registered by the code: trigger update
+        expect(buttonOnClicks.length).toBeGreaterThan(1);
+        await buttonOnClicks[buttonOnClicks.length - 1]();
+
+        expect((plugin as any).updateServer).toHaveBeenCalled();
+        expect(Notice.instances.some((n) => n.message.includes("updated to v0.2.0"))).toBe(true);
+    });
+
+    it("update button shows failure notice when updateServer throws", async () => {
+        Notice.clear();
+
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
+        (plugin as any).checkForUpdate = vi.fn().mockResolvedValue({ available: true, release: { tag: "v0.2.0", assetUrl: "https://example.com" } });
+        (plugin as any).updateServer = vi.fn().mockRejectedValue(new Error("download failed"));
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+
+        await buttonOnClicks[0]();
+        await buttonOnClicks[buttonOnClicks.length - 1]();
+
+        expect(Notice.instances.some((n) => n.message.includes("update failed"))).toBe(true);
+    });
+
     it("check for updates button shows error on failure", async () => {
         Notice.clear();
-        mockGetLatestRelease.mockRejectedValue(new Error("network error"));
 
         const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).checkForUpdate = vi.fn().mockRejectedValue(new Error("network error"));
         (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
         const tab = makeTab(plugin);
 

@@ -388,6 +388,7 @@ class MockToggleComponent {
 class MockButtonComponent {
     private _onClick: (() => void) | null = null;
     setButtonText(_text: string): this { return this; }
+    setDisabled(_disabled: boolean): this { return this; }
     onClick(cb: () => void): this { this._onClick = cb; return this; }
     triggerClick(): void { this._onClick?.(); }
 }

@@ -35,6 +35,7 @@ vi.mock("../src/views/search-modal", () => ({
 
 const mockEnsureBinary = vi.fn().mockResolvedValue("/fake/bin/lilbee");
 const mockBinaryExists = vi.fn().mockReturnValue(true);
+const mockDownload = vi.fn().mockResolvedValue(undefined);
 const mockServerStart = vi.fn().mockResolvedValue(undefined);
 const mockServerStop = vi.fn().mockResolvedValue(undefined);
 const mockUpdateOllamaUrl = vi.fn();
@@ -46,6 +47,7 @@ vi.mock("../src/binary-manager", () => ({
         ensureBinary: mockEnsureBinary,
         binaryPath: "/fake/bin/lilbee",
         binaryExists: mockBinaryExists,
+        download: mockDownload,
     })),
     getLatestRelease: vi.fn(),
     checkForUpdate: vi.fn(),
@@ -1244,6 +1246,28 @@ describe("LilbeePlugin", () => {
             expect(statusTexts.some((t) => t.includes("downloading"))).toBe(false);
         });
 
+        it("saves version on fresh download when lilbeeVersion is empty", async () => {
+            mockBinaryExists.mockReturnValueOnce(false);
+            const { getLatestRelease } = await import("../src/binary-manager");
+            (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({ tag: "v0.5.1", assetUrl: "https://example.com" });
+
+            const plugin = await createPlugin({ serverMode: "managed", lilbeeVersion: "" });
+            await plugin.onload();
+            await flush();
+
+            expect(plugin.settings.lilbeeVersion).toBe("v0.5.1");
+        });
+
+        it("does not overwrite existing lilbeeVersion on fresh download", async () => {
+            mockBinaryExists.mockReturnValueOnce(false);
+
+            const plugin = await createPlugin({ serverMode: "managed", lilbeeVersion: "v0.4.0" });
+            await plugin.onload();
+            await flush();
+
+            expect(plugin.settings.lilbeeVersion).toBe("v0.4.0");
+        });
+
         it("does not create serverManager when ensureBinary fails", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             mockEnsureBinary.mockRejectedValueOnce(new Error("fail"));
@@ -1400,6 +1424,82 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             await flush();
             expect((plugin as any).statusBarEl?.textContent).not.toContain("[external]");
+        });
+    });
+
+    describe("checkForUpdate", () => {
+        it("returns available: true when update exists", async () => {
+            const { getLatestRelease, checkForUpdate } = await import("../src/binary-manager");
+            (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({ tag: "v0.2.0", assetUrl: "https://example.com" });
+            (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+            const plugin = await createPlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
+            await plugin.onload();
+            await flush();
+
+            const result = await plugin.checkForUpdate();
+            expect(result.available).toBe(true);
+            expect(result.release?.tag).toBe("v0.2.0");
+        });
+
+        it("returns available: false when up to date", async () => {
+            const { getLatestRelease, checkForUpdate } = await import("../src/binary-manager");
+            (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({ tag: "v0.1.0", assetUrl: "https://example.com" });
+            (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+            const plugin = await createPlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
+            await plugin.onload();
+            await flush();
+
+            const result = await plugin.checkForUpdate();
+            expect(result.available).toBe(false);
+        });
+    });
+
+    describe("updateServer", () => {
+        it("stops server, downloads binary, saves version, and restarts", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const progress: string[] = [];
+            await plugin.updateServer(
+                { tag: "v0.3.0", assetUrl: "https://example.com/v0.3.0" },
+                (msg) => progress.push(msg),
+            );
+
+            expect(mockServerStop).toHaveBeenCalled();
+            expect(mockDownload).toHaveBeenCalledWith("https://example.com/v0.3.0", expect.any(Function));
+            expect(plugin.settings.lilbeeVersion).toBe("v0.3.0");
+            expect(progress).toContain("Stopping server...");
+            expect(progress).toContain("Downloading...");
+            expect(progress).toContain("Starting server...");
+            expect(progress).toContain("Update complete.");
+        });
+
+        it("creates binaryManager if not present", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            await flush();
+
+            expect(plugin.binaryManager).toBeNull();
+
+            await plugin.updateServer({ tag: "v0.3.0", assetUrl: "https://example.com" });
+
+            expect(plugin.binaryManager).not.toBeNull();
+            expect(mockDownload).toHaveBeenCalled();
+        });
+
+        it("skips restart in external mode", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            await flush();
+
+            mockServerStart.mockClear();
+            await plugin.updateServer({ tag: "v0.3.0", assetUrl: "https://example.com" });
+
+            expect(mockServerStart).not.toHaveBeenCalled();
+            expect(plugin.settings.lilbeeVersion).toBe("v0.3.0");
         });
     });
 });
