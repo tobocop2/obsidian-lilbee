@@ -3,8 +3,8 @@ import type { ServerState } from "./types";
 import { SERVER_STATE } from "./types";
 import { node } from "./binary-manager";
 
-const HEALTH_POLL_INTERVAL_MS = 500;
-const HEALTH_POLL_MAX_ATTEMPTS = 30;
+const HEALTH_POLL_INTERVAL_MS = 1000;
+const HEALTH_POLL_MAX_ATTEMPTS = 60;
 const STOP_GRACE_MS = 5000;
 const CRASH_RESTART_DELAY_MS = 3000;
 const MAX_CRASH_RESTARTS = 3;

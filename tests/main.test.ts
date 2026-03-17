@@ -34,6 +34,7 @@ vi.mock("../src/views/search-modal", () => ({
 }));
 
 const mockEnsureBinary = vi.fn().mockResolvedValue("/fake/bin/lilbee");
+const mockBinaryExists = vi.fn().mockReturnValue(true);
 const mockServerStart = vi.fn().mockResolvedValue(undefined);
 const mockServerStop = vi.fn().mockResolvedValue(undefined);
 const mockUpdateOllamaUrl = vi.fn();
@@ -44,11 +45,11 @@ vi.mock("../src/binary-manager", () => ({
     BinaryManager: vi.fn().mockImplementation(() => ({
         ensureBinary: mockEnsureBinary,
         binaryPath: "/fake/bin/lilbee",
-        binaryExists: vi.fn().mockReturnValue(true),
+        binaryExists: mockBinaryExists,
     })),
     getLatestRelease: vi.fn(),
     checkForUpdate: vi.fn(),
-    node: { spawn: vi.fn(), execFile: vi.fn(), existsSync: vi.fn(), mkdirSync: vi.fn(), chmodSync: vi.fn(), createWriteStream: vi.fn(), fetch: vi.fn() },
+    node: { spawn: vi.fn(), execFile: vi.fn(), existsSync: vi.fn(), mkdirSync: vi.fn(), chmodSync: vi.fn(), writeFileSync: vi.fn(), requestUrl: vi.fn() },
 }));
 
 vi.mock("../src/server-manager", () => ({
@@ -66,6 +67,9 @@ vi.mock("../src/server-manager", () => ({
         };
     }),
 }));
+
+/** Flush the microtask queue so fire-and-forget promises settle. */
+const flush = () => new Promise((r) => setTimeout(r, 0));
 
 async function createPlugin(overrideData?: Record<string, unknown>) {
     const { default: LilbeePlugin } = await import("../src/main");
@@ -1056,6 +1060,7 @@ describe("LilbeePlugin", () => {
         it("onload in managed mode creates binaryManager and serverManager", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
+            await flush();
 
             expect(plugin.binaryManager).not.toBeNull();
             expect(plugin.serverManager).not.toBeNull();
@@ -1063,28 +1068,54 @@ describe("LilbeePlugin", () => {
             expect(mockServerStart).toHaveBeenCalled();
         });
 
-        it("managed mode shows error Notice when startManagedServer fails", async () => {
-            mockEnsureBinary.mockRejectedValueOnce(new Error("download failed"));
+        it("managed mode shows download error Notice when ensureBinary fails", async () => {
+            mockEnsureBinary.mockRejectedValueOnce(new Error("network timeout"));
 
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
+            await flush();
 
-            expect(Notice.instances.some((n) => n.message.includes("failed to start server"))).toBe(true);
-            expect(Notice.instances.some((n) => n.message.includes("download failed"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message.includes("failed to download server"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message.includes("network timeout"))).toBe(true);
         });
 
-        it("managed mode shows error Notice with 'unknown error' for non-Error throw", async () => {
+        it("managed mode shows 'unknown error' when ensureBinary throws non-Error", async () => {
             mockEnsureBinary.mockRejectedValueOnce("string error");
 
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
+            await flush();
 
+            expect(Notice.instances.some((n) => n.message.includes("failed to download server"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message.includes("unknown error"))).toBe(true);
+        });
+
+        it("managed mode shows start error Notice when serverManager.start fails", async () => {
+            mockServerStart.mockRejectedValueOnce(new Error("port in use"));
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            expect(Notice.instances.some((n) => n.message.includes("failed to start server"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message.includes("port in use"))).toBe(true);
+        });
+
+        it("managed mode shows 'unknown error' when serverManager.start throws non-Error", async () => {
+            mockServerStart.mockRejectedValueOnce(42);
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            expect(Notice.instances.some((n) => n.message.includes("failed to start server"))).toBe(true);
             expect(Notice.instances.some((n) => n.message.includes("unknown error"))).toBe(true);
         });
 
         it("handleServerStateChange updates status bar for all states", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
+            await flush();
 
             const stateChange = mockServerOpts?.onStateChange;
             expect(stateChange).toBeDefined();
@@ -1103,17 +1134,144 @@ describe("LilbeePlugin", () => {
         });
 
         it("ensureBinary progress callback updates status bar", async () => {
-            let progressCb: ((msg: string) => void) | undefined;
             mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
-                progressCb = cb;
-                cb?.("Downloading...");
+                cb?.("Downloading 50%");
                 return "/fake/bin/lilbee";
             });
 
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
+            await flush();
 
-            expect(progressCb).toBeDefined();
+            expect(mockEnsureBinary).toHaveBeenCalled();
+        });
+
+        it("does not show download Notice when binary already exists", async () => {
+            mockBinaryExists.mockReturnValueOnce(true);
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const downloadNotices = Notice.instances.filter(
+                (n) => n.message.includes("fetching server binary") || n.message.includes("server binary ready"),
+            );
+            expect(downloadNotices.length).toBe(0);
+        });
+
+        it("shows persistent download Notice when binary is missing", async () => {
+            mockBinaryExists.mockReturnValueOnce(false);
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const fetchNotice = Notice.instances.find((n) => n.duration === 0);
+            expect(fetchNotice).toBeDefined();
+            expect(fetchNotice!.hidden).toBe(true); // hidden after completion
+        });
+
+        it("shows success Notice after download completes", async () => {
+            mockBinaryExists.mockReturnValueOnce(false);
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            expect(Notice.instances.some((n) => n.message.includes("server binary ready"))).toBe(true);
+        });
+
+        it("progress callback updates both status bar and download Notice", async () => {
+            mockBinaryExists.mockReturnValueOnce(false);
+            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+                cb?.("Downloading 25%");
+                cb?.("Downloading 75%");
+                return "/fake/bin/lilbee";
+            });
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const persistentNotice = Notice.instances.find((n) => n.duration === 0);
+            expect(persistentNotice).toBeDefined();
+            expect(persistentNotice!.message).toBe("lilbee: Downloading 75%");
+        });
+
+        it("hides download Notice on ensureBinary failure", async () => {
+            mockBinaryExists.mockReturnValueOnce(false);
+            mockEnsureBinary.mockRejectedValueOnce(new Error("network error"));
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const persistentNotice = Notice.instances.find((n) => n.duration === 0);
+            expect(persistentNotice).toBeDefined();
+            expect(persistentNotice!.hidden).toBe(true);
+        });
+
+        it("sets status bar to downloading only when binary is missing", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+
+            const statusTexts: string[] = [];
+            const origSetText = (plugin as any).statusBarEl!.setText.bind((plugin as any).statusBarEl);
+            (plugin as any).statusBarEl!.setText = (text: string) => {
+                statusTexts.push(text);
+                origSetText(text);
+            };
+
+            mockBinaryExists.mockReturnValueOnce(false);
+            await (plugin as any).startManagedServer();
+
+            expect(statusTexts.some((t) => t.includes("downloading"))).toBe(true);
+        });
+
+        it("does not set status bar to downloading when binary exists", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+
+            const statusTexts: string[] = [];
+            const origSetText = (plugin as any).statusBarEl!.setText.bind((plugin as any).statusBarEl);
+            (plugin as any).statusBarEl!.setText = (text: string) => {
+                statusTexts.push(text);
+                origSetText(text);
+            };
+
+            await (plugin as any).startManagedServer();
+
+            expect(statusTexts.some((t) => t.includes("downloading"))).toBe(false);
+        });
+
+        it("does not create serverManager when ensureBinary fails", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            mockEnsureBinary.mockRejectedValueOnce(new Error("fail"));
+            await plugin.onload();
+            await flush();
+
+            expect(plugin.serverManager).toBeNull();
+            expect(mockServerStart).not.toHaveBeenCalled();
+        });
+
+        it("sets status bar to error when ensureBinary fails", async () => {
+            mockEnsureBinary.mockRejectedValueOnce(new Error("fail"));
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            expect((plugin as any).statusBarEl?.textContent).toContain("error");
+        });
+
+        it("sets status bar to error when serverManager.start fails", async () => {
+            mockServerStart.mockRejectedValueOnce(new Error("crash"));
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            expect((plugin as any).statusBarEl?.textContent).toContain("error");
         });
     });
 
@@ -1121,6 +1279,7 @@ describe("LilbeePlugin", () => {
         it("managed → external: stops server and nulls managers", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
+            await flush();
 
             expect(plugin.serverManager).not.toBeNull();
 
@@ -1150,6 +1309,7 @@ describe("LilbeePlugin", () => {
         it("managed → managed with serverManager: updates port and ollama url", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
+            await flush();
 
             plugin.settings.ollamaUrl = "http://custom:11434";
             plugin.settings.serverPort = 9999;
@@ -1219,6 +1379,7 @@ describe("LilbeePlugin", () => {
         it("calls serverManager.stop on unload", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
+            await flush();
 
             mockServerStop.mockClear();
             plugin.onunload();
@@ -1237,6 +1398,7 @@ describe("LilbeePlugin", () => {
         it("does not show [external] in managed mode", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
+            await flush();
             expect((plugin as any).statusBarEl?.textContent).not.toContain("[external]");
         });
     });

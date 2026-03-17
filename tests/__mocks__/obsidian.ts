@@ -296,6 +296,10 @@ export const MarkdownRenderer = {
     },
 };
 
+export async function requestUrl(_req: { url: string; headers?: Record<string, string> }): Promise<{ status: number; json: unknown; arrayBuffer: ArrayBuffer; headers: Record<string, string> }> {
+    return { status: 200, json: {}, arrayBuffer: new ArrayBuffer(0), headers: {} };
+}
+
 export function setIcon(el: MockElement, icon: string): void {
     el.textContent = icon;
     el.attributes["data-icon"] = icon;
@@ -304,12 +308,15 @@ export function setIcon(el: MockElement, icon: string): void {
 export class Notice {
     message: string;
     duration: number | undefined;
+    hidden = false;
     static instances: Notice[] = [];
     constructor(message: string, duration?: number) {
         this.message = message;
         this.duration = duration;
         Notice.instances.push(this);
     }
+    setMessage(message: string): void { this.message = message; }
+    hide(): void { this.hidden = true; }
     static clear(): void { Notice.instances = []; }
 }
 

@@ -51,7 +51,7 @@ export default class LilbeePlugin extends Plugin {
         );
 
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
-            await this.startManagedServer();
+            void this.startManagedServer();
         } else {
             this.api = new LilbeeClient(this.settings.serverUrl);
             this.setStatusReady();
@@ -66,17 +66,21 @@ export default class LilbeePlugin extends Plugin {
     private async startManagedServer(): Promise<void> {
         const pluginDir = this.getPluginDir();
         this.binaryManager = new BinaryManager(pluginDir);
-        this.updateStatusBar("lilbee: downloading...");
+
+        const needsDownload = !this.binaryManager.binaryExists();
+        const downloadNotice = needsDownload
+            ? new Notice("lilbee: fetching server binary...", 0)
+            : null;
+
+        if (needsDownload) this.updateStatusBar("lilbee: downloading...");
+
+        const binaryPath = await this.downloadBinary(downloadNotice, needsDownload);
+        if (!binaryPath) return;
 
         try {
-            const binaryPath = await this.binaryManager.ensureBinary((msg) => {
-                this.updateStatusBar(`lilbee: ${msg}`);
-            });
-
-            const dataDir = `${pluginDir}/server-data`;
             this.serverManager = new ServerManager({
                 binaryPath,
-                dataDir,
+                dataDir: `${pluginDir}/server-data`,
                 port: this.settings.serverPort,
                 ollamaUrl: this.settings.ollamaUrl,
                 onStateChange: (state) => this.handleServerStateChange(state),
@@ -87,10 +91,34 @@ export default class LilbeePlugin extends Plugin {
             this.api = new LilbeeClient(this.serverManager.serverUrl);
             this.fetchActiveModel();
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "unknown error";
-            new Notice(`lilbee: failed to start server — ${msg}`);
-            this.updateStatusBar("lilbee: error");
+            this.showError("failed to start server", err);
         }
+    }
+
+    private async downloadBinary(
+        downloadNotice: Notice | null,
+        needsDownload: boolean,
+    ): Promise<string | null> {
+        try {
+            const binaryPath = await this.binaryManager!.ensureBinary((msg) => {
+                this.updateStatusBar(`lilbee: ${msg}`);
+                downloadNotice?.setMessage(`lilbee: ${msg}`);
+            });
+            downloadNotice?.hide();
+            if (needsDownload) new Notice("lilbee: server binary ready");
+            return binaryPath;
+        } catch (err) {
+            downloadNotice?.hide();
+            this.showError("failed to download server", err);
+            return null;
+        }
+    }
+
+    private showError(label: string, err: unknown): void {
+        console.error(`[lilbee] ${label}:`, err);
+        const detail = err instanceof Error ? err.message : "unknown error";
+        new Notice(`lilbee: ${label} — ${detail}`);
+        this.updateStatusBar("lilbee: error");
     }
 
     private handleServerStateChange(state: ServerState): void {
@@ -284,6 +312,7 @@ export default class LilbeePlugin extends Plugin {
             if (err instanceof Error && err.name === "AbortError") {
                 new Notice("lilbee: add cancelled");
             } else {
+                console.error("[lilbee] add failed:", err);
                 const msg = err instanceof Error ? err.message : "cannot connect to server";
                 new Notice(`lilbee: add failed — ${msg}`);
             }
@@ -367,6 +396,7 @@ export default class LilbeePlugin extends Plugin {
             if (err instanceof Error && err.name === "AbortError") {
                 new Notice("lilbee: sync cancelled");
             } else {
+                console.error("[lilbee] sync failed:", err);
                 new Notice("lilbee: sync failed — cannot connect to server");
             }
         } finally {

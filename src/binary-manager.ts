@@ -1,12 +1,13 @@
+import { requestUrl } from "obsidian";
 import { execFile, spawn } from "child_process";
-import { createWriteStream, existsSync, mkdirSync, chmodSync } from "fs";
+import { existsSync, mkdirSync, chmodSync, writeFileSync } from "fs";
 import { join } from "path";
 import { promisify } from "util";
 
 const execFileAsync = promisify(execFile);
 
 /** Exported for test mocking. */
-export const node = { spawn, execFile: execFileAsync, existsSync, mkdirSync, chmodSync, createWriteStream, fetch: globalThis.fetch };
+export const node = { spawn, execFile: execFileAsync, existsSync, mkdirSync, chmodSync, writeFileSync, requestUrl, fetch: globalThis.fetch.bind(globalThis) };
 
 const GITHUB_REPO = "tobocop2/lilbee";
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
@@ -37,11 +38,12 @@ export interface ReleaseInfo {
 }
 
 export async function getLatestRelease(): Promise<ReleaseInfo> {
-    const res = await node.fetch(RELEASES_API, {
+    const res = await node.requestUrl({
+        url: RELEASES_API,
         headers: { Accept: "application/vnd.github.v3+json" },
     });
-    if (!res.ok) throw new Error(`GitHub API responded ${res.status}`);
-    const data = (await res.json()) as GitHubRelease;
+    if (res.status >= 400) throw new Error(`GitHub API responded ${res.status}`);
+    const data = res.json as GitHubRelease;
     const assetName = getPlatformAssetName();
     const asset = data.assets.find((a) => a.name === assetName);
     if (!asset) throw new Error(`No asset "${assetName}" in release ${data.tag_name}`);
@@ -82,32 +84,11 @@ export class BinaryManager {
         }
 
         onProgress?.("Downloading lilbee binary...");
-        const res = await node.fetch(assetUrl);
-        if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-        if (!res.body) throw new Error("Download response has no body");
+        const res = await node.requestUrl({ url: assetUrl });
+        if (res.status >= 400) throw new Error(`Download failed: ${res.status}`);
 
         const dest = this.binaryPath;
-        const fileStream = node.createWriteStream(dest);
-        const reader = res.body.getReader();
-
-        const contentLength = Number(res.headers.get("content-length") ?? 0);
-        let downloaded = 0;
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            fileStream.write(value);
-            downloaded += value.byteLength;
-            if (contentLength > 0) {
-                const pct = Math.round((downloaded / contentLength) * 100);
-                onProgress?.(`Downloading lilbee binary... ${pct}%`);
-            }
-        }
-        fileStream.end();
-        await new Promise<void>((resolve, reject) => {
-            fileStream.on("finish", resolve);
-            fileStream.on("error", reject);
-        });
+        node.writeFileSync(dest, Buffer.from(res.arrayBuffer));
 
         if (process.platform !== "win32") {
             node.chmodSync(dest, 0o755);
