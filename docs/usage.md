@@ -34,6 +34,19 @@ If the download or startup fails, the status bar shows `lilbee: error`. Check th
 
 ---
 
+## Open the chat
+
+Once the status bar shows **lilbee: ready**, open the chat sidebar:
+
+| Platform | How to open chat |
+|----------|-----------------|
+| **macOS** | `Cmd + P` → type **lilbee: Open chat** → Enter |
+| **Windows / Linux** | `Ctrl + P` → type **lilbee: Open chat** → Enter |
+
+The chat panel opens in the right sidebar. You can start asking questions right away — attach files inline or run **Sync vault** first to index your whole vault.
+
+---
+
 ## Commands
 
 All commands are available via `Cmd/Ctrl + P` → "lilbee":

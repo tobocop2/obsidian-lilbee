@@ -55,9 +55,19 @@ Models are large files (a few GB each) and take a few minutes to download the fi
 2. Install **[BRAT](https://github.com/TfTHacker/obsidian42-brat)** in Obsidian (Settings → Community plugins → Browse → search "BRAT" → Install → Enable)
 3. Open the command palette (`Cmd/Ctrl + P`) → **BRAT: Plugins: Add a beta plugin for testing** → paste `tobocop2/obsidian-lilbee` → Add Plugin
 4. Enable **lilbee** in Settings → Community plugins
-5. **Open chat** (`Cmd/Ctrl + P` → "lilbee: Open chat") and start attaching files — or run **Sync vault** to index everything at once
 
-The plugin downloads and manages the [lilbee](https://github.com/tobocop2/lilbee) server automatically — no terminal commands, no Python, no manual setup.
+The plugin downloads and manages the [lilbee](https://github.com/tobocop2/lilbee) server automatically — no terminal commands, no Python, no manual setup. Wait for the status bar to show `lilbee: ready`, then open the chat.
+
+### Open the chat
+
+Once the status bar shows **lilbee: ready**:
+
+| Platform | How to open chat |
+|----------|-----------------|
+| **macOS** | `Cmd + P` → type **lilbee: Open chat** → Enter |
+| **Windows / Linux** | `Ctrl + P` → type **lilbee: Open chat** → Enter |
+
+The chat panel opens in the sidebar. From there you can start asking questions, attach files, or run **Sync vault** (`Cmd/Ctrl + P` → "lilbee: Sync vault") to index everything at once.
 
 ## How it works
 
