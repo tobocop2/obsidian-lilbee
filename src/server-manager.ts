@@ -16,6 +16,7 @@ export interface ServerManagerOptions {
     dataDir: string;
     port: number | null;
     ollamaUrl: string;
+    systemPrompt: string;
     onStateChange?: (state: ServerState) => void;
     onRestartsExhausted?: (stderr: string) => void;
 }
@@ -89,11 +90,14 @@ export class ServerManager {
 
         args.push("--data-dir", this.opts.dataDir);
 
-        const env = {
+        const env: Record<string, string | undefined> = {
             ...process.env,
             OLLAMA_HOST: this.opts.ollamaUrl,
             LILBEE_CORS_ORIGINS: "app://obsidian.md",
         };
+        if (this.opts.systemPrompt) {
+            env.LILBEE_SYSTEM_PROMPT = this.opts.systemPrompt;
+        }
 
         this._stderrLines = [];
 

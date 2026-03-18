@@ -43,6 +43,7 @@ function defaultOpts(overrides?: Partial<ServerManagerOptions>): ServerManagerOp
         dataDir: "/tmp/data",
         port: 7433,
         ollamaUrl: "http://localhost:11434",
+        systemPrompt: "",
         ...overrides,
     };
 }
@@ -123,12 +124,26 @@ describe("ServerManager", () => {
             ]);
             expect(opts.env.OLLAMA_HOST).toBe("http://localhost:11434");
             expect(opts.env.LILBEE_CORS_ORIGINS).toBe("app://obsidian.md");
+            expect(opts.env.LILBEE_SYSTEM_PROMPT).toBeUndefined();
             expect(opts.stdio).toEqual(["ignore", "ignore", "pipe"]);
             expect(opts.detached).toBe(false);
 
             expect(mgr.state).toBe("ready");
             expect(stateChanges).toContain("starting");
             expect(stateChanges).toContain("ready");
+        });
+
+        it("passes LILBEE_SYSTEM_PROMPT env when systemPrompt is set", async () => {
+            const mgr = new ServerManager(
+                defaultOpts({ systemPrompt: "You are a pirate." }),
+            );
+
+            const startPromise = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await startPromise;
+
+            const [, , opts] = spawnSpy.mock.calls[0] as any[];
+            expect(opts.env.LILBEE_SYSTEM_PROMPT).toBe("You are a pirate.");
         });
 
         it("in dynamic port mode (port: null), reads port from file and sets state to ready", async () => {

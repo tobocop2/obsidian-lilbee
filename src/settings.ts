@@ -324,6 +324,19 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const modelLabel = this.plugin.activeModel || "no model selected";
         details.createEl("summary", { text: `Advanced settings (${modelLabel})` });
 
+        new Setting(details)
+            .setName("System prompt")
+            .setDesc("lilbee has a default system prompt, but you can override it here for different projects or use cases")
+            .addText((text) =>
+                text
+                    .setPlaceholder("Default")
+                    .setValue(this.plugin.settings.systemPrompt)
+                    .onChange(async (value) => {
+                        this.plugin.settings.systemPrompt = value;
+                        await this.plugin.saveSettings();
+                    }),
+            );
+
         this.genInputs.clear();
         const fields: { key: GenKey; name: string; desc: string; integer: boolean }[] = [
             { key: "temperature", name: "Temperature", desc: "Controls randomness (0.0–2.0)", integer: false },

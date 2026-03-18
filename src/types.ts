@@ -123,6 +123,7 @@ export interface LilbeeSettings {
     serverMode: ServerMode;
     serverPort: number | null;
     lilbeeVersion: string;
+    systemPrompt: string;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -140,6 +141,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     serverMode: "managed",
     serverPort: null,
     lilbeeVersion: "",
+    systemPrompt: "",
 };
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */

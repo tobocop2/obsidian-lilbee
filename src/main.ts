@@ -122,6 +122,7 @@ export default class LilbeePlugin extends Plugin {
                     dataDir: `${pluginDir}/server-data`,
                     port: this.settings.serverPort,
                     ollamaUrl: this.settings.ollamaUrl,
+                    systemPrompt: this.settings.systemPrompt,
                     onStateChange: (state) => this.handleServerStateChange(state),
                     onRestartsExhausted: (stderr: string) => {
                         if (this.serverStartFailed) return;

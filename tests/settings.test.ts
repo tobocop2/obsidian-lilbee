@@ -217,8 +217,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverUrl + ollamaUrl + 6 generation + syncDebounce = 9
-            expect(textOnChanges.length).toBe(9);
+            // serverUrl + ollamaUrl + systemPrompt + 6 generation + syncDebounce = 10
+            expect(textOnChanges.length).toBe(10);
         });
 
         it("does NOT show sync-debounce when syncMode is 'manual'", () => {
@@ -226,8 +226,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverUrl + ollamaUrl + 6 generation settings = 8
-            expect(textOnChanges.length).toBe(8);
+            // serverUrl + ollamaUrl + systemPrompt + 6 generation settings = 9
+            expect(textOnChanges.length).toBe(9);
         });
     });
 
@@ -341,14 +341,28 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
+    describe("system prompt setting", () => {
+        it("saves systemPrompt when changed", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // Index 2 is systemPrompt (0=serverUrl, 1=ollamaUrl)
+            await textOnChanges[2]("You are a pirate.");
+            expect(plugin.settings.systemPrompt).toBe("You are a pirate.");
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+    });
+
     describe("generation settings", () => {
         const GEN_FIELDS = [
-            { idx: 2, key: "temperature", value: "0.7", expected: 0.7 },
-            { idx: 3, key: "top_p", value: "0.9", expected: 0.9 },
-            { idx: 4, key: "top_k_sampling", value: "40", expected: 40 },
-            { idx: 5, key: "repeat_penalty", value: "1.1", expected: 1.1 },
-            { idx: 6, key: "num_ctx", value: "4096", expected: 4096 },
-            { idx: 7, key: "seed", value: "42", expected: 42 },
+            { idx: 3, key: "temperature", value: "0.7", expected: 0.7 },
+            { idx: 4, key: "top_p", value: "0.9", expected: 0.9 },
+            { idx: 5, key: "top_k_sampling", value: "40", expected: 40 },
+            { idx: 6, key: "repeat_penalty", value: "1.1", expected: 1.1 },
+            { idx: 7, key: "num_ctx", value: "4096", expected: 4096 },
+            { idx: 8, key: "seed", value: "42", expected: 42 },
         ] as const;
 
         for (const { idx, key, value, expected } of GEN_FIELDS) {
@@ -383,7 +397,7 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[4]("not-a-number");
+            await textOnChanges[5]("not-a-number");
             expect(plugin.settings.top_k_sampling).toBeNull();
         });
 
@@ -393,7 +407,7 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[2]("abc");
+            await textOnChanges[3]("abc");
             expect(plugin.settings.temperature).toBeNull();
         });
 
@@ -419,8 +433,8 @@ describe("LilbeeSettingTab", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // Index 2 is temperature — should show "0.5"
-            expect(setValues[2]).toBe("0.5");
+            // Index 3 is temperature — should show "0.5" (0=serverUrl, 1=ollamaUrl, 2=systemPrompt)
+            expect(setValues[3]).toBe("0.5");
         });
 
         it("renders inside a <details> element", () => {
@@ -457,8 +471,8 @@ describe("LilbeeSettingTab", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // Indices 2-7 are generation fields (0=serverUrl, 1=ollamaUrl)
-            for (let i = 2; i <= 7; i++) {
+            // Indices 3-8 are generation fields (0=serverUrl, 1=ollamaUrl, 2=systemPrompt)
+            for (let i = 3; i <= 8; i++) {
                 expect(placeholders[i]).toBe("Not set");
             }
         });
