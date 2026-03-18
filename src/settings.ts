@@ -417,7 +417,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
-            const response = await fetch(url, { signal: controller.signal });
+            const response = await globalThis.fetch(url, { signal: controller.signal });
             clearTimeout(timeout);
             const ok = response.ok;
             dot.classList.add(ok ? "is-ok" : "is-error");

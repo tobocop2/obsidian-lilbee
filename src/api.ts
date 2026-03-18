@@ -54,7 +54,7 @@ export class LilbeeClient {
                     timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
                 }
                 try {
-                    return await this.assertOk(await fetch(url, fetchInit));
+                    return await this.assertOk(await globalThis.fetch(url, fetchInit));
                 } finally {
                     if (timer !== undefined) clearTimeout(timer);
                 }
@@ -286,7 +286,7 @@ export class OllamaClient {
     constructor(private baseUrl: string) {}
 
     async *pull(model: string, signal?: AbortSignal): AsyncGenerator<OllamaPullProgress> {
-        const res = await fetch(`${this.baseUrl}/api/pull`, {
+        const res = await globalThis.fetch(`${this.baseUrl}/api/pull`, {
             method: "POST",
             headers: JSON_HEADERS,
             body: JSON.stringify({ name: model, stream: true }),
@@ -300,7 +300,7 @@ export class OllamaClient {
     }
 
     async show(model: string): Promise<OllamaModelDefaults> {
-        const res = await fetch(`${this.baseUrl}/api/show`, {
+        const res = await globalThis.fetch(`${this.baseUrl}/api/show`, {
             method: "POST",
             headers: JSON_HEADERS,
             body: JSON.stringify({ name: model }),
@@ -314,7 +314,7 @@ export class OllamaClient {
     }
 
     async delete(model: string): Promise<void> {
-        const res = await fetch(`${this.baseUrl}/api/delete`, {
+        const res = await globalThis.fetch(`${this.baseUrl}/api/delete`, {
             method: "DELETE",
             headers: JSON_HEADERS,
             body: JSON.stringify({ name: model }),

@@ -1,7 +1,7 @@
 {
     "id": "lilbee",
     "name": "lilbee",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "minAppVersion": "1.0.0",
     "description": "Search, chat, and sync your local knowledge base powered by lilbee",
     "author": "tobocop2",
