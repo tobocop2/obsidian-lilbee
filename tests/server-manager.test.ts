@@ -108,6 +108,7 @@ describe("ServerManager", () => {
                 "--data-dir", "/tmp/data",
             ]);
             expect(opts.env.OLLAMA_HOST).toBe("http://localhost:11434");
+            expect(opts.env.LILBEE_CORS_ORIGINS).toBe("app://obsidian.md");
             expect(opts.stdio).toBe("ignore");
             expect(opts.detached).toBe(false);
 
@@ -492,6 +493,7 @@ describe("ServerManager", () => {
             mgr.start();
             const env = (spawnSpy.mock.calls[0] as any[])[2].env;
             expect(env.OLLAMA_HOST).toBe("http://remote:11434");
+            expect(env.LILBEE_CORS_ORIGINS).toBe("app://obsidian.md");
         });
     });
 

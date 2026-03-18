@@ -82,7 +82,11 @@ export class ServerManager {
 
         args.push("--data-dir", this.opts.dataDir);
 
-        const env = { ...process.env, OLLAMA_HOST: this.opts.ollamaUrl };
+        const env = {
+            ...process.env,
+            OLLAMA_HOST: this.opts.ollamaUrl,
+            LILBEE_CORS_ORIGINS: "app://obsidian.md",
+        };
 
         this.child = node.spawn(this.opts.binaryPath, args, {
             env,
