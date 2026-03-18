@@ -589,5 +589,92 @@
     border-color: var(--text-error);
 }
 
+.lilbee-health-status {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 8px;
+}
+
 .lilbee-health-ok { color: var(--text-success); }
 .lilbee-health-error { color: var(--text-error); }
+
+.lilbee-status-downloading {
+    color: var(--text-on-accent) !important;
+    background-color: var(--interactive-accent);
+    border-radius: var(--radius-s, 4px);
+    padding: 0 var(--size-4-2, 8px);
+    position: relative;
+    overflow: hidden;
+}
+
+.lilbee-status-downloading::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -40%;
+    width: 40%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.35),
+        transparent
+    );
+    animation: lilbee-knight 1.4s ease-in-out infinite;
+}
+
+@keyframes lilbee-knight {
+    0% { left: -40%; }
+    50% { left: 100%; }
+    50.01% { left: 100%; }
+    100% { left: -40%; }
+}
+
+.lilbee-health-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--text-muted);
+    vertical-align: middle;
+}
+
+.lilbee-health-dot.is-ok {
+    background-color: var(--color-green, #2d7a4f);
+}
+
+.lilbee-health-dot.is-error {
+    background-color: var(--text-error);
+}
+
+.lilbee-status-starting {
+    color: var(--text-on-accent) !important;
+    background-color: var(--color-yellow, #e0a526);
+    border-radius: var(--radius-s, 4px);
+    padding: 0 var(--size-4-2, 8px);
+    position: relative;
+    overflow: hidden;
+}
+
+.lilbee-status-starting::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -40%;
+    width: 40%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.35),
+        transparent
+    );
+    animation: lilbee-knight 1.4s ease-in-out infinite;
+}
+
+.lilbee-status-ready {
+    color: var(--text-on-accent, #fff) !important;
+    background-color: var(--color-green, #2d7a4f);
+    border-radius: var(--radius-s, 4px);
+    padding: 0 var(--size-4-2, 8px);
+}

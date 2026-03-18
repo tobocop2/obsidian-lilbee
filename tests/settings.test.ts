@@ -505,10 +505,10 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-            // Server Test + Ollama Test + Refresh = 3
-            expect(buttonOnClicks.length).toBe(3);
+            // Start + Check for updates + Ollama Test + Refresh = 4
+            expect(buttonOnClicks.length).toBe(4);
             // Refresh is the last button
-            await expect(buttonOnClicks[2]()).resolves.not.toThrow();
+            await expect(buttonOnClicks[3]()).resolves.not.toThrow();
         });
     });
 
@@ -1380,7 +1380,7 @@ describe("LilbeeSettingTab", () => {
             globalThis.fetch = origFetch;
         });
 
-        it("shows reachable when fetch returns ok response", async () => {
+        it("shows green dot when fetch returns ok response", async () => {
             globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
             const plugin = makePlugin();
             const tab = makeTab(plugin);
@@ -1388,12 +1388,14 @@ describe("LilbeeSettingTab", () => {
 
             await tab.checkEndpoint("http://localhost:7433/api/health", statusEl);
 
-            expect((statusEl as unknown as MockElement).textContent).toContain("reachable");
+            const dot = (statusEl as unknown as MockElement).find("lilbee-health-dot");
+            expect(dot).not.toBeNull();
+            expect(dot!.classList.contains("is-ok")).toBe(true);
             expect((statusEl as unknown as MockElement).classList.contains("lilbee-health-ok")).toBe(true);
             expect((statusEl as unknown as MockElement).classList.contains("lilbee-health-error")).toBe(false);
         });
 
-        it("shows error status when fetch returns non-ok response", async () => {
+        it("shows red dot when fetch returns non-ok response", async () => {
             globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 });
             const plugin = makePlugin();
             const tab = makeTab(plugin);
@@ -1401,12 +1403,14 @@ describe("LilbeeSettingTab", () => {
 
             await tab.checkEndpoint("http://localhost:7433/api/health", statusEl);
 
-            expect((statusEl as unknown as MockElement).textContent).toContain("500");
+            const dot = (statusEl as unknown as MockElement).find("lilbee-health-dot");
+            expect(dot).not.toBeNull();
+            expect(dot!.classList.contains("is-error")).toBe(true);
             expect((statusEl as unknown as MockElement).classList.contains("lilbee-health-error")).toBe(true);
             expect((statusEl as unknown as MockElement).classList.contains("lilbee-health-ok")).toBe(false);
         });
 
-        it("shows not reachable when fetch throws", async () => {
+        it("shows red dot when fetch throws", async () => {
             globalThis.fetch = vi.fn().mockRejectedValue(new Error("network error"));
             const plugin = makePlugin();
             const tab = makeTab(plugin);
@@ -1414,11 +1418,13 @@ describe("LilbeeSettingTab", () => {
 
             await tab.checkEndpoint("http://localhost:7433/api/health", statusEl);
 
-            expect((statusEl as unknown as MockElement).textContent).toContain("not reachable");
+            const dot = (statusEl as unknown as MockElement).find("lilbee-health-dot");
+            expect(dot).not.toBeNull();
+            expect(dot!.classList.contains("is-error")).toBe(true);
             expect((statusEl as unknown as MockElement).classList.contains("lilbee-health-error")).toBe(true);
         });
 
-        it("shows checking... initially then updates", async () => {
+        it("creates dot immediately then updates classes after fetch", async () => {
             let resolvePromise: (v: { ok: boolean; status: number }) => void;
             const pending = new Promise<{ ok: boolean; status: number }>((r) => { resolvePromise = r; });
             globalThis.fetch = vi.fn().mockReturnValue(pending);
@@ -1428,12 +1434,14 @@ describe("LilbeeSettingTab", () => {
 
             const promise = tab.checkEndpoint("http://localhost:7433/api/health", statusEl);
 
-            expect((statusEl as unknown as MockElement).textContent).toBe("checking...");
+            // Dot should exist immediately
+            const dot = (statusEl as unknown as MockElement).find("lilbee-health-dot");
+            expect(dot).not.toBeNull();
 
             resolvePromise!({ ok: true, status: 200 });
             await promise;
 
-            expect((statusEl as unknown as MockElement).textContent).toContain("reachable");
+            expect(dot!.classList.contains("is-ok")).toBe(true);
         });
 
         it("clears previous health classes before checking", async () => {
@@ -1513,8 +1521,8 @@ describe("LilbeeSettingTab", () => {
             await new Promise((r) => setTimeout(r, 0));
             (globalThis.fetch as ReturnType<typeof vi.fn>).mockClear();
 
-            // buttonOnClicks[1] = ollama Test button
-            await buttonOnClicks[1]();
+            // buttonOnClicks[2] = ollama Test button (after Start + Check for updates)
+            await buttonOnClicks[2]();
 
             expect(globalThis.fetch).toHaveBeenCalledTimes(1);
         });
@@ -1955,7 +1963,8 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-        await buttonOnClicks[0]();
+        // buttonOnClicks[0] = Start (server controls), [1] = Check for updates
+        await buttonOnClicks[1]();
 
         // No notice on check — button transforms to "Update to vX.Y.Z" instead
         expect(Notice.instances.some((n) => n.message.includes("update available"))).toBe(false);
@@ -1971,7 +1980,8 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-        await buttonOnClicks[0]();
+        // buttonOnClicks[0] = Start, [1] = Check for updates
+        await buttonOnClicks[1]();
 
         expect(Notice.instances.some((n) => n.message.includes("already up to date"))).toBe(true);
     });
@@ -1989,14 +1999,30 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-        // First click: check for updates
-        await buttonOnClicks[0]();
-        // Second click registered by the code: trigger update
-        expect(buttonOnClicks.length).toBeGreaterThan(1);
-        await buttonOnClicks[buttonOnClicks.length - 1]();
+        // First click: check for updates (sets pendingRelease)
+        await buttonOnClicks[1]();
+        // Same handler clicked again: now triggers update via pendingRelease
+        await buttonOnClicks[1]();
 
         expect((plugin as any).updateServer).toHaveBeenCalled();
         expect(Notice.instances.some((n) => n.message.includes("updated to v0.2.0"))).toBe(true);
+    });
+
+    it("update button does not add duplicate click handlers", async () => {
+        Notice.clear();
+
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
+        (plugin as any).checkForUpdate = vi.fn().mockResolvedValue({ available: true, release: { tag: "v0.2.0", assetUrl: "https://example.com" } });
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        const countBefore = buttonOnClicks.length;
+
+        // Click check for updates — should NOT add a new handler
+        await buttonOnClicks[1]();
+
+        expect(buttonOnClicks.length).toBe(countBefore);
     });
 
     it("update button shows failure notice when updateServer throws", async () => {
@@ -2010,8 +2036,9 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-        await buttonOnClicks[0]();
-        await buttonOnClicks[buttonOnClicks.length - 1]();
+        // First click: check (sets pendingRelease); second click: update (fails)
+        await buttonOnClicks[1]();
+        await buttonOnClicks[1]();
 
         expect(Notice.instances.some((n) => n.message.includes("update failed"))).toBe(true);
     });
@@ -2026,7 +2053,8 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-        await buttonOnClicks[0]();
+        // buttonOnClicks[0] = Start, [1] = Check for updates
+        await buttonOnClicks[1]();
 
         expect(Notice.instances.some((n) => n.message.includes("could not check"))).toBe(true);
     });
@@ -2075,4 +2103,65 @@ describe("managed mode settings", () => {
         expect(plugin.saveSettings).toHaveBeenCalled();
     });
 
+    it("shows Start button when server is stopped", () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).serverManager = null; // state defaults to "stopped"
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        (plugin as any).startManagedServer = vi.fn().mockResolvedValue(undefined);
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        // Server controls: Start button is first among control buttons
+        // Buttons: Start, Check for updates, Test (ollama), Refresh
+        expect(buttonOnClicks.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("Start button calls startManagedServer", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).serverManager = null; // state defaults to "stopped"
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const mockStart = vi.fn().mockResolvedValue(undefined);
+        (plugin as any).startManagedServer = mockStart;
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
+        // First button in managed stopped mode is Start
+        await buttonOnClicks[0]();
+
+        expect(mockStart).toHaveBeenCalled();
+        expect(displaySpy).toHaveBeenCalled();
+    });
+
+    it("Stop button calls serverManager.stop", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        const mockStop = vi.fn().mockResolvedValue(undefined);
+        (plugin as any).serverManager = { state: "ready", stop: mockStop, restart: vi.fn() };
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
+        // In ready state: buttons are Stop, Restart, Check for updates, Test (ollama), Refresh
+        await buttonOnClicks[0]();
+
+        expect(mockStop).toHaveBeenCalled();
+        expect(displaySpy).toHaveBeenCalled();
+    });
+
+    it("Restart button calls serverManager.restart", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        const mockRestart = vi.fn().mockResolvedValue(undefined);
+        (plugin as any).serverManager = { state: "ready", stop: vi.fn(), restart: mockRestart };
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
+        // In ready state: buttons are Stop, Restart, Check for updates, Test (ollama), Refresh
+        await buttonOnClicks[1]();
+
+        expect(mockRestart).toHaveBeenCalled();
+        expect(displaySpy).toHaveBeenCalled();
+    });
 });

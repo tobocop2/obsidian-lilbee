@@ -150,6 +150,7 @@ export class App {
     };
     vault = {
         on: vi.fn().mockReturnValue({ id: "mock-vault-event" }),
+        offref: vi.fn(),
         adapter: {
             getBasePath: vi.fn().mockReturnValue("/test/vault"),
         },

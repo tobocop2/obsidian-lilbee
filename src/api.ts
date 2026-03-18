@@ -45,14 +45,19 @@ export class LilbeeClient {
             }
             try {
                 const fetchInit = { ...init };
+                let timer: ReturnType<typeof setTimeout> | undefined;
                 if (opts?.signal) {
                     fetchInit.signal = opts.signal;
                 } else if (!opts?.stream) {
                     const controller = new AbortController();
                     fetchInit.signal = controller.signal;
-                    setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+                    timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
                 }
-                return await this.assertOk(await fetch(url, fetchInit));
+                try {
+                    return await this.assertOk(await fetch(url, fetchInit));
+                } finally {
+                    if (timer !== undefined) clearTimeout(timer);
+                }
             } catch (err) {
                 lastError = err;
                 if (err instanceof Error && err.message.startsWith("Server responded")) {

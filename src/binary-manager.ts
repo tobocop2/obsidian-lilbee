@@ -7,7 +7,7 @@ import { promisify } from "util";
 const execFileAsync = promisify(execFile);
 
 /** Exported for test mocking. */
-export const node = { spawn, execFile: execFileAsync, existsSync, mkdirSync, chmodSync, writeFileSync, readFileSync, unlinkSync, requestUrl, fetch: globalThis.fetch.bind(globalThis) };
+export const node = { spawn, execFile: execFileAsync, existsSync, mkdirSync, chmodSync, writeFileSync, readFileSync, unlinkSync, requestUrl, fetch: globalThis.fetch.bind(globalThis) as typeof globalThis.fetch };
 
 const GITHUB_REPO = "tobocop2/lilbee";
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
@@ -70,7 +70,7 @@ export class BinaryManager {
         return node.existsSync(this.binaryPath);
     }
 
-    async ensureBinary(onProgress?: (msg: string) => void): Promise<string> {
+    async ensureBinary(onProgress?: (msg: string, url?: string) => void): Promise<string> {
         if (this.binaryExists()) return this.binaryPath;
         onProgress?.("Fetching latest release info...");
         const release = await getLatestRelease();
@@ -78,12 +78,12 @@ export class BinaryManager {
         return this.binaryPath;
     }
 
-    async download(assetUrl: string, onProgress?: (msg: string) => void): Promise<void> {
+    async download(assetUrl: string, onProgress?: (msg: string, url?: string) => void): Promise<void> {
         if (!node.existsSync(this.binDir)) {
             node.mkdirSync(this.binDir, { recursive: true });
         }
 
-        onProgress?.("Downloading lilbee binary...");
+        onProgress?.("Downloading...", assetUrl);
         const res = await node.requestUrl({ url: assetUrl });
         if (res.status >= 400) throw new Error(`Download failed: ${res.status}`);
 
@@ -102,6 +102,6 @@ export class BinaryManager {
             }
         }
 
-        onProgress?.("Download complete.");
+        onProgress?.("Download complete.", assetUrl);
     }
 }

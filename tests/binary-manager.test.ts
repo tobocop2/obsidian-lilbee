@@ -196,8 +196,8 @@ describe("BinaryManager", () => {
 
             expect(path).toBe(mgr.binaryPath);
             expect(onProgress).toHaveBeenCalledWith("Fetching latest release info...");
-            expect(onProgress).toHaveBeenCalledWith("Downloading lilbee binary...");
-            expect(onProgress).toHaveBeenCalledWith("Download complete.");
+            expect(onProgress).toHaveBeenCalledWith("Downloading...", expect.any(String));
+            expect(onProgress).toHaveBeenCalledWith("Download complete.", expect.any(String));
         });
     });
 
@@ -251,8 +251,8 @@ describe("BinaryManager", () => {
             const writtenBuffer = (node.writeFileSync as ReturnType<typeof vi.fn>).mock.calls[0][1] as Buffer;
             expect([...writtenBuffer]).toEqual([1, 2, 3, 4, 5, 6]);
             expect(node.chmodSync).toHaveBeenCalledWith(mgr.binaryPath, 0o755);
-            expect(onProgress).toHaveBeenCalledWith("Downloading lilbee binary...");
-            expect(onProgress).toHaveBeenCalledWith("Download complete.");
+            expect(onProgress).toHaveBeenCalledWith("Downloading...", expect.any(String));
+            expect(onProgress).toHaveBeenCalledWith("Download complete.", expect.any(String));
         });
 
         it("calls xattr on darwin", async () => {

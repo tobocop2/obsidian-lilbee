@@ -10,7 +10,6 @@ import type {
     ModelsResponse,
     StatusResponse,
     SyncDone,
-    PullProgress,
     SSEEvent,
     Message,
     LilbeeSettings,
@@ -188,18 +187,6 @@ describe("SyncDone interface", () => {
         };
         expect(d.added).toContain("a.md");
         expect(d.unchanged).toBe(10);
-    });
-});
-
-describe("PullProgress interface", () => {
-    it("tracks model pull progress", () => {
-        const p: PullProgress = {
-            model: "llama3",
-            status: "downloading",
-            completed: 512,
-            total: 4096,
-        };
-        expect(p.completed).toBe(512);
     });
 });
 

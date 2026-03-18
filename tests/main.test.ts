@@ -54,6 +54,7 @@ vi.mock("../src/binary-manager", () => ({
     node: { spawn: vi.fn(), execFile: vi.fn(), existsSync: vi.fn(), mkdirSync: vi.fn(), chmodSync: vi.fn(), writeFileSync: vi.fn(), requestUrl: vi.fn() },
 }));
 
+let mockLastStderr = "";
 vi.mock("../src/server-manager", () => ({
     ServerManager: vi.fn().mockImplementation((opts: any) => {
         mockServerOpts = opts;
@@ -65,6 +66,7 @@ vi.mock("../src/server-manager", () => ({
             updatePort: mockUpdatePort,
             get serverUrl() { return `http://127.0.0.1:${opts.port}`; },
             get state() { return "ready"; },
+            get lastStderr() { return mockLastStderr; },
             opts,
         };
     }),
@@ -97,6 +99,7 @@ describe("LilbeePlugin", () => {
     beforeEach(() => {
         Notice.clear();
         vi.clearAllMocks();
+        mockLastStderr = "";
     });
 
     afterEach(() => {
@@ -305,7 +308,7 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerEvent).toHaveBeenCalledTimes(5);
         });
 
-        it("clears autoSyncRefs when switching from auto to manual", async () => {
+        it("clears autoSyncRefs and calls offref when switching from auto to manual", async () => {
             const plugin = await createPlugin();
             plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
             await plugin.onload();
@@ -316,6 +319,7 @@ describe("LilbeePlugin", () => {
             await plugin.saveSettings();
 
             expect((plugin as any).autoSyncRefs.length).toBe(0);
+            expect(plugin.app.vault.offref).toHaveBeenCalledTimes(4);
         });
 
         it("does not re-register events when already in auto mode", async () => {
@@ -1056,6 +1060,16 @@ describe("LilbeePlugin", () => {
                 (plugin as any).updateStatusBar("test");
             }).not.toThrow();
         });
+
+        it("setStatusClass no-ops when statusBarEl is null", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).statusBarEl = null;
+
+            expect(() => {
+                (plugin as any).setStatusClass("lilbee-status-ready");
+            }).not.toThrow();
+        });
     });
 
     describe("managed server mode", () => {
@@ -1081,7 +1095,7 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("network timeout"))).toBe(true);
         });
 
-        it("managed mode shows 'unknown error' when ensureBinary throws non-Error", async () => {
+        it("managed mode shows stringified error when ensureBinary throws non-Error", async () => {
             mockEnsureBinary.mockRejectedValueOnce("string error");
 
             const plugin = await createPlugin({ serverMode: "managed" });
@@ -1089,7 +1103,7 @@ describe("LilbeePlugin", () => {
             await flush();
 
             expect(Notice.instances.some((n) => n.message.includes("failed to download server"))).toBe(true);
-            expect(Notice.instances.some((n) => n.message.includes("unknown error"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message.includes("string error"))).toBe(true);
         });
 
         it("managed mode shows start error Notice when serverManager.start fails", async () => {
@@ -1103,7 +1117,7 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("port in use"))).toBe(true);
         });
 
-        it("managed mode shows 'unknown error' when serverManager.start throws non-Error", async () => {
+        it("managed mode shows stringified error when serverManager.start throws non-Error", async () => {
             mockServerStart.mockRejectedValueOnce(42);
 
             const plugin = await createPlugin({ serverMode: "managed" });
@@ -1111,7 +1125,7 @@ describe("LilbeePlugin", () => {
             await flush();
 
             expect(Notice.instances.some((n) => n.message.includes("failed to start server"))).toBe(true);
-            expect(Notice.instances.some((n) => n.message.includes("unknown error"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message.includes("42"))).toBe(true);
         });
 
         it("handleServerStateChange updates status bar for all states", async () => {
@@ -1135,6 +1149,129 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).statusBarEl?.textContent).toContain("stopped");
         });
 
+        it("handleServerStateChange sets correct CSS classes", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const el = (plugin as any).statusBarEl!;
+            const stateChange = mockServerOpts?.onStateChange;
+
+            stateChange("starting");
+            expect(el.classList.contains("lilbee-status-starting")).toBe(true);
+            expect(el.classList.contains("lilbee-status-ready")).toBe(false);
+
+            stateChange("ready");
+            expect(el.classList.contains("lilbee-status-ready")).toBe(true);
+            expect(el.classList.contains("lilbee-status-starting")).toBe(false);
+
+            stateChange("error");
+            expect(el.classList.contains("lilbee-status-ready")).toBe(false);
+            expect(el.classList.contains("lilbee-status-starting")).toBe(false);
+            expect(el.classList.contains("lilbee-status-downloading")).toBe(false);
+
+            stateChange("stopped");
+            expect(el.classList.contains("lilbee-status-ready")).toBe(false);
+            expect(el.classList.contains("lilbee-status-starting")).toBe(false);
+        });
+
+        it("setStatusReady adds lilbee-status-ready class", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+
+            const el = (plugin as any).statusBarEl!;
+            expect(el.classList.contains("lilbee-status-ready")).toBe(true);
+        });
+
+        it("downloading state sets lilbee-status-downloading class", async () => {
+            mockBinaryExists.mockReturnValueOnce(false);
+            mockEnsureBinary.mockImplementationOnce(async () => "/fake/bin/lilbee");
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            // After ensureBinary completes, the downloading class should be cleared
+            const el = (plugin as any).statusBarEl!;
+            expect(el.classList.contains("lilbee-status-downloading")).toBe(false);
+        });
+
+        it("starting state sets lilbee-status-starting class during start", async () => {
+            let resolveStart!: () => void;
+            mockServerStart.mockImplementationOnce(() => new Promise<void>((r) => { resolveStart = r; }));
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            plugin.onload();
+            await flush();
+
+            // During start, status bar should have starting class
+            const el = (plugin as any).statusBarEl!;
+            expect(el.classList.contains("lilbee-status-starting")).toBe(true);
+
+            resolveStart();
+            await flush();
+        });
+
+        it("onRestartsExhausted shows persistent error Notice with stderr", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const onExhausted = mockServerOpts?.onRestartsExhausted;
+            expect(onExhausted).toBeDefined();
+
+            onExhausted("bind: address already in use");
+
+            expect(Notice.instances.some((n) => n.message.includes("crashed after multiple restarts"))).toBe(true);
+            const notice = Notice.instances.find((n) => n.message.includes("crashed after multiple restarts"));
+            expect(notice!.duration).toBe(0);
+            expect(notice!.message).toContain("address already in use");
+        });
+
+        it("onRestartsExhausted shows notice without stderr detail when stderr is empty", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const onExhausted = mockServerOpts?.onRestartsExhausted;
+            onExhausted("");
+
+            const notice = Notice.instances.find((n) => n.message.includes("crashed after multiple restarts"));
+            expect(notice).toBeDefined();
+            expect(notice!.message).toBe("lilbee: server crashed after multiple restarts");
+        });
+
+        it("onRestartsExhausted is suppressed when showError already fired", async () => {
+            mockServerStart.mockRejectedValueOnce(new Error("port in use"));
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            // showError already fired and set serverStartFailed
+            const beforeCount = Notice.instances.length;
+
+            const onExhausted = mockServerOpts?.onRestartsExhausted;
+            onExhausted("bind: address already in use");
+
+            // No additional notice created
+            expect(Notice.instances.length).toBe(beforeCount);
+        });
+
+        it("showError includes lastStderr in the notice", async () => {
+            mockLastStderr = "fatal: database locked";
+            mockServerStart.mockRejectedValueOnce(new Error("startup failed"));
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const notice = Notice.instances.find((n) => n.message.includes("startup failed"));
+            expect(notice).toBeDefined();
+            expect(notice!.message).toContain("database locked");
+            mockLastStderr = "";
+        });
+
         it("ensureBinary progress callback updates status bar", async () => {
             mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
                 cb?.("Downloading 50%");
@@ -1148,46 +1285,11 @@ describe("LilbeePlugin", () => {
             expect(mockEnsureBinary).toHaveBeenCalled();
         });
 
-        it("does not show download Notice when binary already exists", async () => {
-            mockBinaryExists.mockReturnValueOnce(true);
-
-            const plugin = await createPlugin({ serverMode: "managed" });
-            await plugin.onload();
-            await flush();
-
-            const downloadNotices = Notice.instances.filter(
-                (n) => n.message.includes("fetching server binary") || n.message.includes("server binary ready"),
-            );
-            expect(downloadNotices.length).toBe(0);
-        });
-
-        it("shows persistent download Notice when binary is missing", async () => {
-            mockBinaryExists.mockReturnValueOnce(false);
-
-            const plugin = await createPlugin({ serverMode: "managed" });
-            await plugin.onload();
-            await flush();
-
-            const fetchNotice = Notice.instances.find((n) => n.duration === 0);
-            expect(fetchNotice).toBeDefined();
-            expect(fetchNotice!.hidden).toBe(true); // hidden after completion
-        });
-
-        it("shows success Notice after download completes", async () => {
-            mockBinaryExists.mockReturnValueOnce(false);
-
-            const plugin = await createPlugin({ serverMode: "managed" });
-            await plugin.onload();
-            await flush();
-
-            expect(Notice.instances.some((n) => n.message.includes("server binary ready"))).toBe(true);
-        });
-
-        it("progress callback updates both status bar and download Notice", async () => {
+        it("shows download Notice with URL when binary is missing", async () => {
             mockBinaryExists.mockReturnValueOnce(false);
             mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
-                cb?.("Downloading 25%");
-                cb?.("Downloading 75%");
+                cb?.("Downloading...", "https://example.com/dl");
+                cb?.("Download complete.", "https://example.com/dl");
                 return "/fake/bin/lilbee";
             });
 
@@ -1195,22 +1297,92 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             await flush();
 
-            const persistentNotice = Notice.instances.find((n) => n.duration === 0);
-            expect(persistentNotice).toBeDefined();
-            expect(persistentNotice!.message).toBe("lilbee: Downloading 75%");
+            const downloadNotice = Notice.instances.find((n) => n.duration === 0);
+            expect(downloadNotice).toBeDefined();
+            expect(downloadNotice!.message).toContain("Download complete.");
+            expect(downloadNotice!.message).toContain("https://example.com/dl");
+            expect(downloadNotice!.hidden).toBe(true);
         });
 
-        it("hides download Notice on ensureBinary failure", async () => {
+        it("shows download Notice without URL when url is not provided", async () => {
             mockBinaryExists.mockReturnValueOnce(false);
-            mockEnsureBinary.mockRejectedValueOnce(new Error("network error"));
+            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+                cb?.("Fetching latest release info...");
+                cb?.("Still going...");
+                return "/fake/bin/lilbee";
+            });
 
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
 
-            const persistentNotice = Notice.instances.find((n) => n.duration === 0);
-            expect(persistentNotice).toBeDefined();
-            expect(persistentNotice!.hidden).toBe(true);
+            const downloadNotice = Notice.instances.find((n) => n.duration === 0);
+            expect(downloadNotice).toBeDefined();
+            expect(downloadNotice!.message).toBe("lilbee: Still going...");
+        });
+
+        it("does not show download Notice when binary already exists", async () => {
+            mockBinaryExists.mockReturnValueOnce(true);
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const downloadNotice = Notice.instances.find((n) => n.duration === 0);
+            expect(downloadNotice).toBeUndefined();
+        });
+
+        it("hides download Notice on ensureBinary failure", async () => {
+            mockBinaryExists.mockReturnValueOnce(false);
+            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+                cb?.("Downloading...", "https://example.com/dl");
+                throw new Error("network error");
+            });
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const downloadNotice = Notice.instances.find((n) => n.duration === 0);
+            expect(downloadNotice).toBeDefined();
+            expect(downloadNotice!.hidden).toBe(true);
+        });
+
+        it("startManagedServer no-ops when already starting", async () => {
+            let resolveEnsure!: (v: string) => void;
+            mockEnsureBinary.mockImplementationOnce(() => new Promise((r) => { resolveEnsure = r; }));
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            // First call is in progress (blocked on ensureBinary)
+
+            // Second call should no-op
+            mockEnsureBinary.mockResolvedValueOnce("/fake/bin/lilbee");
+            await plugin.startManagedServer();
+
+            // Unblock the first call
+            resolveEnsure("/fake/bin/lilbee");
+            await flush();
+
+            // ensureBinary was only called once (the first time)
+            expect(mockEnsureBinary).toHaveBeenCalledTimes(1);
+        });
+
+        it("handleServerStateChange ready updates api with current server URL", async () => {
+            const { LilbeeClient } = await import("../src/api");
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const stateChange = mockServerOpts?.onStateChange;
+            expect(stateChange).toBeDefined();
+
+            const callsBefore = (LilbeeClient as ReturnType<typeof vi.fn>).mock.calls.length;
+            stateChange("ready");
+            const callsAfter = (LilbeeClient as ReturnType<typeof vi.fn>).mock.calls.length;
+
+            expect(callsAfter).toBeGreaterThan(callsBefore);
         });
 
         it("sets status bar to downloading only when binary is missing", async () => {
@@ -1288,14 +1460,18 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).statusBarEl?.textContent).toContain("error");
         });
 
-        it("sets status bar to error when serverManager.start fails", async () => {
+        it("sets status bar to error and clears status classes when serverManager.start fails", async () => {
             mockServerStart.mockRejectedValueOnce(new Error("crash"));
 
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
 
-            expect((plugin as any).statusBarEl?.textContent).toContain("error");
+            const el = (plugin as any).statusBarEl!;
+            expect(el.textContent).toContain("error");
+            expect(el.classList.contains("lilbee-status-starting")).toBe(false);
+            expect(el.classList.contains("lilbee-status-ready")).toBe(false);
+            expect(el.classList.contains("lilbee-status-downloading")).toBe(false);
         });
     });
 
@@ -1396,6 +1572,42 @@ describe("LilbeePlugin", () => {
             await plugin.triggerSync();
 
             expect(Notice.instances.some((n) => n.message.includes("sync cancelled"))).toBe(true);
+        });
+
+        it("runAdd emits DONE event to onProgress after AbortError", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const events: any[] = [];
+            plugin.onProgress = (e: any) => events.push(e);
+
+            const abortError = new Error("Aborted");
+            abortError.name = "AbortError";
+            plugin.api.addFiles = vi.fn().mockImplementation(async function* () {
+                throw abortError;
+            });
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(events.some((e) => e.event === SSE_EVENT.DONE)).toBe(true);
+        });
+
+        it("triggerSync emits DONE event to onProgress after AbortError", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const events: any[] = [];
+            plugin.onProgress = (e: any) => events.push(e);
+
+            const abortError = new Error("Aborted");
+            abortError.name = "AbortError";
+            plugin.api.syncStream = vi.fn().mockImplementation(async function* () {
+                throw abortError;
+            });
+
+            await plugin.triggerSync();
+
+            expect(events.some((e) => e.event === SSE_EVENT.DONE)).toBe(true);
         });
     });
 

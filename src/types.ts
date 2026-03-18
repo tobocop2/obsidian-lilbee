@@ -63,13 +63,6 @@ export interface SyncDone {
     failed: string[];
 }
 
-export interface PullProgress {
-    model: string;
-    status: string;
-    completed: number;
-    total: number;
-}
-
 export interface OllamaPullProgress {
     status: string;
     completed?: number;
@@ -96,31 +89,24 @@ export interface Message {
     content: string;
 }
 
-export interface GenerationOptions {
-    temperature?: number;
-    top_p?: number;
-    top_k?: number;
-    repeat_penalty?: number;
-    num_ctx?: number;
-    seed?: number;
-}
+export type GenerationOptions = OllamaModelDefaults;
 
 export type ServerState = "stopped" | "downloading" | "starting" | "ready" | "error";
 
-export const SERVER_STATE: Record<string, ServerState> = {
+export const SERVER_STATE = {
     STOPPED: "stopped",
     DOWNLOADING: "downloading",
     STARTING: "starting",
     READY: "ready",
     ERROR: "error",
-} as const;
+} as const satisfies Record<string, ServerState>;
 
 export type ServerMode = "managed" | "external";
 
-export const SERVER_MODE: Record<string, ServerMode> = {
+export const SERVER_MODE = {
     MANAGED: "managed",
     EXTERNAL: "external",
-} as const;
+} as const satisfies Record<string, ServerMode>;
 
 export interface LilbeeSettings {
     serverUrl: string;
@@ -152,7 +138,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     num_ctx: null,
     seed: null,
     serverMode: "managed",
-    serverPort: 7433,
+    serverPort: null,
     lilbeeVersion: "",
 };
 

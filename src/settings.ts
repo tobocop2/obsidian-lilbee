@@ -1,5 +1,6 @@
 import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
+import type { ReleaseInfo } from "./binary-manager";
 import { DEFAULT_SETTINGS, SERVER_MODE } from "./types";
 import type { ModelCatalog, ModelInfo, ModelsResponse, OllamaModelDefaults, ServerMode } from "./types";
 
@@ -123,13 +124,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
 
         const ollamaStatusEl = ollamaSetting.settingEl.createEl("span", { cls: "lilbee-health-status" });
-        void this.checkEndpoint(this.plugin.settings.ollamaUrl, ollamaStatusEl);
 
         ollamaSetting.addButton((btn) =>
             btn.setButtonText("Test").onClick(async () => {
                 await this.checkEndpoint(this.plugin.settings.ollamaUrl, ollamaStatusEl);
             }),
         );
+
+        void this.checkEndpoint(this.plugin.settings.ollamaUrl, ollamaStatusEl);
     }
 
     private renderManagedSettings(containerEl: HTMLElement): void {
@@ -144,6 +146,35 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const serverState = this.plugin.serverManager?.state ?? "stopped";
         stateText.textContent = serverState;
         dot.classList.add(`is-${serverState}`);
+
+        const controlSetting = new Setting(containerEl)
+            .setName("Server controls")
+            .setDesc("Start, stop, or restart the managed server");
+
+        if (serverState === "stopped" || serverState === "error") {
+            controlSetting.addButton((btn) =>
+                btn.setButtonText("Start").onClick(async () => {
+                    await this.plugin.startManagedServer();
+                    this.display();
+                }),
+            );
+        }
+        if (serverState === "ready" || serverState === "starting") {
+            controlSetting.addButton((btn) =>
+                btn.setButtonText("Stop").onClick(async () => {
+                    await this.plugin.serverManager?.stop();
+                    this.display();
+                }),
+            );
+        }
+        if (serverState === "ready") {
+            controlSetting.addButton((btn) =>
+                btn.setButtonText("Restart").onClick(async () => {
+                    await this.plugin.serverManager?.restart();
+                    this.display();
+                }),
+            );
+        }
 
         new Setting(containerEl)
             .setName("Server port")
@@ -170,32 +201,37 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setName("Server version")
             .setDesc(this.plugin.settings.lilbeeVersion || "Unknown");
 
+        let pendingRelease: ReleaseInfo | null = null;
         updateSetting.addButton((checkBtn) =>
             checkBtn.setButtonText("Check for updates").onClick(async () => {
+                if (pendingRelease) {
+                    const release = pendingRelease;
+                    checkBtn.setDisabled(true);
+                    checkBtn.setButtonText("Updating...");
+                    try {
+                        await this.plugin.updateServer(release, (msg) => {
+                            checkBtn.setButtonText(msg);
+                        });
+                        new Notice(`lilbee: updated to ${release.tag}`);
+                        this.display();
+                    } catch (err) {
+                        new Notice("lilbee: update failed");
+                        console.error("[lilbee] update failed:", err);
+                        pendingRelease = null;
+                        checkBtn.setButtonText("Check for updates");
+                        checkBtn.setDisabled(false);
+                    }
+                    return;
+                }
+
                 checkBtn.setDisabled(true);
                 checkBtn.setButtonText("Checking...");
                 try {
                     const result = await this.plugin.checkForUpdate();
                     if (result.available && result.release) {
-                        const release = result.release;
-                        checkBtn.setButtonText(`Update to ${release.tag}`);
+                        pendingRelease = result.release;
+                        checkBtn.setButtonText(`Update to ${result.release.tag}`);
                         checkBtn.setDisabled(false);
-                        checkBtn.onClick(async () => {
-                            checkBtn.setDisabled(true);
-                            checkBtn.setButtonText("Updating...");
-                            try {
-                                await this.plugin.updateServer(release, (msg) => {
-                                    checkBtn.setButtonText(msg);
-                                });
-                                new Notice(`lilbee: updated to ${release.tag}`);
-                                this.display();
-                            } catch (err) {
-                                new Notice("lilbee: update failed");
-                                console.error("[lilbee] update failed:", err);
-                                checkBtn.setButtonText("Check for updates");
-                                checkBtn.setDisabled(false);
-                            }
-                        });
                     } else {
                         new Notice("lilbee: already up to date");
                         checkBtn.setButtonText("Check for updates");
@@ -225,13 +261,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
 
         const serverStatusEl = serverSetting.settingEl.createEl("span", { cls: "lilbee-health-status" });
-        void this.checkEndpoint(`${this.plugin.settings.serverUrl}/api/health`, serverStatusEl);
 
         serverSetting.addButton((btn) =>
             btn.setButtonText("Test").onClick(async () => {
                 await this.checkEndpoint(`${this.plugin.settings.serverUrl}/api/health`, serverStatusEl);
             }),
         );
+
+        void this.checkEndpoint(`${this.plugin.settings.serverUrl}/api/health`, serverStatusEl);
 
         new Setting(containerEl)
             .setName("Switch to managed server")
@@ -374,17 +411,19 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     async checkEndpoint(url: string, statusEl: HTMLSpanElement): Promise<void> {
-        statusEl.setText("checking...");
+        statusEl.empty();
         statusEl.classList.remove("lilbee-health-ok", "lilbee-health-error");
+        const dot = statusEl.createDiv({ cls: "lilbee-health-dot" });
         try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
             const response = await fetch(url, { signal: controller.signal });
             clearTimeout(timeout);
-            statusEl.setText(response.ok ? " \u2713 reachable" : ` \u2717 ${response.status}`);
-            statusEl.classList.add(response.ok ? "lilbee-health-ok" : "lilbee-health-error");
+            const ok = response.ok;
+            dot.classList.add(ok ? "is-ok" : "is-error");
+            statusEl.classList.add(ok ? "lilbee-health-ok" : "lilbee-health-error");
         } catch {
-            statusEl.setText(" \u2717 not reachable");
+            dot.classList.add("is-error");
             statusEl.classList.add("lilbee-health-error");
         }
     }

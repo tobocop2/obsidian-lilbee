@@ -5,10 +5,24 @@ import type { ServerManagerOptions } from "../src/server-manager";
 
 // ── Mock child process ──────────────────────────────────────────────
 
-function mockChild() {
+function mockStderr() {
     const handlers: Record<string, Function[]> = {};
     return {
+        on(event: string, handler: Function) {
+            (handlers[event] ??= []).push(handler);
+        },
+        _emit(event: string, ...args: unknown[]) {
+            for (const h of handlers[event] ?? []) h(...args);
+        },
+    };
+}
+
+function mockChild() {
+    const handlers: Record<string, Function[]> = {};
+    const stderr = mockStderr();
+    return {
         pid: 1234,
+        stderr,
         on(event: string, handler: Function) {
             (handlers[event] ??= []).push(handler);
         },
@@ -109,7 +123,7 @@ describe("ServerManager", () => {
             ]);
             expect(opts.env.OLLAMA_HOST).toBe("http://localhost:11434");
             expect(opts.env.LILBEE_CORS_ORIGINS).toBe("app://obsidian.md");
-            expect(opts.stdio).toBe("ignore");
+            expect(opts.stdio).toEqual(["ignore", "ignore", "pipe"]);
             expect(opts.detached).toBe(false);
 
             expect(mgr.state).toBe("ready");
@@ -148,7 +162,7 @@ describe("ServerManager", () => {
             const mgr = new ServerManager(defaultOpts({ port: null }));
 
             const startPromise = mgr.start();
-            await vi.advanceTimersByTimeAsync(30_000);
+            await vi.advanceTimersByTimeAsync(120_000);
             await startPromise;
 
             expect(mgr.state).toBe("error");
@@ -173,23 +187,23 @@ describe("ServerManager", () => {
             );
 
             const startPromise = mgr.start();
-            // 60 attempts * 1000ms each = 60000ms
-            await vi.advanceTimersByTimeAsync(60_000);
+            // 120 attempts * 1000ms each = 120000ms
+            await vi.advanceTimersByTimeAsync(120_000);
             await startPromise;
 
             expect(mgr.state).toBe("error");
-        });
+        }, 15_000);
 
         it("sets state to error when health returns non-ok then eventually times out", async () => {
             fetchSpy.mockResolvedValue({ ok: false } as any);
             const mgr = new ServerManager(defaultOpts());
 
             const startPromise = mgr.start();
-            await vi.advanceTimersByTimeAsync(60_000);
+            await vi.advanceTimersByTimeAsync(120_000);
             await startPromise;
 
             expect(mgr.state).toBe("error");
-        });
+        }, 15_000);
     });
 
     // ── stop() ──────────────────────────────────────────────────────
@@ -444,6 +458,34 @@ describe("ServerManager", () => {
             expect(spawnSpy).toHaveBeenCalledTimes(4);
         });
 
+        it("calls onRestartsExhausted with stderr when max restarts exceeded", async () => {
+            const onExhausted = vi.fn();
+            const mgr = new ServerManager(defaultOpts({ onRestartsExhausted: onExhausted }));
+
+            const p1 = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p1;
+
+            fetchSpy.mockRejectedValue(new Error("ECONNREFUSED"));
+
+            for (let i = 0; i < 3; i++) {
+                const nextChild = mockChild();
+                spawnSpy.mockReturnValue(nextChild as any);
+                child._emit("exit", 1, null);
+                await vi.advanceTimersByTimeAsync(3000);
+                await vi.advanceTimersByTimeAsync(15_000);
+                child = nextChild;
+            }
+
+            // Write some stderr before final crash
+            child.stderr._emit("data", Buffer.from("bind: address already in use\n"));
+
+            // Final crash — max restarts exhausted
+            child._emit("exit", 1, null);
+            expect(onExhausted).toHaveBeenCalledTimes(1);
+            expect(onExhausted).toHaveBeenCalledWith(expect.stringContaining("address already in use"));
+        });
+
         it("stop() during restart delay cancels the pending restart", async () => {
             const mgr = new ServerManager(defaultOpts());
             const p1 = mgr.start();
@@ -479,6 +521,65 @@ describe("ServerManager", () => {
             await p1;
 
             expect(stateChanges).toContain("error");
+        });
+    });
+
+    // ── stderr capture ────────────────────────────────────────────────
+
+    describe("lastStderr", () => {
+        it("returns empty string initially", () => {
+            const mgr = new ServerManager(defaultOpts());
+            expect(mgr.lastStderr).toBe("");
+        });
+
+        it("collects stderr lines from the spawned process", async () => {
+            const mgr = new ServerManager(defaultOpts());
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+
+            child.stderr._emit("data", Buffer.from("line one\nline two\n"));
+            expect(mgr.lastStderr).toBe("line one\nline two");
+        });
+
+        it("limits to MAX_STDERR_LINES", async () => {
+            const mgr = new ServerManager(defaultOpts());
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+
+            const lines = Array.from({ length: 25 }, (_, i) => `line ${i}`).join("\n") + "\n";
+            child.stderr._emit("data", Buffer.from(lines));
+            const collected = mgr.lastStderr.split("\n");
+            expect(collected.length).toBe(20);
+            expect(collected[0]).toBe("line 5");
+            expect(collected[19]).toBe("line 24");
+        });
+
+        it("resets stderr on new start", async () => {
+            const mgr = new ServerManager(defaultOpts());
+            const p1 = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p1;
+
+            child.stderr._emit("data", Buffer.from("old error\n"));
+            expect(mgr.lastStderr).toBe("old error");
+
+            // Stop and restart
+            child.kill = vi.fn(() => {
+                setTimeout(() => child._emit("exit", 0, null), 10);
+            });
+            const stopPromise = mgr.stop();
+            await vi.advanceTimersByTimeAsync(50);
+            await stopPromise;
+
+            const child2 = mockChild();
+            spawnSpy.mockReturnValue(child2 as any);
+            const p2 = mgr.restart();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p2;
+
+            expect(mgr.lastStderr).toBe("");
         });
     });
 

@@ -4,12 +4,12 @@ import { SERVER_STATE } from "./types";
 import { node } from "./binary-manager";
 
 const HEALTH_POLL_INTERVAL_MS = 1000;
-const HEALTH_POLL_MAX_ATTEMPTS = 60;
+const HEALTH_POLL_MAX_ATTEMPTS = 120;
 const STOP_GRACE_MS = 5000;
 const CRASH_RESTART_DELAY_MS = 3000;
 const MAX_CRASH_RESTARTS = 3;
-const PORT_FILE_POLL_INTERVAL_MS = 200;
-const PORT_FILE_MAX_ATTEMPTS = 150;
+const PORT_FILE_POLL_INTERVAL_MS = 500;
+const PORT_FILE_MAX_ATTEMPTS = 240;
 
 export interface ServerManagerOptions {
     binaryPath: string;
@@ -17,6 +17,7 @@ export interface ServerManagerOptions {
     port: number | null;
     ollamaUrl: string;
     onStateChange?: (state: ServerState) => void;
+    onRestartsExhausted?: (stderr: string) => void;
 }
 
 export class ServerManager {
@@ -27,9 +28,15 @@ export class ServerManager {
     private stopping = false;
     private restartTimer: ReturnType<typeof setTimeout> | null = null;
     private _actualPort: number | null = null;
+    private _stderrLines: string[] = [];
+    private static readonly MAX_STDERR_LINES = 20;
 
     constructor(opts: ServerManagerOptions) {
         this.opts = opts;
+    }
+
+    get lastStderr(): string {
+        return this._stderrLines.join("\n");
     }
 
     get state(): ServerState {
@@ -42,7 +49,7 @@ export class ServerManager {
     }
 
     private get portFilePath(): string {
-        return `${this.opts.dataDir}/server.port`;
+        return `${this.opts.dataDir}/data/server.port`;
     }
 
     private async waitForPortFile(): Promise<void> {
@@ -88,11 +95,30 @@ export class ServerManager {
             LILBEE_CORS_ORIGINS: "app://obsidian.md",
         };
 
+        this._stderrLines = [];
+
         this.child = node.spawn(this.opts.binaryPath, args, {
             env,
-            stdio: "ignore",
+            stdio: ["ignore", "ignore", "pipe"],
             detached: false,
         });
+
+        if (this.child.stderr) {
+            let partial = "";
+            this.child.stderr.on("data", (chunk: Buffer) => {
+                partial += chunk.toString();
+                const lines = partial.split("\n");
+                partial = lines.pop()!;
+                for (const line of lines) {
+                    if (line.length > 0) {
+                        this._stderrLines.push(line);
+                        if (this._stderrLines.length > ServerManager.MAX_STDERR_LINES) {
+                            this._stderrLines.shift();
+                        }
+                    }
+                }
+            });
+        }
 
         this.child.on("exit", (_code, _signal) => {
             this.child = null;
@@ -105,6 +131,7 @@ export class ServerManager {
                 }, CRASH_RESTART_DELAY_MS);
             } else if (!this.stopping) {
                 this.setState(SERVER_STATE.ERROR);
+                this.opts.onRestartsExhausted?.(this.lastStderr);
             }
         });
 
