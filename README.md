@@ -4,9 +4,12 @@
 [![Coverage](https://tobocop2.github.io/obsidian-lilbee/coverage/badge.svg)](https://tobocop2.github.io/obsidian-lilbee/coverage/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
 [![Obsidian](https://img.shields.io/badge/Obsidian-Plugin-7c3aed?logo=obsidian&logoColor=white)](https://obsidian.md)
 
 > Beta — feedback and bug reports welcome. [Open an issue](https://github.com/tobocop2/obsidian-lilbee/issues).
+>
+> If you delete a file from your vault, it will still show up in search results. Removing deleted files from the index is coming soon.
 
 Chat with your documents privately, entirely on your own machine. Ask questions about your notes, PDFs, code, spreadsheets, and images — and get answers grounded in what you've actually written, with source citations. Save conversations back to your vault as markdown. No cloud services, no API keys, no data leaves your computer.
 
@@ -71,9 +74,9 @@ The chat panel opens in the sidebar. From there you can start asking questions, 
 
 ## How it works
 
-On first launch, the plugin downloads a small server program ([lilbee](https://github.com/tobocop2/lilbee)) and runs it in the background. When you sync your vault or attach files in the chat, this server breaks your documents into passages and uses Ollama to create searchable embeddings. When you ask a question, it finds the most relevant passages and sends them to the chat model, which writes an answer grounded in your actual documents — with links back to the sources.
+On first launch, the plugin downloads the [lilbee](https://github.com/tobocop2/lilbee) server and runs it in the background. When you sync your vault or attach files in the chat, this server breaks your documents into passages and uses Ollama to create searchable embeddings. When you ask a question, it finds the most relevant passages and sends them to the chat model, which writes an answer grounded in your actual documents — with links back to the sources.
 
-Everything stays on your machine. The server, the models, the search index, and your documents all live locally.
+Everything stays on your machine. The server, the models, the search index, and your documents all live locally. Like all Obsidian plugins, lilbee is installed per vault — each vault runs its own server instance with its own index, so there is no shared global store. If you already run your own lilbee server, you can point the plugin at it by overriding the server URL in Settings → lilbee.
 
 > **macOS users:** The server binary is unsigned (Apple charges [$99/year](https://developer.apple.com/support/enrollment/) for that). The plugin clears the quarantine flag automatically. If macOS still blocks it, go to System Settings → Privacy & Security and click "Allow Anyway". See the [lilbee source](https://github.com/tobocop2/lilbee) if you want to audit the build.
 
