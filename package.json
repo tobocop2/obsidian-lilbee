@@ -6,7 +6,8 @@
         "build": "node esbuild.config.mjs production",
         "dev": "node esbuild.config.mjs",
         "test": "vitest run --coverage",
-        "test:watch": "vitest"
+        "test:watch": "vitest",
+        "test:integration": "vitest run --config vitest.integration.config.ts"
     },
     "devDependencies": {
         "@types/node": "^22.0.0",
