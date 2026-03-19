@@ -1,4 +1,4 @@
-# lilbee for Obsidian
+# [lilbee for Obsidian](https://tobocop2.github.io/obsidian-lilbee/)
 
 [![CI](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml/badge.svg)](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml)
 [![Coverage](https://tobocop2.github.io/obsidian-lilbee/coverage/badge.svg)](https://tobocop2.github.io/obsidian-lilbee/coverage/)
@@ -58,6 +58,7 @@ Models are large files (a few GB each) and take a few minutes to download the fi
 2. Install **[BRAT](https://github.com/TfTHacker/obsidian42-brat)** in Obsidian (Settings → Community plugins → Browse → search "BRAT" → Install → Enable)
 3. Open the command palette (`Cmd/Ctrl + P`) → **BRAT: Plugins: Add a beta plugin for testing** → paste `tobocop2/obsidian-lilbee` → Add Plugin
 4. Enable **lilbee** in Settings → Community plugins
+5. Go to **Settings → lilbee** (or click the gear icon next to lilbee in Community plugins) to choose a chat model — pick one from the catalog and it downloads with one click. Optionally enable a vision model for images and scanned PDFs.
 
 The plugin downloads and manages the [lilbee](https://github.com/tobocop2/lilbee) server automatically — no terminal commands, no Python, no manual setup. Wait for the status bar to show `lilbee: ready`, then open the chat.
 
@@ -79,6 +80,10 @@ On first launch, the plugin downloads the [lilbee](https://github.com/tobocop2/l
 Everything stays on your machine. The server, the models, the search index, and your documents all live locally. Like all Obsidian plugins, lilbee is installed per vault — each vault runs its own server instance with its own index, so there is no shared global store. If you already run your own lilbee server, you can point the plugin at it by overriding the server URL in Settings → lilbee.
 
 > **macOS users:** The server binary is unsigned (Apple charges [$99/year](https://developer.apple.com/support/enrollment/) for that). The plugin clears the quarantine flag automatically. If macOS still blocks it, go to System Settings → Privacy & Security and click "Allow Anyway". See the [lilbee source](https://github.com/tobocop2/lilbee) if you want to audit the build.
+
+## Updating the plugin
+
+Go to **Settings → BRAT → Beta Plugin List**, click the edit (pencil) icon next to lilbee, and change the version to the latest release tag. BRAT will download the new version. **Restart Obsidian** after the update for the new version to take effect.
 
 ## Updating the server
 
