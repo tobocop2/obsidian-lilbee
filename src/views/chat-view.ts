@@ -76,6 +76,9 @@ export class ChatView extends ItemView {
     private visionCatalog: ModelCatalog | null = null;
     private chatSelectEl: HTMLSelectElement | null = null;
     private visionSelectEl: HTMLSelectElement | null = null;
+    private static readonly OFFLINE_THRESHOLD = 3;
+    private retryTimer: ReturnType<typeof setTimeout> | null = null;
+    private retryCount = 0;
 
     constructor(leaf: WorkspaceLeaf, plugin: LilbeePlugin) {
         super(leaf);
@@ -110,6 +113,8 @@ export class ChatView extends ItemView {
     async onClose(): Promise<void> {
         this.streamController?.abort();
         this.pullController?.abort();
+        if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = null; }
+        this.retryCount = 0;
         if (this.plugin.onProgress) {
             this.plugin.onProgress = null;
         }
@@ -212,13 +217,28 @@ export class ChatView extends ItemView {
 
     private fetchAndFillSelectors(): void {
         this.plugin.api.listModels().then((models) => {
+            if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = null; }
+            this.retryCount = 0;
+            if (this.chatSelectEl) this.chatSelectEl.empty();
+            if (this.visionSelectEl) this.visionSelectEl.empty();
             this.chatCatalog = models.chat;
             this.visionCatalog = models.vision;
             if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl, models.chat, "chat");
             if (this.visionSelectEl) this.fillSelectOptions(this.visionSelectEl, models.vision, "vision");
+            // Ollama not running — retry until models appear
+            if (models.chat.installed.length === 0 && models.vision.installed.length === 0) {
+                this.retryTimer = setTimeout(() => this.fetchAndFillSelectors(), 5000);
+            }
         }).catch(() => {
-            if (this.chatSelectEl) this.chatSelectEl.createEl("option", { text: "(offline)" });
-            if (this.visionSelectEl) this.visionSelectEl.createEl("option", { text: "(offline)" });
+            this.retryCount++;
+            const connecting = this.retryCount < ChatView.OFFLINE_THRESHOLD;
+            const label = connecting ? "(connecting...)" : "(offline)";
+            if (this.chatSelectEl) { this.chatSelectEl.empty(); this.chatSelectEl.createEl("option", { text: label }); }
+            if (this.visionSelectEl) { this.visionSelectEl.empty(); this.visionSelectEl.createEl("option", { text: label }); }
+            if (this.retryCount === ChatView.OFFLINE_THRESHOLD) {
+                new Notice("lilbee: could not reach server — is Ollama running?");
+            }
+            this.retryTimer = setTimeout(() => this.fetchAndFillSelectors(), 5000);
         });
     }
 

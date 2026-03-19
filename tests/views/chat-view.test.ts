@@ -674,22 +674,26 @@ describe("ChatView.onOpen — model selector", () => {
         expect(options[2].textContent).toBe("phi3");
     });
 
-    it("shows (offline) option on both selects when listModels fails", async () => {
+    it("shows (connecting...) option on both selects when listModels fails", async () => {
+        vi.useFakeTimers();
         Notice.clear();
         const plugin = makePlugin();
         plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
-        await tick();
+        await vi.advanceTimersByTimeAsync(0);
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         const chatSelect = container.find("lilbee-chat-model-select")!;
         const chatOptions = chatSelect.children.filter((c) => c.tagName === "OPTION");
-        expect(chatOptions.some((o) => o.textContent === "(offline)")).toBe(true);
+        expect(chatOptions.some((o) => o.textContent === "(connecting...)")).toBe(true);
 
         const visionSelect = container.find("lilbee-chat-vision-select")!;
         const visionOptions = visionSelect.children.filter((c) => c.tagName === "OPTION");
-        expect(visionOptions.some((o) => o.textContent === "(offline)")).toBe(true);
+        expect(visionOptions.some((o) => o.textContent === "(connecting...)")).toBe(true);
+
+        await view.onClose();
+        vi.useRealTimers();
     });
 
     it("change event calls setChatModel and updates activeModel", async () => {
@@ -2133,5 +2137,271 @@ describe("ChatView.createToolbar — toolbar icons", () => {
         expect(visionIcon.attributes["data-icon"]).toBe("eye");
         expect(chatIcon.attributes["title"]).toBe("Chat model");
         expect(visionIcon.attributes["title"]).toBe("Vision model");
+    });
+});
+
+describe("ChatView — offline retry", () => {
+    beforeEach(() => {
+        Notice.clear();
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it("retries fetching models after failure", async () => {
+        const plugin = makePlugin();
+        let callCount = 0;
+        plugin.api.listModels = vi.fn().mockImplementation(() => {
+            callCount++;
+            if (callCount === 1) return Promise.reject(new Error("offline"));
+            return Promise.resolve({
+                chat: { active: "llama3", installed: ["llama3"], catalog: [] },
+                vision: { active: "", installed: [], catalog: [] },
+            });
+        });
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        // Let the first (rejected) promise settle
+        await vi.advanceTimersByTimeAsync(0);
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const chatSelect = container.find("lilbee-chat-model-select")!;
+        const chatOptions = chatSelect.children.filter((c) => c.tagName === "OPTION");
+        expect(chatOptions.some((o) => o.textContent === "(connecting...)")).toBe(true);
+
+        // Advance past the 5s retry
+        await vi.advanceTimersByTimeAsync(5000);
+
+        const updatedOptions = chatSelect.children.filter((c) => c.tagName === "OPTION");
+        expect(updatedOptions.some((o) => o.textContent === "llama3")).toBe(true);
+        expect(updatedOptions.some((o) => o.textContent === "(connecting...)")).toBe(false);
+
+        await view.onClose();
+    });
+
+    it("shows Ollama notice only at threshold", async () => {
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await vi.advanceTimersByTimeAsync(0);
+
+        // First failure — no notice yet (connecting state)
+        expect(Notice.instances.filter(
+            (n) => n.message.includes("is Ollama running?"),
+        ).length).toBe(0);
+
+        // Second failure — still no notice
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(Notice.instances.filter(
+            (n) => n.message.includes("is Ollama running?"),
+        ).length).toBe(0);
+
+        // Third failure — notice fires at threshold
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(Notice.instances.filter(
+            (n) => n.message.includes("is Ollama running?"),
+        ).length).toBe(1);
+
+        // Fourth failure — no additional notice
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(Notice.instances.filter(
+            (n) => n.message.includes("is Ollama running?"),
+        ).length).toBe(1);
+
+        await view.onClose();
+    });
+
+    it("clears retry timer and retryCount on successful fetch", async () => {
+        const plugin = makePlugin();
+        let callCount = 0;
+        plugin.api.listModels = vi.fn().mockImplementation(() => {
+            callCount++;
+            if (callCount === 1) return Promise.reject(new Error("offline"));
+            return Promise.resolve({
+                chat: { active: "llama3", installed: ["llama3"], catalog: [] },
+                vision: { active: "", installed: [], catalog: [] },
+            });
+        });
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await vi.advanceTimersByTimeAsync(0);
+
+        // After first failure, retryTimer should be set
+        expect((view as any).retryTimer).not.toBeNull();
+        expect((view as any).retryCount).toBe(1);
+
+        // Advance past retry — success
+        await vi.advanceTimersByTimeAsync(5000);
+
+        expect((view as any).retryTimer).toBeNull();
+        expect((view as any).retryCount).toBe(0);
+
+        await view.onClose();
+    });
+
+    it("clears retry timer and retryCount on close", async () => {
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect((view as any).retryTimer).not.toBeNull();
+        expect((view as any).retryCount).toBe(1);
+
+        await view.onClose();
+
+        expect((view as any).retryTimer).toBeNull();
+        expect((view as any).retryCount).toBe(0);
+    });
+
+    it("clears existing options before retry", async () => {
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await vi.advanceTimersByTimeAsync(0);
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const chatSelect = container.find("lilbee-chat-model-select")!;
+
+        // After first failure: exactly one (connecting...) option
+        let connectingOptions = chatSelect.children.filter(
+            (c) => c.tagName === "OPTION" && c.textContent === "(connecting...)",
+        );
+        expect(connectingOptions.length).toBe(1);
+
+        // Advance past retry — second failure
+        await vi.advanceTimersByTimeAsync(5000);
+
+        // Still exactly one (connecting...) option (not duplicated)
+        connectingOptions = chatSelect.children.filter(
+            (c) => c.tagName === "OPTION" && c.textContent === "(connecting...)",
+        );
+        expect(connectingOptions.length).toBe(1);
+
+        await view.onClose();
+    });
+
+    it("shows (connecting...) then (offline) after threshold", async () => {
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const chatSelect = container.find("lilbee-chat-model-select")!;
+
+        // Failure 1 — connecting
+        await vi.advanceTimersByTimeAsync(0);
+        expect(chatSelect.children.some((c) => c.textContent === "(connecting...)")).toBe(true);
+
+        // Failure 2 — still connecting
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(chatSelect.children.some((c) => c.textContent === "(connecting...)")).toBe(true);
+
+        // Failure 3 — switches to offline
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(chatSelect.children.some((c) => c.textContent === "(offline)")).toBe(true);
+        expect(chatSelect.children.some((c) => c.textContent === "(connecting...)")).toBe(false);
+
+        await view.onClose();
+    });
+
+    it("retries when server reachable but no models installed", async () => {
+        const plugin = makePlugin();
+        let callCount = 0;
+        plugin.api.listModels = vi.fn().mockImplementation(() => {
+            callCount++;
+            if (callCount <= 2) {
+                return Promise.resolve({
+                    chat: { active: "", installed: [], catalog: [{ name: "llama3", installed: false }] },
+                    vision: { active: "", installed: [], catalog: [] },
+                });
+            }
+            return Promise.resolve({
+                chat: { active: "llama3", installed: ["llama3"], catalog: [{ name: "llama3", installed: true }] },
+                vision: { active: "", installed: [], catalog: [] },
+            });
+        });
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await vi.advanceTimersByTimeAsync(0);
+
+        // First success with no installed models — retry scheduled
+        expect((view as any).retryTimer).not.toBeNull();
+
+        // Second call — still no installed models
+        await vi.advanceTimersByTimeAsync(5000);
+        expect((view as any).retryTimer).not.toBeNull();
+
+        // Third call — models now installed, retry stops
+        await vi.advanceTimersByTimeAsync(5000);
+        expect((view as any).retryTimer).toBeNull();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const chatSelect = container.find("lilbee-chat-model-select")!;
+        const options = chatSelect.children.filter((c) => c.tagName === "OPTION");
+        expect(options.some((o) => o.textContent === "llama3")).toBe(true);
+
+        await view.onClose();
+    });
+
+    it("stops no-installed-models retry on close", async () => {
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockResolvedValue({
+            chat: { active: "", installed: [], catalog: [] },
+            vision: { active: "", installed: [], catalog: [] },
+        });
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect((view as any).retryTimer).not.toBeNull();
+
+        await view.onClose();
+
+        expect((view as any).retryTimer).toBeNull();
+    });
+
+    it("resets retryCount on success after failures", async () => {
+        const plugin = makePlugin();
+        let callCount = 0;
+        plugin.api.listModels = vi.fn().mockImplementation(() => {
+            callCount++;
+            if (callCount <= 2) return Promise.reject(new Error("offline"));
+            return Promise.resolve({
+                chat: { active: "llama3", installed: ["llama3"], catalog: [] },
+                vision: { active: "", installed: [], catalog: [] },
+            });
+        });
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+
+        // Failure 1
+        await vi.advanceTimersByTimeAsync(0);
+        expect((view as any).retryCount).toBe(1);
+
+        // Failure 2
+        await vi.advanceTimersByTimeAsync(5000);
+        expect((view as any).retryCount).toBe(2);
+
+        // Success — resets to 0
+        await vi.advanceTimersByTimeAsync(5000);
+        expect((view as any).retryCount).toBe(0);
+
+        await view.onClose();
     });
 });
