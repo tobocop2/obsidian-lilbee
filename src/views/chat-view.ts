@@ -1,9 +1,11 @@
 import { FuzzySuggestModal, ItemView, MarkdownRenderer, Menu, Notice, setIcon, type TFile, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
-import { SSE_EVENT } from "../types";
-import type { GenerationOptions, Message, ModelCatalog, OllamaPullProgress, Source, SSEEvent } from "../types";
+import { MODEL_TYPE, NOTICE, SSE_EVENT } from "../types";
+import type { GenerationOptions, Message, ModelCatalog, ModelType, OllamaPullProgress, Source, SSEEvent } from "../types";
+import { PullQueue } from "../pull-queue";
 import { renderSourceChip } from "./results";
 import { buildModelOptions, SEPARATOR_KEY } from "../settings";
+import { ConfirmPullModal } from "./confirm-pull-modal";
 
 interface OpenDialogResult {
     canceled: boolean;
@@ -67,6 +69,7 @@ export class ChatView extends ItemView {
     private sending = false;
     private streamController: AbortController | null = null;
     private pullController: AbortController | null = null;
+    private pullQueue = new PullQueue();
     private progressCancelBtn: HTMLElement | null = null;
     private progressBanner: HTMLElement | null = null;
     private progressTopLabel: HTMLElement | null = null;
@@ -263,7 +266,13 @@ export class ChatView extends ItemView {
                 (m) => m.name === el.value && !m.installed,
             );
             if (uninstalled) {
-                this.autoPullAndSetChat(uninstalled);
+                const modal = new ConfirmPullModal(this.plugin.app, uninstalled);
+                modal.open();
+                void modal.result.then((confirmed) => {
+                    if (confirmed) {
+                        void this.pullQueue.enqueue(() => this.autoPullAndSet(uninstalled, MODEL_TYPE.CHAT), uninstalled.name);
+                    }
+                });
                 return;
             }
             this.plugin.api.setChatModel(el.value).then(() => {
@@ -282,7 +291,13 @@ export class ChatView extends ItemView {
                 (m) => m.name === el.value && !m.installed,
             );
             if (uninstalled) {
-                this.autoPullAndSetVision(uninstalled);
+                const modal = new ConfirmPullModal(this.plugin.app, uninstalled);
+                modal.open();
+                void modal.result.then((confirmed) => {
+                    if (confirmed) {
+                        void this.pullQueue.enqueue(() => this.autoPullAndSet(uninstalled, MODEL_TYPE.VISION), uninstalled.name);
+                    }
+                });
                 return;
             }
             this.plugin.api.setVisionModel(el.value).then(() => {
@@ -294,54 +309,44 @@ export class ChatView extends ItemView {
         });
     }
 
-    private autoPullAndSetChat(model: { name: string }): void {
-        this.autoPullAndSet(model, "chat");
-    }
-
-    private autoPullAndSetVision(model: { name: string }): void {
-        this.autoPullAndSet(model, "vision");
-    }
-
-    private autoPullAndSet(model: { name: string }, type: "chat" | "vision"): void {
-        new Notice(`Pulling ${model.name}...`);
+    private async autoPullAndSet(model: { name: string }, type: ModelType): Promise<void> {
+        new Notice(`lilbee: pulling ${model.name}...`);
         this.pullController = new AbortController();
-        (async () => {
-            try {
-                for await (const progress of this.plugin.ollama.pull(
-                    model.name,
-                    this.pullController!.signal,
-                )) {
-                    if (progress.total && progress.completed !== undefined) {
-                        const pct = Math.round((progress.completed / progress.total) * 100);
-                        this.showPullProgress(
-                            `Pulling ${model.name} — ${pct}%`,
-                            progress.completed,
-                            progress.total,
-                        );
-                    }
+        try {
+            for await (const progress of this.plugin.ollama.pull(
+                model.name,
+                this.pullController.signal,
+            )) {
+                if (progress.total && progress.completed !== undefined) {
+                    const pct = Math.round((progress.completed / progress.total) * 100);
+                    this.showPullProgress(
+                        `Pulling ${model.name} — ${pct}%`,
+                        progress.completed,
+                        progress.total,
+                    );
                 }
-                this.hideProgress();
-                if (type === "chat") {
-                    await this.plugin.api.setChatModel(model.name);
-                    this.plugin.activeModel = model.name;
-                } else {
-                    await this.plugin.api.setVisionModel(model.name);
-                    this.plugin.activeVisionModel = model.name;
-                }
-                this.plugin.fetchActiveModel();
-                new Notice(`Model ${model.name} pulled and activated`);
-                this.refreshModelSelector();
-            } catch (err) {
-                if (err instanceof Error && err.name === "AbortError") {
-                    new Notice("Pull cancelled");
-                } else {
-                    new Notice(`Failed to pull ${model.name}`);
-                }
-                this.hideProgress();
-            } finally {
-                this.pullController = null;
             }
-        })();
+            this.hideProgress();
+            if (type === MODEL_TYPE.CHAT) {
+                await this.plugin.api.setChatModel(model.name);
+                this.plugin.activeModel = model.name;
+            } else {
+                await this.plugin.api.setVisionModel(model.name);
+                this.plugin.activeVisionModel = model.name;
+            }
+            this.plugin.fetchActiveModel();
+            new Notice(`lilbee: ${model.name} pulled and activated`);
+            this.refreshModelSelector();
+        } catch (err) {
+            if (err instanceof Error && err.name === "AbortError") {
+                new Notice(NOTICE.PULL_CANCELLED);
+            } else {
+                new Notice(`lilbee: failed to pull ${model.name}`);
+            }
+            this.hideProgress();
+        } finally {
+            this.pullController = null;
+        }
     }
 
     private refreshModelSelector(): void {
