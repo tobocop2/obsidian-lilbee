@@ -12,7 +12,16 @@ import { Notice, WorkspaceLeaf } from "../__mocks__/obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal, electronDialog, buildGenerationOptions } from "../../src/views/chat-view";
 import type LilbeePlugin from "../../src/main";
-import { SSE_EVENT } from "../../src/types";
+import { NOTICE, SSE_EVENT } from "../../src/types";
+
+let mockChatViewConfirmResult = true;
+vi.mock("../../src/views/confirm-pull-modal", () => ({
+    ConfirmPullModal: vi.fn().mockImplementation(() => ({
+        open: vi.fn(),
+        get result() { return Promise.resolve(mockChatViewConfirmResult); },
+        close: vi.fn(),
+    })),
+}));
 import type { SSEEvent, Source } from "../../src/types";
 
 function makeLeaf(): WorkspaceLeaf {
@@ -797,7 +806,7 @@ describe("ChatView.onOpen — model selector", () => {
 
         expect(plugin.ollama.pull).toHaveBeenCalledWith("phi3", expect.any(AbortSignal));
         expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
-        expect(Notice.instances.some((n) => n.message.includes("pulled and activated"))).toBe(true);
+        expect(Notice.instances.some((n) => n.message === "lilbee: phi3 pulled and activated")).toBe(true);
     });
 
     it("auto-pull failure shows failure notice", async () => {
@@ -831,7 +840,7 @@ describe("ChatView.onOpen — model selector", () => {
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
-        expect(Notice.instances.some((n) => n.message.includes("Failed to pull"))).toBe(true);
+        expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
     });
 
     it("auto-pull with total=0 does not send progress", async () => {
@@ -1570,7 +1579,7 @@ describe("ChatView.onOpen — vision selector", () => {
 
         expect(plugin.ollama.pull).toHaveBeenCalledWith("llava", expect.any(AbortSignal));
         expect(plugin.api.setVisionModel).toHaveBeenCalledWith("llava");
-        expect(Notice.instances.some((n) => n.message.includes("pulled and activated"))).toBe(true);
+        expect(Notice.instances.some((n) => n.message === "lilbee: llava pulled and activated")).toBe(true);
     });
 
     it("vision auto-pull failure shows failure notice", async () => {
@@ -1603,7 +1612,7 @@ describe("ChatView.onOpen — vision selector", () => {
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
-        expect(Notice.instances.some((n) => n.message.includes("Failed to pull"))).toBe(true);
+        expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
     });
 
     it("vision auto-pull with total=0 does not crash", async () => {
@@ -1822,7 +1831,42 @@ describe("ChatView — cancel model pull", () => {
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
-        expect(Notice.instances.some((n) => n.message === "Pull cancelled")).toBe(true);
+        expect(Notice.instances.some((n) => n.message === NOTICE.PULL_CANCELLED)).toBe(true);
+    });
+});
+
+
+describe("ChatView — pull queue", () => {
+    it("enqueueOrRunPull queues second pull while first is running", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+
+        const firstRun = vi.fn().mockResolvedValue(undefined);
+        const secondRun = vi.fn().mockResolvedValue(undefined);
+
+        // Start first pull
+        const p1 = (view as any).pullQueue.enqueue(firstRun);
+        // Manually set pulling to simulate mid-pull state for queue test
+        // (firstRun resolves immediately in test)
+        await p1;
+        expect(firstRun).toHaveBeenCalled();
+
+        // Now test queue: start a slow first, queue a second
+        let resolveSlow!: () => void;
+        const slowRun = () => new Promise<void>((r) => { resolveSlow = r; });
+        const p2 = (view as any).pullQueue.enqueue(slowRun);
+        // Queue a second while slow is running
+        (view as any).pullQueue.enqueue(secondRun);
+        expect(Notice.instances.some((n) => n.message.startsWith("lilbee: download queued"))).toBe(true);
+        expect(secondRun).not.toHaveBeenCalled();
+
+        // Complete the slow pull
+        resolveSlow();
+        await p2;
+        // Second should have run via runNextPull
+        expect(secondRun).toHaveBeenCalled();
     });
 });
 
