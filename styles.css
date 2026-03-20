@@ -129,7 +129,8 @@
     flex: 1;
 }
 
-.lilbee-progress-banner {
+.lilbee-progress-banner,
+.lilbee-progress-banner-pull {
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -141,7 +142,8 @@
     opacity: 1;
 }
 
-.lilbee-progress-banner[data-hidden] {
+.lilbee-progress-banner[data-hidden],
+.lilbee-progress-banner-pull[data-hidden] {
     opacity: 0;
     pointer-events: none;
 }
