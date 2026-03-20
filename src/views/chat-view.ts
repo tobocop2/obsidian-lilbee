@@ -36,6 +36,14 @@ export interface ProgressState {
     subTotal: number;
 }
 
+export interface ProgressRefs {
+    banner: HTMLElement;
+    topLabel: HTMLElement;
+    bar: HTMLElement;
+    cancelBtn: HTMLElement;
+    subLabel: HTMLElement | null;
+}
+
 export function buildGenerationOptions(settings: {
     temperature: number | null;
     top_p: number | null;
@@ -70,11 +78,9 @@ export class ChatView extends ItemView {
     private streamController: AbortController | null = null;
     private pullController: AbortController | null = null;
     private pullQueue = new PullQueue();
-    private progressCancelBtn: HTMLElement | null = null;
-    private progressBanner: HTMLElement | null = null;
-    private progressTopLabel: HTMLElement | null = null;
-    private progressSubLabel: HTMLElement | null = null;
-    private progressBar: HTMLElement | null = null;
+    private addQueue = new PullQueue();
+    private fileProgress: ProgressRefs | null = null;
+    private pullProgress: ProgressRefs | null = null;
     private chatCatalog: ModelCatalog | null = null;
     private visionCatalog: ModelCatalog | null = null;
     private chatSelectEl: HTMLSelectElement | null = null;
@@ -106,7 +112,12 @@ export class ChatView extends ItemView {
         container.addClass("lilbee-chat-container");
 
         this.createToolbar(container);
-        this.createProgressBanner(container);
+        this.fileProgress = this.createBanner(container, "lilbee-progress-banner", true, () => {
+            this.plugin.cancelSync();
+        });
+        this.pullProgress = this.createBanner(container, "lilbee-progress-banner-pull", false, () => {
+            this.pullController?.abort();
+        });
         this.messagesEl = container.createDiv({ cls: "lilbee-chat-messages" });
         this.createInputArea(container);
 
@@ -162,21 +173,26 @@ export class ChatView extends ItemView {
         clearBtn.addEventListener("click", () => this.clearChat());
     }
 
-    private createProgressBanner(container: HTMLElement): void {
-        this.progressBanner = container.createDiv({ cls: "lilbee-progress-banner" });
-        this.progressBanner.dataset.hidden = "";
-        const row = this.progressBanner.createDiv({ cls: "lilbee-progress-row" });
-        this.progressTopLabel = row.createDiv({ cls: "lilbee-progress-top-label" });
-        this.progressCancelBtn = row.createEl("button", { cls: "lilbee-progress-cancel" });
-        setIcon(this.progressCancelBtn, "x");
-        this.progressCancelBtn.setAttribute("aria-label", "Cancel");
-        this.progressCancelBtn.addEventListener("click", () => {
-            this.pullController?.abort();
-            this.plugin.cancelSync();
-        });
-        const barContainer = this.progressBanner.createDiv({ cls: "lilbee-progress-bar-container" });
-        this.progressBar = barContainer.createDiv({ cls: "lilbee-progress-bar" });
-        this.progressSubLabel = this.progressBanner.createDiv({ cls: "lilbee-progress-sub-label" });
+    private createBanner(
+        container: HTMLElement,
+        className: string,
+        withSubLabel: boolean,
+        onCancel: () => void,
+    ): ProgressRefs {
+        const banner = container.createDiv({ cls: className });
+        banner.dataset.hidden = "";
+        const row = banner.createDiv({ cls: "lilbee-progress-row" });
+        const topLabel = row.createDiv({ cls: "lilbee-progress-top-label" });
+        const cancelBtn = row.createEl("button", { cls: "lilbee-progress-cancel" });
+        setIcon(cancelBtn, "x");
+        cancelBtn.setAttribute("aria-label", "Cancel");
+        cancelBtn.addEventListener("click", onCancel);
+        const barContainer = banner.createDiv({ cls: "lilbee-progress-bar-container" });
+        const bar = barContainer.createDiv({ cls: "lilbee-progress-bar" });
+        const subLabel = withSubLabel
+            ? banner.createDiv({ cls: "lilbee-progress-sub-label" })
+            : null;
+        return { banner, topLabel, bar, cancelBtn, subLabel };
     }
 
     private createInputArea(container: HTMLElement): void {
@@ -326,7 +342,7 @@ export class ChatView extends ItemView {
                     );
                 }
             }
-            this.hideProgress();
+            this.hidePullProgress();
             if (type === MODEL_TYPE.CHAT) {
                 await this.plugin.api.setChatModel(model.name);
                 this.plugin.activeModel = model.name;
@@ -343,7 +359,7 @@ export class ChatView extends ItemView {
             } else {
                 new Notice(`lilbee: failed to pull ${model.name}`);
             }
-            this.hideProgress();
+            this.hidePullProgress();
         } finally {
             this.pullController = null;
         }
@@ -419,9 +435,9 @@ export class ChatView extends ItemView {
                     textEl.textContent = "(stopped)";
                 }
             } else {
-                revealContent();
-                textEl.textContent = "Server unavailable — retries exhausted. Is lilbee running?";
-                textEl.addClass("lilbee-chat-error");
+                assistantBubble.remove();
+                this.history.pop();
+                new Notice("lilbee: could not reach server — is lilbee running?");
             }
         } finally {
             this.sending = false;
@@ -459,9 +475,7 @@ export class ChatView extends ItemView {
             }
             case SSE_EVENT.ERROR: {
                 const errMsg = extractString(event.data, "message");
-                revealContent();
-                textEl.textContent = errMsg;
-                textEl.addClass("lilbee-chat-error");
+                assistantBubble.remove();
                 new Notice(`lilbee: ${errMsg}`);
                 break;
             }
@@ -480,7 +494,7 @@ export class ChatView extends ItemView {
             item.setTitle("From vault")
                 .setIcon("vault")
                 .onClick(() => {
-                    new VaultFilePickerModal(this.app, this.plugin).open();
+                    new VaultFilePickerModal(this.app, (file) => this.enqueueAddFile(file)).open();
                 });
         });
         menu.addItem((item) => {
@@ -502,10 +516,23 @@ export class ChatView extends ItemView {
             : ["openFile", "multiSelections"];
         electronDialog.showOpenDialog({ properties }).then((result) => {
             if (result.canceled || result.filePaths.length === 0) return;
-            void this.plugin.addExternalFiles(result.filePaths);
+            const label = result.filePaths.length === 1
+                ? result.filePaths[0].split("/").pop()!
+                : `${result.filePaths.length} files`;
+            void this.addQueue.enqueue(
+                () => this.plugin.addExternalFiles(result.filePaths),
+                label,
+            );
         }).catch(() => {
             new Notice("lilbee: could not open file picker");
         });
+    }
+
+    private enqueueAddFile(file: TFile): void {
+        void this.addQueue.enqueue(
+            () => this.plugin.addToLilbee(file),
+            file.name,
+        );
     }
 
     handleProgress(event: SSEEvent): void {
@@ -540,7 +567,7 @@ export class ChatView extends ItemView {
                 const current = Number(data.current ?? 0);
                 const total = Number(data.total ?? 0);
                 const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-                this.showFileProgress(`Pulling model — ${pct}%`, current, total, "");
+                this.showPullProgress(`Pulling model — ${pct}%`, current, total);
                 break;
             }
             case SSE_EVENT.DONE:
@@ -550,28 +577,38 @@ export class ChatView extends ItemView {
     }
 
     private showFileProgress(topLabel: string, current: number, total: number, subLabel: string): void {
-        if (!this.progressBanner || !this.progressTopLabel || !this.progressBar || !this.progressSubLabel) return;
-        delete this.progressBanner.dataset.hidden;
-        this.progressTopLabel.textContent = topLabel;
-        this.progressBar.style.width = total > 0 ? `${Math.round((current / total) * 100)}%` : "0%";
-        this.progressSubLabel.textContent = subLabel;
+        if (!this.fileProgress) return;
+        delete this.fileProgress.banner.dataset.hidden;
+        this.fileProgress.topLabel.textContent = topLabel;
+        this.fileProgress.bar.style.width = total > 0 ? `${Math.round((current / total) * 100)}%` : "0%";
+        if (this.fileProgress.subLabel) this.fileProgress.subLabel.textContent = subLabel;
     }
 
     private showPullProgress(label: string, current: number, total: number): void {
-        this.showFileProgress(label, current, total, "");
+        if (!this.pullProgress) return;
+        delete this.pullProgress.banner.dataset.hidden;
+        this.pullProgress.topLabel.textContent = label;
+        this.pullProgress.bar.style.width = total > 0 ? `${Math.round((current / total) * 100)}%` : "0%";
     }
 
     private updateSubLabel(text: string): void {
-        if (!this.progressSubLabel) return;
-        this.progressSubLabel.textContent = text;
+        if (!this.fileProgress?.subLabel) return;
+        this.fileProgress.subLabel.textContent = text;
     }
 
     hideProgress(): void {
-        if (!this.progressBanner || !this.progressBar || !this.progressSubLabel) return;
-        this.progressBanner.dataset.hidden = "";
-        this.progressBar.style.width = "0%";
-        if (this.progressTopLabel) this.progressTopLabel.textContent = "";
-        this.progressSubLabel.textContent = "";
+        if (!this.fileProgress) return;
+        this.fileProgress.banner.dataset.hidden = "";
+        this.fileProgress.bar.style.width = "0%";
+        this.fileProgress.topLabel.textContent = "";
+        if (this.fileProgress.subLabel) this.fileProgress.subLabel.textContent = "";
+    }
+
+    private hidePullProgress(): void {
+        if (!this.pullProgress) return;
+        this.pullProgress.banner.dataset.hidden = "";
+        this.pullProgress.bar.style.width = "0%";
+        this.pullProgress.topLabel.textContent = "";
     }
 
     private async saveToVault(): Promise<void> {
@@ -618,11 +655,11 @@ export class ChatView extends ItemView {
 }
 
 export class VaultFilePickerModal extends FuzzySuggestModal<TFile> {
-    private plugin: LilbeePlugin;
+    private onChoose: (file: TFile) => void;
 
-    constructor(app: import("obsidian").App, plugin: LilbeePlugin) {
+    constructor(app: import("obsidian").App, onChoose: (file: TFile) => void) {
         super(app);
-        this.plugin = plugin;
+        this.onChoose = onChoose;
         this.setPlaceholder("Pick a vault file to add to lilbee...");
     }
 
@@ -635,6 +672,6 @@ export class VaultFilePickerModal extends FuzzySuggestModal<TFile> {
     }
 
     onChooseItem(item: TFile): void {
-        void this.plugin.addToLilbee(item);
+        this.onChoose(item);
     }
 }

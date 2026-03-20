@@ -120,6 +120,7 @@ export const NOTICE = {
     PULL_CANCELLED: "lilbee: pull cancelled",
     PULL_FAILED: "lilbee: failed to pull model",
     PULL_QUEUED: "lilbee: download queued",
+    ADD_QUEUED: "lilbee: add queued",
     MODEL_ACTIVATED: "lilbee: model activated",
     ADD_FAILED: "lilbee: add failed",
     ADD_CANCELLED: "lilbee: add cancelled",

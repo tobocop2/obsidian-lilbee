@@ -341,6 +341,7 @@ export default class LilbeePlugin extends Plugin {
             "lilbee-status-downloading",
             "lilbee-status-starting",
             "lilbee-status-ready",
+            "lilbee-status-adding",
         );
         if (cls) this.statusBarEl.classList.add(cls);
     }
@@ -393,6 +394,7 @@ export default class LilbeePlugin extends Plugin {
 
     private async runAdd(paths: string[]): Promise<void> {
         this.updateStatusBar("lilbee: adding...");
+        this.setStatusClass("lilbee-status-adding");
         this.syncController = new AbortController();
 
         try {
@@ -481,6 +483,7 @@ export default class LilbeePlugin extends Plugin {
     async triggerSync(): Promise<void> {
         if (!this.statusBarEl) return;
         this.updateStatusBar("lilbee: syncing...");
+        this.setStatusClass("lilbee-status-adding");
         this.syncController = new AbortController();
 
         try {
