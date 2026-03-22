@@ -190,10 +190,15 @@ export class LilbeeClient {
         options?: { search?: string; featured?: boolean; limit?: number; offset?: number },
     ): Promise<{ total: number; limit: number; offset: number; models: T[] }> {
         const params = new URLSearchParams({ task });
-        if (options?.search !== undefined) params.set("search", options.search);
-        if (options?.featured !== undefined) params.set("featured", String(options.featured));
-        if (options?.limit !== undefined) params.set("limit", String(options.limit));
-        if (options?.offset !== undefined) params.set("offset", String(options.offset));
+        const entries: Record<string, string | undefined> = {
+            search: options?.search,
+            featured: options?.featured !== undefined ? String(options.featured) : undefined,
+            limit: options?.limit !== undefined ? String(options.limit) : undefined,
+            offset: options?.offset !== undefined ? String(options.offset) : undefined,
+        };
+        for (const [key, val] of Object.entries(entries)) {
+            if (val !== undefined) params.set(key, val);
+        }
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/catalog?${params}`);
         return res.json();
     }
