@@ -1,6 +1,7 @@
 import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
 import type { ReleaseInfo } from "./binary-manager";
+import { CatalogModal } from "./views/catalog-modal";
 import { DEFAULT_SETTINGS, SERVER_MODE } from "./types";
 import type { ModelCatalog, ModelDefaults, ModelInfo, ModelsResponse, ServerMode } from "./types";
 
@@ -530,6 +531,21 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     if (value === SEPARATOR_KEY) return;
                     await this.handleModelChange(value, catalog, label, type, container);
                 }),
+        );
+
+        // Browse catalog button — especially useful when no models installed
+        activeSetting.addButton((btn) =>
+            btn.setButtonText("Browse catalog").onClick(() => {
+                new CatalogModal(this.plugin, type, async (model) => {
+                    if (type === "chat") {
+                        await this.plugin.api.setChatModel(model);
+                    } else {
+                        await this.plugin.api.setVisionModel(model);
+                    }
+                    this.plugin.fetchActiveModel();
+                    this.display();
+                }).open();
+            }),
         );
 
         const catalogEl = section.createDiv("lilbee-model-catalog");
