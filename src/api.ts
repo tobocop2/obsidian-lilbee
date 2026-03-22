@@ -1,12 +1,12 @@
 import { JSON_HEADERS, SSE_EVENT } from "./types";
 import type {
     AskResponse,
+    DocumentListResponse,
     DocumentResult,
     GenerationOptions,
     Message,
+    ModelDefaults,
     ModelsResponse,
-    OllamaModelDefaults,
-    OllamaPullProgress,
     SSEEvent,
     StatusResponse,
 } from "./types";
@@ -216,6 +216,48 @@ export class LilbeeClient {
         return res.json();
     }
 
+    async showModel(model: string): Promise<ModelDefaults> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/show`, {
+            method: "POST",
+            headers: JSON_HEADERS,
+            body: JSON.stringify({ model }),
+        });
+        const data = await res.json();
+        return parseModelParameters(data.parameters ?? "", data);
+    }
+
+    async deleteModel(model: string): Promise<{ deleted: boolean }> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/${encodeURIComponent(model)}`, {
+            method: "DELETE",
+        });
+        return res.json();
+    }
+
+    async listDocuments(
+        search = "",
+        limit = 50,
+        offset = 0,
+    ): Promise<DocumentListResponse> {
+        const params = new URLSearchParams();
+        if (search) params.set("search", search);
+        params.set("limit", String(limit));
+        params.set("offset", String(offset));
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/documents?${params}`);
+        return res.json();
+    }
+
+    async removeDocuments(
+        names: string[],
+        deleteFiles = false,
+    ): Promise<{ removed: string[]; not_found: string[] }> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/documents/remove`, {
+            method: "POST",
+            headers: JSON_HEADERS,
+            body: JSON.stringify({ names, delete_files: deleteFiles }),
+        });
+        return res.json();
+    }
+
     private async *parseSSE(response: Response): AsyncGenerator<SSEEvent> {
         if (!response.body) {
             throw new Error("Response body is null");
@@ -251,7 +293,7 @@ export class LilbeeClient {
     }
 }
 
-const PARAM_KEY_MAP: Record<string, keyof OllamaModelDefaults> = {
+const PARAM_KEY_MAP: Record<string, keyof ModelDefaults> = {
     temperature: "temperature",
     top_p: "top_p",
     top_k: "top_k",
@@ -263,8 +305,8 @@ const PARAM_KEY_MAP: Record<string, keyof OllamaModelDefaults> = {
 export function parseModelParameters(
     parameters: string,
     modelInfo: Record<string, unknown>,
-): OllamaModelDefaults {
-    const defaults: OllamaModelDefaults = {};
+): ModelDefaults {
+    const defaults: ModelDefaults = {};
     for (const line of parameters.split("\n")) {
         const parts = line.trim().split(/\s+/);
         if (parts.length < 2) continue;
@@ -282,81 +324,3 @@ export function parseModelParameters(
     return defaults;
 }
 
-export class OllamaClient {
-    constructor(private baseUrl: string) {}
-
-    async *pull(model: string, signal?: AbortSignal): AsyncGenerator<OllamaPullProgress> {
-        const res = await globalThis.fetch(`${this.baseUrl}/api/pull`, {
-            method: "POST",
-            headers: JSON_HEADERS,
-            body: JSON.stringify({ name: model, stream: true }),
-            signal,
-        });
-        if (!res.ok) {
-            const text = await res.text().catch(() => "");
-            throw new Error(`Ollama responded ${res.status}: ${text}`);
-        }
-        yield* this.parseNDJSON(res);
-    }
-
-    async show(model: string): Promise<OllamaModelDefaults> {
-        const res = await globalThis.fetch(`${this.baseUrl}/api/show`, {
-            method: "POST",
-            headers: JSON_HEADERS,
-            body: JSON.stringify({ name: model }),
-        });
-        if (!res.ok) {
-            const text = await res.text().catch(() => "");
-            throw new Error(`Ollama responded ${res.status}: ${text}`);
-        }
-        const data = await res.json();
-        return parseModelParameters(data.parameters ?? "", data.model_info ?? {});
-    }
-
-    async delete(model: string): Promise<void> {
-        const res = await globalThis.fetch(`${this.baseUrl}/api/delete`, {
-            method: "DELETE",
-            headers: JSON_HEADERS,
-            body: JSON.stringify({ name: model }),
-        });
-        if (!res.ok) {
-            const text = await res.text().catch(() => "");
-            throw new Error(`Ollama responded ${res.status}: ${text}`);
-        }
-    }
-
-    private async *parseNDJSON(response: Response): AsyncGenerator<OllamaPullProgress> {
-        if (!response.body) {
-            throw new Error("Response body is null");
-        }
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-
-            const lines = buffer.split("\n");
-            buffer = lines.pop()!;
-
-            for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed) continue;
-                try {
-                    yield JSON.parse(trimmed) as OllamaPullProgress;
-                } catch {
-                    // skip malformed lines
-                }
-            }
-        }
-        if (buffer.trim()) {
-            try {
-                yield JSON.parse(buffer.trim()) as OllamaPullProgress;
-            } catch {
-                // skip
-            }
-        }
-    }
-}

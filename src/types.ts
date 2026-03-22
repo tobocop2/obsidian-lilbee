@@ -63,20 +63,26 @@ export interface SyncDone {
     failed: string[];
 }
 
-export interface OllamaPullProgress {
-    status: string;
-    completed?: number;
-    total?: number;
-    digest?: string;
-}
-
-export interface OllamaModelDefaults {
+export interface ModelDefaults {
     temperature?: number;
     top_p?: number;
     top_k?: number;
     repeat_penalty?: number;
     num_ctx?: number;
     seed?: number;
+}
+
+export interface DocumentEntry {
+    filename: string;
+    chunk_count: number;
+    ingested_at: string;
+}
+
+export interface DocumentListResponse {
+    documents: DocumentEntry[];
+    total: number;
+    limit: number;
+    offset: number;
 }
 
 export interface SSEEvent {
@@ -89,7 +95,7 @@ export interface Message {
     content: string;
 }
 
-export type GenerationOptions = OllamaModelDefaults;
+export type GenerationOptions = ModelDefaults;
 
 export type ServerState = "stopped" | "downloading" | "starting" | "ready" | "error";
 

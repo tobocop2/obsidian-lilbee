@@ -2,7 +2,7 @@ import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
 import type { ReleaseInfo } from "./binary-manager";
 import { DEFAULT_SETTINGS, SERVER_MODE } from "./types";
-import type { ModelCatalog, ModelInfo, ModelsResponse, OllamaModelDefaults, ServerMode } from "./types";
+import type { ModelCatalog, ModelDefaults, ModelInfo, ModelsResponse, ServerMode } from "./types";
 
 const CHECK_TIMEOUT_MS = 5000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
@@ -57,7 +57,7 @@ export function buildModelOptions(
 export { SEPARATOR_KEY, SEPARATOR_LABEL };
 
 type GenKey = "temperature" | "top_p" | "top_k_sampling" | "repeat_penalty" | "num_ctx" | "seed";
-const GEN_DEFAULTS_MAP: Record<GenKey, keyof OllamaModelDefaults> = {
+const GEN_DEFAULTS_MAP: Record<GenKey, keyof ModelDefaults> = {
     temperature: "temperature",
     top_p: "top_p",
     top_k_sampling: "top_k",
@@ -286,7 +286,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private renderModelsSection(containerEl: HTMLElement): void {
         containerEl.createEl("h3", { text: "Models" });
         containerEl.createEl("p", {
-            text: "Curated catalog — see ollama.com/library for the full model list. Requires the lilbee server.",
+            text: "Curated catalog from HuggingFace. Ollama models are also shown if Ollama is available.",
             cls: "setting-item-description",
         });
 
@@ -375,16 +375,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private loadModelDefaults(): void {
         const model = this.plugin.activeModel;
         if (!model) return;
-        this.plugin.ollama.show(model).then((defaults) => {
+        this.plugin.api.showModel(model).then((defaults) => {
             for (const [key, inputEl] of this.genInputs) {
-                const ollamaKey = GEN_DEFAULTS_MAP[key];
-                const val = defaults[ollamaKey];
+                const defaultKey = GEN_DEFAULTS_MAP[key];
+                const val = defaults[defaultKey];
                 if (val !== undefined) {
                     inputEl.placeholder = String(val);
                 }
             }
         }).catch(() => {
-            // Ollama unreachable — leave "Not set" placeholders
+            // Server unreachable — leave "Not set" placeholders
         });
     }
 
@@ -534,12 +534,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const cancelBtn = banner.createEl("button", { text: "Cancel", cls: "lilbee-pull-banner-cancel" });
         cancelBtn.addEventListener("click", () => controller.abort(), { once: true });
         try {
-            for await (const progress of this.plugin.ollama.pull(
-                model.name,
-                controller.signal,
-            )) {
-                if (progress.total && progress.completed !== undefined) {
-                    const pct = Math.round((progress.completed / progress.total) * 100);
+            for await (const event of this.plugin.api.pullModel(model.name)) {
+                if (controller.signal.aborted) break;
+                const data = event.data as Record<string, unknown>;
+                const total = Number(data?.total ?? 0);
+                const completed = Number(data?.completed ?? 0);
+                if (total > 0 && completed > 0) {
+                    const pct = Math.round((completed / total) * 100);
                     label.textContent = `Pulling ${model.name} — ${pct}%`;
                     if (this.plugin.statusBarEl) {
                         this.plugin.statusBarEl.setText(
@@ -604,12 +605,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
         btn.addEventListener("click", () => controller.abort(), { once: true });
         const progress = actionCell.createDiv("lilbee-pull-progress");
         try {
-            for await (const p of this.plugin.ollama.pull(
-                model.name,
-                controller.signal,
-            )) {
-                if (p.total && p.completed !== undefined) {
-                    const pct = Math.round((p.completed / p.total) * 100);
+            for await (const event of this.plugin.api.pullModel(model.name)) {
+                if (controller.signal.aborted) break;
+                const data = event.data as Record<string, unknown>;
+                const total = Number(data?.total ?? 0);
+                const completed = Number(data?.completed ?? 0);
+                if (total > 0 && completed > 0) {
+                    const pct = Math.round((completed / total) * 100);
                     progress.textContent = `${pct}%`;
                     if (this.plugin.statusBarEl) {
                         this.plugin.statusBarEl.setText(`lilbee: pulling ${model.name} — ${pct}%`);
@@ -645,7 +647,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     ): Promise<void> {
         btn.disabled = true;
         try {
-            await this.plugin.ollama.delete(model.name);
+            await this.plugin.api.deleteModel(model.name);
             new Notice(`Deleted ${model.name}`);
             if (type === "chat" && model.name === this.plugin.activeModel) {
                 await this.plugin.api.setChatModel("");
