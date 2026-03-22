@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Notice } from "obsidian";
 import { App, WorkspaceLeaf } from "./__mocks__/obsidian";
-import { SSE_EVENT } from "../src/types";
+import { NOTICE, SSE_EVENT } from "../src/types";
 
 vi.mock("../src/api", () => ({
     LilbeeClient: vi.fn().mockImplementation(() => ({
@@ -678,9 +678,21 @@ describe("LilbeePlugin", () => {
             expect(addSpy).toHaveBeenCalledWith(fakeFile);
         });
 
+        it("addToLilbee shows Notice and returns when no chat model is set", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(Notice.instances.some((n) => n.message === NOTICE.NO_CHAT_MODEL)).toBe(true);
+            expect(plugin.api.addFiles).not.toHaveBeenCalled();
+        });
+
         it("addToLilbee calls api.addFiles with absolute path", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
 
             async function* noEvents() {}
             plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
@@ -693,6 +705,7 @@ describe("LilbeePlugin", () => {
         it("addToLilbee shows summary Notice on done event", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
 
             async function* withDone() {
                 yield {
@@ -710,6 +723,7 @@ describe("LilbeePlugin", () => {
         it("addToLilbee shows error Notice on API failure", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
 
             plugin.api.addFiles = vi.fn().mockImplementation(() => {
                 throw new Error("connection refused");
@@ -723,6 +737,7 @@ describe("LilbeePlugin", () => {
         it("addToLilbee returns early when statusBarEl is null", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
             (plugin as any).statusBarEl = null;
 
             const addFilesSpy = vi.spyOn(plugin.api, "addFiles");
@@ -734,6 +749,7 @@ describe("LilbeePlugin", () => {
         it("addToLilbee shows 'nothing new' Notice when done has empty arrays", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
 
             async function* emptyDone() {
                 yield {
@@ -752,6 +768,7 @@ describe("LilbeePlugin", () => {
         it("addToLilbee falls back to path when name is undefined", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
 
             async function* noEvents() {}
             plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
@@ -764,6 +781,7 @@ describe("LilbeePlugin", () => {
         it("runAdd shows error message from Error instance", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
 
             plugin.api.addFiles = vi.fn().mockImplementation(() => {
                 throw new Error("server returned 500");
@@ -777,6 +795,7 @@ describe("LilbeePlugin", () => {
         it("runAdd shows fallback message for non-Error throw", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
 
             plugin.api.addFiles = vi.fn().mockImplementation(() => {
                 throw "string error";
@@ -790,6 +809,8 @@ describe("LilbeePlugin", () => {
         it("addToLilbee shows failed count in Notice", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
+            plugin.activeModel = "llama3";
 
             async function* withFailed() {
                 yield {
@@ -806,9 +827,21 @@ describe("LilbeePlugin", () => {
     });
 
     describe("addExternalFiles()", () => {
+        it("shows Notice and returns when no chat model is set", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+
+            expect(Notice.instances.some((n) => n.message === NOTICE.NO_CHAT_MODEL)).toBe(true);
+            expect(plugin.api.addFiles).not.toHaveBeenCalled();
+        });
+
         it("calls api.addFiles with the given absolute paths", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
 
             async function* noEvents() {}
             plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
@@ -821,6 +854,7 @@ describe("LilbeePlugin", () => {
         it("passes vision model when activeVisionModel is set", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
             plugin.activeVisionModel = "minicpm-v:latest";
 
             async function* noEvents() {}
@@ -846,6 +880,7 @@ describe("LilbeePlugin", () => {
         it("returns early when statusBarEl is null", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
             (plugin as any).statusBarEl = null;
             plugin.api.addFiles = vi.fn();
 
@@ -857,6 +892,7 @@ describe("LilbeePlugin", () => {
         it("shows summary Notice on done event", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
 
             async function* withDone() {
                 yield {
@@ -874,6 +910,7 @@ describe("LilbeePlugin", () => {
         it("updates status bar on FILE_START during addExternalFiles", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
 
             async function* withFileStart() {
                 yield { event: SSE_EVENT.FILE_START, data: { file: "doc.pdf", current_file: 2, total_files: 5 } };
@@ -888,6 +925,7 @@ describe("LilbeePlugin", () => {
         it("shows error Notice on API failure", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
 
             plugin.api.addFiles = vi.fn().mockImplementation(() => {
                 throw new Error("connection refused");
@@ -901,6 +939,7 @@ describe("LilbeePlugin", () => {
         it("shows failed count in Notice", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
 
             async function* withFailed() {
                 yield {
@@ -984,6 +1023,7 @@ describe("LilbeePlugin", () => {
         it("done event is forwarded to onProgress from runAdd", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
 
             const events: any[] = [];
             plugin.onProgress = (e) => events.push(e);
@@ -1548,6 +1588,7 @@ describe("LilbeePlugin", () => {
         it("runAdd shows 'add cancelled' on AbortError", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
 
             const abortError = new Error("Aborted");
             abortError.name = "AbortError";
@@ -1557,7 +1598,7 @@ describe("LilbeePlugin", () => {
 
             await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
 
-            expect(Notice.instances.some((n) => n.message.includes("add cancelled"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message === NOTICE.ADD_CANCELLED)).toBe(true);
         });
 
         it("triggerSync shows 'sync cancelled' on AbortError", async () => {
@@ -1578,6 +1619,7 @@ describe("LilbeePlugin", () => {
         it("runAdd emits DONE event to onProgress after AbortError", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.activeModel = "llama3";
 
             const events: any[] = [];
             plugin.onProgress = (e: any) => events.push(e);

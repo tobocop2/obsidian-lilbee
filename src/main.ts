@@ -4,7 +4,7 @@ import { BinaryManager, getLatestRelease, checkForUpdate } from "./binary-manage
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { LilbeeSettingTab } from "./settings";
-import { DEFAULT_SETTINGS, SERVER_MODE, SSE_EVENT, type LilbeeSettings, type ServerMode, type ServerState, type SSEEvent, type SyncDone } from "./types";
+import { DEFAULT_SETTINGS, NOTICE, SERVER_MODE, SSE_EVENT, type LilbeeSettings, type ServerMode, type ServerState, type SSEEvent, type SyncDone } from "./types";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
 import { SearchModal } from "./views/search-modal";
 
@@ -338,6 +338,7 @@ export default class LilbeePlugin extends Plugin {
             "lilbee-status-downloading",
             "lilbee-status-starting",
             "lilbee-status-ready",
+            "lilbee-status-adding",
         );
         if (cls) this.statusBarEl.classList.add(cls);
     }
@@ -356,8 +357,15 @@ export default class LilbeePlugin extends Plugin {
         }).catch(() => {});
     }
 
+    private assertActiveModel(): boolean {
+        if (this.activeModel) return true;
+        new Notice(NOTICE.NO_CHAT_MODEL);
+        return false;
+    }
+
     async addExternalFiles(paths: string[]): Promise<void> {
         if (!this.statusBarEl || paths.length === 0) return;
+        if (!this.assertActiveModel()) return;
         const label = paths.length === 1 ? paths[0].split("/").pop() : `${paths.length} files`;
         new Notice(`lilbee: adding ${label}...`);
         await this.runAdd(paths);
@@ -365,6 +373,7 @@ export default class LilbeePlugin extends Plugin {
 
     async addToLilbee(file: TAbstractFile): Promise<void> {
         if (!this.statusBarEl) return;
+        if (!this.assertActiveModel()) return;
         const adapter = this.app.vault.adapter as unknown as { getBasePath(): string };
         const absolutePath = `${adapter.getBasePath()}/${file.path}`;
         new Notice(`lilbee: adding ${file.name ?? file.path}...`);
@@ -382,6 +391,7 @@ export default class LilbeePlugin extends Plugin {
 
     private async runAdd(paths: string[]): Promise<void> {
         this.updateStatusBar("lilbee: adding...");
+        this.setStatusClass("lilbee-status-adding");
         this.syncController = new AbortController();
 
         try {
@@ -470,6 +480,7 @@ export default class LilbeePlugin extends Plugin {
     async triggerSync(): Promise<void> {
         if (!this.statusBarEl) return;
         this.updateStatusBar("lilbee: syncing...");
+        this.setStatusClass("lilbee-status-adding");
         this.syncController = new AbortController();
 
         try {

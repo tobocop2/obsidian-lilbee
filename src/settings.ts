@@ -1,9 +1,10 @@
 import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
 import type { ReleaseInfo } from "./binary-manager";
-import { CatalogModal } from "./views/catalog-modal";
-import { DEFAULT_SETTINGS, SERVER_MODE } from "./types";
-import type { ModelCatalog, ModelDefaults, ModelInfo, ModelsResponse, ServerMode } from "./types";
+import { DEFAULT_SETTINGS, MODEL_TYPE, NOTICE, SERVER_MODE } from "./types";
+import type { ModelCatalog, ModelInfo, ModelType, ModelsResponse, ModelDefaults, ServerMode } from "./types";
+import { PullQueue } from "./pull-queue";
+import { ConfirmPullModal } from "./views/confirm-pull-modal";
 
 const CHECK_TIMEOUT_MS = 5000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
@@ -28,10 +29,10 @@ export function deduplicateLatest(models: string[]): string[] {
 
 export function buildModelOptions(
     catalog: ModelCatalog,
-    type: "chat" | "vision",
+    type: ModelType,
 ): Record<string, string> {
     const options: Record<string, string> = {};
-    if (type === "vision") {
+    if (type === MODEL_TYPE.VISION) {
         options[""] = "Disabled";
     }
 
@@ -69,7 +70,8 @@ const GEN_DEFAULTS_MAP: Record<GenKey, keyof ModelDefaults> = {
 
 export class LilbeeSettingTab extends PluginSettingTab {
     plugin: LilbeePlugin;
-    private pulling = false;
+    private pullQueue = new PullQueue();
+    private pullAbortController: AbortController | null = null;
     private genInputs: Map<GenKey, HTMLInputElement> = new Map();
 
     constructor(app: App, plugin: LilbeePlugin) {
@@ -86,9 +88,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderGeneralSettings(containerEl);
         this.renderSyncSettings(containerEl);
         this.renderGenerationSettings(containerEl);
-        this.renderRetrievalSettings(containerEl);
         this.loadModelDefaults();
-        this.loadServerConfig();
     }
 
     private renderConnectionSettings(containerEl: HTMLElement): void {
@@ -289,7 +289,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private renderModelsSection(containerEl: HTMLElement): void {
         containerEl.createEl("h3", { text: "Models" });
         containerEl.createEl("p", {
-            text: "Curated catalog from HuggingFace. Ollama models are also shown if Ollama is available.",
+            text: "Curated catalog — see ollama.com/library for the full model list. Requires the lilbee server.",
             cls: "setting-item-description",
         });
 
@@ -375,69 +375,19 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    private renderRetrievalSettings(containerEl: HTMLElement): void {
-        const details = containerEl.createEl("details", { cls: "lilbee-retrieval-details" });
-        details.createEl("summary", { text: "Retrieval quality settings" });
-
-        const desc = details.createEl("p", { cls: "setting-item-description" });
-        desc.textContent = "These settings are managed by the lilbee server. "
-            + "Override via LILBEE_* environment variables or config.toml.";
-
-        this.retrievalInfoEl = details.createDiv("lilbee-retrieval-info");
-        this.retrievalInfoEl.textContent = "Loading...";
-    }
-
-    private retrievalInfoEl: HTMLElement | null = null;
-    private systemPromptInfoEl: HTMLElement | null = null;
-
-    private loadServerConfig(): void {
-        this.plugin.api.getConfig().then((config) => {
-            if (this.retrievalInfoEl) {
-                const items = [
-                    `Source diversity: max ${config.diversity_max_per_source} per source`,
-                    `MMR lambda: ${config.mmr_lambda} (0=diverse, 1=relevant)`,
-                    `Candidate multiplier: ${config.candidate_multiplier}x`,
-                    `Query expansion: ${config.query_expansion_count === 0 ? "disabled" : `${config.query_expansion_count} variants`}`,
-                    `Adaptive threshold step: ${config.adaptive_threshold_step}`,
-                    `Max distance: ${config.max_distance}`,
-                    `Chunk size: ${config.chunk_size} tokens`,
-                    `Chunk overlap: ${config.chunk_overlap} tokens`,
-                ];
-                this.retrievalInfoEl.empty();
-                const list = this.retrievalInfoEl.createEl("ul");
-                for (const item of items) {
-                    list.createEl("li", { text: item });
-                }
-            }
-            // Show server system prompt as placeholder
-            if (config.system_prompt && typeof config.system_prompt === "string") {
-                const inputs = this.containerEl.querySelectorAll<HTMLInputElement>(
-                    ".lilbee-generation-details input[type=text]",
-                );
-                if (inputs.length > 0 && !this.plugin.settings.systemPrompt) {
-                    inputs[0].placeholder = String(config.system_prompt).slice(0, 80) + "...";
-                }
-            }
-        }).catch(() => {
-            if (this.retrievalInfoEl) {
-                this.retrievalInfoEl.textContent = "Could not load server config.";
-            }
-        });
-    }
-
     private loadModelDefaults(): void {
         const model = this.plugin.activeModel;
         if (!model) return;
         this.plugin.api.showModel(model).then((defaults) => {
             for (const [key, inputEl] of this.genInputs) {
-                const defaultKey = GEN_DEFAULTS_MAP[key];
-                const val = defaults[defaultKey];
+                const ollamaKey = GEN_DEFAULTS_MAP[key];
+                const val = defaults[ollamaKey];
                 if (val !== undefined) {
                     inputEl.placeholder = String(val);
                 }
             }
         }).catch(() => {
-            // Server unreachable — leave "Not set" placeholders
+            // Ollama unreachable — leave "Not set" placeholders
         });
     }
 
@@ -498,8 +448,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         container.empty();
         try {
             const models = await this.plugin.api.listModels();
-            this.renderModelSection(container, "Chat Model", models.chat, "chat");
-            this.renderModelSection(container, "Vision Model", models.vision, "vision");
+            this.renderModelSection(container, "Chat Model", models.chat, MODEL_TYPE.CHAT);
+            this.renderModelSection(container, "Vision Model", models.vision, MODEL_TYPE.VISION);
         } catch {
             container.createEl("p", {
                 text: "Could not connect to lilbee server. Is it running?",
@@ -512,14 +462,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
         container: HTMLElement,
         label: string,
         catalog: ModelsResponse["chat"],
-        type: "chat" | "vision",
+        type: ModelType,
     ): void {
         const section = container.createDiv("lilbee-model-section");
         section.createEl("h4", { text: label });
 
         const activeSetting = new Setting(section)
             .setName(`Active ${type} model`)
-            .setDesc(catalog.active || (type === "vision" ? "Disabled" : "Not set"));
+            .setDesc(catalog.active || (type === MODEL_TYPE.VISION ? "Disabled" : "Not set"));
 
         const options = buildModelOptions(catalog, type);
 
@@ -531,21 +481,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     if (value === SEPARATOR_KEY) return;
                     await this.handleModelChange(value, catalog, label, type, container);
                 }),
-        );
-
-        // Browse catalog button — especially useful when no models installed
-        activeSetting.addButton((btn) =>
-            btn.setButtonText("Browse catalog").onClick(() => {
-                new CatalogModal(this.plugin, type, async (model) => {
-                    if (type === "chat") {
-                        await this.plugin.api.setChatModel(model);
-                    } else {
-                        await this.plugin.api.setVisionModel(model);
-                    }
-                    this.plugin.fetchActiveModel();
-                    this.display();
-                }).open();
-            }),
         );
 
         const catalogEl = section.createDiv("lilbee-model-catalog");
@@ -561,26 +496,37 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
+    private async setModel(model: { name: string }, type: ModelType): Promise<void> {
+        if (type === MODEL_TYPE.CHAT) {
+            await this.plugin.api.setChatModel(model.name);
+        } else {
+            await this.plugin.api.setVisionModel(model.name);
+        }
+    }
+
     private async handleModelChange(
         value: string,
         catalog: ModelCatalog,
         label: string,
-        type: "chat" | "vision",
+        type: ModelType,
         container: HTMLElement,
     ): Promise<void> {
         const uninstalledCatalogModel = catalog.catalog.find(
             (m) => m.name === value && !m.installed,
         );
         if (uninstalledCatalogModel) {
-            await this.autoPullAndSet(uninstalledCatalogModel, type, container);
+            const modal = new ConfirmPullModal(this.app, uninstalledCatalogModel);
+            modal.open();
+            const confirmed = await modal.result;
+            if (!confirmed) return;
+            await this.pullQueue.enqueue(
+                () => this.autoPullAndSet(uninstalledCatalogModel, type, container),
+                uninstalledCatalogModel.name,
+            );
             return;
         }
         try {
-            if (type === "chat") {
-                await this.plugin.api.setChatModel(value);
-            } else {
-                await this.plugin.api.setVisionModel(value);
-            }
+            await this.setModel({ name: value }, type);
             new Notice(`${label} set to ${value || "disabled"}`);
             this.display();
         } catch {
@@ -590,29 +536,23 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private async autoPullAndSet(
         model: ModelInfo,
-        type: "chat" | "vision",
+        type: ModelType,
         container: HTMLElement,
     ): Promise<void> {
-        if (this.pulling) return;
-        this.pulling = true;
-        new Notice(`Pulling ${model.name}...`);
+        new Notice(`lilbee: pulling ${model.name}...`);
         const controller = new AbortController();
+        this.pullAbortController = controller;
         const banner = container.createDiv("lilbee-pull-banner");
         const label = banner.createEl("span", { text: `Pulling ${model.name}...` });
         const cancelBtn = banner.createEl("button", { text: "Cancel", cls: "lilbee-pull-banner-cancel" });
         cancelBtn.addEventListener("click", () => controller.abort(), { once: true });
         try {
-            for await (const event of this.plugin.api.pullModel(model.name)) {
-                if (controller.signal.aborted) {
-                    const err = new Error("The operation was aborted");
-                    err.name = "AbortError";
-                    throw err;
-                }
-                const data = event.data as Record<string, unknown>;
-                const total = Number(data?.total ?? 0);
-                const completed = Number(data?.completed ?? 0);
-                if (total > 0 && completed > 0) {
-                    const pct = Math.round((completed / total) * 100);
+            for await (const progress of this.plugin.api.pullModel(
+                model.name,
+                controller.signal,
+            )) {
+                if (progress.total && progress.completed !== undefined) {
+                    const pct = Math.round((progress.completed / progress.total) * 100);
                     label.textContent = `Pulling ${model.name} — ${pct}%`;
                     if (this.plugin.statusBarEl) {
                         this.plugin.statusBarEl.setText(
@@ -621,30 +561,26 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }
                 }
             }
-            if (type === "chat") {
-                await this.plugin.api.setChatModel(model.name);
-            } else {
-                await this.plugin.api.setVisionModel(model.name);
-            }
-            new Notice(`Model ${model.name} pulled and activated`);
+            await this.setModel(model, type);
+            new Notice(`lilbee: ${model.name} pulled and activated`);
             this.plugin.fetchActiveModel();
             this.display();
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
-                new Notice("Pull cancelled");
+                new Notice(NOTICE.PULL_CANCELLED);
             } else {
-                new Notice(`Failed to pull ${model.name}`);
+                new Notice(`lilbee: failed to pull ${model.name}`);
             }
         } finally {
             banner.remove();
-            this.pulling = false;
+            this.pullAbortController = null;
         }
     }
 
     private renderCatalogRow(
         table: HTMLTableElement,
         model: ModelInfo,
-        type: "chat" | "vision",
+        type: ModelType,
     ): void {
         const row = table.createEl("tr");
         row.createEl("td", { text: model.name });
@@ -660,7 +596,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
             deleteBtn.addEventListener("click", () => this.deleteModel(deleteBtn, model, type));
         } else {
             const btn = actionCell.createEl("button", { text: "Pull" }) as HTMLButtonElement;
-            btn.addEventListener("click", () => this.pullModel(btn, actionCell, model, type));
+            btn.addEventListener("click", () => {
+                if (this.pullQueue.isPulling) {
+                    this.pullAbortController?.abort();
+                    return;
+                }
+                return this.pullModel(btn, actionCell, model, type);
+            });
         }
     }
 
@@ -668,67 +610,68 @@ export class LilbeeSettingTab extends PluginSettingTab {
         btn: HTMLButtonElement,
         actionCell: HTMLElement,
         model: ModelInfo,
-        type: "chat" | "vision",
+        type: ModelType,
     ): Promise<void> {
-        if (this.pulling) return;
-        this.pulling = true;
+        await this.pullQueue.enqueue(
+            () => this.executePull(btn, actionCell, model, type),
+            model.name,
+        );
+    }
+
+    private async executePull(
+        btn: HTMLButtonElement,
+        actionCell: HTMLElement,
+        model: ModelInfo,
+        type: ModelType,
+    ): Promise<void> {
         const controller = new AbortController();
+        this.pullAbortController = controller;
         btn.textContent = "Cancel";
-        btn.addEventListener("click", () => controller.abort(), { once: true });
         const progress = actionCell.createDiv("lilbee-pull-progress");
         try {
-            for await (const event of this.plugin.api.pullModel(model.name)) {
-                if (controller.signal.aborted) {
-                    const err = new Error("The operation was aborted");
-                    err.name = "AbortError";
-                    throw err;
-                }
-                const data = event.data as Record<string, unknown>;
-                const total = Number(data?.total ?? 0);
-                const completed = Number(data?.completed ?? 0);
-                if (total > 0 && completed > 0) {
-                    const pct = Math.round((completed / total) * 100);
+            for await (const p of this.plugin.api.pullModel(
+                model.name,
+                controller.signal,
+            )) {
+                if (p.total && p.completed !== undefined) {
+                    const pct = Math.round((p.completed / p.total) * 100);
                     progress.textContent = `${pct}%`;
                     if (this.plugin.statusBarEl) {
                         this.plugin.statusBarEl.setText(`lilbee: pulling ${model.name} — ${pct}%`);
                     }
                 }
             }
-            new Notice(`Model ${model.name} pulled successfully`);
-            if (type === "chat") {
-                await this.plugin.api.setChatModel(model.name);
-            } else {
-                await this.plugin.api.setVisionModel(model.name);
-            }
+            new Notice(`lilbee: ${model.name} pulled successfully`);
+            await this.setModel(model, type);
             this.plugin.fetchActiveModel();
             this.display();
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
-                new Notice("Pull cancelled");
+                new Notice(NOTICE.PULL_CANCELLED);
             } else {
-                new Notice(`Failed to pull ${model.name}`);
+                new Notice(`lilbee: failed to pull ${model.name}`);
             }
             btn.disabled = false;
             btn.textContent = "Pull";
         } finally {
             progress.remove();
-            this.pulling = false;
+            this.pullAbortController = null;
         }
     }
 
     private async deleteModel(
         btn: HTMLButtonElement,
         model: ModelInfo,
-        type: "chat" | "vision",
+        type: ModelType,
     ): Promise<void> {
         btn.disabled = true;
         try {
             await this.plugin.api.deleteModel(model.name);
             new Notice(`Deleted ${model.name}`);
-            if (type === "chat" && model.name === this.plugin.activeModel) {
+            if (type === MODEL_TYPE.CHAT && model.name === this.plugin.activeModel) {
                 await this.plugin.api.setChatModel("");
                 this.plugin.activeModel = "";
-            } else if (type === "vision" && model.name === this.plugin.activeVisionModel) {
+            } else if (type === MODEL_TYPE.VISION && model.name === this.plugin.activeVisionModel) {
                 await this.plugin.api.setVisionModel("");
                 this.plugin.activeVisionModel = "";
             }

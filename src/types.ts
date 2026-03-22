@@ -114,6 +114,24 @@ export const SERVER_MODE = {
     EXTERNAL: "external",
 } as const satisfies Record<string, ServerMode>;
 
+export type ModelType = "chat" | "vision";
+
+export const MODEL_TYPE = {
+    CHAT: "chat",
+    VISION: "vision",
+} as const satisfies Record<string, ModelType>;
+
+export const NOTICE = {
+    NO_CHAT_MODEL: "lilbee: no chat model set — select one in settings",
+    PULL_CANCELLED: "lilbee: pull cancelled",
+    PULL_FAILED: "lilbee: failed to pull model",
+    PULL_QUEUED: "lilbee: download queued",
+    ADD_QUEUED: "lilbee: add queued",
+    MODEL_ACTIVATED: "lilbee: model activated",
+    ADD_FAILED: "lilbee: add failed",
+    ADD_CANCELLED: "lilbee: add cancelled",
+} as const;
+
 export interface LilbeeSettings {
     serverUrl: string;
     topK: number;
@@ -167,3 +185,8 @@ export const SSE_EVENT = {
 } as const;
 
 export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+
+export interface QueuedPull {
+    run: () => Promise<void>;
+    modelName: string;
+}
