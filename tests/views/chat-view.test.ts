@@ -64,10 +64,6 @@ function makePlugin(): LilbeePlugin {
             setVisionModel: vi.fn().mockResolvedValue({ model: "" }),
             pullModel: vi.fn(),
         },
-        ollama: {
-            pull: vi.fn(),
-            delete: vi.fn(),
-        },
         settings: { topK: 5 },
         activeModel: "llama3",
         activeVisionModel: "",
@@ -835,7 +831,7 @@ describe("ChatView.onOpen — model selector", () => {
         // Allow async IIFE to complete
         await new Promise((r) => setTimeout(r, 50));
 
-        expect(plugin.api.pullModel).toHaveBeenCalledWith("phi3");
+        expect(plugin.api.pullModel).toHaveBeenCalledWith("phi3", expect.any(AbortSignal));
         expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
         expect(Notice.instances.some((n) => n.message === "lilbee: phi3 pulled and activated")).toBe(true);
     });
@@ -1411,7 +1407,7 @@ describe("ChatView — progress banner", () => {
         async function* pullGen() {
             yield { status: "pulling", completed: 100, total: 100 };
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(pullGen());
+        plugin.api.pullModel = vi.fn().mockReturnValue(pullGen());
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -1758,7 +1754,7 @@ describe("ChatView.onOpen — vision selector", () => {
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
-        expect(plugin.api.pullModel).toHaveBeenCalledWith("llava");
+        expect(plugin.api.pullModel).toHaveBeenCalledWith("llava", expect.any(AbortSignal));
         expect(plugin.api.setVisionModel).toHaveBeenCalledWith("llava");
         expect(Notice.instances.some((n) => n.message === "lilbee: llava pulled and activated")).toBe(true);
     });

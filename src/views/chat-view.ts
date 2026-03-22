@@ -1,7 +1,7 @@
 import { FuzzySuggestModal, ItemView, MarkdownRenderer, Menu, Notice, setIcon, type TFile, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
 import { MODEL_TYPE, NOTICE, SSE_EVENT } from "../types";
-import type { GenerationOptions, Message, ModelCatalog, ModelType, OllamaPullProgress, Source, SSEEvent } from "../types";
+import type { GenerationOptions, Message, ModelCatalog, ModelType, Source, SSEEvent } from "../types";
 import { PullQueue } from "../pull-queue";
 import { renderSourceChip } from "./results";
 import { buildModelOptions, SEPARATOR_KEY } from "../settings";
@@ -329,16 +329,19 @@ export class ChatView extends ItemView {
         new Notice(`lilbee: pulling ${model.name}...`);
         this.pullController = new AbortController();
         try {
-            for await (const progress of this.plugin.ollama.pull(
+            for await (const event of this.plugin.api.pullModel(
                 model.name,
                 this.pullController.signal,
             )) {
-                if (progress.total && progress.completed !== undefined) {
-                    const pct = Math.round((progress.completed / progress.total) * 100);
+                const data = event.data as Record<string, unknown>;
+                const total = Number(data?.total ?? 0);
+                const completed = Number(data?.completed ?? 0);
+                if (total > 0 && completed > 0) {
+                    const pct = Math.round((completed / total) * 100);
                     this.showPullProgress(
                         `Pulling ${model.name} — ${pct}%`,
-                        progress.completed,
-                        progress.total,
+                        completed,
+                        total,
                     );
                 }
             }

@@ -32,16 +32,14 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
         setChatModel: vi.fn(),
         setVisionModel: vi.fn(),
         pullModel: vi.fn(),
-    };
-    const ollama = {
-        pull: vi.fn(),
-        delete: vi.fn(),
-        show: vi.fn().mockRejectedValue(new Error("no model")),
+        showModel: vi.fn().mockRejectedValue(new Error("no model")),
+        deleteModel: vi.fn().mockResolvedValue({ deleted: true }),
+        getConfig: vi.fn().mockResolvedValue({}),
     };
     const saveSettings = vi.fn().mockResolvedValue(undefined);
     const statusBarEl = { setText: vi.fn(), textContent: "" };
     const fetchActiveModel = vi.fn();
-    return { settings, api, ollama, saveSettings, statusBarEl, fetchActiveModel, activeModel: "", activeVisionModel: "" } as unknown as InstanceType<typeof import("../src/main").default>;
+    return { settings, api, saveSettings, statusBarEl, fetchActiveModel, activeModel: "", activeVisionModel: "" } as unknown as InstanceType<typeof import("../src/main").default>;
 }
 
 function makeTab(plugin: ReturnType<typeof makePlugin>) {
@@ -492,7 +490,7 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             (plugin as any).activeModel = "llama3";
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-            (plugin.ollama.show as ReturnType<typeof vi.fn>).mockResolvedValue({
+            (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({
                 temperature: 0.6,
                 top_p: 0.9,
                 top_k: 40,
@@ -506,7 +504,7 @@ describe("LilbeeSettingTab", () => {
             // Wait for async loadModelDefaults to resolve
             await new Promise((r) => setTimeout(r, 0));
 
-            expect(plugin.ollama.show).toHaveBeenCalledWith("llama3");
+            expect(plugin.api.showModel).toHaveBeenCalledWith("llama3");
         });
 
         it("shows model name in summary when active model is set", () => {
@@ -779,7 +777,7 @@ describe("LilbeeSettingTab", () => {
 
         it("successful delete shows 'Deleted' notice", async () => {
             const plugin = makePlugin();
-            (plugin.ollama.delete as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+            (plugin.api.deleteModel as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const { tab, deleteBtn } = setupDeleteButton(plugin);
@@ -790,14 +788,14 @@ describe("LilbeeSettingTab", () => {
             await (deleteBtn as unknown as MockElement).trigger("click");
             await new Promise((r) => setTimeout(r, 0));
 
-            expect(plugin.ollama.delete).toHaveBeenCalledWith("llama3");
+            expect(plugin.api.deleteModel).toHaveBeenCalledWith("llama3");
             expect(Notice.instances.some((n) => n.message.includes("Deleted llama3"))).toBe(true);
             expect(plugin.fetchActiveModel).toHaveBeenCalled();
         });
 
         it("successful delete reloads models container when found", async () => {
             const plugin = makePlugin();
-            (plugin.ollama.delete as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+            (plugin.api.deleteModel as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const { tab, deleteBtn } = setupDeleteButton(plugin);
@@ -818,7 +816,7 @@ describe("LilbeeSettingTab", () => {
         it("deleting active chat model clears it", async () => {
             const plugin = makePlugin();
             (plugin as any).activeModel = "llama3";
-            (plugin.ollama.delete as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+            (plugin.api.deleteModel as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -835,7 +833,7 @@ describe("LilbeeSettingTab", () => {
         it("deleting active vision model clears it", async () => {
             const plugin = makePlugin();
             (plugin as any).activeVisionModel = "llava";
-            (plugin.ollama.delete as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+            (plugin.api.deleteModel as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
             (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -851,7 +849,7 @@ describe("LilbeeSettingTab", () => {
 
         it("delete failure shows error notice and re-enables button", async () => {
             const plugin = makePlugin();
-            (plugin.ollama.delete as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            (plugin.api.deleteModel as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
 
             const { deleteBtn } = setupDeleteButton(plugin);
 
@@ -897,7 +895,7 @@ describe("LilbeeSettingTab", () => {
                 await blockingPromise;
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(slowPull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(slowPull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -931,7 +929,7 @@ describe("LilbeeSettingTab", () => {
                 }
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockImplementation(
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockImplementation(
                 (name: string, signal: AbortSignal) => slowPull(name, signal),
             );
 
@@ -963,7 +961,7 @@ describe("LilbeeSettingTab", () => {
             async function* fakePull() {
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -977,7 +975,7 @@ describe("LilbeeSettingTab", () => {
             await dropdownOnChanges[0]("phi3");
 
             expect(ConfirmPullModal).toHaveBeenCalled();
-            expect(plugin.ollama.pull).toHaveBeenCalled();
+            expect(plugin.api.pullModel).toHaveBeenCalled();
         });
 
         it("canceling modal prevents pull from starting", async () => {
@@ -994,7 +992,7 @@ describe("LilbeeSettingTab", () => {
 
             await dropdownOnChanges[0]("phi3");
 
-            expect(plugin.ollama.pull).not.toHaveBeenCalled();
+            expect(plugin.api.pullModel).not.toHaveBeenCalled();
         });
     });
 
@@ -1032,7 +1030,7 @@ describe("LilbeeSettingTab", () => {
                 }
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockImplementation(
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockImplementation(
                 (name: string, signal: AbortSignal) => slowPull(name, signal),
             );
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
@@ -1057,7 +1055,7 @@ describe("LilbeeSettingTab", () => {
             // Start pull
             const pullPromise = clickHandlers[0]();
             await new Promise((r) => setTimeout(r, 0));
-            expect(plugin.ollama.pull).toHaveBeenCalledTimes(1);
+            expect(plugin.api.pullModel).toHaveBeenCalledTimes(1);
 
             // Second click aborts (since pulling is true)
             clickHandlers[0]();
@@ -1065,7 +1063,7 @@ describe("LilbeeSettingTab", () => {
             await pullPromise;
 
             expect(Notice.instances.some((n) => n.message === NOTICE.PULL_CANCELLED)).toBe(true);
-            expect(plugin.ollama.pull).toHaveBeenCalledTimes(1);
+            expect(plugin.api.pullModel).toHaveBeenCalledTimes(1);
         });
 
         it("autoPullAndSet queues second pull while first is running", async () => {
@@ -1076,7 +1074,7 @@ describe("LilbeeSettingTab", () => {
                 await blockingPromise;
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(slowPull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(slowPull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1095,12 +1093,12 @@ describe("LilbeeSettingTab", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             expect(Notice.instances.some((n) => n.message.startsWith("lilbee: download queued"))).toBe(true);
-            expect(plugin.ollama.pull).toHaveBeenCalledTimes(1);
+            expect(plugin.api.pullModel).toHaveBeenCalledTimes(1);
             // Unblock the first pull
             resolve();
             // Wait for async chain to complete
             await new Promise((r) => setTimeout(r, 50));
-            expect(plugin.ollama.pull).toHaveBeenCalledTimes(2);
+            expect(plugin.api.pullModel).toHaveBeenCalledTimes(2);
         });
     });
 
@@ -1111,7 +1109,7 @@ describe("LilbeeSettingTab", () => {
                 yield { status: "pulling", completed: 50, total: 100 };
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1145,7 +1143,7 @@ describe("LilbeeSettingTab", () => {
                 }
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockImplementation(
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockImplementation(
                 (name: string, signal: AbortSignal) => slowPull(name, signal),
             );
 
@@ -1187,7 +1185,7 @@ describe("LilbeeSettingTab", () => {
                 await waitPromise;
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(slowPull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(slowPull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1216,7 +1214,7 @@ describe("LilbeeSettingTab", () => {
                 err.name = "AbortError";
                 throw err;
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(abortingPull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(abortingPull());
 
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
@@ -1275,7 +1273,7 @@ describe("LilbeeSettingTab", () => {
                 capturedProgressText = actionCell.find("lilbee-pull-progress")?.textContent ?? "";
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1302,7 +1300,7 @@ describe("LilbeeSettingTab", () => {
                 capturedProgressText = actionCell.find("lilbee-pull-progress")?.textContent ?? "";
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1322,7 +1320,7 @@ describe("LilbeeSettingTab", () => {
             async function* fakePull() {
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "llava" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1342,7 +1340,7 @@ describe("LilbeeSettingTab", () => {
             async function* failingPull(): AsyncGenerator<never> {
                 throw new Error("network error");
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(failingPull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(failingPull());
 
             const { tab, clickHandler, actionCell } = await setupPullButton(plugin, "chat");
             const btn = actionCell.children[0];
@@ -1360,7 +1358,7 @@ describe("LilbeeSettingTab", () => {
             async function* fakePull() {
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1376,7 +1374,7 @@ describe("LilbeeSettingTab", () => {
             async function* fakePull() {
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1401,7 +1399,7 @@ describe("LilbeeSettingTab", () => {
                 yield { status: "pulling", completed: 45, total: 100 };
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1421,7 +1419,7 @@ describe("LilbeeSettingTab", () => {
             async function* fakePull() {
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1443,7 +1441,7 @@ describe("LilbeeSettingTab", () => {
                 yield { status: "pulling", completed: 50, total: 100 };
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1462,7 +1460,7 @@ describe("LilbeeSettingTab", () => {
                 yield { status: "downloading" };
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1657,7 +1655,7 @@ describe("LilbeeSettingTab", () => {
                 yield { status: "pulling", completed: 50, total: 100 };
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1674,7 +1672,7 @@ describe("LilbeeSettingTab", () => {
 
             // phi3 is uninstalled in catalog, should trigger auto-pull
             await dropdownOnChanges[0]("phi3");
-            expect(plugin.ollama.pull).toHaveBeenCalledWith("phi3", expect.any(AbortSignal));
+            expect(plugin.api.pullModel).toHaveBeenCalledWith("phi3", expect.any(AbortSignal));
             expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
             expect(Notice.instances.some((n) => n.message === "lilbee: phi3 pulled and activated")).toBe(true);
         });
@@ -1685,7 +1683,7 @@ describe("LilbeeSettingTab", () => {
             async function* failingPull(): AsyncGenerator<never> {
                 throw new Error("network");
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(failingPull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(failingPull());
 
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
@@ -1705,7 +1703,7 @@ describe("LilbeeSettingTab", () => {
                 yield { status: "pulling", completed: 75, total: 100 };
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1727,7 +1725,7 @@ describe("LilbeeSettingTab", () => {
             async function* fakePull() {
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "llava" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1750,7 +1748,7 @@ describe("LilbeeSettingTab", () => {
                 yield { status: "pulling", completed: 60, total: 100 };
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1773,7 +1771,7 @@ describe("LilbeeSettingTab", () => {
                 yield { status: "pulling", completed: 0, total: 0 };
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1798,7 +1796,7 @@ describe("LilbeeSettingTab", () => {
                 yield { status: "pulling", completed: 50, total: 100 };
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1821,7 +1819,7 @@ describe("LilbeeSettingTab", () => {
                 yield { status: "pulling", completed: 50, total: 100 };
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
@@ -1842,7 +1840,7 @@ describe("LilbeeSettingTab", () => {
             async function* fakePull() {
                 yield { status: "success" };
             }
-            (plugin.ollama.pull as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
