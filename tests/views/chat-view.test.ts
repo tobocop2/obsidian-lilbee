@@ -777,10 +777,10 @@ describe("ChatView.onOpen — model selector", () => {
         });
 
         async function* fakePull() {
-            yield { status: "pulling", completed: 50, total: 100 };
-            yield { status: "success" };
+            yield { event: "progress", data: { status: "pulling", completed: 50, total: 100 } };
+            yield { event: "progress", data: { status: "success" } };
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(fakePull());
+        plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
         plugin.api.setChatModel = vi.fn().mockResolvedValue({ model: "phi3" });
 
         const view = new ChatView(makeLeaf(), plugin);
@@ -795,7 +795,7 @@ describe("ChatView.onOpen — model selector", () => {
         // Allow async IIFE to complete
         await new Promise((r) => setTimeout(r, 50));
 
-        expect(plugin.ollama.pull).toHaveBeenCalledWith("phi3", expect.any(AbortSignal));
+        expect(plugin.api.pullModel).toHaveBeenCalledWith("phi3");
         expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
         expect(Notice.instances.some((n) => n.message.includes("pulled and activated"))).toBe(true);
     });
@@ -818,7 +818,7 @@ describe("ChatView.onOpen — model selector", () => {
         async function* failingPull(): AsyncGenerator<never> {
             throw new Error("network");
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(failingPull());
+        plugin.api.pullModel = vi.fn().mockReturnValue(failingPull());
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -850,10 +850,10 @@ describe("ChatView.onOpen — model selector", () => {
         });
 
         async function* fakePull() {
-            yield { status: "pulling", completed: 0, total: 0 };
-            yield { status: "success" };
+            yield { event: "progress", data: { status: "pulling", completed: 0, total: 0 } };
+            yield { event: "progress", data: { status: "success" } };
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(fakePull());
+        plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
         plugin.api.setChatModel = vi.fn().mockResolvedValue({ model: "phi3" });
 
         const view = new ChatView(makeLeaf(), plugin);
@@ -1551,10 +1551,10 @@ describe("ChatView.onOpen — vision selector", () => {
         });
 
         async function* fakePull() {
-            yield { status: "pulling", completed: 50, total: 100 };
-            yield { status: "success" };
+            yield { event: "progress", data: { status: "pulling", completed: 50, total: 100 } };
+            yield { event: "progress", data: { status: "success" } };
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(fakePull());
+        plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
         plugin.api.setVisionModel = vi.fn().mockResolvedValue({ model: "llava" });
 
         const view = new ChatView(makeLeaf(), plugin);
@@ -1568,7 +1568,7 @@ describe("ChatView.onOpen — vision selector", () => {
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
-        expect(plugin.ollama.pull).toHaveBeenCalledWith("llava", expect.any(AbortSignal));
+        expect(plugin.api.pullModel).toHaveBeenCalledWith("llava");
         expect(plugin.api.setVisionModel).toHaveBeenCalledWith("llava");
         expect(Notice.instances.some((n) => n.message.includes("pulled and activated"))).toBe(true);
     });
@@ -1590,7 +1590,7 @@ describe("ChatView.onOpen — vision selector", () => {
         async function* failingPull(): AsyncGenerator<never> {
             throw new Error("network");
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(failingPull());
+        plugin.api.pullModel = vi.fn().mockReturnValue(failingPull());
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -1621,10 +1621,10 @@ describe("ChatView.onOpen — vision selector", () => {
         });
 
         async function* fakePull() {
-            yield { status: "pulling", completed: 0, total: 0 };
-            yield { status: "success" };
+            yield { event: "progress", data: { status: "pulling", completed: 0, total: 0 } };
+            yield { event: "progress", data: { status: "success" } };
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(fakePull());
+        plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
         plugin.api.setVisionModel = vi.fn().mockResolvedValue({ model: "llava" });
 
         const view = new ChatView(makeLeaf(), plugin);
@@ -1806,10 +1806,10 @@ describe("ChatView — cancel model pull", () => {
         const abortError = new Error("Aborted");
         abortError.name = "AbortError";
         async function* abortingPull() {
-            yield { status: "pulling", completed: 50, total: 100 };
+            yield { event: "progress", data: { status: "pulling", completed: 50, total: 100 } };
             throw abortError;
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(abortingPull());
+        plugin.api.pullModel = vi.fn().mockReturnValue(abortingPull());
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -2012,11 +2012,11 @@ describe("ChatView.onClose — aborts both controllers", () => {
         let resolveWait!: () => void;
         const waitPromise = new Promise<void>((r) => { resolveWait = r; });
         async function* slowPull() {
-            yield { status: "pulling", completed: 50, total: 100 };
+            yield { event: "progress", data: { status: "pulling", completed: 50, total: 100 } };
             await waitPromise;
-            yield { status: "success" };
+            yield { event: "progress", data: { status: "success" } };
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(slowPull());
+        plugin.api.pullModel = vi.fn().mockReturnValue(slowPull());
         plugin.api.setChatModel = vi.fn().mockResolvedValue({ model: "phi3" });
 
         const view = new ChatView(makeLeaf(), plugin);
