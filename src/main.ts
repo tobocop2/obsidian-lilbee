@@ -1,5 +1,5 @@
 import { type Menu, type MenuItem, Notice, Plugin, type TAbstractFile } from "obsidian";
-import { LilbeeClient, OllamaClient } from "./api";
+import { LilbeeClient } from "./api";
 import { BinaryManager, getLatestRelease, checkForUpdate } from "./binary-manager";
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
@@ -21,7 +21,6 @@ function summarizeSyncResult(done: SyncDone): string {
 export default class LilbeePlugin extends Plugin {
     settings: LilbeeSettings = { ...DEFAULT_SETTINGS };
     api: LilbeeClient = new LilbeeClient(DEFAULT_SETTINGS.serverUrl);
-    ollama: OllamaClient = new OllamaClient(DEFAULT_SETTINGS.ollamaUrl);
     activeModel = "";
     activeVisionModel = "";
     statusBarEl: HTMLElement | null = null;
@@ -37,7 +36,6 @@ export default class LilbeePlugin extends Plugin {
 
     async onload(): Promise<void> {
         await this.loadSettings();
-        this.ollama = new OllamaClient(this.settings.ollamaUrl);
 
         this.statusBarEl = this.addStatusBarItem();
         this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
@@ -325,7 +323,6 @@ export default class LilbeePlugin extends Plugin {
             this.api = new LilbeeClient(this.settings.serverUrl);
         }
 
-        this.ollama = new OllamaClient(this.settings.ollamaUrl);
         this.updateAutoSync();
     }
 

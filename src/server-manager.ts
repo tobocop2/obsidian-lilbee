@@ -92,6 +92,7 @@ export class ServerManager {
 
         const env: Record<string, string | undefined> = {
             ...process.env,
+            LILBEE_OLLAMA_URL: this.opts.ollamaUrl,
             OLLAMA_HOST: this.opts.ollamaUrl,
             LILBEE_CORS_ORIGINS: "app://obsidian.md",
         };
