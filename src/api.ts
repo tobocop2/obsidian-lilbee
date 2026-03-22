@@ -185,12 +185,25 @@ export class LilbeeClient {
         yield* this.parseSSE(res);
     }
 
+    async getCatalog<T = Record<string, unknown>>(
+        task: "chat" | "vision",
+        options?: { search?: string; featured?: boolean; limit?: number; offset?: number },
+    ): Promise<{ total: number; limit: number; offset: number; models: T[] }> {
+        const params = new URLSearchParams({ task });
+        if (options?.search !== undefined) params.set("search", options.search);
+        if (options?.featured !== undefined) params.set("featured", String(options.featured));
+        if (options?.limit !== undefined) params.set("limit", String(options.limit));
+        if (options?.offset !== undefined) params.set("offset", String(options.offset));
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/catalog?${params}`);
+        return res.json();
+    }
+
     async listModels(): Promise<ModelsResponse> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/models`);
         return res.json();
     }
 
-    async *pullModel(model: string): AsyncGenerator<SSEEvent> {
+    async *pullModel(model: string, signal?: AbortSignal): AsyncGenerator<SSEEvent> {
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/models/pull`,
             {
@@ -198,7 +211,7 @@ export class LilbeeClient {
                 headers: JSON_HEADERS,
                 body: JSON.stringify({ model }),
             },
-            { stream: true },
+            { stream: true, signal },
         );
         yield* this.parseSSE(res);
     }

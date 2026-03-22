@@ -1,4 +1,4 @@
-import { Modal, Notice, setIcon } from "obsidian";
+import { Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { SSEEvent } from "../types";
 
@@ -51,6 +51,7 @@ export class CatalogModal extends Modal {
             type: "text",
             placeholder: "Search models...",
             cls: "lilbee-catalog-search",
+            attr: { "aria-label": "Search models" },
         });
         this.searchInput.addEventListener("input", () => this.onSearchInput());
 
@@ -75,17 +76,12 @@ export class CatalogModal extends Modal {
 
         const search = this.searchInput?.value ?? "";
         try {
-            const url = `${this.plugin.settings.serverUrl}/api/models/catalog`;
-            const params = new URLSearchParams({
-                task: this.task,
+            const data = await this.plugin.api.getCatalog<CatalogEntry>(this.task, {
                 search,
-                featured: search ? "false" : "true",
-                limit: "20",
-                offset: "0",
+                featured: !search,
+                limit: 20,
+                offset: 0,
             });
-            const res = await fetch(`${url}?${params}`);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data: CatalogResponse = await res.json();
             this.renderResults(data);
         } catch {
             this.resultsEl.empty();
@@ -114,7 +110,7 @@ export class CatalogModal extends Modal {
         headerRow.createEl("th", { text: "Model" });
         headerRow.createEl("th", { text: "Size" });
         headerRow.createEl("th", { text: "Description" });
-        headerRow.createEl("th", { text: "" });
+        headerRow.createEl("th", { text: "", attr: { "aria-label": "Actions" } });
 
         const tbody = table.createEl("tbody");
         for (const model of data.models) {
@@ -132,9 +128,10 @@ export class CatalogModal extends Modal {
 
             const actionCell = row.createEl("td");
             if (model.installed) {
-                const badge = actionCell.createEl("span", {
+                const badge = actionCell.createEl("button", {
                     text: "Installed",
                     cls: "lilbee-installed",
+                    attr: { tabindex: "0", role: "button" },
                 });
                 badge.addEventListener("click", () => {
                     if (this.onSelect) this.onSelect(model.name);

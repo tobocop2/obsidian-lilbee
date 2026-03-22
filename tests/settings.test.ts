@@ -806,7 +806,7 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             (plugin as any).activeModel = "llama3";
             (plugin.api.deleteModel as ReturnType<typeof vi.fn>).mockResolvedValue({ deleted: true });
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ deleted: true });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const { tab, deleteBtn } = setupDeleteButton(plugin, "chat");
@@ -823,7 +823,7 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             (plugin as any).activeVisionModel = "llava";
             (plugin.api.deleteModel as ReturnType<typeof vi.fn>).mockResolvedValue({ deleted: true });
-            (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue({ deleted: true });
+            (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const { tab, deleteBtn } = setupDeleteButton(plugin, "vision");
@@ -1355,7 +1355,7 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
 
             async function* fakePull() {
-                yield { status: "downloading" };
+                yield { event: "progress", data: { status: "downloading" } };
                 yield { event: "progress", data: { status: "success" } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
@@ -2109,7 +2109,7 @@ describe("managed mode settings", () => {
         const plugin = makePlugin({ serverMode: "managed" });
         (plugin as any).serverManager = null; // state defaults to "stopped"
         (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-        (plugin as any).startManagedServer = vi.fn().mockResolvedValue({ deleted: true });
+        (plugin as any).startManagedServer = vi.fn().mockResolvedValue(undefined);
         const tab = makeTab(plugin);
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -2122,7 +2122,7 @@ describe("managed mode settings", () => {
         const plugin = makePlugin({ serverMode: "managed" });
         (plugin as any).serverManager = null; // state defaults to "stopped"
         (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-        const mockStart = vi.fn().mockResolvedValue({ deleted: true });
+        const mockStart = vi.fn().mockResolvedValue(undefined);
         (plugin as any).startManagedServer = mockStart;
         const tab = makeTab(plugin);
 
@@ -2137,7 +2137,7 @@ describe("managed mode settings", () => {
 
     it("Stop button calls serverManager.stop", async () => {
         const plugin = makePlugin({ serverMode: "managed" });
-        const mockStop = vi.fn().mockResolvedValue({ deleted: true });
+        const mockStop = vi.fn().mockResolvedValue(undefined);
         (plugin as any).serverManager = { state: "ready", stop: mockStop, restart: vi.fn() };
         (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
         const tab = makeTab(plugin);
@@ -2153,7 +2153,7 @@ describe("managed mode settings", () => {
 
     it("Restart button calls serverManager.restart", async () => {
         const plugin = makePlugin({ serverMode: "managed" });
-        const mockRestart = vi.fn().mockResolvedValue({ deleted: true });
+        const mockRestart = vi.fn().mockResolvedValue(undefined);
         (plugin as any).serverManager = { state: "ready", stop: vi.fn(), restart: mockRestart };
         (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
         const tab = makeTab(plugin);
