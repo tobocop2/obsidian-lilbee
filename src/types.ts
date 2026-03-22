@@ -153,6 +153,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
 /** SSE event type constants — shared across chat, sync, and model pull streams. */
 export const SSE_EVENT = {
     TOKEN: "token",
+    REASONING: "reasoning",
     SOURCES: "sources",
     DONE: "done",
     ERROR: "error",

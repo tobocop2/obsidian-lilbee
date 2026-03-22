@@ -732,3 +732,25 @@
     font-size: var(--font-smaller);
     color: var(--text-muted);
 }
+
+/* Reasoning (thinking) block */
+.lilbee-reasoning {
+    margin-bottom: var(--size-4-2, 8px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    padding: var(--size-4-2, 8px);
+}
+.lilbee-reasoning summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: var(--font-smaller);
+    font-style: italic;
+}
+.lilbee-reasoning pre {
+    font-size: var(--font-smallest);
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+    margin: var(--size-4-2, 8px) 0 0 0;
+}
