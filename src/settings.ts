@@ -85,7 +85,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderGeneralSettings(containerEl);
         this.renderSyncSettings(containerEl);
         this.renderGenerationSettings(containerEl);
+        this.renderRetrievalSettings(containerEl);
         this.loadModelDefaults();
+        this.loadServerConfig();
     }
 
     private renderConnectionSettings(containerEl: HTMLElement): void {
@@ -372,6 +374,56 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
+    private renderRetrievalSettings(containerEl: HTMLElement): void {
+        const details = containerEl.createEl("details", { cls: "lilbee-retrieval-details" });
+        details.createEl("summary", { text: "Retrieval quality settings" });
+
+        const desc = details.createEl("p", { cls: "setting-item-description" });
+        desc.textContent = "These settings are managed by the lilbee server. "
+            + "Override via LILBEE_* environment variables or config.toml.";
+
+        this.retrievalInfoEl = details.createDiv("lilbee-retrieval-info");
+        this.retrievalInfoEl.textContent = "Loading...";
+    }
+
+    private retrievalInfoEl: HTMLElement | null = null;
+    private systemPromptInfoEl: HTMLElement | null = null;
+
+    private loadServerConfig(): void {
+        this.plugin.api.getConfig().then((config) => {
+            if (this.retrievalInfoEl) {
+                const items = [
+                    `Source diversity: max ${config.diversity_max_per_source} per source`,
+                    `MMR lambda: ${config.mmr_lambda} (0=diverse, 1=relevant)`,
+                    `Candidate multiplier: ${config.candidate_multiplier}x`,
+                    `Query expansion: ${config.query_expansion_count === 0 ? "disabled" : `${config.query_expansion_count} variants`}`,
+                    `Adaptive threshold step: ${config.adaptive_threshold_step}`,
+                    `Max distance: ${config.max_distance}`,
+                    `Chunk size: ${config.chunk_size} tokens`,
+                    `Chunk overlap: ${config.chunk_overlap} tokens`,
+                ];
+                this.retrievalInfoEl.empty();
+                const list = this.retrievalInfoEl.createEl("ul");
+                for (const item of items) {
+                    list.createEl("li", { text: item });
+                }
+            }
+            // Show server system prompt as placeholder
+            if (config.system_prompt && typeof config.system_prompt === "string") {
+                const inputs = this.containerEl.querySelectorAll<HTMLInputElement>(
+                    ".lilbee-generation-details input[type=text]",
+                );
+                if (inputs.length > 0 && !this.plugin.settings.systemPrompt) {
+                    inputs[0].placeholder = String(config.system_prompt).slice(0, 80) + "...";
+                }
+            }
+        }).catch(() => {
+            if (this.retrievalInfoEl) {
+                this.retrievalInfoEl.textContent = "Could not load server config.";
+            }
+        });
+    }
+
     private loadModelDefaults(): void {
         const model = this.plugin.activeModel;
         if (!model) return;
@@ -535,7 +587,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
         cancelBtn.addEventListener("click", () => controller.abort(), { once: true });
         try {
             for await (const event of this.plugin.api.pullModel(model.name)) {
-                if (controller.signal.aborted) break;
+                if (controller.signal.aborted) {
+                    const err = new Error("The operation was aborted");
+                    err.name = "AbortError";
+                    throw err;
+                }
                 const data = event.data as Record<string, unknown>;
                 const total = Number(data?.total ?? 0);
                 const completed = Number(data?.completed ?? 0);
@@ -606,7 +662,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const progress = actionCell.createDiv("lilbee-pull-progress");
         try {
             for await (const event of this.plugin.api.pullModel(model.name)) {
-                if (controller.signal.aborted) break;
+                if (controller.signal.aborted) {
+                    const err = new Error("The operation was aborted");
+                    err.name = "AbortError";
+                    throw err;
+                }
                 const data = event.data as Record<string, unknown>;
                 const total = Number(data?.total ?? 0);
                 const completed = Number(data?.completed ?? 0);

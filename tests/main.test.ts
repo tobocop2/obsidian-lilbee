@@ -14,12 +14,13 @@ vi.mock("../src/api", () => ({
         pullModel: vi.fn(),
         setChatModel: vi.fn(),
         setVisionModel: vi.fn(),
+        showModel: vi.fn().mockResolvedValue({}),
+        deleteModel: vi.fn().mockResolvedValue({ deleted: true }),
+        getConfig: vi.fn().mockResolvedValue({}),
+        listDocuments: vi.fn().mockResolvedValue({ documents: [], total: 0 }),
+        removeDocuments: vi.fn().mockResolvedValue({ removed: [], not_found: [] }),
         health: vi.fn(),
         addFiles: vi.fn(),
-    })),
-    OllamaClient: vi.fn().mockImplementation(() => ({
-        pull: vi.fn(),
-        delete: vi.fn(),
     })),
 }));
 

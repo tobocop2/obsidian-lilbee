@@ -71,6 +71,11 @@ export class LilbeeClient {
         throw lastError;
     }
 
+    async getConfig(): Promise<Record<string, unknown>> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/config`);
+        return res.json();
+    }
+
     async health(): Promise<{ status: string; version: string }> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/health`);
         return res.json();
