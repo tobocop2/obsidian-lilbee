@@ -678,3 +678,57 @@
     border-radius: var(--radius-s, 4px);
     padding: 0 var(--size-4-2, 8px);
 }
+
+/* Catalog modal */
+.lilbee-catalog-modal {
+    min-width: 600px;
+}
+.lilbee-catalog-search {
+    width: 100%;
+    margin-bottom: var(--size-4-3, 12px);
+}
+.lilbee-catalog-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.lilbee-catalog-table th,
+.lilbee-catalog-table td {
+    padding: var(--size-4-2, 8px);
+    text-align: left;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+.lilbee-catalog-table th {
+    font-weight: var(--font-semibold);
+    color: var(--text-muted);
+    font-size: var(--font-smaller);
+}
+.lilbee-catalog-install-btn {
+    cursor: pointer;
+}
+.lilbee-catalog-source-badge {
+    font-size: var(--font-smallest);
+    color: var(--text-muted);
+    margin-left: 4px;
+}
+.lilbee-catalog-loading,
+.lilbee-catalog-empty,
+.lilbee-catalog-error {
+    color: var(--text-muted);
+    text-align: center;
+    padding: var(--size-4-4, 16px);
+}
+.lilbee-catalog-pagination-hint {
+    color: var(--text-muted);
+    font-size: var(--font-smaller);
+    text-align: center;
+    margin-top: var(--size-4-2, 8px);
+}
+.lilbee-retrieval-info ul {
+    margin: 0;
+    padding-left: var(--size-4-4, 16px);
+}
+.lilbee-retrieval-info li {
+    margin-bottom: var(--size-2-1, 4px);
+    font-size: var(--font-smaller);
+    color: var(--text-muted);
+}
