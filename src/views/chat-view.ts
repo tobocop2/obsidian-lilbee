@@ -437,6 +437,23 @@ export class ChatView extends ItemView {
         scheduleRender: () => void,
     ): void {
         switch (event.event) {
+            case SSE_EVENT.REASONING: {
+                // Collapsible reasoning block above the answer
+                let details = assistantBubble.querySelector<HTMLDetailsElement>(".lilbee-reasoning");
+                if (!details) {
+                    details = assistantBubble.createEl("details", { cls: "lilbee-reasoning" });
+                    details.createEl("summary", { text: "Thinking..." });
+                    // Insert before the text content
+                    assistantBubble.insertBefore(details, textEl);
+                }
+                const token = extractString(event.data, "token");
+                let pre = details.querySelector<HTMLPreElement>("pre");
+                if (!pre) {
+                    pre = details.createEl("pre");
+                }
+                pre.textContent += token;
+                break;
+            }
             case SSE_EVENT.TOKEN: {
                 revealContent();
                 state.fullContent += extractString(event.data, "token");
