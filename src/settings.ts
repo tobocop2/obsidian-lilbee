@@ -327,8 +327,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 if (cfg[key] !== undefined) {
                     new Setting(container)
                         .setName(label)
-                        .setDesc(String(cfg[key]))
-                        .addText((text) => text.setValue(String(cfg[key])).setPlaceholder(""));
+                        .setDesc(String(cfg[key]));
                 }
             }
             // Populate editable crawl and advanced inputs with current server values
@@ -740,6 +739,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         try {
             for await (const event of this.plugin.api.pullModel(
                 model.name,
+                "native",
+                controller.signal,
             )) {
                 if (event.event === "progress") {
                     const d = event.data as { current?: number; total?: number };
@@ -824,6 +825,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         try {
             for await (const event of this.plugin.api.pullModel(
                 model.name,
+                "native",
+                controller.signal,
             )) {
                 if (event.event === "progress") {
                     const d = event.data as { current?: number; total?: number };

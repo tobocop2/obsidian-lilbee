@@ -261,7 +261,7 @@ export class ChatView extends ItemView {
             if (this.chatSelectEl) { this.chatSelectEl.empty(); this.chatSelectEl.createEl("option", { text: label }); }
             if (this.visionSelectEl) { this.visionSelectEl.empty(); this.visionSelectEl.createEl("option", { text: label }); }
             if (this.retryCount === ChatView.OFFLINE_THRESHOLD) {
-                new Notice("lilbee: could not reach server — is Ollama running?");
+                new Notice("lilbee: could not reach server — is lilbee running?");
             }
             this.retryTimer = setTimeout(() => this.fetchAndFillSelectors(), 5000);
         });
@@ -337,6 +337,8 @@ export class ChatView extends ItemView {
         try {
             for await (const event of this.plugin.api.pullModel(
                 model.name,
+                "native",
+                this.pullController.signal,
             )) {
                 if (event.event === "progress") {
                     const d = event.data as { current?: number; total?: number };

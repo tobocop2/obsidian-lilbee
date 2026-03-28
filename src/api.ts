@@ -201,13 +201,14 @@ export class LilbeeClient {
         return res.json();
     }
 
-    async *pullModel(model: string, source = "native"): AsyncGenerator<SSEEvent> {
+    async *pullModel(model: string, source = "native", signal?: AbortSignal): AsyncGenerator<SSEEvent> {
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/models/pull`,
             {
                 method: "POST",
                 headers: { ...JSON_HEADERS, ...this.authHeaders() },
                 body: JSON.stringify({ model, source }),
+                signal,
             },
             { stream: true },
         );

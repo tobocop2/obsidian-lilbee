@@ -1668,7 +1668,7 @@ describe("LilbeeSettingTab", () => {
 
             // phi3 is uninstalled in catalog, should trigger auto-pull
             await dropdownOnChanges[0]("phi3");
-            expect(plugin.api.pullModel).toHaveBeenCalledWith("phi3");
+            expect(plugin.api.pullModel).toHaveBeenCalledWith("phi3", "native", expect.any(AbortSignal));
             expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
             expect(Notice.instances.some((n) => n.message === "lilbee: phi3 pulled and activated")).toBe(true);
         });

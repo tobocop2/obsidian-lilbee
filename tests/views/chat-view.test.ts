@@ -901,7 +901,7 @@ describe("ChatView.onOpen — model selector", () => {
         // Allow async IIFE to complete
         await new Promise((r) => setTimeout(r, 50));
 
-        expect(plugin.api.pullModel).toHaveBeenCalledWith("phi3");
+        expect(plugin.api.pullModel).toHaveBeenCalledWith("phi3", "native", expect.any(AbortSignal));
         expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
         expect(Notice.instances.some((n) => n.message === "lilbee: phi3 pulled and activated")).toBe(true);
     });
@@ -1826,7 +1826,7 @@ describe("ChatView.onOpen — vision selector", () => {
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
-        expect(plugin.api.pullModel).toHaveBeenCalledWith("llava");
+        expect(plugin.api.pullModel).toHaveBeenCalledWith("llava", "native", expect.any(AbortSignal));
         expect(plugin.api.setVisionModel).toHaveBeenCalledWith("llava");
         expect(Notice.instances.some((n) => n.message === "lilbee: llava pulled and activated")).toBe(true);
     });
@@ -2614,7 +2614,7 @@ describe("ChatView — offline retry", () => {
         await view.onClose();
     });
 
-    it("shows Ollama notice only at threshold", async () => {
+    it("shows offline notice only at threshold", async () => {
         const plugin = makePlugin();
         plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
 
@@ -2624,25 +2624,25 @@ describe("ChatView — offline retry", () => {
 
         // First failure — no notice yet (connecting state)
         expect(Notice.instances.filter(
-            (n) => n.message.includes("is Ollama running?"),
+            (n) => n.message.includes("is lilbee running?"),
         ).length).toBe(0);
 
         // Second failure — still no notice
         await vi.advanceTimersByTimeAsync(5000);
         expect(Notice.instances.filter(
-            (n) => n.message.includes("is Ollama running?"),
+            (n) => n.message.includes("is lilbee running?"),
         ).length).toBe(0);
 
         // Third failure — notice fires at threshold
         await vi.advanceTimersByTimeAsync(5000);
         expect(Notice.instances.filter(
-            (n) => n.message.includes("is Ollama running?"),
+            (n) => n.message.includes("is lilbee running?"),
         ).length).toBe(1);
 
         // Fourth failure — no additional notice
         await vi.advanceTimersByTimeAsync(5000);
         expect(Notice.instances.filter(
-            (n) => n.message.includes("is Ollama running?"),
+            (n) => n.message.includes("is lilbee running?"),
         ).length).toBe(1);
 
         await view.onClose();
