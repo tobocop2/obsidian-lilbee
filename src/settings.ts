@@ -2,7 +2,7 @@ import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
 import type { ReleaseInfo } from "./binary-manager";
 import { DEFAULT_SETTINGS, MODEL_TYPE, NOTICE, SERVER_MODE } from "./types";
-import type { ModelCatalog, ModelInfo, ModelType, ModelsResponse, OllamaModelDefaults, ServerMode } from "./types";
+import type { GenerationOptions, ModelCatalog, ModelInfo, ModelType, ModelsResponse, ServerMode } from "./types";
 import { PullQueue } from "./pull-queue";
 import { ConfirmPullModal } from "./views/confirm-pull-modal";
 
@@ -59,7 +59,7 @@ export function buildModelOptions(
 export { SEPARATOR_KEY, SEPARATOR_LABEL };
 
 type GenKey = "temperature" | "top_p" | "top_k_sampling" | "repeat_penalty" | "num_ctx" | "seed";
-const GEN_DEFAULTS_MAP: Record<GenKey, keyof OllamaModelDefaults> = {
+const GEN_DEFAULTS_MAP: Record<GenKey, keyof GenerationOptions> = {
     temperature: "temperature",
     top_p: "top_p",
     top_k_sampling: "top_k",
@@ -112,29 +112,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
         } else {
             this.renderExternalSettings(containerEl);
         }
-
-        const ollamaSetting = new Setting(containerEl)
-            .setName("Ollama URL")
-            .setDesc("Address of the Ollama server")
-            .addText((text) =>
-                text
-                    .setPlaceholder("http://127.0.0.1:11434")
-                    .setValue(this.plugin.settings.ollamaUrl)
-                    .onChange(async (value) => {
-                        this.plugin.settings.ollamaUrl = value;
-                        await this.plugin.saveSettings();
-                    }),
-            );
-
-        const ollamaStatusEl = ollamaSetting.settingEl.createEl("span", { cls: "lilbee-health-status" });
-
-        ollamaSetting.addButton((btn) =>
-            btn.setButtonText("Test").onClick(async () => {
-                await this.checkEndpoint(this.plugin.settings.ollamaUrl, ollamaStatusEl);
-            }),
-        );
-
-        void this.checkEndpoint(this.plugin.settings.ollamaUrl, ollamaStatusEl);
     }
 
     private renderManagedSettings(containerEl: HTMLElement): void {
@@ -289,7 +266,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private renderModelsSection(containerEl: HTMLElement): void {
         containerEl.createEl("h3", { text: "Models" });
         containerEl.createEl("p", {
-            text: "Curated catalog — see ollama.com/library for the full model list. Requires the lilbee server.",
+            text: "Browse the catalog for available models. Requires the lilbee server.",
             cls: "setting-item-description",
         });
 
@@ -378,16 +355,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private loadModelDefaults(): void {
         const model = this.plugin.activeModel;
         if (!model) return;
-        this.plugin.ollama.show(model).then((defaults) => {
+        this.plugin.api.showModel(model).then((defaults: Record<string, unknown>) => {
             for (const [key, inputEl] of this.genInputs) {
-                const ollamaKey = GEN_DEFAULTS_MAP[key];
-                const val = defaults[ollamaKey];
+                const genKey = GEN_DEFAULTS_MAP[key];
+                const val = defaults[genKey];
                 if (val !== undefined) {
                     inputEl.placeholder = String(val);
                 }
             }
         }).catch(() => {
-            // Ollama unreachable — leave "Not set" placeholders
+            // Server unreachable — leave "Not set" placeholders
         });
     }
 
@@ -547,17 +524,19 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const cancelBtn = banner.createEl("button", { text: "Cancel", cls: "lilbee-pull-banner-cancel" });
         cancelBtn.addEventListener("click", () => controller.abort(), { once: true });
         try {
-            for await (const progress of this.plugin.ollama.pull(
+            for await (const event of this.plugin.api.pullModel(
                 model.name,
-                controller.signal,
             )) {
-                if (progress.total && progress.completed !== undefined) {
-                    const pct = Math.round((progress.completed / progress.total) * 100);
-                    label.textContent = `Pulling ${model.name} — ${pct}%`;
-                    if (this.plugin.statusBarEl) {
-                        this.plugin.statusBarEl.setText(
-                            `lilbee: pulling ${model.name} — ${pct}%`,
-                        );
+                if (event.event === "progress") {
+                    const d = event.data as { current?: number; total?: number };
+                    if (d.total && d.current !== undefined) {
+                        const pct = Math.round((d.current / d.total) * 100);
+                        label.textContent = `Pulling ${model.name} — ${pct}%`;
+                        if (this.plugin.statusBarEl) {
+                            this.plugin.statusBarEl.setText(
+                                `lilbee: pulling ${model.name} — ${pct}%`,
+                            );
+                        }
                     }
                 }
             }
@@ -629,15 +608,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
         btn.textContent = "Cancel";
         const progress = actionCell.createDiv("lilbee-pull-progress");
         try {
-            for await (const p of this.plugin.ollama.pull(
+            for await (const event of this.plugin.api.pullModel(
                 model.name,
-                controller.signal,
             )) {
-                if (p.total && p.completed !== undefined) {
-                    const pct = Math.round((p.completed / p.total) * 100);
-                    progress.textContent = `${pct}%`;
-                    if (this.plugin.statusBarEl) {
-                        this.plugin.statusBarEl.setText(`lilbee: pulling ${model.name} — ${pct}%`);
+                if (event.event === "progress") {
+                    const d = event.data as { current?: number; total?: number };
+                    if (d.total && d.current !== undefined) {
+                        const pct = Math.round((d.current / d.total) * 100);
+                        progress.textContent = `${pct}%`;
+                        if (this.plugin.statusBarEl) {
+                            this.plugin.statusBarEl.setText(`lilbee: pulling ${model.name} — ${pct}%`);
+                        }
                     }
                 }
             }
@@ -666,7 +647,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     ): Promise<void> {
         btn.disabled = true;
         try {
-            await this.plugin.ollama.delete(model.name);
+            await this.plugin.api.deleteModel(model.name);
             new Notice(`Deleted ${model.name}`);
             if (type === MODEL_TYPE.CHAT && model.name === this.plugin.activeModel) {
                 await this.plugin.api.setChatModel("");
