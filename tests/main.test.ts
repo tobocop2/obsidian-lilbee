@@ -33,6 +33,18 @@ vi.mock("../src/views/search-modal", () => ({
     SearchModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
 }));
 
+vi.mock("../src/views/catalog-modal", () => ({
+    CatalogModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
+}));
+
+vi.mock("../src/views/crawl-modal", () => ({
+    CrawlModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
+}));
+
+vi.mock("../src/views/documents-modal", () => ({
+    DocumentsModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
+}));
+
 const mockEnsureBinary = vi.fn().mockResolvedValue("/fake/bin/lilbee");
 const mockBinaryExists = vi.fn().mockReturnValue(true);
 const mockDownload = vi.fn().mockResolvedValue(undefined);
@@ -114,11 +126,11 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerView).toHaveBeenCalled();
         });
 
-        it("adds all seven commands", async () => {
+        it("adds all ten commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(7);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(10);
             const ids = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map(
                 (c: any[]) => c[0].id,
             );
@@ -128,6 +140,9 @@ describe("LilbeePlugin", () => {
             expect(ids).toContain("lilbee:add-file");
             expect(ids).toContain("lilbee:add-folder");
             expect(ids).toContain("lilbee:sync");
+            expect(ids).toContain("lilbee:catalog");
+            expect(ids).toContain("lilbee:crawl");
+            expect(ids).toContain("lilbee:documents");
             expect(ids).toContain("lilbee:status");
         });
 
@@ -617,6 +632,45 @@ describe("LilbeePlugin", () => {
             await cb?.();
 
             expect(Notice.instances.some((n) => n.message.includes("cannot connect"))).toBe(true);
+        });
+
+        it("lilbee:catalog opens CatalogModal", async () => {
+            const { CatalogModal } = await import("../src/views/catalog-modal");
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const cb = await getCommandCallback(plugin, "lilbee:catalog");
+            cb?.();
+
+            expect(CatalogModal).toHaveBeenCalled();
+            const instance = (CatalogModal as ReturnType<typeof vi.fn>).mock.results[0].value;
+            expect(instance.open).toHaveBeenCalled();
+        });
+
+        it("lilbee:crawl opens CrawlModal", async () => {
+            const { CrawlModal } = await import("../src/views/crawl-modal");
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const cb = await getCommandCallback(plugin, "lilbee:crawl");
+            cb?.();
+
+            expect(CrawlModal).toHaveBeenCalled();
+            const instance = (CrawlModal as ReturnType<typeof vi.fn>).mock.results[0].value;
+            expect(instance.open).toHaveBeenCalled();
+        });
+
+        it("lilbee:documents opens DocumentsModal", async () => {
+            const { DocumentsModal } = await import("../src/views/documents-modal");
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const cb = await getCommandCallback(plugin, "lilbee:documents");
+            cb?.();
+
+            expect(DocumentsModal).toHaveBeenCalled();
+            const instance = (DocumentsModal as ReturnType<typeof vi.fn>).mock.results[0].value;
+            expect(instance.open).toHaveBeenCalled();
         });
     });
 

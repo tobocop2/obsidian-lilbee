@@ -73,6 +73,10 @@ export class MockElement {
         this.attributes[name] = value;
     }
 
+    removeAttribute(name: string): void {
+        delete this.attributes[name];
+    }
+
     addClass(cls: string): void {
         cls.split(" ").forEach(c => this.classList.add(c));
     }

@@ -25,6 +25,21 @@ vi.mock("../src/views/confirm-pull-modal", () => ({
     })),
 }));
 
+vi.mock("../src/views/catalog-modal", () => ({
+    CatalogModal: vi.fn().mockImplementation(() => ({
+        open: vi.fn(),
+    })),
+}));
+
+let mockGenericConfirmResult = true;
+vi.mock("../src/views/confirm-modal", () => ({
+    ConfirmModal: vi.fn().mockImplementation(() => ({
+        open: vi.fn(),
+        get result() { return Promise.resolve(mockGenericConfirmResult); },
+        close: vi.fn(),
+    })),
+}));
+
 function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
     const settings: LilbeeSettings = { ...DEFAULT_SETTINGS, ...overrides };
     const api = {
@@ -34,11 +49,15 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
         pullModel: vi.fn(),
         deleteModel: vi.fn(),
         showModel: vi.fn().mockRejectedValue(new Error("no model")),
+        config: vi.fn().mockRejectedValue(new Error("unreachable")),
+        updateConfig: vi.fn().mockResolvedValue({ updated: [], reindex_required: false }),
+        setEmbeddingModel: vi.fn().mockResolvedValue({ model: "" }),
     };
     const saveSettings = vi.fn().mockResolvedValue(undefined);
     const statusBarEl = { setText: vi.fn(), textContent: "" };
     const fetchActiveModel = vi.fn();
-    return { settings, api, saveSettings, statusBarEl, fetchActiveModel, activeModel: "", activeVisionModel: "" } as unknown as InstanceType<typeof import("../src/main").default>;
+    const triggerSync = vi.fn().mockResolvedValue(undefined);
+    return { settings, api, saveSettings, statusBarEl, fetchActiveModel, triggerSync, activeModel: "", activeVisionModel: "" } as unknown as InstanceType<typeof import("../src/main").default>;
 }
 
 function makeTab(plugin: ReturnType<typeof makePlugin>) {
@@ -225,8 +244,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverUrl + systemPrompt + 6 generation + syncDebounce = 9
-            expect(textOnChanges.length).toBe(9);
+            // serverPort + systemPrompt + 6 generation + syncDebounce + 3 crawling + 5 advanced = 17
+            expect(textOnChanges.length).toBe(17);
         });
 
         it("does NOT show sync-debounce when syncMode is 'manual'", () => {
@@ -234,8 +253,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverUrl + systemPrompt + 6 generation settings = 8
-            expect(textOnChanges.length).toBe(8);
+            // serverPort + systemPrompt + 6 generation + 3 crawling + 5 advanced = 16
+            expect(textOnChanges.length).toBe(16);
         });
     });
 
@@ -285,7 +304,7 @@ describe("LilbeeSettingTab", () => {
     describe("syncDebounce text onChange", () => {
         // With syncMode=auto, text fields are (render order: connection → models → general → sync → generation):
         // [0] port, [1] syncDebounce, [2] systemPrompt, [3-8] generation settings
-        const DEBOUNCE_IDX = 1;
+        const DEBOUNCE_IDX = 8;
 
         it("updates syncDebounceMs for valid positive number", async () => {
             const plugin = makePlugin({ syncMode: "auto" });
@@ -513,10 +532,25 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-            // Start + Check for updates + Refresh = 3
-            expect(buttonOnClicks.length).toBe(3);
-            // Refresh is the last button
+            // Start + Check for updates + Refresh + Browse Catalog = 4
+            expect(buttonOnClicks.length).toBe(4);
+            // Refresh is the third button (index 2)
             await expect(buttonOnClicks[2]()).resolves.not.toThrow();
+        });
+    });
+
+    describe("Browse Catalog button in settings", () => {
+        it("onClick opens CatalogModal", async () => {
+            const { CatalogModal } = await import("../src/views/catalog-modal");
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+
+            // Browse Catalog is the fourth button (index 3)
+            buttonOnClicks[3]();
+
+            expect(CatalogModal).toHaveBeenCalled();
         });
     });
 
@@ -2229,5 +2263,305 @@ describe("managed mode settings", () => {
 
         expect(mockRestart).toHaveBeenCalled();
         expect(displaySpy).toHaveBeenCalled();
+    });
+
+    describe("Advanced chunk fields onChange", () => {
+        it("chunk_size calls updateConfig after confirm", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // Index 11: chunk_size
+            await textOnChanges[11]("512");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512 });
+        });
+
+        it("chunk_overlap calls updateConfig after confirm", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // Index 12: chunk_overlap
+            await textOnChanges[12]("64");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_overlap: 64 });
+        });
+
+        it("skips empty value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[11]("");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("skips invalid number", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[11]("abc");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("skips negative number", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[11]("-1");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("aborts when user cancels confirm", async () => {
+            mockGenericConfirmResult = false;
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[11]("512");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            mockGenericConfirmResult = true;
+        });
+
+        it("triggers sync when reindex_required", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockResolvedValue({ updated: ["chunk_size"], reindex_required: true });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[11]("512");
+            expect(plugin.triggerSync).toHaveBeenCalled();
+        });
+
+        it("shows error notice on updateConfig failure", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[11]("512");
+            expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
+        });
+    });
+
+    describe("Embedding model onChange", () => {
+        it("calls setEmbeddingModel on non-empty value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // Index 13: Embedding model
+            await textOnChanges[13]("nomic-embed-text");
+            expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
+        });
+
+        it("skips empty value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[13]("");
+            expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
+        });
+
+        it("aborts when user cancels confirm", async () => {
+            mockGenericConfirmResult = false;
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[13]("nomic-embed-text");
+            expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
+            mockGenericConfirmResult = true;
+        });
+
+        it("shows error notice on failure", async () => {
+            const plugin = makePlugin();
+            (plugin.api.setEmbeddingModel as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[13]("nomic-embed-text");
+            expect(Notice.instances.some((n: any) => n.message.includes("failed to update embedding model"))).toBe(true);
+        });
+    });
+
+    describe("Crawling fields onChange", () => {
+        it("calls updateConfig with valid crawl_max_depth", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // Indices 8-10: crawl_max_depth, crawl_max_pages, crawl_timeout
+            await textOnChanges[8]("3");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_depth: 3 });
+        });
+
+        it("calls updateConfig with valid crawl_max_pages", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[9]("100");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_pages: 100 });
+        });
+
+        it("skips empty value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[8]("");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("skips invalid number", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[8]("abc");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("skips negative number", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[8]("-5");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("shows error notice on updateConfig failure", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[8]("3");
+            expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
+        });
+    });
+
+    describe("loadServerDefaults success path", () => {
+        it("renders server defaults when config() resolves", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                chunk_size: 512,
+                chunk_overlap: 64,
+                embedding_model: "nomic-embed-text",
+            });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+
+            // Wait for async config() to resolve
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(plugin.api.config).toHaveBeenCalled();
+        });
+
+        it("skips fields where cfg value is undefined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                chunk_size: 512,
+                // chunk_overlap and embedding_model are absent
+            });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(plugin.api.config).toHaveBeenCalled();
+        });
+    });
+
+    describe("Embedding provider onChange", () => {
+        it("calls updateConfig on non-empty value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // Index 14: Embedding provider (0=port, 1=systemPrompt, 2-7=gen fields, 8-10=crawl, 11-12=advanced, 13=embedding model, 14=embedding provider)
+            await textOnChanges[14]("litellm");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ embedding_provider: "litellm" });
+        });
+
+        it("skips empty value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[14]("");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("shows error notice on failure", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[14]("litellm");
+            expect(Notice.instances.some((n: any) => n.message.includes("failed to update embedding provider"))).toBe(true);
+        });
+    });
+
+    describe("LiteLLM URL onChange", () => {
+        it("calls updateConfig on non-empty value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // Index 15: LiteLLM URL
+            await textOnChanges[15]("http://localhost:4000");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ litellm_url: "http://localhost:4000" });
+        });
+
+        it("skips empty value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[15]("  ");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("shows error notice on failure", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[15]("http://localhost:4000");
+            expect(Notice.instances.some((n: any) => n.message.includes("failed to update LiteLLM URL"))).toBe(true);
+        });
     });
 });

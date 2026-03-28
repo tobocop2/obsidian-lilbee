@@ -4,6 +4,8 @@ import type { ReleaseInfo } from "./binary-manager";
 import { DEFAULT_SETTINGS, MODEL_TYPE, NOTICE, SERVER_MODE } from "./types";
 import type { GenerationOptions, ModelCatalog, ModelInfo, ModelType, ModelsResponse, ServerMode } from "./types";
 import { PullQueue } from "./pull-queue";
+import { CatalogModal } from "./views/catalog-modal";
+import { ConfirmModal } from "./views/confirm-modal";
 import { ConfirmPullModal } from "./views/confirm-pull-modal";
 
 const CHECK_TIMEOUT_MS = 5000;
@@ -85,9 +87,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         this.renderConnectionSettings(containerEl);
         this.renderModelsSection(containerEl);
-        this.renderGeneralSettings(containerEl);
-        this.renderSyncSettings(containerEl);
+        this.renderSearchRetrievalSettings(containerEl);
         this.renderGenerationSettings(containerEl);
+        this.renderSyncSettings(containerEl);
+        this.renderCrawlingSettings(containerEl);
+        this.renderAdvancedSettings(containerEl);
         this.loadModelDefaults();
     }
 
@@ -271,7 +275,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         });
 
         const modelsContainer = containerEl.createDiv(CLS_MODELS_CONTAINER);
-        new Setting(containerEl)
+        const modelSettings = new Setting(containerEl)
             .setName("Refresh models")
             .setDesc("Fetch available models from the server")
             .addButton((btn) =>
@@ -279,11 +283,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     await this.loadModels(modelsContainer);
                 }),
             );
+        modelSettings.addButton((btn) =>
+            btn.setButtonText("Browse Catalog").onClick(() => {
+                new CatalogModal(this.app, this.plugin).open();
+            }),
+        );
 
         this.loadModels(modelsContainer);
     }
 
-    private renderGeneralSettings(containerEl: HTMLElement): void {
+    private renderSearchRetrievalSettings(containerEl: HTMLElement): void {
+        containerEl.createEl("h3", { text: "Search & Retrieval" });
+
         new Setting(containerEl)
             .setName("Results count")
             .setDesc("Number of search results to return")
@@ -297,6 +308,31 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     }),
             );
+
+        const serverDefaultsEl = containerEl.createDiv({ cls: "lilbee-server-defaults" });
+        this.loadServerDefaults(serverDefaultsEl);
+    }
+
+    private loadServerDefaults(container: HTMLElement): void {
+        this.plugin.api.config().then((cfg: Record<string, unknown>) => {
+            container.empty();
+            const fields: [string, string][] = [
+                ["chunk_size", "Chunk size"],
+                ["chunk_overlap", "Chunk overlap"],
+                ["embedding_model", "Embedding model"],
+            ];
+            for (const [key, label] of fields) {
+                if (cfg[key] !== undefined) {
+                    new Setting(container)
+                        .setName(label)
+                        .setDesc(String(cfg[key]))
+                        .addText((text) => text.setValue(String(cfg[key])).setPlaceholder(""));
+                }
+            }
+        }).catch(() => {
+            container.empty();
+            container.createEl("p", { text: "(server unreachable)", cls: "mod-warning" });
+        });
     }
 
     private renderGenerationSettings(containerEl: HTMLElement): void {
@@ -401,6 +437,151 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         }),
                 );
         }
+    }
+
+    private renderCrawlingSettings(containerEl: HTMLElement): void {
+        containerEl.createEl("h3", { text: "Crawling" });
+
+        const crawlFields: { key: string; name: string; desc: string; placeholder: string }[] = [
+            { key: "crawl_max_depth", name: "Max depth", desc: "Maximum crawl depth (0 = single page)", placeholder: "0" },
+            { key: "crawl_max_pages", name: "Max pages", desc: "Maximum number of pages to crawl", placeholder: "50" },
+            { key: "crawl_timeout", name: "Timeout (seconds)", desc: "Timeout per page in seconds", placeholder: "30" },
+        ];
+
+        for (const field of crawlFields) {
+            new Setting(containerEl)
+                .setName(field.name)
+                .setDesc(field.desc)
+                .addText((text) =>
+                    text
+                        .setPlaceholder(field.placeholder)
+                        .setValue("")
+                        .onChange(async (value) => {
+                            const trimmed = value.trim();
+                            if (trimmed === "") return;
+                            const num = parseInt(trimmed, 10);
+                            if (isNaN(num) || num < 0) return;
+                            try {
+                                await this.plugin.api.updateConfig({ [field.key]: num });
+                                new Notice(`lilbee: ${field.name} updated`);
+                            } catch {
+                                new Notice(`lilbee: failed to update ${field.name}`);
+                            }
+                        }),
+                );
+        }
+    }
+
+    private renderAdvancedSettings(containerEl: HTMLElement): void {
+        const details = containerEl.createEl("details", { cls: "lilbee-advanced-details" });
+        details.createEl("summary", { text: "Advanced" });
+
+        const advancedFields: { key: string; name: string; desc: string; reindex: boolean }[] = [
+            { key: "chunk_size", name: "Chunk size", desc: "Number of tokens per chunk", reindex: true },
+            { key: "chunk_overlap", name: "Chunk overlap", desc: "Overlap between chunks in tokens", reindex: true },
+        ];
+
+        for (const field of advancedFields) {
+            new Setting(details)
+                .setName(field.name)
+                .setDesc(field.desc)
+                .addText((text) =>
+                    text
+                        .setPlaceholder("Server default")
+                        .setValue("")
+                        .onChange(async (value) => {
+                            const trimmed = value.trim();
+                            if (trimmed === "") return;
+                            const num = parseInt(trimmed, 10);
+                            if (isNaN(num) || num < 0) return;
+                            if (field.reindex) {
+                                const confirmModal = new ConfirmModal(
+                                    this.app,
+                                    `Changing ${field.name} will require re-indexing all documents. Continue?`,
+                                );
+                                confirmModal.open();
+                                const confirmed = await confirmModal.result;
+                                if (!confirmed) return;
+                            }
+                            try {
+                                const result = await this.plugin.api.updateConfig({ [field.key]: num });
+                                new Notice(`lilbee: ${field.name} updated`);
+                                if (result.reindex_required) {
+                                    new Notice("lilbee: re-indexing required — starting sync...");
+                                    void this.plugin.triggerSync();
+                                }
+                            } catch {
+                                new Notice(`lilbee: failed to update ${field.name}`);
+                            }
+                        }),
+                );
+        }
+
+        new Setting(details)
+            .setName("Embedding model")
+            .setDesc("Model used for generating embeddings")
+            .addText((text) =>
+                text
+                    .setPlaceholder("Server default")
+                    .setValue("")
+                    .onChange(async (value) => {
+                        const trimmed = value.trim();
+                        if (trimmed === "") return;
+                        const confirmModal = new ConfirmModal(
+                            this.app,
+                            "Changing the embedding model will require re-indexing all documents. Continue?",
+                        );
+                        confirmModal.open();
+                        const confirmed = await confirmModal.result;
+                        if (!confirmed) return;
+                        try {
+                            await this.plugin.api.setEmbeddingModel(trimmed);
+                            new Notice("lilbee: embedding model updated");
+                            new Notice("lilbee: re-indexing required — starting sync...");
+                            void this.plugin.triggerSync();
+                        } catch {
+                            new Notice("lilbee: failed to update embedding model");
+                        }
+                    }),
+            );
+
+        new Setting(details)
+            .setName("Embedding provider")
+            .setDesc("Provider for the embedding model (e.g. native, litellm)")
+            .addText((text) =>
+                text
+                    .setPlaceholder("native")
+                    .setValue("")
+                    .onChange(async (value) => {
+                        const trimmed = value.trim();
+                        if (trimmed === "") return;
+                        try {
+                            await this.plugin.api.updateConfig({ embedding_provider: trimmed });
+                            new Notice("lilbee: embedding provider updated");
+                        } catch {
+                            new Notice("lilbee: failed to update embedding provider");
+                        }
+                    }),
+            );
+
+        new Setting(details)
+            .setName("LiteLLM URL")
+            .setDesc("URL for the LiteLLM proxy (if using litellm provider)")
+            .addText((text) =>
+                text
+                    .setPlaceholder("http://localhost:4000")
+                    .setValue("")
+                    .onChange(async (value) => {
+                        const trimmed = value.trim();
+                        if (trimmed === "") return;
+                        try {
+                            await this.plugin.api.updateConfig({ litellm_url: trimmed });
+                            new Notice("lilbee: LiteLLM URL updated");
+                        } catch {
+                            new Notice("lilbee: failed to update LiteLLM URL");
+                        }
+                    }),
+            );
     }
 
     async checkEndpoint(url: string, statusEl: HTMLSpanElement): Promise<void> {

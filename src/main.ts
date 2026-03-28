@@ -5,7 +5,10 @@ import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { LilbeeSettingTab } from "./settings";
 import { DEFAULT_SETTINGS, NOTICE, SERVER_MODE, SSE_EVENT, type LilbeeSettings, type ServerMode, type ServerState, type SSEEvent, type SyncDone } from "./types";
+import { CatalogModal } from "./views/catalog-modal";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
+import { CrawlModal } from "./views/crawl-modal";
+import { DocumentsModal } from "./views/documents-modal";
 import { SearchModal } from "./views/search-modal";
 
 
@@ -270,6 +273,24 @@ export default class LilbeePlugin extends Plugin {
             id: "lilbee:sync",
             name: "Sync vault",
             callback: () => this.triggerSync(),
+        });
+
+        this.addCommand({
+            id: "lilbee:catalog",
+            name: "Browse model catalog",
+            callback: () => new CatalogModal(this.app, this).open(),
+        });
+
+        this.addCommand({
+            id: "lilbee:crawl",
+            name: "Crawl web page",
+            callback: () => new CrawlModal(this.app, this).open(),
+        });
+
+        this.addCommand({
+            id: "lilbee:documents",
+            name: "Browse documents",
+            callback: () => new DocumentsModal(this.app, this).open(),
         });
 
         this.addCommand({

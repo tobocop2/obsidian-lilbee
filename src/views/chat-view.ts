@@ -6,6 +6,8 @@ import { PullQueue } from "../pull-queue";
 import { renderSourceChip } from "./results";
 import { buildModelOptions, SEPARATOR_KEY } from "../settings";
 import { ConfirmPullModal } from "./confirm-pull-modal";
+import { CatalogModal } from "./catalog-modal";
+import { CrawlModal } from "./crawl-modal";
 
 interface OpenDialogResult {
     canceled: boolean;
@@ -88,6 +90,7 @@ export class ChatView extends ItemView {
     private static readonly OFFLINE_THRESHOLD = 3;
     private retryTimer: ReturnType<typeof setTimeout> | null = null;
     private retryCount = 0;
+    private emptyStateEl: HTMLElement | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: LilbeePlugin) {
         super(leaf);
@@ -244,9 +247,12 @@ export class ChatView extends ItemView {
             this.visionCatalog = models.vision;
             if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl, models.chat, "chat");
             if (this.visionSelectEl) this.fillSelectOptions(this.visionSelectEl, models.vision, "vision");
-            // Ollama not running — retry until models appear
+            // No models installed — show empty state with catalog button
             if (models.chat.installed.length === 0 && models.vision.installed.length === 0) {
+                this.showEmptyState();
                 this.retryTimer = setTimeout(() => this.fetchAndFillSelectors(), 5000);
+            } else {
+                this.hideEmptyState();
             }
         }).catch(() => {
             this.retryCount++;
@@ -395,7 +401,7 @@ export class ChatView extends ItemView {
         textEl.style.display = "none";
         this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 
-        const state = { fullContent: "", sources: [] as Source[], renderPending: false };
+        const state = { fullContent: "", reasoningContent: "", sources: [] as Source[], renderPending: false };
 
         const revealContent = (): void => {
             if (spinner.parentElement) spinner.remove();
@@ -454,7 +460,7 @@ export class ChatView extends ItemView {
         event: SSEEvent,
         textEl: HTMLElement,
         assistantBubble: HTMLElement,
-        state: { fullContent: string; sources: Source[] },
+        state: { fullContent: string; reasoningContent: string; sources: Source[] },
         revealContent: () => void,
         scheduleRender: () => void,
     ): void {
@@ -465,14 +471,26 @@ export class ChatView extends ItemView {
                 scheduleRender();
                 break;
             }
+            case SSE_EVENT.REASONING: {
+                state.reasoningContent += extractString(event.data, "token");
+                break;
+            }
             case SSE_EVENT.SOURCES:
                 state.sources.push(...(event.data as Source[]));
                 break;
             case SSE_EVENT.DONE: {
                 revealContent();
-                void this.renderMarkdown(textEl, state.fullContent);
+                let rendered = state.fullContent;
+                if (state.reasoningContent) {
+                    const details = assistantBubble.createEl("details", { cls: "lilbee-reasoning" });
+                    details.createEl("summary", { text: "Reasoning" });
+                    const content = details.createDiv({ cls: "lilbee-reasoning-content" });
+                    void MarkdownRenderer.render(this.app, state.reasoningContent, content, "", this.plugin);
+                    details.removeAttribute("open");
+                }
+                void this.renderMarkdown(textEl, rendered);
                 if (state.sources.length > 0) this.renderSources(assistantBubble, state.sources);
-                this.history.push({ role: "assistant", content: state.fullContent });
+                this.history.push({ role: "assistant", content: rendered });
                 break;
             }
             case SSE_EVENT.ERROR: {
@@ -508,6 +526,13 @@ export class ChatView extends ItemView {
             item.setTitle("Folder from disk")
                 .setIcon("folder-plus")
                 .onClick(() => this.openNativeFilePicker(true));
+        });
+        menu.addItem((item) => {
+            item.setTitle("Crawl web page")
+                .setIcon("globe")
+                .onClick(() => {
+                    new CrawlModal(this.app, this.plugin).open();
+                });
         });
         menu.showAtMouseEvent(event);
     }
@@ -611,6 +636,23 @@ export class ChatView extends ItemView {
         this.pullProgress.banner.dataset.hidden = "";
         this.pullProgress.bar.style.width = "0%";
         this.pullProgress.topLabel.textContent = "";
+    }
+
+    private showEmptyState(): void {
+        if (this.emptyStateEl || !this.messagesEl) return;
+        this.emptyStateEl = this.messagesEl.createDiv({ cls: "lilbee-chat-empty-state" });
+        this.emptyStateEl.createEl("p", { text: "No models installed." });
+        const btn = this.emptyStateEl.createEl("button", { text: "Browse Catalog", cls: "mod-cta" });
+        btn.addEventListener("click", () => {
+            new CatalogModal(this.app, this.plugin).open();
+        });
+    }
+
+    private hideEmptyState(): void {
+        if (this.emptyStateEl) {
+            this.emptyStateEl.remove();
+            this.emptyStateEl = null;
+        }
     }
 
     private async saveToVault(): Promise<void> {

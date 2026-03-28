@@ -298,7 +298,7 @@ export class LilbeeClient {
         return res.json();
     }
 
-    async *crawl(url: string, depth?: number, maxPages?: number): AsyncGenerator<SSEEvent> {
+    async *crawl(url: string, depth?: number, maxPages?: number, signal?: AbortSignal): AsyncGenerator<SSEEvent> {
         const body: Record<string, unknown> = { url };
         if (depth !== undefined) body.depth = depth;
         if (maxPages !== undefined) body.max_pages = maxPages;
@@ -308,6 +308,7 @@ export class LilbeeClient {
                 method: "POST",
                 headers: { ...JSON_HEADERS, ...this.authHeaders() },
                 body: JSON.stringify(body),
+                signal,
             },
             { stream: true },
         );
