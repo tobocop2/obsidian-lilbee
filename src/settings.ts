@@ -75,6 +75,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private pullQueue = new PullQueue();
     private pullAbortController: AbortController | null = null;
     private genInputs: Map<GenKey, HTMLInputElement> = new Map();
+    private serverConfigInputs: Map<string, HTMLInputElement> = new Map();
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app, plugin);
@@ -84,6 +85,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     display(): void {
         const { containerEl } = this;
         containerEl.empty();
+        this.serverConfigInputs.clear();
 
         this.renderConnectionSettings(containerEl);
         this.renderModelsSection(containerEl);
@@ -329,6 +331,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         .addText((text) => text.setValue(String(cfg[key])).setPlaceholder(""));
                 }
             }
+            // Populate editable crawl and advanced inputs with current server values
+            for (const [key, inputEl] of this.serverConfigInputs) {
+                if (cfg[key] !== undefined) {
+                    inputEl.value = String(cfg[key]);
+                }
+            }
         }).catch(() => {
             container.empty();
             container.createEl("p", { text: "(server unreachable)", cls: "mod-warning" });
@@ -452,7 +460,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             new Setting(containerEl)
                 .setName(field.name)
                 .setDesc(field.desc)
-                .addText((text) =>
+                .addText((text) => {
                     text
                         .setPlaceholder(field.placeholder)
                         .setValue("")
@@ -467,8 +475,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
                             } catch {
                                 new Notice(`lilbee: failed to update ${field.name}`);
                             }
-                        }),
-                );
+                        });
+                    this.serverConfigInputs.set(field.key, text.inputEl as unknown as HTMLInputElement);
+                });
         }
     }
 
@@ -485,7 +494,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             new Setting(details)
                 .setName(field.name)
                 .setDesc(field.desc)
-                .addText((text) =>
+                .addText((text) => {
                     text
                         .setPlaceholder("Server default")
                         .setValue("")
@@ -513,14 +522,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
                             } catch {
                                 new Notice(`lilbee: failed to update ${field.name}`);
                             }
-                        }),
-                );
+                        });
+                    this.serverConfigInputs.set(field.key, text.inputEl as unknown as HTMLInputElement);
+                });
         }
 
         new Setting(details)
             .setName("Embedding model")
             .setDesc("Model used for generating embeddings")
-            .addText((text) =>
+            .addText((text) => {
                 text
                     .setPlaceholder("Server default")
                     .setValue("")
@@ -542,46 +552,69 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         } catch {
                             new Notice("lilbee: failed to update embedding model");
                         }
-                    }),
-            );
+                    });
+                this.serverConfigInputs.set("embedding_model", text.inputEl as unknown as HTMLInputElement);
+            });
 
         new Setting(details)
-            .setName("Embedding provider")
-            .setDesc("Provider for the embedding model (e.g. native, litellm)")
-            .addText((text) =>
-                text
-                    .setPlaceholder("native")
-                    .setValue("")
+            .setName("LLM provider")
+            .setDesc("auto = local models via llama-cpp, falls back to litellm. Use litellm for OpenAI, Claude, etc.")
+            .addDropdown((dropdown) => {
+                dropdown
+                    .addOption("auto", "Auto (default)")
+                    .addOption("llama-cpp", "Local only (llama-cpp)")
+                    .addOption("litellm", "External (litellm)")
+                    .setValue("auto")
                     .onChange(async (value) => {
-                        const trimmed = value.trim();
-                        if (trimmed === "") return;
                         try {
-                            await this.plugin.api.updateConfig({ embedding_provider: trimmed });
-                            new Notice("lilbee: embedding provider updated");
+                            await this.plugin.api.updateConfig({ llm_provider: value });
+                            new Notice("lilbee: LLM provider updated");
                         } catch {
-                            new Notice("lilbee: failed to update embedding provider");
+                            new Notice("lilbee: failed to update LLM provider");
                         }
-                    }),
-            );
+                    });
+                this.serverConfigInputs.set("llm_provider", dropdown.selectEl as unknown as HTMLInputElement);
+            });
 
         new Setting(details)
-            .setName("LiteLLM URL")
-            .setDesc("URL for the LiteLLM proxy (if using litellm provider)")
-            .addText((text) =>
+            .setName("API key")
+            .setDesc("API key for external providers (OpenAI, Anthropic, etc.). Stored on the server, never sent back.")
+            .addText((text) => {
                 text
-                    .setPlaceholder("http://localhost:4000")
+                    .setPlaceholder("sk-...")
                     .setValue("")
                     .onChange(async (value) => {
                         const trimmed = value.trim();
                         if (trimmed === "") return;
                         try {
-                            await this.plugin.api.updateConfig({ litellm_url: trimmed });
+                            await this.plugin.api.updateConfig({ llm_api_key: trimmed });
+                            new Notice("lilbee: API key saved");
+                        } catch {
+                            new Notice("lilbee: failed to save API key");
+                        }
+                    });
+                text.inputEl.type = "password";
+            });
+
+        new Setting(details)
+            .setName("LiteLLM base URL")
+            .setDesc("Endpoint for litellm or Ollama backend (default: http://localhost:11434)")
+            .addText((text) => {
+                text
+                    .setPlaceholder("http://localhost:11434")
+                    .setValue("")
+                    .onChange(async (value) => {
+                        const trimmed = value.trim();
+                        if (trimmed === "") return;
+                        try {
+                            await this.plugin.api.updateConfig({ litellm_base_url: trimmed });
                             new Notice("lilbee: LiteLLM URL updated");
                         } catch {
                             new Notice("lilbee: failed to update LiteLLM URL");
                         }
-                    }),
-            );
+                    });
+                this.serverConfigInputs.set("litellm_base_url", text.inputEl as unknown as HTMLInputElement);
+            });
     }
 
     async checkEndpoint(url: string, statusEl: HTMLSpanElement): Promise<void> {

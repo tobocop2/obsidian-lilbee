@@ -2497,16 +2497,16 @@ describe("managed mode settings", () => {
         });
     });
 
-    describe("Embedding provider onChange", () => {
+    describe("API key onChange", () => {
         it("calls updateConfig on non-empty value", async () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 14: Embedding provider (0=port, 1=systemPrompt, 2-7=gen fields, 8-10=crawl, 11-12=advanced, 13=embedding model, 14=embedding provider)
-            await textOnChanges[14]("litellm");
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ embedding_provider: "litellm" });
+            // Index 14: API key (0=port, 1=systemPrompt, 2-7=gen fields, 8-10=crawl, 11-12=advanced, 13=embedding model, 14=api key)
+            await textOnChanges[14]("sk-test123");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_api_key: "sk-test123" });
         });
 
         it("skips empty value", async () => {
@@ -2526,21 +2526,21 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[14]("litellm");
-            expect(Notice.instances.some((n: any) => n.message.includes("failed to update embedding provider"))).toBe(true);
+            await textOnChanges[14]("sk-test123");
+            expect(Notice.instances.some((n: any) => n.message.includes("failed to save API key"))).toBe(true);
         });
     });
 
-    describe("LiteLLM URL onChange", () => {
+    describe("LiteLLM base URL onChange", () => {
         it("calls updateConfig on non-empty value", async () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 15: LiteLLM URL
+            // Index 15: LiteLLM base URL
             await textOnChanges[15]("http://localhost:4000");
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ litellm_url: "http://localhost:4000" });
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ litellm_base_url: "http://localhost:4000" });
         });
 
         it("skips empty value", async () => {
@@ -2562,6 +2562,32 @@ describe("managed mode settings", () => {
 
             await textOnChanges[15]("http://localhost:4000");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update LiteLLM URL"))).toBe(true);
+        });
+    });
+
+    describe("LLM provider dropdown onChange", () => {
+        it("calls updateConfig with selected provider", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // Last dropdown is the LLM provider (after server mode, chat model, vision model, sync mode)
+            const providerIdx = dropdownOnChanges.length - 1;
+            await dropdownOnChanges[providerIdx]("litellm");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_provider: "litellm" });
+        });
+
+        it("shows error notice on failure", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            const providerIdx = dropdownOnChanges.length - 1;
+            await dropdownOnChanges[providerIdx]("litellm");
+            expect(Notice.instances.some((n: any) => n.message.includes("failed to update LLM provider"))).toBe(true);
         });
     });
 });
