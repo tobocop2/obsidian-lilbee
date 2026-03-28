@@ -402,8 +402,230 @@ describe("pullModel()", () => {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ model: "gpt-4", source: "litellm" }),
-        });
     });
+});
+
+describe("auth token", () => {
+    it("includes Bearer header when token is set via constructor", async () => {
+        const authedClient = new LilbeeClient(BASE_URL, "constructor-token");
+        fetchMock.mockResolvedValue(jsonResponse({ model: "qwen3:8b" }));
+
+        await authedClient.setChatModel("qwen3:8b");
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/models/chat`,
+            expect.objectContaining({
+                headers: { "Content-Type": "application/json", Authorization: "Bearer constructor-token" },
+            }),
+        );
+    });
+
+    it("includes Bearer header when token is set via setToken", async () => {
+        client.setToken("test-token-123");
+        fetchMock.mockResolvedValue(jsonResponse({ model: "qwen3:8b" }));
+
+        await client.setChatModel("qwen3:8b");
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/models/chat`,
+            expect.objectContaining({
+                headers: { "Content-Type": "application/json", Authorization: "Bearer test-token-123" },
+            }),
+        );
+    });
+
+    it("omits Authorization header when token is not set", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ model: "qwen3:8b" }));
+
+        await client.setChatModel("qwen3:8b");
+
+        const headers = fetchMock.mock.calls[0][1].headers;
+        expect(headers).not.toHaveProperty("Authorization");
+    });
+});
+
+describe("catalog()", () => {
+    it("calls GET /api/models/catalog and returns parsed response", async () => {
+        const data = { total: 50, limit: 20, offset: 0, models: [] };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.catalog();
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/catalog`, expect.objectContaining({}));
+        expect(result).toEqual(data);
+    });
+
+    it("appends query params when provided", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ total: 0, limit: 10, offset: 0, models: [] }));
+
+        await client.catalog({ task: "chat", search: "qwen", size: "small", sort: "featured", featured: false, limit: 10, offset: 20 });
+
+        const url = new URL(fetchMock.mock.calls[0][0]);
+        expect(url.searchParams.get("task")).toBe("chat");
+        expect(url.searchParams.get("search")).toBe("qwen");
+        expect(url.searchParams.get("size")).toBe("small");
+        expect(url.searchParams.get("sort")).toBe("featured");
+        expect(url.searchParams.get("featured")).toBe("false");
+        expect(url.searchParams.get("limit")).toBe("10");
+        expect(url.searchParams.get("offset")).toBe("20");
+    });
+});
+
+describe("installedModels()", () => {
+    it("calls GET /api/models/installed", async () => {
+        const data = { models: [{ name: "qwen3:8b", source: "native" }] };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.installedModels();
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/installed`, expect.objectContaining({}));
+        expect(result).toEqual(data);
+    });
+});
+
+describe("showModel()", () => {
+    it("POSTs to /api/models/show", async () => {
+        const data = { temperature: 0.7, num_ctx: 4096 };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.showModel("qwen3:8b");
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/show`, expect.objectContaining({
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "qwen3:8b" }),
+        }));
+        expect(result).toEqual(data);
+    });
+});
+
+describe("deleteModel()", () => {
+    it("DELETEs to /api/models/{model}", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ deleted: true, model: "qwen3:8b", freed_gb: 5.0 }));
+
+        const result = await client.deleteModel("qwen3:8b");
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/models/qwen3%3A8b?source=native`,
+            expect.objectContaining({ method: "DELETE" }),
+        );
+        expect(result.deleted).toBe(true);
+    });
+
+    it("passes custom source parameter", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ deleted: true, model: "gpt-4", freed_gb: 0 }));
+
+        await client.deleteModel("gpt-4", "litellm");
+
+        const url = new URL(fetchMock.mock.calls[0][0]);
+        expect(url.searchParams.get("source")).toBe("litellm");
+    });
+});
+
+describe("listDocuments()", () => {
+    it("calls GET /api/documents", async () => {
+        const data = { documents: [], total: 0, limit: 50, offset: 0 };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.listDocuments();
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/documents`, expect.objectContaining({}));
+        expect(result).toEqual(data);
+    });
+
+    it("appends search params", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ documents: [], total: 0, limit: 10, offset: 5 }));
+
+        await client.listDocuments("notes", 10, 5);
+
+        const url = new URL(fetchMock.mock.calls[0][0]);
+        expect(url.searchParams.get("search")).toBe("notes");
+        expect(url.searchParams.get("limit")).toBe("10");
+        expect(url.searchParams.get("offset")).toBe("5");
+    });
+});
+
+describe("removeDocuments()", () => {
+    it("POSTs to /api/documents/remove", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ removed: 2, not_found: [] }));
+
+        const result = await client.removeDocuments(["a.md", "b.md"], true);
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/documents/remove`, expect.objectContaining({
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ names: ["a.md", "b.md"], delete_files: true }),
+        }));
+        expect(result.removed).toBe(2);
+    });
+});
+
+describe("crawl()", () => {
+    it("POSTs to /api/crawl and yields SSE events", async () => {
+        fetchMock.mockResolvedValue(
+            sseResponse(['event: crawl_done\ndata: {"pages_crawled":5,"files_written":3}\n\n']),
+        );
+
+        const events = await collect(client.crawl("https://example.com", 1, 10));
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/crawl`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: "https://example.com", depth: 1, max_pages: 10 }),
+        });
+        expect(events[0].event).toBe("crawl_done");
+    });
+});
+
+describe("config()", () => {
+    it("calls GET /api/config", async () => {
+        const data = { chat_model: "qwen3:8b", temperature: 0.7 };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.config();
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/config`, expect.objectContaining({}));
+        expect(result).toEqual(data);
+    });
+});
+
+describe("updateConfig()", () => {
+    it("PATCHes /api/config", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ updated: ["temperature"], reindex_required: false }));
+
+        const result = await client.updateConfig({ temperature: 0.5 });
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/config`, expect.objectContaining({
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ temperature: 0.5 }),
+        }));
+        expect(result.reindex_required).toBe(false);
+    });
+
+    it("returns reindex_required true when chunk_size changes", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ updated: ["chunk_size"], reindex_required: true }));
+
+        const result = await client.updateConfig({ chunk_size: 1024 });
+
+        expect(result.reindex_required).toBe(true);
+    });
+});
+
+describe("setEmbeddingModel()", () => {
+    it("PUTs to /api/models/embedding", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ model: "nomic-embed-text-v1.5" }));
+
+        const result = await client.setEmbeddingModel("nomic-embed-text-v1.5");
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/embedding`, expect.objectContaining({
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "nomic-embed-text-v1.5" }),
+        }));
+        expect(result.model).toBe("nomic-embed-text-v1.5");
+    });
+});
 });
 
 describe("setChatModel()", () => {
