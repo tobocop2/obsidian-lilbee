@@ -1,12 +1,15 @@
 import { JSON_HEADERS, SSE_EVENT } from "./types";
 import type {
     AskResponse,
+    CatalogResponse,
+    ConfigUpdateResponse,
     DocumentResult,
+    DocumentsResponse,
+    EmbeddingModelResponse,
     GenerationOptions,
+    InstalledResponse,
     Message,
     ModelsResponse,
-    OllamaModelDefaults,
-    OllamaPullProgress,
     SSEEvent,
     StatusResponse,
 } from "./types";
@@ -16,7 +19,20 @@ const RETRY_COUNT = 2;
 const RETRY_BACKOFF_MS = 500;
 
 export class LilbeeClient {
-    constructor(private baseUrl: string) {}
+    private token: string | null = null;
+
+    constructor(private baseUrl: string, token?: string) {
+        if (token) this.token = token;
+    }
+
+    setToken(token: string | null): void {
+        this.token = token;
+    }
+
+    private authHeaders(): Record<string, string> {
+        if (!this.token) return {};
+        return { Authorization: `Bearer ${this.token}` };
+    }
 
     private async assertOk(res: Response): Promise<Response> {
         if (!res.ok) {
@@ -91,7 +107,7 @@ export class LilbeeClient {
     async ask(question: string, topK?: number): Promise<AskResponse> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/ask`, {
             method: "POST",
-            headers: JSON_HEADERS,
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ question, top_k: topK ?? 0 }),
         });
         return res.json();
@@ -109,7 +125,7 @@ export class LilbeeClient {
             `${this.baseUrl}/api/ask/stream`,
             {
                 method: "POST",
-                headers: JSON_HEADERS,
+                headers: { ...JSON_HEADERS, ...this.authHeaders() },
                 body: JSON.stringify(body),
             },
             { stream: true, signal },
@@ -120,7 +136,7 @@ export class LilbeeClient {
     async chat(question: string, history: Message[], topK?: number): Promise<AskResponse> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/chat`, {
             method: "POST",
-            headers: JSON_HEADERS,
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ question, history, top_k: topK ?? 0 }),
         });
         return res.json();
@@ -139,7 +155,7 @@ export class LilbeeClient {
             `${this.baseUrl}/api/chat/stream`,
             {
                 method: "POST",
-                headers: JSON_HEADERS,
+                headers: { ...JSON_HEADERS, ...this.authHeaders() },
                 body: JSON.stringify(body),
             },
             { stream: true, signal },
@@ -159,7 +175,7 @@ export class LilbeeClient {
             `${this.baseUrl}/api/add`,
             {
                 method: "POST",
-                headers: JSON_HEADERS,
+                headers: { ...JSON_HEADERS, ...this.authHeaders() },
                 body: JSON.stringify(body),
             },
             { stream: true, signal },
@@ -172,7 +188,7 @@ export class LilbeeClient {
             `${this.baseUrl}/api/sync`,
             {
                 method: "POST",
-                headers: JSON_HEADERS,
+                headers: { ...JSON_HEADERS, ...this.authHeaders() },
                 body: JSON.stringify({ force_vision: forceVision }),
             },
             { stream: true, signal },
@@ -185,13 +201,13 @@ export class LilbeeClient {
         return res.json();
     }
 
-    async *pullModel(model: string): AsyncGenerator<SSEEvent> {
+    async *pullModel(model: string, source = "native"): AsyncGenerator<SSEEvent> {
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/models/pull`,
             {
                 method: "POST",
-                headers: JSON_HEADERS,
-                body: JSON.stringify({ model }),
+                headers: { ...JSON_HEADERS, ...this.authHeaders() },
+                body: JSON.stringify({ model, source }),
             },
             { stream: true },
         );
@@ -201,7 +217,7 @@ export class LilbeeClient {
     async setChatModel(model: string): Promise<{ model: string }> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/chat`, {
             method: "PUT",
-            headers: JSON_HEADERS,
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ model }),
         });
         return res.json();
@@ -210,7 +226,112 @@ export class LilbeeClient {
     async setVisionModel(model: string): Promise<{ model: string }> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/vision`, {
             method: "PUT",
-            headers: JSON_HEADERS,
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ model }),
+        });
+        return res.json();
+    }
+
+    async catalog(params?: {
+        task?: "chat" | "embedding" | "vision";
+        search?: string;
+        size?: "small" | "medium" | "large";
+        sort?: "featured" | "downloads" | "name" | "size_asc" | "size_desc";
+        featured?: boolean;
+        limit?: number;
+        offset?: number;
+    }): Promise<CatalogResponse> {
+        const qs = new URLSearchParams();
+        if (params?.task) qs.set("task", params.task);
+        if (params?.search) qs.set("search", params.search);
+        if (params?.size) qs.set("size", params.size);
+        if (params?.sort) qs.set("sort", params.sort);
+        if (params?.featured !== undefined) qs.set("featured", String(params.featured));
+        if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+        if (params?.offset !== undefined) qs.set("offset", String(params.offset));
+        const suffix = qs.toString() ? `?${qs}` : "";
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/catalog${suffix}`);
+        return res.json();
+    }
+
+    async installedModels(): Promise<InstalledResponse> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/installed`);
+        return res.json();
+    }
+
+    async showModel(model: string): Promise<Record<string, unknown>> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/show`, {
+            method: "POST",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ model }),
+        });
+        return res.json();
+    }
+
+    async deleteModel(model: string, source = "native"): Promise<{ deleted: boolean; model: string; freed_gb: number }> {
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/models/${encodeURIComponent(model)}?source=${source}`,
+            {
+                method: "DELETE",
+                headers: this.authHeaders(),
+            },
+        );
+        return res.json();
+    }
+
+    async listDocuments(search?: string, limit?: number, offset?: number): Promise<DocumentsResponse> {
+        const qs = new URLSearchParams();
+        if (search) qs.set("search", search);
+        if (limit !== undefined) qs.set("limit", String(limit));
+        if (offset !== undefined) qs.set("offset", String(offset));
+        const suffix = qs.toString() ? `?${qs}` : "";
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/documents${suffix}`);
+        return res.json();
+    }
+
+    async removeDocuments(names: string[], deleteFiles = false): Promise<{ removed: number; not_found: string[] }> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/documents/remove`, {
+            method: "POST",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ names, delete_files: deleteFiles }),
+        });
+        return res.json();
+    }
+
+    async *crawl(url: string, depth?: number, maxPages?: number): AsyncGenerator<SSEEvent> {
+        const body: Record<string, unknown> = { url };
+        if (depth !== undefined) body.depth = depth;
+        if (maxPages !== undefined) body.max_pages = maxPages;
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/crawl`,
+            {
+                method: "POST",
+                headers: { ...JSON_HEADERS, ...this.authHeaders() },
+                body: JSON.stringify(body),
+            },
+            { stream: true },
+        );
+        yield* this.parseSSE(res);
+    }
+
+    async config(): Promise<Record<string, unknown>> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/config`);
+        return res.json();
+    }
+
+    async updateConfig(updates: Record<string, unknown>): Promise<ConfigUpdateResponse> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/config`, {
+            method: "PATCH",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify(updates),
+        });
+        return res.json();
+    }
+
+    async setEmbeddingModel(model: string): Promise<EmbeddingModelResponse> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/embedding`, {
+            method: "PUT",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ model }),
         });
         return res.json();
@@ -246,116 +367,6 @@ export class LilbeeClient {
                     }
                     currentEvent = SSE_EVENT.MESSAGE;
                 }
-            }
-        }
-    }
-}
-
-const PARAM_KEY_MAP: Record<string, keyof OllamaModelDefaults> = {
-    temperature: "temperature",
-    top_p: "top_p",
-    top_k: "top_k",
-    repeat_penalty: "repeat_penalty",
-    num_ctx: "num_ctx",
-    seed: "seed",
-};
-
-export function parseModelParameters(
-    parameters: string,
-    modelInfo: Record<string, unknown>,
-): OllamaModelDefaults {
-    const defaults: OllamaModelDefaults = {};
-    for (const line of parameters.split("\n")) {
-        const parts = line.trim().split(/\s+/);
-        if (parts.length < 2) continue;
-        const key = PARAM_KEY_MAP[parts[0]];
-        if (key) {
-            const num = Number(parts[1]);
-            if (!isNaN(num)) defaults[key] = num;
-        }
-    }
-    const ctxKey = Object.keys(modelInfo).find((k) => k.endsWith(".context_length"));
-    if (ctxKey && !defaults.num_ctx) {
-        const val = Number(modelInfo[ctxKey]);
-        if (!isNaN(val) && val > 0) defaults.num_ctx = val;
-    }
-    return defaults;
-}
-
-export class OllamaClient {
-    constructor(private baseUrl: string) {}
-
-    async *pull(model: string, signal?: AbortSignal): AsyncGenerator<OllamaPullProgress> {
-        const res = await globalThis.fetch(`${this.baseUrl}/api/pull`, {
-            method: "POST",
-            headers: JSON_HEADERS,
-            body: JSON.stringify({ name: model, stream: true }),
-            signal,
-        });
-        if (!res.ok) {
-            const text = await res.text().catch(() => "");
-            throw new Error(`Ollama responded ${res.status}: ${text}`);
-        }
-        yield* this.parseNDJSON(res);
-    }
-
-    async show(model: string): Promise<OllamaModelDefaults> {
-        const res = await globalThis.fetch(`${this.baseUrl}/api/show`, {
-            method: "POST",
-            headers: JSON_HEADERS,
-            body: JSON.stringify({ name: model }),
-        });
-        if (!res.ok) {
-            const text = await res.text().catch(() => "");
-            throw new Error(`Ollama responded ${res.status}: ${text}`);
-        }
-        const data = await res.json();
-        return parseModelParameters(data.parameters ?? "", data.model_info ?? {});
-    }
-
-    async delete(model: string): Promise<void> {
-        const res = await globalThis.fetch(`${this.baseUrl}/api/delete`, {
-            method: "DELETE",
-            headers: JSON_HEADERS,
-            body: JSON.stringify({ name: model }),
-        });
-        if (!res.ok) {
-            const text = await res.text().catch(() => "");
-            throw new Error(`Ollama responded ${res.status}: ${text}`);
-        }
-    }
-
-    private async *parseNDJSON(response: Response): AsyncGenerator<OllamaPullProgress> {
-        if (!response.body) {
-            throw new Error("Response body is null");
-        }
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-
-            const lines = buffer.split("\n");
-            buffer = lines.pop()!;
-
-            for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed) continue;
-                try {
-                    yield JSON.parse(trimmed) as OllamaPullProgress;
-                } catch {
-                    // skip malformed lines
-                }
-            }
-        }
-        if (buffer.trim()) {
-            try {
-                yield JSON.parse(buffer.trim()) as OllamaPullProgress;
-            } catch {
-                // skip
             }
         }
     }
