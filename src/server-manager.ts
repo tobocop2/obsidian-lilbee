@@ -15,7 +15,6 @@ export interface ServerManagerOptions {
     binaryPath: string;
     dataDir: string;
     port: number | null;
-    ollamaUrl: string;
     systemPrompt: string;
     onStateChange?: (state: ServerState) => void;
     onRestartsExhausted?: (stderr: string) => void;
@@ -92,7 +91,6 @@ export class ServerManager {
 
         const env: Record<string, string | undefined> = {
             ...process.env,
-            OLLAMA_HOST: this.opts.ollamaUrl,
             LILBEE_CORS_ORIGINS: "app://obsidian.md",
         };
         if (this.opts.systemPrompt) {
@@ -223,10 +221,6 @@ export class ServerManager {
         await this.stop();
         this.crashCount = 0;
         await this.start();
-    }
-
-    updateOllamaUrl(url: string): void {
-        this.opts.ollamaUrl = url;
     }
 
     updatePort(port: number | null): void {
