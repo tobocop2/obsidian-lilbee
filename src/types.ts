@@ -63,14 +63,7 @@ export interface SyncDone {
     failed: string[];
 }
 
-export interface OllamaPullProgress {
-    status: string;
-    completed?: number;
-    total?: number;
-    digest?: string;
-}
-
-export interface OllamaModelDefaults {
+export interface GenerationOptions {
     temperature?: number;
     top_p?: number;
     top_k?: number;
@@ -88,8 +81,6 @@ export interface Message {
     role: "user" | "assistant" | "system";
     content: string;
 }
-
-export type GenerationOptions = OllamaModelDefaults;
 
 export type ServerState = "stopped" | "downloading" | "starting" | "ready" | "error";
 
@@ -131,7 +122,6 @@ export interface LilbeeSettings {
     topK: number;
     syncMode: "manual" | "auto";
     syncDebounceMs: number;
-    ollamaUrl: string;
     temperature: number | null;
     top_p: number | null;
     top_k_sampling: number | null;
@@ -149,7 +139,6 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     topK: 5,
     syncMode: "manual",
     syncDebounceMs: 5000,
-    ollamaUrl: "http://127.0.0.1:11434",
     temperature: null,
     top_p: null,
     top_k_sampling: null,
@@ -165,6 +154,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
 /** SSE event type constants — shared across chat, sync, and model pull streams. */
 export const SSE_EVENT = {
     TOKEN: "token",
+    REASONING: "reasoning",
     SOURCES: "sources",
     DONE: "done",
     ERROR: "error",
@@ -175,6 +165,10 @@ export const SSE_EVENT = {
     EMBED: "embed",
     FILE_DONE: "file_done",
     PULL: "pull",
+    CRAWL_START: "crawl_start",
+    CRAWL_PAGE: "crawl_page",
+    CRAWL_DONE: "crawl_done",
+    CRAWL_ERROR: "crawl_error",
 } as const;
 
 export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
@@ -182,4 +176,51 @@ export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 export interface QueuedPull {
     run: () => Promise<void>;
     modelName: string;
+}
+
+export interface CatalogModel {
+    name: string;
+    size_gb: number;
+    min_ram_gb: number;
+    description: string;
+    installed: boolean;
+    source: "native" | "litellm";
+}
+
+export interface CatalogResponse {
+    total: number;
+    limit: number;
+    offset: number;
+    models: CatalogModel[];
+}
+
+export interface InstalledModel {
+    name: string;
+    source: string;
+}
+
+export interface InstalledResponse {
+    models: InstalledModel[];
+}
+
+export interface DocumentEntry {
+    filename: string;
+    chunk_count: number;
+    ingested_at: string;
+}
+
+export interface DocumentsResponse {
+    documents: DocumentEntry[];
+    total: number;
+    limit: number;
+    offset: number;
+}
+
+export interface ConfigUpdateResponse {
+    updated: string[];
+    reindex_required: boolean;
+}
+
+export interface EmbeddingModelResponse {
+    model: string;
 }
