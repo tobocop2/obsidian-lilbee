@@ -38,7 +38,6 @@ const mockBinaryExists = vi.fn().mockReturnValue(true);
 const mockDownload = vi.fn().mockResolvedValue(undefined);
 const mockServerStart = vi.fn().mockResolvedValue(undefined);
 const mockServerStop = vi.fn().mockResolvedValue(undefined);
-const mockUpdateOllamaUrl = vi.fn();
 const mockUpdatePort = vi.fn();
 let mockServerOpts: any = null;
 
@@ -62,7 +61,6 @@ vi.mock("../src/server-manager", () => ({
             start: mockServerStart,
             stop: mockServerStop,
             restart: vi.fn(),
-            updateOllamaUrl: mockUpdateOllamaUrl,
             updatePort: mockUpdatePort,
             get serverUrl() { return `http://127.0.0.1:${opts.port}`; },
             get state() { return "ready"; },
@@ -1546,16 +1544,14 @@ describe("LilbeePlugin", () => {
             expect(plugin.binaryManager).not.toBeNull();
         });
 
-        it("managed → managed with serverManager: updates port and ollama url", async () => {
+        it("managed → managed with serverManager: updates port", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
 
-            plugin.settings.ollamaUrl = "http://custom:11434";
             plugin.settings.serverPort = 9999;
             await plugin.saveSettings();
 
-            expect(mockUpdateOllamaUrl).toHaveBeenCalledWith("http://custom:11434");
             expect(mockUpdatePort).toHaveBeenCalledWith(9999);
         });
     });

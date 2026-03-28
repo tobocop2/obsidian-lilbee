@@ -42,7 +42,6 @@ function defaultOpts(overrides?: Partial<ServerManagerOptions>): ServerManagerOp
         binaryPath: "/usr/local/bin/lilbee",
         dataDir: "/tmp/data",
         port: 7433,
-        ollamaUrl: "http://localhost:11434",
         systemPrompt: "",
         ...overrides,
     };
@@ -122,7 +121,6 @@ describe("ServerManager", () => {
                 "--port", "7433",
                 "--data-dir", "/tmp/data",
             ]);
-            expect(opts.env.OLLAMA_HOST).toBe("http://localhost:11434");
             expect(opts.env.LILBEE_CORS_ORIGINS).toBe("app://obsidian.md");
             expect(opts.env.LILBEE_SYSTEM_PROMPT).toBeUndefined();
             expect(opts.stdio).toEqual(["ignore", "ignore", "pipe"]);
@@ -598,20 +596,7 @@ describe("ServerManager", () => {
         });
     });
 
-    // ── updateOllamaUrl / updatePort ────────────────────────────────
-
-    describe("updateOllamaUrl", () => {
-        it("updates the Ollama URL in options", () => {
-            const mgr = new ServerManager(defaultOpts());
-            mgr.updateOllamaUrl("http://remote:11434");
-
-            // Start to verify the new URL is used
-            mgr.start();
-            const env = (spawnSpy.mock.calls[0] as any[])[2].env;
-            expect(env.OLLAMA_HOST).toBe("http://remote:11434");
-            expect(env.LILBEE_CORS_ORIGINS).toBe("app://obsidian.md");
-        });
-    });
+    // ── updatePort ──────────────────────────────────────────────
 
     describe("updatePort", () => {
         it("updates the port in options", () => {
