@@ -55,7 +55,6 @@ describe("integration: server start", () => {
             binaryPath: bm.binaryPath,
             dataDir: tempDir,
             port: null,
-            ollamaUrl: "http://127.0.0.1:11434",
             systemPrompt: "",
         });
 

@@ -597,7 +597,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         new Setting(details)
             .setName("LiteLLM base URL")
-            .setDesc("Endpoint for litellm or Ollama backend (default: http://localhost:11434)")
+            .setDesc("Endpoint for litellm backend (default: http://localhost:11434)")
             .addText((text) => {
                 text
                     .setPlaceholder("http://localhost:11434")

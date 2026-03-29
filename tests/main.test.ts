@@ -17,10 +17,6 @@ vi.mock("../src/api", () => ({
         health: vi.fn(),
         addFiles: vi.fn(),
     })),
-    OllamaClient: vi.fn().mockImplementation(() => ({
-        pull: vi.fn(),
-        delete: vi.fn(),
-    })),
 }));
 
 // We also need to mock the views to avoid loading heavy deps

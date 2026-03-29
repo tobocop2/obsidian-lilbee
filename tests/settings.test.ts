@@ -1597,7 +1597,7 @@ describe("LilbeeSettingTab", () => {
             // Wait for async checks to complete
             await new Promise((r) => setTimeout(r, 0));
 
-            // Only server health check (Ollama URL removed)
+            // Only server health check
             expect(globalThis.fetch).toHaveBeenCalledTimes(1);
             expect(globalThis.fetch).toHaveBeenCalledWith(
                 expect.stringContaining("/api/health"),
@@ -2001,7 +2001,7 @@ describe("managed mode settings", () => {
 
         const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-        // In managed mode: textOnChanges[0] = port, textOnChanges[1] = ollama URL, then gen settings
+        // In managed mode: textOnChanges[0] = port, then gen settings
         await textOnChanges[0]("9999");
 
         expect(plugin.settings.serverPort).toBe(9999);
@@ -2192,7 +2192,7 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-        // In external mode: buttons are [Test (server), Reset to managed, Test (ollama), Refresh]
+        // In external mode: buttons are [Test (server), Reset to managed, Test (litellm), Refresh]
         // Find the "Reset to managed" click — it's the one that sets serverMode back
         const resetButton = buttonOnClicks.find((_btn, i) => i === 1);
         expect(resetButton).toBeDefined();
@@ -2212,7 +2212,7 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
         // Server controls: Start button is first among control buttons
-        // Buttons: Start, Check for updates, Test (ollama), Refresh
+        // Buttons: Start, Check for updates, Test (litellm), Refresh
         expect(buttonOnClicks.length).toBeGreaterThanOrEqual(1);
     });
 
@@ -2242,7 +2242,7 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
         const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
-        // In ready state: buttons are Stop, Restart, Check for updates, Test (ollama), Refresh
+        // In ready state: buttons are Stop, Restart, Check for updates, Test (litellm), Refresh
         await buttonOnClicks[0]();
 
         expect(mockStop).toHaveBeenCalled();
@@ -2258,7 +2258,7 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
         const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
-        // In ready state: buttons are Stop, Restart, Check for updates, Test (ollama), Refresh
+        // In ready state: buttons are Stop, Restart, Check for updates, Test (litellm), Refresh
         await buttonOnClicks[1]();
 
         expect(mockRestart).toHaveBeenCalled();
