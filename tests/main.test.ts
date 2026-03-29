@@ -41,6 +41,10 @@ vi.mock("../src/views/documents-modal", () => ({
     DocumentsModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
 }));
 
+vi.mock("../src/views/setup-wizard", () => ({
+    SetupWizard: vi.fn().mockImplementation(() => ({ open: vi.fn(), close: vi.fn() })),
+}));
+
 const mockEnsureBinary = vi.fn().mockResolvedValue("/fake/bin/lilbee");
 const mockBinaryExists = vi.fn().mockReturnValue(true);
 const mockDownload = vi.fn().mockResolvedValue(undefined);
@@ -122,11 +126,11 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerView).toHaveBeenCalled();
         });
 
-        it("adds all ten commands", async () => {
+        it("adds all eleven commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(10);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(11);
             const ids = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map(
                 (c: any[]) => c[0].id,
             );
@@ -139,6 +143,7 @@ describe("LilbeePlugin", () => {
             expect(ids).toContain("lilbee:catalog");
             expect(ids).toContain("lilbee:crawl");
             expect(ids).toContain("lilbee:documents");
+            expect(ids).toContain("lilbee:setup");
             expect(ids).toContain("lilbee:status");
         });
 
@@ -235,6 +240,33 @@ describe("LilbeePlugin", () => {
             plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", serverUrl: "http://custom:9999" });
             await plugin.onload();
             expect(LilbeeClient).toHaveBeenCalledWith("http://custom:9999");
+        });
+
+        it("auto-opens setup wizard when setupCompleted is false", async () => {
+            const { SetupWizard } = await import("../src/views/setup-wizard");
+            const plugin = await createPlugin({ serverMode: "external", setupCompleted: false });
+            await plugin.onload();
+            expect(SetupWizard).toHaveBeenCalled();
+        });
+
+        it("does not auto-open setup wizard when setupCompleted is true", async () => {
+            const { SetupWizard } = await import("../src/views/setup-wizard");
+            (SetupWizard as ReturnType<typeof vi.fn>).mockClear();
+            const plugin = await createPlugin({ serverMode: "external", setupCompleted: true });
+            await plugin.onload();
+            expect(SetupWizard).not.toHaveBeenCalled();
+        });
+
+        it("setup command opens SetupWizard", async () => {
+            const plugin = await createPlugin({ serverMode: "external", setupCompleted: true });
+            await plugin.onload();
+            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "lilbee:setup",
+            )![0];
+            expect(cmd.name).toBe("Run setup wizard");
+            cmd.callback();
+            const { SetupWizard } = await import("../src/views/setup-wizard");
+            expect(SetupWizard).toHaveBeenCalled();
         });
     });
 

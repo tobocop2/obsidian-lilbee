@@ -7,6 +7,7 @@ import { PullQueue } from "./pull-queue";
 import { CatalogModal } from "./views/catalog-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { ConfirmPullModal } from "./views/confirm-pull-modal";
+import { SetupWizard } from "./views/setup-wizard";
 
 const CHECK_TIMEOUT_MS = 5000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
@@ -111,6 +112,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                         this.display();
                     }),
+            );
+
+        new Setting(containerEl)
+            .setName("Setup wizard")
+            .setDesc("Walk through initial setup again")
+            .addButton((btn) =>
+                btn.setButtonText("Run setup wizard").onClick(() => {
+                    new SetupWizard(this.app, this.plugin).open();
+                }),
             );
 
         if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED) {

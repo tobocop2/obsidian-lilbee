@@ -318,6 +318,28 @@ describe("CatalogModal", () => {
         expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
     });
 
+    it("Pull passes non-native source to pullModel", async () => {
+        vi.useRealTimers();
+        const models = [makeCatalogModel({ name: "gpt-4o-mini", installed: false, source: "litellm" })];
+        const plugin = makePlugin({ activeModel: "llama3" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+        plugin.api.pullModel.mockReturnValue((async function* () {
+            yield { event: SSE_EVENT.PROGRESS, data: { current: 100, total: 100 } };
+        })());
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const pullBtn = el.findAll("lilbee-catalog-pull")[0];
+        pullBtn.trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.api.pullModel).toHaveBeenCalledWith("gpt-4o-mini", "litellm");
+    });
+
     it("Pull cancelled by confirm modal does not pull", async () => {
         vi.useRealTimers();
         mockConfirmResult = false;

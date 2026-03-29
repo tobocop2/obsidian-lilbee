@@ -31,6 +31,13 @@ vi.mock("../src/views/catalog-modal", () => ({
     })),
 }));
 
+vi.mock("../src/views/setup-wizard", () => ({
+    SetupWizard: vi.fn().mockImplementation(() => ({
+        open: vi.fn(),
+        close: vi.fn(),
+    })),
+}));
+
 let mockGenericConfirmResult = true;
 vi.mock("../src/views/confirm-modal", () => ({
     ConfirmModal: vi.fn().mockImplementation(() => ({
@@ -532,10 +539,25 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-            // Start + Check for updates + Refresh + Browse Catalog = 4
-            expect(buttonOnClicks.length).toBe(4);
-            // Refresh is the third button (index 2)
-            await expect(buttonOnClicks[2]()).resolves.not.toThrow();
+            // Setup wizard + Start + Check for updates + Refresh + Browse Catalog = 5
+            expect(buttonOnClicks.length).toBe(5);
+            // Refresh is the fourth button (index 3)
+            await expect(buttonOnClicks[3]()).resolves.not.toThrow();
+        });
+    });
+
+    describe("Setup wizard button in settings", () => {
+        it("onClick opens SetupWizard", async () => {
+            const { SetupWizard } = await import("../src/views/setup-wizard");
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+
+            // Setup wizard is the first button (index 0)
+            buttonOnClicks[0]();
+
+            expect(SetupWizard).toHaveBeenCalled();
         });
     });
 
@@ -547,8 +569,8 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-            // Browse Catalog is the fourth button (index 3)
-            buttonOnClicks[3]();
+            // Browse Catalog is the fifth button (index 4)
+            buttonOnClicks[4]();
 
             expect(CatalogModal).toHaveBeenCalled();
         });
@@ -1617,8 +1639,8 @@ describe("LilbeeSettingTab", () => {
             await new Promise((r) => setTimeout(r, 0));
             (globalThis.fetch as ReturnType<typeof vi.fn>).mockClear();
 
-            // buttonOnClicks[0] = server Test
-            await buttonOnClicks[0]();
+            // buttonOnClicks[0] = Setup wizard, [1] = server Test
+            await buttonOnClicks[1]();
 
             expect(globalThis.fetch).toHaveBeenCalledTimes(1);
             expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -2063,8 +2085,8 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-        // buttonOnClicks[0] = Start (server controls), [1] = Check for updates
-        await buttonOnClicks[1]();
+        // buttonOnClicks[0] = Setup wizard, [1] = Start (server controls), [2] = Check for updates
+        await buttonOnClicks[2]();
 
         // No notice on check — button transforms to "Update to vX.Y.Z" instead
         expect(Notice.instances.some((n) => n.message.includes("update available"))).toBe(false);
@@ -2080,8 +2102,8 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-        // buttonOnClicks[0] = Start, [1] = Check for updates
-        await buttonOnClicks[1]();
+        // buttonOnClicks[0] = Setup wizard, [1] = Start, [2] = Check for updates
+        await buttonOnClicks[2]();
 
         expect(Notice.instances.some((n) => n.message.includes("already up to date"))).toBe(true);
     });
@@ -2100,9 +2122,9 @@ describe("managed mode settings", () => {
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
         // First click: check for updates (sets pendingRelease)
-        await buttonOnClicks[1]();
+        await buttonOnClicks[2]();
         // Same handler clicked again: now triggers update via pendingRelease
-        await buttonOnClicks[1]();
+        await buttonOnClicks[2]();
 
         expect((plugin as any).updateServer).toHaveBeenCalled();
         expect(Notice.instances.some((n) => n.message.includes("updated to v0.2.0"))).toBe(true);
@@ -2120,7 +2142,7 @@ describe("managed mode settings", () => {
         const countBefore = buttonOnClicks.length;
 
         // Click check for updates — should NOT add a new handler
-        await buttonOnClicks[1]();
+        await buttonOnClicks[2]();
 
         expect(buttonOnClicks.length).toBe(countBefore);
     });
@@ -2137,8 +2159,8 @@ describe("managed mode settings", () => {
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
         // First click: check (sets pendingRelease); second click: update (fails)
-        await buttonOnClicks[1]();
-        await buttonOnClicks[1]();
+        await buttonOnClicks[2]();
+        await buttonOnClicks[2]();
 
         expect(Notice.instances.some((n) => n.message.includes("update failed"))).toBe(true);
     });
@@ -2153,8 +2175,8 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-        // buttonOnClicks[0] = Start, [1] = Check for updates
-        await buttonOnClicks[1]();
+        // buttonOnClicks[0] = Setup wizard, [1] = Start, [2] = Check for updates
+        await buttonOnClicks[2]();
 
         expect(Notice.instances.some((n) => n.message.includes("could not check"))).toBe(true);
     });
@@ -2192,9 +2214,9 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-        // In external mode: buttons are [Test (server), Reset to managed, Test (litellm), Refresh]
+        // In external mode: buttons are [Setup wizard, Test (server), Reset to managed, Refresh, Browse Catalog]
         // Find the "Reset to managed" click — it's the one that sets serverMode back
-        const resetButton = buttonOnClicks.find((_btn, i) => i === 1);
+        const resetButton = buttonOnClicks.find((_btn, i) => i === 2);
         expect(resetButton).toBeDefined();
         await resetButton!();
 
@@ -2226,8 +2248,8 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
         const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
-        // First button in managed stopped mode is Start
-        await buttonOnClicks[0]();
+        // buttonOnClicks[0] = Setup wizard, [1] = Start
+        await buttonOnClicks[1]();
 
         expect(mockStart).toHaveBeenCalled();
         expect(displaySpy).toHaveBeenCalled();
@@ -2242,8 +2264,8 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
         const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
-        // In ready state: buttons are Stop, Restart, Check for updates, Test (litellm), Refresh
-        await buttonOnClicks[0]();
+        // buttonOnClicks[0] = Setup wizard, [1] = Stop, [2] = Restart, [3] = Check for updates
+        await buttonOnClicks[1]();
 
         expect(mockStop).toHaveBeenCalled();
         expect(displaySpy).toHaveBeenCalled();
@@ -2258,8 +2280,8 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
         const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
-        // In ready state: buttons are Stop, Restart, Check for updates, Test (litellm), Refresh
-        await buttonOnClicks[1]();
+        // buttonOnClicks[0] = Setup wizard, [1] = Stop, [2] = Restart
+        await buttonOnClicks[2]();
 
         expect(mockRestart).toHaveBeenCalled();
         expect(displaySpy).toHaveBeenCalled();

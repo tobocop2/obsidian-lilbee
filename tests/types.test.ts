@@ -43,7 +43,7 @@ describe("DEFAULT_SETTINGS", () => {
 
     it("is a plain object with exactly the expected keys", () => {
         const keys = Object.keys(DEFAULT_SETTINGS).sort();
-        expect(keys).toEqual(["lilbeeVersion", "num_ctx", "repeat_penalty", "seed", "serverMode", "serverPort", "serverUrl", "syncDebounceMs", "syncMode", "systemPrompt", "temperature", "topK", "top_k_sampling", "top_p"].sort());
+        expect(keys).toEqual(["lilbeeVersion", "num_ctx", "repeat_penalty", "seed", "serverMode", "serverPort", "serverUrl", "setupCompleted", "syncDebounceMs", "syncMode", "systemPrompt", "temperature", "topK", "top_k_sampling", "top_p"].sort());
     });
 });
 
@@ -243,6 +243,7 @@ describe("LilbeeSettings interface", () => {
             serverPort: null,
             lilbeeVersion: "",
             systemPrompt: "",
+            setupCompleted: false,
         };
         expect(s.syncMode).toBe("manual");
     });
@@ -263,6 +264,7 @@ describe("LilbeeSettings interface", () => {
             serverPort: null,
             lilbeeVersion: "",
             systemPrompt: "",
+            setupCompleted: true,
         };
         expect(s.syncMode).toBe("auto");
     });
