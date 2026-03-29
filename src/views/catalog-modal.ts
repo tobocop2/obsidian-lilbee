@@ -1,6 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { CatalogModel, CatalogResponse, ModelType, SSEEvent } from "../types";
+import type { ModelFamily, ModelVariant, CatalogResponse, ModelType, SSEEvent } from "../types";
 import { MODEL_TYPE, NOTICE, SSE_EVENT } from "../types";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import { PullQueue } from "../pull-queue";
@@ -21,7 +21,7 @@ export class CatalogModal extends Modal {
     private filterSearch = "";
     private offset = 0;
     private total = 0;
-    private models: CatalogModel[] = [];
+    private families: ModelFamily[] = [];
     private resultsEl: HTMLElement | null = null;
     private loadMoreBtn: HTMLElement | null = null;
     private debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -101,7 +101,7 @@ export class CatalogModal extends Modal {
 
     private resetAndFetch(): void {
         this.offset = 0;
-        this.models = [];
+        this.families = [];
         if (this.resultsEl) this.resultsEl.empty();
         void this.fetchPage();
     }
@@ -123,11 +123,11 @@ export class CatalogModal extends Modal {
 
             const response: CatalogResponse = await this.plugin.api.catalog(params);
             this.total = response.total;
-            this.models.push(...response.models);
-            this.offset += response.models.length;
+            this.families.push(...response.families);
+            this.offset += response.families.length;
 
-            for (const model of response.models) {
-                this.renderRow(model);
+            for (const family of response.families) {
+                this.renderFamily(family);
             }
 
             this.updateLoadMore();
@@ -141,50 +141,76 @@ export class CatalogModal extends Modal {
         this.loadMoreBtn.style.display = this.offset < this.total ? "" : "none";
     }
 
-    private renderRow(model: CatalogModel): void {
+    private renderFamily(family: ModelFamily): void {
         if (!this.resultsEl) return;
-        const row = this.resultsEl.createDiv({ cls: "lilbee-catalog-row" });
-        row.createDiv({ cls: "lilbee-catalog-row-name", text: model.name });
-        row.createDiv({ cls: "lilbee-catalog-row-size", text: `${model.size_gb} GB` });
-        row.createDiv({ cls: "lilbee-catalog-row-desc", text: model.description });
+        const container = this.resultsEl.createDiv({ cls: "lilbee-catalog-family" });
 
-        const actionEl = row.createDiv({ cls: "lilbee-catalog-row-action" });
-        const active = this.plugin.activeModel === model.name || this.plugin.activeVisionModel === model.name;
+        const header = container.createDiv({ cls: "lilbee-catalog-family-header" });
+        header.createEl("span", { text: family.family });
+        header.createEl("span", { text: family.task, cls: "lilbee-catalog-family-task" });
 
-        if (active) {
-            actionEl.createEl("span", { text: "Active", cls: "lilbee-catalog-active" });
-        } else if (model.installed) {
-            actionEl.createEl("span", { text: "Installed", cls: "lilbee-installed" });
-        } else {
-            const pullBtn = actionEl.createEl("button", { text: "Pull", cls: "lilbee-catalog-pull" });
-            pullBtn.addEventListener("click", () => this.handlePull(model, pullBtn));
+        header.addEventListener("click", () => {
+            if (container.classList.contains("is-collapsed")) {
+                container.removeClass("is-collapsed");
+            } else {
+                container.addClass("is-collapsed");
+            }
+        });
+
+        const variantsEl = container.createDiv({ cls: "lilbee-catalog-family-variants" });
+        for (const variant of family.variants) {
+            this.renderVariant(family, variant, variantsEl);
         }
     }
 
-    private handlePull(model: CatalogModel, btn: HTMLElement): void {
+    private renderVariant(family: ModelFamily, variant: ModelVariant, container: HTMLElement): void {
+        const row = container.createDiv({ cls: "lilbee-catalog-variant-row" });
+
+        const isRecommended = variant.name === family.recommended;
+        const nameCls = isRecommended ? "lilbee-catalog-variant-name lilbee-catalog-recommended" : "lilbee-catalog-variant-name";
+        const nameText = isRecommended ? `${variant.name} \u2605` : variant.name;
+        row.createEl("span", { text: nameText, cls: nameCls });
+
+        row.createEl("span", { text: `${variant.size_gb} GB`, cls: "lilbee-catalog-variant-size" });
+        row.createEl("span", { text: variant.description, cls: "lilbee-catalog-variant-desc" });
+
+        const actionEl = row.createDiv({ cls: "lilbee-catalog-variant-action" });
+        const active = this.plugin.activeModel === variant.hf_repo || this.plugin.activeVisionModel === variant.hf_repo;
+
+        if (active) {
+            actionEl.createEl("span", { text: "Active", cls: "lilbee-catalog-active" });
+        } else if (variant.installed) {
+            actionEl.createEl("span", { text: "Installed", cls: "lilbee-installed" });
+        } else {
+            const pullBtn = actionEl.createEl("button", { text: "Pull", cls: "lilbee-catalog-pull" });
+            pullBtn.addEventListener("click", () => this.handlePull(family, variant, pullBtn));
+        }
+    }
+
+    private handlePull(family: ModelFamily, variant: ModelVariant, btn: HTMLElement): void {
         const info = {
-            name: model.name,
-            size_gb: model.size_gb,
-            min_ram_gb: model.min_ram_gb,
-            description: model.description,
-            installed: model.installed,
+            name: variant.hf_repo,
+            size_gb: variant.size_gb,
+            min_ram_gb: variant.min_ram_gb,
+            description: variant.description,
+            installed: variant.installed,
         };
         const confirmModal = new ConfirmPullModal(this.app, info);
         confirmModal.open();
         void confirmModal.result.then((confirmed) => {
             if (!confirmed) return;
             void this.pullQueue.enqueue(
-                () => this.executePull(model, btn),
-                model.name,
+                () => this.executePull(family, variant, btn),
+                variant.hf_repo,
             );
         });
     }
 
-    private async executePull(model: CatalogModel, btn: HTMLElement): Promise<void> {
+    private async executePull(family: ModelFamily, variant: ModelVariant, btn: HTMLElement): Promise<void> {
         btn.textContent = "Pulling...";
         (btn as HTMLButtonElement).disabled = true;
         try {
-            for await (const event of this.plugin.api.pullModel(model.name, model.source)) {
+            for await (const event of this.plugin.api.pullModel(variant.hf_repo, variant.source)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { current?: number; total?: number };
                     if (d.total && d.current !== undefined) {
@@ -193,15 +219,15 @@ export class CatalogModal extends Modal {
                     }
                 }
             }
-            if (this.filterTask === "vision") {
-                await this.plugin.api.setVisionModel(model.name);
-                this.plugin.activeVisionModel = model.name;
+            if (variant.task === "vision") {
+                await this.plugin.api.setVisionModel(variant.hf_repo);
+                this.plugin.activeVisionModel = variant.hf_repo;
             } else {
-                await this.plugin.api.setChatModel(model.name);
-                this.plugin.activeModel = model.name;
+                await this.plugin.api.setChatModel(variant.hf_repo);
+                this.plugin.activeModel = variant.hf_repo;
             }
             this.plugin.fetchActiveModel();
-            new Notice(`lilbee: ${model.name} pulled and activated`);
+            new Notice(`lilbee: ${variant.hf_repo} pulled and activated`);
             btn.textContent = "Active";
             (btn as HTMLButtonElement).disabled = true;
         } catch (err) {

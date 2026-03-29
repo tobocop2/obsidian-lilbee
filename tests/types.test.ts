@@ -14,7 +14,8 @@ import type {
     Message,
     LilbeeSettings,
     GenerationOptions,
-    CatalogModel,
+    ModelVariant,
+    ModelFamily,
     CatalogResponse,
     InstalledModel,
     InstalledResponse,
@@ -303,19 +304,38 @@ describe("JSON_HEADERS constant", () => {
     });
 });
 
-describe("CatalogModel interface", () => {
+describe("ModelVariant interface", () => {
     it("accepts all fields", () => {
-        const m: CatalogModel = {
-            name: "Qwen3 8B",
+        const v: ModelVariant = {
+            name: "8B",
+            hf_repo: "qwen/qwen3-8B",
             size_gb: 5.0,
             min_ram_gb: 8,
             description: "Medium model",
+            task: "chat",
             installed: true,
             source: "native",
         };
-        expect(m.name).toBe("Qwen3 8B");
-        expect(m.installed).toBe(true);
-        expect(m.source).toBe("native");
+        expect(v.name).toBe("8B");
+        expect(v.hf_repo).toBe("qwen/qwen3-8B");
+        expect(v.installed).toBe(true);
+        expect(v.source).toBe("native");
+        expect(v.task).toBe("chat");
+    });
+});
+
+describe("ModelFamily interface", () => {
+    it("accepts all fields", () => {
+        const f: ModelFamily = {
+            family: "Qwen3",
+            task: "chat",
+            featured: true,
+            recommended: "8B",
+            variants: [],
+        };
+        expect(f.family).toBe("Qwen3");
+        expect(f.featured).toBe(true);
+        expect(f.recommended).toBe("8B");
     });
 });
 
@@ -325,7 +345,7 @@ describe("CatalogResponse interface", () => {
             total: 50,
             limit: 20,
             offset: 0,
-            models: [],
+            families: [],
         };
         expect(r.total).toBe(50);
     });

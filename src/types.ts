@@ -180,20 +180,30 @@ export interface QueuedPull {
     modelName: string;
 }
 
-export interface CatalogModel {
+export interface ModelVariant {
     name: string;
+    hf_repo: string;
     size_gb: number;
     min_ram_gb: number;
     description: string;
+    task: string;
     installed: boolean;
     source: "native" | "litellm";
+}
+
+export interface ModelFamily {
+    family: string;
+    task: string;
+    featured: boolean;
+    recommended: string;
+    variants: ModelVariant[];
 }
 
 export interface CatalogResponse {
     total: number;
     limit: number;
     offset: number;
-    models: CatalogModel[];
+    families: ModelFamily[];
 }
 
 export interface InstalledModel {

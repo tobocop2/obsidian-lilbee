@@ -3,7 +3,7 @@ import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { SetupWizard, getSystemMemoryGB, recommendedIndex } from "../../src/views/setup-wizard";
 import { SSE_EVENT } from "../../src/types";
-import type { CatalogModel, CatalogResponse } from "../../src/types";
+import type { ModelFamily, ModelVariant, CatalogResponse } from "../../src/types";
 
 vi.mock("../../src/views/catalog-modal", () => ({
     CatalogModal: vi.fn().mockImplementation(() => ({
@@ -12,24 +12,37 @@ vi.mock("../../src/views/catalog-modal", () => ({
     })),
 }));
 
-function makeCatalogModel(overrides: Partial<CatalogModel> = {}): CatalogModel {
+function makeVariant(overrides: Partial<ModelVariant> = {}): ModelVariant {
     return {
-        name: "qwen3:0.6b",
+        name: "0.6B",
+        hf_repo: "qwen/qwen3-0.6B",
         size_gb: 0.5,
         min_ram_gb: 4,
         description: "Runs on anything",
+        task: "chat",
         installed: false,
         source: "native",
         ...overrides,
     };
 }
 
-function makeCatalogResponse(models: CatalogModel[] = []): CatalogResponse {
+function makeFamily(overrides: Partial<ModelFamily> = {}): ModelFamily {
     return {
-        total: models.length,
+        family: "Qwen3",
+        task: "chat",
+        featured: true,
+        recommended: "0.6B",
+        variants: [makeVariant()],
+        ...overrides,
+    };
+}
+
+function makeCatalogResponse(families: ModelFamily[] = []): CatalogResponse {
+    return {
+        total: families.length,
         limit: 4,
         offset: 0,
-        models,
+        families,
     };
 }
 
@@ -393,12 +406,12 @@ describe("SetupWizard", () => {
 
     describe("Step 2: Model Picker", () => {
         it("renders model picker with featured models", async () => {
-            const models = [
-                makeCatalogModel({ name: "qwen3:0.6b", size_gb: 0.5, min_ram_gb: 4 }),
-                makeCatalogModel({ name: "qwen3:4b", size_gb: 2.5, min_ram_gb: 8 }),
+            const families = [
+                makeFamily({ family: "Qwen3-Small", variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B", size_gb: 0.5, min_ram_gb: 4 })], recommended: "0.6B" }),
+                makeFamily({ family: "Qwen3-Medium", variants: [makeVariant({ name: "4B", hf_repo: "qwen/qwen3-4B", size_gb: 2.5, min_ram_gb: 8 })], recommended: "4B" }),
             ];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(models));
+            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(families));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             wizard.next();
@@ -407,17 +420,17 @@ describe("SetupWizard", () => {
             const el = wizard.contentEl as unknown as MockElement;
             const texts = collectTexts(el);
             expect(texts.some(t => t.includes("Pick a chat model"))).toBe(true);
-            expect(texts.some(t => t.includes("qwen3:0.6b"))).toBe(true);
-            expect(texts.some(t => t.includes("qwen3:4b"))).toBe(true);
+            expect(texts.some(t => t.includes("Qwen3-Small"))).toBe(true);
+            expect(texts.some(t => t.includes("Qwen3-Medium"))).toBe(true);
         });
 
         it("pre-selects recommended model based on first in list when no memory detection", async () => {
-            const models = [
-                makeCatalogModel({ name: "qwen3:0.6b", size_gb: 0.5, min_ram_gb: 4 }),
-                makeCatalogModel({ name: "qwen3:4b", size_gb: 2.5, min_ram_gb: 8 }),
+            const families = [
+                makeFamily({ family: "Qwen3-Small", variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B", size_gb: 0.5, min_ram_gb: 4 })], recommended: "0.6B" }),
+                makeFamily({ family: "Qwen3-Medium", variants: [makeVariant({ name: "4B", hf_repo: "qwen/qwen3-4B", size_gb: 2.5, min_ram_gb: 8 })], recommended: "4B" }),
             ];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(models));
+            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(families));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             wizard.next();
@@ -430,12 +443,12 @@ describe("SetupWizard", () => {
         });
 
         it("clicking a model option selects it", async () => {
-            const models = [
-                makeCatalogModel({ name: "qwen3:0.6b", size_gb: 0.5, min_ram_gb: 4 }),
-                makeCatalogModel({ name: "qwen3:4b", size_gb: 2.5, min_ram_gb: 8 }),
+            const families = [
+                makeFamily({ family: "Qwen3-Small", variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B", size_gb: 0.5, min_ram_gb: 4 })], recommended: "0.6B" }),
+                makeFamily({ family: "Qwen3-Medium", variants: [makeVariant({ name: "4B", hf_repo: "qwen/qwen3-4B", size_gb: 2.5, min_ram_gb: 8 })], recommended: "4B" }),
             ];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(models));
+            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(families));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             wizard.next();
@@ -461,6 +474,26 @@ describe("SetupWizard", () => {
             expect(texts.some(t => t.includes("Could not load models"))).toBe(true);
         });
 
+        it("falls back to first variant when recommended not found", async () => {
+            const families = [makeFamily({
+                family: "Qwen3",
+                recommended: "nonexistent",
+                variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B", size_gb: 0.5, min_ram_gb: 4 })],
+            })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(families));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const texts = collectTexts(el);
+            expect(texts.some(t => t.includes("Qwen3"))).toBe(true);
+            expect(texts.some(t => t.includes("0.5 GB"))).toBe(true);
+        });
+
+
         it("Download & continue requires model selection", async () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse([]));
@@ -478,9 +511,9 @@ describe("SetupWizard", () => {
         });
 
         it("Download & continue pulls model and advances to sync step", async () => {
-            const models = [makeCatalogModel({ name: "qwen3:0.6b" })];
+            const families = [makeFamily({ family: "Qwen3", variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B" })], recommended: "0.6B" })];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(models));
+            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(families));
             plugin.api.pullModel = vi.fn().mockReturnValue((async function* () {
                 yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
                 yield { event: SSE_EVENT.PROGRESS, data: { current: 100, total: 100 } };
@@ -501,8 +534,8 @@ describe("SetupWizard", () => {
             await tick();
             await tick();
 
-            expect(plugin.api.pullModel).toHaveBeenCalledWith("qwen3:0.6b", "native", expect.any(AbortSignal));
-            expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen3:0.6b");
+            expect(plugin.api.pullModel).toHaveBeenCalledWith("qwen/qwen3-0.6B", "native", expect.any(AbortSignal));
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen/qwen3-0.6B");
             // After pull completes, it goes to step 3 (sync), which auto-starts and finishes, going to step 4 (done)
             await tick();
             await tick();
@@ -512,9 +545,9 @@ describe("SetupWizard", () => {
         });
 
         it("handles pull failure", async () => {
-            const models = [makeCatalogModel({ name: "qwen3:0.6b" })];
+            const families = [makeFamily({ family: "Qwen3", variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B" })], recommended: "0.6B" })];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(models));
+            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(families));
             plugin.api.pullModel = vi.fn().mockReturnValue((async function* () {
                 throw new Error("network error");
             })());
@@ -534,9 +567,9 @@ describe("SetupWizard", () => {
         });
 
         it("handles pull abort", async () => {
-            const models = [makeCatalogModel({ name: "qwen3:0.6b" })];
+            const families = [makeFamily({ family: "Qwen3", variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B" })], recommended: "0.6B" })];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(models));
+            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(families));
             const abortErr = new Error("aborted");
             abortErr.name = "AbortError";
             plugin.api.pullModel = vi.fn().mockReturnValue((async function* () {
@@ -589,9 +622,9 @@ describe("SetupWizard", () => {
 
         it("Browse full catalog button opens CatalogModal", async () => {
             const { CatalogModal } = await import("../../src/views/catalog-modal");
-            const models = [makeCatalogModel()];
+            const families = [makeFamily()];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(models));
+            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(families));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             wizard.next();
@@ -605,9 +638,9 @@ describe("SetupWizard", () => {
         });
 
         it("Back cancels ongoing pull", async () => {
-            const models = [makeCatalogModel({ name: "qwen3:0.6b" })];
+            const families = [makeFamily({ family: "Qwen3", variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B" })], recommended: "0.6B" })];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(models));
+            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(families));
             let abortSignal: AbortSignal | null = null;
             plugin.api.pullModel = vi.fn().mockImplementation((_name: string, _source: string, signal?: AbortSignal) => {
                 abortSignal = signal ?? null;
@@ -637,7 +670,7 @@ describe("SetupWizard", () => {
         it("Skip setup aborts active pull and closes wizard", async () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue({
-                models: [makeCatalogModel({ name: "qwen3:0.6b", size_gb: 0.5, min_ram_gb: 4 })],
+                families: [makeFamily({ family: "Qwen3", variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B", size_gb: 0.5, min_ram_gb: 4 })], recommended: "0.6B" })],
                 total: 1, limit: 20, offset: 0,
             });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
@@ -882,9 +915,9 @@ describe("SetupWizard", () => {
 
     describe("onClose cleanup", () => {
         it("aborts pull controller on close", async () => {
-            const models = [makeCatalogModel({ name: "qwen3:0.6b" })];
+            const families = [makeFamily({ family: "Qwen3", variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B" })], recommended: "0.6B" })];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(models));
+            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(families));
             plugin.api.pullModel = vi.fn().mockReturnValue((async function* () {
                 yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
                 await new Promise(() => {});
@@ -930,12 +963,12 @@ describe("SetupWizard", () => {
 
     describe("System memory detection", () => {
         it("handles missing os module gracefully", async () => {
-            const models = [
-                makeCatalogModel({ name: "qwen3:0.6b", min_ram_gb: 4 }),
-                makeCatalogModel({ name: "qwen3:4b", min_ram_gb: 8 }),
+            const families = [
+                makeFamily({ family: "Qwen3-Small", variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B", min_ram_gb: 4 })], recommended: "0.6B" }),
+                makeFamily({ family: "Qwen3-Medium", variants: [makeVariant({ name: "4B", hf_repo: "qwen/qwen3-4B", min_ram_gb: 8 })], recommended: "4B" }),
             ];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(models));
+            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(families));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             wizard.next();
@@ -950,9 +983,9 @@ describe("SetupWizard", () => {
 
     describe("Full flow integration", () => {
         it("complete flow: welcome -> model -> sync -> done", async () => {
-            const models = [makeCatalogModel({ name: "qwen3:0.6b" })];
+            const families = [makeFamily({ family: "Qwen3", variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B" })], recommended: "0.6B" })];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(models));
+            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse(families));
             plugin.api.pullModel = vi.fn().mockReturnValue((async function* () {
                 yield { event: SSE_EVENT.PROGRESS, data: { current: 100, total: 100 } };
             })());

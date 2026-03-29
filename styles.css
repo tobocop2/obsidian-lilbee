@@ -1138,3 +1138,42 @@
 .lilbee-wizard-url-input:focus {
     border-color: var(--interactive-accent);
 }
+
+/* Catalog Family Layout */
+
+.lilbee-catalog-family {
+    margin-bottom: 8px;
+}
+.lilbee-catalog-family-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    cursor: pointer;
+    font-weight: 600;
+}
+.lilbee-catalog-family-header:hover {
+    background: var(--background-modifier-hover);
+}
+.lilbee-catalog-family-task {
+    font-size: 0.75em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--background-modifier-border);
+}
+.lilbee-catalog-family-variants {
+    padding-left: 16px;
+}
+.lilbee-catalog-family.is-collapsed .lilbee-catalog-family-variants {
+    display: none;
+}
+.lilbee-catalog-variant-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+.lilbee-catalog-recommended {
+    color: var(--text-accent);
+}

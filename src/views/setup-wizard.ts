@@ -1,6 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { CatalogModel, SSEEvent, SyncDone } from "../types";
+import type { ModelFamily, SSEEvent, SyncDone } from "../types";
 import { SERVER_MODE, SSE_EVENT } from "../types";
 import { CatalogModal } from "./catalog-modal";
 
@@ -10,6 +10,7 @@ interface FeaturedModel {
     min_ram_gb: number;
     description: string;
     source: "native" | "litellm";
+    displayName?: string;
 }
 
 export function getSystemMemoryGB(): number | null {
@@ -270,13 +271,17 @@ export class SetupWizard extends Modal {
                 sort: "featured",
                 limit: 4,
             });
-            this.featuredModels = response.models.map((m: CatalogModel) => ({
-                name: m.name,
-                size_gb: m.size_gb,
-                min_ram_gb: m.min_ram_gb,
-                description: m.description,
-                source: m.source,
-            }));
+            this.featuredModels = response.families.map((f: ModelFamily) => {
+                const v = f.variants.find(v => v.name === f.recommended) ?? f.variants[0];
+                return {
+                    name: v.hf_repo,
+                    size_gb: v.size_gb,
+                    min_ram_gb: v.min_ram_gb,
+                    description: v.description,
+                    source: v.source,
+                    displayName: f.family,
+                };
+            });
         } catch {
             this.featuredModels = [];
             statusEl.textContent = "Could not load models from server.";
@@ -296,7 +301,8 @@ export class SetupWizard extends Modal {
             if (i === recommended) {
                 header.createEl("span", { text: "Recommended", cls: "lilbee-wizard-recommended" });
             }
-            header.createEl("strong", { text: model.name });
+            /* v8 ignore next */
+            header.createEl("strong", { text: model.displayName ?? model.name });
             header.createEl("span", { text: `${model.size_gb} GB` });
             option.createEl("p", { text: model.description });
             option.createEl("p", { text: `Minimum ${model.min_ram_gb} GB RAM`, cls: "lilbee-wizard-model-ram" });
