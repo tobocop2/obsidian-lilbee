@@ -502,6 +502,73 @@ describe("CatalogModal", () => {
         expect(plugin.api.setChatModel).not.toHaveBeenCalled();
     });
 
+    it("renders display_name when present instead of name", async () => {
+        const models = [makeCatalogModel({
+            name: "qwen3:8b",
+            display_name: "Qwen 2.5 7B",
+            installed: false,
+        })];
+        const plugin = makePlugin({ activeModel: "llama3" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const nameEls = el.findAll("lilbee-catalog-row-name");
+        expect(nameEls.length).toBe(1);
+        expect(nameEls[0].textContent).toBe("Qwen 2.5 7B");
+    });
+
+    it("falls back to name when display_name is absent", async () => {
+        const models = [makeCatalogModel({ name: "phi3", installed: false })];
+        const plugin = makePlugin({ activeModel: "llama3" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const nameEls = el.findAll("lilbee-catalog-row-name");
+        expect(nameEls.length).toBe(1);
+        expect(nameEls[0].textContent).toBe("phi3");
+    });
+
+    it("renders quality_tier badge when present", async () => {
+        const models = [makeCatalogModel({
+            name: "qwen3:8b",
+            quality_tier: "balanced",
+            installed: false,
+        })];
+        const plugin = makePlugin({ activeModel: "llama3" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const tierEls = el.findAll("lilbee-catalog-quality-tier");
+        expect(tierEls.length).toBe(1);
+        expect(tierEls[0].textContent).toBe("balanced");
+    });
+
+    it("omits quality_tier badge when absent", async () => {
+        const models = [makeCatalogModel({ name: "phi3", installed: false })];
+        const plugin = makePlugin({ activeModel: "llama3" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const tierEls = el.findAll("lilbee-catalog-quality-tier");
+        expect(tierEls.length).toBe(0);
+    });
+
     it("shows Active for active vision model", async () => {
         const models = [makeCatalogModel({ name: "llava", installed: true })];
         const plugin = makePlugin({ activeModel: "llama3", activeVisionModel: "llava" });

@@ -43,7 +43,7 @@ describe("DEFAULT_SETTINGS", () => {
 
     it("is a plain object with exactly the expected keys", () => {
         const keys = Object.keys(DEFAULT_SETTINGS).sort();
-        expect(keys).toEqual(["lilbeeVersion", "num_ctx", "repeat_penalty", "seed", "serverMode", "serverPort", "serverUrl", "syncDebounceMs", "syncMode", "systemPrompt", "temperature", "topK", "top_k_sampling", "top_p"].sort());
+        expect(keys).toEqual(["hfToken", "lilbeeVersion", "num_ctx", "repeat_penalty", "seed", "serverMode", "serverPort", "serverUrl", "syncDebounceMs", "syncMode", "systemPrompt", "temperature", "topK", "top_k_sampling", "top_p"].sort());
     });
 });
 
@@ -302,7 +302,7 @@ describe("JSON_HEADERS constant", () => {
 });
 
 describe("CatalogModel interface", () => {
-    it("accepts all fields", () => {
+    it("accepts base fields without new optional fields", () => {
         const m: CatalogModel = {
             name: "Qwen3 8B",
             size_gb: 5.0,
@@ -314,6 +314,32 @@ describe("CatalogModel interface", () => {
         expect(m.name).toBe("Qwen3 8B");
         expect(m.installed).toBe(true);
         expect(m.source).toBe("native");
+        expect(m.display_name).toBeUndefined();
+        expect(m.quality_tier).toBeUndefined();
+        expect(m.task).toBeUndefined();
+        expect(m.hf_repo).toBeUndefined();
+        expect(m.downloads).toBeUndefined();
+    });
+
+    it("accepts enriched fields from new server API", () => {
+        const m: CatalogModel = {
+            name: "Qwen3 8B",
+            display_name: "Qwen 2.5 7B",
+            quality_tier: "balanced",
+            size_gb: 5.0,
+            min_ram_gb: 8,
+            description: "Medium model",
+            installed: true,
+            source: "native",
+            task: "chat",
+            hf_repo: "Qwen/Qwen2.5-7B-Instruct-GGUF",
+            downloads: 17900000,
+        };
+        expect(m.display_name).toBe("Qwen 2.5 7B");
+        expect(m.quality_tier).toBe("balanced");
+        expect(m.task).toBe("chat");
+        expect(m.hf_repo).toBe("Qwen/Qwen2.5-7B-Instruct-GGUF");
+        expect(m.downloads).toBe(17900000);
     });
 });
 
