@@ -2,6 +2,7 @@ import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { ModelFamily, ModelVariant, CatalogResponse } from "../types";
 import { NOTICE, SSE_EVENT } from "../types";
+import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import { PullQueue } from "../pull-queue";
 
@@ -186,9 +187,38 @@ export class CatalogModal extends Modal {
             actionEl.createEl("span", { text: "Active", cls: "lilbee-catalog-active" });
         } else if (variant.installed) {
             actionEl.createEl("span", { text: "Installed", cls: "lilbee-installed" });
+            const removeBtn = actionEl.createEl("button", { text: "Remove", cls: "lilbee-catalog-remove" });
+            removeBtn.addEventListener("click", () => this.handleRemove(variant, removeBtn));
         } else {
             const pullBtn = actionEl.createEl("button", { text: "Pull", cls: "lilbee-catalog-pull" });
             pullBtn.addEventListener("click", () => this.handlePull(family, variant, pullBtn));
+        }
+    }
+
+    private handleRemove(variant: ModelVariant, btn: HTMLElement): void {
+        const confirmModal = new ConfirmModal(
+            this.app,
+            `Remove ${variant.hf_repo}? This deletes the model file from disk.`,
+        );
+        confirmModal.open();
+        void confirmModal.result.then((confirmed) => {
+            if (!confirmed) return;
+            void this.executeRemove(variant, btn);
+        });
+    }
+
+    private async executeRemove(variant: ModelVariant, btn: HTMLElement): Promise<void> {
+        btn.textContent = "Removing...";
+        (btn as HTMLButtonElement).disabled = true;
+        try {
+            await this.plugin.api.deleteModel(variant.hf_repo, variant.source);
+            new Notice(`Removed ${variant.hf_repo}`);
+            this.plugin.fetchActiveModel();
+            this.resetAndFetch();
+        } catch {
+            new Notice(`Failed to remove ${variant.hf_repo}`);
+            btn.textContent = "Remove";
+            (btn as HTMLButtonElement).disabled = false;
         }
     }
 
