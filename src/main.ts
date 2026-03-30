@@ -10,6 +10,7 @@ import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
 import { CrawlModal } from "./views/crawl-modal";
 import { DocumentsModal } from "./views/documents-modal";
 import { SearchModal } from "./views/search-modal";
+import { SetupWizard } from "./views/setup-wizard";
 
 
 function summarizeSyncResult(done: SyncDone): string {
@@ -61,6 +62,10 @@ export default class LilbeePlugin extends Plugin {
             this.api = new LilbeeClient(this.settings.serverUrl);
             this.setStatusReady();
             this.fetchActiveModel();
+        }
+
+        if (!this.settings.setupCompleted) {
+            new SetupWizard(this.app, this).open();
         }
 
         if (this.settings.syncMode === "auto") {
@@ -294,6 +299,12 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "lilbee:setup",
+            name: "Run setup wizard",
+            callback: () => new SetupWizard(this.app, this).open(),
+        });
+
+        this.addCommand({
             id: "lilbee:status",
             name: "Show status",
             callback: async () => {
@@ -459,7 +470,7 @@ export default class LilbeePlugin extends Plugin {
         this.autoSyncRefs = [];
     }
 
-    private async activateChatView(): Promise<void> {
+    async activateChatView(): Promise<void> {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT);
         if (existing.length > 0) {
             this.app.workspace.revealLeaf(existing[0]);

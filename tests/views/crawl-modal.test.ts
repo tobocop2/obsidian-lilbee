@@ -294,6 +294,43 @@ describe("CrawlModal", () => {
         expect(Notice.instances.some(n => n.message.includes("unknown error"))).toBe(true);
     });
 
+    it("aborts crawl controller when modal is closed during crawl", async () => {
+        const app = new App();
+        const plugin = makePlugin();
+        let resolveStream: (() => void) | null = null;
+        const streamPromise = new Promise<void>((r) => { resolveStream = r; });
+        plugin.api.crawl.mockReturnValue((async function* () {
+            yield { event: SSE_EVENT.CRAWL_START, data: {} };
+            // Block until we resolve externally — simulates an in-progress crawl
+            await streamPromise;
+            yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 1 } };
+        })());
+        const modal = new CrawlModal(app as any, plugin as any);
+        modal.onOpen();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const urlInput = el.find("lilbee-crawl-url")!;
+        (urlInput as any).value = "https://example.com";
+        const crawlBtn = findButtons(el).find(b => b.textContent === "Crawl")!;
+        crawlBtn.trigger("click");
+        await tick();
+
+        // crawlController is now set — grab the signal before closing
+        const signal = plugin.api.crawl.mock.calls[0][3] as AbortSignal;
+        expect(signal.aborted).toBe(false);
+
+        // Close the modal while the crawl is in-progress
+        modal.onClose();
+        expect(signal.aborted).toBe(true);
+
+        // Unblock stream so the async generator can finish
+        resolveStream!();
+        await tick();
+
+        const result = await modal.result;
+        expect(result).toBe(false);
+    });
+
     it("CRAWL_PAGE with missing url uses empty string fallback", async () => {
         const app = new App();
         const plugin = makePlugin();

@@ -132,6 +132,7 @@ export interface LilbeeSettings {
     serverPort: number | null;
     lilbeeVersion: string;
     systemPrompt: string;
+    setupCompleted: boolean;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -149,6 +150,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     serverPort: null,
     lilbeeVersion: "",
     systemPrompt: "",
+    setupCompleted: false,
 };
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */
@@ -178,20 +180,32 @@ export interface QueuedPull {
     modelName: string;
 }
 
-export interface CatalogModel {
+export interface ModelVariant {
     name: string;
+    hf_repo: string;
     size_gb: number;
     min_ram_gb: number;
     description: string;
+    task: string;
     installed: boolean;
     source: "native" | "litellm";
+    display_name?: string;
+    quality_tier?: string;
+}
+
+export interface ModelFamily {
+    family: string;
+    task: string;
+    featured: boolean;
+    recommended: string;
+    variants: ModelVariant[];
 }
 
 export interface CatalogResponse {
     total: number;
     limit: number;
     offset: number;
-    models: CatalogModel[];
+    families: ModelFamily[];
 }
 
 export interface InstalledModel {

@@ -3,7 +3,7 @@ import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { CatalogModal } from "../../src/views/catalog-modal";
 import { NOTICE, SSE_EVENT } from "../../src/types";
-import type { CatalogModel, CatalogResponse } from "../../src/types";
+import type { ModelFamily, ModelVariant, CatalogResponse } from "../../src/types";
 
 let mockConfirmResult = true;
 vi.mock("../../src/views/confirm-pull-modal", () => ({
@@ -14,36 +14,48 @@ vi.mock("../../src/views/confirm-pull-modal", () => ({
     })),
 }));
 
-function makeCatalogModel(overrides: Partial<CatalogModel> = {}): CatalogModel {
+function makeVariant(overrides: Partial<ModelVariant> = {}): ModelVariant {
     return {
-        name: "llama3",
-        size_gb: 4.7,
+        name: "4B",
+        hf_repo: "test/model-4B",
+        size_gb: 2.5,
         min_ram_gb: 8,
-        description: "Meta Llama 3",
+        description: "Balanced",
+        task: "chat",
         installed: false,
         source: "native",
         ...overrides,
     };
 }
 
-function makeCatalogResponse(models: CatalogModel[] = [], total?: number): CatalogResponse {
+function makeFamily(overrides: Partial<ModelFamily> = {}): ModelFamily {
     return {
-        total: total ?? models.length,
-        limit: 20,
-        offset: 0,
-        models,
+        family: "TestModel",
+        task: "chat",
+        featured: true,
+        recommended: "4B",
+        variants: [
+            makeVariant({ name: "0.6B", hf_repo: "test/model-0.6B", size_gb: 0.5, min_ram_gb: 2, description: "Tiny" }),
+            makeVariant({ name: "4B", hf_repo: "test/model-4B", size_gb: 2.5, min_ram_gb: 8, description: "Balanced" }),
+        ],
+        ...overrides,
     };
+}
+
+function makeCatalogResponse(families: ModelFamily[] = [makeFamily()], total?: number): CatalogResponse {
+    return { total: total ?? families.length, limit: 20, offset: 0, families };
 }
 
 function makePlugin(overrides: Record<string, unknown> = {}) {
     return {
         api: {
-            catalog: vi.fn().mockResolvedValue(makeCatalogResponse()),
+            catalog: vi.fn().mockResolvedValue(makeCatalogResponse([])),
             pullModel: vi.fn(),
-            setChatModel: vi.fn().mockResolvedValue({ model: "llama3" }),
+            setChatModel: vi.fn().mockResolvedValue({ model: "test/model-4B" }),
             setVisionModel: vi.fn().mockResolvedValue({ model: "" }),
+            setEmbeddingModel: vi.fn().mockResolvedValue({ model: "" }),
         },
-        activeModel: "llama3",
+        activeModel: "test/model-4B",
         activeVisionModel: "",
         fetchActiveModel: vi.fn(),
         ...overrides,
@@ -85,7 +97,7 @@ describe("CatalogModal", () => {
         const plugin = makePlugin();
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse());
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([]));
         modal.open();
         await vi.runAllTimersAsync();
 
@@ -97,7 +109,7 @@ describe("CatalogModal", () => {
 
     it("fetches catalog on open", async () => {
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([makeCatalogModel()]));
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([makeFamily()]));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -110,27 +122,82 @@ describe("CatalogModal", () => {
         }));
     });
 
-    it("renders model rows from catalog response", async () => {
-        const models = [
-            makeCatalogModel({ name: "llama3", installed: true }),
-            makeCatalogModel({ name: "phi3", installed: false }),
-        ];
+    it("renders family headers with name and task badge", async () => {
+        const families = [makeFamily({ family: "Qwen3", task: "chat" })];
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
         await vi.runAllTimersAsync();
 
         const el = modal.contentEl as unknown as MockElement;
-        const rows = el.findAll("lilbee-catalog-row");
+        const headers = el.findAll("lilbee-catalog-family-header");
+        expect(headers.length).toBe(1);
+        const texts = collectTexts(headers[0]);
+        expect(texts.some(t => t.includes("Qwen3"))).toBe(true);
+        const taskBadge = el.findAll("lilbee-catalog-family-task");
+        expect(taskBadge.length).toBe(1);
+        expect(taskBadge[0].textContent).toBe("chat");
+    });
+
+    it("renders variant rows within family", async () => {
+        const families = [makeFamily()];
+        const plugin = makePlugin();
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const rows = el.findAll("lilbee-catalog-variant-row");
         expect(rows.length).toBe(2);
     });
 
-    it("shows Active for active model", async () => {
-        const models = [makeCatalogModel({ name: "llama3", installed: true })];
-        const plugin = makePlugin({ activeModel: "llama3" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+    it("recommended variant has star marker", async () => {
+        const families = [makeFamily({ recommended: "4B" })];
+        const plugin = makePlugin({ activeModel: "other" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const recommended = el.findAll("lilbee-catalog-recommended");
+        expect(recommended.length).toBe(1);
+        expect(recommended[0].textContent).toContain("\u2605");
+    });
+
+    it("collapse/expand toggle works on family header click", async () => {
+        const families = [makeFamily()];
+        const plugin = makePlugin();
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const header = el.findAll("lilbee-catalog-family-header")[0];
+        const family = el.findAll("lilbee-catalog-family")[0];
+
+        // Click to collapse
+        header.trigger("click");
+        expect(family.classList.contains("is-collapsed")).toBe(true);
+
+        // Click to expand
+        header.trigger("click");
+        expect(family.classList.contains("is-collapsed")).toBe(false);
+    });
+
+    it("shows Active for active model variant", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true })],
+        })];
+        const plugin = makePlugin({ activeModel: "test/model-4B" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -142,10 +209,12 @@ describe("CatalogModal", () => {
         expect(active[0].textContent).toBe("Active");
     });
 
-    it("shows Installed for installed non-active model", async () => {
-        const models = [makeCatalogModel({ name: "phi3", installed: true })];
-        const plugin = makePlugin({ activeModel: "llama3" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+    it("shows Installed for installed non-active variant", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -156,10 +225,12 @@ describe("CatalogModal", () => {
         expect(installed.length).toBe(1);
     });
 
-    it("shows Pull button for uninstalled model", async () => {
-        const models = [makeCatalogModel({ name: "phi3", installed: false })];
-        const plugin = makePlugin({ activeModel: "llama3" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+    it("shows Pull button for uninstalled variant", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: false })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -172,9 +243,9 @@ describe("CatalogModal", () => {
     });
 
     it("shows Load more button when total > loaded", async () => {
-        const models = Array.from({ length: 20 }, (_, i) => makeCatalogModel({ name: `model${i}` }));
+        const families = Array.from({ length: 20 }, (_, i) => makeFamily({ family: `family${i}` }));
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models, 40));
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families, 40));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -187,9 +258,9 @@ describe("CatalogModal", () => {
     });
 
     it("hides Load more button when all loaded", async () => {
-        const models = [makeCatalogModel()];
+        const families = [makeFamily()];
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models, 1));
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families, 1));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -201,8 +272,8 @@ describe("CatalogModal", () => {
     });
 
     it("Load more fetches next page", async () => {
-        const page1 = Array.from({ length: 20 }, (_, i) => makeCatalogModel({ name: `m${i}` }));
-        const page2 = [makeCatalogModel({ name: "m20" })];
+        const page1 = Array.from({ length: 20 }, (_, i) => makeFamily({ family: `f${i}` }));
+        const page2 = [makeFamily({ family: "f20" })];
         const plugin = makePlugin();
         plugin.api.catalog
             .mockResolvedValueOnce(makeCatalogResponse(page1, 21))
@@ -223,7 +294,7 @@ describe("CatalogModal", () => {
 
     it("search input triggers debounced fetch", async () => {
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse());
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([]));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -234,7 +305,6 @@ describe("CatalogModal", () => {
         (searchInput as any).value = "test";
         searchInput.trigger("input");
 
-        // Should not have fetched yet (debounce)
         const callsBefore = plugin.api.catalog.mock.calls.length;
 
         await vi.advanceTimersByTimeAsync(300);
@@ -246,7 +316,7 @@ describe("CatalogModal", () => {
 
     it("task filter triggers fetch", async () => {
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse());
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([]));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -263,7 +333,7 @@ describe("CatalogModal", () => {
 
     it("size filter triggers fetch", async () => {
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse());
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([]));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -280,7 +350,7 @@ describe("CatalogModal", () => {
 
     it("sort filter triggers fetch", async () => {
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse());
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([]));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -297,9 +367,11 @@ describe("CatalogModal", () => {
 
     it("Pull button opens confirm modal and pulls on confirm", async () => {
         vi.useRealTimers();
-        const models = [makeCatalogModel({ name: "phi3", installed: false })];
-        const plugin = makePlugin({ activeModel: "llama3" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: false })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
         plugin.api.pullModel.mockReturnValue((async function* () {
             yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
         })());
@@ -314,16 +386,70 @@ describe("CatalogModal", () => {
         await tick();
         await tick();
 
-        expect(plugin.api.pullModel).toHaveBeenCalledWith("phi3", "native");
-        expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
+        expect(plugin.api.pullModel).toHaveBeenCalledWith("test/model-4B", "native");
+        expect(plugin.api.setChatModel).toHaveBeenCalledWith("test/model-4B");
+    });
+
+    it("Pull passes non-native source to pullModel", async () => {
+        vi.useRealTimers();
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "gpt-4o", hf_repo: "openai/gpt-4o", installed: false, source: "litellm" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.pullModel.mockReturnValue((async function* () {
+            yield { event: SSE_EVENT.PROGRESS, data: { current: 100, total: 100 } };
+        })());
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const pullBtn = el.findAll("lilbee-catalog-pull")[0];
+        pullBtn.trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.api.pullModel).toHaveBeenCalledWith("openai/gpt-4o", "litellm");
+    });
+
+    it("Pull on vision variant calls setVisionModel", async () => {
+        vi.useRealTimers();
+        const families = [makeFamily({
+            task: "vision",
+            variants: [makeVariant({ name: "llava", hf_repo: "llava/llava-v1.6", installed: false, task: "vision" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model", activeVisionModel: "" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.pullModel.mockReturnValue((async function* () {
+            yield { event: SSE_EVENT.PROGRESS, data: { current: 100, total: 100 } };
+        })());
+        plugin.api.setVisionModel.mockResolvedValue({ model: "llava/llava-v1.6" });
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const pullBtn = el.findAll("lilbee-catalog-pull")[0];
+        pullBtn.trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.api.pullModel).toHaveBeenCalledWith("llava/llava-v1.6", "native");
+        expect(plugin.api.setVisionModel).toHaveBeenCalledWith("llava/llava-v1.6");
+        expect(plugin.api.setChatModel).not.toHaveBeenCalled();
     });
 
     it("Pull cancelled by confirm modal does not pull", async () => {
         vi.useRealTimers();
         mockConfirmResult = false;
-        const models = [makeCatalogModel({ name: "phi3", installed: false })];
-        const plugin = makePlugin({ activeModel: "llama3" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: false })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -339,9 +465,11 @@ describe("CatalogModal", () => {
 
     it("handles pull failure with notice", async () => {
         vi.useRealTimers();
-        const models = [makeCatalogModel({ name: "phi3", installed: false })];
-        const plugin = makePlugin({ activeModel: "llama3" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: false })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
         plugin.api.pullModel.mockReturnValue((async function* () {
             throw new Error("network error");
         })());
@@ -361,9 +489,11 @@ describe("CatalogModal", () => {
 
     it("handles AbortError during pull", async () => {
         vi.useRealTimers();
-        const models = [makeCatalogModel({ name: "phi3", installed: false })];
-        const plugin = makePlugin({ activeModel: "llama3" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: false })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
         const abortErr = new Error("aborted");
         abortErr.name = "AbortError";
         plugin.api.pullModel.mockReturnValue((async function* () {
@@ -399,16 +529,14 @@ describe("CatalogModal", () => {
         const plugin = makePlugin();
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
-        // Should not throw
         modal.onClose();
     });
 
     it("search input debounce: first input with null timer, second clears existing timer", async () => {
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse());
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([]));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
-        // Ensure debounceTimer is null before open
         expect((modal as any).debounceTimer).toBeNull();
         modal.open();
         await vi.runAllTimersAsync();
@@ -416,11 +544,9 @@ describe("CatalogModal", () => {
         const el = modal.contentEl as unknown as MockElement;
         const searchInput = el.find("lilbee-catalog-search")!;
 
-        // First input: debounceTimer is null (false branch at line 79)
         (searchInput as any).value = "a";
         searchInput.trigger("input");
 
-        // Second input before debounce fires: debounceTimer is set (true branch at line 79)
         (searchInput as any).value = "ab";
         searchInput.trigger("input");
 
@@ -430,18 +556,17 @@ describe("CatalogModal", () => {
         expect(plugin.api.catalog.mock.calls.length).toBeGreaterThan(1);
     });
 
-    it("onClose with no debounce timer does not throw (false branch at line 99)", () => {
+    it("onClose with no debounce timer does not throw", () => {
         const plugin = makePlugin();
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         expect((modal as any).debounceTimer).toBeNull();
-        // onClose before onOpen — debounceTimer is null
         modal.onClose();
     });
 
     it("onClose with active debounce timer clears it", async () => {
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse());
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([]));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -451,43 +576,140 @@ describe("CatalogModal", () => {
         const searchInput = el.find("lilbee-catalog-search")!;
         (searchInput as any).value = "test";
         searchInput.trigger("input");
-        // debounceTimer is now set
         expect((modal as any).debounceTimer).not.toBeNull();
         modal.onClose();
     });
 
-    it("updateLoadMore returns early when loadMoreBtn is null", async () => {
+    it("updateLoadMore returns early when loadMoreBtn is null", () => {
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([makeCatalogModel()]));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
-        // Set loadMoreBtn to null before calling the private method
         (modal as any).loadMoreBtn = null;
         (modal as any).updateLoadMore();
-        // Should not throw
     });
 
-    it("renderRow returns early when resultsEl is null", () => {
+    it("renderFamily returns early when resultsEl is null", () => {
         const plugin = makePlugin();
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         (modal as any).resultsEl = null;
-        (modal as any).renderRow(makeCatalogModel());
-        // Should not throw
+        (modal as any).renderFamily(makeFamily());
     });
 
-    it("Pull with vision filter sets vision model instead of chat model", async () => {
+    it("shows Active for active vision model variant", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "llava", hf_repo: "llava/v1.6", installed: true })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model", activeVisionModel: "llava/v1.6" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const active = el.findAll("lilbee-catalog-active");
+        expect(active.length).toBe(1);
+    });
+
+    it("renders multiple families from response", async () => {
+        const families = [
+            makeFamily({ family: "Qwen3" }),
+            makeFamily({ family: "Llama3" }),
+        ];
+        const plugin = makePlugin();
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const familyEls = el.findAll("lilbee-catalog-family");
+        expect(familyEls.length).toBe(2);
+    });
+
+    it("variant display_name is used when present", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", display_name: "Qwen3 4B Instruct", hf_repo: "test/4B" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const texts = collectTexts(el);
+        expect(texts.some(t => t.includes("Qwen3 4B Instruct"))).toBe(true);
+        expect(texts.some(t => t === "4B")).toBe(false);
+    });
+
+    it("variant falls back to name when display_name is absent", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/4B" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const names = el.findAll("lilbee-catalog-variant-name");
+        expect(names.length).toBe(1);
+        expect(names[0].textContent).toContain("4B");
+    });
+
+    it("quality_tier badge is shown when present", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/4B", quality_tier: "recommended" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const tiers = el.findAll("lilbee-catalog-variant-tier");
+        expect(tiers.length).toBe(1);
+        expect(tiers[0].textContent).toBe("recommended");
+    });
+
+    it("quality_tier badge is not rendered when absent", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/4B" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const tiers = el.findAll("lilbee-catalog-variant-tier");
+        expect(tiers.length).toBe(0);
+    });
+
+    it("Pull on embedding variant calls setEmbeddingModel, not setChatModel", async () => {
         vi.useRealTimers();
-        const models = [makeCatalogModel({ name: "llava", installed: false })];
-        const plugin = makePlugin({ activeModel: "llama3", activeVisionModel: "" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+        const families = [makeFamily({
+            task: "embedding",
+            variants: [makeVariant({ name: "nomic", hf_repo: "nomic-ai/nomic-embed", installed: false, task: "embedding" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
         plugin.api.pullModel.mockReturnValue((async function* () {
             yield { event: SSE_EVENT.PROGRESS, data: { current: 100, total: 100 } };
         })());
-        plugin.api.setVisionModel.mockResolvedValue({ model: "llava" });
+        plugin.api.setEmbeddingModel.mockResolvedValue({ model: "nomic-ai/nomic-embed" });
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
-        (modal as any).filterTask = "vision";
         modal.open();
         await tick();
 
@@ -497,22 +719,26 @@ describe("CatalogModal", () => {
         await tick();
         await tick();
 
-        expect(plugin.api.pullModel).toHaveBeenCalledWith("llava", "native");
-        expect(plugin.api.setVisionModel).toHaveBeenCalledWith("llava");
+        expect(plugin.api.pullModel).toHaveBeenCalledWith("nomic-ai/nomic-embed", "native");
+        expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-ai/nomic-embed");
         expect(plugin.api.setChatModel).not.toHaveBeenCalled();
+        expect(plugin.api.setVisionModel).not.toHaveBeenCalled();
     });
 
-    it("shows Active for active vision model", async () => {
-        const models = [makeCatalogModel({ name: "llava", installed: true })];
-        const plugin = makePlugin({ activeModel: "llama3", activeVisionModel: "llava" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+    it("variant size and description are rendered", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/4B", size_gb: 2.5, description: "Balanced model" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
         await vi.runAllTimersAsync();
 
         const el = modal.contentEl as unknown as MockElement;
-        const active = el.findAll("lilbee-catalog-active");
-        expect(active.length).toBe(1);
+        const texts = collectTexts(el);
+        expect(texts.some(t => t.includes("2.5 GB"))).toBe(true);
+        expect(texts.some(t => t.includes("Balanced model"))).toBe(true);
     });
 });
