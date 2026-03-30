@@ -4,7 +4,7 @@ import { BinaryManager, getLatestRelease, checkForUpdate } from "./binary-manage
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { LilbeeSettingTab } from "./settings";
-import { DEFAULT_SETTINGS, NOTICE, SERVER_MODE, SSE_EVENT, type LilbeeSettings, type ServerMode, type ServerState, type SSEEvent, type SyncDone } from "./types";
+import { DEFAULT_SETTINGS, NOTICE, SERVER_MODE, SSE_EVENT, type LilbeeSettings, type ServerMode, type ServerState, type SSEEvent, type SyncDone, type VaultAdapter } from "./types";
 import { CatalogModal } from "./views/catalog-modal";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
 import { CrawlModal } from "./views/crawl-modal";
@@ -228,8 +228,12 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private getPluginDir(): string {
-        const adapter = this.app.vault.adapter as unknown as { getBasePath(): string };
-        return `${adapter.getBasePath()}/.obsidian/plugins/lilbee`;
+        return `${this.getVaultBasePath()}/.obsidian/plugins/lilbee`;
+    }
+
+    private getVaultBasePath(): string {
+        const adapter = this.app.vault.adapter as unknown as VaultAdapter;
+        return adapter.getBasePath();
     }
 
     private registerCommands(): void {
@@ -404,8 +408,7 @@ export default class LilbeePlugin extends Plugin {
     async addToLilbee(file: TAbstractFile): Promise<void> {
         if (!this.statusBarEl) return;
         if (!this.assertActiveModel()) return;
-        const adapter = this.app.vault.adapter as unknown as { getBasePath(): string };
-        const absolutePath = `${adapter.getBasePath()}/${file.path}`;
+        const absolutePath = `${this.getVaultBasePath()}/${file.path}`;
         new Notice(`lilbee: adding ${file.name ?? file.path}...`);
         await this.runAdd([absolutePath]);
     }

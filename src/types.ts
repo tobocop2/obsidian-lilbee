@@ -238,3 +238,7 @@ export interface ConfigUpdateResponse {
 export interface EmbeddingModelResponse {
     model: string;
 }
+
+export interface VaultAdapter {
+    getBasePath(): string;
+}
