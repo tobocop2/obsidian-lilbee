@@ -6,10 +6,18 @@ import { NOTICE, SSE_EVENT } from "../../src/types";
 import type { ModelFamily, ModelVariant, CatalogResponse } from "../../src/types";
 
 let mockConfirmResult = true;
+let mockConfirmRemoveResult = true;
 vi.mock("../../src/views/confirm-pull-modal", () => ({
     ConfirmPullModal: vi.fn().mockImplementation(() => ({
         open: vi.fn(),
         get result() { return Promise.resolve(mockConfirmResult); },
+        close: vi.fn(),
+    })),
+}));
+vi.mock("../../src/views/confirm-modal", () => ({
+    ConfirmModal: vi.fn().mockImplementation(() => ({
+        open: vi.fn(),
+        get result() { return Promise.resolve(mockConfirmRemoveResult); },
         close: vi.fn(),
     })),
 }));
@@ -54,6 +62,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
             setChatModel: vi.fn().mockResolvedValue({ model: "test/model-4B" }),
             setVisionModel: vi.fn().mockResolvedValue({ model: "" }),
             setEmbeddingModel: vi.fn().mockResolvedValue({ model: "" }),
+            deleteModel: vi.fn().mockResolvedValue({ deleted: true, model: "", freed_gb: 2.5 }),
         },
         activeModel: "test/model-4B",
         activeVisionModel: "",
@@ -86,6 +95,7 @@ describe("CatalogModal", () => {
     beforeEach(() => {
         Notice.clear();
         mockConfirmResult = true;
+        mockConfirmRemoveResult = true;
         vi.useFakeTimers();
     });
 
@@ -723,6 +733,129 @@ describe("CatalogModal", () => {
         expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-ai/nomic-embed");
         expect(plugin.api.setChatModel).not.toHaveBeenCalled();
         expect(plugin.api.setVisionModel).not.toHaveBeenCalled();
+    });
+
+    it("Remove button appears for installed non-active variants", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const removeBtns = el.findAll("lilbee-catalog-remove");
+        expect(removeBtns.length).toBe(1);
+        expect(removeBtns[0].textContent).toBe("Remove");
+    });
+
+    it("Remove button does NOT appear for non-installed variants", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: false })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const removeBtns = el.findAll("lilbee-catalog-remove");
+        expect(removeBtns.length).toBe(0);
+    });
+
+    it("Remove button does NOT appear for active variants", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true })],
+        })];
+        const plugin = makePlugin({ activeModel: "test/model-4B" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const removeBtns = el.findAll("lilbee-catalog-remove");
+        expect(removeBtns.length).toBe(0);
+    });
+
+    it("clicking Remove shows confirmation modal", async () => {
+        vi.useRealTimers();
+        mockConfirmRemoveResult = false;
+        const { ConfirmModal } = await import("../../src/views/confirm-modal");
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const removeBtn = el.findAll("lilbee-catalog-remove")[0];
+        removeBtn.trigger("click");
+        await tick();
+
+        expect(ConfirmModal).toHaveBeenCalledWith(
+            expect.anything(),
+            "Remove test/model-4B? This deletes the model file from disk.",
+        );
+        expect(plugin.api.deleteModel).not.toHaveBeenCalled();
+    });
+
+    it("confirming Remove calls deleteModel and refreshes catalog", async () => {
+        vi.useRealTimers();
+        mockConfirmRemoveResult = true;
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true, source: "native" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const removeBtn = el.findAll("lilbee-catalog-remove")[0];
+        removeBtn.trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.api.deleteModel).toHaveBeenCalledWith("test/model-4B", "native");
+        expect(Notice.instances.some(n => n.message.includes("Removed test/model-4B"))).toBe(true);
+        expect(plugin.fetchActiveModel).toHaveBeenCalled();
+    });
+
+    it("Remove failure shows error notice and re-enables button", async () => {
+        vi.useRealTimers();
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.deleteModel.mockRejectedValue(new Error("network error"));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const removeBtn = el.findAll("lilbee-catalog-remove")[0];
+        removeBtn.trigger("click");
+        await tick();
+        await tick();
+
+        expect(Notice.instances.some(n => n.message.includes("Failed to remove"))).toBe(true);
+        expect(removeBtn.textContent).toBe("Remove");
+        expect(removeBtn.disabled).toBe(false);
     });
 
     it("variant size and description are rendered", async () => {
