@@ -1,7 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { ModelFamily, ModelVariant, CatalogResponse, ModelType, SSEEvent } from "../types";
-import { MODEL_TYPE, NOTICE, SSE_EVENT } from "../types";
+import type { ModelFamily, ModelVariant, CatalogResponse } from "../types";
+import { NOTICE, SSE_EVENT } from "../types";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import { PullQueue } from "../pull-queue";
 
@@ -167,9 +167,14 @@ export class CatalogModal extends Modal {
         const row = container.createDiv({ cls: "lilbee-catalog-variant-row" });
 
         const isRecommended = variant.name === family.recommended;
+        const displayName = variant.display_name ?? variant.name;
         const nameCls = isRecommended ? "lilbee-catalog-variant-name lilbee-catalog-recommended" : "lilbee-catalog-variant-name";
-        const nameText = isRecommended ? `${variant.name} \u2605` : variant.name;
+        const nameText = isRecommended ? `${displayName} \u2605` : displayName;
         row.createEl("span", { text: nameText, cls: nameCls });
+
+        if (variant.quality_tier) {
+            row.createEl("span", { text: variant.quality_tier, cls: "lilbee-catalog-variant-tier" });
+        }
 
         row.createEl("span", { text: `${variant.size_gb} GB`, cls: "lilbee-catalog-variant-size" });
         row.createEl("span", { text: variant.description, cls: "lilbee-catalog-variant-desc" });
@@ -222,6 +227,8 @@ export class CatalogModal extends Modal {
             if (variant.task === "vision") {
                 await this.plugin.api.setVisionModel(variant.hf_repo);
                 this.plugin.activeVisionModel = variant.hf_repo;
+            } else if (variant.task === "embedding") {
+                await this.plugin.api.setEmbeddingModel(variant.hf_repo);
             } else {
                 await this.plugin.api.setChatModel(variant.hf_repo);
                 this.plugin.activeModel = variant.hf_repo;

@@ -189,6 +189,8 @@ export interface ModelVariant {
     task: string;
     installed: boolean;
     source: "native" | "litellm";
+    display_name?: string;
+    quality_tier?: string;
 }
 
 export interface ModelFamily {

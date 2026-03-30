@@ -53,6 +53,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
             pullModel: vi.fn(),
             setChatModel: vi.fn().mockResolvedValue({ model: "test/model-4B" }),
             setVisionModel: vi.fn().mockResolvedValue({ model: "" }),
+            setEmbeddingModel: vi.fn().mockResolvedValue({ model: "" }),
         },
         activeModel: "test/model-4B",
         activeVisionModel: "",
@@ -626,6 +627,102 @@ describe("CatalogModal", () => {
         const el = modal.contentEl as unknown as MockElement;
         const familyEls = el.findAll("lilbee-catalog-family");
         expect(familyEls.length).toBe(2);
+    });
+
+    it("variant display_name is used when present", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", display_name: "Qwen3 4B Instruct", hf_repo: "test/4B" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const texts = collectTexts(el);
+        expect(texts.some(t => t.includes("Qwen3 4B Instruct"))).toBe(true);
+        expect(texts.some(t => t === "4B")).toBe(false);
+    });
+
+    it("variant falls back to name when display_name is absent", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/4B" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const names = el.findAll("lilbee-catalog-variant-name");
+        expect(names.length).toBe(1);
+        expect(names[0].textContent).toContain("4B");
+    });
+
+    it("quality_tier badge is shown when present", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/4B", quality_tier: "recommended" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const tiers = el.findAll("lilbee-catalog-variant-tier");
+        expect(tiers.length).toBe(1);
+        expect(tiers[0].textContent).toBe("recommended");
+    });
+
+    it("quality_tier badge is not rendered when absent", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/4B" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const tiers = el.findAll("lilbee-catalog-variant-tier");
+        expect(tiers.length).toBe(0);
+    });
+
+    it("Pull on embedding variant calls setEmbeddingModel, not setChatModel", async () => {
+        vi.useRealTimers();
+        const families = [makeFamily({
+            task: "embedding",
+            variants: [makeVariant({ name: "nomic", hf_repo: "nomic-ai/nomic-embed", installed: false, task: "embedding" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.pullModel.mockReturnValue((async function* () {
+            yield { event: SSE_EVENT.PROGRESS, data: { current: 100, total: 100 } };
+        })());
+        plugin.api.setEmbeddingModel.mockResolvedValue({ model: "nomic-ai/nomic-embed" });
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const pullBtn = el.findAll("lilbee-catalog-pull")[0];
+        pullBtn.trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.api.pullModel).toHaveBeenCalledWith("nomic-ai/nomic-embed", "native");
+        expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-ai/nomic-embed");
+        expect(plugin.api.setChatModel).not.toHaveBeenCalled();
+        expect(plugin.api.setVisionModel).not.toHaveBeenCalled();
     });
 
     it("variant size and description are rendered", async () => {
