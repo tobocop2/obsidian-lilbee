@@ -16,7 +16,6 @@ export interface ServerManagerOptions {
     dataDir: string;
     port: number | null;
     systemPrompt: string;
-    hfToken: string;
     onStateChange?: (state: ServerState) => void;
     onRestartsExhausted?: (stderr: string) => void;
 }
@@ -96,9 +95,6 @@ export class ServerManager {
         };
         if (this.opts.systemPrompt) {
             env.LILBEE_SYSTEM_PROMPT = this.opts.systemPrompt;
-        }
-        if (this.opts.hfToken) {
-            env.HF_TOKEN = this.opts.hfToken;
         }
 
         this._stderrLines = [];

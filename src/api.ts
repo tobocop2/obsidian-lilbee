@@ -25,9 +25,6 @@ export class LilbeeClient {
         if (token) this.token = token;
     }
 
-    // TODO: Wire up token loading from plugin settings (hfToken).
-    // Currently deferred — the managed server has no auth enabled,
-    // so the plugin works fine without calling setToken().
     setToken(token: string | null): void {
         this.token = token;
     }

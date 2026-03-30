@@ -43,7 +43,6 @@ function defaultOpts(overrides?: Partial<ServerManagerOptions>): ServerManagerOp
         dataDir: "/tmp/data",
         port: 7433,
         systemPrompt: "",
-        hfToken: "",
         ...overrides,
     };
 }
@@ -143,19 +142,6 @@ describe("ServerManager", () => {
 
             const [, , opts] = spawnSpy.mock.calls[0] as any[];
             expect(opts.env.LILBEE_SYSTEM_PROMPT).toBe("You are a pirate.");
-        });
-
-        it("passes HF_TOKEN env when hfToken is set", async () => {
-            const mgr = new ServerManager(
-                defaultOpts({ hfToken: "hf_test_token_123" }),
-            );
-
-            const startPromise = mgr.start();
-            await vi.advanceTimersByTimeAsync(1000);
-            await startPromise;
-
-            const [, , opts] = spawnSpy.mock.calls[0] as any[];
-            expect(opts.env.HF_TOKEN).toBe("hf_test_token_123");
         });
 
         it("in dynamic port mode (port: null), reads port from file and sets state to ready", async () => {

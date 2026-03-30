@@ -56,7 +56,6 @@ describe("integration: server start", () => {
             dataDir: tempDir,
             port: null,
             systemPrompt: "",
-            hfToken: "",
         });
 
         try {
