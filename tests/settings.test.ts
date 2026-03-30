@@ -244,8 +244,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + systemPrompt + 6 generation + syncDebounce + 3 crawling + 5 advanced = 17
-            expect(textOnChanges.length).toBe(17);
+            // serverPort + hfToken + systemPrompt + 6 generation + syncDebounce + 3 crawling + 5 advanced = 18
+            expect(textOnChanges.length).toBe(18);
         });
 
         it("does NOT show sync-debounce when syncMode is 'manual'", () => {
@@ -253,8 +253,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + systemPrompt + 6 generation + 3 crawling + 5 advanced = 16
-            expect(textOnChanges.length).toBe(16);
+            // serverPort + hfToken + systemPrompt + 6 generation + 3 crawling + 5 advanced = 17
+            expect(textOnChanges.length).toBe(17);
         });
     });
 
@@ -303,8 +303,8 @@ describe("LilbeeSettingTab", () => {
 
     describe("syncDebounce text onChange", () => {
         // With syncMode=auto, text fields are (render order: connection → models → general → sync → generation):
-        // [0] port, [1] syncDebounce, [2] systemPrompt, [3-8] generation settings
-        const DEBOUNCE_IDX = 8;
+        // [0] port, [1] hfToken, [2] systemPrompt, [3-8] generation, [9] syncDebounce
+        const DEBOUNCE_IDX = 9;
 
         it("updates syncDebounceMs for valid positive number", async () => {
             const plugin = makePlugin({ syncMode: "auto" });
@@ -354,6 +354,20 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
+    describe("hfToken setting", () => {
+        it("saves hfToken when changed", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // Index 1 is hfToken (0=serverPort)
+            await textOnChanges[1]("hf_my_secret_token");
+            expect(plugin.settings.hfToken).toBe("hf_my_secret_token");
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+    });
+
     describe("system prompt setting", () => {
         it("saves systemPrompt when changed", async () => {
             const plugin = makePlugin();
@@ -361,8 +375,8 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 1 is systemPrompt (0=serverUrl)
-            await textOnChanges[1]("You are a pirate.");
+            // Index 2 is systemPrompt (0=serverPort, 1=hfToken)
+            await textOnChanges[2]("You are a pirate.");
             expect(plugin.settings.systemPrompt).toBe("You are a pirate.");
             expect(plugin.saveSettings).toHaveBeenCalled();
         });
@@ -370,12 +384,12 @@ describe("LilbeeSettingTab", () => {
 
     describe("generation settings", () => {
         const GEN_FIELDS = [
-            { idx: 2, key: "temperature", value: "0.7", expected: 0.7 },
-            { idx: 3, key: "top_p", value: "0.9", expected: 0.9 },
-            { idx: 4, key: "top_k_sampling", value: "40", expected: 40 },
-            { idx: 5, key: "repeat_penalty", value: "1.1", expected: 1.1 },
-            { idx: 6, key: "num_ctx", value: "4096", expected: 4096 },
-            { idx: 7, key: "seed", value: "42", expected: 42 },
+            { idx: 3, key: "temperature", value: "0.7", expected: 0.7 },
+            { idx: 4, key: "top_p", value: "0.9", expected: 0.9 },
+            { idx: 5, key: "top_k_sampling", value: "40", expected: 40 },
+            { idx: 6, key: "repeat_penalty", value: "1.1", expected: 1.1 },
+            { idx: 7, key: "num_ctx", value: "4096", expected: 4096 },
+            { idx: 8, key: "seed", value: "42", expected: 42 },
         ] as const;
 
         for (const { idx, key, value, expected } of GEN_FIELDS) {
@@ -410,7 +424,7 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[4]("not-a-number");
+            await textOnChanges[5]("not-a-number");
             expect(plugin.settings.top_k_sampling).toBeNull();
         });
 
@@ -420,7 +434,7 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[2]("abc");
+            await textOnChanges[3]("abc");
             expect(plugin.settings.temperature).toBeNull();
         });
 
@@ -446,8 +460,8 @@ describe("LilbeeSettingTab", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // Index 2 is temperature (0=port, 1=systemPrompt)
-            expect(setValues[2]).toBe("0.5");
+            // Index 3 is temperature (0=port, 1=hfToken, 2=systemPrompt)
+            expect(setValues[3]).toBe("0.5");
         });
 
         it("renders inside a <details> element", () => {
@@ -484,8 +498,8 @@ describe("LilbeeSettingTab", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // Indices 2-7 are generation fields (0=port, 1=systemPrompt)
-            for (let i = 2; i <= 7; i++) {
+            // Indices 3-8 are generation fields (0=port, 1=hfToken, 2=systemPrompt)
+            for (let i = 3; i <= 8; i++) {
                 expect(placeholders[i]).toBe("Not set");
             }
         });
@@ -2272,8 +2286,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 11: chunk_size
-            await textOnChanges[11]("512");
+            // Index 12: chunk_size
+            await textOnChanges[12]("512");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512 });
         });
 
@@ -2283,8 +2297,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 12: chunk_overlap
-            await textOnChanges[12]("64");
+            // Index 13: chunk_overlap
+            await textOnChanges[13]("64");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_overlap: 64 });
         });
 
@@ -2294,7 +2308,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("");
+            await textOnChanges[12]("");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2304,7 +2318,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("abc");
+            await textOnChanges[12]("abc");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2314,7 +2328,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("-1");
+            await textOnChanges[12]("-1");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2325,7 +2339,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("512");
+            await textOnChanges[12]("512");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
             mockGenericConfirmResult = true;
         });
@@ -2337,7 +2351,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("512");
+            await textOnChanges[12]("512");
             expect(plugin.triggerSync).toHaveBeenCalled();
         });
 
@@ -2348,7 +2362,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("512");
+            await textOnChanges[12]("512");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
     });
@@ -2360,8 +2374,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 13: Embedding model
-            await textOnChanges[13]("nomic-embed-text");
+            // Index 14: Embedding model
+            await textOnChanges[14]("nomic-embed-text");
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
         });
 
@@ -2371,7 +2385,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[13]("");
+            await textOnChanges[14]("");
             expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
         });
 
@@ -2382,7 +2396,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[13]("nomic-embed-text");
+            await textOnChanges[14]("nomic-embed-text");
             expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
             mockGenericConfirmResult = true;
         });
@@ -2394,7 +2408,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[13]("nomic-embed-text");
+            await textOnChanges[14]("nomic-embed-text");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update embedding model"))).toBe(true);
         });
     });
@@ -2406,8 +2420,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Indices 8-10: crawl_max_depth, crawl_max_pages, crawl_timeout
-            await textOnChanges[8]("3");
+            // Indices 9-11: crawl_max_depth, crawl_max_pages, crawl_timeout
+            await textOnChanges[9]("3");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_depth: 3 });
         });
 
@@ -2417,7 +2431,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[9]("100");
+            await textOnChanges[10]("100");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_pages: 100 });
         });
 
@@ -2427,7 +2441,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[8]("");
+            await textOnChanges[9]("");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2437,7 +2451,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[8]("abc");
+            await textOnChanges[9]("abc");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2447,7 +2461,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[8]("-5");
+            await textOnChanges[9]("-5");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2458,7 +2472,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[8]("3");
+            await textOnChanges[9]("3");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
     });
@@ -2504,8 +2518,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 14: API key (0=port, 1=systemPrompt, 2-7=gen fields, 8-10=crawl, 11-12=advanced, 13=embedding model, 14=api key)
-            await textOnChanges[14]("sk-test123");
+            // Index 15: API key (0=port, 1=hfToken, 2=systemPrompt, 3-8=gen fields, 9-11=crawl, 12-13=advanced, 14=embedding model, 15=api key)
+            await textOnChanges[15]("sk-test123");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_api_key: "sk-test123" });
         });
 
@@ -2515,7 +2529,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[14]("");
+            await textOnChanges[15]("");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2526,7 +2540,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[14]("sk-test123");
+            await textOnChanges[15]("sk-test123");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to save API key"))).toBe(true);
         });
     });
@@ -2538,8 +2552,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 15: LiteLLM base URL
-            await textOnChanges[15]("http://localhost:4000");
+            // Index 16: LiteLLM base URL
+            await textOnChanges[16]("http://localhost:4000");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ litellm_base_url: "http://localhost:4000" });
         });
 
@@ -2549,7 +2563,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[15]("  ");
+            await textOnChanges[16]("  ");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2560,7 +2574,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[15]("http://localhost:4000");
+            await textOnChanges[16]("http://localhost:4000");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update LiteLLM URL"))).toBe(true);
         });
     });

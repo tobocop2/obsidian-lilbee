@@ -1,7 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { CatalogModel, CatalogResponse, ModelType, SSEEvent } from "../types";
-import { MODEL_TYPE, NOTICE, SSE_EVENT } from "../types";
+import type { CatalogModel, CatalogResponse } from "../types";
+import { NOTICE, SSE_EVENT } from "../types";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import { PullQueue } from "../pull-queue";
 
@@ -196,7 +196,9 @@ export class CatalogModal extends Modal {
                     }
                 }
             }
-            if (this.filterTask === "vision") {
+            if (this.filterTask === "embedding") {
+                await this.plugin.api.setEmbeddingModel(model.name);
+            } else if (this.filterTask === "vision") {
                 await this.plugin.api.setVisionModel(model.name);
                 this.plugin.activeVisionModel = model.name;
             } else {

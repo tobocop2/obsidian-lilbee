@@ -183,6 +183,20 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }),
             );
 
+        new Setting(containerEl)
+            .setName("HuggingFace token")
+            .setDesc("Optional — needed for gated models like Mistral and Llama. Get a free token at huggingface.co/settings/tokens")
+            .addText((text) => {
+                text
+                    .setPlaceholder("")
+                    .setValue(this.plugin.settings.hfToken)
+                    .onChange(async (value) => {
+                        this.plugin.settings.hfToken = value;
+                        await this.plugin.saveSettings();
+                    });
+                text.inputEl.type = "password";
+            });
+
         const updateSetting = new Setting(containerEl)
             .setName("Server version")
             .setDesc(this.plugin.settings.lilbeeVersion || "Unknown");

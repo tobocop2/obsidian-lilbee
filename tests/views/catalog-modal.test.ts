@@ -476,6 +476,33 @@ describe("CatalogModal", () => {
         // Should not throw
     });
 
+    it("Pull with embedding filter calls setEmbeddingModel instead of setChatModel", async () => {
+        vi.useRealTimers();
+        const models = [makeCatalogModel({ name: "nomic-embed", installed: false })];
+        const plugin = makePlugin({ activeModel: "llama3" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(models));
+        plugin.api.pullModel.mockReturnValue((async function* () {
+            yield { event: SSE_EVENT.PROGRESS, data: { current: 100, total: 100 } };
+        })());
+        plugin.api.setEmbeddingModel = vi.fn().mockResolvedValue({ model: "nomic-embed" });
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        (modal as any).filterTask = "embedding";
+        modal.open();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const pullBtn = el.findAll("lilbee-catalog-pull")[0];
+        pullBtn.trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.api.pullModel).toHaveBeenCalledWith("nomic-embed", "native");
+        expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed");
+        expect(plugin.api.setChatModel).not.toHaveBeenCalled();
+        expect(plugin.api.setVisionModel).not.toHaveBeenCalled();
+    });
+
     it("Pull with vision filter sets vision model instead of chat model", async () => {
         vi.useRealTimers();
         const models = [makeCatalogModel({ name: "llava", installed: false })];

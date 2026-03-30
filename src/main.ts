@@ -123,6 +123,7 @@ export default class LilbeePlugin extends Plugin {
                     dataDir: `${pluginDir}/server-data`,
                     port: this.settings.serverPort,
                     systemPrompt: this.settings.systemPrompt,
+                    hfToken: this.settings.hfToken,
                     onStateChange: (state) => this.handleServerStateChange(state),
                     onRestartsExhausted: (stderr: string) => {
                         if (this.serverStartFailed) return;
