@@ -144,11 +144,8 @@ export class CatalogModal extends Modal {
     private renderRow(model: CatalogModel): void {
         if (!this.resultsEl) return;
         const row = this.resultsEl.createDiv({ cls: "lilbee-catalog-row" });
-        row.createDiv({ cls: "lilbee-catalog-row-name", text: model.display_name ?? model.name });
-        const sizeEl = row.createDiv({ cls: "lilbee-catalog-row-size", text: `${model.size_gb} GB` });
-        if (model.quality_tier) {
-            sizeEl.createEl("span", { text: model.quality_tier, cls: "lilbee-catalog-quality-tier" });
-        }
+        row.createDiv({ cls: "lilbee-catalog-row-name", text: model.name });
+        row.createDiv({ cls: "lilbee-catalog-row-size", text: `${model.size_gb} GB` });
         row.createDiv({ cls: "lilbee-catalog-row-desc", text: model.description });
 
         const actionEl = row.createDiv({ cls: "lilbee-catalog-row-action" });
