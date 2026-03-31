@@ -246,3 +246,36 @@ export interface EmbeddingModelResponse {
 export interface VaultAdapter {
     getBasePath(): string;
 }
+
+export type TaskStatus = "queued" | "active" | "done" | "failed" | "cancelled";
+
+export const TASK_STATUS = {
+    QUEUED: "queued",
+    ACTIVE: "active",
+    DONE: "done",
+    FAILED: "failed",
+    CANCELLED: "cancelled",
+} as const satisfies Record<string, TaskStatus>;
+
+export type TaskType = "sync" | "add" | "pull" | "crawl" | "download";
+
+export const TASK_TYPE = {
+    SYNC: "sync",
+    ADD: "add",
+    PULL: "pull",
+    CRAWL: "crawl",
+    DOWNLOAD: "download",
+} as const satisfies Record<string, TaskType>;
+
+export interface TaskEntry {
+    id: string;
+    name: string;
+    type: TaskType;
+    status: TaskStatus;
+    progress: number;
+    detail: string;
+    startedAt: number;
+    completedAt: number | null;
+    error: string | null;
+    canCancel: boolean;
+}
