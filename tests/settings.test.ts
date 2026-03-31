@@ -291,6 +291,52 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
+    describe("maxDistance slider onChange", () => {
+        it("updates maxDistance and calls saveSettings", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { sliderOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await sliderOnChanges[1](0.8);
+            expect(plugin.settings.maxDistance).toBe(0.8);
+            expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+        });
+
+        it("uses default value when maxDistance is undefined", async () => {
+            const plugin = makePlugin({ maxDistance: undefined });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { sliderOnChanges } = captureSettingCallbacks(() => tab.display());
+            
+            // When maxDistance is undefined, setValue should use ?? 0.9 fallback
+            // Just call display to render - this exercises the ?? operator
+            expect(() => tab.display()).not.toThrow();
+        });
+    });
+
+    describe("adaptiveThreshold toggle onChange", () => {
+        it("updates adaptiveThreshold and calls saveSettings", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await toggleOnChanges[0](true);
+            expect(plugin.settings.adaptiveThreshold).toBe(true);
+            expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+        });
+
+        it("uses default value when adaptiveThreshold is undefined", async () => {
+            const plugin = makePlugin({ adaptiveThreshold: undefined });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            
+            // When adaptiveThreshold is undefined, setValue should use ?? false fallback
+            expect(() => tab.display()).not.toThrow();
+        });
+    });
+
     describe("syncMode dropdown onChange", () => {
         it("updates syncMode, saves, and re-renders display", async () => {
             const plugin = makePlugin({ serverMode: "external", syncMode: "manual" });

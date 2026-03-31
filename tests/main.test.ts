@@ -1171,6 +1171,26 @@ describe("LilbeePlugin", () => {
             expect(statusTexts.some((t) => t.includes("syncing") && t.includes("llama3"))).toBe(true);
         });
 
+        it("startTask and endTask track active tasks", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            plugin.startTask("task-1", "syncing");
+            expect((plugin as any).activeTasks.size).toBe(1);
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: syncing");
+
+            plugin.startTask("task-2", "adding files");
+            expect((plugin as any).activeTasks.size).toBe(2);
+            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: 2 tasks");
+
+            plugin.endTask("task-1");
+            expect((plugin as any).activeTasks.size).toBe(1);
+
+            plugin.endTask("task-2");
+            expect((plugin as any).activeTasks.size).toBe(0);
+        });
+
         it("updateStatusBar no-ops when statusBarEl is null", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
