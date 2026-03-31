@@ -4,13 +4,15 @@ import { BinaryManager, getLatestRelease, checkForUpdate } from "./binary-manage
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { LilbeeSettingTab } from "./settings";
-import { DEFAULT_SETTINGS, NOTICE, SERVER_MODE, SSE_EVENT, type LilbeeSettings, type ServerMode, type ServerState, type SSEEvent, type SyncDone, type VaultAdapter } from "./types";
+import { DEFAULT_SETTINGS, NOTICE, SERVER_MODE, SSE_EVENT, TASK_TYPE, type LilbeeSettings, type ServerMode, type ServerState, type SSEEvent, type SyncDone, type VaultAdapter } from "./types";
 import { CatalogModal } from "./views/catalog-modal";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
 import { CrawlModal } from "./views/crawl-modal";
 import { DocumentsModal } from "./views/documents-modal";
 import { SearchModal } from "./views/search-modal";
 import { SetupWizard } from "./views/setup-wizard";
+import { TaskCenterView, VIEW_TYPE_TASKS } from "./views/task-center";
+import { TaskQueue } from "./task-queue";
 
 
 function summarizeSyncResult(done: SyncDone): string {
@@ -28,7 +30,6 @@ export default class LilbeePlugin extends Plugin {
     activeModel = "";
     activeVisionModel = "";
     statusBarEl: HTMLElement | null = null;
-    onProgress: ((event: SSEEvent) => void) | null = null;
     binaryManager: BinaryManager | null = null;
     serverManager: ServerManager | null = null;
     syncController: AbortController | null = null;
@@ -37,14 +38,18 @@ export default class LilbeePlugin extends Plugin {
     private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
     private startingServer = false;
     private serverStartFailed = false;
-    private activeTasks: Map<string, string> = new Map();
+    taskQueue: TaskQueue = new TaskQueue();
 
     async onload(): Promise<void> {
         await this.loadSettings();
 
         this.statusBarEl = this.addStatusBarItem();
+        this.statusBarEl.style.cursor = "pointer";
+        this.statusBarEl.addEventListener("click", () => this.activateTaskView());
         this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
+        this.registerView(VIEW_TYPE_TASKS, (leaf) => new TaskCenterView(leaf, this));
         this.addSettingTab(new LilbeeSettingTab(this.app, this));
+        this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
         this.registerCommands();
 
         this.registerEvent(
@@ -310,6 +315,12 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "lilbee:tasks",
+            name: "Show task center",
+            callback: () => this.activateTaskView(),
+        });
+
+        this.addCommand({
             id: "lilbee:status",
             name: "Show status",
             callback: async () => {
@@ -384,21 +395,19 @@ export default class LilbeePlugin extends Plugin {
         this.setStatusClass("lilbee-status-ready");
     }
 
-    startTask(id: string, name: string): void {
-        this.activeTasks.set(id, name);
-        this.updateTaskStatusBar();
-    }
+    private updateStatusBarFromQueue(): void {
+        const active = this.taskQueue.active;
+        const queued = this.taskQueue.queued;
 
-    endTask(id: string): void {
-        this.activeTasks.delete(id);
-        this.updateTaskStatusBar();
-    }
+        if (!active && queued.length === 0) {
+            this.setStatusReady();
+            return;
+        }
 
-    private updateTaskStatusBar(): void {
-        if (this.activeTasks.size > 0) {
-            const tasks = Array.from(this.activeTasks.values());
-            const taskText = tasks.length === 1 ? tasks[0] : `${tasks.length} tasks`;
-            this.updateStatusBar(`lilbee: ${taskText}`);
+        if (active) {
+            const suffix = queued.length > 0 ? ` +${queued.length}` : "";
+            const pct = active.progress > 0 ? ` ${active.progress}%` : "";
+            this.updateStatusBar(`lilbee: ${active.name}${pct}${suffix}`);
             this.setStatusClass("lilbee-status-adding");
         }
     }
@@ -433,49 +442,49 @@ export default class LilbeePlugin extends Plugin {
         await this.runAdd([absolutePath]);
     }
 
-    private emitProgress(event: SSEEvent): void {
-        if (this.onProgress) this.onProgress(event);
-    }
-
     cancelSync(): void {
         this.syncController?.abort();
         this.syncController = null;
     }
 
     private async runAdd(paths: string[]): Promise<void> {
-        const taskId = "add-" + Date.now();
-        this.startTask(taskId, "adding files");
+        const taskId = this.taskQueue.enqueue("Adding files", TASK_TYPE.ADD);
         this.syncController = new AbortController();
 
         try {
             let lastEvent: SSEEvent | null = null;
             for await (const event of this.api.addFiles(paths, false, this.activeVisionModel || undefined, this.syncController.signal)) {
-                this.emitProgress(event);
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };
-                    this.updateStatusBar(`lilbee: adding ${d.current_file}/${d.total_files}`);
+                    const pct = Math.round((d.current_file / d.total_files) * 100);
+                    this.taskQueue.update(taskId, pct, `file ${d.current_file}/${d.total_files}`);
+                } else if (event.event === SSE_EVENT.EXTRACT) {
+                    const d = event.data as { page: number; total_pages: number; file: string };
+                    this.taskQueue.update(taskId, -1, `extracting ${d.file} p${d.page}/${d.total_pages}`);
+                } else if (event.event === SSE_EVENT.EMBED) {
+                    const d = event.data as { chunk: number; total_chunks: number };
+                    this.taskQueue.update(taskId, -1, `embedding chunk ${d.chunk}/${d.total_chunks}`);
                 }
                 lastEvent = event;
             }
 
             if (lastEvent?.event === SSE_EVENT.DONE) {
-                this.emitProgress(lastEvent);
                 const summary = summarizeSyncResult(lastEvent.data as SyncDone);
                 new Notice(summary ? `lilbee: ${summary}` : "lilbee: nothing new to add");
             }
+            this.taskQueue.complete(taskId);
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
                 new Notice("lilbee: add cancelled");
+                this.taskQueue.cancel(taskId);
             } else {
                 console.error("[lilbee] add failed:", err);
                 const msg = err instanceof Error ? err.message : "cannot connect to server";
                 new Notice(`lilbee: add failed — ${msg}`);
+                this.taskQueue.fail(taskId, msg);
             }
         } finally {
             this.syncController = null;
-            this.endTask(taskId);
-            this.setStatusReady();
-            this.emitProgress({ event: SSE_EVENT.DONE, data: null });
         }
     }
 
@@ -492,6 +501,19 @@ export default class LilbeePlugin extends Plugin {
             this.app.vault.offref(ref as any);
         }
         this.autoSyncRefs = [];
+    }
+
+    async activateTaskView(): Promise<void> {
+        const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_TASKS);
+        if (existing.length > 0) {
+            this.app.workspace.revealLeaf(existing[0]);
+            return;
+        }
+        const leaf = this.app.workspace.getRightLeaf(false);
+        if (leaf) {
+            await leaf.setViewState({ type: VIEW_TYPE_TASKS, active: true });
+            this.app.workspace.revealLeaf(leaf);
+        }
     }
 
     async activateChatView(): Promise<void> {
@@ -533,37 +555,42 @@ export default class LilbeePlugin extends Plugin {
 
     async triggerSync(): Promise<void> {
         if (!this.statusBarEl) return;
-        const taskId = "sync-" + Date.now();
-        this.startTask(taskId, "syncing");
+        const taskId = this.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
         this.syncController = new AbortController();
 
         try {
             let lastEvent: SSEEvent | null = null;
             for await (const event of this.api.syncStream(!!this.activeVisionModel, this.syncController.signal)) {
-                this.emitProgress(event);
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };
-                    this.updateStatusBar(`lilbee: syncing ${d.current_file}/${d.total_files}`);
+                    const pct = Math.round((d.current_file / d.total_files) * 100);
+                    this.taskQueue.update(taskId, pct, `syncing ${d.current_file}/${d.total_files}`);
+                } else if (event.event === SSE_EVENT.EXTRACT) {
+                    const d = event.data as { page: number; total_pages: number; file: string };
+                    this.taskQueue.update(taskId, -1, `extracting ${d.file} p${d.page}/${d.total_pages}`);
+                } else if (event.event === SSE_EVENT.EMBED) {
+                    const d = event.data as { chunk: number; total_chunks: number };
+                    this.taskQueue.update(taskId, -1, `embedding chunk ${d.chunk}/${d.total_chunks}`);
                 }
                 lastEvent = event;
             }
 
             if (lastEvent?.event === SSE_EVENT.DONE) {
-                this.emitProgress(lastEvent);
                 const summary = summarizeSyncResult(lastEvent.data as SyncDone);
                 if (summary) new Notice(`lilbee: synced — ${summary}`);
             }
+            this.taskQueue.complete(taskId);
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
                 new Notice("lilbee: sync cancelled");
+                this.taskQueue.cancel(taskId);
             } else {
                 console.error("[lilbee] sync failed:", err);
                 new Notice("lilbee: sync failed — cannot connect to server");
+                this.taskQueue.fail(taskId, "cannot connect to server");
             }
         } finally {
             this.syncController = null;
-            this.setStatusReady();
-            this.emitProgress({ event: SSE_EVENT.DONE, data: null });
         }
     }
 }

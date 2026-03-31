@@ -20,6 +20,7 @@ export class MockElement {
     value: string = "";
     disabled: boolean = false;
     placeholder: string = "";
+    title: string = "";
     parentElement: MockElement | null = null;
 
     constructor(tag = "div") {
@@ -120,6 +121,24 @@ export class MockElement {
             return this.find(selector.slice(1));
         }
         return null;
+    }
+
+    querySelectorAll(selector: string): MockElement[] {
+        if (selector.startsWith(".")) {
+            return this.findAll(selector.slice(1));
+        }
+        return [];
+    }
+
+    createSpan(opts?: { cls?: string; text?: string }): MockElement {
+        const el = new MockElement("span");
+        if (opts) {
+            if (opts.cls) opts.cls.split(" ").forEach(c => el.classList.add(c));
+            if (opts.text) el.textContent = opts.text;
+        }
+        el.parentElement = this;
+        this.children.push(el);
+        return el;
     }
 
     remove(): void {
@@ -224,12 +243,14 @@ export class ItemView {
     app: App;
     leaf: WorkspaceLeaf;
     containerEl: { children: MockElement[] };
+    contentEl: MockElement;
 
     constructor(leaf: WorkspaceLeaf) {
         this.leaf = leaf;
         this.app = leaf.app ?? new App();
         const content = new MockElement("div");
         this.containerEl = { children: [new MockElement("div"), content] };
+        this.contentEl = new MockElement("div");
     }
 
     getViewType(): string { return ""; }

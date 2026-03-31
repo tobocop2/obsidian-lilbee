@@ -3,12 +3,14 @@ import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { CrawlModal } from "../../src/views/crawl-modal";
 import { SSE_EVENT } from "../../src/types";
+import { TaskQueue } from "../../src/task-queue";
 
 function makePlugin() {
     return {
         api: {
             crawl: vi.fn(),
         },
+        taskQueue: new TaskQueue(),
     };
 }
 

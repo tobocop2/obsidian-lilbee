@@ -1,6 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import { SSE_EVENT } from "../types";
+import { SSE_EVENT, TASK_TYPE } from "../types";
 
 export class CrawlModal extends Modal {
     private plugin: LilbeePlugin;
@@ -86,6 +86,7 @@ export class CrawlModal extends Modal {
     private async executeCrawl(url: string, depth: number, maxPages: number, crawlBtn?: HTMLElement): Promise<void> {
         if (this.progressEl) this.progressEl.textContent = "Crawling...";
         this.crawlController = new AbortController();
+        const taskId = this.plugin.taskQueue.enqueue(`Crawl ${url}`, TASK_TYPE.CRAWL);
         try {
             let pageCount = 0;
             for await (const event of this.plugin.api.crawl(url, depth, maxPages, this.crawlController.signal)) {
@@ -97,16 +98,19 @@ export class CrawlModal extends Modal {
                         pageCount++;
                         const d = event.data as { url?: string };
                         if (this.progressEl) this.progressEl.textContent = `Crawled ${pageCount} pages — ${d.url ?? ""}`;
+                        this.plugin.taskQueue.update(taskId, -1, `${pageCount} pages`);
                         break;
                     }
                     case SSE_EVENT.CRAWL_DONE: {
                         const d = event.data as { pages_crawled?: number };
+                        this.plugin.taskQueue.complete(taskId);
                         new Notice(`lilbee: crawl done — ${d.pages_crawled ?? pageCount} pages`);
                         this.decide(true);
                         return;
                     }
                     case SSE_EVENT.CRAWL_ERROR: {
                         const d = event.data as { message?: string };
+                        this.plugin.taskQueue.fail(taskId, d.message ?? "unknown");
                         new Notice(`lilbee: crawl error — ${d.message ?? "unknown"}`);
                         if (this.progressEl) this.progressEl.textContent = `Error: ${d.message ?? "unknown"}`;
                         if (crawlBtn) (crawlBtn as HTMLButtonElement).disabled = false;
@@ -116,9 +120,11 @@ export class CrawlModal extends Modal {
                 }
             }
             // Stream ended without DONE/ERROR
+            this.plugin.taskQueue.complete(taskId);
             this.decide(true);
         } catch (err) {
             const msg = err instanceof Error ? err.message : "unknown error";
+            this.plugin.taskQueue.fail(taskId, msg);
             new Notice(`lilbee: crawl failed — ${msg}`);
             if (this.progressEl) this.progressEl.textContent = `Failed: ${msg}`;
             if (crawlBtn) (crawlBtn as HTMLButtonElement).disabled = false;

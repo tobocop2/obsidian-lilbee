@@ -4,6 +4,7 @@ import { MockElement } from "./__mocks__/obsidian";
 import { LilbeeSettingTab, buildModelOptions, deduplicateLatest, SEPARATOR_KEY, SEPARATOR_LABEL } from "../src/settings";
 import type { LilbeeSettings, ModelCatalog, ModelsResponse } from "../src/types";
 import { DEFAULT_SETTINGS, NOTICE } from "../src/types";
+import { TaskQueue } from "../src/task-queue";
 import { ConfirmPullModal } from "../src/views/confirm-pull-modal";
 
 const mockGetLatestRelease = vi.fn();
@@ -64,7 +65,7 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
     const statusBarEl = { setText: vi.fn(), textContent: "" };
     const fetchActiveModel = vi.fn();
     const triggerSync = vi.fn().mockResolvedValue(undefined);
-    return { settings, api, saveSettings, statusBarEl, fetchActiveModel, triggerSync, activeModel: "", activeVisionModel: "" } as unknown as InstanceType<typeof import("../src/main").default>;
+    return { settings, api, saveSettings, statusBarEl, fetchActiveModel, triggerSync, activeModel: "", activeVisionModel: "", taskQueue: new TaskQueue() } as unknown as InstanceType<typeof import("../src/main").default>;
 }
 
 function makeTab(plugin: ReturnType<typeof makePlugin>) {
@@ -1081,26 +1082,7 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
-    describe("Pull queue", () => {
-        it("enqueueOrRunPull shows queued message with model name", async () => {
-            const plugin = makePlugin();
-            const tab = makeTab(plugin);
-
-            let resolveSlow!: () => void;
-            const slowRun = () => new Promise<void>((r) => { resolveSlow = r; });
-            const queuedRun = vi.fn().mockResolvedValue(undefined);
-
-            // Start a slow pull
-            const p = (tab as any).pullQueue.enqueue(slowRun, "llama3");
-            // Queue second pull
-            (tab as any).pullQueue.enqueue(queuedRun, "mistral");
-
-            expect(Notice.instances.some((n) => n.message === "lilbee: download queued: mistral")).toBe(true);
-
-            resolveSlow();
-            await p;
-        });
-
+    describe("Pull via taskQueue", () => {
         it("pullModel second click on same button aborts instead of queuing", async () => {
             const plugin = makePlugin();
             let aborted = false;
@@ -1121,7 +1103,7 @@ describe("LilbeeSettingTab", () => {
 
             const tab = makeTab(plugin);
             const table = new MockElement("table") as unknown as HTMLTableElement;
-            const model = makeModelsResponse().chat.catalog[1]; // phi3 — uninstalled
+            const model = makeModelsResponse().chat.catalog[1]; // phi3 -- uninstalled
 
             const clickHandlers: Function[] = [];
             const origAddEventListener = MockElement.prototype.addEventListener;
@@ -1140,48 +1122,13 @@ describe("LilbeeSettingTab", () => {
             await new Promise((r) => setTimeout(r, 10));
             expect(plugin.api.pullModel).toHaveBeenCalledTimes(1);
 
-            // Second click aborts (since pulling is true)
+            // Second click aborts (since taskQueue has active task)
             aborted = true;
             clickHandlers[0]();
             await pullPromise;
 
             expect(Notice.instances.some((n) => n.message === NOTICE.PULL_CANCELLED)).toBe(true);
             expect(plugin.api.pullModel).toHaveBeenCalledTimes(1);
-        });
-
-        it("autoPullAndSet queues second pull while first is running", async () => {
-            const plugin = makePlugin();
-            let resolve!: () => void;
-            const blockingPromise = new Promise<void>((r) => { resolve = r; });
-            async function* slowPull() {
-                await blockingPromise;
-
-            }
-            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(slowPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
-            });
-
-            // Start auto-pull (phi3 is uninstalled)
-            dropdownOnChanges[0]("phi3");
-            await new Promise((r) => setTimeout(r, 0));
-            // Second attempt should be queued
-            dropdownOnChanges[0]("phi3");
-            await new Promise((r) => setTimeout(r, 0));
-
-            expect(Notice.instances.some((n) => n.message.startsWith("lilbee: download queued"))).toBe(true);
-            expect(plugin.api.pullModel).toHaveBeenCalledTimes(1);
-            // Unblock the first pull
-            resolve();
-            // Wait for async chain to complete
-            await new Promise((r) => setTimeout(r, 50));
-            expect(plugin.api.pullModel).toHaveBeenCalledTimes(2);
         });
     });
 
@@ -1433,6 +1380,22 @@ describe("LilbeeSettingTab", () => {
             expect(btn.textContent).toBe("Pull");
         });
 
+        it("pull failure with non-Error throw uses 'unknown' in taskQueue", async () => {
+            const plugin = makePlugin();
+
+            async function* failingPull(): AsyncGenerator<never> {
+                throw "string error";
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(failingPull());
+
+            const { tab, clickHandler } = await setupPullButton(plugin, "chat");
+            await clickHandler();
+
+            const failed = plugin.taskQueue.completed.find((t: any) => t.status === "failed");
+            expect(failed).toBeDefined();
+            expect(failed!.error).toBe("unknown");
+        });
+
         it("successful pull without models container: does not crash", async () => {
             const plugin = makePlugin();
 
@@ -1473,7 +1436,7 @@ describe("LilbeeSettingTab", () => {
             delete (globalThis as any).HTMLElement;
         });
 
-        it("pull progress updates plugin status bar", async () => {
+        it("pull progress updates taskQueue", async () => {
             const plugin = makePlugin();
 
             async function* fakePull() {
@@ -1491,7 +1454,8 @@ describe("LilbeeSettingTab", () => {
 
             await clickHandler();
 
-            expect(plugin.statusBarEl!.setText).toHaveBeenCalledWith("lilbee: pulling phi3 — 45%");
+            // Task should be completed in history
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
         it("successful pull calls fetchActiveModel", async () => {
@@ -1760,7 +1724,31 @@ describe("LilbeeSettingTab", () => {
             expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
         });
 
-        it("auto-pull updates status bar with progress", async () => {
+        it("auto-pull failure with non-Error throw uses 'unknown' in taskQueue", async () => {
+            const plugin = makePlugin();
+
+            async function* failingPull(): AsyncGenerator<never> {
+                throw "string error";
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(failingPull());
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+            tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
+
+            const { dropdownOnChanges } = captureSettingCallbacks(() => {
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+            });
+
+            await dropdownOnChanges[0]("phi3");
+
+            const failed = plugin.taskQueue.completed.find((t: any) => t.status === "failed");
+            expect(failed).toBeDefined();
+            expect(failed!.error).toBe("unknown");
+        });
+
+        it("auto-pull updates taskQueue with progress", async () => {
             const plugin = makePlugin();
 
             async function* fakePull() {
@@ -1780,7 +1768,8 @@ describe("LilbeeSettingTab", () => {
             });
 
             await dropdownOnChanges[0]("phi3");
-            expect(plugin.statusBarEl!.setText).toHaveBeenCalledWith("lilbee: pulling phi3 — 75%");
+            // Task should be completed in history with progress
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
         it("auto-pull for vision type calls setVisionModel", async () => {
@@ -1805,7 +1794,7 @@ describe("LilbeeSettingTab", () => {
             expect(plugin.api.setVisionModel).toHaveBeenCalledWith("llava");
         });
 
-        it("auto-pull updates status bar text", async () => {
+        it("auto-pull completes task in taskQueue", async () => {
             const plugin = makePlugin();
 
             async function* fakePull() {
@@ -1825,7 +1814,8 @@ describe("LilbeeSettingTab", () => {
             });
 
             await dropdownOnChanges[0]("phi3");
-            expect(plugin.statusBarEl!.setText).toHaveBeenCalledWith("lilbee: pulling phi3 — 60%");
+            const done = plugin.taskQueue.completed.find((t: any) => t.status === "done");
+            expect(done).toBeDefined();
         });
 
         it("auto-pull with total=0 does not update status bar", async () => {

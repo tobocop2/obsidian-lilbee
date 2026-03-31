@@ -4,6 +4,7 @@ import { MockElement } from "../__mocks__/obsidian";
 import { CatalogModal } from "../../src/views/catalog-modal";
 import { NOTICE, SSE_EVENT } from "../../src/types";
 import type { ModelFamily, ModelVariant, CatalogResponse } from "../../src/types";
+import { TaskQueue } from "../../src/task-queue";
 
 let mockConfirmResult = true;
 let mockConfirmRemoveResult = true;
@@ -67,6 +68,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         activeModel: "test/model-4B",
         activeVisionModel: "",
         fetchActiveModel: vi.fn(),
+        taskQueue: new TaskQueue(),
         ...overrides,
     };
 }
@@ -621,6 +623,32 @@ describe("CatalogModal", () => {
         await tick();
 
         expect(Notice.instances.some(n => n.message.includes("failed to pull"))).toBe(true);
+    });
+
+    it("handles non-Error throw during pull", async () => {
+        vi.useRealTimers();
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: false })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.pullModel.mockReturnValue((async function* () {
+            throw "string error";
+        })());
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const pullBtn = el.findAll("lilbee-catalog-pull")[0];
+        pullBtn.trigger("click");
+        await tick();
+        await tick();
+
+        const failed = plugin.taskQueue.completed.find((t: any) => t.status === "failed");
+        expect(failed).toBeDefined();
+        expect(failed!.error).toBe("unknown");
     });
 
     it("handles AbortError during pull", async () => {

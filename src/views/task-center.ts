@@ -73,7 +73,7 @@ export class TaskCenterView extends ItemView {
         this.completedSection.createDiv({ cls: "lilbee-tasks-section-header" }).textContent = "COMPLETED";
 
         this.unsubscribe = this.plugin.taskQueue.onChange(() => this.render());
-        this.timeRefreshInterval = window.setInterval(() => this.render(), 30000);
+        this.timeRefreshInterval = setInterval(() => this.render(), 30000) as unknown as number;
 
         this.render();
     }
@@ -170,7 +170,7 @@ export class TaskCenterView extends ItemView {
 
         const typeBadge = info.createSpan({ cls: "lilbee-task-type-badge" });
         typeBadge.textContent = task.type.toUpperCase();
-        typeBadge.style.backgroundColor = TYPE_COLORS[task.type] || "#666";
+        typeBadge.style.backgroundColor = TYPE_COLORS[task.type];
 
         const name = info.createSpan({ cls: "lilbee-task-name" });
         name.textContent = task.name;
@@ -215,7 +215,7 @@ export class TaskCenterView extends ItemView {
 
         const typeBadge = info.createSpan({ cls: "lilbee-task-type-badge" });
         typeBadge.textContent = task.type.toUpperCase();
-        typeBadge.style.backgroundColor = TYPE_COLORS[task.type] || "#666";
+        typeBadge.style.backgroundColor = TYPE_COLORS[task.type];
 
         const name = info.createSpan({ cls: "lilbee-task-name" });
         name.textContent = task.name;

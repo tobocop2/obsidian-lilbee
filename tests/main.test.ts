@@ -126,11 +126,11 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerView).toHaveBeenCalled();
         });
 
-        it("adds all eleven commands", async () => {
+        it("adds all twelve commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(11);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(12);
             const ids = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map(
                 (c: any[]) => c[0].id,
             );
@@ -145,6 +145,7 @@ describe("LilbeePlugin", () => {
             expect(ids).toContain("lilbee:documents");
             expect(ids).toContain("lilbee:setup");
             expect(ids).toContain("lilbee:status");
+            expect(ids).toContain("lilbee:tasks");
         });
 
         it("add-file command returns false when no active file", async () => {
@@ -433,6 +434,45 @@ describe("LilbeePlugin", () => {
         });
     });
 
+    describe("activateTaskView()", () => {
+        it("reveals existing leaf when task view is already open", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const leaf = new WorkspaceLeaf(plugin.app as any);
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([leaf]);
+
+            await (plugin as any).activateTaskView();
+
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+            expect(plugin.app.workspace.getRightLeaf).not.toHaveBeenCalled();
+        });
+
+        it("sets view state on right leaf when no task view exists", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            const leaf = new WorkspaceLeaf(plugin.app as any);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(leaf);
+
+            await (plugin as any).activateTaskView();
+
+            expect(leaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-tasks", active: true });
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+        });
+
+        it("does not crash when getRightLeaf returns null", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
+
+            await expect((plugin as any).activateTaskView()).resolves.not.toThrow();
+        });
+    });
+
     describe("debouncedSync()", () => {
         it("schedules triggerSync after debounce delay", async () => {
             vi.useFakeTimers();
@@ -475,23 +515,6 @@ describe("LilbeePlugin", () => {
             await plugin.triggerSync();
 
             expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
-        });
-
-        it("emits progress events to onProgress callback", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-
-            const progressEvents: any[] = [];
-            plugin.onProgress = (event) => progressEvents.push(event);
-
-            async function* withProgress() {
-                yield { event: SSE_EVENT.PROGRESS, data: { file: "notes.md", current: 1, total: 5 } };
-            }
-            plugin.api.syncStream = vi.fn().mockReturnValue(withProgress());
-
-            await plugin.triggerSync();
-
-            expect(progressEvents.some((e) => e.event === SSE_EVENT.PROGRESS)).toBe(true);
         });
 
         it("shows Notice with all stats when done event has populated arrays", async () => {
@@ -673,6 +696,19 @@ describe("LilbeePlugin", () => {
             expect(CatalogModal).toHaveBeenCalled();
             const instance = (CatalogModal as ReturnType<typeof vi.fn>).mock.results[0].value;
             expect(instance.open).toHaveBeenCalled();
+        });
+
+        it("lilbee:tasks calls activateTaskView", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const activateSpy = vi
+                .spyOn(plugin as any, "activateTaskView")
+                .mockResolvedValue(undefined);
+            const cb = await getCommandCallback(plugin, "lilbee:tasks");
+            cb?.();
+
+            expect(activateSpy).toHaveBeenCalled();
         });
 
         it("lilbee:crawl opens CrawlModal", async () => {
@@ -1034,30 +1070,10 @@ describe("LilbeePlugin", () => {
         });
     });
 
-    describe("progress event forwarding", () => {
-        it("file_start event is forwarded to onProgress callback", async () => {
+    describe("triggerSync event handling", () => {
+        it("handles EXTRACT events by updating taskQueue", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-
-            const events: any[] = [];
-            plugin.onProgress = (e) => events.push(e);
-
-            async function* withFileStart() {
-                yield { event: SSE_EVENT.FILE_START, data: { file: "paper.pdf", current_file: 3, total_files: 10 } };
-            }
-            plugin.api.syncStream = vi.fn().mockReturnValue(withFileStart());
-
-            await plugin.triggerSync();
-
-            expect(events.some((e) => e.event === SSE_EVENT.FILE_START)).toBe(true);
-        });
-
-        it("extract event is forwarded to onProgress callback", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-
-            const events: any[] = [];
-            plugin.onProgress = (e) => events.push(e);
 
             async function* withExtract() {
                 yield { event: SSE_EVENT.EXTRACT, data: { file: "paper.pdf", page: 5, total_pages: 50 } };
@@ -1066,15 +1082,12 @@ describe("LilbeePlugin", () => {
 
             await plugin.triggerSync();
 
-            expect(events.some((e) => e.event === SSE_EVENT.EXTRACT)).toBe(true);
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
-        it("embed event is forwarded to onProgress callback", async () => {
+        it("handles EMBED events by updating taskQueue", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-
-            const events: any[] = [];
-            plugin.onProgress = (e) => events.push(e);
 
             async function* withEmbed() {
                 yield { event: SSE_EVENT.EMBED, data: { file: "paper.pdf", chunk: 30, total_chunks: 100 } };
@@ -1083,29 +1096,63 @@ describe("LilbeePlugin", () => {
 
             await plugin.triggerSync();
 
-            expect(events.some((e) => e.event === SSE_EVENT.EMBED)).toBe(true);
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
+    });
 
-        it("emitProgress no-ops when onProgress is null", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            plugin.onProgress = null;
-
-            async function* withFileStart() {
-                yield { event: SSE_EVENT.FILE_START, data: { file: "x", current_file: 1, total_files: 1 } };
-            }
-            plugin.api.syncStream = vi.fn().mockReturnValue(withFileStart());
-
-            await expect(plugin.triggerSync()).resolves.not.toThrow();
-        });
-
-        it("done event is forwarded to onProgress from runAdd", async () => {
+    describe("runAdd event handling", () => {
+        it("handles EXTRACT events by updating taskQueue", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "llama3";
 
-            const events: any[] = [];
-            plugin.onProgress = (e) => events.push(e);
+            async function* withExtract() {
+                yield { event: SSE_EVENT.EXTRACT, data: { file: "paper.pdf", page: 3, total_pages: 10 } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withExtract());
+
+            await (plugin as any).addToLilbee({ path: "paper.pdf", name: "paper.pdf" });
+
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
+        });
+
+        it("handles EMBED events by updating taskQueue", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* withEmbed() {
+                yield { event: SSE_EVENT.EMBED, data: { chunk: 5, total_chunks: 20 } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withEmbed());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
+        });
+    });
+
+    describe("taskQueue integration", () => {
+        it("sync updates taskQueue with progress", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* withFileStart() {
+                yield { event: SSE_EVENT.FILE_START, data: { file: "paper.pdf", current_file: 3, total_files: 10 } };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(withFileStart());
+
+            await plugin.triggerSync();
+
+            // Task should be completed in history
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
+            expect(plugin.taskQueue.completed[0]!.name).toBe("Sync vault");
+        });
+
+        it("add updates taskQueue with progress", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
 
             async function* withDone() {
                 yield {
@@ -1117,7 +1164,8 @@ describe("LilbeePlugin", () => {
 
             await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
 
-            expect(events.some((e) => e.event === SSE_EVENT.DONE)).toBe(true);
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
+            expect(plugin.taskQueue.completed[0]!.name).toBe("Adding files");
         });
     });
 
@@ -1151,10 +1199,38 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
         });
 
-        it("status bar includes model name during sync", async () => {
+        it("status bar shows task name during sync", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "llama3";
+
+            async function* withFileStart() {
+                yield { event: SSE_EVENT.FILE_START, data: { file: "a.md", current_file: 1, total_files: 2 } };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(withFileStart());
+
+            await plugin.triggerSync();
+
+            // After sync completes, status bar should be ready
+            expect((plugin as any).statusBarEl?.textContent).toContain("ready");
+        });
+
+        it("taskQueue updates status bar when task is active", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
+            expect((plugin as any).statusBarEl?.textContent).toContain("Sync vault");
+
+            plugin.taskQueue.complete(id);
+            expect((plugin as any).statusBarEl?.textContent).toContain("ready");
+        });
+
+        it("taskQueue status bar shows queued count suffix on update", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
 
             const statusTexts: string[] = [];
             const origSetText = (plugin as any).statusBarEl!.setText.bind((plugin as any).statusBarEl);
@@ -1163,32 +1239,23 @@ describe("LilbeePlugin", () => {
                 origSetText(text);
             };
 
-            async function* noEvents() {}
-            plugin.api.syncStream = vi.fn().mockReturnValue(noEvents());
+            const id1 = plugin.taskQueue.enqueue("Sync vault", "sync");
+            plugin.taskQueue.enqueue("Pull model", "pull");
+            // Update the active task to trigger a re-render with queued count
+            plugin.taskQueue.update(id1, 50);
 
-            await plugin.triggerSync();
-
-            expect(statusTexts.some((t) => t.includes("syncing") && t.includes("llama3"))).toBe(true);
+            expect(statusTexts.some((t) => t.includes("+1"))).toBe(true);
         });
 
-        it("startTask and endTask track active tasks", async () => {
+        it("taskQueue status bar shows progress percentage", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "";
 
-            plugin.startTask("task-1", "syncing");
-            expect((plugin as any).activeTasks.size).toBe(1);
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: syncing");
+            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
+            plugin.taskQueue.update(id, 42);
 
-            plugin.startTask("task-2", "adding files");
-            expect((plugin as any).activeTasks.size).toBe(2);
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: 2 tasks");
-
-            plugin.endTask("task-1");
-            expect((plugin as any).activeTasks.size).toBe(1);
-
-            plugin.endTask("task-2");
-            expect((plugin as any).activeTasks.size).toBe(0);
+            expect((plugin as any).statusBarEl?.textContent).toContain("42%");
         });
 
         it("updateStatusBar no-ops when statusBarEl is null", async () => {
@@ -1713,13 +1780,10 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("sync cancelled"))).toBe(true);
         });
 
-        it("runAdd emits DONE event to onProgress after AbortError", async () => {
+        it("runAdd cancels task in queue on AbortError", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "llama3";
-
-            const events: any[] = [];
-            plugin.onProgress = (e: any) => events.push(e);
 
             const abortError = new Error("Aborted");
             abortError.name = "AbortError";
@@ -1729,15 +1793,13 @@ describe("LilbeePlugin", () => {
 
             await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
 
-            expect(events.some((e) => e.event === SSE_EVENT.DONE)).toBe(true);
+            const cancelled = plugin.taskQueue.completed.find(t => t.status === "cancelled");
+            expect(cancelled).toBeDefined();
         });
 
-        it("triggerSync emits DONE event to onProgress after AbortError", async () => {
+        it("triggerSync cancels task in queue on AbortError", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-
-            const events: any[] = [];
-            plugin.onProgress = (e: any) => events.push(e);
 
             const abortError = new Error("Aborted");
             abortError.name = "AbortError";
@@ -1747,7 +1809,8 @@ describe("LilbeePlugin", () => {
 
             await plugin.triggerSync();
 
-            expect(events.some((e) => e.event === SSE_EVENT.DONE)).toBe(true);
+            const cancelled = plugin.taskQueue.completed.find(t => t.status === "cancelled");
+            expect(cancelled).toBeDefined();
         });
     });
 

@@ -1177,3 +1177,175 @@
 .lilbee-catalog-recommended {
     color: var(--text-accent);
 }
+
+.lilbee-tasks-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+    padding: var(--size-4-3, 12px);
+}
+
+.lilbee-tasks-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-tasks-header h2 {
+    margin: 0;
+    font-size: var(--font-text-size, 15px);
+    font-weight: var(--font-semibold, 600);
+}
+
+.lilbee-tasks-clear {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: var(--font-small, 13px);
+    padding: 2px var(--size-4-2, 8px);
+    border-radius: var(--radius-s, 4px);
+}
+
+.lilbee-tasks-clear:hover {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.lilbee-tasks-section {
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-tasks-section-header {
+    font-size: var(--font-smallest, 10px);
+    font-weight: var(--font-semibold, 600);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-task-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--size-4-1, 4px);
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    border-radius: var(--radius-s, 4px);
+    margin-bottom: 2px;
+}
+
+.lilbee-task-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-task-info {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1, 4px);
+    flex: 1;
+    min-width: 0;
+}
+
+.lilbee-task-type-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 9px;
+    font-weight: var(--font-semibold, 600);
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+}
+
+.lilbee-task-name {
+    font-size: var(--font-small, 13px);
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lilbee-task-progress-bar {
+    width: 100%;
+    height: 3px;
+    background-color: var(--background-modifier-border);
+    border-radius: 2px;
+    overflow: hidden;
+    flex-basis: 100%;
+}
+
+.lilbee-task-progress-fill {
+    height: 100%;
+    background-color: var(--interactive-accent);
+    border-radius: 2px;
+    transition: width 200ms ease-out;
+}
+
+.lilbee-task-detail {
+    width: 100%;
+    font-size: 9px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-basis: 100%;
+}
+
+.lilbee-task-progress-text {
+    font-size: var(--font-smallest, 10px);
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.lilbee-task-cancel {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1;
+    padding: 2px;
+    border-radius: var(--radius-s, 4px);
+    flex-shrink: 0;
+}
+
+.lilbee-task-cancel:hover {
+    color: var(--text-error);
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-task-status-icon {
+    font-size: var(--font-small, 13px);
+    flex-shrink: 0;
+    width: 16px;
+    text-align: center;
+}
+
+.lilbee-task-status-done {
+    color: var(--text-success);
+}
+
+.lilbee-task-status-failed {
+    color: var(--text-error);
+}
+
+.lilbee-task-status-cancelled {
+    color: var(--text-muted);
+}
+
+.lilbee-task-time {
+    font-size: var(--font-smallest, 10px);
+    color: var(--text-faint);
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.lilbee-tasks-empty {
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    font-style: italic;
+}

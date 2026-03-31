@@ -1,9 +1,8 @@
 import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
 import type { ReleaseInfo } from "./binary-manager";
-import { DEFAULT_SETTINGS, MODEL_TYPE, NOTICE, SERVER_MODE } from "./types";
+import { DEFAULT_SETTINGS, MODEL_TYPE, NOTICE, SERVER_MODE, SSE_EVENT, TASK_TYPE } from "./types";
 import type { GenerationOptions, ModelCatalog, ModelInfo, ModelType, ModelsResponse, ServerMode } from "./types";
-import { PullQueue } from "./pull-queue";
 import { CatalogModal } from "./views/catalog-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { ConfirmPullModal } from "./views/confirm-pull-modal";
@@ -73,7 +72,6 @@ const GEN_DEFAULTS_MAP: Record<GenKey, keyof GenerationOptions> = {
 
 export class LilbeeSettingTab extends PluginSettingTab {
     plugin: LilbeePlugin;
-    private pullQueue = new PullQueue();
     private pullAbortController: AbortController | null = null;
     private genInputs: Map<GenKey, HTMLInputElement> = new Map();
     private serverConfigInputs: Map<string, HTMLInputElement> = new Map();
@@ -745,10 +743,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             modal.open();
             const confirmed = await modal.result;
             if (!confirmed) return;
-            await this.pullQueue.enqueue(
-                () => this.autoPullAndSet(uninstalledCatalogModel, type, container),
-                uninstalledCatalogModel.name,
-            );
+            await this.autoPullAndSet(uninstalledCatalogModel, type, container);
             return;
         }
         try {
@@ -765,7 +760,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         type: ModelType,
         container: HTMLElement,
     ): Promise<void> {
-        new Notice(`lilbee: pulling ${model.name}...`);
+        const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
         const controller = new AbortController();
         this.pullAbortController = controller;
         const banner = container.createDiv("lilbee-pull-banner");
@@ -778,28 +773,27 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 "native",
                 controller.signal,
             )) {
-                if (event.event === "progress") {
+                if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { current?: number; total?: number };
                     if (d.total && d.current !== undefined) {
                         const pct = Math.round((d.current / d.total) * 100);
                         label.textContent = `Pulling ${model.name} — ${pct}%`;
-                        if (this.plugin.statusBarEl) {
-                            this.plugin.statusBarEl.setText(
-                                `lilbee: pulling ${model.name} — ${pct}%`,
-                            );
-                        }
+                        this.plugin.taskQueue.update(taskId, pct, model.name);
                     }
                 }
             }
             await this.setModel(model, type);
+            this.plugin.taskQueue.complete(taskId);
             new Notice(`lilbee: ${model.name} pulled and activated`);
             this.plugin.fetchActiveModel();
             this.display();
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
                 new Notice(NOTICE.PULL_CANCELLED);
+                this.plugin.taskQueue.cancel(taskId);
             } else {
                 new Notice(`lilbee: failed to pull ${model.name}`);
+                this.plugin.taskQueue.fail(taskId, err instanceof Error ? err.message : "unknown");
             }
         } finally {
             banner.remove();
@@ -827,7 +821,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         } else {
             const btn = actionCell.createEl("button", { text: "Pull" }) as HTMLButtonElement;
             btn.addEventListener("click", () => {
-                if (this.pullQueue.isPulling) {
+                if (this.plugin.taskQueue.active) {
                     this.pullAbortController?.abort();
                     return;
                 }
@@ -842,10 +836,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         model: ModelInfo,
         type: ModelType,
     ): Promise<void> {
-        await this.pullQueue.enqueue(
-            () => this.executePull(btn, actionCell, model, type),
-            model.name,
-        );
+        await this.executePull(btn, actionCell, model, type);
     }
 
     private async executePull(
@@ -854,6 +845,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         model: ModelInfo,
         type: ModelType,
     ): Promise<void> {
+        const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
         const controller = new AbortController();
         this.pullAbortController = controller;
         btn.textContent = "Cancel";
@@ -864,17 +856,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 "native",
                 controller.signal,
             )) {
-                if (event.event === "progress") {
+                if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { current?: number; total?: number };
                     if (d.total && d.current !== undefined) {
                         const pct = Math.round((d.current / d.total) * 100);
                         progress.textContent = `${pct}%`;
-                        if (this.plugin.statusBarEl) {
-                            this.plugin.statusBarEl.setText(`lilbee: pulling ${model.name} — ${pct}%`);
-                        }
+                        this.plugin.taskQueue.update(taskId, pct, model.name);
                     }
                 }
             }
+            this.plugin.taskQueue.complete(taskId);
             new Notice(`lilbee: ${model.name} pulled successfully`);
             await this.setModel(model, type);
             this.plugin.fetchActiveModel();
@@ -882,8 +873,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
                 new Notice(NOTICE.PULL_CANCELLED);
+                this.plugin.taskQueue.cancel(taskId);
             } else {
                 new Notice(`lilbee: failed to pull ${model.name}`);
+                this.plugin.taskQueue.fail(taskId, err instanceof Error ? err.message : "unknown");
             }
             btn.disabled = false;
             btn.textContent = "Pull";

@@ -1,10 +1,9 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { ModelFamily, ModelVariant, CatalogResponse } from "../types";
-import { NOTICE, SSE_EVENT } from "../types";
+import { NOTICE, SSE_EVENT, TASK_TYPE } from "../types";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
-import { PullQueue } from "../pull-queue";
 
 const PAGE_SIZE = 20;
 const DEBOUNCE_MS = 300;
@@ -15,7 +14,6 @@ type SortFilter = "featured" | "downloads" | "name" | "size_asc" | "size_desc";
 
 export class CatalogModal extends Modal {
     private plugin: LilbeePlugin;
-    private pullQueue = new PullQueue();
     private filterTask: TaskFilter = "";
     private filterSize: SizeFilter = "";
     private filterSort: SortFilter = "featured";
@@ -258,16 +256,14 @@ export class CatalogModal extends Modal {
         confirmModal.open();
         void confirmModal.result.then((confirmed) => {
             if (!confirmed) return;
-            void this.pullQueue.enqueue(
-                () => this.executePull(family, variant, btn),
-                variant.hf_repo,
-            );
+            void this.executePull(family, variant, btn);
         });
     }
 
     private async executePull(family: ModelFamily, variant: ModelVariant, btn: HTMLElement): Promise<void> {
         btn.textContent = "Pulling...";
         (btn as HTMLButtonElement).disabled = true;
+        const taskId = this.plugin.taskQueue.enqueue(`Pull ${variant.hf_repo}`, TASK_TYPE.PULL);
         try {
             for await (const event of this.plugin.api.pullModel(variant.hf_repo, variant.source)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
@@ -275,6 +271,7 @@ export class CatalogModal extends Modal {
                     if (d.total && d.current !== undefined) {
                         const pct = Math.round((d.current / d.total) * 100);
                         btn.textContent = `${pct}%`;
+                        this.plugin.taskQueue.update(taskId, pct, variant.hf_repo);
                     }
                 }
             }
@@ -288,14 +285,17 @@ export class CatalogModal extends Modal {
                 this.plugin.activeModel = variant.hf_repo;
             }
             this.plugin.fetchActiveModel();
+            this.plugin.taskQueue.complete(taskId);
             new Notice(`lilbee: ${variant.hf_repo} pulled and activated`);
             btn.textContent = "Active";
             (btn as HTMLButtonElement).disabled = true;
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
                 new Notice(NOTICE.PULL_CANCELLED);
+                this.plugin.taskQueue.cancel(taskId);
             } else {
                 new Notice(NOTICE.PULL_FAILED);
+                this.plugin.taskQueue.fail(taskId, err instanceof Error ? err.message : "unknown");
             }
             btn.textContent = "Pull";
             (btn as HTMLButtonElement).disabled = false;
