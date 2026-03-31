@@ -298,6 +298,40 @@ describe("CatalogModal", () => {
         expect(plugin.api.setChatModel).toHaveBeenCalled();
     });
 
+    it("handles vision model task type in Use button", async () => {
+        vi.clearAllMocks();
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true, task: "vision" })],
+        })];
+        const plugin = makePlugin({ activeVisionModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const useBtn = el.find("lilbee-catalog-use");
+        expect(useBtn).toBeDefined();
+    });
+
+    it("handles embedding model task type in Use button", async () => {
+        vi.clearAllMocks();
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true, task: "embedding" })],
+        })];
+        const plugin = makePlugin();
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const useBtn = el.find("lilbee-catalog-use");
+        expect(useBtn).toBeDefined();
+    });
+
     it.skip("clicking Use button sets embedding model as active", async () => {
         vi.clearAllMocks();
         const families = [makeFamily({
