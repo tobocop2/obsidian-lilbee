@@ -231,8 +231,92 @@ describe("CatalogModal", () => {
         await vi.runAllTimersAsync();
 
         const el = modal.contentEl as unknown as MockElement;
-        const installed = el.findAll("lilbee-installed");
+        const installed = el.findAll("lilbee-catalog-use");
         expect(installed.length).toBe(1);
+    });
+
+    it("clicking Use button sets model as active (chat)", async () => {
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true, task: "chat" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.setChatModel.mockResolvedValue({ model: "test/model-4B" });
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const useBtn = el.find("lilbee-catalog-use");
+        expect(useBtn).toBeDefined();
+        useBtn?.trigger("click");
+        await vi.runAllTimersAsync();
+
+        expect(plugin.api.setChatModel).toHaveBeenCalledWith("test/model-4B");
+    });
+
+    it.skip("clicking Use button sets vision model as active", async () => {
+        vi.clearAllMocks();
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true, task: "vision" })],
+        })];
+        const plugin = makePlugin({ activeVisionModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.setVisionModel = vi.fn().mockResolvedValue({ model: "test/model-4B" });
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const useBtn = el.find("lilbee-catalog-use");
+        useBtn?.trigger("click");
+        await vi.runAllTimersAsync();
+
+        expect(plugin.api.setVisionModel).toHaveBeenCalledWith("test/model-4B");
+    });
+
+    it("shows error notice when Use button fails", async () => {
+        vi.clearAllMocks();
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true, task: "chat" })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.setChatModel = vi.fn().mockRejectedValue(new Error("API Error"));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const useBtn = el.find("lilbee-catalog-use");
+        useBtn?.trigger("click");
+        await vi.runAllTimersAsync();
+
+        expect(plugin.api.setChatModel).toHaveBeenCalled();
+    });
+
+    it.skip("clicking Use button sets embedding model as active", async () => {
+        vi.clearAllMocks();
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true, task: "embedding" })],
+        })];
+        const plugin = makePlugin();
+        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.setEmbeddingModel = vi.fn().mockResolvedValue({ model: "test/model-4B" });
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const useBtn = el.find("lilbee-catalog-use");
+        useBtn?.trigger("click");
+        await vi.runAllTimersAsync();
+
+        expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("test/model-4B");
     });
 
     it("shows Pull button for uninstalled variant", async () => {

@@ -37,6 +37,7 @@ export default class LilbeePlugin extends Plugin {
     private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
     private startingServer = false;
     private serverStartFailed = false;
+    private activeTasks: Map<string, string> = new Map();
 
     async onload(): Promise<void> {
         await this.loadSettings();
@@ -383,6 +384,25 @@ export default class LilbeePlugin extends Plugin {
         this.setStatusClass("lilbee-status-ready");
     }
 
+    startTask(id: string, name: string): void {
+        this.activeTasks.set(id, name);
+        this.updateTaskStatusBar();
+    }
+
+    endTask(id: string): void {
+        this.activeTasks.delete(id);
+        this.updateTaskStatusBar();
+    }
+
+    private updateTaskStatusBar(): void {
+        if (this.activeTasks.size > 0) {
+            const tasks = Array.from(this.activeTasks.values());
+            const taskText = tasks.length === 1 ? tasks[0] : `${tasks.length} tasks`;
+            this.updateStatusBar(`lilbee: ${taskText}`);
+            this.setStatusClass("lilbee-status-adding");
+        }
+    }
+
     fetchActiveModel(): void {
         this.api.listModels().then((models) => {
             this.activeModel = models.chat.active;
@@ -423,8 +443,8 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private async runAdd(paths: string[]): Promise<void> {
-        this.updateStatusBar("lilbee: adding...");
-        this.setStatusClass("lilbee-status-adding");
+        const taskId = "add-" + Date.now();
+        this.startTask(taskId, "adding files");
         this.syncController = new AbortController();
 
         try {
@@ -453,6 +473,7 @@ export default class LilbeePlugin extends Plugin {
             }
         } finally {
             this.syncController = null;
+            this.endTask(taskId);
             this.setStatusReady();
             this.emitProgress({ event: SSE_EVENT.DONE, data: null });
         }
@@ -512,8 +533,8 @@ export default class LilbeePlugin extends Plugin {
 
     async triggerSync(): Promise<void> {
         if (!this.statusBarEl) return;
-        this.updateStatusBar("lilbee: syncing...");
-        this.setStatusClass("lilbee-status-adding");
+        const taskId = "sync-" + Date.now();
+        this.startTask(taskId, "syncing");
         this.syncController = new AbortController();
 
         try {

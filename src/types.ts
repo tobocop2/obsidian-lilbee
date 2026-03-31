@@ -120,6 +120,8 @@ export const NOTICE = {
 export interface LilbeeSettings {
     serverUrl: string;
     topK: number;
+    maxDistance: number;
+    adaptiveThreshold: boolean;
     syncMode: "manual" | "auto";
     syncDebounceMs: number;
     temperature: number | null;
@@ -138,6 +140,8 @@ export interface LilbeeSettings {
 export const DEFAULT_SETTINGS: LilbeeSettings = {
     serverUrl: "http://127.0.0.1:7433",
     topK: 5,
+    maxDistance: 0.9,
+    adaptiveThreshold: false,
     syncMode: "manual",
     syncDebounceMs: 5000,
     temperature: null,

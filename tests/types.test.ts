@@ -44,7 +44,26 @@ describe("DEFAULT_SETTINGS", () => {
 
     it("is a plain object with exactly the expected keys", () => {
         const keys = Object.keys(DEFAULT_SETTINGS).sort();
-        expect(keys).toEqual(["lilbeeVersion", "num_ctx", "repeat_penalty", "seed", "serverMode", "serverPort", "serverUrl", "setupCompleted", "syncDebounceMs", "syncMode", "systemPrompt", "temperature", "topK", "top_k_sampling", "top_p"].sort());
+        const expected = [
+            "adaptiveThreshold",
+            "lilbeeVersion",
+            "maxDistance",
+            "num_ctx",
+            "repeat_penalty",
+            "seed",
+            "serverMode",
+            "serverPort",
+            "serverUrl",
+            "setupCompleted",
+            "syncDebounceMs",
+            "syncMode",
+            "systemPrompt",
+            "temperature",
+            "topK",
+            "top_k_sampling",
+            "top_p",
+        ].sort();
+        expect(keys).toEqual(expected);
     });
 });
 
@@ -231,6 +250,8 @@ describe("LilbeeSettings interface", () => {
     it("accepts manual syncMode", () => {
         const s: LilbeeSettings = {
             serverUrl: "http://localhost:7433",
+            maxDistance: 0.9,
+            adaptiveThreshold: false,
             topK: 3,
             syncMode: "manual",
             syncDebounceMs: 2000,
@@ -252,6 +273,8 @@ describe("LilbeeSettings interface", () => {
     it("accepts auto syncMode", () => {
         const s: LilbeeSettings = {
             serverUrl: "http://localhost:7433",
+            maxDistance: 0.9,
+            adaptiveThreshold: false,
             topK: 3,
             syncMode: "auto",
             syncDebounceMs: 2000,

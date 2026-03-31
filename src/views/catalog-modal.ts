@@ -186,7 +186,8 @@ export class CatalogModal extends Modal {
         if (active) {
             actionEl.createEl("span", { text: "Active", cls: "lilbee-catalog-active" });
         } else if (variant.installed) {
-            actionEl.createEl("span", { text: "Installed", cls: "lilbee-installed" });
+            const installedBtn = actionEl.createEl("button", { text: "Use", cls: "lilbee-catalog-use" });
+            installedBtn.addEventListener("click", () => this.handleUse(family, variant, installedBtn));
             const removeBtn = actionEl.createEl("button", { text: "Remove", cls: "lilbee-catalog-remove" });
             removeBtn.addEventListener("click", () => this.handleRemove(variant, removeBtn));
         } else {
@@ -218,6 +219,29 @@ export class CatalogModal extends Modal {
         } catch {
             new Notice(`Failed to remove ${variant.hf_repo}`);
             btn.textContent = "Remove";
+            (btn as HTMLButtonElement).disabled = false;
+        }
+    }
+
+    private async handleUse(family: ModelFamily, variant: ModelVariant, btn: HTMLElement): Promise<void> {
+        btn.textContent = "Setting...";
+        (btn as HTMLButtonElement).disabled = true;
+        try {
+            if (variant.task === "vision") {
+                await this.plugin.api.setVisionModel(variant.hf_repo);
+                this.plugin.activeVisionModel = variant.hf_repo;
+            } else if (variant.task === "embedding") {
+                await this.plugin.api.setEmbeddingModel(variant.hf_repo);
+            } else {
+                await this.plugin.api.setChatModel(variant.hf_repo);
+                this.plugin.activeModel = variant.hf_repo;
+            }
+            this.plugin.fetchActiveModel();
+            new Notice(`Now using ${variant.hf_repo}`);
+            this.resetAndFetch();
+        } catch {
+            new Notice(`Failed to set ${variant.hf_repo}`);
+            btn.textContent = "Use";
             (btn as HTMLButtonElement).disabled = false;
         }
     }

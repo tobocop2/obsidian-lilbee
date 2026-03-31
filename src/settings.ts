@@ -321,6 +321,32 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }),
             );
 
+        new Setting(containerEl)
+            .setName("Max distance")
+            .setDesc("Cosine distance threshold (0-1). Lower = stricter filtering, Higher = more results")
+            .addSlider((slider) =>
+                slider
+                    .setLimits(0.1, 1.0, 0.1)
+                    .setValue(this.plugin.settings.maxDistance ?? 0.9)
+                    .setDynamicTooltip()
+                    .onChange(async (value) => {
+                        this.plugin.settings.maxDistance = value;
+                        await this.plugin.saveSettings();
+                    }),
+            );
+
+        new Setting(containerEl)
+            .setName("Adaptive threshold")
+            .setDesc("Widen distance threshold when too few results found")
+            .addToggle((toggle) =>
+                toggle
+                    .setValue(this.plugin.settings.adaptiveThreshold ?? false)
+                    .onChange(async (value) => {
+                        this.plugin.settings.adaptiveThreshold = value;
+                        await this.plugin.saveSettings();
+                    }),
+            );
+
         const serverDefaultsEl = containerEl.createDiv({ cls: "lilbee-server-defaults" });
         this.loadServerDefaults(serverDefaultsEl);
     }
