@@ -310,3 +310,6 @@ export interface TaskEntry {
     error: string | null;
     canCancel: boolean;
 }
+
+export type ModelSize = "small" | "medium" | "large";
+export type ModelSort = "featured" | "downloads" | "name" | "size_asc" | "size_desc";
