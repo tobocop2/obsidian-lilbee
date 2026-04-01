@@ -4,7 +4,7 @@ import { BinaryManager, getLatestRelease, checkForUpdate } from "./binary-manage
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { LilbeeSettingTab } from "./settings";
-import { DEFAULT_SETTINGS, NOTICE, SERVER_MODE, SSE_EVENT, TASK_TYPE, type LilbeeSettings, type ServerMode, type ServerState, type SSEEvent, type SyncDone, type VaultAdapter } from "./types";
+import { DEFAULT_SETTINGS, NOTICE, SERVER_MODE, SERVER_STATE, SSE_EVENT, SYNC_MODE, TASK_TYPE, type LilbeeSettings, type ServerMode, type ServerState, type SSEEvent, type SyncDone, type VaultAdapter } from "./types";
 import { CatalogModal } from "./views/catalog-modal";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
 import { CrawlModal } from "./views/crawl-modal";
@@ -74,7 +74,7 @@ export default class LilbeePlugin extends Plugin {
             new SetupWizard(this.app, this).open();
         }
 
-        if (this.settings.syncMode === "auto") {
+        if (this.settings.syncMode === SYNC_MODE.AUTO) {
             this.registerAutoSync();
         }
     }
@@ -489,9 +489,9 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private updateAutoSync(): void {
-        if (this.settings.syncMode === "auto" && this.autoSyncRefs.length === 0) {
+        if (this.settings.syncMode === SYNC_MODE.AUTO && this.autoSyncRefs.length === 0) {
             this.registerAutoSync();
-        } else if (this.settings.syncMode === "manual" && this.autoSyncRefs.length > 0) {
+        } else if (this.settings.syncMode === SYNC_MODE.MANUAL && this.autoSyncRefs.length > 0) {
             this.unregisterAutoSync();
         }
     }

@@ -1,7 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { ModelFamily, ModelVariant, CatalogResponse } from "../types";
-import { NOTICE, SSE_EVENT, TASK_TYPE } from "../types";
+import { MODEL_TASK, NOTICE, SSE_EVENT, TASK_TYPE } from "../types";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 
@@ -225,10 +225,10 @@ export class CatalogModal extends Modal {
         btn.textContent = "Setting...";
         (btn as HTMLButtonElement).disabled = true;
         try {
-            if (variant.task === "vision") {
+            if (variant.task === MODEL_TASK.VISION) {
                 await this.plugin.api.setVisionModel(variant.hf_repo);
                 this.plugin.activeVisionModel = variant.hf_repo;
-            } else if (variant.task === "embedding") {
+            } else if (variant.task === MODEL_TASK.EMBEDDING) {
                 await this.plugin.api.setEmbeddingModel(variant.hf_repo);
             } else {
                 await this.plugin.api.setChatModel(variant.hf_repo);
@@ -275,10 +275,10 @@ export class CatalogModal extends Modal {
                     }
                 }
             }
-            if (variant.task === "vision") {
+            if (variant.task === MODEL_TASK.VISION) {
                 await this.plugin.api.setVisionModel(variant.hf_repo);
                 this.plugin.activeVisionModel = variant.hf_repo;
-            } else if (variant.task === "embedding") {
+            } else if (variant.task === MODEL_TASK.EMBEDDING) {
                 await this.plugin.api.setEmbeddingModel(variant.hf_repo);
             } else {
                 await this.plugin.api.setChatModel(variant.hf_repo);

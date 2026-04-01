@@ -1,7 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { ModelFamily, SSEEvent, SyncDone } from "../types";
-import { SERVER_MODE, SSE_EVENT } from "../types";
+import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP } from "../types";
 import { CatalogModal } from "./catalog-modal";
 
 interface FeaturedModel {
@@ -68,11 +68,11 @@ export class SetupWizard extends Modal {
         contentEl.empty();
 
         switch (this.step) {
-            case 0: this.renderWelcome(); break;
-            case 1: this.renderServerMode(); break;
-            case 2: this.renderModelPicker(); break;
-            case 3: this.renderSync(); break;
-            case 4: this.renderDone(); break;
+            case WIZARD_STEP.WELCOME: this.renderWelcome(); break;
+            case WIZARD_STEP.SERVER_MODE: this.renderServerMode(); break;
+            case WIZARD_STEP.MODEL_PICKER: this.renderModelPicker(); break;
+            case WIZARD_STEP.SYNC: this.renderSync(); break;
+            case WIZARD_STEP.DONE: this.renderDone(); break;
         }
     }
 
@@ -109,16 +109,16 @@ export class SetupWizard extends Modal {
         step.createEl("h2", { text: "How do you want to run lilbee?" });
 
         let mode: "managed" | "external" = this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL
-            ? "external"
-            : "managed";
+            ? SERVER_MODE.EXTERNAL
+            : SERVER_MODE.MANAGED;
 
-        const managedOption = step.createDiv({ cls: `lilbee-wizard-model-option${mode === "managed" ? " selected" : ""}` });
+        const managedOption = step.createDiv({ cls: `lilbee-wizard-model-option${mode === SERVER_MODE.MANAGED ? " selected" : ""}` });
         managedOption.createEl("strong", { text: "Managed (recommended)" });
         managedOption.createEl("p", {
             text: "lilbee starts and stops automatically with Obsidian. No terminal needed.",
         });
 
-        const externalOption = step.createDiv({ cls: `lilbee-wizard-model-option${mode === "external" ? " selected" : ""}` });
+        const externalOption = step.createDiv({ cls: `lilbee-wizard-model-option${mode === SERVER_MODE.EXTERNAL ? " selected" : ""}` });
         externalOption.createEl("strong", { text: "External" });
         externalOption.createEl("p", {
             text: "You run the lilbee server yourself. For advanced users or shared setups.",
@@ -130,12 +130,12 @@ export class SetupWizard extends Modal {
             attr: { type: "text" },
         });
         urlInput.value = this.plugin.settings.serverUrl;
-        urlInput.style.display = mode === "external" ? "" : "none";
+        urlInput.style.display = mode === SERVER_MODE.EXTERNAL ? "" : "none";
 
         const statusEl = step.createDiv({ cls: "lilbee-wizard-status" });
 
         managedOption.addEventListener("click", () => {
-            mode = "managed";
+            mode = SERVER_MODE.MANAGED;
             managedOption.classList.add("selected");
             externalOption.classList.remove("selected");
             urlInput.style.display = "none";
@@ -143,7 +143,7 @@ export class SetupWizard extends Modal {
         });
 
         externalOption.addEventListener("click", () => {
-            mode = "external";
+            mode = SERVER_MODE.EXTERNAL;
             externalOption.classList.add("selected");
             managedOption.classList.remove("selected");
             urlInput.style.display = "";
@@ -157,7 +157,7 @@ export class SetupWizard extends Modal {
 
         const nextBtn = actions.createEl("button", { text: "Next", cls: "mod-cta" });
         nextBtn.addEventListener("click", () => {
-            if (mode === "managed") {
+            if (mode === SERVER_MODE.MANAGED) {
                 this.plugin.settings.serverMode = SERVER_MODE.MANAGED;
                 statusEl.textContent = "Starting server...";
                 statusEl.classList.add("lilbee-loading");
@@ -181,7 +181,7 @@ export class SetupWizard extends Modal {
             }
             statusEl.textContent = "";
             statusEl.classList.remove("lilbee-loading");
-            this.step = 2;
+            this.step = WIZARD_STEP.MODEL_PICKER;
             this.renderStep();
         } catch {
             statusEl.textContent = "Failed to start server. Check the settings tab for details.";
@@ -195,7 +195,7 @@ export class SetupWizard extends Modal {
             await this.plugin.saveSettings();
             await this.plugin.api.health();
             statusEl.textContent = "";
-            this.step = 2;
+            this.step = WIZARD_STEP.MODEL_PICKER;
             this.renderStep();
         } catch {
             statusEl.textContent = "Could not connect. Check the URL and make sure the server is running.";
@@ -350,7 +350,7 @@ export class SetupWizard extends Modal {
             this.plugin.activeModel = model.name;
             this.plugin.fetchActiveModel();
             this.pulledModelName = model.name;
-            this.step = 3;
+            this.step = WIZARD_STEP.SYNC;
             this.renderStep();
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
@@ -431,7 +431,7 @@ export class SetupWizard extends Modal {
             }
             progressFill.style.width = "100%";
             progressLabel.textContent = "Done!";
-            this.step = 4;
+            this.step = WIZARD_STEP.DONE;
             this.renderStep();
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
@@ -482,10 +482,10 @@ export class SetupWizard extends Modal {
     }
 
     next(): void {
-        if (this.step === 0) {
-            const serverReady = this.plugin.serverManager?.state === "ready" ||
+        if (this.step === WIZARD_STEP.WELCOME) {
+            const serverReady = this.plugin.serverManager?.state === SERVER_STATE.READY ||
                 this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL;
-            this.step = serverReady ? 2 : 1;
+            this.step = serverReady ? WIZARD_STEP.MODEL_PICKER : WIZARD_STEP.SERVER_MODE;
         } else {
             this.step++;
         }
@@ -493,10 +493,10 @@ export class SetupWizard extends Modal {
     }
 
     back(): void {
-        if (this.step === 2) {
-            const serverReady = this.plugin.serverManager?.state === "ready" ||
+        if (this.step === WIZARD_STEP.MODEL_PICKER) {
+            const serverReady = this.plugin.serverManager?.state === SERVER_STATE.READY ||
                 this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL;
-            this.step = serverReady ? 0 : 1;
+            this.step = serverReady ? WIZARD_STEP.WELCOME : WIZARD_STEP.SERVER_MODE;
         } else {
             this.step = Math.max(0, this.step - 1);
         }

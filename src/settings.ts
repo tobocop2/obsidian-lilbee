@@ -1,7 +1,7 @@
 import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
 import type { ReleaseInfo } from "./binary-manager";
-import { DEFAULT_SETTINGS, MODEL_TYPE, NOTICE, SERVER_MODE, SSE_EVENT, TASK_TYPE } from "./types";
+import { DEFAULT_SETTINGS, MODEL_TYPE, NOTICE, SERVER_MODE, SERVER_STATE, SSE_EVENT, SYNC_MODE, TASK_TYPE } from "./types";
 import type { GenerationOptions, ModelCatalog, ModelInfo, ModelType, ModelsResponse, ServerMode } from "./types";
 import { CatalogModal } from "./views/catalog-modal";
 import { ConfirmModal } from "./views/confirm-modal";
@@ -145,7 +145,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setName("Server controls")
             .setDesc("Start, stop, or restart the managed server");
 
-        if (serverState === "stopped" || serverState === "error") {
+        if (serverState === SERVER_STATE.STOPPED || serverState === SERVER_STATE.ERROR) {
             controlSetting.addButton((btn) =>
                 btn.setButtonText("Start").onClick(async () => {
                     await this.plugin.startManagedServer();
@@ -153,7 +153,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 }),
             );
         }
-        if (serverState === "ready" || serverState === "starting") {
+        if (serverState === SERVER_STATE.READY || serverState === SERVER_STATE.STARTING) {
             controlSetting.addButton((btn) =>
                 btn.setButtonText("Stop").onClick(async () => {
                     await this.plugin.serverManager?.stop();
@@ -161,7 +161,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 }),
             );
         }
-        if (serverState === "ready") {
+        if (serverState === SERVER_STATE.READY) {
             controlSetting.addButton((btn) =>
                 btn.setButtonText("Restart").onClick(async () => {
                     await this.plugin.serverManager?.restart();
@@ -461,7 +461,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }),
             );
 
-        if (this.plugin.settings.syncMode === "auto") {
+        if (this.plugin.settings.syncMode === SYNC_MODE.AUTO) {
             new Setting(containerEl)
                 .setName("Sync debounce")
                 .setDesc("Delay in ms before syncing after a change")

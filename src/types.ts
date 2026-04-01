@@ -260,6 +260,44 @@ export const TASK_TYPE = {
     DOWNLOAD: "download",
 } as const satisfies Record<string, TaskType>;
 
+export type SyncMode = "manual" | "auto";
+
+export const SYNC_MODE = {
+    MANUAL: "manual",
+    AUTO: "auto",
+} as const satisfies Record<string, SyncMode>;
+
+export type ModelTask = "chat" | "vision" | "embedding";
+
+export const MODEL_TASK = {
+    CHAT: "chat",
+    VISION: "vision",
+    EMBEDDING: "embedding",
+} as const satisfies Record<string, ModelTask>;
+
+export const ERROR_NAME = {
+    ABORT_ERROR: "AbortError",
+} as const;
+
+export const WIZARD_STEP = {
+    WELCOME: 0,
+    SERVER_MODE: 1,
+    MODEL_PICKER: 2,
+    SYNC: 3,
+    DONE: 4,
+} as const satisfies Record<string, number>;
+
+export const PLATFORM = {
+    DARWIN: "darwin",
+    LINUX: "linux",
+    WIN32: "win32",
+} as const;
+
+export const ARCH = {
+    ARM64: "arm64",
+    X64: "x64",
+} as const;
+
 export interface TaskEntry {
     id: string;
     name: string;

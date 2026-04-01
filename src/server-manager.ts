@@ -1,6 +1,6 @@
 import type { ChildProcess } from "child_process";
 import type { ServerState } from "./types";
-import { SERVER_STATE } from "./types";
+import { PLATFORM, SERVER_STATE } from "./types";
 import { node } from "./binary-manager";
 
 const SERVER_MANAGER_CONFIG = {
@@ -186,7 +186,7 @@ export class ServerManager {
 
         const child = this.child;
 
-        if (process.platform === "win32") {
+        if (process.platform === PLATFORM.WIN32) {
             try {
                 await node.execFile("taskkill", ["/pid", String(child.pid), "/f", "/t"]);
             } catch {

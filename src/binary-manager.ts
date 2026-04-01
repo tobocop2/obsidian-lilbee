@@ -3,6 +3,7 @@ import { execFile, spawn } from "child_process";
 import { existsSync, mkdirSync, chmodSync, writeFileSync, readFileSync, unlinkSync } from "fs";
 import { join } from "path";
 import { promisify } from "util";
+import { ARCH, PLATFORM } from "./types";
 
 const execFileAsync = promisify(execFile);
 
@@ -15,10 +16,10 @@ const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/lates
 export function getPlatformAssetName(): string {
     const platform = process.platform;
     const arch = process.arch;
-    if (platform === "darwin" && arch === "arm64") return "lilbee-macos-arm64";
-    if (platform === "darwin" && arch === "x64") return "lilbee-macos-x86_64";
-    if (platform === "linux" && arch === "x64") return "lilbee-linux-x86_64";
-    if (platform === "win32" && arch === "x64") return "lilbee-windows-x86_64.exe";
+    if (platform === PLATFORM.DARWIN && arch === ARCH.ARM64) return "lilbee-macos-arm64";
+    if (platform === PLATFORM.DARWIN && arch === ARCH.X64) return "lilbee-macos-x86_64";
+    if (platform === PLATFORM.LINUX && arch === ARCH.X64) return "lilbee-linux-x86_64";
+    if (platform === PLATFORM.WIN32 && arch === ARCH.X64) return "lilbee-windows-x86_64.exe";
     throw new Error(`Unsupported platform: ${platform}/${arch}`);
 }
 
@@ -62,7 +63,7 @@ export class BinaryManager {
     }
 
     get binaryPath(): string {
-        const name = process.platform === "win32" ? "lilbee.exe" : "lilbee";
+        const name = process.platform === PLATFORM.WIN32 ? "lilbee.exe" : "lilbee";
         return join(this.binDir, name);
     }
 
@@ -90,11 +91,11 @@ export class BinaryManager {
         const dest = this.binaryPath;
         node.writeFileSync(dest, Buffer.from(res.arrayBuffer));
 
-        if (process.platform !== "win32") {
+        if (process.platform !== PLATFORM.WIN32) {
             node.chmodSync(dest, 0o755);
         }
 
-        if (process.platform === "darwin") {
+        if (process.platform === PLATFORM.DARWIN) {
             try {
                 await node.execFile("xattr", ["-cr", dest]);
             } catch {
