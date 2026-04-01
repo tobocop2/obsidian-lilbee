@@ -1088,7 +1088,7 @@ describe("LilbeePlugin", () => {
 
             await plugin.triggerSync();
 
-            expect(statusTexts.some((t) => t.includes("syncing") && t.includes("llama3"))).toBe(true);
+            expect(statusTexts.some((t) => t.includes("Sync vault") && t.includes("llama3"))).toBe(true);
         });
 
         it("updateStatusBar no-ops when statusBarEl is null", async () => {

@@ -20,6 +20,7 @@ export class MockElement {
     value: string = "";
     disabled: boolean = false;
     placeholder: string = "";
+    title: string = "";
     parentElement: MockElement | null = null;
 
     constructor(tag = "div") {
@@ -35,6 +36,19 @@ export class MockElement {
 
     createDiv(opts?: string | { cls?: string; text?: string }): MockElement {
         const el = new MockElement("div");
+        if (typeof opts === "string") {
+            el.classList.add(opts);
+        } else if (opts) {
+            if (opts.cls) opts.cls.split(" ").forEach(c => el.classList.add(c));
+            if (opts.text) el.textContent = opts.text;
+        }
+        el.parentElement = this;
+        this.children.push(el);
+        return el;
+    }
+
+    createSpan(opts?: string | { cls?: string; text?: string }): MockElement {
+        const el = new MockElement("span");
         if (typeof opts === "string") {
             el.classList.add(opts);
         } else if (opts) {
@@ -116,6 +130,13 @@ export class MockElement {
             return this.find(selector.slice(1));
         }
         return null;
+    }
+
+    querySelectorAll(selector: string): MockElement[] {
+        if (selector.startsWith(".")) {
+            return this.findAll(selector.slice(1));
+        }
+        return [];
     }
 
     remove(): void {
