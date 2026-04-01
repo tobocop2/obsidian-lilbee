@@ -2,15 +2,16 @@ import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { ModelFamily, ModelVariant, CatalogResponse } from "../types";
 import { MODEL_TASK, NOTICE, SSE_EVENT, TASK_TYPE } from "../types";
+import { MESSAGES, FILTERS, TASK_LABELS } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 
 const PAGE_SIZE = 20;
 const DEBOUNCE_MS = 300;
 
-type TaskFilter = "" | "chat" | "embedding" | "vision";
-type SizeFilter = "" | "small" | "medium" | "large";
-type SortFilter = "featured" | "downloads" | "name" | "size_asc" | "size_desc";
+type TaskFilter = typeof FILTERS.TASK[keyof typeof FILTERS.TASK];
+type SizeFilter = "" | typeof FILTERS.SIZE.SMALL | typeof FILTERS.SIZE.MEDIUM | typeof FILTERS.SIZE.LARGE;
+type SortFilter = typeof FILTERS.SORT[keyof typeof FILTERS.SORT];
 
 export class CatalogModal extends Modal {
     private plugin: LilbeePlugin;
@@ -35,12 +36,17 @@ export class CatalogModal extends Modal {
         contentEl.empty();
         contentEl.addClass("lilbee-catalog-modal");
 
-        contentEl.createEl("h2", { text: "Model Catalog" });
+        contentEl.createEl("h2", { text: MESSAGES.TITLE_MODEL_CATALOG });
 
         const filters = contentEl.createDiv({ cls: "lilbee-catalog-filters" });
 
         const taskSelect = filters.createEl("select", { cls: "lilbee-catalog-filter-task" }) as HTMLSelectElement;
-        for (const [value, label] of [["", "All tasks"], ["chat", "Chat"], ["embedding", "Embedding"], ["vision", "Vision"]] as const) {
+        for (const [value, label] of [
+            [FILTERS.TASK.ALL, MESSAGES.LABEL_ALL_TASKS],
+            [FILTERS.TASK.CHAT, TASK_LABELS[MODEL_TASK.CHAT]],
+            [FILTERS.TASK.EMBEDDING, TASK_LABELS[MODEL_TASK.EMBEDDING]],
+            [FILTERS.TASK.VISION, TASK_LABELS[MODEL_TASK.VISION]],
+        ] as const) {
             const opt = taskSelect.createEl("option", { text: label }) as HTMLOptionElement;
             opt.value = value;
         }
@@ -50,7 +56,12 @@ export class CatalogModal extends Modal {
         });
 
         const sizeSelect = filters.createEl("select", { cls: "lilbee-catalog-filter-size" }) as HTMLSelectElement;
-        for (const [value, label] of [["", "All sizes"], ["small", "Small"], ["medium", "Medium"], ["large", "Large"]] as const) {
+        for (const [value, label] of [
+            [FILTERS.SIZE.ALL, MESSAGES.LABEL_ALL_SIZES],
+            [FILTERS.SIZE.SMALL, "Small"],
+            [FILTERS.SIZE.MEDIUM, "Medium"],
+            [FILTERS.SIZE.LARGE, "Large"],
+        ] as const) {
             const opt = sizeSelect.createEl("option", { text: label }) as HTMLOptionElement;
             opt.value = value;
         }
@@ -60,7 +71,13 @@ export class CatalogModal extends Modal {
         });
 
         const sortSelect = filters.createEl("select", { cls: "lilbee-catalog-filter-sort" }) as HTMLSelectElement;
-        for (const [value, label] of [["featured", "Featured"], ["downloads", "Downloads"], ["name", "Name"], ["size_asc", "Size (asc)"], ["size_desc", "Size (desc)"]] as const) {
+        for (const [value, label] of [
+            [FILTERS.SORT.FEATURED, MESSAGES.LABEL_FEATURED],
+            [FILTERS.SORT.DOWNLOADS, MESSAGES.LABEL_DOWNLOADS],
+            [FILTERS.SORT.NAME, MESSAGES.LABEL_NAME],
+            [FILTERS.SORT.SIZE_ASC, MESSAGES.LABEL_SIZE_ASC],
+            [FILTERS.SORT.SIZE_DESC, MESSAGES.LABEL_SIZE_DESC],
+        ] as const) {
             const opt = sortSelect.createEl("option", { text: label }) as HTMLOptionElement;
             opt.value = value;
         }
@@ -71,7 +88,7 @@ export class CatalogModal extends Modal {
 
         const searchInput = filters.createEl("input", {
             cls: "lilbee-catalog-search",
-            placeholder: "Search models...",
+            placeholder: MESSAGES.PLACEHOLDER_SEARCH_MODELS,
             attr: { type: "text" },
         });
         searchInput.addEventListener("input", () => {
@@ -85,7 +102,7 @@ export class CatalogModal extends Modal {
         this.resultsEl = contentEl.createDiv({ cls: "lilbee-catalog-results" });
 
         this.loadMoreBtn = contentEl.createEl("button", {
-            text: "Load more",
+            text: MESSAGES.BUTTON_LOAD_MORE,
             cls: "lilbee-catalog-load-more",
         });
         this.loadMoreBtn.style.display = "none";
@@ -131,7 +148,7 @@ export class CatalogModal extends Modal {
 
             this.updateLoadMore();
         } catch {
-            new Notice("lilbee: failed to load catalog");
+            new Notice(MESSAGES.ERROR_LOAD_CATALOG);
         }
     }
 
@@ -182,14 +199,14 @@ export class CatalogModal extends Modal {
         const active = this.plugin.activeModel === variant.hf_repo || this.plugin.activeVisionModel === variant.hf_repo;
 
         if (active) {
-            actionEl.createEl("span", { text: "Active", cls: "lilbee-catalog-active" });
+            actionEl.createEl("span", { text: MESSAGES.LABEL_ACTIVE, cls: "lilbee-catalog-active" });
         } else if (variant.installed) {
-            const installedBtn = actionEl.createEl("button", { text: "Use", cls: "lilbee-catalog-use" });
+            const installedBtn = actionEl.createEl("button", { text: MESSAGES.BUTTON_USE, cls: "lilbee-catalog-use" });
             installedBtn.addEventListener("click", () => this.handleUse(family, variant, installedBtn));
-            const removeBtn = actionEl.createEl("button", { text: "Remove", cls: "lilbee-catalog-remove" });
+            const removeBtn = actionEl.createEl("button", { text: MESSAGES.BUTTON_REMOVE, cls: "lilbee-catalog-remove" });
             removeBtn.addEventListener("click", () => this.handleRemove(variant, removeBtn));
         } else {
-            const pullBtn = actionEl.createEl("button", { text: "Pull", cls: "lilbee-catalog-pull" });
+            const pullBtn = actionEl.createEl("button", { text: MESSAGES.BUTTON_PULL, cls: "lilbee-catalog-pull" });
             pullBtn.addEventListener("click", () => this.handlePull(family, variant, pullBtn));
         }
     }
@@ -207,22 +224,22 @@ export class CatalogModal extends Modal {
     }
 
     private async executeRemove(variant: ModelVariant, btn: HTMLElement): Promise<void> {
-        btn.textContent = "Removing...";
+        btn.textContent = MESSAGES.STATUS_REMOVING;
         (btn as HTMLButtonElement).disabled = true;
         try {
             await this.plugin.api.deleteModel(variant.hf_repo, variant.source);
-            new Notice(`Removed ${variant.hf_repo}`);
+            new Notice(MESSAGES.NOTICE_REMOVED(variant.hf_repo));
             this.plugin.fetchActiveModel();
             this.resetAndFetch();
         } catch {
-            new Notice(`Failed to remove ${variant.hf_repo}`);
-            btn.textContent = "Remove";
+            new Notice(MESSAGES.ERROR_REMOVE_MODEL.replace("{model}", variant.hf_repo));
+            btn.textContent = MESSAGES.BUTTON_REMOVE;
             (btn as HTMLButtonElement).disabled = false;
         }
     }
 
     private async handleUse(family: ModelFamily, variant: ModelVariant, btn: HTMLElement): Promise<void> {
-        btn.textContent = "Setting...";
+        btn.textContent = MESSAGES.STATUS_SETTING;
         (btn as HTMLButtonElement).disabled = true;
         try {
             if (variant.task === MODEL_TASK.VISION) {
@@ -235,11 +252,11 @@ export class CatalogModal extends Modal {
                 this.plugin.activeModel = variant.hf_repo;
             }
             this.plugin.fetchActiveModel();
-            new Notice(`Now using ${variant.hf_repo}`);
+            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(variant.hf_repo));
             this.resetAndFetch();
         } catch {
-            new Notice(`Failed to set ${variant.hf_repo}`);
-            btn.textContent = "Use";
+            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", variant.hf_repo));
+            btn.textContent = MESSAGES.BUTTON_USE;
             (btn as HTMLButtonElement).disabled = false;
         }
     }
@@ -261,7 +278,7 @@ export class CatalogModal extends Modal {
     }
 
     private async executePull(family: ModelFamily, variant: ModelVariant, btn: HTMLElement): Promise<void> {
-        btn.textContent = "Pulling...";
+        btn.textContent = MESSAGES.STATUS_PULLING.replace("{model}", variant.hf_repo);
         (btn as HTMLButtonElement).disabled = true;
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${variant.hf_repo}`, TASK_TYPE.PULL);
         try {
@@ -286,8 +303,8 @@ export class CatalogModal extends Modal {
             }
             this.plugin.fetchActiveModel();
             this.plugin.taskQueue.complete(taskId);
-            new Notice(`lilbee: ${variant.hf_repo} pulled and activated`);
-            btn.textContent = "Active";
+            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(variant.hf_repo));
+            btn.textContent = MESSAGES.LABEL_ACTIVE;
             (btn as HTMLButtonElement).disabled = true;
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
