@@ -9,6 +9,9 @@
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
+  "dependencies": {
+    "neverthrow": "^8.2.0"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^2.1.9",
