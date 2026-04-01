@@ -629,6 +629,19 @@ describe("setEmbeddingModel()", () => {
         }));
         expect(result.ok).toBe(true);
     });
+
+    it("returns error when response is not ok", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 400,
+            statusText: "Bad Request",
+            text: () => Promise.resolve(""),
+        } as unknown as Response);
+
+        const result = await client.setEmbeddingModel("nomic-embed-text-v1.5");
+        expect(result.ok).toBe(false);
+        expect(result.error.message).toBe("Server responded 400: ");
+    });
 });
 });
 
@@ -648,6 +661,19 @@ describe("setChatModel()", () => {
         );
         expect(result.ok).toBe(true);
     });
+
+    it("returns error when response is not ok", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 500,
+            statusText: "Internal Server Error",
+            text: () => Promise.resolve(""),
+        } as unknown as Response);
+
+        const result = await client.setChatModel("mistral");
+        expect(result.ok).toBe(false);
+        expect(result.error.message).toBe("Server responded 500: ");
+    });
 });
 
 describe("setVisionModel()", () => {
@@ -665,6 +691,19 @@ describe("setVisionModel()", () => {
             }),
         );
         expect(result.ok).toBe(true);
+    });
+
+    it("returns error when response is not ok", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 422,
+            statusText: "Unprocessable Entity",
+            text: () => Promise.resolve(""),
+        } as unknown as Response);
+
+        const result = await client.setVisionModel("llava");
+        expect(result.ok).toBe(false);
+        expect(result.error.message).toBe("Server responded 422: ");
     });
 });
 

@@ -222,23 +222,21 @@ export class LilbeeClient {
 
     async setChatModel(model: string): Promise<Result<void, Error>> {
         return tryCatch(async () => {
-            const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/chat`, {
+            await this.fetchWithRetry(`${this.baseUrl}/api/models/chat`, {
                 method: "PUT",
                 headers: { ...JSON_HEADERS, ...this.authHeaders() },
                 body: JSON.stringify({ model }),
             });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
         });
     }
 
     async setVisionModel(model: string): Promise<Result<void, Error>> {
         return tryCatch(async () => {
-            const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/vision`, {
+            await this.fetchWithRetry(`${this.baseUrl}/api/models/vision`, {
                 method: "PUT",
                 headers: { ...JSON_HEADERS, ...this.authHeaders() },
                 body: JSON.stringify({ model }),
             });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
         });
     }
 
@@ -345,12 +343,11 @@ export class LilbeeClient {
 
     async setEmbeddingModel(model: string): Promise<Result<void, Error>> {
         return tryCatch(async () => {
-            const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/embedding`, {
+            await this.fetchWithRetry(`${this.baseUrl}/api/models/embedding`, {
                 method: "PUT",
                 headers: { ...JSON_HEADERS, ...this.authHeaders() },
                 body: JSON.stringify({ model }),
             });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
         });
     }
 
