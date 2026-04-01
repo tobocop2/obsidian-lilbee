@@ -5,7 +5,7 @@ import { CatalogModal } from "../../src/views/catalog-modal";
 import { NOTICE, SSE_EVENT } from "../../src/types";
 import type { ModelFamily, ModelVariant, CatalogResponse } from "../../src/types";
 import { TaskQueue } from "../../src/task-queue";
-import { ok, err } from "../../src/result";
+import { ok, err } from "neverthrow";
 
 let mockConfirmResult = true;
 let mockConfirmRemoveResult = true;

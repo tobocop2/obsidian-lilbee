@@ -1,6 +1,8 @@
 import { JSON_HEADERS, SSE_EVENT } from "./types";
-import { tryCatch } from "./result";
-import type { Result } from "./result";
+import { ok, err, Result } from "neverthrow";
+
+type FetchResult<T> = Result<T, Error> & { ok: boolean; value?: T; error?: Error };
+
 import type {
     AskResponse,
     CatalogResponse,
@@ -41,6 +43,27 @@ export class LilbeeClient {
             throw new Error(`Server responded ${res.status}: ${text}`);
         }
         return res;
+    }
+
+    /**
+     * Fetch with retry and return Result. Handles all errors uniformly.
+     * Returns Result with backward-compatible .ok, .value, .error properties.
+     */
+    private async fetchResult<T>(
+        url: string,
+        init?: RequestInit,
+        opts?: { stream?: boolean; signal?: AbortSignal },
+    ): Promise<FetchResult<T>> {
+        try {
+            const res = await this.fetchWithRetry(url, init, opts);
+            const value = await res.json() as T;
+            const result = ok(value);
+            return Object.assign(result, { ok: true, value });
+        } catch (e) {
+            const error = e instanceof Error ? e : new Error(String(e));
+            const result = err(error);
+            return Object.assign(result, { ok: false, error });
+        }
     }
 
     /**
@@ -89,17 +112,11 @@ export class LilbeeClient {
     }
 
     async health(): Promise<Result<{ status: string; version: string }, Error>> {
-        return tryCatch(async () => {
-            const res = await this.fetchWithRetry(`${this.baseUrl}/api/health`);
-            return await res.json() as { status: string; version: string };
-        });
+        return this.fetchResult(`${this.baseUrl}/api/health`);
     }
 
     async status(): Promise<Result<StatusResponse, Error>> {
-        return tryCatch(async () => {
-            const res = await this.fetchWithRetry(`${this.baseUrl}/api/status`);
-            return await res.json() as StatusResponse;
-        });
+        return this.fetchResult(`${this.baseUrl}/api/status`);
     }
 
     async search(query: string, topK?: number): Promise<DocumentResult[]> {
@@ -221,22 +238,18 @@ export class LilbeeClient {
     }
 
     async setChatModel(model: string): Promise<Result<void, Error>> {
-        return tryCatch(async () => {
-            await this.fetchWithRetry(`${this.baseUrl}/api/models/chat`, {
-                method: "PUT",
-                headers: { ...JSON_HEADERS, ...this.authHeaders() },
-                body: JSON.stringify({ model }),
-            });
+        return this.fetchResult<void>(`${this.baseUrl}/api/models/chat`, {
+            method: "PUT",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ model }),
         });
     }
 
     async setVisionModel(model: string): Promise<Result<void, Error>> {
-        return tryCatch(async () => {
-            await this.fetchWithRetry(`${this.baseUrl}/api/models/vision`, {
-                method: "PUT",
-                headers: { ...JSON_HEADERS, ...this.authHeaders() },
-                body: JSON.stringify({ model }),
-            });
+        return this.fetchResult<void>(`${this.baseUrl}/api/models/vision`, {
+            method: "PUT",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ model }),
         });
     }
 
@@ -249,19 +262,16 @@ export class LilbeeClient {
         limit?: number;
         offset?: number;
     }): Promise<Result<CatalogResponse, Error>> {
-        return tryCatch(async () => {
-            const qs = new URLSearchParams();
-            if (params?.task) qs.set("task", params.task);
-            if (params?.search) qs.set("search", params.search);
-            if (params?.size) qs.set("size", params.size);
-            if (params?.sort) qs.set("sort", params.sort);
-            if (params?.featured !== undefined) qs.set("featured", String(params.featured));
-            if (params?.limit !== undefined) qs.set("limit", String(params.limit));
-            if (params?.offset !== undefined) qs.set("offset", String(params.offset));
-            const suffix = qs.toString() ? `?${qs}` : "";
-            const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/catalog${suffix}`);
-            return await res.json() as CatalogResponse;
-        });
+        const qs = new URLSearchParams();
+        if (params?.task) qs.set("task", params.task);
+        if (params?.search) qs.set("search", params.search);
+        if (params?.size) qs.set("size", params.size);
+        if (params?.sort) qs.set("sort", params.sort);
+        if (params?.featured !== undefined) qs.set("featured", String(params.featured));
+        if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+        if (params?.offset !== undefined) qs.set("offset", String(params.offset));
+        const suffix = qs.toString() ? `?${qs}` : "";
+        return this.fetchResult<CatalogResponse>(`${this.baseUrl}/api/models/catalog${suffix}`);
     }
 
     async installedModels(): Promise<InstalledResponse> {
@@ -279,16 +289,13 @@ export class LilbeeClient {
     }
 
     async deleteModel(model: string, source = "native"): Promise<Result<{ deleted: boolean; model: string; freed_gb: number }, Error>> {
-        return tryCatch(async () => {
-            const res = await this.fetchWithRetry(
-                `${this.baseUrl}/api/models/${encodeURIComponent(model)}?source=${source}`,
-                {
-                    method: "DELETE",
-                    headers: this.authHeaders(),
-                },
-            );
-            return await res.json() as { deleted: boolean; model: string; freed_gb: number };
-        });
+        return this.fetchResult(
+            `${this.baseUrl}/api/models/${encodeURIComponent(model)}?source=${source}`,
+            {
+                method: "DELETE",
+                headers: this.authHeaders(),
+            },
+        );
     }
 
     async listDocuments(search?: string, limit?: number, offset?: number): Promise<DocumentsResponse> {
@@ -342,12 +349,10 @@ export class LilbeeClient {
     }
 
     async setEmbeddingModel(model: string): Promise<Result<void, Error>> {
-        return tryCatch(async () => {
-            await this.fetchWithRetry(`${this.baseUrl}/api/models/embedding`, {
-                method: "PUT",
-                headers: { ...JSON_HEADERS, ...this.authHeaders() },
-                body: JSON.stringify({ model }),
-            });
+        return this.fetchResult<void>(`${this.baseUrl}/api/models/embedding`, {
+            method: "PUT",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ model }),
         });
     }
 

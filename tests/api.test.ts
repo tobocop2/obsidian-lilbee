@@ -879,6 +879,14 @@ describe("fetchWithRetry()", () => {
         expect(fetchMock).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
     });
 
+    it("wraps non-Error thrown value in Error", async () => {
+        fetchMock.mockRejectedValue("string error");
+
+        const result = await client.health();
+        expect(result.ok).toBe(false);
+        expect(result.error.message).toBe("string error");
+    });
+
     it("does NOT retry on HTTP error (4xx/5xx)", async () => {
         fetchMock.mockResolvedValue({
             ok: false,

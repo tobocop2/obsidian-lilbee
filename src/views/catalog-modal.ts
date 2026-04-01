@@ -5,7 +5,7 @@ import { MODEL_TASK, NOTICE, SSE_EVENT, TASK_TYPE } from "../types";
 import { MESSAGES, FILTERS, TASK_LABELS } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
-import { isOk, isErr, Result } from "../result";
+import type { Result } from "neverthrow";
 
 const PAGE_SIZE = 20;
 const DEBOUNCE_MS = 300;
@@ -138,12 +138,12 @@ export class CatalogModal extends Modal {
         if (this.filterSearch) params.search = this.filterSearch;
 
         const result = await this.plugin.api.catalog(params);
-        if (isErr(result)) {
+        if (result.isErr()) {
             new Notice(MESSAGES.ERROR_LOAD_CATALOG);
             return;
         }
 
-        const response = result.value;
+        const response = (result as { value: CatalogResponse }).value;
         this.total = response.total;
         this.families.push(...response.families);
         this.offset += response.families.length;
@@ -231,7 +231,7 @@ export class CatalogModal extends Modal {
         (btn as HTMLButtonElement).disabled = true;
 
         const result = await this.plugin.api.deleteModel(variant.hf_repo, variant.source);
-        if (isErr(result)) {
+        if (result.isErr()) {
             new Notice(MESSAGES.ERROR_REMOVE_MODEL.replace("{model}", variant.hf_repo));
             btn.textContent = MESSAGES.BUTTON_REMOVE;
             (btn as HTMLButtonElement).disabled = false;
@@ -249,7 +249,7 @@ export class CatalogModal extends Modal {
 
         const result = await this.setModelForTask(variant);
 
-        if (isErr(result)) {
+        if (result.isErr()) {
             new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", variant.hf_repo));
             btn.textContent = MESSAGES.BUTTON_USE;
             (btn as HTMLButtonElement).disabled = false;
@@ -264,13 +264,13 @@ export class CatalogModal extends Modal {
     private async setModelForTask(variant: ModelVariant): Promise<Result<void, Error>> {
         if (variant.task === MODEL_TASK.VISION) {
             const result = await this.plugin.api.setVisionModel(variant.hf_repo);
-            if (isOk(result)) this.plugin.activeVisionModel = variant.hf_repo;
+            if (result.isOk()) this.plugin.activeVisionModel = variant.hf_repo;
             return result;
         } else if (variant.task === MODEL_TASK.EMBEDDING) {
             return await this.plugin.api.setEmbeddingModel(variant.hf_repo);
         } else {
             const result = await this.plugin.api.setChatModel(variant.hf_repo);
-            if (isOk(result)) this.plugin.activeModel = variant.hf_repo;
+            if (result.isOk()) this.plugin.activeModel = variant.hf_repo;
             return result;
         }
     }
@@ -323,9 +323,10 @@ export class CatalogModal extends Modal {
         }
 
         const result = await this.setModelForTask(variant);
-        if (isErr(result)) {
+        if (result.isErr()) {
             new Notice(NOTICE.PULL_FAILED);
-            this.plugin.taskQueue.fail(taskId, result.error.message);
+            const err = (result as { error: Error }).error;
+            this.plugin.taskQueue.fail(taskId, err.message);
             btn.textContent = "Pull";
             (btn as HTMLButtonElement).disabled = false;
             return;
