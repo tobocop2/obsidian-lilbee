@@ -2,7 +2,7 @@ import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { ModelFamily, ModelVariant, CatalogResponse } from "../types";
 import { MODEL_TASK, NOTICE, SSE_EVENT, TASK_TYPE } from "../types";
-import { MESSAGES, FILTERS, TASK_LABELS } from "../locales/en";
+import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import type { Result } from "neverthrow";
@@ -42,13 +42,8 @@ export class CatalogModal extends Modal {
         const filters = contentEl.createDiv({ cls: "lilbee-catalog-filters" });
 
         const taskSelect = filters.createEl("select", { cls: "lilbee-catalog-filter-task" }) as HTMLSelectElement;
-        for (const [value, label] of [
-            [FILTERS.TASK.ALL, MESSAGES.LABEL_ALL_TASKS],
-            [FILTERS.TASK.CHAT, TASK_LABELS[MODEL_TASK.CHAT]],
-            [FILTERS.TASK.EMBEDDING, TASK_LABELS[MODEL_TASK.EMBEDDING]],
-            [FILTERS.TASK.VISION, TASK_LABELS[MODEL_TASK.VISION]],
-        ] as const) {
-            const opt = taskSelect.createEl("option", { text: label }) as HTMLOptionElement;
+        for (const [value, label] of CATALOG_FILTERS.TASK) {
+            const opt = taskSelect.createEl("option", { text: label });
             opt.value = value;
         }
         taskSelect.addEventListener("change", () => {
@@ -57,13 +52,8 @@ export class CatalogModal extends Modal {
         });
 
         const sizeSelect = filters.createEl("select", { cls: "lilbee-catalog-filter-size" }) as HTMLSelectElement;
-        for (const [value, label] of [
-            [FILTERS.SIZE.ALL, MESSAGES.LABEL_ALL_SIZES],
-            [FILTERS.SIZE.SMALL, "Small"],
-            [FILTERS.SIZE.MEDIUM, "Medium"],
-            [FILTERS.SIZE.LARGE, "Large"],
-        ] as const) {
-            const opt = sizeSelect.createEl("option", { text: label }) as HTMLOptionElement;
+        for (const [value, label] of CATALOG_FILTERS.SIZE) {
+            const opt = sizeSelect.createEl("option", { text: label });
             opt.value = value;
         }
         sizeSelect.addEventListener("change", () => {
@@ -72,14 +62,8 @@ export class CatalogModal extends Modal {
         });
 
         const sortSelect = filters.createEl("select", { cls: "lilbee-catalog-filter-sort" }) as HTMLSelectElement;
-        for (const [value, label] of [
-            [FILTERS.SORT.FEATURED, MESSAGES.LABEL_FEATURED],
-            [FILTERS.SORT.DOWNLOADS, MESSAGES.LABEL_DOWNLOADS],
-            [FILTERS.SORT.NAME, MESSAGES.LABEL_NAME],
-            [FILTERS.SORT.SIZE_ASC, MESSAGES.LABEL_SIZE_ASC],
-            [FILTERS.SORT.SIZE_DESC, MESSAGES.LABEL_SIZE_DESC],
-        ] as const) {
-            const opt = sortSelect.createEl("option", { text: label }) as HTMLOptionElement;
+        for (const [value, label] of CATALOG_FILTERS.SORT) {
+            const opt = sortSelect.createEl("option", { text: label });
             opt.value = value;
         }
         sortSelect.addEventListener("change", () => {
