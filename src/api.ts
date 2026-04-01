@@ -95,9 +95,11 @@ export class LilbeeClient {
         });
     }
 
-    async status(): Promise<StatusResponse> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/status`);
-        return res.json();
+    async status(): Promise<Result<StatusResponse, Error>> {
+        return tryCatch(async () => {
+            const res = await this.fetchWithRetry(`${this.baseUrl}/api/status`);
+            return await res.json() as StatusResponse;
+        });
     }
 
     async search(query: string, topK?: number): Promise<DocumentResult[]> {

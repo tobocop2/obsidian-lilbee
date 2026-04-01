@@ -322,8 +322,6 @@ export class CatalogModal extends Modal {
             return;
         }
 
-        if (!pullSucceeded) return;
-
         const result = await this.setModelForTask(variant);
         if (isErr(result)) {
             new Notice(NOTICE.PULL_FAILED);

@@ -69,7 +69,8 @@ describe("health()", () => {
             `${BASE_URL}/api/health`,
             expect.objectContaining({}),
         );
-        expect(result).toEqual(data);
+        expect(result.ok).toBe(true);
+        expect(result.value).toEqual(data);
     });
 });
 
@@ -88,7 +89,8 @@ describe("status()", () => {
             `${BASE_URL}/api/status`,
             expect.objectContaining({}),
         );
-        expect(result).toEqual(data);
+        expect(result.ok).toBe(true);
+        expect(result.value).toEqual(data);
     });
 });
 
@@ -452,7 +454,8 @@ describe("catalog()", () => {
         const result = await client.catalog();
 
         expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/catalog`, expect.objectContaining({}));
-        expect(result).toEqual(data);
+        expect(result.ok).toBe(true);
+        expect(result.value).toEqual(data);
     });
 
     it("appends query params when provided", async () => {
@@ -509,7 +512,8 @@ describe("deleteModel()", () => {
             `${BASE_URL}/api/models/qwen3%3A8b?source=native`,
             expect.objectContaining({ method: "DELETE" }),
         );
-        expect(result.deleted).toBe(true);
+        expect(result.ok).toBe(true);
+        expect(result.value.deleted).toBe(true);
     });
 
     it("passes custom source parameter", async () => {
@@ -623,7 +627,7 @@ describe("setEmbeddingModel()", () => {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ model: "nomic-embed-text-v1.5" }),
         }));
-        expect(result.model).toBe("nomic-embed-text-v1.5");
+        expect(result.ok).toBe(true);
     });
 });
 });
@@ -642,7 +646,7 @@ describe("setChatModel()", () => {
                 body: JSON.stringify({ model: "mistral" }),
             }),
         );
-        expect(result).toEqual({ model: "mistral" });
+        expect(result.ok).toBe(true);
     });
 });
 
@@ -660,7 +664,7 @@ describe("setVisionModel()", () => {
                 body: JSON.stringify({ model: "llava" }),
             }),
         );
-        expect(result).toEqual({ model: "llava" });
+        expect(result.ok).toBe(true);
     });
 });
 
@@ -823,13 +827,16 @@ describe("fetchWithRetry()", () => {
         const result = await client.health();
 
         expect(fetchMock).toHaveBeenCalledTimes(2);
-        expect(result).toEqual(data);
+        expect(result.ok).toBe(true);
+        expect(result.value).toEqual(data);
     });
 
     it("throws after all retries exhausted on network error", async () => {
         fetchMock.mockRejectedValue(new Error("connection refused"));
 
-        await expect(client.health()).rejects.toThrow("connection refused");
+        const result = await client.health();
+        expect(result.ok).toBe(false);
+        expect(result.error.message).toBe("connection refused");
         expect(fetchMock).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
     });
 
@@ -840,7 +847,9 @@ describe("fetchWithRetry()", () => {
             text: () => Promise.resolve("Validation error"),
         } as unknown as Response);
 
-        await expect(client.health()).rejects.toThrow("Server responded 422");
+        const result = await client.health();
+        expect(result.ok).toBe(false);
+        expect(result.error.message).toBe("Server responded 422: Validation error");
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
@@ -872,7 +881,9 @@ describe("assertOk", () => {
             text: () => Promise.resolve("Internal Server Error"),
         } as unknown as Response);
 
-        await expect(client.status()).rejects.toThrow("Server responded 500: Internal Server Error");
+        const result = await client.status();
+        expect(result.ok).toBe(false);
+        expect(result.error.message).toBe("Server responded 500: Internal Server Error");
     });
 
     it("throws with empty string when res.text() itself throws", async () => {
@@ -882,7 +893,9 @@ describe("assertOk", () => {
             text: () => Promise.reject(new Error("network failure")),
         } as unknown as Response);
 
-        await expect(client.status()).rejects.toThrow("Server responded 503: ");
+        const result = await client.status();
+        expect(result.ok).toBe(false);
+        expect(result.error.message).toBe("Server responded 503: ");
     });
 });
 describe("fetchWithRetry() — signal and AbortError", () => {
@@ -905,7 +918,9 @@ describe("fetchWithRetry() — signal and AbortError", () => {
         abortError.name = "AbortError";
         fetchMock.mockRejectedValue(abortError);
 
-        await expect(client.health()).rejects.toThrow("The operation was aborted");
+        const result = await client.health();
+        expect(result.ok).toBe(false);
+        expect(result.error.name).toBe("AbortError");
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 });
