@@ -2,6 +2,7 @@ import { App, Modal } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { DocumentResult } from "../types";
 import { renderDocumentResult, renderSourceChip } from "./results";
+import { MESSAGES } from "../locales/en";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -22,13 +23,13 @@ export class SearchModal extends Modal {
         contentEl.empty();
         contentEl.addClass("lilbee-modal");
 
-        const title = this.mode === "search" ? "Search knowledge base" : "Ask a question";
+        const title = this.mode === "search" ? MESSAGES.TITLE_SEARCH : MESSAGES.TITLE_ASK;
         contentEl.createEl("h2", { text: title });
 
         const input = contentEl.createEl("input", {
             type: "text",
             cls: "lilbee-search-input",
-            placeholder: this.mode === "search" ? "Type to search..." : "Ask anything...",
+            placeholder: this.mode === "search" ? MESSAGES.PLACEHOLDER_TYPE_SEARCH : MESSAGES.PLACEHOLDER_ASK_ANYTHING,
         });
 
         this.resultsContainer = contentEl.createDiv({ cls: "lilbee-modal-results" });

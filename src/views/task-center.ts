@@ -1,6 +1,7 @@
 import { ItemView, setIcon, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
 import { TASK_STATUS, TASK_TYPE, type TaskEntry, type TaskStatus, type TaskType } from "../types";
+import { MESSAGES } from "../locales/en";
 
 export const VIEW_TYPE_TASKS = "lilbee-tasks";
 
@@ -41,7 +42,7 @@ export class TaskCenterView extends ItemView {
     }
 
     getDisplayText(): string {
-        return "lilbee Tasks";
+        return MESSAGES.LABEL_TASKS_VIEW;
     }
 
     getIcon(): string {
@@ -54,23 +55,23 @@ export class TaskCenterView extends ItemView {
         contentEl.addClass("lilbee-tasks-container");
 
         const header = contentEl.createDiv({ cls: "lilbee-tasks-header" });
-        header.createEl("h2", { text: "Task Center" });
+        header.createEl("h2", { text: MESSAGES.LABEL_TASK_CENTER });
 
         const clearBtn = header.createEl("button", { cls: "lilbee-tasks-clear" });
-        clearBtn.textContent = "Clear";
+        clearBtn.textContent = MESSAGES.BUTTON_CLEAR_TASKS;
         clearBtn.addEventListener("click", () => {
             this.plugin.taskQueue.clearHistory();
             this.render();
         });
 
         this.activeSection = contentEl.createDiv({ cls: "lilbee-tasks-section" });
-        this.activeSection.createDiv({ cls: "lilbee-tasks-section-header" }).textContent = "ACTIVE";
+        this.activeSection.createDiv({ cls: "lilbee-tasks-section-header" }).textContent = MESSAGES.LABEL_ACTIVE_TASKS;
 
         this.queuedSection = contentEl.createDiv({ cls: "lilbee-tasks-section" });
-        this.queuedSection.createDiv({ cls: "lilbee-tasks-section-header" }).textContent = "QUEUED";
+        this.queuedSection.createDiv({ cls: "lilbee-tasks-section-header" }).textContent = MESSAGES.LABEL_QUEUED_TASKS;
 
         this.completedSection = contentEl.createDiv({ cls: "lilbee-tasks-section" });
-        this.completedSection.createDiv({ cls: "lilbee-tasks-section-header" }).textContent = "COMPLETED";
+        this.completedSection.createDiv({ cls: "lilbee-tasks-section-header" }).textContent = MESSAGES.LABEL_COMPLETED_TASKS;
 
         this.unsubscribe = this.plugin.taskQueue.onChange(() => this.render());
         this.timeRefreshInterval = setInterval(() => this.render(), 30000) as unknown as number;
@@ -103,7 +104,7 @@ export class TaskCenterView extends ItemView {
 
         if (!active) {
             const empty = container.createDiv({ cls: "lilbee-tasks-empty" });
-            empty.textContent = "No active tasks";
+            empty.textContent = MESSAGES.LABEL_NO_ACTIVE_TASKS;
             return;
         }
 
@@ -123,7 +124,7 @@ export class TaskCenterView extends ItemView {
 
         if (queued.length === 0) {
             const empty = container.createDiv({ cls: "lilbee-tasks-empty" });
-            empty.textContent = "No queued tasks";
+            empty.textContent = MESSAGES.LABEL_NO_QUEUED_TASKS;
             return;
         }
 
@@ -145,7 +146,7 @@ export class TaskCenterView extends ItemView {
 
         if (completed.length === 0) {
             const empty = container.createDiv({ cls: "lilbee-tasks-empty" });
-            empty.textContent = "No completed tasks";
+            empty.textContent = MESSAGES.LABEL_NO_COMPLETED_TASKS;
             return;
         }
 
@@ -188,7 +189,7 @@ export class TaskCenterView extends ItemView {
         if (isActive && task.canCancel) {
             const cancelBtn = row.createEl("button", { cls: "lilbee-task-cancel" });
             cancelBtn.textContent = "×";
-            cancelBtn.title = "Cancel task";
+            cancelBtn.title = MESSAGES.LABEL_CANCEL_TASK;
             cancelBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
                 this.handleCancel(task);
@@ -236,10 +237,7 @@ export class TaskCenterView extends ItemView {
             return;
         }
 
-        const confirmed = confirm(
-            "This operation is already in progress on the server. " +
-                "Canceling will hide it from the task center, but it may still complete. Continue?"
-        );
+        const confirmed = confirm(MESSAGES.NOTICE_CONFIRM_CANCEL);
 
         if (confirmed) {
             this.plugin.taskQueue.cancel(task.id);

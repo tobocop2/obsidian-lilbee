@@ -29,7 +29,8 @@ describe("MESSAGES", () => {
             expect(MESSAGES.BUTTON_RESET_MANAGED).toBe("Reset to managed");
             expect(MESSAGES.BUTTON_RUN_SETUP_WIZARD).toBe("Run setup wizard");
             expect(MESSAGES.BUTTON_CHECK_UPDATES).toBe("Check for updates");
-            expect(MESSAGES.BUTTON_CLEAR).toBe("Clear");
+            expect(MESSAGES.BUTTON_CLEAR_TASKS).toBe("Clear");
+            expect(MESSAGES.BUTTON_CLEAR_CHAT).toBe("Clear chat");
             expect(MESSAGES.BUTTON_SEND).toBe("Send");
             expect(MESSAGES.BUTTON_OPEN_CHAT).toBe("Open chat");
         });

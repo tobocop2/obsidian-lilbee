@@ -1,4 +1,6 @@
 import { JSON_HEADERS, SSE_EVENT } from "./types";
+import { tryCatch } from "./result";
+import type { Result } from "./result";
 import type {
     AskResponse,
     CatalogResponse,
@@ -13,7 +15,6 @@ import type {
     SSEEvent,
     StatusResponse,
 } from "./types";
-
 const DEFAULT_TIMEOUT_MS = 15_000;
 const RETRY_COUNT = 2;
 const RETRY_BACKOFF_MS = 500;
@@ -87,9 +88,11 @@ export class LilbeeClient {
         throw lastError;
     }
 
-    async health(): Promise<{ status: string; version: string }> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/health`);
-        return res.json();
+    async health(): Promise<Result<{ status: string; version: string }, Error>> {
+        return tryCatch(async () => {
+            const res = await this.fetchWithRetry(`${this.baseUrl}/api/health`);
+            return await res.json() as { status: string; version: string };
+        });
     }
 
     async status(): Promise<StatusResponse> {
@@ -215,22 +218,26 @@ export class LilbeeClient {
         yield* this.parseSSE(res);
     }
 
-    async setChatModel(model: string): Promise<{ model: string }> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/chat`, {
-            method: "PUT",
-            headers: { ...JSON_HEADERS, ...this.authHeaders() },
-            body: JSON.stringify({ model }),
+    async setChatModel(model: string): Promise<Result<void, Error>> {
+        return tryCatch(async () => {
+            const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/chat`, {
+                method: "PUT",
+                headers: { ...JSON_HEADERS, ...this.authHeaders() },
+                body: JSON.stringify({ model }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
         });
-        return res.json();
     }
 
-    async setVisionModel(model: string): Promise<{ model: string }> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/vision`, {
-            method: "PUT",
-            headers: { ...JSON_HEADERS, ...this.authHeaders() },
-            body: JSON.stringify({ model }),
+    async setVisionModel(model: string): Promise<Result<void, Error>> {
+        return tryCatch(async () => {
+            const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/vision`, {
+                method: "PUT",
+                headers: { ...JSON_HEADERS, ...this.authHeaders() },
+                body: JSON.stringify({ model }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
         });
-        return res.json();
     }
 
     async catalog(params?: {
@@ -241,18 +248,20 @@ export class LilbeeClient {
         featured?: boolean;
         limit?: number;
         offset?: number;
-    }): Promise<CatalogResponse> {
-        const qs = new URLSearchParams();
-        if (params?.task) qs.set("task", params.task);
-        if (params?.search) qs.set("search", params.search);
-        if (params?.size) qs.set("size", params.size);
-        if (params?.sort) qs.set("sort", params.sort);
-        if (params?.featured !== undefined) qs.set("featured", String(params.featured));
-        if (params?.limit !== undefined) qs.set("limit", String(params.limit));
-        if (params?.offset !== undefined) qs.set("offset", String(params.offset));
-        const suffix = qs.toString() ? `?${qs}` : "";
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/catalog${suffix}`);
-        return res.json();
+    }): Promise<Result<CatalogResponse, Error>> {
+        return tryCatch(async () => {
+            const qs = new URLSearchParams();
+            if (params?.task) qs.set("task", params.task);
+            if (params?.search) qs.set("search", params.search);
+            if (params?.size) qs.set("size", params.size);
+            if (params?.sort) qs.set("sort", params.sort);
+            if (params?.featured !== undefined) qs.set("featured", String(params.featured));
+            if (params?.limit !== undefined) qs.set("limit", String(params.limit));
+            if (params?.offset !== undefined) qs.set("offset", String(params.offset));
+            const suffix = qs.toString() ? `?${qs}` : "";
+            const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/catalog${suffix}`);
+            return await res.json() as CatalogResponse;
+        });
     }
 
     async installedModels(): Promise<InstalledResponse> {
@@ -269,15 +278,17 @@ export class LilbeeClient {
         return res.json();
     }
 
-    async deleteModel(model: string, source = "native"): Promise<{ deleted: boolean; model: string; freed_gb: number }> {
-        const res = await this.fetchWithRetry(
-            `${this.baseUrl}/api/models/${encodeURIComponent(model)}?source=${source}`,
-            {
-                method: "DELETE",
-                headers: this.authHeaders(),
-            },
-        );
-        return res.json();
+    async deleteModel(model: string, source = "native"): Promise<Result<{ deleted: boolean; model: string; freed_gb: number }, Error>> {
+        return tryCatch(async () => {
+            const res = await this.fetchWithRetry(
+                `${this.baseUrl}/api/models/${encodeURIComponent(model)}?source=${source}`,
+                {
+                    method: "DELETE",
+                    headers: this.authHeaders(),
+                },
+            );
+            return await res.json() as { deleted: boolean; model: string; freed_gb: number };
+        });
     }
 
     async listDocuments(search?: string, limit?: number, offset?: number): Promise<DocumentsResponse> {
@@ -330,13 +341,15 @@ export class LilbeeClient {
         return res.json();
     }
 
-    async setEmbeddingModel(model: string): Promise<EmbeddingModelResponse> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/embedding`, {
-            method: "PUT",
-            headers: { ...JSON_HEADERS, ...this.authHeaders() },
-            body: JSON.stringify({ model }),
+    async setEmbeddingModel(model: string): Promise<Result<void, Error>> {
+        return tryCatch(async () => {
+            const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/embedding`, {
+                method: "PUT",
+                headers: { ...JSON_HEADERS, ...this.authHeaders() },
+                body: JSON.stringify({ model }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
         });
-        return res.json();
     }
 
     private async *parseSSE(response: Response): AsyncGenerator<SSEEvent> {

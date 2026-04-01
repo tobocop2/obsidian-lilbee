@@ -1,4 +1,5 @@
 import { App, Modal } from "obsidian";
+import { MESSAGES } from "../locales/en";
 
 export class ConfirmModal extends Modal {
     private message: string;
@@ -22,10 +23,10 @@ export class ConfirmModal extends Modal {
         contentEl.createEl("p", { text: this.message });
 
         const actions = contentEl.createDiv({ cls: "lilbee-confirm-actions" });
-        const continueBtn = actions.createEl("button", { text: "Continue", cls: "mod-cta" });
+        const continueBtn = actions.createEl("button", { text: MESSAGES.BUTTON_CONTINUE, cls: "mod-cta" });
         continueBtn.addEventListener("click", () => this.decide(true));
 
-        const cancelBtn = actions.createEl("button", { text: "Cancel" });
+        const cancelBtn = actions.createEl("button", { text: MESSAGES.BUTTON_CANCEL });
         cancelBtn.addEventListener("click", () => this.decide(false));
     }
 

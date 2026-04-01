@@ -5,6 +5,7 @@ import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { LilbeeSettingTab } from "./settings";
 import { DEFAULT_SETTINGS, NOTICE, SERVER_MODE, SERVER_STATE, SSE_EVENT, SYNC_MODE, TASK_TYPE, type LilbeeSettings, type ServerMode, type ServerState, type SSEEvent, type SyncDone, type VaultAdapter } from "./types";
+import { MESSAGES } from "./locales/en";
 import { CatalogModal } from "./views/catalog-modal";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
 import { CrawlModal } from "./views/crawl-modal";
@@ -90,7 +91,7 @@ export default class LilbeePlugin extends Plugin {
 
             const needsDownload = !this.binaryManager.binaryExists();
             if (needsDownload) {
-                this.updateStatusBar("lilbee: downloading...");
+                this.updateStatusBar(MESSAGES.STATUS_DOWNLOADING);
                 this.setStatusClass("lilbee-status-downloading");
             }
 
@@ -140,11 +141,11 @@ export default class LilbeePlugin extends Plugin {
                         const detail = stderr
                             ? `\n${stderr.split("\n").slice(-5).join("\n")}`
                             : "";
-                        new Notice(`lilbee: server crashed after multiple restarts${detail}`, 0);
+                        new Notice(`${MESSAGES.ERROR_SERVER_CRASHED}${detail}`, 0);
                     },
                 });
 
-                this.updateStatusBar("lilbee: starting...");
+                this.updateStatusBar(MESSAGES.STATUS_STARTING);
                 this.setStatusClass("lilbee-status-starting");
                 await this.serverManager.start();
                 this.api = new LilbeeClient(this.serverManager.serverUrl);
@@ -216,18 +217,18 @@ export default class LilbeePlugin extends Plugin {
                     this.api = new LilbeeClient(this.serverManager.serverUrl);
                 }
                 this.setStatusReady();
-                new Notice("lilbee: server ready", 3000);
+                new Notice(MESSAGES.STATUS_READY, 3000);
                 break;
             case "starting":
-                this.updateStatusBar("lilbee: starting...");
+                this.updateStatusBar(MESSAGES.STATUS_STARTING);
                 this.setStatusClass("lilbee-status-starting");
                 break;
             case "error":
-                this.updateStatusBar("lilbee: error");
+                this.updateStatusBar(MESSAGES.STATUS_ERROR);
                 this.setStatusClass(null);
                 break;
             case "stopped":
-                this.updateStatusBar("lilbee: stopped");
+                this.updateStatusBar(MESSAGES.STATUS_STOPPED);
                 this.setStatusClass(null);
                 break;
         }
@@ -327,10 +328,10 @@ export default class LilbeePlugin extends Plugin {
                 try {
                     const status = await this.api.status();
                     new Notice(
-                        `lilbee: ${status.sources.length} documents, ${status.total_chunks} chunks`,
+                        MESSAGES.NOTICE_STATUS(status.sources.length, status.total_chunks),
                     );
                 } catch {
-                    new Notice("lilbee: cannot connect to server");
+                    new Notice(MESSAGES.ERROR_COULD_NOT_CONNECT);
                 }
             },
         });
@@ -430,7 +431,7 @@ export default class LilbeePlugin extends Plugin {
         if (!this.statusBarEl || paths.length === 0) return;
         if (!this.assertActiveModel()) return;
         const label = paths.length === 1 ? paths[0].split("/").pop() : `${paths.length} files`;
-        new Notice(`lilbee: adding ${label}...`);
+        new Notice(MESSAGES.STATUS_ADDING.replace("{label}", label));
         await this.runAdd(paths);
     }
 
@@ -438,7 +439,8 @@ export default class LilbeePlugin extends Plugin {
         if (!this.statusBarEl) return;
         if (!this.assertActiveModel()) return;
         const absolutePath = `${this.getVaultBasePath()}/${file.path}`;
-        new Notice(`lilbee: adding ${file.name ?? file.path}...`);
+        const name = file.name ?? file.path;
+        new Notice(`lilbee: adding ${name}...`);
         await this.runAdd([absolutePath]);
     }
 

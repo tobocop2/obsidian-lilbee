@@ -3,6 +3,7 @@ import type LilbeePlugin from "../main";
 import type { ModelFamily, SSEEvent, SyncDone } from "../types";
 import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP } from "../types";
 import { CatalogModal } from "./catalog-modal";
+import { MESSAGES } from "../locales/en";
 
 interface FeaturedModel {
     name: string;
@@ -80,25 +81,21 @@ export class SetupWizard extends Modal {
         const { contentEl } = this;
         const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
 
-        step.createEl("h2", { text: "Welcome to lilbee" });
-        step.createEl("p", {
-            text: "lilbee turns your Obsidian vault into a searchable knowledge base powered by AI running on your machine.",
-        });
+        step.createEl("h2", { text: MESSAGES.TITLE_WELCOME });
+        step.createEl("p", { text: MESSAGES.WIZARD_INTRO_DESC });
 
-        step.createEl("p", { text: "This wizard will help you:" });
+        step.createEl("p", { text: MESSAGES.WIZARD_INTRO_STEPS });
         const ul = step.createEl("ul");
-        ul.createEl("li", { text: "Choose an AI model that fits your computer" });
-        ul.createEl("li", { text: "Index your vault so you can search and chat" });
+        ul.createEl("li", { text: MESSAGES.WIZARD_STEP_CHOOSE_MODEL });
+        ul.createEl("li", { text: MESSAGES.WIZARD_STEP_INDEX });
 
-        step.createEl("p", {
-            text: "Everything runs locally \u2014 your notes never leave your machine.",
-        });
+        step.createEl("p", { text: MESSAGES.WIZARD_LOCAL_ONLY });
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
-        const skipBtn = actions.createEl("button", { text: "Skip setup" });
+        const skipBtn = actions.createEl("button", { text: MESSAGES.BUTTON_SKIP_SETUP });
         skipBtn.addEventListener("click", () => this.skip());
 
-        const startBtn = actions.createEl("button", { text: "Get started", cls: "mod-cta" });
+        const startBtn = actions.createEl("button", { text: MESSAGES.BUTTON_GET_STARTED, cls: "mod-cta" });
         startBtn.addEventListener("click", () => this.next());
     }
 
@@ -106,27 +103,23 @@ export class SetupWizard extends Modal {
         const { contentEl } = this;
         const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
 
-        step.createEl("h2", { text: "How do you want to run lilbee?" });
+        step.createEl("h2", { text: MESSAGES.TITLE_SERVER_MODE });
 
         let mode: "managed" | "external" = this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL
             ? SERVER_MODE.EXTERNAL
             : SERVER_MODE.MANAGED;
 
         const managedOption = step.createDiv({ cls: `lilbee-wizard-model-option${mode === SERVER_MODE.MANAGED ? " selected" : ""}` });
-        managedOption.createEl("strong", { text: "Managed (recommended)" });
-        managedOption.createEl("p", {
-            text: "lilbee starts and stops automatically with Obsidian. No terminal needed.",
-        });
+        managedOption.createEl("strong", { text: MESSAGES.TITLE_MANAGED_RECOMMENDED });
+        managedOption.createEl("p", { text: MESSAGES.WIZARD_MANAGED_DESC });
 
         const externalOption = step.createDiv({ cls: `lilbee-wizard-model-option${mode === SERVER_MODE.EXTERNAL ? " selected" : ""}` });
-        externalOption.createEl("strong", { text: "External" });
-        externalOption.createEl("p", {
-            text: "You run the lilbee server yourself. For advanced users or shared setups.",
-        });
+        externalOption.createEl("strong", { text: MESSAGES.TITLE_EXTERNAL });
+        externalOption.createEl("p", { text: MESSAGES.WIZARD_EXTERNAL_DESC });
 
         const urlInput = step.createEl("input", {
             cls: "lilbee-wizard-url-input",
-            placeholder: "http://127.0.0.1:7433",
+            placeholder: MESSAGES.PLACEHOLDER_HTTP_LOCALHOST,
             attr: { type: "text" },
         });
         urlInput.value = this.plugin.settings.serverUrl;
@@ -150,23 +143,23 @@ export class SetupWizard extends Modal {
         });
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
-        const backBtn = actions.createEl("button", { text: "Back" });
+        const backBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BACK });
         backBtn.addEventListener("click", () => this.back());
-        const skipBtn = actions.createEl("button", { text: "Skip setup" });
+        const skipBtn = actions.createEl("button", { text: MESSAGES.BUTTON_SKIP_SETUP });
         skipBtn.addEventListener("click", () => this.skip());
 
-        const nextBtn = actions.createEl("button", { text: "Next", cls: "mod-cta" });
+        const nextBtn = actions.createEl("button", { text: MESSAGES.BUTTON_NEXT, cls: "mod-cta" });
         nextBtn.addEventListener("click", () => {
             if (mode === SERVER_MODE.MANAGED) {
                 this.plugin.settings.serverMode = SERVER_MODE.MANAGED;
-                statusEl.textContent = "Starting server...";
+                statusEl.textContent = MESSAGES.STATUS_STARTING_SERVER;
                 statusEl.classList.add("lilbee-loading");
                 nextBtn.disabled = true;
                 void this.startManagedAndAdvance(statusEl, nextBtn);
             } else {
                 this.plugin.settings.serverUrl = String(urlInput.value || "").trim() || "http://127.0.0.1:7433";
                 this.plugin.settings.serverMode = SERVER_MODE.EXTERNAL;
-                statusEl.textContent = "Checking connection...";
+                statusEl.textContent = MESSAGES.STATUS_CHECKING_CONNECTION;
                 nextBtn.disabled = true;
                 void this.checkExternalAndAdvance(statusEl, nextBtn);
             }
@@ -184,7 +177,7 @@ export class SetupWizard extends Modal {
             this.step = WIZARD_STEP.MODEL_PICKER;
             this.renderStep();
         } catch {
-            statusEl.textContent = "Failed to start server. Check the settings tab for details.";
+            statusEl.textContent = MESSAGES.ERROR_START_SERVER;
             statusEl.classList.remove("lilbee-loading");
             (nextBtn as HTMLButtonElement).disabled = false;
         }
@@ -198,7 +191,7 @@ export class SetupWizard extends Modal {
             this.step = WIZARD_STEP.MODEL_PICKER;
             this.renderStep();
         } catch {
-            statusEl.textContent = "Could not connect. Check the URL and make sure the server is running.";
+            statusEl.textContent = MESSAGES.ERROR_COULD_NOT_CONNECT_EXT;
             (nextBtn as HTMLButtonElement).disabled = false;
         }
     }
@@ -207,15 +200,13 @@ export class SetupWizard extends Modal {
         const { contentEl } = this;
         const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
 
-        step.createEl("h2", { text: "Pick a chat model" });
-        step.createEl("p", {
-            text: "This is the AI that answers your questions about your notes. Bigger models are smarter but need more RAM and disk space.",
-        });
+        step.createEl("h2", { text: MESSAGES.TITLE_PICK_MODEL });
+        step.createEl("p", { text: MESSAGES.WIZARD_MODEL_HELP });
 
         const memGB = getSystemMemoryGB();
         if (memGB !== null) {
             step.createEl("p", {
-                text: `Your system: ${memGB} GB RAM`,
+                text: MESSAGES.WIZARD_SYSTEM_RAM.replace("{ram}", String(memGB)),
                 cls: "lilbee-wizard-system-info",
             });
         }
@@ -229,26 +220,26 @@ export class SetupWizard extends Modal {
         const progressLabel = progressEl.createDiv({ cls: "lilbee-wizard-progress-label" });
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
-        const backBtn = actions.createEl("button", { text: "Back" });
+        const backBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BACK });
         backBtn.addEventListener("click", () => {
             this.pullController?.abort();
             this.back();
         });
-        const skipBtn = actions.createEl("button", { text: "Skip setup" });
+        const skipBtn = actions.createEl("button", { text: MESSAGES.BUTTON_SKIP_SETUP });
         skipBtn.addEventListener("click", () => {
             this.pullController?.abort();
             this.skip();
         });
 
-        const catalogBtn = actions.createEl("button", { text: "Browse full catalog" });
+        const catalogBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BROWSE_FULL_CATALOG });
         catalogBtn.addEventListener("click", () => {
             new CatalogModal(this.app, this.plugin).open();
         });
 
-        const downloadBtn = actions.createEl("button", { text: "Download & continue", cls: "mod-cta" });
+        const downloadBtn = actions.createEl("button", { text: MESSAGES.BUTTON_DOWNLOAD_CONTINUE, cls: "mod-cta" });
         downloadBtn.addEventListener("click", () => {
             if (!this.selectedModel) {
-                statusEl.textContent = "Please select a model first.";
+                statusEl.textContent = MESSAGES.WIZARD_SELECT_MODEL;
                 return;
             }
             downloadBtn.disabled = true;
@@ -284,7 +275,7 @@ export class SetupWizard extends Modal {
             });
         } catch {
             this.featuredModels = [];
-            statusEl.textContent = "Could not load models from server.";
+            statusEl.textContent = MESSAGES.ERROR_LOAD_MODELS;
             return;
         }
 
@@ -299,13 +290,13 @@ export class SetupWizard extends Modal {
 
             const header = option.createDiv({ cls: "lilbee-wizard-model-header" });
             if (i === recommended) {
-                header.createEl("span", { text: "Recommended", cls: "lilbee-wizard-recommended" });
+                header.createEl("span", { text: MESSAGES.TITLE_RECOMMENDED, cls: "lilbee-wizard-recommended" });
             }
             /* v8 ignore next */
             header.createEl("strong", { text: model.displayName ?? model.name });
             header.createEl("span", { text: `${model.size_gb} GB` });
             option.createEl("p", { text: model.description });
-            option.createEl("p", { text: `Minimum ${model.min_ram_gb} GB RAM`, cls: "lilbee-wizard-model-ram" });
+            option.createEl("p", { text: MESSAGES.WIZARD_MIN_RAM.replace("{ram}", String(model.min_ram_gb)), cls: "lilbee-wizard-model-ram" });
 
             option.addEventListener("click", () => {
                 this.selectedModel = model;
@@ -327,7 +318,7 @@ export class SetupWizard extends Modal {
         if (!this.selectedModel) return;
         const model = this.selectedModel;
         progressEl.style.display = "";
-        progressLabel.textContent = `Downloading ${model.name}...`;
+        progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL.replace("{model}", model.name);
         this.pullController = new AbortController();
 
         try {
@@ -341,7 +332,7 @@ export class SetupWizard extends Modal {
                     if (d.total && d.current !== undefined) {
                         const pct = Math.round((d.current / d.total) * 100);
                         progressFill.style.width = `${pct}%`;
-                        progressLabel.textContent = `Downloading ${model.name}... ${pct}%`;
+                        progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL_PCT.replace("{model}", model.name).replace("{pct}", String(pct));
                     }
                 }
             }
@@ -354,9 +345,9 @@ export class SetupWizard extends Modal {
             this.renderStep();
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
-                new Notice("lilbee: download cancelled");
+                new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELLED);
             } else {
-                statusEl.textContent = "Download failed. Please try again or pick a different model.";
+                statusEl.textContent = MESSAGES.ERROR_DOWNLOAD_FAILED;
             }
             progressEl.style.display = "none";
             (downloadBtn as HTMLButtonElement).disabled = false;
@@ -369,29 +360,27 @@ export class SetupWizard extends Modal {
         const { contentEl } = this;
         const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
 
-        step.createEl("h2", { text: "Index your vault" });
-        step.createEl("p", {
-            text: "lilbee needs to read your notes once to make them searchable. This happens locally on your machine.",
-        });
+        step.createEl("h2", { text: MESSAGES.TITLE_INDEX_VAULT });
+        step.createEl("p", { text: MESSAGES.WIZARD_SYNC_HELP });
 
         const progressEl = step.createDiv({ cls: "lilbee-wizard-progress" });
         const progressBar = progressEl.createDiv({ cls: "lilbee-progress-bar-container" });
         const progressFill = progressBar.createDiv({ cls: "lilbee-progress-bar" });
         const progressLabel = progressEl.createDiv({ cls: "lilbee-wizard-progress-label" });
-        progressLabel.textContent = "Starting...";
+        progressLabel.textContent = MESSAGES.WIZARD_STATUS_STARTING;
 
         step.createEl("p", {
-            text: "After this, new and changed files are indexed automatically (or manually, your choice).",
+            text: MESSAGES.WIZARD_SYNC_HINT,
             cls: "lilbee-wizard-hint",
         });
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
-        const backBtn = actions.createEl("button", { text: "Back" });
+        const backBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BACK });
         backBtn.addEventListener("click", () => {
             this.syncController?.abort();
             this.back();
         });
-        const skipBtn = actions.createEl("button", { text: "Skip setup" });
+        const skipBtn = actions.createEl("button", { text: MESSAGES.BUTTON_SKIP_SETUP });
         skipBtn.addEventListener("click", () => {
             this.syncController?.abort();
             this.skip();
@@ -415,12 +404,12 @@ export class SetupWizard extends Modal {
                     const d = event.data as { current_file: number; total_files: number; file?: string };
                     const pct = d.total_files > 0 ? Math.round((d.current_file / d.total_files) * 100) : 0;
                     progressFill.style.width = `${pct}%`;
-                    progressLabel.textContent = `Processing ${d.current_file}/${d.total_files} files`;
+                    progressLabel.textContent = MESSAGES.STATUS_PROCESSING_FILES.replace("{current}", String(d.current_file)).replace("{total}", String(d.total_files));
                 }
                 if (event.event === SSE_EVENT.EMBED) {
                     const d = event.data as { file?: string };
                     if (d.file) {
-                        progressLabel.textContent = `Indexing: ${d.file}`;
+                        progressLabel.textContent = MESSAGES.STATUS_INDEXING.replace("{file}", d.file);
                     }
                 }
                 lastEvent = event;
@@ -430,14 +419,14 @@ export class SetupWizard extends Modal {
                 this.syncResult = lastEvent.data as SyncDone;
             }
             progressFill.style.width = "100%";
-            progressLabel.textContent = "Done!";
+            progressLabel.textContent = MESSAGES.STATUS_DONE;
             this.step = WIZARD_STEP.DONE;
             this.renderStep();
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
-                new Notice("lilbee: indexing cancelled");
+                new Notice(MESSAGES.NOTICE_INDEXING_CANCELLED);
             } else {
-                progressLabel.textContent = "Indexing failed. You can retry from the settings tab.";
+                progressLabel.textContent = MESSAGES.ERROR_INDEXING_FAILED;
             }
         } finally {
             this.syncController = null;
@@ -448,36 +437,34 @@ export class SetupWizard extends Modal {
         const { contentEl } = this;
         const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
 
-        step.createEl("h2", { text: "You're all set!" });
+        step.createEl("h2", { text: MESSAGES.TITLE_ALL_SET });
 
         const summary = step.createDiv({ cls: "lilbee-wizard-summary" });
         if (this.pulledModelName) {
-            summary.createEl("p", { text: `Chat model: ${this.pulledModelName}` });
+            summary.createEl("p", { text: MESSAGES.WIZARD_SUMMARY_MODEL.replace("{model}", this.pulledModelName) });
         }
         if (this.syncResult) {
             const total = this.syncResult.added.length +
                 this.syncResult.updated.length +
                 this.syncResult.unchanged;
             const chunks = this.syncResult.added.length + this.syncResult.updated.length;
-            summary.createEl("p", { text: `${total} files indexed` });
+            summary.createEl("p", { text: MESSAGES.WIZARD_SUMMARY_FILES.replace("{count}", String(total)) });
             if (chunks > 0) {
-                summary.createEl("p", { text: `${chunks} files processed` });
+                summary.createEl("p", { text: MESSAGES.WIZARD_SUMMARY_PROCESSED.replace("{count}", String(chunks)) });
             }
         }
 
         const tips = step.createDiv({ cls: "lilbee-wizard-tips" });
-        tips.createEl("p", { text: "Try it out:" });
+        tips.createEl("p", { text: MESSAGES.WIZARD_TIPS });
         const ul = tips.createEl("ul");
-        ul.createEl("li", { text: "Open the chat panel to ask questions about your notes" });
-        ul.createEl("li", { text: "Use the search command to find specific content" });
-        ul.createEl("li", { text: "Drag files into the chat to add context" });
+        ul.createEl("li", { text: MESSAGES.WIZARD_TIP_CHAT });
+        ul.createEl("li", { text: MESSAGES.WIZARD_TIP_SEARCH });
+        ul.createEl("li", { text: MESSAGES.WIZARD_TIP_DRAG });
 
-        step.createEl("p", {
-            text: "You can change models and settings anytime in the lilbee settings tab.",
-        });
+        step.createEl("p", { text: MESSAGES.WIZARD_CHANGE_SETTINGS });
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
-        const openChatBtn = actions.createEl("button", { text: "Open chat", cls: "mod-cta" });
+        const openChatBtn = actions.createEl("button", { text: MESSAGES.BUTTON_OPEN_CHAT, cls: "mod-cta" });
         openChatBtn.addEventListener("click", () => this.complete());
     }
 

@@ -7,6 +7,7 @@ import { buildModelOptions, SEPARATOR_KEY } from "../settings";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import { CatalogModal } from "./catalog-modal";
 import { CrawlModal } from "./crawl-modal";
+import { MESSAGES } from "../locales/en";
 
 interface OpenDialogResult {
     canceled: boolean;
@@ -80,7 +81,7 @@ export class ChatView extends ItemView {
     }
 
     getDisplayText(): string {
-        return "lilbee Chat";
+        return MESSAGES.LABEL_CHAT_VIEW;
     }
 
     getIcon(): string {
@@ -110,7 +111,7 @@ export class ChatView extends ItemView {
         const chatGroup = toolbar.createDiv({ cls: "lilbee-toolbar-group" });
         const chatIcon = chatGroup.createDiv({ cls: "lilbee-toolbar-icon" });
         setIcon(chatIcon, "message-circle");
-        chatIcon.setAttribute("title", "Chat model");
+        chatIcon.setAttribute("title", MESSAGES.LABEL_CHAT_MODEL_ICON);
 
         this.chatSelectEl = chatGroup.createEl("select", {
             cls: "lilbee-chat-model-select",
@@ -120,7 +121,7 @@ export class ChatView extends ItemView {
         const visionGroup = toolbar.createDiv({ cls: "lilbee-toolbar-group" });
         const visionIcon = visionGroup.createDiv({ cls: "lilbee-toolbar-icon" });
         setIcon(visionIcon, "eye");
-        visionIcon.setAttribute("title", "Vision model");
+        visionIcon.setAttribute("title", MESSAGES.LABEL_VISION_MODEL_ICON);
 
         this.visionSelectEl = visionGroup.createEl("select", {
             cls: "lilbee-chat-vision-select",
@@ -133,11 +134,11 @@ export class ChatView extends ItemView {
 
         const saveBtn = toolbar.createEl("button", { cls: "lilbee-chat-save" });
         setIcon(saveBtn, "save");
-        saveBtn.setAttribute("aria-label", "Save to vault");
+        saveBtn.setAttribute("aria-label", MESSAGES.LABEL_SAVE_VAULT);
         saveBtn.addEventListener("click", () => this.saveToVault());
 
         const clearBtn = toolbar.createEl("button", {
-            text: "Clear chat",
+            text: MESSAGES.BUTTON_CLEAR_CHAT,
             cls: "lilbee-chat-clear",
         });
         clearBtn.addEventListener("click", () => this.clearChat());
@@ -147,16 +148,16 @@ export class ChatView extends ItemView {
         const inputArea = container.createDiv({ cls: "lilbee-chat-input" });
 
         const addBtn = inputArea.createEl("button", { cls: "lilbee-chat-add-file" });
-        addBtn.setAttribute("aria-label", "Add file");
+        addBtn.setAttribute("aria-label", MESSAGES.LABEL_ADD_FILE);
         setIcon(addBtn, "paperclip");
         addBtn.addEventListener("click", (e) => this.openFilePicker(e));
 
         const textarea = inputArea.createEl("textarea", {
-            placeholder: "Ask something...",
+            placeholder: MESSAGES.PLACEHOLDER_ASK_SOMETHING,
             cls: "lilbee-chat-textarea",
         });
         this.sendBtn = inputArea.createEl("button", {
-            text: "Send",
+            text: MESSAGES.BUTTON_SEND,
             cls: "lilbee-chat-send",
         }) as HTMLButtonElement;
 
@@ -202,7 +203,7 @@ export class ChatView extends ItemView {
         }).catch(() => {
             this.retryCount++;
             const connecting = this.retryCount < ChatView.OFFLINE_THRESHOLD;
-            const label = connecting ? "(connecting...)" : "(offline)";
+            const label = connecting ? MESSAGES.LABEL_CONNECTING : MESSAGES.LABEL_OFFLINE;
             if (this.chatSelectEl) { this.chatSelectEl.empty(); this.chatSelectEl.createEl("option", { text: label }); }
             if (this.visionSelectEl) { this.visionSelectEl.empty(); this.visionSelectEl.createEl("option", { text: label }); }
             if (this.retryCount === ChatView.OFFLINE_THRESHOLD) {
@@ -246,7 +247,7 @@ export class ChatView extends ItemView {
                 this.plugin.activeModel = el.value;
                 this.plugin.fetchActiveModel();
             }).catch(() => {
-                new Notice("lilbee: failed to switch model");
+                new Notice(MESSAGES.ERROR_SWITCH_MODEL);
             });
         });
     }
@@ -271,7 +272,7 @@ export class ChatView extends ItemView {
                 this.plugin.activeVisionModel = el.value;
                 this.plugin.fetchActiveModel();
             }).catch(() => {
-                new Notice("lilbee: failed to switch vision model");
+                new Notice(MESSAGES.ERROR_SWITCH_VISION_MODEL);
             });
         });
     }
@@ -332,7 +333,7 @@ export class ChatView extends ItemView {
         if (!this.messagesEl || this.sending) return;
         this.sending = true;
         this.streamController = new AbortController();
-        if (this.sendBtn) this.sendBtn.textContent = "Stop";
+        if (this.sendBtn) this.sendBtn.textContent = MESSAGES.BUTTON_STOP;
 
         const userBubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message user" });
         userBubble.createEl("p", { text });
@@ -340,7 +341,7 @@ export class ChatView extends ItemView {
 
         const assistantBubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message assistant" });
         const spinner = assistantBubble.createDiv({ cls: "lilbee-loading" });
-        spinner.textContent = "Thinking...";
+        spinner.textContent = MESSAGES.LABEL_THINKING;
         const textEl = assistantBubble.createDiv({ cls: "lilbee-chat-content" });
         textEl.style.display = "none";
         this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
@@ -395,7 +396,7 @@ export class ChatView extends ItemView {
             this.sending = false;
             this.streamController = null;
             if (this.sendBtn) {
-                this.sendBtn.textContent = "Send";
+                this.sendBtn.textContent = MESSAGES.BUTTON_SEND;
             }
         }
     }
@@ -500,8 +501,8 @@ export class ChatView extends ItemView {
     private showEmptyState(): void {
         if (this.emptyStateEl || !this.messagesEl) return;
         this.emptyStateEl = this.messagesEl.createDiv({ cls: "lilbee-chat-empty-state" });
-        this.emptyStateEl.createEl("p", { text: "No models installed." });
-        const btn = this.emptyStateEl.createEl("button", { text: "Browse Catalog", cls: "mod-cta" });
+        this.emptyStateEl.createEl("p", { text: MESSAGES.NOTICE_NO_MODELS_INSTALLED });
+        const btn = this.emptyStateEl.createEl("button", { text: MESSAGES.BUTTON_BROWSE_CATALOG, cls: "mod-cta" });
         btn.addEventListener("click", () => {
             new CatalogModal(this.app, this.plugin).open();
         });
@@ -516,7 +517,7 @@ export class ChatView extends ItemView {
 
     private async saveToVault(): Promise<void> {
         if (this.history.length === 0) {
-            new Notice("Nothing to save");
+            new Notice(MESSAGES.NOTICE_NOTHING_SAVE);
             return;
         }
         const now = new Date();
@@ -526,7 +527,7 @@ export class ChatView extends ItemView {
         const folder = "lilbee";
         const path = `${folder}/${filename}`;
 
-        const lines = [`# lilbee Chat — ${now.toLocaleDateString()}`, ""];
+        const lines = [`# ${MESSAGES.LABEL_CHAT_VIEW} — ${now.toLocaleDateString()}`, ""];
         for (const msg of this.history) {
             const label = msg.role === "user" ? "User" : "Assistant";
             lines.push(`**${label}**: ${msg.content}`, "");
@@ -542,14 +543,14 @@ export class ChatView extends ItemView {
             await vault.create(path, content);
             new Notice(`Saved to ${path}`);
         } catch {
-            new Notice("Failed to save chat");
+            new Notice(MESSAGES.ERROR_SAVE_CHAT);
         }
     }
 
     private renderSources(container: HTMLElement, sources: Source[]): void {
         const sourcesEl = container.createDiv({ cls: "lilbee-chat-sources" });
         const details = sourcesEl.createEl("details");
-        details.createEl("summary", { text: "Sources" });
+        details.createEl("summary", { text: MESSAGES.LABEL_SOURCES });
         const chipsEl = details.createDiv({ cls: "lilbee-chat-source-chips" });
         for (const source of sources) {
             renderSourceChip(chipsEl, source);
@@ -563,7 +564,7 @@ export class VaultFilePickerModal extends FuzzySuggestModal<TFile> {
     constructor(app: import("obsidian").App, onChoose: (file: TFile) => void) {
         super(app);
         this.onChoose = onChoose;
-        this.setPlaceholder("Pick a vault file to add to lilbee...");
+        this.setPlaceholder(MESSAGES.PLACEHOLDER_PICK_VAULT_FILE);
     }
 
     getItems(): TFile[] {

@@ -2,6 +2,7 @@ import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { DocumentEntry, DocumentsResponse } from "../types";
 import { ConfirmModal } from "./confirm-modal";
+import { MESSAGES } from "../locales/en";
 
 const PAGE_SIZE = 20;
 const DEBOUNCE_MS = 300;
@@ -28,11 +29,11 @@ export class DocumentsModal extends Modal {
         contentEl.empty();
         contentEl.addClass("lilbee-documents-modal");
 
-        contentEl.createEl("h2", { text: "Documents" });
+        contentEl.createEl("h2", { text: MESSAGES.TITLE_DOCUMENTS });
 
         const searchInput = contentEl.createEl("input", {
             cls: "lilbee-documents-search",
-            placeholder: "Search documents...",
+            placeholder: MESSAGES.PLACEHOLDER_SEARCH_DOCUMENTS,
             attr: { type: "text" },
         });
         searchInput.addEventListener("input", () => {
@@ -44,7 +45,7 @@ export class DocumentsModal extends Modal {
         });
 
         this.removeBtn = contentEl.createEl("button", {
-            text: "Delete selected",
+            text: MESSAGES.BUTTON_DELETE_SELECTED,
             cls: "lilbee-documents-remove",
         });
         (this.removeBtn as HTMLButtonElement).disabled = true;
@@ -53,7 +54,7 @@ export class DocumentsModal extends Modal {
         this.resultsEl = contentEl.createDiv({ cls: "lilbee-documents-results" });
 
         this.loadMoreBtn = contentEl.createEl("button", {
-            text: "Load more",
+            text: MESSAGES.BUTTON_LOAD_MORE,
             cls: "lilbee-documents-load-more",
         });
         this.loadMoreBtn.style.display = "none";
@@ -92,7 +93,7 @@ export class DocumentsModal extends Modal {
 
             this.updateLoadMore();
         } catch {
-            new Notice("lilbee: failed to load documents");
+            new Notice(MESSAGES.ERROR_LOAD_DOCUMENTS);
         }
     }
 
@@ -141,10 +142,10 @@ export class DocumentsModal extends Modal {
         if (!confirmed) return;
         try {
             const result = await this.plugin.api.removeDocuments(names, true);
-            new Notice(`lilbee: deleted ${result.removed} documents`);
+            new Notice(MESSAGES.NOTICE_DELETED(result.removed));
             this.resetAndFetch();
         } catch {
-            new Notice("lilbee: failed to delete documents");
+            new Notice(MESSAGES.ERROR_DELETE_DOCUMENTS);
         }
     }
 }
