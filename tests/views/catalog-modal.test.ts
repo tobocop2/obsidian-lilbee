@@ -5,6 +5,7 @@ import { CatalogModal } from "../../src/views/catalog-modal";
 import { NOTICE, SSE_EVENT } from "../../src/types";
 import type { ModelFamily, ModelVariant, CatalogResponse } from "../../src/types";
 import { TaskQueue } from "../../src/task-queue";
+import { ok, err } from "../../src/result";
 
 let mockConfirmResult = true;
 let mockConfirmRemoveResult = true;
@@ -58,12 +59,12 @@ function makeCatalogResponse(families: ModelFamily[] = [makeFamily()], total?: n
 function makePlugin(overrides: Record<string, unknown> = {}) {
     return {
         api: {
-            catalog: vi.fn().mockResolvedValue(makeCatalogResponse([])),
+            catalog: vi.fn().mockResolvedValue(ok(makeCatalogResponse([]))),
             pullModel: vi.fn(),
-            setChatModel: vi.fn().mockResolvedValue({ model: "test/model-4B" }),
-            setVisionModel: vi.fn().mockResolvedValue({ model: "" }),
-            setEmbeddingModel: vi.fn().mockResolvedValue({ model: "" }),
-            deleteModel: vi.fn().mockResolvedValue({ deleted: true, model: "", freed_gb: 2.5 }),
+            setChatModel: vi.fn().mockResolvedValue(ok(undefined)),
+            setVisionModel: vi.fn().mockResolvedValue(ok(undefined)),
+            setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
+            deleteModel: vi.fn().mockResolvedValue(ok({ deleted: true, model: "", freed_gb: 2.5 })),
         },
         activeModel: "test/model-4B",
         activeVisionModel: "",
@@ -109,7 +110,7 @@ describe("CatalogModal", () => {
         const plugin = makePlugin();
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([]));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([])));
         modal.open();
         await vi.runAllTimersAsync();
 
@@ -121,7 +122,7 @@ describe("CatalogModal", () => {
 
     it("fetches catalog on open", async () => {
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([makeFamily()]));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeFamily()])));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -137,7 +138,7 @@ describe("CatalogModal", () => {
     it("renders family headers with name and task badge", async () => {
         const families = [makeFamily({ family: "Qwen3", task: "chat" })];
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -156,7 +157,7 @@ describe("CatalogModal", () => {
     it("renders variant rows within family", async () => {
         const families = [makeFamily()];
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -170,7 +171,7 @@ describe("CatalogModal", () => {
     it("recommended variant has star marker", async () => {
         const families = [makeFamily({ recommended: "4B" })];
         const plugin = makePlugin({ activeModel: "other" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -185,7 +186,7 @@ describe("CatalogModal", () => {
     it("collapse/expand toggle works on family header click", async () => {
         const families = [makeFamily()];
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -209,7 +210,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true })],
         })];
         const plugin = makePlugin({ activeModel: "test/model-4B" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -226,7 +227,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -242,8 +243,8 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true, task: "chat" })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
-        plugin.api.setChatModel.mockResolvedValue({ model: "test/model-4B" });
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
+        plugin.api.setChatModel.mockResolvedValue(ok(undefined));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -264,7 +265,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true, task: "vision" })],
         })];
         const plugin = makePlugin({ activeVisionModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -289,7 +290,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true, task: "embedding" })],
         })];
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -314,8 +315,8 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true, task: "chat" })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
-        plugin.api.setChatModel = vi.fn().mockRejectedValue(new Error("API Error"));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("API Error")));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -335,7 +336,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true, task: "vision" })],
         })];
         const plugin = makePlugin({ activeVisionModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -352,7 +353,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true, task: "embedding" })],
         })];
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -368,7 +369,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: false })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -383,7 +384,7 @@ describe("CatalogModal", () => {
     it("shows Load more button when total > loaded", async () => {
         const families = Array.from({ length: 20 }, (_, i) => makeFamily({ family: `family${i}` }));
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families, 40));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families, 40)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -398,7 +399,7 @@ describe("CatalogModal", () => {
     it("hides Load more button when all loaded", async () => {
         const families = [makeFamily()];
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families, 1));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families, 1)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -414,8 +415,8 @@ describe("CatalogModal", () => {
         const page2 = [makeFamily({ family: "f20" })];
         const plugin = makePlugin();
         plugin.api.catalog
-            .mockResolvedValueOnce(makeCatalogResponse(page1, 21))
-            .mockResolvedValueOnce(makeCatalogResponse(page2, 21));
+            .mockResolvedValueOnce(ok(makeCatalogResponse(page1, 21)))
+            .mockResolvedValueOnce(ok(makeCatalogResponse(page2, 21)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -432,7 +433,7 @@ describe("CatalogModal", () => {
 
     it("search input triggers debounced fetch", async () => {
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([]));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([])));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -454,7 +455,7 @@ describe("CatalogModal", () => {
 
     it("task filter triggers fetch", async () => {
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([]));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([])));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -471,7 +472,7 @@ describe("CatalogModal", () => {
 
     it("size filter triggers fetch", async () => {
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([]));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([])));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -488,7 +489,7 @@ describe("CatalogModal", () => {
 
     it("sort filter triggers fetch", async () => {
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([]));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([])));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -509,7 +510,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: false })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         plugin.api.pullModel.mockReturnValue((async function* () {
             yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
         })());
@@ -534,7 +535,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "gpt-4o", hf_repo: "openai/gpt-4o", installed: false, source: "litellm" })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         plugin.api.pullModel.mockReturnValue((async function* () {
             yield { event: SSE_EVENT.PROGRESS, data: { current: 100, total: 100 } };
         })());
@@ -559,11 +560,11 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "llava", hf_repo: "llava/llava-v1.6", installed: false, task: "vision" })],
         })];
         const plugin = makePlugin({ activeModel: "other-model", activeVisionModel: "" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         plugin.api.pullModel.mockReturnValue((async function* () {
             yield { event: SSE_EVENT.PROGRESS, data: { current: 100, total: 100 } };
         })());
-        plugin.api.setVisionModel.mockResolvedValue({ model: "llava/llava-v1.6" });
+        plugin.api.setVisionModel.mockResolvedValue(ok(undefined));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -587,7 +588,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: false })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -607,7 +608,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: false })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         plugin.api.pullModel.mockReturnValue((async function* () {
             throw new Error("network error");
         })());
@@ -631,7 +632,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: false })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         plugin.api.pullModel.mockReturnValue((async function* () {
             throw "string error";
         })());
@@ -657,7 +658,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: false })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const abortErr = new Error("aborted");
         abortErr.name = "AbortError";
         plugin.api.pullModel.mockReturnValue((async function* () {
@@ -680,7 +681,7 @@ describe("CatalogModal", () => {
     it("handles catalog fetch failure", async () => {
         vi.useRealTimers();
         const plugin = makePlugin();
-        plugin.api.catalog.mockRejectedValue(new Error("network"));
+        plugin.api.catalog.mockResolvedValue(err(new Error("network")));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -698,7 +699,7 @@ describe("CatalogModal", () => {
 
     it("search input debounce: first input with null timer, second clears existing timer", async () => {
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([]));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([])));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         expect((modal as any).debounceTimer).toBeNull();
@@ -730,7 +731,7 @@ describe("CatalogModal", () => {
 
     it("onClose with active debounce timer clears it", async () => {
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse([]));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([])));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -765,7 +766,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "llava", hf_repo: "llava/v1.6", installed: true })],
         })];
         const plugin = makePlugin({ activeModel: "other-model", activeVisionModel: "llava/v1.6" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -782,7 +783,7 @@ describe("CatalogModal", () => {
             makeFamily({ family: "Llama3" }),
         ];
         const plugin = makePlugin();
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -798,7 +799,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", display_name: "Qwen3 4B Instruct", hf_repo: "test/4B" })],
         })];
         const plugin = makePlugin({ activeModel: "other" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -815,7 +816,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/4B" })],
         })];
         const plugin = makePlugin({ activeModel: "other" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -832,7 +833,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/4B", quality_tier: "recommended" })],
         })];
         const plugin = makePlugin({ activeModel: "other" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -849,7 +850,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/4B" })],
         })];
         const plugin = makePlugin({ activeModel: "other" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -867,11 +868,11 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "nomic", hf_repo: "nomic-ai/nomic-embed", installed: false, task: "embedding" })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         plugin.api.pullModel.mockReturnValue((async function* () {
             yield { event: SSE_EVENT.PROGRESS, data: { current: 100, total: 100 } };
         })());
-        plugin.api.setEmbeddingModel.mockResolvedValue({ model: "nomic-ai/nomic-embed" });
+        plugin.api.setEmbeddingModel.mockResolvedValue(ok(undefined));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -889,12 +890,41 @@ describe("CatalogModal", () => {
         expect(plugin.api.setVisionModel).not.toHaveBeenCalled();
     });
 
+    it("handles setModel failure after successful pull", async () => {
+        vi.useRealTimers();
+        Notice.clear();
+        const families = [makeFamily({
+            variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: false })],
+        })];
+        const plugin = makePlugin({ activeModel: "other-model" });
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
+        plugin.api.pullModel.mockReturnValue((async function* () {
+            yield { event: SSE_EVENT.PROGRESS, data: { current: 100, total: 100 } };
+        })());
+        plugin.api.setChatModel.mockResolvedValue(err(new Error("failed to set model")));
+        const app = new App();
+        const modal = new CatalogModal(app as any, plugin as any);
+        modal.open();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const pullBtn = el.findAll("lilbee-catalog-pull")[0];
+        pullBtn.trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.api.pullModel).toHaveBeenCalled();
+        expect(Notice.instances.some(n => n.message.includes("failed"))).toBe(true);
+        expect(pullBtn.textContent).toBe("Pull");
+        expect(pullBtn.disabled).toBe(false);
+    });
+
     it("Remove button appears for installed non-active variants", async () => {
         const families = [makeFamily({
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -911,7 +941,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: false })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -927,7 +957,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true })],
         })];
         const plugin = makePlugin({ activeModel: "test/model-4B" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -946,7 +976,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -971,7 +1001,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true, source: "native" })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -994,8 +1024,8 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/model-4B", installed: true })],
         })];
         const plugin = makePlugin({ activeModel: "other-model" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
-        plugin.api.deleteModel.mockRejectedValue(new Error("network error"));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
+        plugin.api.deleteModel.mockResolvedValue(err(new Error("network error")));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();
@@ -1017,7 +1047,7 @@ describe("CatalogModal", () => {
             variants: [makeVariant({ name: "4B", hf_repo: "test/4B", size_gb: 2.5, description: "Balanced model" })],
         })];
         const plugin = makePlugin({ activeModel: "other" });
-        plugin.api.catalog.mockResolvedValue(makeCatalogResponse(families));
+        plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(families)));
         const app = new App();
         const modal = new CatalogModal(app as any, plugin as any);
         modal.open();

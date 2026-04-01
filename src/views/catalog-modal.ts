@@ -5,6 +5,7 @@ import { MODEL_TASK, NOTICE, SSE_EVENT, TASK_TYPE } from "../types";
 import { MESSAGES, FILTERS, TASK_LABELS } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
+import { isOk, isErr, Result } from "../result";
 
 const PAGE_SIZE = 20;
 const DEBOUNCE_MS = 300;
@@ -127,29 +128,31 @@ export class CatalogModal extends Modal {
     }
 
     private async fetchPage(): Promise<void> {
-        try {
-            const params: Parameters<typeof this.plugin.api.catalog>[0] = {
-                limit: PAGE_SIZE,
-                offset: this.offset,
-                sort: this.filterSort,
-            };
-            if (this.filterTask) params.task = this.filterTask as "chat" | "embedding" | "vision";
-            if (this.filterSize) params.size = this.filterSize as "small" | "medium" | "large";
-            if (this.filterSearch) params.search = this.filterSearch;
+        const params: Parameters<typeof this.plugin.api.catalog>[0] = {
+            limit: PAGE_SIZE,
+            offset: this.offset,
+            sort: this.filterSort,
+        };
+        if (this.filterTask) params.task = this.filterTask as "chat" | "embedding" | "vision";
+        if (this.filterSize) params.size = this.filterSize as "small" | "medium" | "large";
+        if (this.filterSearch) params.search = this.filterSearch;
 
-            const response: CatalogResponse = await this.plugin.api.catalog(params);
-            this.total = response.total;
-            this.families.push(...response.families);
-            this.offset += response.families.length;
-
-            for (const family of response.families) {
-                this.renderFamily(family);
-            }
-
-            this.updateLoadMore();
-        } catch {
+        const result = await this.plugin.api.catalog(params);
+        if (isErr(result)) {
             new Notice(MESSAGES.ERROR_LOAD_CATALOG);
+            return;
         }
+
+        const response = result.value;
+        this.total = response.total;
+        this.families.push(...response.families);
+        this.offset += response.families.length;
+
+        for (const family of response.families) {
+            this.renderFamily(family);
+        }
+
+        this.updateLoadMore();
     }
 
     private updateLoadMore(): void {
@@ -226,38 +229,49 @@ export class CatalogModal extends Modal {
     private async executeRemove(variant: ModelVariant, btn: HTMLElement): Promise<void> {
         btn.textContent = MESSAGES.STATUS_REMOVING;
         (btn as HTMLButtonElement).disabled = true;
-        try {
-            await this.plugin.api.deleteModel(variant.hf_repo, variant.source);
-            new Notice(MESSAGES.NOTICE_REMOVED(variant.hf_repo));
-            this.plugin.fetchActiveModel();
-            this.resetAndFetch();
-        } catch {
+
+        const result = await this.plugin.api.deleteModel(variant.hf_repo, variant.source);
+        if (isErr(result)) {
             new Notice(MESSAGES.ERROR_REMOVE_MODEL.replace("{model}", variant.hf_repo));
             btn.textContent = MESSAGES.BUTTON_REMOVE;
             (btn as HTMLButtonElement).disabled = false;
+            return;
         }
+
+        new Notice(MESSAGES.NOTICE_REMOVED(variant.hf_repo));
+        this.plugin.fetchActiveModel();
+        this.resetAndFetch();
     }
 
     private async handleUse(family: ModelFamily, variant: ModelVariant, btn: HTMLElement): Promise<void> {
         btn.textContent = MESSAGES.STATUS_SETTING;
         (btn as HTMLButtonElement).disabled = true;
-        try {
-            if (variant.task === MODEL_TASK.VISION) {
-                await this.plugin.api.setVisionModel(variant.hf_repo);
-                this.plugin.activeVisionModel = variant.hf_repo;
-            } else if (variant.task === MODEL_TASK.EMBEDDING) {
-                await this.plugin.api.setEmbeddingModel(variant.hf_repo);
-            } else {
-                await this.plugin.api.setChatModel(variant.hf_repo);
-                this.plugin.activeModel = variant.hf_repo;
-            }
-            this.plugin.fetchActiveModel();
-            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(variant.hf_repo));
-            this.resetAndFetch();
-        } catch {
+
+        const result = await this.setModelForTask(variant);
+
+        if (isErr(result)) {
             new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", variant.hf_repo));
             btn.textContent = MESSAGES.BUTTON_USE;
             (btn as HTMLButtonElement).disabled = false;
+            return;
+        }
+
+        this.plugin.fetchActiveModel();
+        new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(variant.hf_repo));
+        this.resetAndFetch();
+    }
+
+    private async setModelForTask(variant: ModelVariant): Promise<Result<void, Error>> {
+        if (variant.task === MODEL_TASK.VISION) {
+            const result = await this.plugin.api.setVisionModel(variant.hf_repo);
+            if (isOk(result)) this.plugin.activeVisionModel = variant.hf_repo;
+            return result;
+        } else if (variant.task === MODEL_TASK.EMBEDDING) {
+            return await this.plugin.api.setEmbeddingModel(variant.hf_repo);
+        } else {
+            const result = await this.plugin.api.setChatModel(variant.hf_repo);
+            if (isOk(result)) this.plugin.activeModel = variant.hf_repo;
+            return result;
         }
     }
 
@@ -281,6 +295,8 @@ export class CatalogModal extends Modal {
         btn.textContent = MESSAGES.STATUS_PULLING.replace("{model}", variant.hf_repo);
         (btn as HTMLButtonElement).disabled = true;
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${variant.hf_repo}`, TASK_TYPE.PULL);
+
+        let pullSucceeded = false;
         try {
             for await (const event of this.plugin.api.pullModel(variant.hf_repo, variant.source)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
@@ -292,20 +308,7 @@ export class CatalogModal extends Modal {
                     }
                 }
             }
-            if (variant.task === MODEL_TASK.VISION) {
-                await this.plugin.api.setVisionModel(variant.hf_repo);
-                this.plugin.activeVisionModel = variant.hf_repo;
-            } else if (variant.task === MODEL_TASK.EMBEDDING) {
-                await this.plugin.api.setEmbeddingModel(variant.hf_repo);
-            } else {
-                await this.plugin.api.setChatModel(variant.hf_repo);
-                this.plugin.activeModel = variant.hf_repo;
-            }
-            this.plugin.fetchActiveModel();
-            this.plugin.taskQueue.complete(taskId);
-            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(variant.hf_repo));
-            btn.textContent = MESSAGES.LABEL_ACTIVE;
-            (btn as HTMLButtonElement).disabled = true;
+            pullSucceeded = true;
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
                 new Notice(NOTICE.PULL_CANCELLED);
@@ -316,6 +319,24 @@ export class CatalogModal extends Modal {
             }
             btn.textContent = "Pull";
             (btn as HTMLButtonElement).disabled = false;
+            return;
         }
+
+        if (!pullSucceeded) return;
+
+        const result = await this.setModelForTask(variant);
+        if (isErr(result)) {
+            new Notice(NOTICE.PULL_FAILED);
+            this.plugin.taskQueue.fail(taskId, result.error.message);
+            btn.textContent = "Pull";
+            (btn as HTMLButtonElement).disabled = false;
+            return;
+        }
+
+        this.plugin.fetchActiveModel();
+        this.plugin.taskQueue.complete(taskId);
+        new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(variant.hf_repo));
+        btn.textContent = MESSAGES.LABEL_ACTIVE;
+        (btn as HTMLButtonElement).disabled = true;
     }
 }
