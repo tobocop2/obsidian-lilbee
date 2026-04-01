@@ -115,10 +115,10 @@ describe("MESSAGES", () => {
     describe("ERROR_ constants", () => {
         it("has all error constants", () => {
             expect(MESSAGES.ERROR_COULD_NOT_CONNECT).toBe("lilbee: cannot connect to server");
-            expect(MESSAGES.ERROR_COULD_NOT_REACH).toBe("lilbee: could not reach server — is lilbee running?");
+            expect(MESSAGES.ERROR_COULD_NOT_REACH).toBe("Could not connect to lilbee server. Is it running?");
             expect(MESSAGES.ERROR_LOAD_CATALOG).toBe("lilbee: failed to load catalog");
             expect(MESSAGES.ERROR_LOAD_DOCUMENTS).toBe("lilbee: failed to load documents");
-            expect(MESSAGES.ERROR_SERVER_UNREACHABLE).toBe("(server unreachable)");
+            expect(MESSAGES.ERROR_SERVER_UNREACHABLE).toBe("Could not connect to lilbee server. Is it running?");
         });
     });
 
@@ -170,7 +170,7 @@ describe("MESSAGES", () => {
         });
 
         it("NOTICE_REMOVED produces correct output", () => {
-            expect(MESSAGES.NOTICE_REMOVED("llama3")).toBe("Removed llama3");
+            expect(MESSAGES.NOTICE_REMOVED("llama3")).toBe("Deleted llama3");
         });
 
         it("NOTICE_SYNC_SUMMARY produces correct output", () => {
@@ -204,7 +204,7 @@ describe("MESSAGES", () => {
         });
 
         it("NOTICE_REMOVED produces correct output", () => {
-            expect(MESSAGES.NOTICE_REMOVED("llama3")).toBe("Removed llama3");
+            expect(MESSAGES.NOTICE_REMOVED("llama3")).toBe("Deleted llama3");
         });
 
         it("NOTICE_CRAWL_DONE produces correct output", () => {

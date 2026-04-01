@@ -984,7 +984,7 @@ describe("CatalogModal", () => {
         await tick();
 
         expect(plugin.api.deleteModel).toHaveBeenCalledWith("test/model-4B", "native");
-        expect(Notice.instances.some(n => n.message.includes("Removed test/model-4B"))).toBe(true);
+        expect(Notice.instances.some(n => n.message.includes("Deleted test/model-4B"))).toBe(true);
         expect(plugin.fetchActiveModel).toHaveBeenCalled();
     });
 
