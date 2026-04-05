@@ -23,7 +23,9 @@ function makePlugin(): LilbeePlugin {
             topK: 5,
             syncMode: "manual" as const,
             syncDebounceMs: 5000,
+            searchChunkType: "all" as const,
         },
+        saveSettings: vi.fn(),
     } as unknown as LilbeePlugin;
 }
 
@@ -91,23 +93,23 @@ describe("SearchModal", () => {
         });
 
         it("renders h2 with 'Search knowledge base'", () => {
-            const h2 = modal.contentEl.find("lilbee-modal")
-                ? modal.contentEl.children.find(el => el.tagName === "H2")
+            const _h2 = modal.contentEl.find("lilbee-modal")
+                ? modal.contentEl.children.find((el) => el.tagName === "H2")
                 : null;
             // Search through direct children
-            const headings = modal.contentEl.children.filter(c => c.tagName === "H2");
+            const headings = modal.contentEl.children.filter((c) => c.tagName === "H2");
             expect(headings.length).toBe(1);
             expect(headings[0].textContent).toBe("Search knowledge base");
         });
 
         it("creates input with correct placeholder", () => {
-            const inputs = modal.contentEl.children.filter(c => c.tagName === "INPUT");
+            const inputs = modal.contentEl.children.filter((c) => c.tagName === "INPUT");
             expect(inputs.length).toBe(1);
             expect(inputs[0].placeholder).toBe("Type to search...");
         });
 
         it("applies lilbee-search-input CSS class to input", () => {
-            const input = modal.contentEl.children.find(c => c.tagName === "INPUT")!;
+            const input = modal.contentEl.children.find((c) => c.tagName === "INPUT")!;
             expect(input.classList.contains("lilbee-search-input")).toBe(true);
         });
 
@@ -124,7 +126,7 @@ describe("SearchModal", () => {
 
         it("debounces search on input event", async () => {
             (plugin.api.search as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-            const input = modal.contentEl.children.find(c => c.tagName === "INPUT")!;
+            const input = modal.contentEl.children.find((c) => c.tagName === "INPUT")!;
 
             input.value = "hello";
             input.trigger("input");
@@ -133,12 +135,12 @@ describe("SearchModal", () => {
             expect(plugin.api.search).not.toHaveBeenCalled();
 
             await vi.advanceTimersByTimeAsync(300);
-            expect(plugin.api.search).toHaveBeenCalledWith("hello", 5);
+            expect(plugin.api.search).toHaveBeenCalledWith("hello", 5, "all");
         });
 
         it("resets debounce timer on rapid input events", async () => {
             (plugin.api.search as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-            const input = modal.contentEl.children.find(c => c.tagName === "INPUT")!;
+            const input = modal.contentEl.children.find((c) => c.tagName === "INPUT")!;
 
             input.value = "h";
             input.trigger("input");
@@ -150,12 +152,12 @@ describe("SearchModal", () => {
 
             // Only called once (second debounce)
             expect(plugin.api.search).toHaveBeenCalledTimes(1);
-            expect(plugin.api.search).toHaveBeenCalledWith("hello", 5);
+            expect(plugin.api.search).toHaveBeenCalledWith("hello", 5, "all");
         });
 
         it("does not trigger search for empty input value", async () => {
             (plugin.api.search as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-            const input = modal.contentEl.children.find(c => c.tagName === "INPUT")!;
+            const input = modal.contentEl.children.find((c) => c.tagName === "INPUT")!;
 
             input.value = "   "; // whitespace only
             input.trigger("input");
@@ -183,18 +185,18 @@ describe("SearchModal", () => {
         });
 
         it("renders h2 with 'Ask a question'", () => {
-            const headings = modal.contentEl.children.filter(c => c.tagName === "H2");
+            const headings = modal.contentEl.children.filter((c) => c.tagName === "H2");
             expect(headings[0].textContent).toBe("Ask a question");
         });
 
         it("creates input with 'Ask anything...' placeholder", () => {
-            const inputs = modal.contentEl.children.filter(c => c.tagName === "INPUT");
+            const inputs = modal.contentEl.children.filter((c) => c.tagName === "INPUT");
             expect(inputs[0].placeholder).toBe("Ask anything...");
         });
 
         it("Enter key with non-empty value triggers runAsk", async () => {
             (plugin.api.ask as ReturnType<typeof vi.fn>).mockResolvedValue(makeAskResponse());
-            const input = modal.contentEl.children.find(c => c.tagName === "INPUT")!;
+            const input = modal.contentEl.children.find((c) => c.tagName === "INPUT")!;
 
             input.value = "What is lilbee?";
             input.trigger("keydown", { key: "Enter" });
@@ -205,7 +207,7 @@ describe("SearchModal", () => {
 
         it("Enter key with empty value does nothing", async () => {
             (plugin.api.ask as ReturnType<typeof vi.fn>).mockResolvedValue(makeAskResponse());
-            const input = modal.contentEl.children.find(c => c.tagName === "INPUT")!;
+            const input = modal.contentEl.children.find((c) => c.tagName === "INPUT")!;
 
             input.value = "";
             input.trigger("keydown", { key: "Enter" });
@@ -214,9 +216,20 @@ describe("SearchModal", () => {
             expect(plugin.api.ask).not.toHaveBeenCalled();
         });
 
+        it("Enter key with whitespace-only value does nothing", async () => {
+            (plugin.api.ask as ReturnType<typeof vi.fn>).mockResolvedValue(makeAskResponse());
+            const input = modal.contentEl.children.find((c) => c.tagName === "INPUT")!;
+
+            input.value = "   ";
+            input.trigger("keydown", { key: "Enter" });
+            await vi.runAllTimersAsync();
+
+            expect(plugin.api.ask).not.toHaveBeenCalled();
+        });
+
         it("non-Enter key does nothing", async () => {
             (plugin.api.ask as ReturnType<typeof vi.fn>).mockResolvedValue(makeAskResponse());
-            const input = modal.contentEl.children.find(c => c.tagName === "INPUT")!;
+            const input = modal.contentEl.children.find((c) => c.tagName === "INPUT")!;
 
             input.value = "What is lilbee?";
             input.trigger("keydown", { key: "a" });
@@ -242,7 +255,7 @@ describe("SearchModal", () => {
             const modal = new SearchModal(app, plugin, "search");
             modal.open();
 
-            const input = modal.contentEl.children.find(c => c.tagName === "INPUT")!;
+            const input = modal.contentEl.children.find((c) => c.tagName === "INPUT")!;
             input.value = "query";
             input.trigger("input");
 
@@ -276,11 +289,7 @@ describe("SearchModal", () => {
 
             await (modal as any).runSearch("query");
 
-            expect(renderDocumentResult).toHaveBeenCalledWith(
-                (modal as any).resultsContainer,
-                result,
-                app,
-            );
+            expect(renderDocumentResult).toHaveBeenCalledWith((modal as any).resultsContainer, result, app);
         });
 
         it("shows 'No results found.' when results array is empty", async () => {
@@ -328,6 +337,24 @@ describe("SearchModal", () => {
             // Should not throw
             await expect((modal as any).runSearch("query")).resolves.toBeUndefined();
         });
+
+        it("debounce skips search when lastSearchQuery is empty", async () => {
+            const modal = new SearchModal(app, plugin);
+            modal.open();
+            (modal as any).lastSearchQuery = "";
+            await (modal as any).debouncedSearch();
+            expect(plugin.api.search).not.toHaveBeenCalled();
+        });
+
+        it("debounce executes search when lastSearchQuery is non-empty", async () => {
+            (plugin.api.search as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+            const modal = new SearchModal(app, plugin);
+            modal.open();
+            (modal as any).lastSearchQuery = "test";
+            await (modal as any).debouncedSearch();
+            await vi.runAllTimersAsync();
+            expect(plugin.api.search).toHaveBeenCalledWith("test", 5, "all");
+        });
     });
 
     describe("runAsk", () => {
@@ -339,9 +366,7 @@ describe("SearchModal", () => {
         });
 
         it("shows loading then renders answer", async () => {
-            (plugin.api.ask as ReturnType<typeof vi.fn>).mockResolvedValue(
-                makeAskResponse({ answer: "Forty-two." }),
-            );
+            (plugin.api.ask as ReturnType<typeof vi.fn>).mockResolvedValue(makeAskResponse({ answer: "Forty-two." }));
 
             await (modal as any).runAsk("What is the answer?");
 
@@ -351,9 +376,7 @@ describe("SearchModal", () => {
         });
 
         it("does not render sources section when sources array is empty", async () => {
-            (plugin.api.ask as ReturnType<typeof vi.fn>).mockResolvedValue(
-                makeAskResponse({ sources: [] }),
-            );
+            (plugin.api.ask as ReturnType<typeof vi.fn>).mockResolvedValue(makeAskResponse({ sources: [] }));
 
             await (modal as any).runAsk("question");
 
@@ -387,14 +410,12 @@ describe("SearchModal", () => {
                 distance: 0.1,
                 chunk: "chunk",
             };
-            (plugin.api.ask as ReturnType<typeof vi.fn>).mockResolvedValue(
-                makeAskResponse({ sources: [source] }),
-            );
+            (plugin.api.ask as ReturnType<typeof vi.fn>).mockResolvedValue(makeAskResponse({ sources: [source] }));
 
             await (modal as any).runAsk("question");
 
             const sourcesEl = modal.contentEl.find("lilbee-ask-sources")!;
-            const label = sourcesEl.children.find(c => c.textContent === "Sources: ");
+            const label = sourcesEl.children.find((c) => c.textContent === "Sources: ");
             expect(label).not.toBeUndefined();
         });
 
@@ -432,6 +453,65 @@ describe("SearchModal", () => {
             modal.open();
             (modal as any).resultsContainer = null;
             expect(() => (modal as any).renderLoading()).not.toThrow();
+        });
+    });
+
+    describe("renderSearchModeToggle", () => {
+        it("renders three search mode buttons in search mode", () => {
+            const modal = new SearchModal(app, plugin, "search");
+            modal.open();
+            const modeGroup = modal.contentEl.find("lilbee-search-mode");
+            expect(modeGroup).not.toBeNull();
+            const buttons = modeGroup!.children.filter((c: any) => c.tagName === "BUTTON");
+            expect(buttons).toHaveLength(3);
+            expect(buttons[0].textContent).toBe("All");
+            expect(buttons[1].textContent).toBe("Wiki");
+            expect(buttons[2].textContent).toBe("Raw");
+        });
+
+        it("does not render search mode toggle in ask mode", () => {
+            const modal = new SearchModal(app, plugin, "ask");
+            modal.open();
+            const modeGroup = modal.contentEl.find("lilbee-search-mode");
+            expect(modeGroup).toBeNull();
+        });
+
+        it("marks the active mode button as active", () => {
+            plugin.settings.searchChunkType = "wiki";
+            const modal = new SearchModal(app, plugin, "search");
+            modal.open();
+            const modeGroup = modal.contentEl.find("lilbee-search-mode")!;
+            const buttons = modeGroup.children.filter((c: any) => c.tagName === "BUTTON");
+            expect(buttons[1].classList.contains("active")).toBe(true);
+            expect(buttons[0].classList.contains("active")).toBe(false);
+        });
+
+        it("clicking a mode button updates settings.searchChunkType and calls saveSettings", async () => {
+            const modal = new SearchModal(app, plugin, "search");
+            modal.open();
+            const modeGroup = modal.contentEl.find("lilbee-search-mode")!;
+            const buttons = modeGroup.children.filter((c: any) => c.tagName === "BUTTON");
+
+            // Click "Wiki" button
+            buttons[1].trigger("click");
+            expect(plugin.settings.searchChunkType).toBe("wiki");
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+
+        it("clicking a mode button with active query re-triggers search", async () => {
+            (plugin.api.search as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+            const modal = new SearchModal(app, plugin, "search");
+            modal.open();
+
+            // Set a query first
+            (modal as any).lastSearchQuery = "test";
+
+            const modeGroup = modal.contentEl.find("lilbee-search-mode")!;
+            const buttons = modeGroup.children.filter((c: any) => c.tagName === "BUTTON");
+            buttons[1].trigger("click");
+
+            await vi.advanceTimersByTimeAsync(300);
+            expect(plugin.api.search).toHaveBeenCalledWith("test", 5, "wiki");
         });
     });
 });

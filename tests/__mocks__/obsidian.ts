@@ -12,7 +12,12 @@ export class MockElement {
     tagName: string;
     textContent: string = "";
     children: MockElement[] = [];
-    classList: { list: string[]; add: (...classes: string[]) => void; remove: (...classes: string[]) => void; contains: (cls: string) => boolean };
+    classList: {
+        list: string[];
+        add: (...classes: string[]) => void;
+        remove: (...classes: string[]) => void;
+        contains: (cls: string) => boolean;
+    };
     style: Record<string, string> = {};
     attributes: Record<string, string> = {};
     dataset: Record<string, string> = {};
@@ -20,6 +25,7 @@ export class MockElement {
     value: string = "";
     disabled: boolean = false;
     placeholder: string = "";
+    title: string = "";
     parentElement: MockElement | null = null;
 
     constructor(tag = "div") {
@@ -27,8 +33,17 @@ export class MockElement {
         const list: string[] = [];
         this.classList = {
             list,
-            add: (...classes: string[]) => { for (const cls of classes) { if (!list.includes(cls)) list.push(cls); } },
-            remove: (...classes: string[]) => { for (const cls of classes) { const i = list.indexOf(cls); if (i >= 0) list.splice(i, 1); } },
+            add: (...classes: string[]) => {
+                for (const cls of classes) {
+                    if (!list.includes(cls)) list.push(cls);
+                }
+            },
+            remove: (...classes: string[]) => {
+                for (const cls of classes) {
+                    const i = list.indexOf(cls);
+                    if (i >= 0) list.splice(i, 1);
+                }
+            },
             contains: (cls: string) => list.includes(cls),
         };
     }
@@ -38,7 +53,7 @@ export class MockElement {
         if (typeof opts === "string") {
             el.classList.add(opts);
         } else if (opts) {
-            if (opts.cls) opts.cls.split(" ").forEach(c => el.classList.add(c));
+            if (opts.cls) opts.cls.split(" ").forEach((c) => el.classList.add(c));
             if (opts.text) el.textContent = opts.text;
         }
         el.parentElement = this;
@@ -46,11 +61,14 @@ export class MockElement {
         return el;
     }
 
-    createEl(tag: string, opts?: { text?: string; cls?: string; type?: string; placeholder?: string; attr?: Record<string, string> }): MockElement {
+    createEl(
+        tag: string,
+        opts?: { text?: string; cls?: string; type?: string; placeholder?: string; attr?: Record<string, string> },
+    ): MockElement {
         const el = new MockElement(tag);
         if (opts) {
             if (opts.text) el.textContent = opts.text;
-            if (opts.cls) opts.cls.split(" ").forEach(c => el.classList.add(c));
+            if (opts.cls) opts.cls.split(" ").forEach((c) => el.classList.add(c));
             if (opts.type) el.attributes["type"] = opts.type;
             if (opts.placeholder) el.placeholder = opts.placeholder;
             if (opts.attr) Object.assign(el.attributes, opts.attr);
@@ -73,8 +91,12 @@ export class MockElement {
         this.attributes[name] = value;
     }
 
+    removeAttribute(name: string): void {
+        delete this.attributes[name];
+    }
+
     addClass(cls: string): void {
-        cls.split(" ").forEach(c => this.classList.add(c));
+        cls.split(" ").forEach((c) => this.classList.add(c));
     }
 
     removeClass(...classes: string[]): void {
@@ -118,6 +140,24 @@ export class MockElement {
         return null;
     }
 
+    querySelectorAll(selector: string): MockElement[] {
+        if (selector.startsWith(".")) {
+            return this.findAll(selector.slice(1));
+        }
+        return [];
+    }
+
+    createSpan(opts?: { cls?: string; text?: string }): MockElement {
+        const el = new MockElement("span");
+        if (opts) {
+            if (opts.cls) opts.cls.split(" ").forEach((c) => el.classList.add(c));
+            if (opts.text) el.textContent = opts.text;
+        }
+        el.parentElement = this;
+        this.children.push(el);
+        return el;
+    }
+
     remove(): void {
         if (this.parentElement) {
             const idx = this.parentElement.children.indexOf(this);
@@ -126,12 +166,20 @@ export class MockElement {
         }
     }
 
-    scrollIntoView(_opts?: unknown): void { /* noop */ }
-    focus(): void { /* noop */ }
-    blur(): void { /* noop */ }
+    scrollIntoView(_opts?: unknown): void {
+        /* noop */
+    }
+    focus(): void {
+        /* noop */
+    }
+    blur(): void {
+        /* noop */
+    }
 
     // Support select element behavior
-    get selectedIndex(): number { return 0; }
+    get selectedIndex(): number {
+        return 0;
+    }
 }
 
 export interface TAbstractFile {
@@ -176,10 +224,18 @@ export class Modal {
         this.contentEl = new MockElement("div");
     }
 
-    open(): void { this.onOpen(); }
-    close(): void { this.onClose(); }
-    onOpen(): void { /* override */ }
-    onClose(): void { /* override */ }
+    open(): void {
+        this.onOpen();
+    }
+    close(): void {
+        this.onClose();
+    }
+    onOpen(): void {
+        /* override */
+    }
+    onClose(): void {
+        /* override */
+    }
 }
 
 export class FuzzySuggestModal<T> {
@@ -189,18 +245,37 @@ export class FuzzySuggestModal<T> {
         this.app = app;
     }
 
-    setPlaceholder(_text: string): void { /* noop */ }
-    open(): void { /* noop */ }
-    close(): void { /* noop */ }
-    getItems(): T[] { return []; }
-    getItemText(_item: T): string { return ""; }
-    onChooseItem(_item: T, _evt: unknown): void { /* override */ }
+    setPlaceholder(_text: string): void {
+        /* noop */
+    }
+    open(): void {
+        /* noop */
+    }
+    close(): void {
+        /* noop */
+    }
+    getItems(): T[] {
+        return [];
+    }
+    getItemText(_item: T): string {
+        return "";
+    }
+    onChooseItem(_item: T, _evt: unknown): void {
+        /* override */
+    }
 }
 
 class MockMenuItem {
-    setTitle(_title: string): this { return this; }
-    setIcon(_icon: string): this { return this; }
-    onClick(cb: () => void): this { cb(); return this; }
+    setTitle(_title: string): this {
+        return this;
+    }
+    setIcon(_icon: string): this {
+        return this;
+    }
+    onClick(cb: () => void): this {
+        cb();
+        return this;
+    }
 }
 
 export class Menu {
@@ -213,26 +288,38 @@ export class Menu {
         return this;
     }
 
-    showAtMouseEvent(_event: unknown): void { /* noop */ }
+    showAtMouseEvent(_event: unknown): void {
+        /* noop */
+    }
 }
 
 export class ItemView {
     app: App;
     leaf: WorkspaceLeaf;
     containerEl: { children: MockElement[] };
+    contentEl: MockElement;
 
     constructor(leaf: WorkspaceLeaf) {
         this.leaf = leaf;
         this.app = leaf.app ?? new App();
         const content = new MockElement("div");
         this.containerEl = { children: [new MockElement("div"), content] };
+        this.contentEl = new MockElement("div");
     }
 
-    getViewType(): string { return ""; }
-    getDisplayText(): string { return ""; }
-    getIcon(): string { return ""; }
+    getViewType(): string {
+        return "";
+    }
+    getDisplayText(): string {
+        return "";
+    }
+    getIcon(): string {
+        return "";
+    }
 
-    registerEvent(_ref: unknown): void { /* noop */ }
+    registerEvent(_ref: unknown): void {
+        /* noop */
+    }
 }
 
 export class WorkspaceLeaf {
@@ -254,7 +341,9 @@ export class Plugin {
     }
 
     loadData = vi.fn(async () => this._data);
-    saveData = vi.fn(async (data: Record<string, unknown>) => { this._data = data; });
+    saveData = vi.fn(async (data: Record<string, unknown>) => {
+        this._data = data;
+    });
 
     addCommand = vi.fn();
     addSettingTab = vi.fn();
@@ -279,8 +368,12 @@ export class PluginSettingTab {
         this.containerEl = new MockElement("div");
     }
 
-    display(): void { /* override */ }
-    hide(): void { /* noop */ }
+    display(): void {
+        /* override */
+    }
+    hide(): void {
+        /* noop */
+    }
 }
 
 export const MarkdownRenderer = {
@@ -297,7 +390,10 @@ export const MarkdownRenderer = {
     },
 };
 
-export async function requestUrl(_req: { url: string; headers?: Record<string, string> }): Promise<{ status: number; json: unknown; arrayBuffer: ArrayBuffer; headers: Record<string, string> }> {
+export async function requestUrl(_req: {
+    url: string;
+    headers?: Record<string, string>;
+}): Promise<{ status: number; json: unknown; arrayBuffer: ArrayBuffer; headers: Record<string, string> }> {
     return { status: 200, json: {}, arrayBuffer: new ArrayBuffer(0), headers: {} };
 }
 
@@ -316,9 +412,15 @@ export class Notice {
         this.duration = duration;
         Notice.instances.push(this);
     }
-    setMessage(message: string): void { this.message = message; }
-    hide(): void { this.hidden = true; }
-    static clear(): void { Notice.instances = []; }
+    setMessage(message: string): void {
+        this.message = message;
+    }
+    hide(): void {
+        this.hidden = true;
+    }
+    static clear(): void {
+        Notice.instances = [];
+    }
 }
 
 export class Setting {
@@ -328,8 +430,15 @@ export class Setting {
         this._el = el;
         this.settingEl = el;
     }
-    setName(_name: string): this { return this; }
-    setDesc(_desc: string): this { return this; }
+    setName(_name: string): this {
+        return this;
+    }
+    setDesc(_desc: string): this {
+        return this;
+    }
+    setDisabled(_disabled: boolean): this {
+        return this;
+    }
     addText(cb: (text: MockTextComponent) => void): this {
         cb(new MockTextComponent());
         return this;
@@ -355,41 +464,89 @@ export class Setting {
 class MockTextComponent {
     private _onChange: ((v: string) => void) | null = null;
     inputEl: { placeholder: string } = { placeholder: "" };
-    setPlaceholder(p: string): this { this.inputEl.placeholder = p; return this; }
-    setValue(_v: string): this { return this; }
-    onChange(cb: (v: string) => void): this { this._onChange = cb; return this; }
-    triggerChange(v: string): void { this._onChange?.(v); }
+    setPlaceholder(p: string): this {
+        this.inputEl.placeholder = p;
+        return this;
+    }
+    setValue(_v: string): this {
+        return this;
+    }
+    onChange(cb: (v: string) => void): this {
+        this._onChange = cb;
+        return this;
+    }
+    triggerChange(v: string): void {
+        this._onChange?.(v);
+    }
 }
 
 class MockSliderComponent {
     private _onChange: ((v: number) => void) | null = null;
-    setLimits(_min: number, _max: number, _step: number): this { return this; }
-    setValue(_v: number): this { return this; }
-    setDynamicTooltip(): this { return this; }
-    onChange(cb: (v: number) => void): this { this._onChange = cb; return this; }
-    triggerChange(v: number): void { this._onChange?.(v); }
+    setLimits(_min: number, _max: number, _step: number): this {
+        return this;
+    }
+    setValue(_v: number): this {
+        return this;
+    }
+    setDynamicTooltip(): this {
+        return this;
+    }
+    onChange(cb: (v: number) => void): this {
+        this._onChange = cb;
+        return this;
+    }
+    triggerChange(v: number): void {
+        this._onChange?.(v);
+    }
 }
 
 class MockDropdownComponent {
     private _onChange: ((v: string) => void) | null = null;
-    addOption(_value: string, _label: string): this { return this; }
-    addOptions(_opts: Record<string, string>): this { return this; }
-    setValue(_v: string): this { return this; }
-    onChange(cb: (v: string) => void): this { this._onChange = cb; return this; }
-    triggerChange(v: string): void { this._onChange?.(v); }
+    addOption(_value: string, _label: string): this {
+        return this;
+    }
+    addOptions(_opts: Record<string, string>): this {
+        return this;
+    }
+    setValue(_v: string): this {
+        return this;
+    }
+    onChange(cb: (v: string) => void): this {
+        this._onChange = cb;
+        return this;
+    }
+    triggerChange(v: string): void {
+        this._onChange?.(v);
+    }
 }
 
 class MockToggleComponent {
     private _onChange: ((v: boolean) => void) | null = null;
-    setValue(_v: boolean): this { return this; }
-    onChange(cb: (v: boolean) => void): this { this._onChange = cb; return this; }
-    triggerChange(v: boolean): void { this._onChange?.(v); }
+    setValue(_v: boolean): this {
+        return this;
+    }
+    onChange(cb: (v: boolean) => void): this {
+        this._onChange = cb;
+        return this;
+    }
+    triggerChange(v: boolean): void {
+        this._onChange?.(v);
+    }
 }
 
 class MockButtonComponent {
     private _onClick: (() => void) | null = null;
-    setButtonText(_text: string): this { return this; }
-    setDisabled(_disabled: boolean): this { return this; }
-    onClick(cb: () => void): this { this._onClick = cb; return this; }
-    triggerClick(): void { this._onClick?.(); }
+    setButtonText(_text: string): this {
+        return this;
+    }
+    setDisabled(_disabled: boolean): this {
+        return this;
+    }
+    onClick(cb: () => void): this {
+        this._onClick = cb;
+        return this;
+    }
+    triggerClick(): void {
+        this._onClick?.();
+    }
 }

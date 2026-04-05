@@ -1,4 +1,4 @@
-import { vi, describe, it, expect } from "vitest";
+import { describe, it, expect } from "vitest";
 import { DEFAULT_SETTINGS, SSE_EVENT, JSON_HEADERS, SERVER_MODE } from "../src/types";
 import type {
     Excerpt,
@@ -13,7 +13,15 @@ import type {
     SSEEvent,
     Message,
     LilbeeSettings,
-    GenerationOptions,
+    ModelVariant,
+    ModelFamily,
+    CatalogResponse,
+    InstalledModel,
+    InstalledResponse,
+    DocumentEntry,
+    DocumentsResponse,
+    ConfigUpdateResponse,
+    EmbeddingModelResponse,
 } from "../src/types";
 
 describe("DEFAULT_SETTINGS", () => {
@@ -35,7 +43,32 @@ describe("DEFAULT_SETTINGS", () => {
 
     it("is a plain object with exactly the expected keys", () => {
         const keys = Object.keys(DEFAULT_SETTINGS).sort();
-        expect(keys).toEqual(["lilbeeVersion", "num_ctx", "ollamaUrl", "repeat_penalty", "seed", "serverMode", "serverPort", "serverUrl", "syncDebounceMs", "syncMode", "systemPrompt", "temperature", "topK", "top_k_sampling", "top_p"].sort());
+        const expected = [
+            "adaptiveThreshold",
+            "lilbeeVersion",
+            "maxDistance",
+            "num_ctx",
+            "repeat_penalty",
+            "searchChunkType",
+            "seed",
+            "serverMode",
+            "serverPort",
+            "serverUrl",
+            "setupCompleted",
+            "syncDebounceMs",
+            "syncMode",
+            "systemPrompt",
+            "temperature",
+            "topK",
+            "top_k_sampling",
+            "top_p",
+            "wikiEnabled",
+            "wikiFaithfulnessThreshold",
+            "wikiPruneRaw",
+            "wikiSyncToVault",
+            "wikiVaultFolder",
+        ].sort();
+        expect(keys).toEqual(expected);
     });
 });
 
@@ -93,14 +126,18 @@ describe("DocumentResult interface", () => {
 });
 
 describe("Source interface", () => {
-    it("accepts required fields only", () => {
+    it("accepts required fields", () => {
         const s: Source = {
             source: "doc.pdf",
             content_type: "application/pdf",
             distance: 0.12,
             chunk: "some text",
+            page_start: null,
+            page_end: null,
+            line_start: null,
+            line_end: null,
         };
-        expect(s.page_start).toBeUndefined();
+        expect(s.page_start).toBeNull();
         expect(s.distance).toBe(0.12);
     });
 
@@ -218,17 +255,22 @@ describe("LilbeeSettings interface", () => {
     it("accepts manual syncMode", () => {
         const s: LilbeeSettings = {
             serverUrl: "http://localhost:7433",
+            maxDistance: 0.9,
+            adaptiveThreshold: false,
             topK: 3,
             syncMode: "manual",
             syncDebounceMs: 2000,
-            ollamaUrl: "http://127.0.0.1:11434",
             temperature: null,
             top_p: null,
             top_k_sampling: null,
             repeat_penalty: null,
             num_ctx: null,
             seed: null,
+            serverMode: "managed",
+            serverPort: null,
+            lilbeeVersion: "",
             systemPrompt: "",
+            setupCompleted: false,
         };
         expect(s.syncMode).toBe("manual");
     });
@@ -236,17 +278,22 @@ describe("LilbeeSettings interface", () => {
     it("accepts auto syncMode", () => {
         const s: LilbeeSettings = {
             serverUrl: "http://localhost:7433",
+            maxDistance: 0.9,
+            adaptiveThreshold: false,
             topK: 3,
             syncMode: "auto",
             syncDebounceMs: 2000,
-            ollamaUrl: "http://127.0.0.1:11434",
             temperature: null,
             top_p: null,
             top_k_sampling: null,
             repeat_penalty: null,
             num_ctx: null,
             seed: null,
+            serverMode: "managed",
+            serverPort: null,
+            lilbeeVersion: "",
             systemPrompt: "",
+            setupCompleted: true,
         };
         expect(s.syncMode).toBe("auto");
     });
@@ -255,6 +302,7 @@ describe("LilbeeSettings interface", () => {
 describe("SSE_EVENT constants", () => {
     it("has all expected event types", () => {
         expect(SSE_EVENT.TOKEN).toBe("token");
+        expect(SSE_EVENT.REASONING).toBe("reasoning");
         expect(SSE_EVENT.SOURCES).toBe("sources");
         expect(SSE_EVENT.DONE).toBe("done");
         expect(SSE_EVENT.ERROR).toBe("error");
@@ -264,6 +312,10 @@ describe("SSE_EVENT constants", () => {
         expect(SSE_EVENT.EXTRACT).toBe("extract");
         expect(SSE_EVENT.EMBED).toBe("embed");
         expect(SSE_EVENT.FILE_DONE).toBe("file_done");
+        expect(SSE_EVENT.CRAWL_START).toBe("crawl_start");
+        expect(SSE_EVENT.CRAWL_PAGE).toBe("crawl_page");
+        expect(SSE_EVENT.CRAWL_DONE).toBe("crawl_done");
+        expect(SSE_EVENT.CRAWL_ERROR).toBe("crawl_error");
     });
 });
 
@@ -277,5 +329,107 @@ describe("SERVER_MODE constants", () => {
 describe("JSON_HEADERS constant", () => {
     it("has Content-Type application/json", () => {
         expect(JSON_HEADERS["Content-Type"]).toBe("application/json");
+    });
+});
+
+describe("ModelVariant interface", () => {
+    it("accepts all fields", () => {
+        const v: ModelVariant = {
+            name: "8B",
+            hf_repo: "qwen/qwen3-8B",
+            size_gb: 5.0,
+            min_ram_gb: 8,
+            description: "Medium model",
+            task: "chat",
+            installed: true,
+            source: "native",
+        };
+        expect(v.name).toBe("8B");
+        expect(v.hf_repo).toBe("qwen/qwen3-8B");
+        expect(v.installed).toBe(true);
+        expect(v.source).toBe("native");
+        expect(v.task).toBe("chat");
+    });
+});
+
+describe("ModelFamily interface", () => {
+    it("accepts all fields", () => {
+        const f: ModelFamily = {
+            family: "Qwen3",
+            task: "chat",
+            featured: true,
+            recommended: "8B",
+            variants: [],
+        };
+        expect(f.family).toBe("Qwen3");
+        expect(f.featured).toBe(true);
+        expect(f.recommended).toBe("8B");
+    });
+});
+
+describe("CatalogResponse interface", () => {
+    it("holds paginated catalog results", () => {
+        const r: CatalogResponse = {
+            total: 50,
+            limit: 20,
+            offset: 0,
+            families: [],
+        };
+        expect(r.total).toBe(50);
+    });
+});
+
+describe("InstalledModel interface", () => {
+    it("holds model name and source", () => {
+        const m: InstalledModel = { name: "qwen3:8b", source: "native" };
+        expect(m.source).toBe("native");
+    });
+});
+
+describe("InstalledResponse interface", () => {
+    it("holds list of installed models", () => {
+        const r: InstalledResponse = { models: [{ name: "qwen3:8b", source: "native" }] };
+        expect(r.models).toHaveLength(1);
+    });
+});
+
+describe("DocumentEntry interface", () => {
+    it("holds document metadata", () => {
+        const d: DocumentEntry = {
+            filename: "notes.md",
+            chunk_count: 5,
+            ingested_at: "2026-03-28T00:00:00Z",
+        };
+        expect(d.chunk_count).toBe(5);
+    });
+});
+
+describe("DocumentsResponse interface", () => {
+    it("holds paginated documents", () => {
+        const r: DocumentsResponse = {
+            documents: [],
+            total: 0,
+            limit: 50,
+            offset: 0,
+        };
+        expect(r.total).toBe(0);
+    });
+});
+
+describe("ConfigUpdateResponse interface", () => {
+    it("holds updated fields and reindex flag", () => {
+        const r: ConfigUpdateResponse = {
+            updated: ["temperature", "chunk_size"],
+            reindex_required: true,
+        };
+        expect(r.reindex_required).toBe(true);
+        expect(r.updated).toContain("chunk_size");
+    });
+});
+
+describe("EmbeddingModelResponse interface", () => {
+    it("holds model name", () => {
+        const r: EmbeddingModelResponse = { model: "nomic-embed-text-v1.5" };
+        expect(r.model).toBe("nomic-embed-text-v1.5");
     });
 });

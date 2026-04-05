@@ -112,9 +112,25 @@ type StreamEvent =
 ## Testing
 
 ### Requirements
-- **100% coverage** on statements, functions, lines (branches: 99% threshold due to one v8 artifact).
+- **100% coverage** on statements, branches, functions, and lines — enforced by vitest thresholds.
 - Every new public function needs tests. Every branch needs coverage.
 - Tests run in Node, not a browser — there is no real DOM.
+
+### V8 Coverage Gotcha: Property Initializer Arrow Functions
+V8 counts arrow functions in property initializers (e.g. `private cancel = () => {}`) as distinct coverable functions. If the constructor immediately overwrites the property, the initializer arrow is never called and shows as uncovered — dropping function coverage below 100% even though every *meaningful* function is tested.
+
+**Fix:** use a type-only declaration (`private cancel: () => void`) instead of an initializer when the constructor always assigns a value. Do not dismiss the coverage gap as a "vitest quirk" — inspect `coverage-final.json` to find the exact uncovered functions:
+```bash
+cat coverage/coverage-final.json | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for path, info in data.items():
+    for key, count in info['f'].items():
+        if count == 0:
+            fn = info['fnMap'][key]
+            print(f'{path}:{fn[\"loc\"][\"start\"][\"line\"]} - {fn[\"name\"]}')
+"
+```
 
 ### Mock Architecture
 `tests/__mocks__/obsidian.ts` provides the entire Obsidian API mock:
@@ -186,3 +202,36 @@ esbuild bundles `src/main.ts` → `main.js` (CJS, ES2022). Externals: `obsidian`
 ## Server Dependency
 
 The plugin requires `lilbee serve` running on localhost (default port 7433). Without it, all API calls fail gracefully with user-visible Notice messages.
+
+## Dependencies & Abstractions
+
+**DO NOT reinvent well-known abstractions.** Before implementing a common pattern (error handling, async utilities, data structures), check if a popular library exists:
+
+| Need | Recommended Library |
+|------|---------------------|
+| Result/Either type | [neverthrow](https://github.com/supermacro/neverthrow) (7k+ stars, 0 deps) |
+| Functional programming | [fp-ts](https://github.com/gcanti/fp-ts) |
+| Async utilities | Native TypeScript (Promise.all, etc.) |
+
+If a library is chosen, add it to `dependencies` in package.json (not devDependencies), as it will be bundled into the plugin.
+
+Example - using neverthrow for error handling:
+```typescript
+import { Result, ok, err } from "neverthrow";
+
+async function fetchData(): Promise<Result<Data, Error>> {
+    try {
+        return ok(await doFetch());
+    } catch (e) {
+        return err(e instanceof Error ? e : new Error(String(e)));
+    }
+}
+
+// Usage
+const result = await fetchData();
+if (result.isOk()) {
+    console.log(result.value);
+} else {
+    console.error(result.error);
+}
+```

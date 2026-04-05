@@ -10,19 +10,43 @@ if (typeof globalThis.requestAnimationFrame === "undefined") {
 
 import { Notice, WorkspaceLeaf } from "../__mocks__/obsidian";
 import { MockElement } from "../__mocks__/obsidian";
-import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal, electronDialog, buildGenerationOptions } from "../../src/views/chat-view";
+import {
+    ChatView,
+    VIEW_TYPE_CHAT,
+    VaultFilePickerModal,
+    electronDialog,
+    buildGenerationOptions,
+} from "../../src/views/chat-view";
+import { ok, err } from "neverthrow";
 import type LilbeePlugin from "../../src/main";
 import { NOTICE, SSE_EVENT } from "../../src/types";
 
-let mockChatViewConfirmResult = true;
+const mockChatViewConfirmResult = true;
 vi.mock("../../src/views/confirm-pull-modal", () => ({
     ConfirmPullModal: vi.fn().mockImplementation(() => ({
         open: vi.fn(),
-        get result() { return Promise.resolve(mockChatViewConfirmResult); },
+        get result() {
+            return Promise.resolve(mockChatViewConfirmResult);
+        },
         close: vi.fn(),
     })),
 }));
+
+vi.mock("../../src/views/crawl-modal", () => ({
+    CrawlModal: vi.fn().mockImplementation(() => ({
+        open: vi.fn(),
+        result: Promise.resolve(true),
+        close: vi.fn(),
+    })),
+}));
+
+vi.mock("../../src/views/catalog-modal", () => ({
+    CatalogModal: vi.fn().mockImplementation(() => ({
+        open: vi.fn(),
+    })),
+}));
 import type { SSEEvent, Source } from "../../src/types";
+import { TaskQueue } from "../../src/task-queue";
 
 function makeLeaf(): WorkspaceLeaf {
     return new WorkspaceLeaf();
@@ -37,7 +61,9 @@ function makeStream(events: SSEEvent[]): {
     done: Promise<void>;
 } {
     let resolveStream!: () => void;
-    const done = new Promise<void>((r) => { resolveStream = r; });
+    const done = new Promise<void>((r) => {
+        resolveStream = r;
+    });
     const mockFn = vi.fn().mockReturnValue(
         (async function* () {
             for (const e of events) yield e;
@@ -60,20 +86,16 @@ function makePlugin(): LilbeePlugin {
                 chat: { active: "llama3", installed: ["llama3", "phi3"], catalog: [] },
                 vision: { active: "", installed: [], catalog: [] },
             }),
-            setChatModel: vi.fn().mockResolvedValue({ model: "phi3" }),
-            setVisionModel: vi.fn().mockResolvedValue({ model: "" }),
+            setChatModel: vi.fn().mockResolvedValue(ok({ model: "phi3" })),
+            setVisionModel: vi.fn().mockResolvedValue(ok({ model: "" })),
             pullModel: vi.fn(),
-        },
-        ollama: {
-            pull: vi.fn(),
-            delete: vi.fn(),
         },
         settings: { topK: 5 },
         activeModel: "llama3",
         activeVisionModel: "",
         fetchActiveModel: vi.fn(),
-        onProgress: null,
         cancelSync: vi.fn(),
+        taskQueue: new TaskQueue(),
         app: {
             vault: {
                 getAbstractFileByPath: vi.fn().mockReturnValue(null),
@@ -167,18 +189,6 @@ describe("ChatView.onOpen — DOM structure", () => {
     it("creates a spacer div in the toolbar", () => {
         const spacer = container.find("lilbee-toolbar-spacer");
         expect(spacer).not.toBeNull();
-    });
-
-    it("creates a progress banner (hidden by default)", () => {
-        const banner = container.find("lilbee-progress-banner");
-        expect(banner).not.toBeNull();
-        expect(banner!.dataset.hidden).toBe("");
-    });
-
-    it("creates a pull progress banner (hidden by default)", () => {
-        const banner = container.find("lilbee-progress-banner-pull");
-        expect(banner).not.toBeNull();
-        expect(banner!.dataset.hidden).toBe("");
     });
 
     it("creates a messages div with class 'lilbee-chat-messages'", () => {
@@ -392,6 +402,61 @@ describe("ChatView.sendMessage — token streaming", () => {
     });
 });
 
+describe("ChatView.sendMessage — reasoning tokens", () => {
+    it("renders reasoning as collapsible details block on done", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.REASONING, data: { token: "Let me think..." } },
+            { event: SSE_EVENT.REASONING, data: { token: " about this." } },
+            { event: SSE_EVENT.TOKEN, data: { token: "The answer is 42." } },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "explain";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+
+        const assistantBubble = messagesEl.children[1];
+        const details = assistantBubble.find("lilbee-reasoning");
+        expect(details).toBeTruthy();
+        expect(details!.children[0].textContent).toBe("Reasoning");
+        const textEl = assistantBubble.find("lilbee-chat-content");
+        expect(textEl!.textContent).toBe("The answer is 42.");
+    });
+
+    it("does not render details block when no reasoning tokens", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: { token: "Just an answer." } },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "simple";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+
+        const assistantBubble = messagesEl.children[1];
+        const details = assistantBubble.find("lilbee-reasoning");
+        expect(details).toBeNull();
+    });
+});
+
 describe("ChatView.sendMessage — sources", () => {
     it("renders sources section when sources event precedes done", async () => {
         Notice.clear();
@@ -532,9 +597,7 @@ describe("ChatView.sendMessage — error event", () => {
     it("shows a Notice and removes assistant bubble when error event is received", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        const { mockFn, done } = makeStream([
-            { event: SSE_EVENT.ERROR, data: "something went wrong" },
-        ]);
+        const { mockFn, done } = makeStream([{ event: SSE_EVENT.ERROR, data: "something went wrong" }]);
         plugin.api.chatStream = mockFn;
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -556,9 +619,7 @@ describe("ChatView.sendMessage — error event", () => {
     it("does not add error message to chat history", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        const { mockFn, done } = makeStream([
-            { event: SSE_EVENT.ERROR, data: "model not found" },
-        ]);
+        const { mockFn, done } = makeStream([{ event: SSE_EVENT.ERROR, data: "model not found" }]);
         plugin.api.chatStream = mockFn;
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -582,7 +643,9 @@ describe("ChatView.sendMessage — API throws", () => {
         Notice.clear();
         const plugin = makePlugin();
         let resolveThrown!: () => void;
-        const thrown = new Promise<void>((r) => { resolveThrown = r; });
+        const thrown = new Promise<void>((r) => {
+            resolveThrown = r;
+        });
         plugin.api.chatStream = vi.fn().mockReturnValue(
             (async function* () {
                 resolveThrown();
@@ -604,7 +667,9 @@ describe("ChatView.sendMessage — API throws", () => {
         expect(messagesEl.children.length).toBe(1);
         expect(messagesEl.children[0].classList.contains("user")).toBe(true);
         // Notice shown
-        expect(Notice.instances.some((n) => n.message === "lilbee: could not reach server — is lilbee running?")).toBe(true);
+        expect(Notice.instances.some((n) => n.message === "lilbee: could not reach server — is lilbee running?")).toBe(
+            true,
+        );
         // History popped — no user message either
         expect((view as any).history.length).toBe(0);
     });
@@ -618,7 +683,7 @@ describe("ChatView.sendMessage — messagesEl null guard", () => {
         // Do NOT call onOpen — messagesEl stays null
 
         // Access the private method directly for coverage
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         await (view as any).sendMessage("test");
 
         expect(plugin.api.chatStream).not.toHaveBeenCalled();
@@ -755,7 +820,7 @@ describe("ChatView.onOpen — model selector", () => {
     it("change event shows Notice on setChatModel failure", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.setChatModel = vi.fn().mockRejectedValue(new Error("fail"));
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("fail")));
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         await tick();
@@ -817,11 +882,10 @@ describe("ChatView.onOpen — model selector", () => {
         });
 
         async function* fakePull() {
-            yield { status: "pulling", completed: 50, total: 100 };
-            yield { status: "success" };
+            yield { event: "progress", data: { current: 50, total: 100 } };
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue({ model: "phi3" });
+        plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -835,7 +899,7 @@ describe("ChatView.onOpen — model selector", () => {
         // Allow async IIFE to complete
         await new Promise((r) => setTimeout(r, 50));
 
-        expect(plugin.ollama.pull).toHaveBeenCalledWith("phi3", expect.any(AbortSignal));
+        expect(plugin.api.pullModel).toHaveBeenCalledWith("phi3", "native", expect.any(AbortSignal));
         expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
         expect(Notice.instances.some((n) => n.message === "lilbee: phi3 pulled and activated")).toBe(true);
     });
@@ -858,7 +922,7 @@ describe("ChatView.onOpen — model selector", () => {
         async function* failingPull(): AsyncGenerator<never> {
             throw new Error("network");
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(failingPull());
+        plugin.api.pullModel = vi.fn().mockReturnValue(failingPull());
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -872,6 +936,78 @@ describe("ChatView.onOpen — model selector", () => {
         await new Promise((r) => setTimeout(r, 50));
 
         expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
+    });
+
+    it("auto-pull AbortError shows Pull cancelled notice", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockResolvedValue({
+            chat: {
+                active: "llama3",
+                installed: ["llama3"],
+                catalog: [
+                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+                ],
+            },
+            vision: { active: "", installed: [], catalog: [] },
+        });
+
+        const abortError = new Error("Aborted");
+        abortError.name = "AbortError";
+        async function* abortingPull(): AsyncGenerator<never> {
+            throw abortError;
+        }
+        plugin.api.pullModel = vi.fn().mockReturnValue(abortingPull());
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-chat-model-select")!;
+        (select as any).value = "phi3";
+        select.trigger("change");
+        await tick();
+        await new Promise((r) => setTimeout(r, 50));
+
+        expect(Notice.instances.some((n) => n.message === NOTICE.PULL_CANCELLED)).toBe(true);
+    });
+
+    it("auto-pull non-Error throw uses 'unknown' in taskQueue", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockResolvedValue({
+            chat: {
+                active: "llama3",
+                installed: ["llama3"],
+                catalog: [
+                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+                ],
+            },
+            vision: { active: "", installed: [], catalog: [] },
+        });
+
+        async function* failingPull(): AsyncGenerator<never> {
+            throw "string error";
+        }
+        plugin.api.pullModel = vi.fn().mockReturnValue(failingPull());
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-chat-model-select")!;
+        (select as any).value = "phi3";
+        select.trigger("change");
+        await tick();
+        await new Promise((r) => setTimeout(r, 50));
+
+        const failed = plugin.taskQueue.completed.find((t: any) => t.status === "failed");
+        expect(failed).toBeDefined();
+        expect(failed!.error).toBe("unknown");
     });
 
     it("auto-pull with total=0 does not send progress", async () => {
@@ -890,11 +1026,10 @@ describe("ChatView.onOpen — model selector", () => {
         });
 
         async function* fakePull() {
-            yield { status: "pulling", completed: 0, total: 0 };
-            yield { status: "success" };
+            yield { event: "progress", data: { current: 0, total: 0 } };
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue({ model: "phi3" });
+        plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -941,9 +1076,7 @@ describe("ChatView.sendMessage — object token extraction", () => {
     it("extracts message property from error object data", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        const { mockFn, done } = makeStream([
-            { event: SSE_EVENT.ERROR, data: { message: "model not found" } },
-        ]);
+        const { mockFn, done } = makeStream([{ event: SSE_EVENT.ERROR, data: { message: "model not found" } }]);
         plugin.api.chatStream = mockFn;
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -963,9 +1096,7 @@ describe("ChatView.sendMessage — loading indicator", () => {
     it("shows Stop text on send button while streaming", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        const { mockFn, done } = makeStream([
-            { event: SSE_EVENT.DONE, data: {} },
-        ]);
+        const { mockFn, done } = makeStream([{ event: SSE_EVENT.DONE, data: {} }]);
         plugin.api.chatStream = mockFn;
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -1015,7 +1146,10 @@ describe("ChatView.sendMessage — loading indicator", () => {
 describe("VaultFilePickerModal", () => {
     it("getItems returns vault files", () => {
         const onChoose = vi.fn();
-        const files = [{ path: "a.md", name: "a.md" }, { path: "b.md", name: "b.md" }];
+        const files = [
+            { path: "a.md", name: "a.md" },
+            { path: "b.md", name: "b.md" },
+        ];
         const leaf = makeLeaf();
         (leaf.app.vault as any).getFiles = vi.fn().mockReturnValue(files);
         const modal = new VaultFilePickerModal(leaf.app as any, onChoose);
@@ -1097,411 +1231,14 @@ describe("ChatView — toolbar groups and tooltips", () => {
     });
 });
 
-describe("ChatView — progress banner", () => {
-    it("handleProgress shows banner on file_start event", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const banner = container.find("lilbee-progress-banner")!;
-
-        view.handleProgress({
-            event: SSE_EVENT.FILE_START,
-            data: { file: "paper.pdf", current_file: 3, total_files: 10 },
-        });
-
-        expect(banner.dataset.hidden).toBeUndefined();
-        const label = container.find("lilbee-progress-top-label")!;
-        expect(label.textContent).toContain("3/10");
-    });
-
-    it("handleProgress updates sub-label on extract event", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        view.handleProgress({
-            event: SSE_EVENT.EXTRACT,
-            data: { file: "paper.pdf", page: 5, total_pages: 50 },
-        });
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const subLabel = container.find("lilbee-progress-sub-label")!;
-        expect(subLabel.textContent).toContain("Extracting");
-        expect(subLabel.textContent).toContain("page 5/50");
-    });
-
-    it("handleProgress updates sub-label on embed event", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        view.handleProgress({
-            event: SSE_EVENT.EMBED,
-            data: { file: "paper.pdf", chunk: 30, total_chunks: 100 },
-        });
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const subLabel = container.find("lilbee-progress-sub-label")!;
-        expect(subLabel.textContent).toContain("Embedding");
-        expect(subLabel.textContent).toContain("30/100");
-    });
-
-    it("handleProgress shows banner on progress event", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        view.handleProgress({
-            event: SSE_EVENT.PROGRESS,
-            data: { file: "notes.md", current: 2, total: 5 },
-        });
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const label = container.find("lilbee-progress-top-label")!;
-        expect(label.textContent).toContain("2/5");
-        expect(label.textContent).toContain("notes.md");
-    });
-
-    it("handleProgress hides banner on done event", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        // Show first
-        view.handleProgress({
-            event: SSE_EVENT.FILE_START,
-            data: { file: "a.md", current_file: 1, total_files: 1 },
-        });
-        // Then complete
-        view.handleProgress({
-            event: SSE_EVENT.DONE,
-            data: {},
-        });
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const banner = container.find("lilbee-progress-banner")!;
-        expect(banner.dataset.hidden).toBe("");
-    });
-
-    it("handleProgress no-ops when progressBanner is null (before onOpen)", () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-
-        expect(() => {
-            view.handleProgress({
-                event: SSE_EVENT.FILE_START,
-                data: { file: "x", current_file: 1, total_files: 1 },
-            });
-        }).not.toThrow();
-    });
-
-    it("handleProgress ignores unknown event types", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const banner = container.find("lilbee-progress-banner")!;
-
-        view.handleProgress({ event: "unknown_event", data: {} });
-
-        // Banner stays hidden (data-hidden attribute still present)
-        expect(banner.dataset.hidden).toBe("");
-    });
-
-    it("handleProgress shows pull-specific label on pull event", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const banner = container.find("lilbee-progress-banner-pull")!;
-        const label = banner.find("lilbee-progress-top-label")!;
-
-        view.handleProgress({
-            event: SSE_EVENT.PULL,
-            data: { model: "mistral", current: 50, total: 100 },
-        });
-
-        expect(banner.dataset.hidden).toBeUndefined();
-        expect(label.textContent).toBe("Pulling model — 50%");
-    });
-
-    it("hideProgress no-ops when progressBanner is null", () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        expect(() => view.hideProgress()).not.toThrow();
-    });
-
-    it("handleProgress with missing data fields uses fallback values", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        // FILE_START with missing fields
-        view.handleProgress({ event: SSE_EVENT.FILE_START, data: {} });
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const label = container.find("lilbee-progress-top-label")!;
-        expect(label.textContent).toContain("0/0");
-
-        // EXTRACT with missing fields
-        view.handleProgress({ event: SSE_EVENT.EXTRACT, data: {} });
-        const subLabel = container.find("lilbee-progress-sub-label")!;
-        expect(subLabel.textContent).toContain("0/0");
-
-        // EMBED with missing fields
-        view.handleProgress({ event: SSE_EVENT.EMBED, data: {} });
-        expect(subLabel.textContent).toContain("0/0");
-
-        // PROGRESS with missing fields
-        view.handleProgress({ event: SSE_EVENT.PROGRESS, data: {} });
-        expect(label.textContent).toContain("0/0");
-
-        // PULL with missing fields (tests ?? fallback)
-        view.handleProgress({ event: SSE_EVENT.PULL, data: {} });
-        const pullBanner = container.find("lilbee-progress-banner-pull")!;
-        const pullLabel = pullBanner.find("lilbee-progress-top-label")!;
-        expect(pullLabel.textContent).toContain("0%");
-    });
-
-    it("updateSubLabel no-ops before onOpen", () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        // EXTRACT before onOpen — progressSubLabel is null
-        expect(() => {
-            view.handleProgress({ event: SSE_EVENT.EXTRACT, data: { file: "x", page: 1, total_pages: 1 } });
-        }).not.toThrow();
-    });
-
-    it("showFileProgress with total=0 sets bar width to 0%", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        view.handleProgress({ event: SSE_EVENT.FILE_START, data: { current_file: 0, total_files: 0 } });
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const bar = container.find("lilbee-progress-bar")!;
-        expect(bar.style.width).toBe("0%");
-    });
-
-    it("file cancel button does not abort pullController", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        const controller = new AbortController();
-        (view as any).pullController = controller;
-        const abortSpy = vi.spyOn(controller, "abort");
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const cancelBtn = container.find("lilbee-progress-cancel")!;
-        cancelBtn.trigger("click");
-
-        expect(abortSpy).not.toHaveBeenCalled();
-        expect((plugin as any).cancelSync).toHaveBeenCalled();
-    });
-
-    it("pull cancel button only aborts pullController, not cancelSync", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        const controller = new AbortController();
-        (view as any).pullController = controller;
-        const abortSpy = vi.spyOn(controller, "abort");
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const pullBanner = container.find("lilbee-progress-banner-pull")!;
-        const pullCancelBtn = pullBanner.find("lilbee-progress-cancel")!;
-        pullCancelBtn.trigger("click");
-
-        expect(abortSpy).toHaveBeenCalled();
-        expect((plugin as any).cancelSync).not.toHaveBeenCalled();
-    });
-
-    it("both banners can show simultaneously without interference", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-
-        // Show file progress
-        view.handleProgress({
-            event: SSE_EVENT.FILE_START,
-            data: { current_file: 1, total_files: 3 },
-        });
-
-        // Show pull progress
-        view.handleProgress({
-            event: SSE_EVENT.PULL,
-            data: { current: 50, total: 100 },
-        });
-
-        const fileBanner = container.find("lilbee-progress-banner")!;
-        const pullBanner = container.find("lilbee-progress-banner-pull")!;
-
-        // Both banners visible
-        expect(fileBanner.dataset.hidden).toBeUndefined();
-        expect(pullBanner.dataset.hidden).toBeUndefined();
-
-        // Each banner has its own label
-        const fileLabel = fileBanner.find("lilbee-progress-top-label")!;
-        expect(fileLabel.textContent).toContain("1/3");
-
-        const pullLabel = pullBanner.find("lilbee-progress-top-label")!;
-        expect(pullLabel.textContent).toContain("50%");
-    });
-
-    it("hideProgress hides file banner but not pull banner", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-
-        // Show both banners
-        view.handleProgress({ event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 1 } });
-        view.handleProgress({ event: SSE_EVENT.PULL, data: { current: 50, total: 100 } });
-
-        // Hide file banner via DONE
-        view.handleProgress({ event: SSE_EVENT.DONE, data: {} });
-
-        const fileBanner = container.find("lilbee-progress-banner")!;
-        const pullBanner = container.find("lilbee-progress-banner-pull")!;
-
-        expect(fileBanner.dataset.hidden).toBe("");
-        expect(pullBanner.dataset.hidden).toBeUndefined();
-    });
-
-    it("hidePullProgress is called after pull completes, not hideProgress", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3"],
-                catalog: [
-                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
-                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
-                ],
-            },
-            vision: { active: "", installed: [], catalog: [] },
-        });
-
-        async function* pullGen() {
-            yield { status: "pulling", completed: 100, total: 100 };
-        }
-        plugin.ollama.pull = vi.fn().mockReturnValue(pullGen());
-
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        await tick();
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-
-        // Start a file operation
-        view.handleProgress({ event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 2 } });
-
-        // Trigger pull via model selector
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
-        await tick();
-        await new Promise((r) => setTimeout(r, 50));
-
-        // File banner should still be visible (not hidden by pull completion)
-        const fileBanner = container.find("lilbee-progress-banner")!;
-        expect(fileBanner.dataset.hidden).toBeUndefined();
-    });
-
-    it("pull banner no-ops when pullProgress is null (before onOpen)", () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-
-        // showPullProgress before onOpen — should not throw
-        expect(() => {
-            (view as any).showPullProgress("test", 50, 100);
-        }).not.toThrow();
-    });
-
-    it("hidePullProgress no-ops when pullProgress is null", () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        expect(() => (view as any).hidePullProgress()).not.toThrow();
-    });
-
-    it("pull banner bar width is 0% when total is 0", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        view.handleProgress({ event: SSE_EVENT.PULL, data: { current: 0, total: 0 } });
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const pullBanner = container.find("lilbee-progress-banner-pull")!;
-        const bar = pullBanner.find("lilbee-progress-bar")!;
-        expect(bar.style.width).toBe("0%");
-    });
-});
-
 describe("ChatView.onClose", () => {
-    it("clears onProgress callback", async () => {
+    it("aborts stream and pull controllers", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
-
-        expect(plugin.onProgress).not.toBeNull();
-
         await (view as any).onClose();
-
-        expect(plugin.onProgress).toBeNull();
-    });
-});
-
-describe("ChatView — onProgress registration", () => {
-    it("registers onProgress callback on open that forwards to handleProgress", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        expect(plugin.onProgress).toBeTypeOf("function");
-
-        // Call through the registered callback
-        plugin.onProgress!({
-            event: SSE_EVENT.FILE_START,
-            data: { file: "test.md", current_file: 1, total_files: 2 },
-        });
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const label = container.find("lilbee-progress-top-label")!;
-        expect(label.textContent).toContain("1/2");
-        const banner = container.find("lilbee-progress-banner")!;
-        expect(banner.dataset.hidden).toBeUndefined();
+        // Should not throw
     });
 });
 
@@ -1509,8 +1246,7 @@ describe("ChatView.onOpen — add file button opens menu", () => {
     let dialogSpy: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
-        dialogSpy = vi.spyOn(electronDialog, "showOpenDialog")
-            .mockResolvedValue({ canceled: true, filePaths: [] });
+        dialogSpy = vi.spyOn(electronDialog, "showOpenDialog").mockResolvedValue({ canceled: true, filePaths: [] });
     });
 
     afterEach(() => {
@@ -1688,7 +1424,7 @@ describe("ChatView.onOpen — vision selector", () => {
     it("setVisionModel failure shows Notice", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.setVisionModel = vi.fn().mockRejectedValue(new Error("fail"));
+        plugin.api.setVisionModel = vi.fn().mockResolvedValue(err(new Error("fail")));
         plugin.api.listModels = vi.fn().mockResolvedValue({
             chat: { active: "llama3", installed: ["llama3"], catalog: [] },
             vision: {
@@ -1734,18 +1470,15 @@ describe("ChatView.onOpen — vision selector", () => {
             vision: {
                 active: "",
                 installed: [],
-                catalog: [
-                    { name: "llava", size_gb: 4.7, min_ram_gb: 8, description: "Vision", installed: false },
-                ],
+                catalog: [{ name: "llava", size_gb: 4.7, min_ram_gb: 8, description: "Vision", installed: false }],
             },
         });
 
         async function* fakePull() {
-            yield { status: "pulling", completed: 50, total: 100 };
-            yield { status: "success" };
+            yield { event: "progress", data: { current: 50, total: 100 } };
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setVisionModel = vi.fn().mockResolvedValue({ model: "llava" });
+        plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
+        plugin.api.setVisionModel = vi.fn().mockResolvedValue(ok({ model: "llava" }));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -1758,7 +1491,7 @@ describe("ChatView.onOpen — vision selector", () => {
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
-        expect(plugin.ollama.pull).toHaveBeenCalledWith("llava", expect.any(AbortSignal));
+        expect(plugin.api.pullModel).toHaveBeenCalledWith("llava", "native", expect.any(AbortSignal));
         expect(plugin.api.setVisionModel).toHaveBeenCalledWith("llava");
         expect(Notice.instances.some((n) => n.message === "lilbee: llava pulled and activated")).toBe(true);
     });
@@ -1771,16 +1504,14 @@ describe("ChatView.onOpen — vision selector", () => {
             vision: {
                 active: "",
                 installed: [],
-                catalog: [
-                    { name: "llava", size_gb: 4.7, min_ram_gb: 8, description: "Vision", installed: false },
-                ],
+                catalog: [{ name: "llava", size_gb: 4.7, min_ram_gb: 8, description: "Vision", installed: false }],
             },
         });
 
         async function* failingPull(): AsyncGenerator<never> {
             throw new Error("network");
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(failingPull());
+        plugin.api.pullModel = vi.fn().mockReturnValue(failingPull());
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -1804,18 +1535,15 @@ describe("ChatView.onOpen — vision selector", () => {
             vision: {
                 active: "",
                 installed: [],
-                catalog: [
-                    { name: "llava", size_gb: 4.7, min_ram_gb: 8, description: "Vision", installed: false },
-                ],
+                catalog: [{ name: "llava", size_gb: 4.7, min_ram_gb: 8, description: "Vision", installed: false }],
             },
         });
 
         async function* fakePull() {
-            yield { status: "pulling", completed: 0, total: 0 };
-            yield { status: "success" };
+            yield { event: "progress", data: { current: 0, total: 0 } };
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setVisionModel = vi.fn().mockResolvedValue({ model: "llava" });
+        plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
+        plugin.api.setVisionModel = vi.fn().mockResolvedValue(ok({ model: "llava" }));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -1830,7 +1558,6 @@ describe("ChatView.onOpen — vision selector", () => {
 
         expect(plugin.api.setVisionModel).toHaveBeenCalledWith("llava");
     });
-
 });
 
 describe("ChatView — cancel chat stream (stop button)", () => {
@@ -1922,7 +1649,9 @@ describe("ChatView — cancel chat stream (stop button)", () => {
         Notice.clear();
         const plugin = makePlugin();
         let resolveWait!: () => void;
-        const waitPromise = new Promise<void>((r) => { resolveWait = r; });
+        const waitPromise = new Promise<void>((r) => {
+            resolveWait = r;
+        });
         plugin.api.chatStream = vi.fn().mockReturnValue(
             (async function* () {
                 yield { event: SSE_EVENT.TOKEN, data: { token: "hi" } };
@@ -1950,201 +1679,8 @@ describe("ChatView — cancel chat stream (stop button)", () => {
     });
 });
 
-describe("ChatView — cancel model pull", () => {
-    it("progress cancel button exists in banner", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const cancelBtn = container.find("lilbee-progress-cancel")!;
-        expect(cancelBtn).not.toBeNull();
-        expect(cancelBtn.tagName).toBe("BUTTON");
-    });
-
-    it("cancel button calls plugin.cancelSync (not pullController.abort)", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        const controller = new AbortController();
-        (view as any).pullController = controller;
-        const abortSpy = vi.spyOn(controller, "abort");
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const cancelBtn = container.find("lilbee-progress-cancel")!;
-        cancelBtn.trigger("click");
-
-        expect((plugin as any).cancelSync).toHaveBeenCalled();
-        expect(abortSpy).not.toHaveBeenCalled();
-    });
-
-    it("clicking cancel button during pull aborts and shows Pull cancelled Notice", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3"],
-                catalog: [
-                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
-                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
-                ],
-            },
-            vision: { active: "", installed: [], catalog: [] },
-        });
-
-        const abortError = new Error("Aborted");
-        abortError.name = "AbortError";
-        async function* abortingPull() {
-            yield { status: "pulling", completed: 50, total: 100 };
-            throw abortError;
-        }
-        plugin.ollama.pull = vi.fn().mockReturnValue(abortingPull());
-
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        await tick();
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
-        await tick();
-        await new Promise((r) => setTimeout(r, 50));
-
-        expect(Notice.instances.some((n) => n.message === NOTICE.PULL_CANCELLED)).toBe(true);
-    });
-});
-
-
-describe("ChatView — pull queue", () => {
-    it("enqueueOrRunPull queues second pull while first is running", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        const firstRun = vi.fn().mockResolvedValue(undefined);
-        const secondRun = vi.fn().mockResolvedValue(undefined);
-
-        // Start first pull
-        const p1 = (view as any).pullQueue.enqueue(firstRun);
-        // Manually set pulling to simulate mid-pull state for queue test
-        // (firstRun resolves immediately in test)
-        await p1;
-        expect(firstRun).toHaveBeenCalled();
-
-        // Now test queue: start a slow first, queue a second
-        let resolveSlow!: () => void;
-        const slowRun = () => new Promise<void>((r) => { resolveSlow = r; });
-        const p2 = (view as any).pullQueue.enqueue(slowRun);
-        // Queue a second while slow is running
-        (view as any).pullQueue.enqueue(secondRun);
-        expect(Notice.instances.some((n) => n.message.startsWith("lilbee: download queued"))).toBe(true);
-        expect(secondRun).not.toHaveBeenCalled();
-
-        // Complete the slow pull
-        resolveSlow();
-        await p2;
-        // Second should have run via runNextPull
-        expect(secondRun).toHaveBeenCalled();
-    });
-
-    it("cancel running pull → next queued pull runs", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        let resolveFirst!: () => void;
-        let rejectFirst!: (err: Error) => void;
-        const firstRun = vi.fn(() => new Promise<void>((res, rej) => {
-            resolveFirst = res;
-            rejectFirst = rej;
-        }));
-        const secondRun = vi.fn().mockResolvedValue(undefined);
-
-        // Start first, queue second
-        const p1 = (view as any).pullQueue.enqueue(firstRun, "first");
-        (view as any).pullQueue.enqueue(secondRun, "second");
-        expect(firstRun).toHaveBeenCalled();
-        expect(secondRun).not.toHaveBeenCalled();
-
-        // Cancel the first (reject with AbortError)
-        const abortErr = new Error("aborted");
-        abortErr.name = "AbortError";
-        rejectFirst(abortErr);
-        await p1.catch(() => { /* queue rejections are unhandled */ });
-        await tick();
-
-        // Second should have run
-        expect(secondRun).toHaveBeenCalled();
-    });
-});
-
-describe("ChatView — add queue", () => {
-    it("file adds are routed through addQueue", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        (plugin as any).addExternalFiles = vi.fn().mockResolvedValue(undefined);
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        const addSpy = vi.spyOn((view as any).addQueue, "enqueue");
-
-        const firstRun = vi.fn().mockResolvedValue(undefined);
-        const secondRun = vi.fn().mockResolvedValue(undefined);
-
-        // Enqueue two adds
-        await (view as any).addQueue.enqueue(firstRun, "file1.md");
-        expect(firstRun).toHaveBeenCalled();
-
-        // Start a slow add, then queue a second
-        let resolveSlow!: () => void;
-        const slowRun = () => new Promise<void>((r) => { resolveSlow = r; });
-        const p = (view as any).addQueue.enqueue(slowRun, "slow.md");
-        (view as any).addQueue.enqueue(secondRun, "file2.md");
-        expect(secondRun).not.toHaveBeenCalled();
-
-        resolveSlow();
-        await p;
-        expect(secondRun).toHaveBeenCalled();
-    });
-
-    it("vault file picker routes through addQueue", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        (plugin as any).addToLilbee = vi.fn().mockResolvedValue(undefined);
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        // Directly test the queue behavior by simulating what the modal callback does
-        const queueSpy = vi.spyOn((view as any).addQueue, "enqueue");
-        const file = { path: "test.md", name: "test.md" } as any;
-
-        void (view as any).addQueue.enqueue(
-            () => (plugin as any).addToLilbee(file),
-            file.name,
-        );
-        await tick();
-
-        expect(queueSpy).toHaveBeenCalled();
-        expect((plugin as any).addToLilbee).toHaveBeenCalledWith(file);
-    });
-
-    it("addQueue and pullQueue are independent", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        expect((view as any).addQueue).not.toBe((view as any).pullQueue);
-    });
-
-    it("enqueueAddFile routes through addQueue", async () => {
+describe("ChatView — enqueueAddFile", () => {
+    it("enqueueAddFile calls plugin.addToLilbee", async () => {
         Notice.clear();
         const plugin = makePlugin();
         (plugin as any).addToLilbee = vi.fn().mockResolvedValue(undefined);
@@ -2156,35 +1692,6 @@ describe("ChatView — add queue", () => {
         await tick();
 
         expect((plugin as any).addToLilbee).toHaveBeenCalledWith(file);
-    });
-
-    it("cancel running add → next queued add runs", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-
-        let rejectFirst!: (err: Error) => void;
-        const firstRun = vi.fn(() => new Promise<void>((_res, rej) => {
-            rejectFirst = rej;
-        }));
-        const secondRun = vi.fn().mockResolvedValue(undefined);
-
-        // Start first, queue second
-        const p1 = (view as any).addQueue.enqueue(firstRun, "first");
-        (view as any).addQueue.enqueue(secondRun, "second");
-        expect(firstRun).toHaveBeenCalled();
-        expect(secondRun).not.toHaveBeenCalled();
-
-        // Cancel the first
-        const abortErr = new Error("aborted");
-        abortErr.name = "AbortError";
-        rejectFirst(abortErr);
-        await p1.catch(() => { /* queue rejection */ });
-        await tick();
-
-        // Second should have run
-        expect(secondRun).toHaveBeenCalled();
     });
 });
 
@@ -2326,7 +1833,9 @@ describe("ChatView.onClose — aborts both controllers", () => {
         abortError.name = "AbortError";
 
         let resolveWait!: () => void;
-        const waitPromise = new Promise<void>((r) => { resolveWait = r; });
+        const waitPromise = new Promise<void>((r) => {
+            resolveWait = r;
+        });
         plugin.api.chatStream = vi.fn().mockReturnValue(
             (async function* () {
                 yield { event: SSE_EVENT.TOKEN, data: { token: "partial" } };
@@ -2372,14 +1881,15 @@ describe("ChatView.onClose — aborts both controllers", () => {
         });
 
         let resolveWait!: () => void;
-        const waitPromise = new Promise<void>((r) => { resolveWait = r; });
+        const waitPromise = new Promise<void>((r) => {
+            resolveWait = r;
+        });
         async function* slowPull() {
-            yield { status: "pulling", completed: 50, total: 100 };
+            yield { event: "progress", data: { current: 50, total: 100 } };
             await waitPromise;
-            yield { status: "success" };
         }
-        plugin.ollama.pull = vi.fn().mockReturnValue(slowPull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue({ model: "phi3" });
+        plugin.api.pullModel = vi.fn().mockReturnValue(slowPull());
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -2407,25 +1917,29 @@ describe("ChatView.onClose — aborts both controllers", () => {
 
 describe("buildGenerationOptions", () => {
     it("returns empty object when all fields are null", () => {
-        expect(buildGenerationOptions({
-            temperature: null,
-            top_p: null,
-            top_k_sampling: null,
-            repeat_penalty: null,
-            num_ctx: null,
-            seed: null,
-        })).toEqual({});
+        expect(
+            buildGenerationOptions({
+                temperature: null,
+                top_p: null,
+                top_k_sampling: null,
+                repeat_penalty: null,
+                num_ctx: null,
+                seed: null,
+            }),
+        ).toEqual({});
     });
 
     it("includes only non-null fields", () => {
-        expect(buildGenerationOptions({
-            temperature: 0.7,
-            top_p: null,
-            top_k_sampling: 40,
-            repeat_penalty: null,
-            num_ctx: null,
-            seed: null,
-        })).toEqual({ temperature: 0.7, top_k: 40 });
+        expect(
+            buildGenerationOptions({
+                temperature: 0.7,
+                top_p: null,
+                top_k_sampling: 40,
+                repeat_penalty: null,
+                num_ctx: null,
+                seed: null,
+            }),
+        ).toEqual({ temperature: 0.7, top_k: 40 });
     });
 
     it("maps top_k_sampling to top_k", () => {
@@ -2442,14 +1956,16 @@ describe("buildGenerationOptions", () => {
     });
 
     it("includes all fields when all are set", () => {
-        expect(buildGenerationOptions({
-            temperature: 0.8,
-            top_p: 0.9,
-            top_k_sampling: 40,
-            repeat_penalty: 1.1,
-            num_ctx: 4096,
-            seed: 42,
-        })).toEqual({
+        expect(
+            buildGenerationOptions({
+                temperature: 0.8,
+                top_p: 0.9,
+                top_k_sampling: 40,
+                repeat_penalty: 1.1,
+                num_ctx: 4096,
+                seed: 42,
+            }),
+        ).toEqual({
             temperature: 0.8,
             top_p: 0.9,
             top_k: 40,
@@ -2477,10 +1993,45 @@ describe("ChatView.sendMessage — passes generation options", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
 
-        expect(plugin.api.chatStream).toHaveBeenCalledWith(
-            "hi", [], 5, expect.any(AbortSignal),
-            { temperature: 0.5, seed: 42 },
-        );
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("hi", [], 5, expect.any(AbortSignal), {
+            temperature: 0.5,
+            seed: 42,
+        });
+    });
+});
+
+describe("ChatView.createToolbar — search mode buttons", () => {
+    it("renders search mode buttons in toolbar", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const modeGroup = container.find("lilbee-search-mode");
+        expect(modeGroup).not.toBeNull();
+        const buttons = modeGroup!.children.filter((c: any) => c.tagName === "BUTTON");
+        expect(buttons).toHaveLength(3);
+        expect(buttons[0].textContent).toBe("All");
+        expect(buttons[1].textContent).toBe("Wiki");
+        expect(buttons[2].textContent).toBe("Raw");
+        await view.onClose();
+    });
+
+    it("clicking a search mode button updates settings.searchChunkType", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.settings.searchChunkType = "all";
+        plugin.saveSettings = vi.fn();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const modeGroup = container.find("lilbee-search-mode")!;
+        const buttons = modeGroup.children.filter((c: any) => c.tagName === "BUTTON");
+
+        buttons[1].trigger("click");
+        expect(plugin.settings.searchChunkType).toBe("wiki");
+        expect(plugin.saveSettings).toHaveBeenCalled();
+        await view.onClose();
     });
 });
 
@@ -2544,7 +2095,7 @@ describe("ChatView — offline retry", () => {
         await view.onClose();
     });
 
-    it("shows Ollama notice only at threshold", async () => {
+    it("shows offline notice only at threshold", async () => {
         const plugin = makePlugin();
         plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
 
@@ -2553,27 +2104,19 @@ describe("ChatView — offline retry", () => {
         await vi.advanceTimersByTimeAsync(0);
 
         // First failure — no notice yet (connecting state)
-        expect(Notice.instances.filter(
-            (n) => n.message.includes("is Ollama running?"),
-        ).length).toBe(0);
+        expect(Notice.instances.filter((n) => n.message.includes("is lilbee running?")).length).toBe(0);
 
         // Second failure — still no notice
         await vi.advanceTimersByTimeAsync(5000);
-        expect(Notice.instances.filter(
-            (n) => n.message.includes("is Ollama running?"),
-        ).length).toBe(0);
+        expect(Notice.instances.filter((n) => n.message.includes("is lilbee running?")).length).toBe(0);
 
         // Third failure — notice fires at threshold
         await vi.advanceTimersByTimeAsync(5000);
-        expect(Notice.instances.filter(
-            (n) => n.message.includes("is Ollama running?"),
-        ).length).toBe(1);
+        expect(Notice.instances.filter((n) => n.message.includes("is lilbee running?")).length).toBe(1);
 
         // Fourth failure — no additional notice
         await vi.advanceTimersByTimeAsync(5000);
-        expect(Notice.instances.filter(
-            (n) => n.message.includes("is Ollama running?"),
-        ).length).toBe(1);
+        expect(Notice.instances.filter((n) => n.message.includes("is lilbee running?")).length).toBe(1);
 
         await view.onClose();
     });
@@ -2735,6 +2278,31 @@ describe("ChatView — offline retry", () => {
         await view.onClose();
 
         expect((view as any).retryTimer).toBeNull();
+    });
+
+    it("Browse Catalog button in empty state opens CatalogModal", async () => {
+        const { CatalogModal } = await import("../../src/views/catalog-modal");
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockResolvedValue({
+            chat: { active: "", installed: [], catalog: [] },
+            vision: { active: "", installed: [], catalog: [] },
+        });
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await vi.advanceTimersByTimeAsync(0);
+
+        const container = (view as any).messagesEl as MockElement;
+        const emptyState = container.find("lilbee-chat-empty-state")!;
+        expect(emptyState).not.toBeNull();
+        const browseBtns = emptyState.children.filter(
+            (c: MockElement) => c.tagName === "BUTTON" && c.textContent === "Browse Catalog",
+        );
+        expect(browseBtns.length).toBe(1);
+        browseBtns[0].trigger("click");
+
+        expect(CatalogModal).toHaveBeenCalled();
+        await view.onClose();
     });
 
     it("resets retryCount on success after failures", async () => {

@@ -700,3 +700,911 @@
     );
     animation: lilbee-knight 1.4s ease-in-out infinite;
 }
+
+/* Catalog Modal */
+
+.lilbee-catalog-modal {
+    padding: var(--size-4-3, 12px);
+}
+
+.lilbee-catalog-filters {
+    display: flex;
+    gap: var(--size-4-2, 8px);
+    flex-wrap: wrap;
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-catalog-filters select,
+.lilbee-catalog-search {
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-catalog-search {
+    flex: 1;
+    min-width: 150px;
+}
+
+.lilbee-catalog-results {
+    max-height: 50vh;
+    overflow-y: auto;
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-catalog-row {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-2, 8px);
+    border-bottom: 1px solid var(--background-modifier-border);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-catalog-row:last-child {
+    border-bottom: none;
+}
+
+.lilbee-catalog-row-name {
+    font-weight: var(--font-medium, 500);
+    min-width: 120px;
+}
+
+.lilbee-catalog-row-size {
+    color: var(--text-muted);
+    min-width: 60px;
+}
+
+.lilbee-catalog-row-desc {
+    flex: 1;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lilbee-catalog-row-action {
+    flex-shrink: 0;
+}
+
+.lilbee-catalog-active {
+    display: inline-block;
+    padding: 1px var(--size-4-2, 8px);
+    border-radius: 999px;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    font-size: var(--font-smallest, 10px);
+    font-weight: var(--font-medium, 500);
+}
+
+.lilbee-catalog-pull {
+    padding: 2px var(--size-4-2, 8px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    background: none;
+    cursor: pointer;
+    color: var(--text-normal);
+    font-size: var(--font-smallest, 10px);
+}
+
+.lilbee-catalog-pull:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-catalog-load-more {
+    width: 100%;
+    padding: var(--size-4-2, 8px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    background: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: var(--font-small, 13px);
+    text-align: center;
+}
+
+.lilbee-catalog-load-more:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+/* Crawl Modal */
+
+.lilbee-crawl-modal {
+    padding: var(--size-4-3, 12px);
+}
+
+.lilbee-crawl-url {
+    width: 100%;
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    margin-bottom: var(--size-4-2, 8px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 6px);
+    font-size: var(--font-text-size, 15px);
+    outline: none;
+    box-sizing: border-box;
+}
+
+.lilbee-crawl-url:focus {
+    border-color: var(--interactive-accent);
+}
+
+.lilbee-crawl-options {
+    display: flex;
+    gap: var(--size-4-4, 16px);
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-crawl-options label {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1, 4px);
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+}
+
+.lilbee-crawl-options input {
+    width: 60px;
+    padding: var(--size-4-1, 4px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-crawl-progress {
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    margin-bottom: var(--size-4-2, 8px);
+    min-height: 1.5em;
+}
+
+.lilbee-crawl-actions {
+    display: flex;
+    gap: var(--size-4-2, 8px);
+    justify-content: flex-end;
+}
+
+/* Documents Modal */
+
+.lilbee-documents-modal {
+    padding: var(--size-4-3, 12px);
+}
+
+.lilbee-documents-search {
+    width: 100%;
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    margin-bottom: var(--size-4-2, 8px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 6px);
+    font-size: var(--font-text-size, 15px);
+    outline: none;
+    box-sizing: border-box;
+}
+
+.lilbee-documents-search:focus {
+    border-color: var(--interactive-accent);
+}
+
+.lilbee-documents-remove {
+    margin-bottom: var(--size-4-2, 8px);
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    background: none;
+    cursor: pointer;
+    color: var(--text-error);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-documents-remove:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.lilbee-documents-remove:not(:disabled):hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-documents-results {
+    max-height: 50vh;
+    overflow-y: auto;
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-documents-row {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-2, 8px);
+    border-bottom: 1px solid var(--background-modifier-border);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-documents-row:last-child {
+    border-bottom: none;
+}
+
+.lilbee-documents-checkbox {
+    flex-shrink: 0;
+}
+
+.lilbee-documents-row-name {
+    flex: 1;
+    font-weight: var(--font-medium, 500);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lilbee-documents-row-chunks {
+    color: var(--text-muted);
+    min-width: 70px;
+}
+
+.lilbee-documents-row-date {
+    color: var(--text-faint);
+    min-width: 100px;
+    font-size: var(--font-smallest, 10px);
+}
+
+.lilbee-documents-load-more {
+    width: 100%;
+    padding: var(--size-4-2, 8px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    background: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: var(--font-small, 13px);
+    text-align: center;
+}
+
+.lilbee-documents-load-more:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+/* Chat Empty State */
+
+.lilbee-chat-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--size-4-3, 12px);
+    padding: var(--size-4-8, 32px) var(--size-4-4, 16px);
+    color: var(--text-faint);
+    font-size: var(--font-small, 13px);
+    text-align: center;
+}
+
+.lilbee-chat-empty-state p {
+    margin: 0;
+}
+
+/* Server Defaults (read-only config display) */
+
+.lilbee-server-defaults {
+    margin-top: var(--size-4-2, 8px);
+}
+
+/* Advanced details */
+
+.lilbee-advanced-details summary {
+    cursor: pointer;
+    font-weight: var(--font-semibold, 600);
+    padding: var(--size-4-2, 8px) 0;
+    color: var(--text-normal);
+}
+
+/* Setup Wizard */
+
+.lilbee-wizard {
+    max-width: 540px;
+}
+
+.lilbee-wizard-step {
+    padding: var(--size-4-4, 16px) var(--size-4-3, 12px);
+}
+
+.lilbee-wizard-step h2 {
+    margin: 0 0 var(--size-4-3, 12px);
+}
+
+.lilbee-wizard-step p {
+    margin: 0 0 var(--size-4-2, 8px);
+    color: var(--text-normal);
+    line-height: var(--line-height-normal, 1.5);
+}
+
+.lilbee-wizard-step ul {
+    margin: 0 0 var(--size-4-2, 8px);
+    padding-left: var(--size-4-6, 24px);
+}
+
+.lilbee-wizard-model-option {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 6px);
+    padding: var(--size-4-3, 12px);
+    margin-bottom: var(--size-4-2, 8px);
+    cursor: pointer;
+    transition: border-color 150ms ease;
+}
+
+.lilbee-wizard-model-option:hover {
+    border-color: var(--interactive-accent);
+}
+
+.lilbee-wizard-model-option.selected {
+    border-color: var(--interactive-accent);
+    background-color: var(--background-secondary);
+}
+
+.lilbee-wizard-model-option strong {
+    display: block;
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-wizard-model-option p {
+    margin: 0;
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+}
+
+.lilbee-wizard-model-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-wizard-model-ram {
+    font-size: var(--font-smallest, 10px) !important;
+    color: var(--text-faint) !important;
+}
+
+.lilbee-wizard-recommended {
+    display: inline-block;
+    padding: 1px var(--size-4-2, 8px);
+    border-radius: 999px;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    font-size: var(--font-smallest, 10px);
+    font-weight: var(--font-medium, 500);
+}
+
+.lilbee-wizard-system-info {
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted) !important;
+}
+
+.lilbee-wizard-progress {
+    margin: var(--size-4-3, 12px) 0;
+}
+
+.lilbee-wizard-progress-label {
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    margin-top: var(--size-4-1, 4px);
+}
+
+.lilbee-wizard-actions {
+    display: flex;
+    gap: var(--size-4-2, 8px);
+    justify-content: flex-end;
+    margin-top: var(--size-4-4, 16px);
+}
+
+.lilbee-wizard-summary p {
+    font-weight: var(--font-medium, 500);
+}
+
+.lilbee-wizard-tips {
+    margin-top: var(--size-4-2, 8px);
+}
+
+.lilbee-wizard-hint {
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted) !important;
+}
+
+.lilbee-wizard-status {
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    min-height: 1.5em;
+    margin: var(--size-4-2, 8px) 0;
+}
+
+.lilbee-wizard-url-input {
+    width: 100%;
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    margin: var(--size-4-2, 8px) 0;
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 6px);
+    font-size: var(--font-text-size, 15px);
+    outline: none;
+    box-sizing: border-box;
+}
+
+.lilbee-wizard-url-input:focus {
+    border-color: var(--interactive-accent);
+}
+
+/* Catalog Family Layout */
+
+.lilbee-catalog-family {
+    margin-bottom: 8px;
+}
+.lilbee-catalog-family-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    cursor: pointer;
+    font-weight: 600;
+}
+.lilbee-catalog-family-header:hover {
+    background: var(--background-modifier-hover);
+}
+.lilbee-catalog-family-task {
+    font-size: 0.75em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--background-modifier-border);
+}
+.lilbee-catalog-family-variants {
+    padding-left: 16px;
+}
+.lilbee-catalog-family.is-collapsed .lilbee-catalog-family-variants {
+    display: none;
+}
+.lilbee-catalog-variant-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+.lilbee-catalog-recommended {
+    color: var(--text-accent);
+}
+
+.lilbee-tasks-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+    padding: var(--size-4-3, 12px);
+}
+
+.lilbee-tasks-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-tasks-header h2 {
+    margin: 0;
+    font-size: var(--font-text-size, 15px);
+    font-weight: var(--font-semibold, 600);
+}
+
+.lilbee-tasks-clear {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: var(--font-small, 13px);
+    padding: 2px var(--size-4-2, 8px);
+    border-radius: var(--radius-s, 4px);
+}
+
+.lilbee-tasks-clear:hover {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.lilbee-tasks-section {
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-tasks-section-header {
+    font-size: var(--font-smallest, 10px);
+    font-weight: var(--font-semibold, 600);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-task-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--size-4-1, 4px);
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    border-radius: var(--radius-s, 4px);
+    margin-bottom: 2px;
+}
+
+.lilbee-task-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-task-info {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1, 4px);
+    flex: 1;
+    min-width: 0;
+}
+
+.lilbee-task-type-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 9px;
+    font-weight: var(--font-semibold, 600);
+    letter-spacing: 0.03em;
+    flex-shrink: 0;
+}
+
+.lilbee-task-name {
+    font-size: var(--font-small, 13px);
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lilbee-task-progress-bar {
+    width: 100%;
+    height: 3px;
+    background-color: var(--background-modifier-border);
+    border-radius: 2px;
+    overflow: hidden;
+    flex-basis: 100%;
+}
+
+.lilbee-task-progress-fill {
+    height: 100%;
+    background-color: var(--interactive-accent);
+    border-radius: 2px;
+    transition: width 200ms ease-out;
+}
+
+.lilbee-task-detail {
+    width: 100%;
+    font-size: 9px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-basis: 100%;
+}
+
+.lilbee-task-progress-text {
+    font-size: var(--font-smallest, 10px);
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.lilbee-task-cancel {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1;
+    padding: 2px;
+    border-radius: var(--radius-s, 4px);
+    flex-shrink: 0;
+}
+
+.lilbee-task-cancel:hover {
+    color: var(--text-error);
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-task-status-icon {
+    font-size: var(--font-small, 13px);
+    flex-shrink: 0;
+    width: 16px;
+    text-align: center;
+}
+
+.lilbee-task-status-done {
+    color: var(--text-success);
+}
+
+.lilbee-task-status-failed {
+    color: var(--text-error);
+}
+
+.lilbee-task-status-cancelled {
+    color: var(--text-muted);
+}
+
+.lilbee-task-time {
+    font-size: var(--font-smallest, 10px);
+    color: var(--text-faint);
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.lilbee-tasks-empty {
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    font-style: italic;
+}
+
+/* ── Wiki view ── */
+
+.lilbee-wiki-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.lilbee-wiki-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-wiki-header h2 {
+    margin: 0;
+    font-size: var(--font-ui-medium, 15px);
+}
+
+.lilbee-wiki-search {
+    margin: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    width: calc(100% - var(--size-4-3, 12px) * 2);
+}
+
+.lilbee-wiki-list {
+    flex: 0 0 auto;
+    max-height: 40%;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+}
+
+.lilbee-wiki-page-item {
+    padding: var(--size-4-2, 8px);
+    border-radius: var(--radius-s, 4px);
+    cursor: pointer;
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-wiki-page-item:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-wiki-page-item.active {
+    background-color: var(--background-modifier-active-hover);
+}
+
+.lilbee-wiki-type-badge {
+    display: inline-block;
+    font-size: var(--font-smallest, 10px);
+    font-weight: var(--font-semibold, 600);
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: var(--radius-s, 4px);
+    background-color: #10b981;
+    color: #fff;
+    margin-right: var(--size-4-1, 4px);
+}
+
+.lilbee-wiki-detail {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--size-4-3, 12px);
+}
+
+.lilbee-wiki-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-4-2, 8px);
+    align-items: center;
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-wiki-content {
+    font-size: var(--font-text-size, 14px);
+    line-height: var(--line-height-normal, 1.5);
+}
+
+/* ── Source chip wiki modifier ── */
+
+.lilbee-source-chip-wiki {
+    border-left: 3px solid #10b981;
+    padding-left: 6px;
+}
+
+.lilbee-claim-fact {
+    border-left-style: solid;
+}
+
+.lilbee-claim-inference {
+    border-left-style: dashed;
+}
+
+/* ── Citation modal ── */
+
+.lilbee-citation-card {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 6px);
+    padding: var(--size-4-3, 12px);
+    margin-bottom: var(--size-4-2, 8px);
+    background-color: var(--background-primary);
+}
+
+.lilbee-citation-key {
+    font-family: var(--font-monospace);
+    font-size: var(--font-small, 13px);
+    color: var(--text-accent);
+}
+
+.lilbee-citation-claim-badge {
+    display: inline-block;
+    font-size: var(--font-smallest, 10px);
+    font-weight: var(--font-semibold, 600);
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: var(--radius-s, 4px);
+    margin-left: var(--size-4-1, 4px);
+}
+
+.lilbee-claim-fact .lilbee-citation-claim-badge,
+.lilbee-citation-claim-badge.lilbee-claim-fact {
+    background-color: var(--interactive-accent);
+    color: #fff;
+}
+
+.lilbee-citation-claim-badge.lilbee-claim-inference {
+    background-color: transparent;
+    border: 1px dashed var(--interactive-accent);
+    color: var(--interactive-accent);
+}
+
+.lilbee-citation-excerpt {
+    margin: var(--size-4-2, 8px) 0;
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    border-left: 3px solid var(--background-modifier-border);
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+}
+
+.lilbee-citation-hash-status {
+    font-size: var(--font-smallest, 10px);
+    font-weight: var(--font-semibold, 600);
+    padding: 1px 6px;
+    border-radius: var(--radius-s, 4px);
+}
+
+.lilbee-hash-current {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+}
+
+.lilbee-hash-stale {
+    background-color: rgba(234, 179, 8, 0.15);
+    color: #eab308;
+}
+
+/* ── Draft modal ── */
+
+.lilbee-draft-item {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 6px);
+    padding: var(--size-4-3, 12px);
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-draft-score {
+    font-weight: var(--font-semibold, 600);
+}
+
+.lilbee-draft-reason {
+    color: var(--text-muted);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-draft-expand {
+    margin-top: var(--size-4-2, 8px);
+    font-size: var(--font-small, 13px);
+}
+
+/* ── Lint modal ── */
+
+.lilbee-lint-summary {
+    font-weight: var(--font-semibold, 600);
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-lint-group {
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-lint-group h3 {
+    font-size: var(--font-ui-medium, 15px);
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-lint-issue {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-1, 4px) 0;
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-lint-status {
+    display: inline-block;
+    font-size: var(--font-smallest, 10px);
+    font-weight: var(--font-semibold, 600);
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: var(--radius-s, 4px);
+    color: #fff;
+}
+
+.lilbee-lint-valid { background-color: #22c55e; }
+.lilbee-lint-stale { background-color: #eab308; }
+.lilbee-lint-deleted { background-color: #ef4444; }
+.lilbee-lint-missing { background-color: #f97316; }
+.lilbee-lint-model { background-color: #3b82f6; }
+
+.lilbee-lint-detail {
+    color: var(--text-muted);
+    flex: 1;
+}
+
+/* ── Search mode toggle ── */
+
+.lilbee-search-mode {
+    display: flex;
+    gap: 0;
+    margin: var(--size-4-2, 8px) 0;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 6px);
+    overflow: hidden;
+    width: fit-content;
+}
+
+.lilbee-search-mode-btn {
+    padding: var(--size-4-1, 4px) var(--size-4-3, 12px);
+    font-size: var(--font-small, 13px);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+}
+
+.lilbee-search-mode-btn:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-search-mode-btn.active {
+    background-color: var(--interactive-accent);
+    color: #fff;
+}

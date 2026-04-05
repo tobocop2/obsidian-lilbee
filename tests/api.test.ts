@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { LilbeeClient, OllamaClient, parseModelParameters } from "../src/api";
+import { LilbeeClient } from "../src/api";
 import type { Message } from "../src/types";
 
 const BASE_URL = "http://localhost:7433";
@@ -65,11 +65,9 @@ describe("health()", () => {
 
         const result = await client.health();
 
-        expect(fetchMock).toHaveBeenCalledWith(
-            `${BASE_URL}/api/health`,
-            expect.objectContaining({}),
-        );
-        expect(result).toEqual(data);
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/health`, expect.objectContaining({}));
+        expect(result.ok).toBe(true);
+        expect(result.value).toEqual(data);
     });
 });
 
@@ -84,11 +82,9 @@ describe("status()", () => {
 
         const result = await client.status();
 
-        expect(fetchMock).toHaveBeenCalledWith(
-            `${BASE_URL}/api/status`,
-            expect.objectContaining({}),
-        );
-        expect(result).toEqual(data);
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/status`, expect.objectContaining({}));
+        expect(result.ok).toBe(true);
+        expect(result.value).toEqual(data);
     });
 });
 
@@ -153,17 +149,17 @@ describe("ask()", () => {
 describe("askStream()", () => {
     it("POSTs to /api/ask/stream and yields SSE events", async () => {
         fetchMock.mockResolvedValue(
-            sseResponse([
-                'event: token\ndata: {"text":"hello"}\n\n',
-                'event: done\ndata: {"answer":"hi"}\n\n',
-            ]),
+            sseResponse(['event: token\ndata: {"text":"hello"}\n\n', 'event: done\ndata: {"answer":"hi"}\n\n']),
         );
 
         const events = await collect(client.askStream("What?"));
 
-        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/ask/stream`, expect.objectContaining({
-            method: "POST",
-        }));
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/ask/stream`,
+            expect.objectContaining({
+                method: "POST",
+            }),
+        );
         expect(events).toHaveLength(2);
         expect(events[0]).toEqual({ event: "token", data: { text: "hello" } });
         expect(events[1]).toEqual({ event: "done", data: { answer: "hi" } });
@@ -237,16 +233,17 @@ describe("chat()", () => {
 
 describe("chatStream()", () => {
     it("POSTs to /api/chat/stream and yields SSE events", async () => {
-        fetchMock.mockResolvedValue(
-            sseResponse(['event: token\ndata: "chunk"\n\n']),
-        );
+        fetchMock.mockResolvedValue(sseResponse(['event: token\ndata: "chunk"\n\n']));
 
         const history: Message[] = [{ role: "user", content: "hey" }];
         const events = await collect(client.chatStream("next", history));
 
-        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/chat/stream`, expect.objectContaining({
-            method: "POST",
-        }));
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/chat/stream`,
+            expect.objectContaining({
+                method: "POST",
+            }),
+        );
         expect(events).toHaveLength(1);
         expect(events[0]).toEqual({ event: "token", data: "chunk" });
     });
@@ -300,7 +297,9 @@ describe("chatStream()", () => {
 describe("addFiles()", () => {
     it("POSTs to /api/add with paths and yields SSE events", async () => {
         fetchMock.mockResolvedValue(
-            sseResponse(['event: done\ndata: {"added":["a.md"],"updated":[],"removed":[],"failed":[],"unchanged":0}\n\n']),
+            sseResponse([
+                'event: done\ndata: {"added":["a.md"],"updated":[],"removed":[],"failed":[],"unchanged":0}\n\n',
+            ]),
         );
 
         const events = await collect(client.addFiles(["/vault/a.md"]));
@@ -367,10 +366,7 @@ describe("listModels()", () => {
 
         const result = await client.listModels();
 
-        expect(fetchMock).toHaveBeenCalledWith(
-            `${BASE_URL}/api/models`,
-            expect.objectContaining({}),
-        );
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models`, expect.objectContaining({}));
         expect(result).toEqual(data);
     });
 });
@@ -378,7 +374,9 @@ describe("listModels()", () => {
 describe("pullModel()", () => {
     it("POSTs to /api/models/pull and yields SSE events", async () => {
         fetchMock.mockResolvedValue(
-            sseResponse(['event: progress\ndata: {"model":"llama3","status":"downloading","completed":10,"total":100}\n\n']),
+            sseResponse([
+                'event: progress\ndata: {"model":"llama3","status":"downloading","completed":10,"total":100}\n\n',
+            ]),
         );
 
         const events = await collect(client.pullModel("llama3"));
@@ -386,9 +384,280 @@ describe("pullModel()", () => {
         expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/pull`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "llama3" }),
+            body: JSON.stringify({ model: "llama3", source: "native" }),
         });
         expect(events[0].event).toBe("progress");
+    });
+
+    it("passes custom source parameter", async () => {
+        fetchMock.mockResolvedValue(
+            sseResponse(['event: progress\ndata: {"model":"gpt-4","status":"downloading"}\n\n']),
+        );
+
+        await collect(client.pullModel("gpt-4", "litellm"));
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/pull`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "gpt-4", source: "litellm" }),
+        });
+    });
+
+    describe("auth token", () => {
+        it("includes Bearer header when token is set via constructor", async () => {
+            const authedClient = new LilbeeClient(BASE_URL, "constructor-token");
+            fetchMock.mockResolvedValue(jsonResponse({ model: "qwen3:8b" }));
+
+            await authedClient.setChatModel("qwen3:8b");
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${BASE_URL}/api/models/chat`,
+                expect.objectContaining({
+                    headers: { "Content-Type": "application/json", Authorization: "Bearer constructor-token" },
+                }),
+            );
+        });
+
+        it("includes Bearer header when token is set via setToken", async () => {
+            client.setToken("test-token-123");
+            fetchMock.mockResolvedValue(jsonResponse({ model: "qwen3:8b" }));
+
+            await client.setChatModel("qwen3:8b");
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${BASE_URL}/api/models/chat`,
+                expect.objectContaining({
+                    headers: { "Content-Type": "application/json", Authorization: "Bearer test-token-123" },
+                }),
+            );
+        });
+
+        it("omits Authorization header when token is not set", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ model: "qwen3:8b" }));
+
+            await client.setChatModel("qwen3:8b");
+
+            const headers = fetchMock.mock.calls[0][1].headers;
+            expect(headers).not.toHaveProperty("Authorization");
+        });
+    });
+
+    describe("catalog()", () => {
+        it("calls GET /api/models/catalog and returns parsed response", async () => {
+            const data = { total: 50, limit: 20, offset: 0, models: [] };
+            fetchMock.mockResolvedValue(jsonResponse(data));
+
+            const result = await client.catalog();
+
+            expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/catalog`, expect.objectContaining({}));
+            expect(result.ok).toBe(true);
+            expect(result.value).toEqual(data);
+        });
+
+        it("appends query params when provided", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ total: 0, limit: 10, offset: 0, models: [] }));
+
+            await client.catalog({
+                task: "chat",
+                search: "qwen",
+                size: "small",
+                sort: "featured",
+                featured: false,
+                limit: 10,
+                offset: 20,
+            });
+
+            const url = new URL(fetchMock.mock.calls[0][0]);
+            expect(url.searchParams.get("task")).toBe("chat");
+            expect(url.searchParams.get("search")).toBe("qwen");
+            expect(url.searchParams.get("size")).toBe("small");
+            expect(url.searchParams.get("sort")).toBe("featured");
+            expect(url.searchParams.get("featured")).toBe("false");
+            expect(url.searchParams.get("limit")).toBe("10");
+            expect(url.searchParams.get("offset")).toBe("20");
+        });
+    });
+
+    describe("installedModels()", () => {
+        it("calls GET /api/models/installed", async () => {
+            const data = { models: [{ name: "qwen3:8b", source: "native" }] };
+            fetchMock.mockResolvedValue(jsonResponse(data));
+
+            const result = await client.installedModels();
+
+            expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/installed`, expect.objectContaining({}));
+            expect(result).toEqual(data);
+        });
+    });
+
+    describe("showModel()", () => {
+        it("POSTs to /api/models/show", async () => {
+            const data = { temperature: 0.7, num_ctx: 4096 };
+            fetchMock.mockResolvedValue(jsonResponse(data));
+
+            const result = await client.showModel("qwen3:8b");
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${BASE_URL}/api/models/show`,
+                expect.objectContaining({
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model: "qwen3:8b" }),
+                }),
+            );
+            expect(result).toEqual(data);
+        });
+    });
+
+    describe("deleteModel()", () => {
+        it("DELETEs to /api/models/{model}", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ deleted: true, model: "qwen3:8b", freed_gb: 5.0 }));
+
+            const result = await client.deleteModel("qwen3:8b");
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${BASE_URL}/api/models/qwen3%3A8b?source=native`,
+                expect.objectContaining({ method: "DELETE" }),
+            );
+            expect(result.ok).toBe(true);
+            expect(result.value.deleted).toBe(true);
+        });
+
+        it("passes custom source parameter", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ deleted: true, model: "gpt-4", freed_gb: 0 }));
+
+            await client.deleteModel("gpt-4", "litellm");
+
+            const url = new URL(fetchMock.mock.calls[0][0]);
+            expect(url.searchParams.get("source")).toBe("litellm");
+        });
+    });
+
+    describe("listDocuments()", () => {
+        it("calls GET /api/documents", async () => {
+            const data = { documents: [], total: 0, limit: 50, offset: 0 };
+            fetchMock.mockResolvedValue(jsonResponse(data));
+
+            const result = await client.listDocuments();
+
+            expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/documents`, expect.objectContaining({}));
+            expect(result).toEqual(data);
+        });
+
+        it("appends search params", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ documents: [], total: 0, limit: 10, offset: 5 }));
+
+            await client.listDocuments("notes", 10, 5);
+
+            const url = new URL(fetchMock.mock.calls[0][0]);
+            expect(url.searchParams.get("search")).toBe("notes");
+            expect(url.searchParams.get("limit")).toBe("10");
+            expect(url.searchParams.get("offset")).toBe("5");
+        });
+    });
+
+    describe("removeDocuments()", () => {
+        it("POSTs to /api/documents/remove", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ removed: 2, not_found: [] }));
+
+            const result = await client.removeDocuments(["a.md", "b.md"], true);
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${BASE_URL}/api/documents/remove`,
+                expect.objectContaining({
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ names: ["a.md", "b.md"], delete_files: true }),
+                }),
+            );
+            expect(result.removed).toBe(2);
+        });
+    });
+
+    describe("crawl()", () => {
+        it("POSTs to /api/crawl and yields SSE events", async () => {
+            fetchMock.mockResolvedValue(
+                sseResponse(['event: crawl_done\ndata: {"pages_crawled":5,"files_written":3}\n\n']),
+            );
+
+            const events = await collect(client.crawl("https://example.com", 1, 10));
+
+            expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/crawl`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: "https://example.com", depth: 1, max_pages: 10 }),
+            });
+            expect(events[0].event).toBe("crawl_done");
+        });
+    });
+
+    describe("config()", () => {
+        it("calls GET /api/config", async () => {
+            const data = { chat_model: "qwen3:8b", temperature: 0.7 };
+            fetchMock.mockResolvedValue(jsonResponse(data));
+
+            const result = await client.config();
+
+            expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/config`, expect.objectContaining({}));
+            expect(result).toEqual(data);
+        });
+    });
+
+    describe("updateConfig()", () => {
+        it("PATCHes /api/config", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ updated: ["temperature"], reindex_required: false }));
+
+            const result = await client.updateConfig({ temperature: 0.5 });
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${BASE_URL}/api/config`,
+                expect.objectContaining({
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ temperature: 0.5 }),
+                }),
+            );
+            expect(result.reindex_required).toBe(false);
+        });
+
+        it("returns reindex_required true when chunk_size changes", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ updated: ["chunk_size"], reindex_required: true }));
+
+            const result = await client.updateConfig({ chunk_size: 1024 });
+
+            expect(result.reindex_required).toBe(true);
+        });
+    });
+
+    describe("setEmbeddingModel()", () => {
+        it("PUTs to /api/models/embedding", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ model: "nomic-embed-text-v1.5" }));
+
+            const result = await client.setEmbeddingModel("nomic-embed-text-v1.5");
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${BASE_URL}/api/models/embedding`,
+                expect.objectContaining({
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model: "nomic-embed-text-v1.5" }),
+                }),
+            );
+            expect(result.ok).toBe(true);
+        });
+
+        it("returns error when response is not ok", async () => {
+            fetchMock.mockResolvedValue({
+                ok: false,
+                status: 400,
+                statusText: "Bad Request",
+                text: () => Promise.resolve(""),
+            } as unknown as Response);
+
+            const result = await client.setEmbeddingModel("nomic-embed-text-v1.5");
+            expect(result.ok).toBe(false);
+            expect(result.error.message).toBe("Server responded 400: ");
+        });
     });
 });
 
@@ -406,7 +675,20 @@ describe("setChatModel()", () => {
                 body: JSON.stringify({ model: "mistral" }),
             }),
         );
-        expect(result).toEqual({ model: "mistral" });
+        expect(result.ok).toBe(true);
+    });
+
+    it("returns error when response is not ok", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 500,
+            statusText: "Internal Server Error",
+            text: () => Promise.resolve(""),
+        } as unknown as Response);
+
+        const result = await client.setChatModel("mistral");
+        expect(result.ok).toBe(false);
+        expect(result.error.message).toBe("Server responded 500: ");
     });
 });
 
@@ -424,7 +706,20 @@ describe("setVisionModel()", () => {
                 body: JSON.stringify({ model: "llava" }),
             }),
         );
-        expect(result).toEqual({ model: "llava" });
+        expect(result.ok).toBe(true);
+    });
+
+    it("returns error when response is not ok", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 422,
+            statusText: "Unprocessable Entity",
+            text: () => Promise.resolve(""),
+        } as unknown as Response);
+
+        const result = await client.setVisionModel("llava");
+        expect(result.ok).toBe(false);
+        expect(result.error.message).toBe("Server responded 422: ");
     });
 });
 
@@ -448,11 +743,7 @@ describe("parseSSE — edge cases", () => {
 
     it("resets currentEvent to 'message' after each data line", async () => {
         // First block: named event. Second block: no event line → should be "message".
-        fetchMock.mockResolvedValue(
-            sseResponse([
-                'event: custom\ndata: {"a":1}\n\ndata: {"b":2}\n\n',
-            ]),
-        );
+        fetchMock.mockResolvedValue(sseResponse(['event: custom\ndata: {"a":1}\n\ndata: {"b":2}\n\n']));
 
         const events = await collect(client.syncStream());
 
@@ -468,8 +759,14 @@ describe("parseSSE — edge cases", () => {
         let call = 0;
         const reader = {
             read: vi.fn(async () => {
-                if (call === 0) { call++; return { done: false, value: encoder.encode(part1) }; }
-                if (call === 1) { call++; return { done: false, value: encoder.encode(part2) }; }
+                if (call === 0) {
+                    call++;
+                    return { done: false, value: encoder.encode(part1) };
+                }
+                if (call === 1) {
+                    call++;
+                    return { done: false, value: encoder.encode(part2) };
+                }
                 return { done: true, value: undefined };
             }),
         };
@@ -487,9 +784,7 @@ describe("parseSSE — edge cases", () => {
 
     it("ignores lines that are not event: or data:", async () => {
         // Comment lines and blank lines should be ignored
-        fetchMock.mockResolvedValue(
-            sseResponse([": this is a comment\nid: 42\ndata: {}\n\n"]),
-        );
+        fetchMock.mockResolvedValue(sseResponse([": this is a comment\nid: 42\ndata: {}\n\n"]));
 
         const events = await collect(client.syncStream());
 
@@ -506,11 +801,7 @@ describe("parseSSE — edge cases", () => {
     });
 
     it("handles multiple events in a single chunk", async () => {
-        fetchMock.mockResolvedValue(
-            sseResponse([
-                'event: a\ndata: 1\n\nevent: b\ndata: 2\n\n',
-            ]),
-        );
+        fetchMock.mockResolvedValue(sseResponse(["event: a\ndata: 1\n\nevent: b\ndata: 2\n\n"]));
 
         const events = await collect(client.syncStream());
 
@@ -523,9 +814,7 @@ describe("parseSSE — edge cases", () => {
         // The buffer remainder logic: last element of split("\n") goes back into buffer.
         // If there's no trailing \n the last partial line stays in buffer and is dropped
         // at stream end (done). Verify no crash and no spurious events.
-        fetchMock.mockResolvedValue(
-            sseResponse(["data: {}\n\ndata: incomplete"]),
-        );
+        fetchMock.mockResolvedValue(sseResponse(["data: {}\n\ndata: incomplete"]));
 
         const events = await collect(client.syncStream());
 
@@ -535,9 +824,7 @@ describe("parseSSE — edge cases", () => {
     });
 
     it("trims whitespace from event name", async () => {
-        fetchMock.mockResolvedValue(
-            sseResponse(["event:  spaced \ndata: null\n\n"]),
-        );
+        fetchMock.mockResolvedValue(sseResponse(["event:  spaced \ndata: null\n\n"]));
 
         const events = await collect(client.syncStream());
 
@@ -545,9 +832,7 @@ describe("parseSSE — edge cases", () => {
     });
 
     it("handles event:X (no space after colon)", async () => {
-        fetchMock.mockResolvedValue(
-            sseResponse(['event:token\ndata: {"text":"hi"}\n\n']),
-        );
+        fetchMock.mockResolvedValue(sseResponse(['event:token\ndata: {"text":"hi"}\n\n']));
 
         const events = await collect(client.syncStream());
 
@@ -556,9 +841,7 @@ describe("parseSSE — edge cases", () => {
     });
 
     it("handles data:{...} (no space after colon)", async () => {
-        fetchMock.mockResolvedValue(
-            sseResponse(['event: token\ndata:{"key":"val"}\n\n']),
-        );
+        fetchMock.mockResolvedValue(sseResponse(['event: token\ndata:{"key":"val"}\n\n']));
 
         const events = await collect(client.syncStream());
 
@@ -580,21 +863,30 @@ describe("parseSSE — edge cases", () => {
 describe("fetchWithRetry()", () => {
     it("retries on network error and succeeds on second attempt", async () => {
         const data = { status: "ok" };
-        fetchMock
-            .mockRejectedValueOnce(new Error("connection refused"))
-            .mockResolvedValueOnce(jsonResponse(data));
+        fetchMock.mockRejectedValueOnce(new Error("connection refused")).mockResolvedValueOnce(jsonResponse(data));
 
         const result = await client.health();
 
         expect(fetchMock).toHaveBeenCalledTimes(2);
-        expect(result).toEqual(data);
+        expect(result.ok).toBe(true);
+        expect(result.value).toEqual(data);
     });
 
     it("throws after all retries exhausted on network error", async () => {
         fetchMock.mockRejectedValue(new Error("connection refused"));
 
-        await expect(client.health()).rejects.toThrow("connection refused");
+        const result = await client.health();
+        expect(result.ok).toBe(false);
+        expect(result.error.message).toBe("connection refused");
         expect(fetchMock).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
+    });
+
+    it("wraps non-Error thrown value in Error", async () => {
+        fetchMock.mockRejectedValue("string error");
+
+        const result = await client.health();
+        expect(result.ok).toBe(false);
+        expect(result.error.message).toBe("string error");
     });
 
     it("does NOT retry on HTTP error (4xx/5xx)", async () => {
@@ -604,7 +896,9 @@ describe("fetchWithRetry()", () => {
             text: () => Promise.resolve("Validation error"),
         } as unknown as Response);
 
-        await expect(client.health()).rejects.toThrow("Server responded 422");
+        const result = await client.health();
+        expect(result.ok).toBe(false);
+        expect(result.error.message).toBe("Server responded 422: Validation error");
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
@@ -636,7 +930,9 @@ describe("assertOk", () => {
             text: () => Promise.resolve("Internal Server Error"),
         } as unknown as Response);
 
-        await expect(client.status()).rejects.toThrow("Server responded 500: Internal Server Error");
+        const result = await client.status();
+        expect(result.ok).toBe(false);
+        expect(result.error.message).toBe("Server responded 500: Internal Server Error");
     });
 
     it("throws with empty string when res.text() itself throws", async () => {
@@ -646,303 +942,175 @@ describe("assertOk", () => {
             text: () => Promise.reject(new Error("network failure")),
         } as unknown as Response);
 
-        await expect(client.status()).rejects.toThrow("Server responded 503: ");
+        const result = await client.status();
+        expect(result.ok).toBe(false);
+        expect(result.error.message).toBe("Server responded 503: ");
+    });
+});
+describe("search() — chunkType parameter", () => {
+    it("adds chunk_type param when chunkType is 'wiki'", async () => {
+        fetchMock.mockResolvedValue(jsonResponse([]));
+
+        await client.search("hello", 5, "wiki");
+
+        const url = new URL(fetchMock.mock.calls[0][0]);
+        expect(url.searchParams.get("chunk_type")).toBe("wiki");
+    });
+
+    it("adds chunk_type param when chunkType is 'raw'", async () => {
+        fetchMock.mockResolvedValue(jsonResponse([]));
+
+        await client.search("hello", 5, "raw");
+
+        const url = new URL(fetchMock.mock.calls[0][0]);
+        expect(url.searchParams.get("chunk_type")).toBe("raw");
+    });
+
+    it("does NOT add chunk_type param when chunkType is 'all'", async () => {
+        fetchMock.mockResolvedValue(jsonResponse([]));
+
+        await client.search("hello", 5, "all");
+
+        const url = new URL(fetchMock.mock.calls[0][0]);
+        expect(url.searchParams.has("chunk_type")).toBe(false);
+    });
+
+    it("does NOT add chunk_type param when chunkType is undefined", async () => {
+        fetchMock.mockResolvedValue(jsonResponse([]));
+
+        await client.search("hello", 5);
+
+        const url = new URL(fetchMock.mock.calls[0][0]);
+        expect(url.searchParams.has("chunk_type")).toBe(false);
     });
 });
 
-/** Build a fake fetch response whose body is a ReadableStream emitting NDJSON lines. */
-function ndjsonResponse(lines: string[]): Response {
-    const encoder = new TextEncoder();
-    let index = 0;
-    const reader = {
-        read: vi.fn(async () => {
-            if (index < lines.length) {
-                return { done: false, value: encoder.encode(lines[index++]) };
-            }
-            return { done: true, value: undefined };
-        }),
-    };
-    return {
-        ok: true,
-        text: () => Promise.resolve(""),
-        body: { getReader: () => reader },
-    } as unknown as Response;
-}
+describe("wikiList()", () => {
+    it("calls GET /api/wiki and returns parsed response", async () => {
+        const data = [{ slug: "test-page", title: "Test Page" }];
+        fetchMock.mockResolvedValue(jsonResponse(data));
 
-describe("OllamaClient", () => {
-    const OLLAMA_URL = "http://localhost:11434";
-    let ollama: OllamaClient;
+        const result = await client.wikiList();
 
-    beforeEach(() => {
-        ollama = new OllamaClient(OLLAMA_URL);
-    });
-
-    describe("pull()", () => {
-        it("POSTs to {baseUrl}/api/pull with model name and stream: true", async () => {
-            fetchMock.mockResolvedValue(ndjsonResponse([
-                '{"status":"pulling manifest"}\n',
-            ]));
-
-            await collect(ollama.pull("llama3"));
-
-            expect(fetchMock).toHaveBeenCalledWith(
-                `${OLLAMA_URL}/api/pull`,
-                expect.objectContaining({
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name: "llama3", stream: true }),
-                }),
-            );
-        });
-
-        it("yields OllamaPullProgress objects from NDJSON response", async () => {
-            fetchMock.mockResolvedValue(ndjsonResponse([
-                '{"status":"pulling manifest"}\n{"status":"downloading","completed":50,"total":100}\n',
-                '{"status":"success"}\n',
-            ]));
-
-            const results = await collect(ollama.pull("llama3"));
-
-            expect(results).toEqual([
-                { status: "pulling manifest" },
-                { status: "downloading", completed: 50, total: 100 },
-                { status: "success" },
-            ]);
-        });
-
-        it("throws on non-ok response", async () => {
-            fetchMock.mockResolvedValue({
-                ok: false,
-                status: 404,
-                text: () => Promise.resolve("model not found"),
-            } as unknown as Response);
-
-            await expect(collect(ollama.pull("nonexistent"))).rejects.toThrow(
-                "Ollama responded 404: model not found",
-            );
-        });
-
-        it("passes signal to fetch", async () => {
-            fetchMock.mockResolvedValue(ndjsonResponse([]));
-            const controller = new AbortController();
-
-            await collect(ollama.pull("llama3", controller.signal));
-
-            const init = fetchMock.mock.calls[0][1] as RequestInit;
-            expect(init.signal).toBe(controller.signal);
-        });
-
-        it("throws when response.body is null", async () => {
-            fetchMock.mockResolvedValue({
-                ok: true,
-                text: () => Promise.resolve(""),
-                body: null,
-            } as unknown as Response);
-
-            await expect(collect(ollama.pull("llama3"))).rejects.toThrow("Response body is null");
-        });
-
-        it("skips malformed JSON lines", async () => {
-            fetchMock.mockResolvedValue(ndjsonResponse([
-                '{"status":"ok"}\nnot-valid-json\n{"status":"done"}\n',
-            ]));
-
-            const results = await collect(ollama.pull("llama3"));
-
-            expect(results).toEqual([
-                { status: "ok" },
-                { status: "done" },
-            ]);
-        });
-
-        it("skips blank lines between NDJSON entries", async () => {
-            fetchMock.mockResolvedValue(ndjsonResponse([
-                '{"status":"ok"}\n\n\n{"status":"done"}\n',
-            ]));
-
-            const results = await collect(ollama.pull("llama3"));
-
-            expect(results).toEqual([
-                { status: "ok" },
-                { status: "done" },
-            ]);
-        });
-
-        it("handles trailing NDJSON line without newline", async () => {
-            fetchMock.mockResolvedValue(ndjsonResponse([
-                '{"status":"success"}',
-            ]));
-
-            const results = await collect(ollama.pull("llama3"));
-
-            expect(results).toEqual([{ status: "success" }]);
-        });
-
-        it("skips malformed trailing buffer", async () => {
-            fetchMock.mockResolvedValue(ndjsonResponse([
-                '{"status":"ok"}\nnot-json',
-            ]));
-
-            const results = await collect(ollama.pull("llama3"));
-
-            expect(results).toEqual([{ status: "ok" }]);
-        });
-    });
-
-    describe("delete()", () => {
-        it("DELETEs to {baseUrl}/api/delete with model name", async () => {
-            fetchMock.mockResolvedValue({
-                ok: true,
-                text: () => Promise.resolve(""),
-            } as unknown as Response);
-
-            await ollama.delete("llama3");
-
-            expect(fetchMock).toHaveBeenCalledWith(
-                `${OLLAMA_URL}/api/delete`,
-                expect.objectContaining({
-                    method: "DELETE",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name: "llama3" }),
-                }),
-            );
-        });
-
-        it("throws on non-ok response", async () => {
-            fetchMock.mockResolvedValue({
-                ok: false,
-                status: 404,
-                text: () => Promise.resolve("model not found"),
-            } as unknown as Response);
-
-            await expect(ollama.delete("nonexistent")).rejects.toThrow(
-                "Ollama responded 404: model not found",
-            );
-        });
-
-        it("succeeds without returning anything on ok response", async () => {
-            fetchMock.mockResolvedValue({
-                ok: true,
-                text: () => Promise.resolve(""),
-            } as unknown as Response);
-
-            const result = await ollama.delete("llama3");
-
-            expect(result).toBeUndefined();
-        });
-    });
-
-    describe("show()", () => {
-        it("POSTs to {baseUrl}/api/show and returns parsed model defaults", async () => {
-            fetchMock.mockResolvedValue(jsonResponse({
-                parameters: "temperature 0.6\ntop_p 0.9\ntop_k 40\nrepeat_penalty 1.1\nnum_ctx 4096\nseed 42",
-                model_info: {},
-            }));
-
-            const defaults = await ollama.show("llama3");
-
-            expect(fetchMock).toHaveBeenCalledWith(
-                `${OLLAMA_URL}/api/show`,
-                expect.objectContaining({
-                    method: "POST",
-                    body: JSON.stringify({ name: "llama3" }),
-                }),
-            );
-            expect(defaults).toEqual({
-                temperature: 0.6,
-                top_p: 0.9,
-                top_k: 40,
-                repeat_penalty: 1.1,
-                num_ctx: 4096,
-                seed: 42,
-            });
-        });
-
-        it("throws on non-ok response", async () => {
-            fetchMock.mockResolvedValue({
-                ok: false,
-                status: 404,
-                text: () => Promise.resolve("model not found"),
-            } as unknown as Response);
-
-            await expect(ollama.show("nonexistent")).rejects.toThrow(
-                "Ollama responded 404: model not found",
-            );
-        });
-
-        it("falls back to model_info for context_length when parameters lacks num_ctx", async () => {
-            fetchMock.mockResolvedValue(jsonResponse({
-                parameters: "temperature 0.7",
-                model_info: { "llama3.context_length": 8192 },
-            }));
-
-            const defaults = await ollama.show("llama3");
-            expect(defaults.num_ctx).toBe(8192);
-            expect(defaults.temperature).toBe(0.7);
-        });
-
-        it("handles missing parameters field", async () => {
-            fetchMock.mockResolvedValue(jsonResponse({
-                model_info: { "llama3.context_length": 4096 },
-            }));
-
-            const defaults = await ollama.show("llama3");
-            expect(defaults.num_ctx).toBe(4096);
-        });
-
-        it("handles missing both parameters and model_info fields", async () => {
-            fetchMock.mockResolvedValue(jsonResponse({}));
-
-            const defaults = await ollama.show("llama3");
-            expect(defaults).toEqual({});
-        });
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/wiki`, expect.objectContaining({}));
+        expect(result).toEqual(data);
     });
 });
 
-describe("parseModelParameters()", () => {
-    it("parses multiline parameter string", () => {
-        const result = parseModelParameters(
-            "temperature 0.8\ntop_p 0.95\nnum_ctx 2048",
-            {},
+describe("wikiPage()", () => {
+    it("calls GET /api/wiki/{slug} and returns parsed response", async () => {
+        const data = { slug: "test-page", title: "Test Page", content: "Hello" };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.wikiPage("test-page");
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/wiki/test-page`, expect.objectContaining({}));
+        expect(result).toEqual(data);
+    });
+
+    it("encodes slug with special characters", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({}));
+
+        await client.wikiPage("hello world/foo");
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/wiki/hello%20world%2Ffoo`, expect.objectContaining({}));
+    });
+});
+
+describe("wikiCitations()", () => {
+    it("calls GET /api/wiki/{slug}/citations", async () => {
+        const data = { citations: [] };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.wikiCitations("my-page");
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/wiki/my-page/citations`, expect.objectContaining({}));
+        expect(result).toEqual(data);
+    });
+
+    it("encodes slug with special characters", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({}));
+
+        await client.wikiCitations("page with spaces");
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/page%20with%20spaces/citations`,
+            expect.objectContaining({}),
         );
-        expect(result).toEqual({
-            temperature: 0.8,
-            top_p: 0.95,
-            num_ctx: 2048,
-        });
     });
+});
 
-    it("ignores unknown parameter keys", () => {
-        const result = parseModelParameters("mirostat 2\ntemperature 0.5", {});
-        expect(result).toEqual({ temperature: 0.5 });
+describe("wikiCitationsForSource()", () => {
+    it("calls GET /api/wiki/citations?source=filename", async () => {
+        const data = [{ citations: [] }];
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.wikiCitationsForSource("notes/foo.md");
+
+        const url = new URL(fetchMock.mock.calls[0][0]);
+        expect(url.pathname).toBe("/api/wiki/citations");
+        expect(url.searchParams.get("source")).toBe("notes/foo.md");
+        expect(result).toEqual(data);
     });
+});
 
-    it("ignores lines with missing values", () => {
-        const result = parseModelParameters("temperature\ntop_p 0.9", {});
-        expect(result).toEqual({ top_p: 0.9 });
+describe("wikiLint()", () => {
+    it("POSTs to /api/wiki/lint and yields SSE events", async () => {
+        fetchMock.mockResolvedValue(sseResponse(['event: wiki_lint_done\ndata: {"issues":[]}\n\n']));
+
+        const events = await collect(client.wikiLint());
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/lint`,
+            expect.objectContaining({ method: "POST" }),
+        );
+        expect(events).toHaveLength(1);
+        expect(events[0].event).toBe("wiki_lint_done");
     });
+});
 
-    it("ignores non-numeric values", () => {
-        const result = parseModelParameters("temperature abc", {});
-        expect(result).toEqual({});
+describe("wikiGenerate()", () => {
+    it("POSTs to /api/wiki/generate with source and yields SSE events", async () => {
+        fetchMock.mockResolvedValue(sseResponse(['event: wiki_generate_done\ndata: {"slug":"test"}\n\n']));
+
+        const events = await collect(client.wikiGenerate("notes/foo.md"));
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/generate`,
+            expect.objectContaining({
+                method: "POST",
+                body: JSON.stringify({ source: "notes/foo.md" }),
+            }),
+        );
+        expect(events).toHaveLength(1);
+        expect(events[0].event).toBe("wiki_generate_done");
     });
+});
 
-    it("uses model_info context_length when num_ctx not in parameters", () => {
-        const result = parseModelParameters("", {
-            "model.context_length": 131072,
-        });
-        expect(result).toEqual({ num_ctx: 131072 });
+describe("wikiDrafts()", () => {
+    it("calls GET /api/wiki/drafts and returns parsed response", async () => {
+        const data = [{ slug: "draft-1", score: 0.8 }];
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.wikiDrafts();
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/wiki/drafts`, expect.objectContaining({}));
+        expect(result).toEqual(data);
     });
+});
 
-    it("prefers parameters num_ctx over model_info context_length", () => {
-        const result = parseModelParameters("num_ctx 4096", {
-            "model.context_length": 131072,
-        });
-        expect(result).toEqual({ num_ctx: 4096 });
-    });
+describe("wikiPrune()", () => {
+    it("POSTs to /api/wiki/prune and yields SSE events", async () => {
+        fetchMock.mockResolvedValue(sseResponse(['event: wiki_prune_done\ndata: {"archived":3}\n\n']));
 
-    it("returns empty object for empty inputs", () => {
-        expect(parseModelParameters("", {})).toEqual({});
+        const events = await collect(client.wikiPrune());
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/prune`,
+            expect.objectContaining({ method: "POST" }),
+        );
+        expect(events).toHaveLength(1);
+        expect(events[0].event).toBe("wiki_prune_done");
     });
 });
 
@@ -951,11 +1119,7 @@ describe("fetchWithRetry() — signal and AbortError", () => {
         fetchMock.mockResolvedValue(jsonResponse({ status: "ok" }));
         const controller = new AbortController();
 
-        await client.fetchWithRetry(
-            `${BASE_URL}/api/health`,
-            {},
-            { signal: controller.signal },
-        );
+        await client.fetchWithRetry(`${BASE_URL}/api/health`, {}, { signal: controller.signal });
 
         const init = fetchMock.mock.calls[0][1] as RequestInit;
         expect(init.signal).toBe(controller.signal);
@@ -966,7 +1130,9 @@ describe("fetchWithRetry() — signal and AbortError", () => {
         abortError.name = "AbortError";
         fetchMock.mockRejectedValue(abortError);
 
-        await expect(client.health()).rejects.toThrow("The operation was aborted");
+        const result = await client.health();
+        expect(result.ok).toBe(false);
+        expect(result.error.name).toBe("AbortError");
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 });

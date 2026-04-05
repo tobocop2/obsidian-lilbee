@@ -79,10 +79,12 @@ describe("getLatestRelease", () => {
 
     it("returns tag and assetUrl on success", async () => {
         restore = stubPlatform("darwin", "arm64");
-        vi.spyOn(node, "requestUrl").mockResolvedValue(releaseResponse({
-            tag_name: "v1.0.0",
-            assets: [{ name: "lilbee-macos-arm64", browser_download_url: "https://example.com/download" }],
-        }));
+        vi.spyOn(node, "requestUrl").mockResolvedValue(
+            releaseResponse({
+                tag_name: "v1.0.0",
+                assets: [{ name: "lilbee-macos-arm64", browser_download_url: "https://example.com/download" }],
+            }),
+        );
 
         const release = await getLatestRelease();
         expect(release).toEqual({ tag: "v1.0.0", assetUrl: "https://example.com/download" });
@@ -90,7 +92,10 @@ describe("getLatestRelease", () => {
 
     it("throws when GitHub API returns error status", async () => {
         vi.spyOn(node, "requestUrl").mockResolvedValue({
-            status: 403, json: {}, arrayBuffer: new ArrayBuffer(0), headers: {},
+            status: 403,
+            json: {},
+            arrayBuffer: new ArrayBuffer(0),
+            headers: {},
         });
 
         await expect(getLatestRelease()).rejects.toThrow("GitHub API responded 403");
@@ -98,10 +103,12 @@ describe("getLatestRelease", () => {
 
     it("throws when asset is not found in release", async () => {
         restore = stubPlatform("darwin", "arm64");
-        vi.spyOn(node, "requestUrl").mockResolvedValue(releaseResponse({
-            tag_name: "v2.0.0",
-            assets: [{ name: "some-other-asset", browser_download_url: "https://example.com/other" }],
-        }));
+        vi.spyOn(node, "requestUrl").mockResolvedValue(
+            releaseResponse({
+                tag_name: "v2.0.0",
+                assets: [{ name: "some-other-asset", browser_download_url: "https://example.com/other" }],
+            }),
+        );
 
         await expect(getLatestRelease()).rejects.toThrow('No asset "lilbee-macos-arm64" in release v2.0.0');
     });
@@ -182,10 +189,12 @@ describe("BinaryManager", () => {
             // existsSync: first call (binaryExists) => false, second call (binDir check in download) => true
             vi.spyOn(node, "existsSync").mockReturnValueOnce(false).mockReturnValueOnce(true);
             vi.spyOn(node, "requestUrl")
-                .mockResolvedValueOnce(releaseResponse({
-                    tag_name: "v1.0.0",
-                    assets: [{ name: "lilbee-macos-arm64", browser_download_url: "https://example.com/dl" }],
-                }))
+                .mockResolvedValueOnce(
+                    releaseResponse({
+                        tag_name: "v1.0.0",
+                        assets: [{ name: "lilbee-macos-arm64", browser_download_url: "https://example.com/dl" }],
+                    }),
+                )
                 .mockResolvedValueOnce(downloadResponse(data));
             vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
@@ -321,7 +330,10 @@ describe("BinaryManager", () => {
             restore = stubPlatform("linux", "x64");
             vi.spyOn(node, "existsSync").mockReturnValue(true);
             vi.spyOn(node, "requestUrl").mockResolvedValue({
-                status: 404, json: {}, arrayBuffer: new ArrayBuffer(0), headers: {},
+                status: 404,
+                json: {},
+                arrayBuffer: new ArrayBuffer(0),
+                headers: {},
             });
 
             const mgr = new BinaryManager("/plugins/lilbee");

@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect } from "vitest";
 import { App, MockElement } from "../__mocks__/obsidian";
 import { renderDocumentResult, renderSourceChip } from "../../src/views/results";
 import type { DocumentResult, Source } from "../../src/types";
@@ -115,22 +115,14 @@ describe("renderDocumentResult — relevance bar width", () => {
 
     it("handles best_relevance of exactly 1 → 100%", () => {
         const container = makeContainer();
-        renderDocumentResult(
-            container as unknown as HTMLElement,
-            makeDocumentResult({ best_relevance: 1 }),
-            makeApp(),
-        );
+        renderDocumentResult(container as unknown as HTMLElement, makeDocumentResult({ best_relevance: 1 }), makeApp());
         const bar = container.find("lilbee-relevance-bar")!;
         expect(bar.style["width"]).toBe("100%");
     });
 
     it("handles best_relevance of exactly 0 → 0%", () => {
         const container = makeContainer();
-        renderDocumentResult(
-            container as unknown as HTMLElement,
-            makeDocumentResult({ best_relevance: 0 }),
-            makeApp(),
-        );
+        renderDocumentResult(container as unknown as HTMLElement, makeDocumentResult({ best_relevance: 0 }), makeApp());
         const bar = container.find("lilbee-relevance-bar")!;
         expect(bar.style["width"]).toBe("0%");
     });
@@ -156,44 +148,28 @@ describe("renderDocumentResult — source link click", () => {
 describe("renderDocumentResult — excerpts", () => {
     it("renders no excerpt elements when excerpts array is empty", () => {
         const container = makeContainer();
-        renderDocumentResult(
-            container as unknown as HTMLElement,
-            makeDocumentResult({ excerpts: [] }),
-            makeApp(),
-        );
+        renderDocumentResult(container as unknown as HTMLElement, makeDocumentResult({ excerpts: [] }), makeApp());
         expect(container.findAll("lilbee-excerpt")).toHaveLength(0);
     });
 
     it("renders up to 3 excerpts even when 5 are provided", () => {
         const container = makeContainer();
         const excerpts = [1, 2, 3, 4, 5].map((i) => makeExcerpt(`Excerpt ${i}`));
-        renderDocumentResult(
-            container as unknown as HTMLElement,
-            makeDocumentResult({ excerpts }),
-            makeApp(),
-        );
+        renderDocumentResult(container as unknown as HTMLElement, makeDocumentResult({ excerpts }), makeApp());
         expect(container.findAll("lilbee-excerpt")).toHaveLength(3);
     });
 
     it("renders exactly 3 excerpts when exactly 3 are provided", () => {
         const container = makeContainer();
         const excerpts = [1, 2, 3].map((i) => makeExcerpt(`Excerpt ${i}`));
-        renderDocumentResult(
-            container as unknown as HTMLElement,
-            makeDocumentResult({ excerpts }),
-            makeApp(),
-        );
+        renderDocumentResult(container as unknown as HTMLElement, makeDocumentResult({ excerpts }), makeApp());
         expect(container.findAll("lilbee-excerpt")).toHaveLength(3);
     });
 
     it("renders fewer than 3 excerpts when fewer are provided", () => {
         const container = makeContainer();
         const excerpts = [makeExcerpt("Only one")];
-        renderDocumentResult(
-            container as unknown as HTMLElement,
-            makeDocumentResult({ excerpts }),
-            makeApp(),
-        );
+        renderDocumentResult(container as unknown as HTMLElement, makeDocumentResult({ excerpts }), makeApp());
         expect(container.findAll("lilbee-excerpt")).toHaveLength(1);
     });
 
@@ -509,5 +485,124 @@ describe("renderSourceChip — basic", () => {
         };
         renderSourceChip(container as unknown as HTMLElement, source);
         expect(container.find("lilbee-source-chip")!.textContent).toBe("notes/plain.md");
+    });
+});
+
+describe("renderSourceChip — wiki chunk_type", () => {
+    it("adds wiki class and creates W badge when chunk_type='wiki'", () => {
+        const container = makeContainer();
+        const source: Source = {
+            source: "wiki/concept.md",
+            content_type: "markdown",
+            distance: 0.1,
+            chunk: "wiki content",
+            page_start: null,
+            page_end: null,
+            line_start: null,
+            line_end: null,
+            chunk_type: "wiki",
+        };
+        renderSourceChip(container as unknown as HTMLElement, source);
+        const chip = container.find("lilbee-source-chip")!;
+        expect(chip.classList.contains("lilbee-source-chip-wiki")).toBe(true);
+        const badge = chip.children.find((c: any) => c.classList.contains("lilbee-wiki-type-badge"));
+        expect(badge).toBeDefined();
+        expect(badge!.textContent).toBe("W");
+    });
+
+    it("does not add wiki class when chunk_type is not 'wiki'", () => {
+        const container = makeContainer();
+        const source: Source = {
+            source: "notes/plain.md",
+            content_type: "markdown",
+            distance: 0.1,
+            chunk: "text",
+            page_start: null,
+            page_end: null,
+            line_start: null,
+            line_end: null,
+        };
+        renderSourceChip(container as unknown as HTMLElement, source);
+        const chip = container.find("lilbee-source-chip")!;
+        expect(chip.classList.contains("lilbee-source-chip-wiki")).toBe(false);
+    });
+
+    it("adds fact class when claim_type='fact'", () => {
+        const container = makeContainer();
+        const source: Source = {
+            source: "wiki/page.md",
+            content_type: "markdown",
+            distance: 0.1,
+            chunk: "fact",
+            page_start: null,
+            page_end: null,
+            line_start: null,
+            line_end: null,
+            chunk_type: "wiki",
+            claim_type: "fact",
+        };
+        renderSourceChip(container as unknown as HTMLElement, source);
+        const chip = container.find("lilbee-source-chip")!;
+        expect(chip.classList.contains("lilbee-claim-fact")).toBe(true);
+    });
+
+    it("adds inference class when claim_type='inference'", () => {
+        const container = makeContainer();
+        const source: Source = {
+            source: "wiki/page.md",
+            content_type: "markdown",
+            distance: 0.1,
+            chunk: "inference",
+            page_start: null,
+            page_end: null,
+            line_start: null,
+            line_end: null,
+            chunk_type: "wiki",
+            claim_type: "inference",
+        };
+        renderSourceChip(container as unknown as HTMLElement, source);
+        const chip = container.find("lilbee-source-chip")!;
+        expect(chip.classList.contains("lilbee-claim-inference")).toBe(true);
+    });
+
+    it("sets cursor to pointer and triggers onWikiClick when wiki chip is clicked", () => {
+        const container = makeContainer();
+        const onWikiClick = vi.fn();
+        const source: Source = {
+            source: "wiki/concept.md",
+            content_type: "markdown",
+            distance: 0.1,
+            chunk: "wiki",
+            page_start: null,
+            page_end: null,
+            line_start: null,
+            line_end: null,
+            chunk_type: "wiki",
+        };
+        renderSourceChip(container as unknown as HTMLElement, source, onWikiClick);
+        const chip = container.find("lilbee-source-chip")!;
+        expect(chip.style["cursor"]).toBe("pointer");
+        chip.trigger("click");
+        expect(onWikiClick).toHaveBeenCalledWith("wiki/concept.md");
+    });
+
+    it("does not set cursor or add click listener for non-wiki chip even with onWikiClick", () => {
+        const container = makeContainer();
+        const onWikiClick = vi.fn();
+        const source: Source = {
+            source: "notes/plain.md",
+            content_type: "markdown",
+            distance: 0.1,
+            chunk: "text",
+            page_start: null,
+            page_end: null,
+            line_start: null,
+            line_end: null,
+        };
+        renderSourceChip(container as unknown as HTMLElement, source, onWikiClick);
+        const chip = container.find("lilbee-source-chip")!;
+        expect(chip.style["cursor"]).toBeUndefined();
+        chip.trigger("click");
+        expect(onWikiClick).not.toHaveBeenCalled();
     });
 });
