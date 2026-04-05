@@ -6,7 +6,6 @@ import { ServerManager } from "./server-manager";
 import { LilbeeSettingTab } from "./settings";
 import {
     DEFAULT_SETTINGS,
-    NOTICE,
     SERVER_MODE,
     SSE_EVENT,
     SYNC_MODE,
@@ -73,6 +72,8 @@ export default class LilbeePlugin extends Plugin {
     private serverStartFailed = false;
     taskQueue: TaskQueue = new TaskQueue();
     wikiEnabled = false;
+    wikiPageCount = 0;
+    wikiDraftCount = 0;
     wikiSync: WikiSync | null = null;
 
     async onload(): Promise<void> {
@@ -91,7 +92,7 @@ export default class LilbeePlugin extends Plugin {
         this.registerEvent(
             this.app.workspace.on("file-menu", (menu: Menu, file: TAbstractFile) => {
                 menu.addItem((item: MenuItem) => {
-                    item.setTitle("Add to lilbee")
+                    item.setTitle(MESSAGES.COMMAND_ADD_TO_LILBEE)
                         .setIcon("plus-circle")
                         .onClick(() => this.addToLilbee(file));
                 });
@@ -234,7 +235,7 @@ export default class LilbeePlugin extends Plugin {
         const detail = err instanceof Error ? err.message : String(err);
         const stderrTail = stderr ? `\n${stderr.split("\n").slice(-5).join("\n")}` : "";
         new Notice(`lilbee: ${label} — ${detail}${stderrTail}`, NOTICE_ERROR_DURATION_MS);
-        this.updateStatusBar("lilbee: error");
+        this.updateStatusBar(MESSAGES.STATUS_ERROR);
         this.setStatusClass(null);
         this.serverStartFailed = true;
     }
@@ -489,6 +490,8 @@ export default class LilbeePlugin extends Plugin {
             if (status.isOk()) {
                 this.wikiEnabled = !!status.value.wiki?.enabled;
                 this.settings.wikiEnabled = this.wikiEnabled;
+                this.wikiPageCount = status.value.wiki?.page_count ?? 0;
+                this.wikiDraftCount = status.value.wiki?.draft_count ?? 0;
             }
         } catch {
             // wiki detection is best-effort
@@ -518,15 +521,15 @@ export default class LilbeePlugin extends Plugin {
 
     private assertActiveModel(): boolean {
         if (this.activeModel) return true;
-        new Notice(NOTICE.NO_CHAT_MODEL);
+        new Notice(MESSAGES.NOTICE_NO_CHAT_MODEL);
         return false;
     }
 
     async addExternalFiles(paths: string[]): Promise<void> {
         if (!this.statusBarEl || paths.length === 0) return;
         if (!this.assertActiveModel()) return;
-        const label = paths.length === 1 ? paths[0].split("/").pop() : `${paths.length} files`;
-        new Notice(`lilbee: adding ${label}...`);
+        const label = paths.length === 1 ? paths[0].split("/").pop() || paths[0] : `${paths.length} files`;
+        new Notice(MESSAGES.STATUS_ADDING.replace("{label}", label));
         await this.runAdd(paths);
     }
 
@@ -535,7 +538,7 @@ export default class LilbeePlugin extends Plugin {
         if (!this.assertActiveModel()) return;
         const absolutePath = `${this.getVaultBasePath()}/${file.path}`;
         const name = file.name ?? file.path;
-        new Notice(`lilbee: adding ${name}...`);
+        new Notice(MESSAGES.STATUS_ADDING.replace("{label}", name));
         await this.runAdd([absolutePath]);
     }
 
@@ -572,17 +575,17 @@ export default class LilbeePlugin extends Plugin {
 
             if (lastEvent?.event === SSE_EVENT.DONE) {
                 const summary = summarizeSyncResult(lastEvent.data as SyncDone);
-                new Notice(summary ? `lilbee: ${summary}` : "lilbee: nothing new to add");
+                new Notice(summary ? MESSAGES.NOTICE_SYNC_SUMMARY(summary) : MESSAGES.STATUS_NOTHING_NEW);
             }
             this.taskQueue.complete(taskId);
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
-                new Notice("lilbee: add cancelled");
+                new Notice(MESSAGES.STATUS_ADD_CANCELLED);
                 this.taskQueue.cancel(taskId);
             } else {
                 console.error("[lilbee] add failed:", err);
                 const msg = err instanceof Error ? err.message : "cannot connect to server";
-                new Notice(`lilbee: add failed — ${msg}`);
+                new Notice(MESSAGES.ERROR_ADD_FAILED_DETAIL(msg));
                 this.taskQueue.fail(taskId, msg);
             }
         } finally {
@@ -775,16 +778,16 @@ export default class LilbeePlugin extends Plugin {
 
             if (lastEvent?.event === SSE_EVENT.DONE) {
                 const summary = summarizeSyncResult(lastEvent.data as SyncDone);
-                if (summary) new Notice(`lilbee: synced — ${summary}`);
+                if (summary) new Notice(MESSAGES.STATUS_SYNCED.replace("{summary}", summary));
             }
             this.taskQueue.complete(taskId);
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
-                new Notice("lilbee: sync cancelled");
+                new Notice(MESSAGES.STATUS_SYNC_CANCELLED);
                 this.taskQueue.cancel(taskId);
             } else {
                 console.error("[lilbee] sync failed:", err);
-                new Notice("lilbee: sync failed — cannot connect to server");
+                new Notice(MESSAGES.STATUS_SYNC_FAILED);
                 this.taskQueue.fail(taskId, "cannot connect to server");
             }
         } finally {

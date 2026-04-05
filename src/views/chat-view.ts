@@ -9,7 +9,7 @@ import {
     WorkspaceLeaf,
 } from "obsidian";
 import type LilbeePlugin from "../main";
-import { MODEL_TYPE, NOTICE, SSE_EVENT, TASK_TYPE } from "../types";
+import { MODEL_TYPE, SSE_EVENT, TASK_TYPE } from "../types";
 import type { GenerationOptions, Message, ModelCatalog, ModelType, SearchChunkType, Source, SSEEvent } from "../types";
 import { renderSourceChip } from "./results";
 import { buildModelOptions, SEPARATOR_KEY } from "../settings";
@@ -251,7 +251,7 @@ export class ChatView extends ItemView {
                     this.visionSelectEl.createEl("option", { text: label });
                 }
                 if (this.retryCount === ChatView.OFFLINE_THRESHOLD) {
-                    new Notice("lilbee: could not reach server — is lilbee running?");
+                    new Notice(MESSAGES.ERROR_SERVER_UNREACHABLE);
                 }
                 this.retryTimer = setTimeout(() => this.fetchAndFillSelectors(), RETRY_INTERVAL_MS);
             });
@@ -343,14 +343,14 @@ export class ChatView extends ItemView {
             }
             this.plugin.fetchActiveModel();
             this.plugin.taskQueue.complete(taskId);
-            new Notice(`lilbee: ${model.name} pulled and activated`);
+            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
             this.refreshModelSelector();
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
-                new Notice(NOTICE.PULL_CANCELLED);
+                new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
-                new Notice(`lilbee: failed to pull ${model.name}`);
+                new Notice(MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name));
                 this.plugin.taskQueue.fail(taskId, err instanceof Error ? err.message : "unknown");
             }
         } finally {
@@ -430,7 +430,7 @@ export class ChatView extends ItemView {
             } else {
                 assistantBubble.remove();
                 this.history.pop();
-                new Notice("lilbee: could not reach server — is lilbee running?");
+                new Notice(MESSAGES.ERROR_SERVER_UNREACHABLE);
             }
         } finally {
             this.sending = false;
@@ -468,7 +468,7 @@ export class ChatView extends ItemView {
                 const rendered = state.fullContent;
                 if (state.reasoningContent) {
                     const details = assistantBubble.createEl("details", { cls: "lilbee-reasoning" });
-                    details.createEl("summary", { text: "Reasoning" });
+                    details.createEl("summary", { text: MESSAGES.LABEL_REASONING });
                     const content = details.createDiv({ cls: "lilbee-reasoning-content" });
                     void MarkdownRenderer.render(this.app, state.reasoningContent, content, "", this.plugin);
                     details.removeAttribute("open");
@@ -481,7 +481,7 @@ export class ChatView extends ItemView {
             case SSE_EVENT.ERROR: {
                 const errMsg = extractString(event.data, "message");
                 assistantBubble.remove();
-                new Notice(`lilbee: ${errMsg}`);
+                new Notice(MESSAGES.ERROR_STREAM(errMsg));
                 break;
             }
         }
@@ -496,24 +496,24 @@ export class ChatView extends ItemView {
     private openFilePicker(event: MouseEvent): void {
         const menu = new Menu();
         menu.addItem((item) => {
-            item.setTitle("From vault")
+            item.setTitle(MESSAGES.WIZARD_FILE_PICKER_VAULT)
                 .setIcon("vault")
                 .onClick(() => {
                     new VaultFilePickerModal(this.app, (file) => this.enqueueAddFile(file)).open();
                 });
         });
         menu.addItem((item) => {
-            item.setTitle("Files from disk")
+            item.setTitle(MESSAGES.WIZARD_FILE_PICKER_DISK)
                 .setIcon("file-plus")
                 .onClick(() => this.openNativeFilePicker(false));
         });
         menu.addItem((item) => {
-            item.setTitle("Folder from disk")
+            item.setTitle(MESSAGES.WIZARD_FOLDER_PICKER_DISK)
                 .setIcon("folder-plus")
                 .onClick(() => this.openNativeFilePicker(true));
         });
         menu.addItem((item) => {
-            item.setTitle("Crawl web page")
+            item.setTitle(MESSAGES.WIZARD_CRAWL_WEB)
                 .setIcon("globe")
                 .onClick(() => {
                     new CrawlModal(this.app, this.plugin).open();
@@ -531,7 +531,7 @@ export class ChatView extends ItemView {
                 void this.plugin.addExternalFiles(result.filePaths);
             })
             .catch(() => {
-                new Notice("lilbee: could not open file picker");
+                new Notice(MESSAGES.ERROR_FILE_PICKER);
             });
     }
 
@@ -582,7 +582,7 @@ export class ChatView extends ItemView {
                 await vault.createFolder(folder);
             }
             await vault.create(path, content);
-            new Notice(`Saved to ${path}`);
+            new Notice(MESSAGES.NOTICE_SAVED(path));
         } catch {
             new Notice(MESSAGES.ERROR_SAVE_CHAT);
         }

@@ -1,16 +1,7 @@
 import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
 import type { ReleaseInfo } from "./binary-manager";
-import {
-    DEFAULT_SETTINGS,
-    MODEL_TYPE,
-    NOTICE,
-    SERVER_MODE,
-    SERVER_STATE,
-    SSE_EVENT,
-    SYNC_MODE,
-    TASK_TYPE,
-} from "./types";
+import { DEFAULT_SETTINGS, MODEL_TYPE, SERVER_MODE, SERVER_STATE, SSE_EVENT, SYNC_MODE, TASK_TYPE } from "./types";
 import type { GenerationOptions, ModelCatalog, ModelInfo, ModelType, ModelsResponse, ServerMode } from "./types";
 import { MESSAGES } from "./locales/en";
 import { CatalogModal } from "./views/catalog-modal";
@@ -214,7 +205,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         new Notice(MESSAGES.ERROR_FAILED_UPDATE);
                         console.error("[lilbee] update failed:", err);
                         pendingRelease = null;
-                        checkBtn.setButtonText("Check for updates");
+                        checkBtn.setButtonText(MESSAGES.BUTTON_CHECK_UPDATES);
                         checkBtn.setDisabled(false);
                     }
                     return;
@@ -230,12 +221,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         checkBtn.setDisabled(false);
                     } else {
                         new Notice(MESSAGES.ERROR_ALREADY_UPTODATE);
-                        checkBtn.setButtonText("Check for updates");
+                        checkBtn.setButtonText(MESSAGES.BUTTON_CHECK_UPDATES);
                         checkBtn.setDisabled(false);
                     }
                 } catch {
                     new Notice(MESSAGES.ERROR_COULD_NOT_CHECK);
-                    checkBtn.setButtonText("Check for updates");
+                    checkBtn.setButtonText(MESSAGES.BUTTON_CHECK_UPDATES);
                     checkBtn.setDisabled(false);
                 }
             }),
@@ -548,7 +539,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
 
         // Wiki status (display only)
-        new Setting(details).setName(MESSAGES.LABEL_WIKI_STATUS).setDesc(`Enabled`).setDisabled(true);
+        const statusDesc = `Enabled — ${this.plugin.wikiPageCount} pages, ${this.plugin.wikiDraftCount} drafts`;
+        new Setting(details).setName(MESSAGES.LABEL_WIKI_STATUS).setDesc(statusDesc).setDisabled(true);
 
         // Prune raw chunks
         new Setting(details)
@@ -921,7 +913,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             this.display();
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
-                new Notice(NOTICE.PULL_CANCELLED);
+                new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
                 new Notice(MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name));
@@ -996,7 +988,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             this.display();
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
-                new Notice(NOTICE.PULL_CANCELLED);
+                new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
                 new Notice(MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name));
@@ -1028,8 +1020,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
         this.plugin.fetchActiveModel();
         const modelsContainer = this.containerEl.querySelector(`.${CLS_MODELS_CONTAINER}`);
-        if (modelsContainer instanceof HTMLElement) {
-            await this.loadModels(modelsContainer);
+        if (modelsContainer) {
+            await this.loadModels(modelsContainer as HTMLElement);
         }
     }
 }

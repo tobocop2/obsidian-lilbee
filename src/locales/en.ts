@@ -151,6 +151,10 @@ export const MESSAGES = {
     PLACEHOLDER_50: "50",
     PLACEHOLDER_30: "30",
 
+    LABEL_ENTER_QUERY: "Enter a query to begin.",
+    LABEL_NO_RESULTS: "No results found.",
+    ERROR_SEARCH_CONNECT: "Error: could not connect to lilbee server.",
+
     TITLE_SEARCH: "Search knowledge base",
     TITLE_ASK: "Ask a question",
     TITLE_MODEL_CATALOG: "Model Catalog",
@@ -223,6 +227,8 @@ export const MESSAGES = {
     ERROR_CRAWL_FAILED: "lilbee: crawl failed — {msg}",
     ERROR_CRAWL_ERROR: "lilbee: crawl error — {msg}",
     ERROR_SERVER_UNREACHABLE: "Could not connect to lilbee server. Is it running?",
+    ERROR_STREAM: (msg: string) => `lilbee: ${msg}`,
+    ERROR_ADD_FAILED_DETAIL: (msg: string) => `lilbee: add failed — ${msg}`,
 
     NOTICE_NO_CHAT_MODEL: "lilbee: no chat model set — select one in settings",
     NOTICE_MODEL_ACTIVATED: (model: string) => `Now using ${model}`,
@@ -257,6 +263,9 @@ export const MESSAGES = {
     NOTICE_NO_MODELS_INSTALLED: "No models installed.",
     NOTICE_CONFIRM_CANCEL:
         "This operation is already in progress on the server. Canceling will hide it from the task center, but it may still complete. Continue?",
+    NOTICE_CONFIRM_REMOVE: (model: string) => `Remove ${model}? This deletes the model file from disk.`,
+    NOTICE_CONFIRM_DELETE_DOCS: (count: number) =>
+        `Delete ${count} document(s) from index and disk? This cannot be undone.`,
 
     COMMAND_SEARCH: "Search knowledge base",
     COMMAND_ASK: "Ask a question",

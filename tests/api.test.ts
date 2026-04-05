@@ -66,8 +66,8 @@ describe("health()", () => {
         const result = await client.health();
 
         expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/health`, expect.objectContaining({}));
-        expect(result.ok).toBe(true);
-        expect(result.value).toEqual(data);
+        expect(result.isOk()).toBe(true);
+        expect(result._unsafeUnwrap()).toEqual(data);
     });
 });
 
@@ -83,8 +83,8 @@ describe("status()", () => {
         const result = await client.status();
 
         expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/status`, expect.objectContaining({}));
-        expect(result.ok).toBe(true);
-        expect(result.value).toEqual(data);
+        expect(result.isOk()).toBe(true);
+        expect(result._unsafeUnwrap()).toEqual(data);
     });
 });
 
@@ -450,8 +450,8 @@ describe("pullModel()", () => {
             const result = await client.catalog();
 
             expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/catalog`, expect.objectContaining({}));
-            expect(result.ok).toBe(true);
-            expect(result.value).toEqual(data);
+            expect(result.isOk()).toBe(true);
+            expect(result._unsafeUnwrap()).toEqual(data);
         });
 
         it("appends query params when provided", async () => {
@@ -519,8 +519,8 @@ describe("pullModel()", () => {
                 `${BASE_URL}/api/models/qwen3%3A8b?source=native`,
                 expect.objectContaining({ method: "DELETE" }),
             );
-            expect(result.ok).toBe(true);
-            expect(result.value.deleted).toBe(true);
+            expect(result.isOk()).toBe(true);
+            expect(result._unsafeUnwrap().deleted).toBe(true);
         });
 
         it("passes custom source parameter", async () => {
@@ -643,7 +643,7 @@ describe("pullModel()", () => {
                     body: JSON.stringify({ model: "nomic-embed-text-v1.5" }),
                 }),
             );
-            expect(result.ok).toBe(true);
+            expect(result.isOk()).toBe(true);
         });
 
         it("returns error when response is not ok", async () => {
@@ -655,8 +655,8 @@ describe("pullModel()", () => {
             } as unknown as Response);
 
             const result = await client.setEmbeddingModel("nomic-embed-text-v1.5");
-            expect(result.ok).toBe(false);
-            expect(result.error.message).toBe("Server responded 400: ");
+            expect(result.isErr()).toBe(true);
+            expect(result._unsafeUnwrapErr().message).toBe("Server responded 400: ");
         });
     });
 });
@@ -675,7 +675,7 @@ describe("setChatModel()", () => {
                 body: JSON.stringify({ model: "mistral" }),
             }),
         );
-        expect(result.ok).toBe(true);
+        expect(result.isOk()).toBe(true);
     });
 
     it("returns error when response is not ok", async () => {
@@ -687,8 +687,8 @@ describe("setChatModel()", () => {
         } as unknown as Response);
 
         const result = await client.setChatModel("mistral");
-        expect(result.ok).toBe(false);
-        expect(result.error.message).toBe("Server responded 500: ");
+        expect(result.isErr()).toBe(true);
+        expect(result._unsafeUnwrapErr().message).toBe("Server responded 500: ");
     });
 });
 
@@ -706,7 +706,7 @@ describe("setVisionModel()", () => {
                 body: JSON.stringify({ model: "llava" }),
             }),
         );
-        expect(result.ok).toBe(true);
+        expect(result.isOk()).toBe(true);
     });
 
     it("returns error when response is not ok", async () => {
@@ -718,8 +718,8 @@ describe("setVisionModel()", () => {
         } as unknown as Response);
 
         const result = await client.setVisionModel("llava");
-        expect(result.ok).toBe(false);
-        expect(result.error.message).toBe("Server responded 422: ");
+        expect(result.isErr()).toBe(true);
+        expect(result._unsafeUnwrapErr().message).toBe("Server responded 422: ");
     });
 });
 
@@ -868,16 +868,16 @@ describe("fetchWithRetry()", () => {
         const result = await client.health();
 
         expect(fetchMock).toHaveBeenCalledTimes(2);
-        expect(result.ok).toBe(true);
-        expect(result.value).toEqual(data);
+        expect(result.isOk()).toBe(true);
+        expect(result._unsafeUnwrap()).toEqual(data);
     });
 
     it("throws after all retries exhausted on network error", async () => {
         fetchMock.mockRejectedValue(new Error("connection refused"));
 
         const result = await client.health();
-        expect(result.ok).toBe(false);
-        expect(result.error.message).toBe("connection refused");
+        expect(result.isErr()).toBe(true);
+        expect(result._unsafeUnwrapErr().message).toBe("connection refused");
         expect(fetchMock).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
     });
 
@@ -885,8 +885,8 @@ describe("fetchWithRetry()", () => {
         fetchMock.mockRejectedValue("string error");
 
         const result = await client.health();
-        expect(result.ok).toBe(false);
-        expect(result.error.message).toBe("string error");
+        expect(result.isErr()).toBe(true);
+        expect(result._unsafeUnwrapErr().message).toBe("string error");
     });
 
     it("does NOT retry on HTTP error (4xx/5xx)", async () => {
@@ -897,8 +897,8 @@ describe("fetchWithRetry()", () => {
         } as unknown as Response);
 
         const result = await client.health();
-        expect(result.ok).toBe(false);
-        expect(result.error.message).toBe("Server responded 422: Validation error");
+        expect(result.isErr()).toBe(true);
+        expect(result._unsafeUnwrapErr().message).toBe("Server responded 422: Validation error");
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
@@ -931,8 +931,8 @@ describe("assertOk", () => {
         } as unknown as Response);
 
         const result = await client.status();
-        expect(result.ok).toBe(false);
-        expect(result.error.message).toBe("Server responded 500: Internal Server Error");
+        expect(result.isErr()).toBe(true);
+        expect(result._unsafeUnwrapErr().message).toBe("Server responded 500: Internal Server Error");
     });
 
     it("throws with empty string when res.text() itself throws", async () => {
@@ -943,8 +943,8 @@ describe("assertOk", () => {
         } as unknown as Response);
 
         const result = await client.status();
-        expect(result.ok).toBe(false);
-        expect(result.error.message).toBe("Server responded 503: ");
+        expect(result.isErr()).toBe(true);
+        expect(result._unsafeUnwrapErr().message).toBe("Server responded 503: ");
     });
 });
 describe("search() — chunkType parameter", () => {
@@ -1131,8 +1131,8 @@ describe("fetchWithRetry() — signal and AbortError", () => {
         fetchMock.mockRejectedValue(abortError);
 
         const result = await client.health();
-        expect(result.ok).toBe(false);
-        expect(result.error.name).toBe("AbortError");
+        expect(result.isErr()).toBe(true);
+        expect(result._unsafeUnwrapErr().name).toBe("AbortError");
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 });

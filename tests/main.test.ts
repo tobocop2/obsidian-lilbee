@@ -1,7 +1,8 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Notice } from "obsidian";
 import { App, WorkspaceLeaf } from "./__mocks__/obsidian";
-import { NOTICE, SSE_EVENT } from "../src/types";
+import { SSE_EVENT } from "../src/types";
+import { MESSAGES } from "../src/locales/en";
 import { ok, err } from "neverthrow";
 
 vi.mock("../src/api", () => ({
@@ -859,7 +860,7 @@ describe("LilbeePlugin", () => {
 
             await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
 
-            expect(Notice.instances.some((n) => n.message === NOTICE.NO_CHAT_MODEL)).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_NO_CHAT_MODEL)).toBe(true);
             expect(plugin.api.addFiles).not.toHaveBeenCalled();
         });
 
@@ -1013,7 +1014,7 @@ describe("LilbeePlugin", () => {
 
             await plugin.addExternalFiles(["/home/user/doc.pdf"]);
 
-            expect(Notice.instances.some((n) => n.message === NOTICE.NO_CHAT_MODEL)).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_NO_CHAT_MODEL)).toBe(true);
             expect(plugin.api.addFiles).not.toHaveBeenCalled();
         });
 
@@ -1062,6 +1063,21 @@ describe("LilbeePlugin", () => {
             await plugin.addExternalFiles([]);
 
             expect(plugin.api.addFiles).not.toHaveBeenCalled();
+        });
+
+        it("handles path with trailing slash gracefully", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            plugin.api.addFiles = vi.fn().mockImplementation(async function* () {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: { added: [], updated: [], removed: [], unchanged: 0, failed: [] },
+                };
+            });
+
+            await plugin.addExternalFiles(["/some/dir/"]);
+            expect(plugin.api.addFiles).toHaveBeenCalled();
         });
 
         it("returns early when statusBarEl is null", async () => {
@@ -1847,7 +1863,7 @@ describe("LilbeePlugin", () => {
 
             await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
 
-            expect(Notice.instances.some((n) => n.message === NOTICE.ADD_CANCELLED)).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.STATUS_ADD_CANCELLED)).toBe(true);
         });
 
         it("triggerSync shows 'sync cancelled' on AbortError", async () => {

@@ -1,7 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { ModelFamily, ModelVariant, CatalogResponse } from "../types";
-import { MODEL_TASK, NOTICE, SSE_EVENT, TASK_TYPE } from "../types";
+import { MODEL_TASK, SSE_EVENT, TASK_TYPE } from "../types";
 import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
@@ -211,10 +211,7 @@ export class CatalogModal extends Modal {
     }
 
     private handleRemove(variant: ModelVariant, btn: HTMLElement): void {
-        const confirmModal = new ConfirmModal(
-            this.app,
-            `Remove ${variant.hf_repo}? This deletes the model file from disk.`,
-        );
+        const confirmModal = new ConfirmModal(this.app, MESSAGES.NOTICE_CONFIRM_REMOVE(variant.hf_repo));
         confirmModal.open();
         void confirmModal.result.then((confirmed) => {
             if (!confirmed) return;
@@ -305,23 +302,23 @@ export class CatalogModal extends Modal {
             }
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
-                new Notice(NOTICE.PULL_CANCELLED);
+                new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
-                new Notice(NOTICE.PULL_FAILED);
+                new Notice(MESSAGES.NOTICE_PULL_FAILED);
                 this.plugin.taskQueue.fail(taskId, err instanceof Error ? err.message : "unknown");
             }
-            btn.textContent = "Pull";
+            btn.textContent = MESSAGES.BUTTON_PULL;
             (btn as HTMLButtonElement).disabled = false;
             return;
         }
 
         const result = await this.setModelForTask(variant);
         if (result.isErr()) {
-            new Notice(NOTICE.PULL_FAILED);
+            new Notice(MESSAGES.NOTICE_PULL_FAILED);
             const err = (result as { error: Error }).error;
             this.plugin.taskQueue.fail(taskId, err.message);
-            btn.textContent = "Pull";
+            btn.textContent = MESSAGES.BUTTON_PULL;
             (btn as HTMLButtonElement).disabled = false;
             return;
         }

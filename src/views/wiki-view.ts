@@ -72,10 +72,6 @@ export class WikiView extends ItemView {
         void this.refresh();
     }
 
-    async onClose(): Promise<void> {
-        // nothing to clean up
-    }
-
     async refresh(): Promise<void> {
         try {
             this.pages = await this.plugin.api.wikiList();

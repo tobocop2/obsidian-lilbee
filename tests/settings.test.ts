@@ -9,7 +9,8 @@ import {
     SEPARATOR_LABEL,
 } from "../src/settings";
 import type { LilbeeSettings, ModelCatalog, ModelsResponse } from "../src/types";
-import { DEFAULT_SETTINGS, NOTICE } from "../src/types";
+import { DEFAULT_SETTINGS } from "../src/types";
+import { MESSAGES } from "../src/locales/en";
 import { ok, err } from "neverthrow";
 import { TaskQueue } from "../src/task-queue";
 import { ConfirmPullModal } from "../src/views/confirm-pull-modal";
@@ -1087,7 +1088,7 @@ describe("LilbeeSettingTab", () => {
             btn.trigger("click");
             await pullPromise;
 
-            expect(Notice.instances.some((n) => n.message === NOTICE.PULL_CANCELLED)).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_PULL_CANCELLED)).toBe(true);
             expect(btn.textContent).toBe("Pull");
             expect(btn.disabled).toBe(false);
             // Progress div should be cleaned up
@@ -1178,7 +1179,7 @@ describe("LilbeeSettingTab", () => {
             clickHandlers[0]();
             await pullPromise;
 
-            expect(Notice.instances.some((n) => n.message === NOTICE.PULL_CANCELLED)).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_PULL_CANCELLED)).toBe(true);
             expect(plugin.api.pullModel).toHaveBeenCalledTimes(1);
         });
     });
@@ -1244,7 +1245,7 @@ describe("LilbeeSettingTab", () => {
             cancelBtn!.trigger("click");
             await pullPromise;
 
-            expect(Notice.instances.some((n) => n.message === NOTICE.PULL_CANCELLED)).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_PULL_CANCELLED)).toBe(true);
         });
 
         it("auto-pull banner label updates with progress percentage", async () => {
@@ -1302,7 +1303,7 @@ describe("LilbeeSettingTab", () => {
 
             // phi3 is uninstalled in catalog — triggers autoPullAndSet
             await dropdownOnChanges[0]("phi3");
-            expect(Notice.instances.some((n) => n.message === NOTICE.PULL_CANCELLED)).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_PULL_CANCELLED)).toBe(true);
         });
     });
 

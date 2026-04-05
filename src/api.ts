@@ -1,8 +1,6 @@
 import { JSON_HEADERS, SSE_EVENT } from "./types";
 import { ok, err, Result } from "neverthrow";
 
-type FetchResult<T> = Result<T, Error> & { ok: boolean; value?: T; error?: Error };
-
 import type {
     AskResponse,
     CatalogResponse,
@@ -52,24 +50,17 @@ export class LilbeeClient {
         return res;
     }
 
-    /**
-     * Fetch with retry and return Result. Handles all errors uniformly.
-     * Returns Result with backward-compatible .ok, .value, .error properties.
-     */
     private async fetchResult<T>(
         url: string,
         init?: RequestInit,
         opts?: { stream?: boolean; signal?: AbortSignal },
-    ): Promise<FetchResult<T>> {
+    ): Promise<Result<T, Error>> {
         try {
             const res = await this.fetchWithRetry(url, init, opts);
             const value = (await res.json()) as T;
-            const result = ok(value);
-            return Object.assign(result, { ok: true, value });
+            return ok(value);
         } catch (e) {
-            const error = e instanceof Error ? e : new Error(String(e));
-            const result = err(error);
-            return Object.assign(result, { ok: false, error });
+            return err(e instanceof Error ? e : new Error(String(e)));
         }
     }
 
@@ -365,23 +356,29 @@ export class LilbeeClient {
     }
 
     async wikiList(): Promise<WikiPage[]> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki`);
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki`, { headers: this.authHeaders() });
         return res.json();
     }
 
     async wikiPage(slug: string): Promise<WikiPageDetail> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/${encodeURIComponent(slug)}`);
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/${encodeURIComponent(slug)}`, {
+            headers: this.authHeaders(),
+        });
         return res.json();
     }
 
     async wikiCitations(slug: string): Promise<WikiCitationChain> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/${encodeURIComponent(slug)}/citations`);
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/${encodeURIComponent(slug)}/citations`, {
+            headers: this.authHeaders(),
+        });
         return res.json();
     }
 
     async wikiCitationsForSource(filename: string): Promise<WikiCitationChain[]> {
         const params = new URLSearchParams({ source: filename });
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/citations?${params}`);
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/citations?${params}`, {
+            headers: this.authHeaders(),
+        });
         return res.json();
     }
 
@@ -411,7 +408,7 @@ export class LilbeeClient {
     }
 
     async wikiDrafts(): Promise<WikiDraft[]> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/drafts`);
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/drafts`, { headers: this.authHeaders() });
         return res.json();
     }
 

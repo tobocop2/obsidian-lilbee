@@ -19,7 +19,8 @@ import {
 } from "../../src/views/chat-view";
 import { ok, err } from "neverthrow";
 import type LilbeePlugin from "../../src/main";
-import { NOTICE, SSE_EVENT } from "../../src/types";
+import { SSE_EVENT } from "../../src/types";
+import { MESSAGES } from "../../src/locales/en";
 
 const mockChatViewConfirmResult = true;
 vi.mock("../../src/views/confirm-pull-modal", () => ({
@@ -667,7 +668,7 @@ describe("ChatView.sendMessage — API throws", () => {
         expect(messagesEl.children.length).toBe(1);
         expect(messagesEl.children[0].classList.contains("user")).toBe(true);
         // Notice shown
-        expect(Notice.instances.some((n) => n.message === "lilbee: could not reach server — is lilbee running?")).toBe(
+        expect(Notice.instances.some((n) => n.message === "Could not connect to lilbee server. Is it running?")).toBe(
             true,
         );
         // History popped — no user message either
@@ -971,7 +972,7 @@ describe("ChatView.onOpen — model selector", () => {
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
-        expect(Notice.instances.some((n) => n.message === NOTICE.PULL_CANCELLED)).toBe(true);
+        expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_PULL_CANCELLED)).toBe(true);
     });
 
     it("auto-pull non-Error throw uses 'unknown' in taskQueue", async () => {
@@ -2104,19 +2105,19 @@ describe("ChatView — offline retry", () => {
         await vi.advanceTimersByTimeAsync(0);
 
         // First failure — no notice yet (connecting state)
-        expect(Notice.instances.filter((n) => n.message.includes("is lilbee running?")).length).toBe(0);
+        expect(Notice.instances.filter((n) => n.message.includes("Is it running?")).length).toBe(0);
 
         // Second failure — still no notice
         await vi.advanceTimersByTimeAsync(5000);
-        expect(Notice.instances.filter((n) => n.message.includes("is lilbee running?")).length).toBe(0);
+        expect(Notice.instances.filter((n) => n.message.includes("Is it running?")).length).toBe(0);
 
         // Third failure — notice fires at threshold
         await vi.advanceTimersByTimeAsync(5000);
-        expect(Notice.instances.filter((n) => n.message.includes("is lilbee running?")).length).toBe(1);
+        expect(Notice.instances.filter((n) => n.message.includes("Is it running?")).length).toBe(1);
 
         // Fourth failure — no additional notice
         await vi.advanceTimersByTimeAsync(5000);
-        expect(Notice.instances.filter((n) => n.message.includes("is lilbee running?")).length).toBe(1);
+        expect(Notice.instances.filter((n) => n.message.includes("Is it running?")).length).toBe(1);
 
         await view.onClose();
     });

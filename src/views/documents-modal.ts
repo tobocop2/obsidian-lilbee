@@ -134,10 +134,7 @@ export class DocumentsModal extends Modal {
     private async removeSelected(): Promise<void> {
         if (this.selected.size === 0) return;
         const names = Array.from(this.selected);
-        const confirm = new ConfirmModal(
-            this.app,
-            `Delete ${names.length} document(s) from index and disk? This cannot be undone.`,
-        );
+        const confirm = new ConfirmModal(this.app, MESSAGES.NOTICE_CONFIRM_DELETE_DOCS(names.length));
         confirm.open();
         const confirmed = await confirm.result;
         if (!confirmed) return;

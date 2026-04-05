@@ -48,7 +48,7 @@ export class SearchModal extends Modal {
         }
 
         this.resultsContainer = contentEl.createDiv({ cls: "lilbee-modal-results" });
-        this.renderEmptyState("Enter a query to begin.");
+        this.renderEmptyState(MESSAGES.LABEL_ENTER_QUERY);
 
         if (this.mode === "search") {
             input.addEventListener("input", () => {
@@ -111,7 +111,7 @@ export class SearchModal extends Modal {
 
     private async runSearch(query: string): Promise<void> {
         if (!query) {
-            this.renderEmptyState("Enter a query to begin.");
+            this.renderEmptyState(MESSAGES.LABEL_ENTER_QUERY);
             return;
         }
         this.renderLoading();
@@ -124,7 +124,7 @@ export class SearchModal extends Modal {
             if (!this.resultsContainer) return;
             this.resultsContainer.empty();
             if (results.length === 0) {
-                this.renderEmptyState("No results found.");
+                this.renderEmptyState(MESSAGES.LABEL_NO_RESULTS);
                 return;
             }
             for (const result of results) {
@@ -132,7 +132,7 @@ export class SearchModal extends Modal {
             }
         } catch {
             new Notice(MESSAGES.ERROR_COULD_NOT_CONNECT);
-            this.renderEmptyState("Error: could not connect to lilbee server.");
+            this.renderEmptyState(MESSAGES.ERROR_SEARCH_CONNECT);
         }
     }
 
@@ -150,14 +150,14 @@ export class SearchModal extends Modal {
 
             if (response.sources.length > 0) {
                 const sourcesEl = this.resultsContainer.createDiv({ cls: "lilbee-ask-sources" });
-                sourcesEl.createEl("span", { text: "Sources: " });
+                sourcesEl.createEl("span", { text: `${MESSAGES.LABEL_SOURCES}: ` });
                 for (const source of response.sources) {
                     renderSourceChip(sourcesEl, source);
                 }
             }
         } catch {
             new Notice(MESSAGES.ERROR_COULD_NOT_CONNECT);
-            this.renderEmptyState("Error: could not connect to lilbee server.");
+            this.renderEmptyState(MESSAGES.ERROR_SEARCH_CONNECT);
         }
     }
 }

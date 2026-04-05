@@ -114,15 +114,6 @@ export const MODEL_TYPE = {
     VISION: "vision",
 } as const satisfies Record<string, ModelType>;
 
-export const NOTICE = {
-    NO_CHAT_MODEL: "lilbee: no chat model set — select one in settings",
-    PULL_CANCELLED: "lilbee: pull cancelled",
-    PULL_FAILED: "lilbee: failed to pull model",
-    MODEL_ACTIVATED: "lilbee: model activated",
-    ADD_FAILED: "lilbee: add failed",
-    ADD_CANCELLED: "lilbee: add cancelled",
-} as const;
-
 export type SearchChunkType = "all" | "wiki" | "raw";
 
 export interface LilbeeSettings {

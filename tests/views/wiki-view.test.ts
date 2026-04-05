@@ -170,13 +170,6 @@ describe("WikiView.onOpen", () => {
     });
 });
 
-describe("WikiView.onClose", () => {
-    it("is a no-op that does not throw", async () => {
-        const view = new WikiView(makeLeaf(), makePlugin());
-        await expect(view.onClose()).resolves.toBeUndefined();
-    });
-});
-
 describe("WikiView.refresh", () => {
     let view: WikiView;
     let plugin: LilbeePlugin;
