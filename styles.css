@@ -735,41 +735,6 @@
     margin-bottom: var(--size-4-2, 8px);
 }
 
-.lilbee-catalog-row {
-    display: flex;
-    align-items: center;
-    gap: var(--size-4-2, 8px);
-    padding: var(--size-4-2, 8px);
-    border-bottom: 1px solid var(--background-modifier-border);
-    font-size: var(--font-small, 13px);
-}
-
-.lilbee-catalog-row:last-child {
-    border-bottom: none;
-}
-
-.lilbee-catalog-row-name {
-    font-weight: var(--font-medium, 500);
-    min-width: 120px;
-}
-
-.lilbee-catalog-row-size {
-    color: var(--text-muted);
-    min-width: 60px;
-}
-
-.lilbee-catalog-row-desc {
-    flex: 1;
-    color: var(--text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.lilbee-catalog-row-action {
-    flex-shrink: 0;
-}
-
 .lilbee-catalog-active {
     display: inline-block;
     padding: 1px var(--size-4-2, 8px);
@@ -808,6 +773,194 @@
 
 .lilbee-catalog-load-more:hover {
     background-color: var(--background-modifier-hover);
+}
+
+/* Card Grid Layout */
+
+.lilbee-catalog-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+}
+
+.lilbee-model-card {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 12px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+}
+
+.lilbee-model-card:hover {
+    border-color: var(--interactive-accent);
+}
+
+.lilbee-model-card.is-selected {
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+.lilbee-model-card-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+
+.lilbee-model-card-name {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.lilbee-model-card-specs {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-bottom: 4px;
+}
+
+.lilbee-model-card-status {
+    font-size: 11px;
+}
+
+.lilbee-model-card-actions {
+    margin-top: 8px;
+    display: flex;
+    gap: 6px;
+}
+
+/* Pill/Badge */
+
+.lilbee-pill {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.lilbee-pill-pick {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.lilbee-pill-task-chat,
+.lilbee-pill-task-embedding,
+.lilbee-pill-task-vision {
+    background: var(--background-secondary);
+    color: var(--text-muted);
+}
+
+.lilbee-pill-installed {
+    background: var(--background-modifier-success);
+    color: var(--text-on-accent);
+}
+
+.lilbee-pill-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+/* Browse More CTA Card */
+
+.lilbee-browse-more-card {
+    border: 1px dashed var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 24px;
+    text-align: center;
+    cursor: pointer;
+    color: var(--text-muted);
+}
+
+.lilbee-browse-more-card:hover {
+    border-color: var(--interactive-accent);
+    color: var(--text-normal);
+}
+
+/* Section Headings */
+
+.lilbee-catalog-section-heading {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 16px 0 8px;
+    padding: 0 4px;
+}
+
+/* View Toggle CTA Banner */
+
+.lilbee-view-toggle-cta {
+    text-align: center;
+    padding: 12px;
+    margin: 12px 0;
+    background: var(--background-secondary);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.lilbee-view-toggle-cta button {
+    margin-left: 8px;
+}
+
+/* List View */
+
+.lilbee-catalog-list {
+    width: 100%;
+}
+
+.lilbee-catalog-list-header {
+    display: flex;
+    gap: 8px;
+    padding: 6px 8px;
+    border-bottom: 2px solid var(--background-modifier-border);
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.lilbee-catalog-list-row {
+    display: flex;
+    gap: 8px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    font-size: 13px;
+    align-items: center;
+}
+
+.lilbee-catalog-list-row:hover {
+    background: var(--background-modifier-hover);
+}
+
+.lilbee-catalog-list-col-name {
+    flex: 2;
+    font-weight: 500;
+}
+
+.lilbee-catalog-list-col-task {
+    flex: 0.8;
+}
+
+.lilbee-catalog-list-col-size {
+    flex: 0.6;
+    text-align: right;
+}
+
+.lilbee-catalog-list-col-quant {
+    flex: 0.8;
+}
+
+.lilbee-catalog-list-col-downloads {
+    flex: 0.8;
+    text-align: right;
+}
+
+.lilbee-catalog-list-col-action {
+    flex: 0.8;
+    text-align: right;
 }
 
 /* Crawl Modal */
@@ -1139,44 +1292,6 @@
     border-color: var(--interactive-accent);
 }
 
-/* Catalog Family Layout */
-
-.lilbee-catalog-family {
-    margin-bottom: 8px;
-}
-.lilbee-catalog-family-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px;
-    cursor: pointer;
-    font-weight: 600;
-}
-.lilbee-catalog-family-header:hover {
-    background: var(--background-modifier-hover);
-}
-.lilbee-catalog-family-task {
-    font-size: 0.75em;
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: var(--background-modifier-border);
-}
-.lilbee-catalog-family-variants {
-    padding-left: 16px;
-}
-.lilbee-catalog-family.is-collapsed .lilbee-catalog-family-variants {
-    display: none;
-}
-.lilbee-catalog-variant-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 8px;
-    border-bottom: 1px solid var(--background-modifier-border);
-}
-.lilbee-catalog-recommended {
-    color: var(--text-accent);
-}
 
 .lilbee-tasks-container {
     display: flex;

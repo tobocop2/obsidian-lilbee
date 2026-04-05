@@ -4,6 +4,7 @@ import type { ModelFamily, SSEEvent, SyncDone } from "../types";
 import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP } from "../types";
 import { CatalogModal } from "./catalog-modal";
 import { MESSAGES } from "../locales/en";
+import { renderModelCard } from "../components/model-card";
 
 interface FeaturedModel {
     name: string;
@@ -269,6 +270,7 @@ export class SetupWizard extends Modal {
         memGB: number | null,
         statusEl: HTMLElement,
     ): Promise<void> {
+        let families: ModelFamily[];
         try {
             const result = await this.plugin.api.catalog({
                 task: "chat",
@@ -280,7 +282,8 @@ export class SetupWizard extends Modal {
                 this.featuredModels = [];
                 return;
             }
-            this.featuredModels = result.value.families.map((f: ModelFamily) => {
+            families = result.value.families;
+            this.featuredModels = families.map((f: ModelFamily) => {
                 const v = f.variants.find((v) => v.name === f.recommended) ?? f.variants[0];
                 return {
                     name: v.hf_repo,
@@ -300,32 +303,31 @@ export class SetupWizard extends Modal {
         const recommended = recommendedIndex(this.featuredModels, memGB);
         this.selectedModel = this.featuredModels[recommended] ?? null;
 
-        for (let i = 0; i < this.featuredModels.length; i++) {
+        container.createDiv({ cls: "lilbee-catalog-section-heading", text: MESSAGES.LABEL_OUR_PICKS });
+        const grid = container.createDiv({ cls: "lilbee-catalog-grid" });
+
+        for (let i = 0; i < families.length; i++) {
+            const family = families[i];
+            const variant = family.variants.find((v) => v.name === family.recommended) ?? family.variants[0];
             const model = this.featuredModels[i];
-            const option = container.createDiv({
-                cls: `lilbee-wizard-model-option${i === recommended ? " selected" : ""}`,
+            renderModelCard(grid, family, variant, {
+                isActive: i === recommended,
+                compact: true,
+                onClick: () => this.selectModel(grid, model),
             });
+        }
+    }
 
-            const header = option.createDiv({ cls: "lilbee-wizard-model-header" });
-            if (i === recommended) {
-                header.createEl("span", { text: MESSAGES.TITLE_RECOMMENDED, cls: "lilbee-wizard-recommended" });
+    private selectModel(grid: HTMLElement, model: FeaturedModel): void {
+        this.selectedModel = model;
+        for (const child of Array.from(grid.children)) {
+            child.classList.remove("is-selected");
+        }
+        for (const child of Array.from(grid.children)) {
+            const el = child as HTMLElement;
+            if (el.dataset.repo === model.name) {
+                el.classList.add("is-selected");
             }
-            /* v8 ignore next */
-            header.createEl("strong", { text: model.displayName ?? model.name });
-            header.createEl("span", { text: `${model.size_gb} GB` });
-            option.createEl("p", { text: model.description });
-            option.createEl("p", {
-                text: MESSAGES.WIZARD_MIN_RAM.replace("{ram}", String(model.min_ram_gb)),
-                cls: "lilbee-wizard-model-ram",
-            });
-
-            option.addEventListener("click", () => {
-                this.selectedModel = model;
-                for (const child of Array.from(container.children)) {
-                    child.classList.remove("selected");
-                }
-                option.classList.add("selected");
-            });
         }
     }
 
