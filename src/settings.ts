@@ -1,7 +1,16 @@
 import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
 import type { ReleaseInfo } from "./binary-manager";
-import { DEFAULT_SETTINGS, MODEL_TYPE, SERVER_MODE, SERVER_STATE, SSE_EVENT, SYNC_MODE, TASK_TYPE } from "./types";
+import {
+    DEFAULT_SETTINGS,
+    MODEL_TYPE,
+    SERVER_MODE,
+    SERVER_STATE,
+    SSE_EVENT,
+    SYNC_MODE,
+    TASK_TYPE,
+    ERROR_NAME,
+} from "./types";
 import type { GenerationOptions, ModelCatalog, ModelInfo, ModelType, ModelsResponse, ServerMode } from "./types";
 import { MESSAGES } from "./locales/en";
 import { CatalogModal } from "./views/catalog-modal";
@@ -912,7 +921,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             this.plugin.fetchActiveModel();
             this.display();
         } catch (err) {
-            if (err instanceof Error && err.name === "AbortError") {
+            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
@@ -987,7 +996,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             this.plugin.fetchActiveModel();
             this.display();
         } catch (err) {
-            if (err instanceof Error && err.name === "AbortError") {
+            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {

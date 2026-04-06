@@ -6,6 +6,7 @@ import { ServerManager } from "./server-manager";
 import { LilbeeSettingTab } from "./settings";
 import {
     DEFAULT_SETTINGS,
+    ERROR_NAME,
     SERVER_MODE,
     SSE_EVENT,
     SYNC_MODE,
@@ -579,7 +580,7 @@ export default class LilbeePlugin extends Plugin {
             }
             this.taskQueue.complete(taskId);
         } catch (err) {
-            if (err instanceof Error && err.name === "AbortError") {
+            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.STATUS_ADD_CANCELLED);
                 this.taskQueue.cancel(taskId);
             } else {
@@ -782,7 +783,7 @@ export default class LilbeePlugin extends Plugin {
             }
             this.taskQueue.complete(taskId);
         } catch (err) {
-            if (err instanceof Error && err.name === "AbortError") {
+            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.STATUS_SYNC_CANCELLED);
                 this.taskQueue.cancel(taskId);
             } else {

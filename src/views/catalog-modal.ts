@@ -1,6 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { ModelFamily, ModelVariant, CatalogViewMode } from "../types";
+import type { ModelFamily, ModelVariant, CatalogViewMode, ModelTask, ModelSize } from "../types";
 import { MODEL_TASK, SSE_EVENT, TASK_TYPE, CATALOG_VIEW_MODE, ERROR_NAME } from "../types";
 import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
@@ -156,8 +156,8 @@ export class CatalogModal extends Modal {
             offset: this.offset,
             sort: this.filterSort,
         };
-        if (this.filterTask) params.task = this.filterTask as "chat" | "embedding" | "vision";
-        if (this.filterSize) params.size = this.filterSize as "small" | "medium" | "large";
+        if (this.filterTask) params.task = this.filterTask as ModelTask;
+        if (this.filterSize) params.size = this.filterSize as ModelSize;
         if (this.filterSearch) params.search = this.filterSearch;
 
         const result = await this.plugin.api.catalog(params);
