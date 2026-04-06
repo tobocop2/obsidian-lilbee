@@ -788,6 +788,8 @@ describe("CatalogModal", () => {
             const el = modal.contentEl as unknown as MockElement;
             const searchInput = el.find("lilbee-catalog-search")!;
 
+            const callsBeforeInput = plugin.api.catalog.mock.calls.length;
+
             (searchInput as any).value = "a";
             searchInput.trigger("input");
 
@@ -797,7 +799,9 @@ describe("CatalogModal", () => {
             await vi.advanceTimersByTimeAsync(300);
             await vi.runAllTimersAsync();
 
-            expect(plugin.api.catalog.mock.calls.length).toBeGreaterThan(1);
+            // Two rapid inputs should batch into a single debounced fetch
+            expect(plugin.api.catalog.mock.calls.length).toBe(callsBeforeInput + 1);
+            expect(plugin.api.catalog).toHaveBeenLastCalledWith(expect.objectContaining({ search: "ab" }));
         });
     });
 
@@ -948,6 +952,7 @@ describe("CatalogModal", () => {
             await vi.runAllTimersAsync();
 
             expect(plugin.api.setChatModel).toHaveBeenCalled();
+            expect(Notice.instances.some((n) => n.message.includes("Failed to set"))).toBe(true);
         });
 
         it("Active shown for active model variant in grid", async () => {
@@ -1378,14 +1383,7 @@ describe("CatalogModal", () => {
             expect(Notice.instances.some((n) => n.message.includes("failed to load catalog"))).toBe(true);
         });
 
-        it("onClose cleans up debounce timer", () => {
-            const plugin = makePlugin();
-            const app = new App();
-            const modal = new CatalogModal(app as any, plugin as any);
-            modal.onClose();
-        });
-
-        it("onClose does not throw", () => {
+        it("onClose cleans up without throwing", () => {
             const plugin = makePlugin();
             const app = new App();
             const modal = new CatalogModal(app as any, plugin as any);

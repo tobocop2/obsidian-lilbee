@@ -98,15 +98,6 @@ function findButtons(el: MockElement): MockElement[] {
     return buttons;
 }
 
-function _findByText(el: MockElement, text: string): MockElement | null {
-    if (el.textContent === text) return el;
-    for (const child of el.children) {
-        const found = findByText(child, text);
-        if (found) return found;
-    }
-    return null;
-}
-
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe("SetupWizard", () => {
