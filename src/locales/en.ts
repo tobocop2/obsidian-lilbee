@@ -111,6 +111,9 @@ export const MESSAGES = {
     LABEL_TASK: "Task",
     LABEL_QUANT: "Quant",
     LABEL_DOWNLOADS_COUNT: (count: string) => `${count} downloads`,
+    LABEL_SIZE_SMALL: "Small",
+    LABEL_SIZE_MEDIUM: "Medium",
+    LABEL_SIZE_LARGE: "Large",
 
     DESC_SERVER_MODE: "How the lilbee server is managed",
     DESC_MANAGED_BUILTIN: "Managed (built-in)",
@@ -439,9 +442,9 @@ export const CATALOG_FILTERS = {
     ] as const,
     SIZE: [
         [FILTERS.SIZE.ALL, MESSAGES.LABEL_ALL_SIZES],
-        [FILTERS.SIZE.SMALL, "Small"],
-        [FILTERS.SIZE.MEDIUM, "Medium"],
-        [FILTERS.SIZE.LARGE, "Large"],
+        [FILTERS.SIZE.SMALL, MESSAGES.LABEL_SIZE_SMALL],
+        [FILTERS.SIZE.MEDIUM, MESSAGES.LABEL_SIZE_MEDIUM],
+        [FILTERS.SIZE.LARGE, MESSAGES.LABEL_SIZE_LARGE],
     ] as const,
     SORT: [
         [FILTERS.SORT.FEATURED, MESSAGES.LABEL_FEATURED],

@@ -407,5 +407,4 @@ export interface ModelCardOptions {
     onRemove?: (variant: ModelVariant, btn: HTMLElement) => void;
     showActions?: boolean;
     isActive?: boolean;
-    compact?: boolean;
 }

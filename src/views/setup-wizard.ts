@@ -1,7 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { ModelFamily, SSEEvent, SyncDone } from "../types";
-import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP } from "../types";
+import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME } from "../types";
 import { CatalogModal } from "./catalog-modal";
 import { MESSAGES } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
@@ -312,7 +312,6 @@ export class SetupWizard extends Modal {
             const model = this.featuredModels[i];
             renderModelCard(grid, family, variant, {
                 isActive: i === recommended,
-                compact: true,
                 onClick: () => this.selectModel(grid, model),
             });
         }
@@ -365,7 +364,7 @@ export class SetupWizard extends Modal {
             this.step = WIZARD_STEP.SYNC;
             this.renderStep();
         } catch (err) {
-            if (err instanceof Error && err.name === "AbortError") {
+            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELLED);
             } else {
                 statusEl.textContent = MESSAGES.ERROR_DOWNLOAD_FAILED;
@@ -444,7 +443,7 @@ export class SetupWizard extends Modal {
             this.step = WIZARD_STEP.DONE;
             this.renderStep();
         } catch (err) {
-            if (err instanceof Error && err.name === "AbortError") {
+            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_INDEXING_CANCELLED);
             } else {
                 progressLabel.textContent = MESSAGES.ERROR_INDEXING_FAILED;

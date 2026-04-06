@@ -72,6 +72,9 @@ describe("MESSAGES", () => {
             expect(MESSAGES.LABEL_TASK).toBe("Task");
             expect(MESSAGES.LABEL_QUANT).toBe("Quant");
             expect(MESSAGES.LABEL_DOWNLOADS_COUNT("1.5K")).toBe("1.5K downloads");
+            expect(MESSAGES.LABEL_SIZE_SMALL).toBe("Small");
+            expect(MESSAGES.LABEL_SIZE_MEDIUM).toBe("Medium");
+            expect(MESSAGES.LABEL_SIZE_LARGE).toBe("Large");
         });
     });
 
