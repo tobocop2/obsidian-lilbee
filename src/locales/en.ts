@@ -108,6 +108,9 @@ export const MESSAGES = {
     LABEL_BROWSE_MORE: "Browse more models",
     LABEL_VIEW_TOGGLE_CTA: "Switch to list view for the full catalog",
     LABEL_NO_MODELS_FOUND: "No models match your filters.",
+    LABEL_TASK: "Task",
+    LABEL_QUANT: "Quant",
+    LABEL_DOWNLOADS_COUNT: (count: string) => `${count} downloads`,
 
     DESC_SERVER_MODE: "How the lilbee server is managed",
     DESC_MANAGED_BUILTIN: "Managed (built-in)",

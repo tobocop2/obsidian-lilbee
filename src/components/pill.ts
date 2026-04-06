@@ -1,3 +1,4 @@
+import { MODEL_TASK } from "../types";
 import { MESSAGES } from "../locales/en";
 
 export const PILL_CLS = {
@@ -10,9 +11,9 @@ export const PILL_CLS = {
 } as const;
 
 const TASK_PILL_MAP: Record<string, string> = {
-    chat: PILL_CLS.TASK_CHAT,
-    embedding: PILL_CLS.TASK_EMBEDDING,
-    vision: PILL_CLS.TASK_VISION,
+    [MODEL_TASK.CHAT]: PILL_CLS.TASK_CHAT,
+    [MODEL_TASK.EMBEDDING]: PILL_CLS.TASK_EMBEDDING,
+    [MODEL_TASK.VISION]: PILL_CLS.TASK_VISION,
 };
 
 export function renderPill(container: HTMLElement, text: string, cls: string): HTMLElement {

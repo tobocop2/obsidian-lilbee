@@ -321,12 +321,11 @@ export class SetupWizard extends Modal {
     private selectModel(grid: HTMLElement, model: FeaturedModel): void {
         this.selectedModel = model;
         for (const child of Array.from(grid.children)) {
-            child.classList.remove("is-selected");
-        }
-        for (const child of Array.from(grid.children)) {
             const el = child as HTMLElement;
             if (el.dataset.repo === model.name) {
                 el.classList.add("is-selected");
+            } else {
+                el.classList.remove("is-selected");
             }
         }
     }

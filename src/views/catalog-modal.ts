@@ -1,7 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { ModelFamily, ModelVariant, CatalogResponse, CatalogViewMode } from "../types";
-import { MODEL_TASK, SSE_EVENT, TASK_TYPE, CATALOG_VIEW_MODE } from "../types";
+import type { ModelFamily, ModelVariant, CatalogViewMode } from "../types";
+import { MODEL_TASK, SSE_EVENT, TASK_TYPE, CATALOG_VIEW_MODE, ERROR_NAME } from "../types";
 import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
@@ -166,7 +166,7 @@ export class CatalogModal extends Modal {
             return;
         }
 
-        const response = (result as { value: CatalogResponse }).value;
+        const response = result.value;
         this.total = response.total;
         this.families.push(...response.families);
         this.offset += response.families.length;
@@ -291,9 +291,9 @@ export class CatalogModal extends Modal {
         const header = listEl.createDiv({ cls: "lilbee-catalog-list-header" });
         const cols = [
             { key: "name", label: MESSAGES.LABEL_NAME, cls: "lilbee-catalog-list-col-name" },
-            { key: "task", label: "Task", cls: "lilbee-catalog-list-col-task" },
+            { key: "task", label: MESSAGES.LABEL_TASK, cls: "lilbee-catalog-list-col-task" },
             { key: "size", label: MESSAGES.LABEL_SIZE, cls: "lilbee-catalog-list-col-size" },
-            { key: "quant", label: "Quant", cls: "lilbee-catalog-list-col-quant" },
+            { key: "quant", label: MESSAGES.LABEL_QUANT, cls: "lilbee-catalog-list-col-quant" },
             { key: "action", label: "", cls: "lilbee-catalog-list-col-action" },
         ];
         for (const col of cols) {
@@ -478,7 +478,7 @@ export class CatalogModal extends Modal {
                 }
             }
         } catch (err) {
-            if (err instanceof Error && err.name === "AbortError") {
+            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
@@ -493,7 +493,7 @@ export class CatalogModal extends Modal {
         const result = await this.setModelForTask(variant);
         if (result.isErr()) {
             new Notice(MESSAGES.NOTICE_PULL_FAILED);
-            const e = (result as { error: Error }).error;
+            const e = result.error;
             this.plugin.taskQueue.fail(taskId, e.message);
             btn.textContent = MESSAGES.BUTTON_PULL;
             (btn as HTMLButtonElement).disabled = false;
