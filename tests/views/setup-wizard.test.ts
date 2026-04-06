@@ -1086,37 +1086,42 @@ describe("SetupWizard", () => {
                     recommended: "0.6B",
                 }),
             ];
+            let capturedSignal: AbortSignal | null = null;
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(families)));
-            plugin.api.pullModel = vi.fn().mockReturnValue(
-                (async function* () {
-                    yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
-                    await new Promise(() => {});
-                })(),
-            );
+            plugin.api.pullModel = vi
+                .fn()
+                .mockImplementation((_model: string, _source: string, signal: AbortSignal) => {
+                    capturedSignal = signal;
+                    return (async function* () {
+                        yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
+                        await new Promise(() => {});
+                    })();
+                });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             wizard.next();
             await tick();
 
-            // Start pull
             const el = wizard.contentEl as unknown as MockElement;
             const downloadBtn = findButtons(el).find((b) => b.textContent === "Download & continue")!;
             downloadBtn.trigger("click");
             await tick();
 
-            // Close should abort
             wizard.close();
+            expect(capturedSignal?.aborted).toBe(true);
         });
 
         it("aborts sync controller on close", async () => {
+            let capturedSignal: AbortSignal | null = null;
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.syncStream = vi.fn().mockReturnValue(
-                (async function* () {
+            plugin.api.syncStream = vi.fn().mockImplementation((_vision: boolean, signal: AbortSignal) => {
+                capturedSignal = signal;
+                return (async function* () {
                     yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 100 } };
                     await new Promise(() => {});
-                })(),
-            );
+                })();
+            });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 3;
@@ -1124,14 +1129,7 @@ describe("SetupWizard", () => {
             await tick();
 
             wizard.close();
-        });
-
-        it("clears server check timer on close", () => {
-            const plugin = makePlugin();
-            const wizard = new SetupWizard(plugin.app as any, plugin as any);
-            (wizard as any).serverCheckTimer = setTimeout(() => {}, 10000);
-            wizard.close();
-            // Should not throw
+            expect(capturedSignal?.aborted).toBe(true);
         });
     });
 
