@@ -1,9 +1,9 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { ModelFamily, SSEEvent, SyncDone } from "../types";
-import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME } from "../types";
+import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK } from "../types";
 import { CatalogModal } from "./catalog-modal";
-import { MESSAGES } from "../locales/en";
+import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
 
 interface FeaturedModel {
@@ -273,9 +273,9 @@ export class SetupWizard extends Modal {
         let families: ModelFamily[];
         try {
             const result = await this.plugin.api.catalog({
-                task: "chat",
+                task: MODEL_TASK.CHAT,
                 featured: true,
-                sort: "featured",
+                sort: FILTERS.SORT.FEATURED,
                 limit: 4,
             });
             if (result.isErr()) {

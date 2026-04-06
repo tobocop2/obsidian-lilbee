@@ -25,7 +25,7 @@ export class CatalogModal extends Modal {
     private plugin: LilbeePlugin;
     private filterTask: TaskFilter = "";
     private filterSize: SizeFilter = "";
-    private filterSort: SortFilter = "featured";
+    private filterSort: SortFilter = FILTERS.SORT.FEATURED;
     private filterSearch = "";
     private offset = 0;
     private total = 0;
