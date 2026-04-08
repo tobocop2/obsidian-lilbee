@@ -87,6 +87,7 @@ export const MESSAGES = {
     LABEL_NO_QUEUED_TASKS: "No queued tasks",
     LABEL_NO_COMPLETED_TASKS: "No completed tasks",
     LABEL_CANCEL_TASK: "Cancel task",
+    LABEL_DOWNLOAD_QUEUED: "+{count} queued",
     LABEL_CHAT_MODEL_ICON: "Chat model",
     LABEL_VISION_MODEL_ICON: "Vision model",
     LABEL_ADD_FILE: "Add file",
