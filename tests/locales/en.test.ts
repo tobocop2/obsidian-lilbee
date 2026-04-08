@@ -75,6 +75,7 @@ describe("MESSAGES", () => {
             expect(MESSAGES.LABEL_SIZE_SMALL).toBe("Small");
             expect(MESSAGES.LABEL_SIZE_MEDIUM).toBe("Medium");
             expect(MESSAGES.LABEL_SIZE_LARGE).toBe("Large");
+            expect(MESSAGES.LABEL_DOWNLOAD_QUEUED).toBe("+{count} queued");
         });
     });
 

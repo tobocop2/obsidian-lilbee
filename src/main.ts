@@ -32,8 +32,8 @@ import { WikiView, VIEW_TYPE_WIKI } from "./views/wiki-view";
 import { LintModal } from "./views/lint-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { StatusModal } from "./views/status-modal";
-import { TaskQueue } from "./task-queue";
 import { DownloadPanel } from "./views/download-panel";
+import { TaskQueue } from "./task-queue";
 import { WikiSync } from "./wiki-sync";
 
 interface LintProgressData {

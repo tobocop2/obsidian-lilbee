@@ -1749,11 +1749,14 @@
     bottom: 32px;
     right: 16px;
     z-index: 30;
+    max-width: 320px;
+    pointer-events: none;
+}
+
+.lilbee-dp-panels {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    max-width: 320px;
-    pointer-events: none;
 }
 
 .lilbee-dp-panel {
@@ -1768,10 +1771,6 @@
     box-shadow: var(--shadow-s);
     opacity: 1;
     transition: opacity 300ms ease;
-}
-
-.lilbee-dp-panel.lilbee-dp-dismissing {
-    opacity: 0;
 }
 
 .lilbee-dp-info {

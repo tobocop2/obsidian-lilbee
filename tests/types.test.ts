@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { DEFAULT_SETTINGS, SSE_EVENT, JSON_HEADERS, SERVER_MODE } from "../src/types";
+import { DEFAULT_SETTINGS, SSE_EVENT, JSON_HEADERS, SERVER_MODE, DOWNLOAD_PANEL } from "../src/types";
 import type {
     Excerpt,
     DocumentResult,
@@ -324,6 +324,13 @@ describe("SERVER_MODE constants", () => {
     it("has MANAGED and EXTERNAL values", () => {
         expect(SERVER_MODE.MANAGED).toBe("managed");
         expect(SERVER_MODE.EXTERNAL).toBe("external");
+    });
+});
+
+describe("DOWNLOAD_PANEL constants", () => {
+    it("has MAX_VISIBLE and DISMISS_DELAY_MS", () => {
+        expect(DOWNLOAD_PANEL.MAX_VISIBLE).toBe(5);
+        expect(DOWNLOAD_PANEL.DISMISS_DELAY_MS).toBe(1500);
     });
 });
 

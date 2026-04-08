@@ -340,6 +340,14 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             expect(() => plugin.onunload()).not.toThrow();
         });
+
+        it("calls downloadPanel.detach()", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const detachSpy = plugin.downloadPanel!.detach;
+            plugin.onunload();
+            expect(detachSpy).toHaveBeenCalled();
+        });
     });
 
     describe("loadSettings()", () => {
