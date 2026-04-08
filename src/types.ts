@@ -368,6 +368,11 @@ export const WIZARD_STEP = {
     DONE: 4,
 } as const satisfies Record<string, number>;
 
+export const DOWNLOAD_PANEL = {
+    MAX_VISIBLE: 5,
+    DISMISS_DELAY_MS: 1500,
+} as const;
+
 export const PLATFORM = {
     DARWIN: "darwin",
     LINUX: "linux",
