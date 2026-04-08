@@ -140,6 +140,7 @@ export interface LilbeeSettings {
     searchChunkType: SearchChunkType;
     wikiSyncToVault: boolean;
     wikiVaultFolder: string;
+    hfToken: string;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -166,6 +167,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     searchChunkType: "all",
     wikiSyncToVault: false,
     wikiVaultFolder: "lilbee-wiki",
+    hfToken: "",
 };
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */
@@ -399,6 +401,16 @@ export const CATALOG_VIEW_MODE = {
     GRID: "grid",
     LIST: "list",
 } as const satisfies Record<string, CatalogViewMode>;
+
+export interface ModelShowResponse {
+    architecture?: string;
+    context_length?: string;
+    embedding_length?: string;
+    chat_template?: string;
+    file_type?: string;
+    parameters?: string;
+    [key: string]: string | undefined;
+}
 
 export interface ModelCardOptions {
     onClick?: (family: ModelFamily, variant: ModelVariant) => void;

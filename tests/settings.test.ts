@@ -305,8 +305,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + systemPrompt + 6 generation + syncDebounce + 3 crawling + 5 advanced = 17
-            expect(textOnChanges.length).toBe(17);
+            // serverPort + systemPrompt + 6 generation + syncDebounce + 3 crawling + 6 advanced (incl. hfToken) = 18
+            expect(textOnChanges.length).toBe(18);
         });
 
         it("does NOT show sync-debounce when syncMode is 'manual'", () => {
@@ -314,8 +314,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + systemPrompt + 6 generation + 3 crawling + 5 advanced = 16
-            expect(textOnChanges.length).toBe(16);
+            // serverPort + systemPrompt + 6 generation + 3 crawling + 6 advanced (incl. hfToken) = 17
+            expect(textOnChanges.length).toBe(17);
         });
     });
 
@@ -2629,6 +2629,161 @@ describe("managed mode settings", () => {
         });
     });
 
+    describe("HuggingFace token onChange", () => {
+        it("calls updateConfig and saves settings on non-empty value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // Index 15: HF token (after API key at 14)
+            await textOnChanges[15]("hf_test123");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ hf_token: "hf_test123" });
+            expect(plugin.settings.hfToken).toBe("hf_test123");
+            expect(Notice.instances.some((n: any) => n.message.includes("HuggingFace token saved"))).toBe(true);
+        });
+
+        it("saves empty token", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[15]("");
+            expect(plugin.settings.hfToken).toBe("");
+        });
+
+        it("shows error notice on failure", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[15]("hf_test123");
+            expect(Notice.instances.some((n: any) => n.message.includes("failed to save HuggingFace token"))).toBe(
+                true,
+            );
+        });
+    });
+
+    describe("settings filter", () => {
+        it("renders a filter input at the top", () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+            const input = tab.containerEl.children.find(
+                (c: any) => c.tagName === "INPUT" && c.classList?.contains("lilbee-settings-filter"),
+            );
+            expect(input).toBeDefined();
+        });
+
+        it("calls filterSettings on input event", () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const filterSpy = vi.spyOn(tab as any, "filterSettings");
+
+            const input = tab.containerEl.children.find(
+                (c: any) => c.tagName === "INPUT" && c.classList?.contains("lilbee-settings-filter"),
+            );
+            expect(input).toBeDefined();
+
+            (input as any).value = "sync";
+            input!.trigger("input");
+
+            expect(filterSpy).toHaveBeenCalledWith(tab.containerEl, "sync");
+        });
+
+        it("filterSettings hides non-matching items and shows matching ones", () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+
+            // Manually build a section with setting items to test the inner loop
+            const container = new MockElement("div") as any;
+            const section = container.createEl("details", { cls: "lilbee-settings-section" });
+
+            const item1 = section.createDiv({ cls: "setting-item" });
+            const name1 = item1.createDiv({ cls: "setting-item-name" });
+            name1.textContent = "Server URL";
+
+            const item2 = section.createDiv({ cls: "setting-item" });
+            const name2 = item2.createDiv({ cls: "setting-item-name" });
+            name2.textContent = "Sync mode";
+
+            // Filter for "sync" — only item2 should match
+            (tab as any).filterSettings(container, "sync");
+
+            expect(item1.style.display).toBe("none");
+            expect(item2.style.display).toBe("");
+            expect(section.style.display).toBe("");
+            expect(section.attributes.open).toBe("");
+        });
+
+        it("filterSettings handles items without setting-item-name", () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const container = new MockElement("div") as any;
+            const section = container.createEl("details", { cls: "lilbee-settings-section" });
+
+            // Item with no setting-item-name child
+            section.createDiv({ cls: "setting-item" });
+
+            // Should not crash, item won't match any search term
+            (tab as any).filterSettings(container, "anything");
+            const items = section.findAll("setting-item");
+            expect(items[0].style.display).toBe("none");
+        });
+
+        it("filterSettings hides entire section when no items match", () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const container = new MockElement("div") as any;
+            const section = container.createEl("details", { cls: "lilbee-settings-section" });
+
+            const item1 = section.createDiv({ cls: "setting-item" });
+            const name1 = item1.createDiv({ cls: "setting-item-name" });
+            name1.textContent = "Server URL";
+
+            (tab as any).filterSettings(container, "zzz_nonexistent");
+
+            expect(item1.style.display).toBe("none");
+            expect(section.style.display).toBe("none");
+        });
+
+        it("filterSettings shows all items when query is empty", () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const container = new MockElement("div") as any;
+            const section = container.createEl("details", { cls: "lilbee-settings-section" });
+
+            const item1 = section.createDiv({ cls: "setting-item" });
+            const name1 = item1.createDiv({ cls: "setting-item-name" });
+            name1.textContent = "Server URL";
+
+            // Filter then clear
+            (tab as any).filterSettings(container, "zzz");
+            (tab as any).filterSettings(container, "");
+
+            expect(item1.style.display).toBe("");
+            expect(section.style.display).toBe("");
+        });
+    });
+
     describe("LiteLLM base URL onChange", () => {
         it("calls updateConfig on non-empty value", async () => {
             const plugin = makePlugin();
@@ -2636,8 +2791,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 15: LiteLLM base URL
-            await textOnChanges[15]("http://localhost:4000");
+            // Index 16: LiteLLM base URL (shifted by hfToken at 15)
+            await textOnChanges[16]("http://localhost:4000");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ litellm_base_url: "http://localhost:4000" });
         });
 
@@ -2647,7 +2802,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[15]("  ");
+            await textOnChanges[16]("  ");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2658,7 +2813,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[15]("http://localhost:4000");
+            await textOnChanges[16]("http://localhost:4000");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update LiteLLM URL"))).toBe(true);
         });
     });

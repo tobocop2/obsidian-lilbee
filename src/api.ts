@@ -10,6 +10,7 @@ import type {
     GenerationOptions,
     InstalledResponse,
     Message,
+    ModelShowResponse,
     ModelsResponse,
     SearchChunkType,
     SSEEvent,
@@ -278,7 +279,7 @@ export class LilbeeClient {
         return res.json();
     }
 
-    async showModel(model: string): Promise<Record<string, unknown>> {
+    async showModel(model: string): Promise<ModelShowResponse> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/show`, {
             method: "POST",
             headers: { ...JSON_HEADERS, ...this.authHeaders() },

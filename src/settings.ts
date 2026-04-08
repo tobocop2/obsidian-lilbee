@@ -87,6 +87,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
         containerEl.empty();
         this.serverConfigInputs.clear();
 
+        const filterInput = containerEl.createEl("input", {
+            cls: "lilbee-settings-filter",
+            placeholder: MESSAGES.PLACEHOLDER_FILTER_SETTINGS,
+            attr: { type: "text" },
+        });
+        filterInput.addEventListener("input", () => {
+            this.filterSettings(containerEl, (filterInput as unknown as HTMLInputElement).value);
+        });
+
         this.renderConnectionSettings(containerEl);
         this.renderModelsSection(containerEl);
         this.renderSearchRetrievalSettings(containerEl);
@@ -96,6 +105,26 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderWikiSettings(containerEl);
         this.renderAdvancedSettings(containerEl);
         this.loadModelDefaults();
+    }
+
+    private filterSettings(containerEl: HTMLElement, query: string): void {
+        const term = query.trim().toLowerCase();
+        const sections = containerEl.querySelectorAll(".lilbee-settings-section");
+        for (const section of Array.from(sections)) {
+            const items = section.querySelectorAll(".setting-item");
+            let visibleCount = 0;
+            for (const item of Array.from(items)) {
+                const nameEl = item.querySelector(".setting-item-name");
+                const name = nameEl?.textContent?.toLowerCase() ?? "";
+                const matches = !term || name.includes(term);
+                (item as HTMLElement).style.display = matches ? "" : "none";
+                if (matches) visibleCount++;
+            }
+            (section as HTMLElement).style.display = visibleCount > 0 || !term ? "" : "none";
+            if (term && visibleCount > 0) {
+                section.setAttribute("open", "");
+            }
+        }
     }
 
     private renderConnectionSettings(containerEl: HTMLElement): void {
@@ -378,7 +407,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private renderGenerationSettings(containerEl: HTMLElement): void {
-        const details = containerEl.createEl("details", { cls: "lilbee-generation-details" });
+        const details = containerEl.createEl("details", { cls: "lilbee-generation-details lilbee-settings-section" });
         const modelLabel = this.plugin.activeModel || MESSAGES.LABEL_NO_MODEL_SELECTED;
         details.createEl("summary", { text: `${MESSAGES.LABEL_GENERATION} (${modelLabel})` });
 
@@ -536,7 +565,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private renderWikiSettings(containerEl: HTMLElement): void {
         const wikiEnabled = this.plugin.wikiEnabled;
         const heading = wikiEnabled ? MESSAGES.LABEL_WIKI_SECTION : MESSAGES.LABEL_WIKI_NOT_ENABLED;
-        const details = containerEl.createEl("details", { cls: "lilbee-advanced-details" });
+        const details = containerEl.createEl("details", { cls: "lilbee-advanced-details lilbee-settings-section" });
         details.createEl("summary", { text: heading });
 
         if (!wikiEnabled) {
@@ -657,7 +686,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private renderAdvancedSettings(containerEl: HTMLElement): void {
-        const details = containerEl.createEl("details", { cls: "lilbee-advanced-details" });
+        const details = containerEl.createEl("details", { cls: "lilbee-advanced-details lilbee-settings-section" });
         details.createEl("summary", { text: MESSAGES.LABEL_ADVANCED });
 
         const advancedFields: { key: string; name: string; desc: string; reindex: boolean }[] = [
@@ -765,6 +794,26 @@ export class LilbeeSettingTab extends PluginSettingTab {
                             new Notice(MESSAGES.NOTICE_API_KEY_SAVED);
                         } catch {
                             new Notice(MESSAGES.NOTICE_FAILED_SAVE_KEY);
+                        }
+                    });
+                text.inputEl.type = "password";
+            });
+
+        new Setting(details)
+            .setName(MESSAGES.LABEL_HF_TOKEN)
+            .setDesc(MESSAGES.DESC_HF_TOKEN)
+            .addText((text) => {
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_HF_TOKEN)
+                    .setValue(this.plugin.settings.hfToken)
+                    .onChange(async (value) => {
+                        const trimmed = value.trim();
+                        this.plugin.settings.hfToken = trimmed;
+                        await this.plugin.saveSettings();
+                        try {
+                            await this.plugin.api.updateConfig({ hf_token: trimmed });
+                            new Notice(MESSAGES.NOTICE_HF_TOKEN_SAVED);
+                        } catch {
+                            new Notice(MESSAGES.NOTICE_FAILED_HF_TOKEN);
                         }
                     });
                 text.inputEl.type = "password";
