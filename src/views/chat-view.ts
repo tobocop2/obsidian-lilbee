@@ -9,7 +9,7 @@ import {
     WorkspaceLeaf,
 } from "obsidian";
 import type LilbeePlugin from "../main";
-import { MODEL_TYPE, SSE_EVENT, TASK_TYPE } from "../types";
+import { MODEL_TYPE, SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
 import type { GenerationOptions, Message, ModelCatalog, ModelType, SearchChunkType, Source, SSEEvent } from "../types";
 import { renderSourceChip } from "./results";
 import { buildModelOptions, SEPARATOR_KEY } from "../settings";
@@ -346,7 +346,7 @@ export class ChatView extends ItemView {
             new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
             this.refreshModelSelector();
         } catch (err) {
-            if (err instanceof Error && err.name === "AbortError") {
+            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
@@ -419,7 +419,7 @@ export class ChatView extends ItemView {
                 this.handleStreamEvent(event, textEl, assistantBubble, state, revealContent, scheduleRender);
             }
         } catch (err) {
-            if (err instanceof Error && err.name === "AbortError") {
+            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 revealContent();
                 if (state.fullContent) {
                     void this.renderMarkdown(textEl, state.fullContent + "\n\n*(stopped)*");

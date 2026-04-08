@@ -6,6 +6,7 @@ import { ServerManager } from "./server-manager";
 import { LilbeeSettingTab } from "./settings";
 import {
     DEFAULT_SETTINGS,
+    ERROR_NAME,
     SERVER_MODE,
     SSE_EVENT,
     SYNC_MODE,
@@ -30,6 +31,7 @@ import { TaskCenterView, VIEW_TYPE_TASKS } from "./views/task-center";
 import { WikiView, VIEW_TYPE_WIKI } from "./views/wiki-view";
 import { LintModal } from "./views/lint-modal";
 import { ConfirmModal } from "./views/confirm-modal";
+import { StatusModal } from "./views/status-modal";
 import { TaskQueue } from "./task-queue";
 import { WikiSync } from "./wiki-sync";
 
@@ -386,14 +388,7 @@ export default class LilbeePlugin extends Plugin {
         this.addCommand({
             id: "lilbee:status",
             name: "Show status",
-            callback: async () => {
-                const status = await this.api.status();
-                if (status.isOk()) {
-                    new Notice(MESSAGES.NOTICE_STATUS(status.value.sources.length, status.value.total_chunks));
-                } else {
-                    new Notice(MESSAGES.ERROR_COULD_NOT_CONNECT);
-                }
-            },
+            callback: () => new StatusModal(this.app, this).open(),
         });
     }
 
@@ -579,7 +574,7 @@ export default class LilbeePlugin extends Plugin {
             }
             this.taskQueue.complete(taskId);
         } catch (err) {
-            if (err instanceof Error && err.name === "AbortError") {
+            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.STATUS_ADD_CANCELLED);
                 this.taskQueue.cancel(taskId);
             } else {
@@ -782,7 +777,7 @@ export default class LilbeePlugin extends Plugin {
             }
             this.taskQueue.complete(taskId);
         } catch (err) {
-            if (err instanceof Error && err.name === "AbortError") {
+            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.STATUS_SYNC_CANCELLED);
                 this.taskQueue.cancel(taskId);
             } else {

@@ -98,15 +98,6 @@ function findButtons(el: MockElement): MockElement[] {
     return buttons;
 }
 
-function _findByText(el: MockElement, text: string): MockElement | null {
-    if (el.textContent === text) return el;
-    for (const child of el.children) {
-        const found = findByText(child, text);
-        if (found) return found;
-    }
-    return null;
-}
-
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe("SetupWizard", () => {
@@ -410,12 +401,28 @@ describe("SetupWizard", () => {
             const families = [
                 makeFamily({
                     family: "Qwen3-Small",
-                    variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B", size_gb: 0.5, min_ram_gb: 4 })],
+                    variants: [
+                        makeVariant({
+                            name: "0.6B",
+                            hf_repo: "qwen/qwen3-0.6B",
+                            size_gb: 0.5,
+                            min_ram_gb: 4,
+                            display_name: "Qwen3 0.6B",
+                        }),
+                    ],
                     recommended: "0.6B",
                 }),
                 makeFamily({
                     family: "Qwen3-Medium",
-                    variants: [makeVariant({ name: "4B", hf_repo: "qwen/qwen3-4B", size_gb: 2.5, min_ram_gb: 8 })],
+                    variants: [
+                        makeVariant({
+                            name: "4B",
+                            hf_repo: "qwen/qwen3-4B",
+                            size_gb: 2.5,
+                            min_ram_gb: 8,
+                            display_name: "Qwen3 4B",
+                        }),
+                    ],
                     recommended: "4B",
                 }),
             ];
@@ -429,11 +436,11 @@ describe("SetupWizard", () => {
             const el = wizard.contentEl as unknown as MockElement;
             const texts = collectTexts(el);
             expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(true);
-            expect(texts.some((t) => t.includes("Qwen3-Small"))).toBe(true);
-            expect(texts.some((t) => t.includes("Qwen3-Medium"))).toBe(true);
+            expect(texts.some((t) => t.includes("Qwen3 0.6B"))).toBe(true);
+            expect(texts.some((t) => t.includes("Qwen3 4B"))).toBe(true);
         });
 
-        it("pre-selects recommended model based on first in list when no memory detection", async () => {
+        it("pre-selects recommended model with is-selected class", async () => {
             const families = [
                 makeFamily({
                     family: "Qwen3-Small",
@@ -454,12 +461,52 @@ describe("SetupWizard", () => {
             await tick();
 
             const el = wizard.contentEl as unknown as MockElement;
-            const options = el.findAll("lilbee-wizard-model-option");
+            const cards = el.findAll("lilbee-model-card");
             // At least one should be selected
-            expect(options.some((o) => o.classList.contains("selected"))).toBe(true);
+            expect(cards.some((c) => c.classList.contains("is-selected"))).toBe(true);
         });
 
-        it("clicking a model option selects it", async () => {
+        it("renders 'Our picks' section heading", async () => {
+            const families = [
+                makeFamily({
+                    family: "Qwen3-Small",
+                    variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B" })],
+                    recommended: "0.6B",
+                }),
+            ];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(families)));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const headings = el.findAll("lilbee-catalog-section-heading");
+            expect(headings.some((h) => h.textContent === "Our picks")).toBe(true);
+        });
+
+        it("renders model cards in grid layout", async () => {
+            const families = [
+                makeFamily({
+                    family: "Qwen3-Small",
+                    variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B" })],
+                    recommended: "0.6B",
+                }),
+            ];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(families)));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            expect(el.find("lilbee-catalog-grid")).not.toBeNull();
+            expect(el.findAll("lilbee-model-card").length).toBe(1);
+        });
+
+        it("clicking a model card selects it", async () => {
             const families = [
                 makeFamily({
                     family: "Qwen3-Small",
@@ -480,10 +527,11 @@ describe("SetupWizard", () => {
             await tick();
 
             const el = wizard.contentEl as unknown as MockElement;
-            const options = el.findAll("lilbee-wizard-model-option");
-            options[1].trigger("click");
-            expect(options[1].classList.contains("selected")).toBe(true);
-            expect(options[0].classList.contains("selected")).toBe(false);
+            const cards = el.findAll("lilbee-model-card");
+            // Click the second card (simulating card click, not button)
+            cards[1].trigger("click", { target: { tagName: "DIV" } });
+            expect(cards[1].classList.contains("is-selected")).toBe(true);
+            expect(cards[0].classList.contains("is-selected")).toBe(false);
         });
 
         it("shows error when catalog fetch fails", async () => {
@@ -516,7 +564,15 @@ describe("SetupWizard", () => {
                 makeFamily({
                     family: "Qwen3",
                     recommended: "nonexistent",
-                    variants: [makeVariant({ name: "0.6B", hf_repo: "qwen/qwen3-0.6B", size_gb: 0.5, min_ram_gb: 4 })],
+                    variants: [
+                        makeVariant({
+                            name: "0.6B",
+                            hf_repo: "qwen/qwen3-0.6B",
+                            size_gb: 0.5,
+                            min_ram_gb: 4,
+                            display_name: "Qwen3 0.6B",
+                        }),
+                    ],
                 }),
             ];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
@@ -528,7 +584,7 @@ describe("SetupWizard", () => {
 
             const el = wizard.contentEl as unknown as MockElement;
             const texts = collectTexts(el);
-            expect(texts.some((t) => t.includes("Qwen3"))).toBe(true);
+            expect(texts.some((t) => t.includes("Qwen3 0.6B"))).toBe(true);
             expect(texts.some((t) => t.includes("0.5 GB"))).toBe(true);
         });
 
@@ -1030,37 +1086,42 @@ describe("SetupWizard", () => {
                     recommended: "0.6B",
                 }),
             ];
+            let capturedSignal: AbortSignal | null = null;
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(families)));
-            plugin.api.pullModel = vi.fn().mockReturnValue(
-                (async function* () {
-                    yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
-                    await new Promise(() => {});
-                })(),
-            );
+            plugin.api.pullModel = vi
+                .fn()
+                .mockImplementation((_model: string, _source: string, signal: AbortSignal) => {
+                    capturedSignal = signal;
+                    return (async function* () {
+                        yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
+                        await new Promise(() => {});
+                    })();
+                });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             wizard.next();
             await tick();
 
-            // Start pull
             const el = wizard.contentEl as unknown as MockElement;
             const downloadBtn = findButtons(el).find((b) => b.textContent === "Download & continue")!;
             downloadBtn.trigger("click");
             await tick();
 
-            // Close should abort
             wizard.close();
+            expect(capturedSignal?.aborted).toBe(true);
         });
 
         it("aborts sync controller on close", async () => {
+            let capturedSignal: AbortSignal | null = null;
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.syncStream = vi.fn().mockReturnValue(
-                (async function* () {
+            plugin.api.syncStream = vi.fn().mockImplementation((_vision: boolean, signal: AbortSignal) => {
+                capturedSignal = signal;
+                return (async function* () {
                     yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 100 } };
                     await new Promise(() => {});
-                })(),
-            );
+                })();
+            });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 3;
@@ -1068,14 +1129,7 @@ describe("SetupWizard", () => {
             await tick();
 
             wizard.close();
-        });
-
-        it("clears server check timer on close", () => {
-            const plugin = makePlugin();
-            const wizard = new SetupWizard(plugin.app as any, plugin as any);
-            (wizard as any).serverCheckTimer = setTimeout(() => {}, 10000);
-            wizard.close();
-            // Should not throw
+            expect(capturedSignal?.aborted).toBe(true);
         });
     });
 

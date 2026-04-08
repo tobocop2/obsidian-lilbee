@@ -1,4 +1,4 @@
-import { JSON_HEADERS, SSE_EVENT } from "./types";
+import { JSON_HEADERS, SSE_EVENT, ERROR_NAME } from "./types";
 import { ok, err, Result } from "neverthrow";
 
 import type {
@@ -10,6 +10,7 @@ import type {
     GenerationOptions,
     InstalledResponse,
     Message,
+    ModelShowResponse,
     ModelsResponse,
     SearchChunkType,
     SSEEvent,
@@ -101,7 +102,7 @@ export class LilbeeClient {
                 if (err instanceof Error && err.message.startsWith("Server responded")) {
                     throw err;
                 }
-                if (err instanceof Error && err.name === "AbortError") {
+                if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                     throw err;
                 }
             }
@@ -278,7 +279,7 @@ export class LilbeeClient {
         return res.json();
     }
 
-    async showModel(model: string): Promise<Record<string, unknown>> {
+    async showModel(model: string): Promise<ModelShowResponse> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/show`, {
             method: "POST",
             headers: { ...JSON_HEADERS, ...this.authHeaders() },

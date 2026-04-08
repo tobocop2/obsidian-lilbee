@@ -58,6 +58,23 @@ describe("MESSAGES", () => {
             expect(MESSAGES.LABEL_VISION_MODEL).toBe("Vision Model");
             expect(MESSAGES.LABEL_REASONING).toBe("Reasoning");
             expect(MESSAGES.LABEL_SOURCES).toBe("Sources");
+            expect(MESSAGES.LABEL_OUR_PICKS).toBe("Our picks");
+            expect(MESSAGES.LABEL_SECTION_INSTALLED).toBe("Installed");
+            expect(MESSAGES.LABEL_SECTION_CHAT).toBe("Chat");
+            expect(MESSAGES.LABEL_SECTION_EMBEDDING).toBe("Embedding");
+            expect(MESSAGES.LABEL_SECTION_VISION).toBe("Vision");
+            expect(MESSAGES.LABEL_PICK).toBe("pick");
+            expect(MESSAGES.LABEL_SWITCH_TO_LIST).toBe("Switch to list view");
+            expect(MESSAGES.LABEL_SWITCH_TO_GRID).toBe("Switch to grid view");
+            expect(MESSAGES.LABEL_BROWSE_MORE).toBe("Browse more models");
+            expect(MESSAGES.LABEL_VIEW_TOGGLE_CTA).toBe("Switch to list view for the full catalog");
+            expect(MESSAGES.LABEL_NO_MODELS_FOUND).toBe("No models match your filters.");
+            expect(MESSAGES.LABEL_TASK).toBe("Task");
+            expect(MESSAGES.LABEL_QUANT).toBe("Quant");
+            expect(MESSAGES.LABEL_DOWNLOADS_COUNT("1.5K")).toBe("1.5K downloads");
+            expect(MESSAGES.LABEL_SIZE_SMALL).toBe("Small");
+            expect(MESSAGES.LABEL_SIZE_MEDIUM).toBe("Medium");
+            expect(MESSAGES.LABEL_SIZE_LARGE).toBe("Large");
         });
     });
 

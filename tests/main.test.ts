@@ -3,8 +3,6 @@ import { Notice } from "obsidian";
 import { App, WorkspaceLeaf } from "./__mocks__/obsidian";
 import { SSE_EVENT } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
-import { ok, err } from "neverthrow";
-
 vi.mock("../src/api", () => ({
     LilbeeClient: vi.fn().mockImplementation(() => ({
         status: vi.fn(),
@@ -44,6 +42,10 @@ vi.mock("../src/views/crawl-modal", () => ({
 
 vi.mock("../src/views/documents-modal", () => ({
     DocumentsModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
+}));
+
+vi.mock("../src/views/status-modal", () => ({
+    StatusModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
 }));
 
 vi.mock("../src/views/setup-wizard", () => ({
@@ -703,39 +705,15 @@ describe("LilbeePlugin", () => {
             expect(syncSpy).toHaveBeenCalled();
         });
 
-        it("lilbee:status shows status Notice on success", async () => {
+        it("lilbee:status opens StatusModal", async () => {
+            const { StatusModal } = await import("../src/views/status-modal");
             const plugin = await createPlugin();
             await plugin.onload();
 
-            plugin.api.status = vi.fn().mockResolvedValue(
-                ok({
-                    sources: [
-                        { filename: "a.md", chunk_count: 3 },
-                        { filename: "b.md", chunk_count: 2 },
-                    ],
-                    total_chunks: 5,
-                    config: {},
-                }),
-            );
-
             const cb = await getCommandCallback(plugin, "lilbee:status");
-            await cb?.();
+            cb?.();
 
-            expect(
-                Notice.instances.some((n) => n.message.includes("2 documents") && n.message.includes("5 chunks")),
-            ).toBe(true);
-        });
-
-        it("lilbee:status shows error Notice on API failure", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-
-            plugin.api.status = vi.fn().mockResolvedValue(err(new Error("timeout")));
-
-            const cb = await getCommandCallback(plugin, "lilbee:status");
-            await cb?.();
-
-            expect(Notice.instances.some((n) => n.message.includes("cannot connect"))).toBe(true);
+            expect(StatusModal).toHaveBeenCalled();
         });
 
         it("lilbee:catalog opens CatalogModal", async () => {
