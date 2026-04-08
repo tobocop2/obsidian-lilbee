@@ -117,7 +117,8 @@ export class CrawlModal extends Modal {
                         const d = event.data as { message?: string };
                         this.plugin.taskQueue.fail(taskId, d.message ?? "unknown");
                         new Notice(MESSAGES.ERROR_CRAWL_ERROR.replace("{msg}", d.message ?? "unknown"));
-                        if (this.progressEl) this.progressEl.textContent = `Error: ${d.message ?? "unknown"}`;
+                        if (this.progressEl)
+                            this.progressEl.textContent = MESSAGES.LABEL_ERROR_PREFIX(d.message ?? "unknown");
                         if (crawlBtn) (crawlBtn as HTMLButtonElement).disabled = false;
                         this.decide(false);
                         return;
@@ -130,7 +131,7 @@ export class CrawlModal extends Modal {
             const msg = err instanceof Error ? err.message : "unknown error";
             this.plugin.taskQueue.fail(taskId, msg);
             new Notice(MESSAGES.ERROR_CRAWL_FAILED.replace("{msg}", msg));
-            if (this.progressEl) this.progressEl.textContent = `Failed: ${msg}`;
+            if (this.progressEl) this.progressEl.textContent = MESSAGES.LABEL_FAILED_PREFIX(msg);
             if (crawlBtn) (crawlBtn as HTMLButtonElement).disabled = false;
             this.decide(false);
         } finally {

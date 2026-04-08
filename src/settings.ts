@@ -10,8 +10,18 @@ import {
     SYNC_MODE,
     TASK_TYPE,
     ERROR_NAME,
+    SEARCH_CHUNK_TYPE,
 } from "./types";
-import type { GenerationOptions, ModelCatalog, ModelInfo, ModelType, ModelsResponse, ServerMode } from "./types";
+import type {
+    GenerationOptions,
+    ModelCatalog,
+    ModelInfo,
+    ModelType,
+    ModelsResponse,
+    SearchChunkType,
+    ServerMode,
+    SyncMode,
+} from "./types";
 import { MESSAGES } from "./locales/en";
 import { CatalogModal } from "./views/catalog-modal";
 import { ConfirmModal } from "./views/confirm-modal";
@@ -168,7 +178,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const dot = statusEl.createDiv({ cls: "lilbee-server-dot" });
         const stateText = statusEl.createEl("span");
 
-        const serverState = this.plugin.serverManager?.state ?? "stopped";
+        const serverState = this.plugin.serverManager?.state ?? SERVER_STATE.STOPPED;
         stateText.textContent = serverState;
         dot.classList.add(`is-${serverState}`);
 
@@ -255,7 +265,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     const result = await this.plugin.checkForUpdate();
                     if (result.available && result.release) {
                         pendingRelease = result.release;
-                        checkBtn.setButtonText(`Update to ${result.release.tag}`);
+                        checkBtn.setButtonText(MESSAGES.LABEL_UPDATE_TO(result.release.tag));
                         checkBtn.setDisabled(false);
                     } else {
                         new Notice(MESSAGES.ERROR_ALREADY_UPTODATE);
@@ -426,12 +436,22 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         this.genInputs.clear();
         const fields: { key: GenKey; name: string; desc: string; integer: boolean }[] = [
-            { key: "temperature", name: "Temperature", desc: "Controls randomness (0.0–2.0)", integer: false },
-            { key: "top_p", name: "Top P", desc: "Nucleus sampling threshold (0.0–1.0)", integer: false },
-            { key: "top_k_sampling", name: "Top K (sampling)", desc: "Limits token choices per step", integer: true },
-            { key: "repeat_penalty", name: "Repeat penalty", desc: "Penalizes repeated tokens (1.0+)", integer: false },
-            { key: "num_ctx", name: "Context length", desc: "Max context window in tokens", integer: true },
-            { key: "seed", name: "Seed", desc: "Fixed seed for reproducible output", integer: true },
+            {
+                key: "temperature",
+                name: MESSAGES.LABEL_GEN_TEMPERATURE,
+                desc: MESSAGES.DESC_GEN_TEMPERATURE,
+                integer: false,
+            },
+            { key: "top_p", name: MESSAGES.LABEL_GEN_TOP_P, desc: MESSAGES.DESC_GEN_TOP_P, integer: false },
+            { key: "top_k_sampling", name: MESSAGES.LABEL_GEN_TOP_K, desc: MESSAGES.DESC_GEN_TOP_K, integer: true },
+            {
+                key: "repeat_penalty",
+                name: MESSAGES.LABEL_GEN_REPEAT_PENALTY,
+                desc: MESSAGES.DESC_GEN_REPEAT_PENALTY,
+                integer: false,
+            },
+            { key: "num_ctx", name: MESSAGES.LABEL_GEN_NUM_CTX, desc: MESSAGES.DESC_GEN_NUM_CTX, integer: true },
+            { key: "seed", name: MESSAGES.LABEL_GEN_SEED, desc: MESSAGES.DESC_GEN_SEED, integer: true },
         ];
 
         for (const field of fields) {
@@ -485,11 +505,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_SYNC_MODE)
             .addDropdown((dropdown) =>
                 dropdown
-                    .addOption("manual", MESSAGES.DESC_SYNC_MANUAL)
-                    .addOption("auto", MESSAGES.DESC_SYNC_AUTO)
+                    .addOption(SYNC_MODE.MANUAL, MESSAGES.DESC_SYNC_MANUAL)
+                    .addOption(SYNC_MODE.AUTO, MESSAGES.DESC_SYNC_AUTO)
                     .setValue(this.plugin.settings.syncMode)
                     .onChange(async (value) => {
-                        this.plugin.settings.syncMode = value as "manual" | "auto";
+                        this.plugin.settings.syncMode = value as SyncMode;
                         await this.plugin.saveSettings();
                         this.display();
                     }),
@@ -520,19 +540,19 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const crawlFields: { key: string; name: string; desc: string; placeholder: string }[] = [
             {
                 key: "crawl_max_depth",
-                name: "Max depth",
+                name: MESSAGES.LABEL_CRAWL_MAX_DEPTH,
                 desc: MESSAGES.DESC_CRAWL_MAX_DEPTH,
                 placeholder: MESSAGES.PLACEHOLDER_0,
             },
             {
                 key: "crawl_max_pages",
-                name: "Max pages",
+                name: MESSAGES.LABEL_CRAWL_MAX_PAGES,
                 desc: MESSAGES.DESC_CRAWL_MAX_PAGES,
                 placeholder: MESSAGES.PLACEHOLDER_50,
             },
             {
                 key: "crawl_timeout",
-                name: "Timeout (seconds)",
+                name: MESSAGES.LABEL_CRAWL_TIMEOUT,
                 desc: MESSAGES.DESC_CRAWL_TIMEOUT,
                 placeholder: MESSAGES.PLACEHOLDER_30,
             },
@@ -577,7 +597,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
 
         // Wiki status (display only)
-        const statusDesc = `Enabled — ${this.plugin.wikiPageCount} pages, ${this.plugin.wikiDraftCount} drafts`;
+        const statusDesc = MESSAGES.LABEL_WIKI_STATUS_DESC(this.plugin.wikiPageCount, this.plugin.wikiDraftCount);
         new Setting(details).setName(MESSAGES.LABEL_WIKI_STATUS).setDesc(statusDesc).setDisabled(true);
 
         // Prune raw chunks
@@ -625,12 +645,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_WIKI_SEARCH_MODE)
             .addDropdown((dropdown) => {
                 dropdown
-                    .addOption("all", MESSAGES.LABEL_SEARCH_ALL)
-                    .addOption("wiki", MESSAGES.LABEL_SEARCH_WIKI)
-                    .addOption("raw", MESSAGES.LABEL_SEARCH_RAW)
+                    .addOption(SEARCH_CHUNK_TYPE.ALL, MESSAGES.LABEL_SEARCH_ALL)
+                    .addOption(SEARCH_CHUNK_TYPE.WIKI, MESSAGES.LABEL_SEARCH_WIKI)
+                    .addOption(SEARCH_CHUNK_TYPE.RAW, MESSAGES.LABEL_SEARCH_RAW)
                     .setValue(this.plugin.settings.searchChunkType)
                     .onChange(async (value) => {
-                        this.plugin.settings.searchChunkType = value as "all" | "wiki" | "raw";
+                        this.plugin.settings.searchChunkType = value as SearchChunkType;
                         await this.plugin.saveSettings();
                     });
             });
@@ -881,7 +901,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         section.createEl("h4", { text: label });
 
         const activeSetting = new Setting(section)
-            .setName(`${MESSAGES.LABEL_ACTIVE} ${type} model`)
+            .setName(MESSAGES.LABEL_ACTIVE_MODEL(type))
             .setDesc(catalog.active || (type === MODEL_TYPE.VISION ? MESSAGES.LABEL_DISABLED : MESSAGES.LABEL_NOT_SET));
 
         const options = buildModelOptions(catalog, type);
@@ -910,11 +930,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private async setModel(model: { name: string }, type: ModelType): Promise<void> {
-        if (type === MODEL_TYPE.CHAT) {
-            await this.plugin.api.setChatModel(model.name);
-        } else {
-            await this.plugin.api.setVisionModel(model.name);
-        }
+        const result =
+            type === MODEL_TYPE.CHAT
+                ? await this.plugin.api.setChatModel(model.name)
+                : await this.plugin.api.setVisionModel(model.name);
+        if (result.isErr()) throw result.error;
     }
 
     private async handleModelChange(
@@ -994,7 +1014,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             actionCell.createEl("span", { text: MESSAGES.LABEL_INSTALLED, cls: "lilbee-installed" });
             const deleteBtn = actionCell.createEl("button", { cls: "lilbee-model-delete" }) as HTMLButtonElement;
             setIcon(deleteBtn, "trash-2");
-            deleteBtn.setAttribute("aria-label", "Delete model");
+            deleteBtn.setAttribute("aria-label", MESSAGES.LABEL_DELETE_MODEL);
             deleteBtn.addEventListener("click", () => this.deleteModel(deleteBtn, model, type));
         } else {
             const btn = actionCell.createEl("button", { text: MESSAGES.BUTTON_PULL }) as HTMLButtonElement;
@@ -1070,11 +1090,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
         new Notice(MESSAGES.NOTICE_REMOVED(model.name));
         if (type === MODEL_TYPE.CHAT && model.name === this.plugin.activeModel) {
-            await this.plugin.api.setChatModel("");
-            this.plugin.activeModel = "";
+            const r = await this.plugin.api.setChatModel("");
+            if (r.isOk()) this.plugin.activeModel = "";
         } else if (type === MODEL_TYPE.VISION && model.name === this.plugin.activeVisionModel) {
-            await this.plugin.api.setVisionModel("");
-            this.plugin.activeVisionModel = "";
+            const r = await this.plugin.api.setVisionModel("");
+            if (r.isOk()) this.plugin.activeVisionModel = "";
         }
         this.plugin.fetchActiveModel();
         const modelsContainer = this.containerEl.querySelector(`.${CLS_MODELS_CONTAINER}`);

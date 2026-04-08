@@ -1,5 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
+import { SEARCH_CHUNK_TYPE } from "../types";
 import type { DocumentResult, SearchChunkType } from "../types";
 import { renderDocumentResult, renderSourceChip } from "./results";
 import { MESSAGES } from "../locales/en";
@@ -74,9 +75,9 @@ export class SearchModal extends Modal {
 
     private renderSearchModeToggle(container: HTMLElement): void {
         const modes: { value: SearchChunkType; label: string }[] = [
-            { value: "all", label: MESSAGES.LABEL_SEARCH_ALL },
-            { value: "wiki", label: MESSAGES.LABEL_SEARCH_WIKI },
-            { value: "raw", label: MESSAGES.LABEL_SEARCH_RAW },
+            { value: SEARCH_CHUNK_TYPE.ALL, label: MESSAGES.LABEL_SEARCH_ALL },
+            { value: SEARCH_CHUNK_TYPE.WIKI, label: MESSAGES.LABEL_SEARCH_WIKI },
+            { value: SEARCH_CHUNK_TYPE.RAW, label: MESSAGES.LABEL_SEARCH_RAW },
         ];
         const group = container.createDiv({ cls: "lilbee-search-mode" });
         for (const mode of modes) {

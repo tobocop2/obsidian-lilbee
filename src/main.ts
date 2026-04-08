@@ -8,6 +8,7 @@ import {
     DEFAULT_SETTINGS,
     ERROR_NAME,
     SERVER_MODE,
+    SERVER_STATE,
     SSE_EVENT,
     SYNC_MODE,
     TASK_TYPE,
@@ -248,22 +249,22 @@ export default class LilbeePlugin extends Plugin {
 
     private handleServerStateChange(state: ServerState): void {
         switch (state) {
-            case "ready":
+            case SERVER_STATE.READY:
                 if (this.serverManager) {
                     this.api = new LilbeeClient(this.serverManager.serverUrl);
                 }
                 this.setStatusReady();
                 new Notice(MESSAGES.STATUS_READY, NOTICE_DURATION_MS);
                 break;
-            case "starting":
+            case SERVER_STATE.STARTING:
                 this.updateStatusBar(MESSAGES.STATUS_STARTING);
                 this.setStatusClass("lilbee-status-starting");
                 break;
-            case "error":
+            case SERVER_STATE.ERROR:
                 this.updateStatusBar(MESSAGES.STATUS_ERROR);
                 this.setStatusClass(null);
                 break;
-            case "stopped":
+            case SERVER_STATE.STOPPED:
                 this.updateStatusBar(MESSAGES.STATUS_STOPPED);
                 this.setStatusClass(null);
                 break;

@@ -116,6 +116,12 @@ export const MODEL_TYPE = {
 
 export type SearchChunkType = "all" | "wiki" | "raw";
 
+export const SEARCH_CHUNK_TYPE = {
+    ALL: "all",
+    WIKI: "wiki",
+    RAW: "raw",
+} as const satisfies Record<string, SearchChunkType>;
+
 export interface LilbeeSettings {
     serverUrl: string;
     topK: number;
@@ -164,7 +170,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     wikiEnabled: false,
     wikiPruneRaw: false,
     wikiFaithfulnessThreshold: 0.7,
-    searchChunkType: "all",
+    searchChunkType: SEARCH_CHUNK_TYPE.ALL,
     wikiSyncToVault: false,
     wikiVaultFolder: "lilbee-wiki",
     hfToken: "",

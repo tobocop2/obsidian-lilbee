@@ -1,4 +1,4 @@
-import { JSON_HEADERS, SSE_EVENT, ERROR_NAME } from "./types";
+import { JSON_HEADERS, SSE_EVENT, ERROR_NAME, SEARCH_CHUNK_TYPE } from "./types";
 import { ok, err, Result } from "neverthrow";
 
 import type {
@@ -8,9 +8,11 @@ import type {
     DocumentResult,
     DocumentsResponse,
     GenerationOptions,
-    InstalledResponse,
     Message,
     ModelShowResponse,
+    ModelSort,
+    ModelSize,
+    ModelTask,
     ModelsResponse,
     SearchChunkType,
     SSEEvent,
@@ -121,7 +123,7 @@ export class LilbeeClient {
     async search(query: string, topK?: number, chunkType?: SearchChunkType): Promise<DocumentResult[]> {
         const params = new URLSearchParams({ q: query });
         if (topK !== undefined) params.set("top_k", String(topK));
-        if (chunkType && chunkType !== "all") params.set("chunk_type", chunkType);
+        if (chunkType && chunkType !== SEARCH_CHUNK_TYPE.ALL) params.set("chunk_type", chunkType);
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/search?${params}`);
         return res.json();
     }
@@ -254,10 +256,10 @@ export class LilbeeClient {
     }
 
     async catalog(params?: {
-        task?: "chat" | "embedding" | "vision";
+        task?: ModelTask;
         search?: string;
-        size?: "small" | "medium" | "large";
-        sort?: "featured" | "downloads" | "name" | "size_asc" | "size_desc";
+        size?: ModelSize;
+        sort?: ModelSort;
         featured?: boolean;
         limit?: number;
         offset?: number;
@@ -272,11 +274,6 @@ export class LilbeeClient {
         if (params?.offset !== undefined) qs.set("offset", String(params.offset));
         const suffix = qs.toString() ? `?${qs}` : "";
         return this.fetchResult<CatalogResponse>(`${this.baseUrl}/api/models/catalog${suffix}`);
-    }
-
-    async installedModels(): Promise<InstalledResponse> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/installed`);
-        return res.json();
     }
 
     async showModel(model: string): Promise<ModelShowResponse> {

@@ -1,4 +1,5 @@
 import { App } from "obsidian";
+import { SEARCH_CHUNK_TYPE } from "../types";
 import type { DocumentResult, Source } from "../types";
 
 const MAX_EXCERPT_CHARS = 200;
@@ -66,7 +67,7 @@ export function renderDocumentResult(container: HTMLElement, result: DocumentRes
 }
 
 export function renderSourceChip(container: HTMLElement, source: Source, onWikiClick?: (slug: string) => void): void {
-    const isWiki = source.chunk_type === "wiki";
+    const isWiki = source.chunk_type === SEARCH_CHUNK_TYPE.WIKI;
     const cls = isWiki ? "lilbee-source-chip lilbee-source-chip-wiki" : "lilbee-source-chip";
     const chip = container.createEl("span", { cls });
 

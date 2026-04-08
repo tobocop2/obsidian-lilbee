@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
+import { Notice } from "obsidian";
 import {
     WikiSync,
     pageVaultPath,
@@ -51,6 +52,7 @@ let sync: WikiSync;
 
 beforeEach(() => {
     vi.resetAllMocks();
+    Notice.clear();
     sync = new WikiSync(mockApi as unknown as LilbeeClient, mockVault, FOLDER);
 });
 
@@ -283,6 +285,36 @@ describe("reconcile", () => {
         expect(mockApi.wikiPage).toHaveBeenCalledWith("c");
         expect(mockApi.wikiPage).not.toHaveBeenCalledWith("other");
     });
+
+    it("shows Notice and returns zeros when wikiList fails", async () => {
+        vi.mocked(mockApi.wikiList).mockRejectedValue(new Error("network"));
+
+        const result = await sync.reconcile();
+
+        expect(result).toEqual({ written: 0, removed: 0 });
+        expect(Notice.instances.length).toBe(1);
+    });
+
+    it("shows Notice and continues when wikiPage fails for a single page", async () => {
+        const pages = [
+            makePage({ slug: "ok", page_type: "summary" }),
+            makePage({ slug: "fail", page_type: "summary" }),
+        ];
+        vi.mocked(mockApi.wikiList).mockResolvedValue(pages);
+        vi.mocked(mockVault.exists).mockImplementation(async (path: string) => {
+            if (path.endsWith(".md")) return false;
+            return true;
+        });
+        vi.mocked(mockApi.wikiPage).mockImplementation(async (slug: string) => {
+            if (slug === "fail") throw new Error("network");
+            return makeDetail({ slug });
+        });
+
+        const result = await sync.reconcile();
+
+        expect(result.written).toBe(1);
+        expect(Notice.instances.length).toBe(1);
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -327,6 +359,15 @@ describe("writePage", () => {
         expect(mockVault.mkdir).toHaveBeenCalledWith("wiki");
         expect(mockVault.mkdir).toHaveBeenCalledWith("wiki/summaries");
         expect(mockVault.mkdir).toHaveBeenCalledWith("wiki/concepts");
+    });
+
+    it("shows Notice when wikiPage fails", async () => {
+        vi.mocked(mockApi.wikiPage).mockRejectedValue(new Error("network"));
+
+        await sync.writePage("broken");
+
+        expect(Notice.instances.length).toBe(1);
+        expect(mockVault.write).not.toHaveBeenCalled();
     });
 });
 

@@ -1,6 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { ModelFamily, SSEEvent, SyncDone } from "../types";
+import type { ModelFamily, ServerMode, SSEEvent, SyncDone } from "../types";
 import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK } from "../types";
 import { CatalogModal } from "./catalog-modal";
 import { MESSAGES, FILTERS } from "../locales/en";
@@ -116,7 +116,7 @@ export class SetupWizard extends Modal {
 
         step.createEl("h2", { text: MESSAGES.TITLE_SERVER_MODE });
 
-        let mode: "managed" | "external" =
+        let mode: ServerMode =
             this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL ? SERVER_MODE.EXTERNAL : SERVER_MODE.MANAGED;
 
         const managedOption = step.createDiv({
@@ -357,8 +357,8 @@ export class SetupWizard extends Modal {
                 }
             }
 
-            await this.plugin.api.setChatModel(model.name);
-            this.plugin.activeModel = model.name;
+            const setResult = await this.plugin.api.setChatModel(model.name);
+            if (setResult.isOk()) this.plugin.activeModel = model.name;
             this.plugin.fetchActiveModel();
             this.pulledModelName = model.name;
             this.step = WIZARD_STEP.SYNC;

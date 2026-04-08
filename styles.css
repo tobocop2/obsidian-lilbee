@@ -1849,3 +1849,180 @@
     text-align: right;
     padding: 0 4px;
 }
+
+/* Chat toolbar selects */
+.lilbee-chat-model-select,
+.lilbee-chat-vision-select {
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: var(--font-small, 13px);
+    max-width: 180px;
+}
+
+.lilbee-chat-textarea {
+    flex: 1;
+}
+
+.lilbee-chat-clear {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-chat-clear:hover {
+    color: var(--text-normal);
+    background-color: var(--background-modifier-hover);
+    border-radius: var(--radius-s, 4px);
+}
+
+/* Reasoning collapsible */
+.lilbee-reasoning {
+    margin-top: var(--size-4-2, 8px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    padding: var(--size-4-2, 8px);
+}
+
+.lilbee-reasoning summary {
+    cursor: pointer;
+    font-weight: var(--font-semibold);
+    color: var(--text-muted);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-reasoning-content {
+    margin-top: var(--size-4-2, 8px);
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+}
+
+/* Confirm modal */
+.lilbee-confirm-modal {
+    max-width: 400px;
+}
+
+.lilbee-confirm-actions {
+    display: flex;
+    gap: var(--size-4-2, 8px);
+    justify-content: flex-end;
+    margin-top: var(--size-4-4, 16px);
+}
+
+/* Confirm pull modal */
+.lilbee-confirm-pull {
+    max-width: 400px;
+}
+
+.lilbee-confirm-pull-info {
+    margin: var(--size-4-2, 8px) 0;
+}
+
+.lilbee-confirm-pull-info p {
+    margin: var(--size-4-1, 4px) 0;
+}
+
+.lilbee-confirm-pull-actions {
+    display: flex;
+    gap: var(--size-4-2, 8px);
+    justify-content: flex-end;
+    margin-top: var(--size-4-4, 16px);
+}
+
+/* Model card downloads count */
+.lilbee-model-card-downloads {
+    font-size: var(--font-smallest, 10px);
+    color: var(--text-muted);
+}
+
+/* Settings filter */
+.lilbee-settings-filter {
+    width: 100%;
+    padding: var(--size-4-2, 8px);
+    margin-bottom: var(--size-4-4, 16px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: var(--font-ui-medium, 14px);
+}
+
+/* Catalog filter selects */
+.lilbee-catalog-filter-task,
+.lilbee-catalog-filter-size,
+.lilbee-catalog-filter-sort {
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: var(--font-small, 13px);
+}
+
+/* Catalog view toggle */
+.lilbee-catalog-view-toggle {
+    background: none;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-catalog-view-toggle:hover {
+    color: var(--text-normal);
+    background-color: var(--background-modifier-hover);
+}
+
+/* Wizard model list */
+.lilbee-wizard-models {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-2, 8px);
+    margin: var(--size-4-4, 16px) 0;
+}
+
+/* Crawl modal fields */
+.lilbee-crawl-depth,
+.lilbee-crawl-max-pages {
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+/* Status modal */
+.lilbee-status-modal {
+    max-width: 500px;
+}
+
+.lilbee-status-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: var(--size-4-2, 8px) 0;
+}
+
+.lilbee-status-table td {
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-status-label {
+    color: var(--text-muted);
+    font-weight: var(--font-semibold);
+    white-space: nowrap;
+}
+
+.lilbee-status-value {
+    color: var(--text-normal);
+    word-break: break-word;
+}
+
+/* Settings section groups (used by filter) */
+.lilbee-settings-section {
+    margin-bottom: var(--size-4-4, 16px);
+}

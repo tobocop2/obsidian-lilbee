@@ -9,7 +9,7 @@ import {
     WorkspaceLeaf,
 } from "obsidian";
 import type LilbeePlugin from "../main";
-import { MODEL_TYPE, SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
+import { MODEL_TYPE, SSE_EVENT, TASK_TYPE, ERROR_NAME, SEARCH_CHUNK_TYPE } from "../types";
 import type { GenerationOptions, Message, ModelCatalog, ModelType, SearchChunkType, Source, SSEEvent } from "../types";
 import { renderSourceChip } from "./results";
 import { buildModelOptions, SEPARATOR_KEY } from "../settings";
@@ -145,9 +145,9 @@ export class ChatView extends ItemView {
         // Search mode toggle
         const modeGroup = toolbar.createDiv({ cls: "lilbee-search-mode" });
         const modes: { value: SearchChunkType; label: string }[] = [
-            { value: "all", label: MESSAGES.LABEL_SEARCH_ALL },
-            { value: "wiki", label: MESSAGES.LABEL_SEARCH_WIKI },
-            { value: "raw", label: MESSAGES.LABEL_SEARCH_RAW },
+            { value: SEARCH_CHUNK_TYPE.ALL, label: MESSAGES.LABEL_SEARCH_ALL },
+            { value: SEARCH_CHUNK_TYPE.WIKI, label: MESSAGES.LABEL_SEARCH_WIKI },
+            { value: SEARCH_CHUNK_TYPE.RAW, label: MESSAGES.LABEL_SEARCH_RAW },
         ];
         for (const mode of modes) {
             const btn = modeGroup.createEl("button", {
@@ -228,8 +228,8 @@ export class ChatView extends ItemView {
                 if (this.visionSelectEl) this.visionSelectEl.empty();
                 this.chatCatalog = models.chat;
                 this.visionCatalog = models.vision;
-                if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl, models.chat, "chat");
-                if (this.visionSelectEl) this.fillSelectOptions(this.visionSelectEl, models.vision, "vision");
+                if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl, models.chat, MODEL_TYPE.CHAT);
+                if (this.visionSelectEl) this.fillSelectOptions(this.visionSelectEl, models.vision, MODEL_TYPE.VISION);
                 // No models installed — show empty state with catalog button
                 if (models.chat.installed.length === 0 && models.vision.installed.length === 0) {
                     this.showEmptyState();
@@ -257,7 +257,7 @@ export class ChatView extends ItemView {
             });
     }
 
-    private fillSelectOptions(selectEl: HTMLSelectElement, catalog: ModelCatalog, type: "chat" | "vision"): void {
+    private fillSelectOptions(selectEl: HTMLSelectElement, catalog: ModelCatalog, type: ModelType): void {
         const options = buildModelOptions(catalog, type);
         for (const [value, label] of Object.entries(options)) {
             const option = selectEl.createEl("option", { text: label });
@@ -335,11 +335,11 @@ export class ChatView extends ItemView {
                 }
             }
             if (type === MODEL_TYPE.CHAT) {
-                await this.plugin.api.setChatModel(model.name);
-                this.plugin.activeModel = model.name;
+                const r = await this.plugin.api.setChatModel(model.name);
+                if (r.isOk()) this.plugin.activeModel = model.name;
             } else {
-                await this.plugin.api.setVisionModel(model.name);
-                this.plugin.activeVisionModel = model.name;
+                const r = await this.plugin.api.setVisionModel(model.name);
+                if (r.isOk()) this.plugin.activeVisionModel = model.name;
             }
             this.plugin.fetchActiveModel();
             this.plugin.taskQueue.complete(taskId);
@@ -422,10 +422,10 @@ export class ChatView extends ItemView {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 revealContent();
                 if (state.fullContent) {
-                    void this.renderMarkdown(textEl, state.fullContent + "\n\n*(stopped)*");
+                    void this.renderMarkdown(textEl, state.fullContent + "\n\n" + MESSAGES.LABEL_STOPPED_MARKDOWN);
                     this.history.push({ role: "assistant", content: state.fullContent });
                 } else {
-                    textEl.textContent = "(stopped)";
+                    textEl.textContent = MESSAGES.LABEL_STOPPED;
                 }
             } else {
                 assistantBubble.remove();

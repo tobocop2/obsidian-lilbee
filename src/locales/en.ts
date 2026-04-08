@@ -49,7 +49,6 @@ export const MESSAGES = {
     LABEL_DESCRIPTION: "Description",
     LABEL_CHAT_MODEL: "Chat Model",
     LABEL_VISION_MODEL: "Vision Model",
-    LABEL_ACTIVE_MODEL: "Active",
     LABEL_REASONING: "Reasoning",
     LABEL_SOURCES: "Sources",
     LABEL_DEPTH: "Depth:",
@@ -387,6 +386,36 @@ export const MESSAGES = {
     LABEL_SEARCH_ALL: "All",
     LABEL_SEARCH_WIKI: "Wiki",
     LABEL_SEARCH_RAW: "Raw",
+
+    // Generation parameter names + descriptions
+    LABEL_GEN_TEMPERATURE: "Temperature",
+    DESC_GEN_TEMPERATURE: "Controls randomness (0.0–2.0)",
+    LABEL_GEN_TOP_P: "Top P",
+    DESC_GEN_TOP_P: "Nucleus sampling threshold (0.0–1.0)",
+    LABEL_GEN_TOP_K: "Top K (sampling)",
+    DESC_GEN_TOP_K: "Limits token choices per step",
+    LABEL_GEN_REPEAT_PENALTY: "Repeat penalty",
+    DESC_GEN_REPEAT_PENALTY: "Penalizes repeated tokens (1.0+)",
+    LABEL_GEN_NUM_CTX: "Context length",
+    DESC_GEN_NUM_CTX: "Max context window in tokens",
+    LABEL_GEN_SEED: "Seed",
+    DESC_GEN_SEED: "Fixed seed for reproducible output",
+
+    // Crawl setting names
+    LABEL_CRAWL_MAX_DEPTH: "Max depth",
+    LABEL_CRAWL_MAX_PAGES: "Max pages",
+    LABEL_CRAWL_TIMEOUT: "Timeout (seconds)",
+
+    // Chat stopped indicator
+    LABEL_STOPPED_MARKDOWN: "*(stopped)*",
+
+    // Settings — dynamic labels
+    LABEL_WIKI_STATUS_DESC: (pages: number, drafts: number) => `Enabled — ${pages} pages, ${drafts} drafts`,
+    LABEL_UPDATE_TO: (tag: string) => `Update to ${tag}`,
+    LABEL_ACTIVE_MODEL: (type: string) => `Active ${type} model`,
+    LABEL_DELETE_MODEL: "Delete model",
+    LABEL_ERROR_PREFIX: (msg: string) => `Error: ${msg}`,
+    LABEL_FAILED_PREFIX: (msg: string) => `Failed: ${msg}`,
 
     // Wiki tasks/notices
     NOTICE_WIKI_LINT_DONE: (issues: number) => `lilbee: lint complete — ${issues} issues found`,

@@ -478,18 +478,6 @@ describe("pullModel()", () => {
         });
     });
 
-    describe("installedModels()", () => {
-        it("calls GET /api/models/installed", async () => {
-            const data = { models: [{ name: "qwen3:8b", source: "native" }] };
-            fetchMock.mockResolvedValue(jsonResponse(data));
-
-            const result = await client.installedModels();
-
-            expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/installed`, expect.objectContaining({}));
-            expect(result).toEqual(data);
-        });
-    });
-
     describe("showModel()", () => {
         it("POSTs to /api/models/show", async () => {
             const data = { temperature: 0.7, num_ctx: 4096 };
