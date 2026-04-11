@@ -104,6 +104,7 @@ vi.mock("../src/binary-manager", () => ({
         mkdirSync: vi.fn(),
         chmodSync: vi.fn(),
         writeFileSync: vi.fn(),
+        readFileSync: vi.fn(),
         requestUrl: vi.fn(),
     },
 }));
@@ -117,7 +118,6 @@ vi.mock("../src/server-manager", () => ({
             stop: mockServerStop,
             restart: vi.fn(),
             updatePort: mockUpdatePort,
-            readSessionToken: vi.fn().mockReturnValue(null),
             get serverUrl() {
                 return `http://127.0.0.1:${opts.port}`;
             },
@@ -1864,6 +1864,16 @@ describe("LilbeePlugin", () => {
             expect(callsAfter).toBeGreaterThan(callsBefore);
         });
 
+        it("readCurrentToken returns null in managed mode when the server manager is missing", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+            // Simulate a transient state where managed mode is configured but
+            // the manager hasn't been constructed yet (or was torn down).
+            (plugin as any).serverManager = null;
+            expect((plugin as any).readCurrentToken()).toBeNull();
+        });
+
         it("handleServerStateChange ready re-reads the session token after a restart", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
@@ -1872,14 +1882,16 @@ describe("LilbeePlugin", () => {
             const stateChange = mockServerOpts?.onStateChange;
             expect(stateChange).toBeDefined();
 
-            const mgr = (plugin as any).serverManager as {
-                readSessionToken: ReturnType<typeof vi.fn>;
-            };
-            mgr.readSessionToken.mockReturnValue("fresh-token-after-restart");
+            const expectedTokenPath = `${mockServerOpts.dataDir}/data/server.json`;
+            const { node } = await import("../src/binary-manager");
+            (node.existsSync as ReturnType<typeof vi.fn>).mockImplementation((p: unknown) => p === expectedTokenPath);
+            (node.readFileSync as ReturnType<typeof vi.fn>).mockImplementation((p: unknown) =>
+                p === expectedTokenPath ? JSON.stringify({ token: "fresh-token-after-restart" }) : "",
+            );
 
             stateChange("ready");
-            const instances = (plugin.api as unknown as { setToken: ReturnType<typeof vi.fn> }).setToken;
-            expect(instances).toHaveBeenCalledWith("fresh-token-after-restart");
+            const setToken = (plugin.api as unknown as { setToken: ReturnType<typeof vi.fn> }).setToken;
+            expect(setToken).toHaveBeenCalledWith("fresh-token-after-restart");
         });
 
         it("handleServerStateChange error sets lilbee-status-error class", async () => {

@@ -295,20 +295,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         void this.checkEndpoint(`${this.plugin.settings.serverUrl}/api/health`, serverStatusEl);
 
-        new Setting(containerEl)
-            .setName(MESSAGES.LABEL_SERVER_TOKEN)
-            .setDesc(MESSAGES.DESC_SERVER_TOKEN)
-            .addText((text) => {
-                const input = text
-                    .setPlaceholder(MESSAGES.PLACEHOLDER_SERVER_TOKEN)
-                    .setValue(this.plugin.settings.serverToken)
-                    .onChange(async (value) => {
-                        this.plugin.settings.serverToken = value;
-                        await this.plugin.saveSettings();
-                    });
-                input.inputEl.type = "password";
-                input.inputEl.autocomplete = "off";
-            });
+        new Setting(containerEl).setName(MESSAGES.LABEL_SESSION_TOKEN).setDesc(MESSAGES.DESC_SESSION_TOKEN_AUTO);
 
         new Setting(containerEl)
             .setName(MESSAGES.LABEL_SWITCH_MANAGED)

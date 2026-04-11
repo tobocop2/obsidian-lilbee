@@ -58,18 +58,6 @@ export class ServerManager {
         return `${this.opts.dataDir}/data/server.port`;
     }
 
-    readSessionToken(): string | null {
-        const tokenPath = `${this.opts.dataDir}/data/server.json`;
-        try {
-            if (!node.existsSync(tokenPath)) return null;
-            const content = node.readFileSync(tokenPath, "utf-8");
-            const parsed = JSON.parse(content) as { token?: unknown };
-            return typeof parsed.token === "string" ? parsed.token : null;
-        } catch {
-            return null;
-        }
-    }
-
     private async waitForPortFile(): Promise<void> {
         for (let i = 0; i < SERVER_MANAGER_CONFIG.PORT_FILE_MAX_ATTEMPTS; i++) {
             if (node.existsSync(this.portFilePath)) {

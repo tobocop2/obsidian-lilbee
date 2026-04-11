@@ -3,6 +3,7 @@ import { LilbeeClient } from "./api";
 import { BinaryManager, getLatestRelease, checkForUpdate } from "./binary-manager";
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
+import { readSessionToken, resolveExternalDataRoot } from "./session-token";
 import { LilbeeSettingTab } from "./settings";
 import {
     DEFAULT_SETTINGS,
@@ -136,7 +137,7 @@ export default class LilbeePlugin extends Plugin {
             void this.startManagedServer();
         } else {
             this.api = new LilbeeClient(this.settings.serverUrl);
-            this.api.setToken(this.settings.serverToken || null);
+            this.api.setToken(this.readCurrentToken());
             this.setStatusReady();
             this.fetchActiveModel();
         }
@@ -217,7 +218,7 @@ export default class LilbeePlugin extends Plugin {
                 this.setStatusClass("lilbee-status-starting");
                 await this.serverManager.start();
                 this.api = new LilbeeClient(this.serverManager.serverUrl);
-                this.api.setToken(this.serverManager.readSessionToken());
+                this.api.setToken(this.readCurrentToken());
                 this.fetchActiveModel();
             } catch (err) {
                 this.showError("failed to start server", err);
@@ -283,7 +284,7 @@ export default class LilbeePlugin extends Plugin {
                 if (this.serverManager) {
                     this.api = new LilbeeClient(this.serverManager.serverUrl);
                     // Re-apply the token — each server start writes a fresh server.json.
-                    this.api.setToken(this.serverManager.readSessionToken());
+                    this.api.setToken(this.readCurrentToken());
                 }
                 this.serverUnreachable = false;
                 this.setStatusReady();
@@ -311,6 +312,21 @@ export default class LilbeePlugin extends Plugin {
     private getVaultBasePath(): string {
         const adapter = this.app.vault.adapter as unknown as VaultAdapter;
         return adapter.getBasePath();
+    }
+
+    /**
+     * Read the lilbee session token.
+     *
+     * Managed mode: reads from the plugin-owned server-data directory.
+     * External mode: auto-discovers the user's data root the same way lilbee
+     * itself does (LILBEE_DATA env > .lilbee walk-up > platform default).
+     */
+    private readCurrentToken(): string | null {
+        if (this.settings.serverMode === SERVER_MODE.MANAGED) {
+            return this.serverManager ? readSessionToken(this.serverManager.dataDir) : null;
+        }
+        const dataRoot = resolveExternalDataRoot(this.getVaultBasePath());
+        return readSessionToken(dataRoot);
     }
 
     private registerCommands(): void {
@@ -454,7 +470,7 @@ export default class LilbeePlugin extends Plugin {
             } else if (this.serverManager) {
                 this.serverManager.updatePort(this.settings.serverPort);
                 this.api = new LilbeeClient(this.serverManager.serverUrl);
-                this.api.setToken(this.serverManager.readSessionToken());
+                this.api.setToken(this.readCurrentToken());
             }
         } else {
             if (previousMode === SERVER_MODE.MANAGED) {
@@ -463,7 +479,7 @@ export default class LilbeePlugin extends Plugin {
                 this.binaryManager = null;
             }
             this.api = new LilbeeClient(this.settings.serverUrl);
-            this.api.setToken(this.settings.serverToken || null);
+            this.api.setToken(this.readCurrentToken());
         }
 
         this.updateAutoSync();
@@ -503,6 +519,9 @@ export default class LilbeePlugin extends Plugin {
     private async probeServerHealth(): Promise<void> {
         if (this.taskQueue.activeAll.length > 0) return;
         if (this.startingServer) return;
+        // Re-read the token before probing — the server writes a fresh one on
+        // every restart, and this is the cheapest way to stay in sync.
+        this.api.setToken(this.readCurrentToken());
         const ok = (await this.api.health().catch(() => null))?.isOk() ?? false;
         if (ok) {
             if (this.serverUnreachable) {

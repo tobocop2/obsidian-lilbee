@@ -141,7 +141,6 @@ export interface LilbeeSettings {
     wikiSyncToVault: boolean;
     wikiVaultFolder: string;
     hfToken: string;
-    serverToken: string;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -169,7 +168,6 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     wikiSyncToVault: false,
     wikiVaultFolder: "lilbee-wiki",
     hfToken: "",
-    serverToken: "",
 };
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */
