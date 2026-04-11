@@ -300,7 +300,7 @@ export class SetupWizard extends Modal {
         this.selectedModel = model;
         for (const child of Array.from(grid.children)) {
             const el = child as HTMLElement;
-            if (el.dataset.name === model.name) {
+            if (el.dataset.repo === model.hf_repo) {
                 el.classList.add("is-selected");
             } else {
                 el.classList.remove("is-selected");
@@ -318,11 +318,15 @@ export class SetupWizard extends Modal {
         if (!this.selectedModel) return;
         const model = this.selectedModel;
         progressEl.style.display = "";
-        progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL.replace("{model}", model.name);
+        progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL.replace("{model}", model.hf_repo);
         this.pullController = new AbortController();
 
         try {
-            for await (const event of this.plugin.api.pullModel(model.name, model.source, this.pullController.signal)) {
+            for await (const event of this.plugin.api.pullModel(
+                model.hf_repo,
+                model.source,
+                this.pullController.signal,
+            )) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { current?: number; total?: number };
                     if (d.total && d.current !== undefined) {
@@ -330,16 +334,16 @@ export class SetupWizard extends Modal {
                         progressFill.style.width = `${pct}%`;
                         progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL_PCT.replace(
                             "{model}",
-                            model.name,
+                            model.hf_repo,
                         ).replace("{pct}", String(pct));
                     }
                 }
             }
 
-            await this.plugin.api.setChatModel(model.name);
-            this.plugin.activeModel = model.name;
+            await this.plugin.api.setChatModel(model.hf_repo);
+            this.plugin.activeModel = model.hf_repo;
             this.plugin.fetchActiveModel();
-            this.pulledModelName = model.name;
+            this.pulledModelName = model.hf_repo;
             this.step = WIZARD_STEP.SYNC;
             this.renderStep();
         } catch (err) {

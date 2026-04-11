@@ -31,7 +31,7 @@ vi.mock("../../src/views/confirm-modal", () => ({
 
 function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     return {
-        name: "qwen3:8b",
+        name: "qwen3",
         display_name: "Qwen3 8B",
         size_gb: 5,
         min_ram_gb: 8,
@@ -39,6 +39,11 @@ function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
         quality_tier: "balanced",
         installed: false,
         source: "native",
+        hf_repo: "qwen/qwen3-8b",
+        tag: "8b",
+        task: "chat",
+        featured: false,
+        downloads: 0,
         ...overrides,
     };
 }
@@ -150,7 +155,7 @@ describe("CatalogModal", () => {
                 ok(
                     makeCatalogResponse([
                         makeEntry({ name: "qwen3:0.6b", display_name: "Qwen3 0.6B", installed: true }),
-                        makeEntry({ name: "qwen3:8b", display_name: "Qwen3 8B", installed: false }),
+                        makeEntry({ hf_repo: "qwen/qwen3-8b", display_name: "Qwen3 8B", installed: false }),
                     ]),
                 ),
             );
@@ -158,6 +163,73 @@ describe("CatalogModal", () => {
             const content = contentEl(modal);
             const headings = content.findAll("lilbee-catalog-section-heading").map((el) => el.textContent);
             expect(headings).toContain(MESSAGES.LABEL_SECTION_INSTALLED);
+        });
+
+        it("renders an 'Our picks' section for featured entries", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeEntry({ hf_repo: "r1", display_name: "R1", featured: true }),
+                        makeEntry({ hf_repo: "r2", display_name: "R2", featured: false }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const headings = content.findAll("lilbee-catalog-section-heading").map((el) => el.textContent);
+            expect(headings).toContain(MESSAGES.LABEL_OUR_PICKS);
+        });
+
+        it("groups non-featured entries by task", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeEntry({ hf_repo: "a", display_name: "Chat A", task: "chat" }),
+                        makeEntry({ hf_repo: "b", display_name: "Vision B", task: "vision" }),
+                        makeEntry({ hf_repo: "c", display_name: "Embed C", task: "embedding" }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const headings = content.findAll("lilbee-catalog-section-heading").map((el) => el.textContent);
+            expect(headings).toContain(MESSAGES.LABEL_SECTION_CHAT);
+            expect(headings).toContain(MESSAGES.LABEL_SECTION_VISION);
+            expect(headings).toContain(MESSAGES.LABEL_SECTION_EMBEDDING);
+        });
+
+        it("uses the raw task string when an unknown task appears", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ hf_repo: "x", display_name: "X", task: "custom" as any })])),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const headings = content.findAll("lilbee-catalog-section-heading").map((el) => el.textContent);
+            expect(headings).toContain("custom");
+        });
+
+        it("renders a Browse more models card until the full catalog is loaded", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ featured: true })])));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            expect(content.find("lilbee-browse-more-card")).not.toBeNull();
+        });
+
+        it("clicking the Browse more card loads the full catalog and drops the card", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ featured: true })])));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            content.find("lilbee-browse-more-card")!.trigger("click");
+            await tick();
+            await tick();
+            expect(content.find("lilbee-browse-more-card")).toBeNull();
+            // The sort filter should now be downloads (loadFullCatalog side effect)
+            expect(plugin.api.catalog).toHaveBeenLastCalledWith(expect.objectContaining({ sort: "downloads" }));
         });
 
         it("renders the view-toggle CTA banner", async () => {
@@ -203,7 +275,7 @@ describe("CatalogModal", () => {
         });
 
         it("shows Active when the entry is the plugin's active model", async () => {
-            const plugin = makePlugin({ activeModel: "qwen3:8b" });
+            const plugin = makePlugin({ activeModel: "qwen/qwen3-8b" });
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
             const modal = await openModal(plugin);
             const content = contentEl(modal);
@@ -291,13 +363,13 @@ describe("CatalogModal", () => {
             expect(rows.length).toBe(2);
         });
 
-        it("sorts by quant column (string comparison)", async () => {
+        it("sorts alphabetically on task column", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(
                 ok(
                     makeCatalogResponse([
-                        makeEntry({ name: "a", display_name: "A", quality_tier: "balanced" }),
-                        makeEntry({ name: "b", display_name: "B", quality_tier: "accurate" }),
+                        makeEntry({ hf_repo: "a", display_name: "A", task: "vision" }),
+                        makeEntry({ hf_repo: "b", display_name: "B", task: "chat" }),
                     ]),
                 ),
             );
@@ -307,13 +379,82 @@ describe("CatalogModal", () => {
             await tick();
 
             const header = content.find("lilbee-catalog-list-header")!;
-            const quantCol = header.findAll("lilbee-catalog-list-col-quant")[0];
-            quantCol.trigger("click");
+            const taskCol = header.findAll("lilbee-catalog-list-col-task")[0];
+            taskCol.trigger("click");
             await tick();
             const rows = content
                 .findAll("lilbee-catalog-list-row")
                 .map((r) => r.findAll("lilbee-catalog-list-col-name")[0].textContent);
-            expect(rows[0]).toBe("B"); // "accurate" < "balanced"
+            expect(rows[0]).toBe("B"); // "chat" < "vision"
+        });
+
+        it("formats download counts with K and M abbreviations in the list view", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeEntry({ hf_repo: "a", display_name: "Millions", downloads: 2_500_000 }),
+                        makeEntry({ hf_repo: "b", display_name: "Thousands", downloads: 1500 }),
+                        makeEntry({ hf_repo: "c", display_name: "Raw", downloads: 42 }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            content.find("lilbee-catalog-view-toggle")!.trigger("click");
+            await tick();
+            const dls = content
+                .findAll("lilbee-catalog-list-row")
+                .map((r) => r.findAll("lilbee-catalog-list-col-downloads")[0].textContent);
+            expect(dls).toContain("2.5M");
+            expect(dls).toContain("1.5K");
+            expect(dls).toContain("42");
+        });
+
+        it("renders a star prefix on featured rows", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeEntry({ hf_repo: "a", display_name: "Featured A", featured: true }),
+                        makeEntry({ hf_repo: "b", display_name: "Plain B", featured: false }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            content.find("lilbee-catalog-view-toggle")!.trigger("click");
+            await tick();
+            const names = content
+                .findAll("lilbee-catalog-list-row")
+                .map((r) => r.findAll("lilbee-catalog-list-col-name")[0].textContent);
+            expect(names).toContain("\u2605 Featured A");
+            expect(names).toContain("Plain B");
+        });
+
+        it("sorts numerically on downloads column", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeEntry({ name: "a", display_name: "A", downloads: 100 }),
+                        makeEntry({ name: "b", display_name: "B", downloads: 5 }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            content.find("lilbee-catalog-view-toggle")!.trigger("click");
+            await tick();
+
+            const header = content.find("lilbee-catalog-list-header")!;
+            const dlCol = header.findAll("lilbee-catalog-list-col-downloads")[0];
+            dlCol.trigger("click");
+            await tick();
+            const rows = content
+                .findAll("lilbee-catalog-list-row")
+                .map((r) => r.findAll("lilbee-catalog-list-col-name")[0].textContent);
+            expect(rows[0]).toBe("B"); // 5 downloads sorts before 100
         });
     });
 
@@ -429,7 +570,7 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            expect(plugin.api.pullModel).toHaveBeenCalledWith("qwen3:8b", "native");
+            expect(plugin.api.pullModel).toHaveBeenCalledWith("qwen/qwen3-8b", "native");
         });
 
         it("does not run pull when user cancels the confirm modal", async () => {
@@ -462,31 +603,32 @@ describe("CatalogModal", () => {
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
-        it("uses setVisionModel when the task filter is vision", async () => {
+        it("uses setVisionModel when the entry is a vision task", async () => {
             const plugin = makePlugin();
-            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ installed: true, task: "vision" })])),
+            );
             const modal = await openModal(plugin);
-            // Switch filter to vision so handleUse takes the vision path
-            (modal as any).filterTask = "vision";
             const content = contentEl(modal);
             const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
             useBtn.trigger("click");
             await tick();
             await tick();
-            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("qwen3:8b");
+            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("qwen/qwen3-8b");
         });
 
-        it("uses setEmbeddingModel when the task filter is embedding", async () => {
+        it("uses setEmbeddingModel when the entry is an embedding task", async () => {
             const plugin = makePlugin();
-            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ installed: true, task: "embedding" })])),
+            );
             const modal = await openModal(plugin);
-            (modal as any).filterTask = "embedding";
             const content = contentEl(modal);
             const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
             useBtn.trigger("click");
             await tick();
             await tick();
-            expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("qwen3:8b");
+            expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("qwen/qwen3-8b");
         });
 
         it("uses setChatModel by default", async () => {
@@ -498,7 +640,7 @@ describe("CatalogModal", () => {
             useBtn.trigger("click");
             await tick();
             await tick();
-            expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen3:8b");
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen/qwen3-8b");
         });
 
         it("notices failure when Use fails", async () => {
@@ -512,20 +654,22 @@ describe("CatalogModal", () => {
             await tick();
             await tick();
             const messages = Notice.instances.map((n) => n.message);
-            expect(messages.some((m) => m.includes("qwen3:8b"))).toBe(true);
+            expect(messages.some((m) => m.includes("qwen/qwen3-8b"))).toBe(true);
         });
 
         it("opens confirm-remove modal and deletes the model on confirm", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
-            plugin.api.deleteModel = vi.fn().mockResolvedValue(ok({ deleted: true, model: "qwen3:8b", freed_gb: 5 }));
+            plugin.api.deleteModel = vi
+                .fn()
+                .mockResolvedValue(ok({ deleted: true, model: "qwen/qwen3-8b", freed_gb: 5 }));
             const modal = await openModal(plugin);
             const content = contentEl(modal);
             const removeBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_REMOVE)!;
             removeBtn.trigger("click");
             await tick();
             await tick();
-            expect(plugin.api.deleteModel).toHaveBeenCalledWith("qwen3:8b", "native");
+            expect(plugin.api.deleteModel).toHaveBeenCalledWith("qwen/qwen3-8b", "native");
         });
 
         it("skips delete when confirm is cancelled", async () => {
@@ -553,7 +697,7 @@ describe("CatalogModal", () => {
             await tick();
             await tick();
             const messages = Notice.instances.map((n) => n.message);
-            expect(messages.some((m) => m.includes("qwen3:8b"))).toBe(true);
+            expect(messages.some((m) => m.includes("qwen/qwen3-8b"))).toBe(true);
         });
 
         it("fails the task and surfaces a Notice when pull aborts", async () => {

@@ -209,6 +209,12 @@ export interface CatalogEntry {
     quality_tier: string;
     installed: boolean;
     source: "native" | "litellm";
+    hf_repo: string;
+    tag: string;
+    task: ModelTask;
+    featured: boolean;
+    downloads: number;
+    param_count?: string;
 }
 
 export interface CatalogResponse {

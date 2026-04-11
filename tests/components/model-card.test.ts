@@ -15,6 +15,11 @@ function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
         quality_tier: "balanced",
         installed: false,
         source: "native",
+        hf_repo: "qwen/qwen3-8b",
+        tag: "8b",
+        task: "chat",
+        featured: false,
+        downloads: 0,
         ...overrides,
     };
 }
@@ -29,7 +34,7 @@ describe("renderModelCard", () => {
         const card = renderModelCard(c, makeEntry(), {}) as unknown as MockElement;
 
         expect(card.classList.contains("lilbee-model-card")).toBe(true);
-        expect(card.dataset.name).toBe("qwen3:8b");
+        expect(card.dataset.repo).toBe("qwen/qwen3-8b");
         expect(card.find("lilbee-model-card-header")).not.toBeNull();
         expect(card.find("lilbee-model-card-specs")).not.toBeNull();
         expect(card.find("lilbee-model-card-status")).not.toBeNull();
@@ -68,6 +73,43 @@ describe("renderModelCard", () => {
         const c = container();
         const card = renderModelCard(c, makeEntry(), {}) as unknown as MockElement;
         expect(card.find(PILL_CLS.INSTALLED)).toBeNull();
+    });
+
+    it("shows a download count when not installed and downloads > 0", () => {
+        const c = container();
+        const card = renderModelCard(c, makeEntry({ downloads: 42 }), {}) as unknown as MockElement;
+        const dl = card.find("lilbee-model-card-downloads");
+        expect(dl?.textContent).toBe("42 downloads");
+    });
+
+    it("formats download counts in thousands", () => {
+        const c = container();
+        const card = renderModelCard(c, makeEntry({ downloads: 1500 }), {}) as unknown as MockElement;
+        expect(card.find("lilbee-model-card-downloads")?.textContent).toBe("1.5K downloads");
+    });
+
+    it("formats download counts in millions", () => {
+        const c = container();
+        const card = renderModelCard(c, makeEntry({ downloads: 2_500_000 }), {}) as unknown as MockElement;
+        expect(card.find("lilbee-model-card-downloads")?.textContent).toBe("2.5M downloads");
+    });
+
+    it("renders a task pill in the header", () => {
+        const c = container();
+        const card = renderModelCard(c, makeEntry({ task: "vision" }), {}) as unknown as MockElement;
+        expect(card.find(PILL_CLS.TASK_VISION)).not.toBeNull();
+    });
+
+    it("renders a pick pill when the entry is featured", () => {
+        const c = container();
+        const card = renderModelCard(c, makeEntry({ featured: true }), {}) as unknown as MockElement;
+        expect(card.find(PILL_CLS.PICK)).not.toBeNull();
+    });
+
+    it("omits the pick pill when the entry is not featured", () => {
+        const c = container();
+        const card = renderModelCard(c, makeEntry({ featured: false }), {}) as unknown as MockElement;
+        expect(card.find(PILL_CLS.PICK)).toBeNull();
     });
 
     describe("actions", () => {
