@@ -443,8 +443,34 @@ describe("pullModel()", () => {
     });
 
     describe("catalog()", () => {
-        it("calls GET /api/models/catalog and returns parsed response", async () => {
-            const data = { total: 50, limit: 20, offset: 0, models: [] };
+        it("calls GET /api/models/catalog and returns the parsed response", async () => {
+            const data = {
+                total: 2,
+                limit: 20,
+                offset: 0,
+                models: [
+                    {
+                        name: "qwen3:8b",
+                        display_name: "Qwen3 8B",
+                        size_gb: 5,
+                        min_ram_gb: 8,
+                        description: "medium",
+                        quality_tier: "balanced",
+                        installed: true,
+                        source: "litellm",
+                    },
+                    {
+                        name: "phi4:14b",
+                        display_name: "Phi 4 14B",
+                        size_gb: 9,
+                        min_ram_gb: 16,
+                        description: "large",
+                        quality_tier: "balanced",
+                        installed: false,
+                        source: "native",
+                    },
+                ],
+            };
             fetchMock.mockResolvedValue(jsonResponse(data));
 
             const result = await client.catalog();
@@ -452,6 +478,12 @@ describe("pullModel()", () => {
             expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/catalog`, expect.objectContaining({}));
             expect(result.isOk()).toBe(true);
             expect(result._unsafeUnwrap()).toEqual(data);
+        });
+
+        it("returns err(error) when the underlying HTTP call fails", async () => {
+            fetchMock.mockResolvedValue(new Response("boom", { status: 503, statusText: "Service Unavailable" }));
+            const result = await client.catalog();
+            expect(result.isErr()).toBe(true);
         });
 
         it("appends query params when provided", async () => {

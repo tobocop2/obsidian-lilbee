@@ -355,6 +355,7 @@ export class Plugin {
 
     registerView = vi.fn();
     registerEvent = vi.fn();
+    registerInterval = vi.fn((handle: number) => handle);
 }
 
 export class PluginSettingTab {

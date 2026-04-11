@@ -2,30 +2,24 @@ import { describe, it, expect, vi } from "vitest";
 import { MockElement } from "../__mocks__/obsidian";
 import { renderModelCard, renderBrowseMoreCard } from "../../src/components/model-card";
 import { PILL_CLS } from "../../src/components/pill";
-import type { ModelFamily, ModelVariant } from "../../src/types";
+import type { CatalogEntry } from "../../src/types";
 import { MESSAGES } from "../../src/locales/en";
 
-function makeVariant(overrides: Partial<ModelVariant> = {}): ModelVariant {
+function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     return {
-        name: "test-model:q4",
-        hf_repo: "org/test-model-q4",
-        size_gb: 4.2,
+        name: "qwen3:8b",
+        display_name: "Qwen3 8B",
+        size_gb: 5,
         min_ram_gb: 8,
-        description: "A test model",
-        task: "chat",
+        description: "Medium — strong general purpose",
+        quality_tier: "balanced",
         installed: false,
         source: "native",
-        ...overrides,
-    };
-}
-
-function makeFamily(overrides: Partial<ModelFamily> = {}): ModelFamily {
-    return {
-        family: "test-model",
+        hf_repo: "qwen/qwen3-8b",
+        tag: "8b",
         task: "chat",
         featured: false,
-        recommended: "test-model:q4",
-        variants: [makeVariant()],
+        downloads: 0,
         ...overrides,
     };
 }
@@ -37,155 +31,111 @@ function container(): HTMLElement {
 describe("renderModelCard", () => {
     it("creates card with correct structure", () => {
         const c = container();
-        const family = makeFamily();
-        const variant = makeVariant();
-        const card = renderModelCard(c, family, variant, {}) as unknown as MockElement;
+        const card = renderModelCard(c, makeEntry(), {}) as unknown as MockElement;
 
         expect(card.classList.contains("lilbee-model-card")).toBe(true);
-        expect(card.dataset.repo).toBe("org/test-model-q4");
+        expect(card.dataset.repo).toBe("qwen/qwen3-8b");
         expect(card.find("lilbee-model-card-header")).not.toBeNull();
         expect(card.find("lilbee-model-card-specs")).not.toBeNull();
         expect(card.find("lilbee-model-card-status")).not.toBeNull();
     });
 
-    it("shows display_name when present", () => {
+    it("shows display_name in the header", () => {
         const c = container();
-        const variant = makeVariant({ display_name: "Test Model Q4" });
-        const card = renderModelCard(c, makeFamily(), variant, {}) as unknown as MockElement;
+        const card = renderModelCard(c, makeEntry({ display_name: "Qwen3 0.6B" }), {}) as unknown as MockElement;
         const name = card.find("lilbee-model-card-name");
-        expect(name?.textContent).toBe("Test Model Q4");
-    });
-
-    it("falls back to name when display_name absent", () => {
-        const c = container();
-        const variant = makeVariant({ display_name: undefined });
-        const card = renderModelCard(c, makeFamily(), variant, {}) as unknown as MockElement;
-        const name = card.find("lilbee-model-card-name");
-        expect(name?.textContent).toBe("test-model:q4");
-    });
-
-    it("shows task pill", () => {
-        const c = container();
-        const card = renderModelCard(c, makeFamily(), makeVariant(), {}) as unknown as MockElement;
-        const pill = card.find(PILL_CLS.TASK_CHAT);
-        expect(pill).not.toBeNull();
-        expect(pill?.textContent).toBe("chat");
-    });
-
-    it("falls back to family task when variant task is empty", () => {
-        const c = container();
-        const family = makeFamily({ task: "vision" });
-        const variant = makeVariant({ task: "" });
-        const card = renderModelCard(c, family, variant, {}) as unknown as MockElement;
-        const pill = card.find(PILL_CLS.TASK_VISION);
-        expect(pill).not.toBeNull();
-        expect(pill?.textContent).toBe("vision");
-    });
-
-    it("shows pick pill when family is featured", () => {
-        const c = container();
-        const family = makeFamily({ featured: true });
-        const card = renderModelCard(c, family, makeVariant(), {}) as unknown as MockElement;
-        expect(card.find(PILL_CLS.PICK)).not.toBeNull();
-    });
-
-    it("shows pick pill when variant has featured flag", () => {
-        const c = container();
-        const variant = makeVariant({ featured: true });
-        const card = renderModelCard(c, makeFamily(), variant, {}) as unknown as MockElement;
-        expect(card.find(PILL_CLS.PICK)).not.toBeNull();
-    });
-
-    it("does not show pick pill when not featured", () => {
-        const c = container();
-        const card = renderModelCard(c, makeFamily(), makeVariant(), {}) as unknown as MockElement;
-        expect(card.find(PILL_CLS.PICK)).toBeNull();
+        expect(name?.textContent).toBe("Qwen3 0.6B");
     });
 
     it("renders specs with quality_tier and size", () => {
         const c = container();
-        const variant = makeVariant({ quality_tier: "Q4_K_M", size_gb: 4.2 });
-        const card = renderModelCard(c, makeFamily(), variant, {}) as unknown as MockElement;
+        const entry = makeEntry({ quality_tier: "balanced", size_gb: 4.2 });
+        const card = renderModelCard(c, entry, {}) as unknown as MockElement;
         const specs = card.find("lilbee-model-card-specs");
-        expect(specs?.textContent).toBe("Q4_K_M \u00B7 4.2 GB");
+        expect(specs?.textContent).toBe("balanced \u00B7 4.2 GB");
     });
 
     it("renders specs without quality_tier", () => {
         const c = container();
-        const variant = makeVariant({ quality_tier: undefined });
-        const card = renderModelCard(c, makeFamily(), variant, {}) as unknown as MockElement;
+        const entry = makeEntry({ quality_tier: "" });
+        const card = renderModelCard(c, entry, {}) as unknown as MockElement;
         const specs = card.find("lilbee-model-card-specs");
-        expect(specs?.textContent).toBe("4.2 GB");
+        expect(specs?.textContent).toBe("5 GB");
     });
 
-    it("shows installed pill when variant is installed", () => {
+    it("shows installed pill when entry is installed", () => {
         const c = container();
-        const variant = makeVariant({ installed: true });
-        const card = renderModelCard(c, makeFamily(), variant, {}) as unknown as MockElement;
+        const card = renderModelCard(c, makeEntry({ installed: true }), {}) as unknown as MockElement;
         expect(card.find(PILL_CLS.INSTALLED)).not.toBeNull();
     });
 
-    it("shows download count when not installed and has downloads", () => {
+    it("does not show installed pill when not installed", () => {
         const c = container();
-        const variant = makeVariant({ downloads: 1500 });
-        const card = renderModelCard(c, makeFamily(), variant, {}) as unknown as MockElement;
-        const dl = card.find("lilbee-model-card-downloads");
-        expect(dl?.textContent).toBe("1.5K downloads");
+        const card = renderModelCard(c, makeEntry(), {}) as unknown as MockElement;
+        expect(card.find(PILL_CLS.INSTALLED)).toBeNull();
     });
 
-    it("formats downloads in millions", () => {
+    it("shows a download count when not installed and downloads > 0", () => {
         const c = container();
-        const variant = makeVariant({ downloads: 2_500_000 });
-        const card = renderModelCard(c, makeFamily(), variant, {}) as unknown as MockElement;
-        const dl = card.find("lilbee-model-card-downloads");
-        expect(dl?.textContent).toBe("2.5M downloads");
-    });
-
-    it("formats small download counts", () => {
-        const c = container();
-        const variant = makeVariant({ downloads: 42 });
-        const card = renderModelCard(c, makeFamily(), variant, {}) as unknown as MockElement;
+        const card = renderModelCard(c, makeEntry({ downloads: 42 }), {}) as unknown as MockElement;
         const dl = card.find("lilbee-model-card-downloads");
         expect(dl?.textContent).toBe("42 downloads");
     });
 
-    it("does not show downloads when installed", () => {
+    it("formats download counts in thousands", () => {
         const c = container();
-        const variant = makeVariant({ installed: true, downloads: 5000 });
-        const card = renderModelCard(c, makeFamily(), variant, {}) as unknown as MockElement;
-        expect(card.find("lilbee-model-card-downloads")).toBeNull();
-        expect(card.find(PILL_CLS.INSTALLED)).not.toBeNull();
+        const card = renderModelCard(c, makeEntry({ downloads: 1500 }), {}) as unknown as MockElement;
+        expect(card.find("lilbee-model-card-downloads")?.textContent).toBe("1.5K downloads");
+    });
+
+    it("formats download counts in millions", () => {
+        const c = container();
+        const card = renderModelCard(c, makeEntry({ downloads: 2_500_000 }), {}) as unknown as MockElement;
+        expect(card.find("lilbee-model-card-downloads")?.textContent).toBe("2.5M downloads");
+    });
+
+    it("renders a task pill in the header", () => {
+        const c = container();
+        const card = renderModelCard(c, makeEntry({ task: "vision" }), {}) as unknown as MockElement;
+        expect(card.find(PILL_CLS.TASK_VISION)).not.toBeNull();
+    });
+
+    it("renders a pick pill when the entry is featured", () => {
+        const c = container();
+        const card = renderModelCard(c, makeEntry({ featured: true }), {}) as unknown as MockElement;
+        expect(card.find(PILL_CLS.PICK)).not.toBeNull();
+    });
+
+    it("omits the pick pill when the entry is not featured", () => {
+        const c = container();
+        const card = renderModelCard(c, makeEntry({ featured: false }), {}) as unknown as MockElement;
+        expect(card.find(PILL_CLS.PICK)).toBeNull();
     });
 
     describe("actions", () => {
         it("does not render actions when showActions is false", () => {
             const c = container();
-            const card = renderModelCard(c, makeFamily(), makeVariant(), {
-                showActions: false,
-            }) as unknown as MockElement;
+            const card = renderModelCard(c, makeEntry(), { showActions: false }) as unknown as MockElement;
             expect(card.find("lilbee-model-card-actions")).toBeNull();
         });
 
         it("does not render actions when showActions is undefined", () => {
             const c = container();
-            const card = renderModelCard(c, makeFamily(), makeVariant(), {}) as unknown as MockElement;
+            const card = renderModelCard(c, makeEntry(), {}) as unknown as MockElement;
             expect(card.find("lilbee-model-card-actions")).toBeNull();
         });
 
-        it("shows Pull button for non-installed variant", () => {
+        it("shows Pull button for non-installed entry", () => {
             const c = container();
-            const card = renderModelCard(c, makeFamily(), makeVariant(), {
-                showActions: true,
-            }) as unknown as MockElement;
+            const card = renderModelCard(c, makeEntry(), { showActions: true }) as unknown as MockElement;
             const pullBtn = card.find("lilbee-catalog-pull");
             expect(pullBtn).not.toBeNull();
             expect(pullBtn?.textContent).toBe(MESSAGES.BUTTON_PULL);
         });
 
-        it("shows Use and Remove buttons for installed variant", () => {
+        it("shows Use and Remove buttons for installed entry", () => {
             const c = container();
-            const variant = makeVariant({ installed: true });
-            const card = renderModelCard(c, makeFamily(), variant, {
+            const card = renderModelCard(c, makeEntry({ installed: true }), {
                 showActions: true,
             }) as unknown as MockElement;
             expect(card.find("lilbee-catalog-use")).not.toBeNull();
@@ -194,8 +144,7 @@ describe("renderModelCard", () => {
 
         it("shows Active label when isActive", () => {
             const c = container();
-            const variant = makeVariant({ installed: true });
-            const card = renderModelCard(c, makeFamily(), variant, {
+            const card = renderModelCard(c, makeEntry({ installed: true }), {
                 showActions: true,
                 isActive: true,
             }) as unknown as MockElement;
@@ -205,69 +154,78 @@ describe("renderModelCard", () => {
 
         it("adds is-selected class when isActive", () => {
             const c = container();
-            const card = renderModelCard(c, makeFamily(), makeVariant(), {
-                isActive: true,
-            }) as unknown as MockElement;
+            const card = renderModelCard(c, makeEntry(), { isActive: true }) as unknown as MockElement;
             expect(card.classList.contains("is-selected")).toBe(true);
         });
 
         it("calls onPull when Pull button clicked", () => {
             const c = container();
-            const family = makeFamily();
-            const variant = makeVariant();
+            const entry = makeEntry();
             const onPull = vi.fn();
-            const card = renderModelCard(c, family, variant, {
-                showActions: true,
-                onPull,
-            }) as unknown as MockElement;
+            const card = renderModelCard(c, entry, { showActions: true, onPull }) as unknown as MockElement;
             const btn = card.find("lilbee-catalog-pull")!;
             btn.trigger("click");
-            expect(onPull).toHaveBeenCalledWith(family, variant, btn);
+            expect(onPull).toHaveBeenCalledWith(entry, btn);
+        });
+
+        it("does not throw when Pull button clicked without onPull", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry(), { showActions: true }) as unknown as MockElement;
+            const btn = card.find("lilbee-catalog-pull")!;
+            expect(() => btn.trigger("click")).not.toThrow();
         });
 
         it("calls onUse when Use button clicked", () => {
             const c = container();
-            const family = makeFamily();
-            const variant = makeVariant({ installed: true });
+            const entry = makeEntry({ installed: true });
             const onUse = vi.fn();
-            const card = renderModelCard(c, family, variant, {
-                showActions: true,
-                onUse,
-            }) as unknown as MockElement;
+            const card = renderModelCard(c, entry, { showActions: true, onUse }) as unknown as MockElement;
             const btn = card.find("lilbee-catalog-use")!;
             btn.trigger("click");
-            expect(onUse).toHaveBeenCalledWith(family, variant, btn);
+            expect(onUse).toHaveBeenCalledWith(entry, btn);
+        });
+
+        it("does not throw when Use button clicked without onUse", () => {
+            const c = container();
+            const entry = makeEntry({ installed: true });
+            const card = renderModelCard(c, entry, { showActions: true }) as unknown as MockElement;
+            const btn = card.find("lilbee-catalog-use")!;
+            expect(() => btn.trigger("click")).not.toThrow();
         });
 
         it("calls onRemove when Remove button clicked", () => {
             const c = container();
-            const variant = makeVariant({ installed: true });
+            const entry = makeEntry({ installed: true });
             const onRemove = vi.fn();
-            const card = renderModelCard(c, makeFamily(), variant, {
-                showActions: true,
-                onRemove,
-            }) as unknown as MockElement;
+            const card = renderModelCard(c, entry, { showActions: true, onRemove }) as unknown as MockElement;
             const btn = card.find("lilbee-catalog-remove")!;
             btn.trigger("click");
-            expect(onRemove).toHaveBeenCalledWith(variant, btn);
+            expect(onRemove).toHaveBeenCalledWith(entry, btn);
+        });
+
+        it("does not throw when Remove button clicked without onRemove", () => {
+            const c = container();
+            const entry = makeEntry({ installed: true });
+            const card = renderModelCard(c, entry, { showActions: true }) as unknown as MockElement;
+            const btn = card.find("lilbee-catalog-remove")!;
+            expect(() => btn.trigger("click")).not.toThrow();
         });
     });
 
     describe("onClick", () => {
         it("calls onClick when card is clicked", () => {
             const c = container();
-            const family = makeFamily();
-            const variant = makeVariant();
+            const entry = makeEntry();
             const onClick = vi.fn();
-            const card = renderModelCard(c, family, variant, { onClick }) as unknown as MockElement;
+            const card = renderModelCard(c, entry, { onClick }) as unknown as MockElement;
             card.trigger("click", { target: { tagName: "DIV" } });
-            expect(onClick).toHaveBeenCalledWith(family, variant);
+            expect(onClick).toHaveBeenCalledWith(entry);
         });
 
         it("does not call onClick when button is clicked", () => {
             const c = container();
             const onClick = vi.fn();
-            const card = renderModelCard(c, makeFamily(), makeVariant(), {
+            const card = renderModelCard(c, makeEntry(), {
                 onClick,
                 showActions: true,
             }) as unknown as MockElement;

@@ -480,7 +480,13 @@ export class ChatView extends ItemView {
             }
             case SSE_EVENT.ERROR: {
                 const errMsg = extractString(event.data, "message");
-                assistantBubble.remove();
+                assistantBubble.empty();
+                assistantBubble.addClass("lilbee-chat-message-error");
+                assistantBubble.setAttribute("role", "alert");
+                assistantBubble.createDiv({
+                    cls: "lilbee-chat-error-text",
+                    text: MESSAGES.ERROR_STREAM(errMsg),
+                });
                 new Notice(MESSAGES.ERROR_STREAM(errMsg));
                 break;
             }

@@ -595,7 +595,7 @@ describe("ChatView.sendMessage — sources", () => {
 });
 
 describe("ChatView.sendMessage — error event", () => {
-    it("shows a Notice and removes assistant bubble when error event is received", async () => {
+    it("shows a Notice and replaces the assistant bubble with a persistent error bubble", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const { mockFn, done } = makeStream([{ event: SSE_EVENT.ERROR, data: "something went wrong" }]);
@@ -612,9 +612,14 @@ describe("ChatView.sendMessage — error event", () => {
         await tick();
 
         expect(Notice.instances[0].message).toBe("lilbee: something went wrong");
-        // Assistant bubble should be removed — only user bubble remains
-        expect(messagesEl.children.length).toBe(1);
+        // User bubble + persistent error bubble (replaces the pending assistant bubble)
+        expect(messagesEl.children.length).toBe(2);
         expect(messagesEl.children[0].classList.contains("user")).toBe(true);
+        expect(messagesEl.children[1].classList.contains("lilbee-chat-message-error")).toBe(true);
+        const errorBubble = messagesEl.children[1] as MockElement;
+        const errorText = errorBubble.find("lilbee-chat-error-text");
+        expect(errorText).not.toBeNull();
+        expect(errorText!.textContent).toBe("lilbee: something went wrong");
     });
 
     it("does not add error message to chat history", async () => {

@@ -23,6 +23,13 @@ export const NOTICE_DURATION_MS = 3000;
 export const NOTICE_ERROR_DURATION_MS = 8000;
 export const NOTICE_PERMANENT = 0;
 export const TIME_REFRESH_INTERVAL_MS = 30000;
+export const HEALTH_PROBE_INTERVAL_MS = 30_000;
+
+export function formatAbbreviatedCount(count: number): string {
+    if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
+    if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;
+    return String(count);
+}
 
 export function relativeTime(timestamp: number): string {
     const seconds = Math.floor((Date.now() - timestamp) / 1000);

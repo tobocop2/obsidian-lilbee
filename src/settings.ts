@@ -295,6 +295,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         void this.checkEndpoint(`${this.plugin.settings.serverUrl}/api/health`, serverStatusEl);
 
+        new Setting(containerEl).setName(MESSAGES.LABEL_SESSION_TOKEN).setDesc(MESSAGES.DESC_SESSION_TOKEN_AUTO);
+
         new Setting(containerEl)
             .setName(MESSAGES.LABEL_SWITCH_MANAGED)
             .setDesc(MESSAGES.DESC_SWITCH_MANAGED)

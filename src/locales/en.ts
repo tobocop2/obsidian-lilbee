@@ -60,6 +60,7 @@ export const MESSAGES = {
     LABEL_SERVER_PORT: "Server port",
     LABEL_SERVER_VERSION: "Server version",
     LABEL_SERVER_URL: "Server URL",
+    LABEL_SESSION_TOKEN: "Session token",
     LABEL_SETUP_WIZARD: "Setup wizard",
     LABEL_SWITCH_MANAGED: "Switch to managed server",
     LABEL_MODELS: "Models",
@@ -126,6 +127,8 @@ export const MESSAGES = {
     DESC_SERVER_PORT_HELP: "Port for the managed server. Leave blank for automatic.",
     DESC_SERVER_VERSION_UNKNOWN: "Unknown",
     DESC_SERVER_URL_HELP: "Address of the lilbee HTTP server",
+    DESC_SESSION_TOKEN_AUTO:
+        "Read automatically from the lilbee data directory on every request. Works when the server runs on the same machine as Obsidian. Set LILBEE_DATA if you use a non-default data directory.",
     DESC_SWITCH_MANAGED: "Stop using an external server and start the built-in one",
     DESC_MODELS_HELP: "Browse the catalog for available models. Requires the lilbee server.",
     DESC_REFRESH_MODELS: "Fetch available models from the server",

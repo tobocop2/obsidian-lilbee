@@ -198,36 +198,28 @@ export const SSE_EVENT = {
 
 export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
-export interface ModelVariant {
+export interface CatalogEntry {
     name: string;
-    hf_repo: string;
+    display_name: string;
     size_gb: number;
     min_ram_gb: number;
     description: string;
-    task: string;
+    quality_tier: string;
     installed: boolean;
     source: "native" | "litellm";
-    display_name?: string;
-    quality_tier?: string;
-    downloads?: number;
-    param_count?: string;
-    quant?: string;
-    featured?: boolean;
-}
-
-export interface ModelFamily {
-    family: string;
-    task: string;
+    hf_repo: string;
+    tag: string;
+    task: ModelTask;
     featured: boolean;
-    recommended: string;
-    variants: ModelVariant[];
+    downloads: number;
+    param_count?: string;
 }
 
 export interface CatalogResponse {
     total: number;
     limit: number;
     offset: number;
-    families: ModelFamily[];
+    models: CatalogEntry[];
 }
 
 export interface InstalledModel {
@@ -418,10 +410,10 @@ export interface ModelShowResponse {
 }
 
 export interface ModelCardOptions {
-    onClick?: (family: ModelFamily, variant: ModelVariant) => void;
-    onPull?: (family: ModelFamily, variant: ModelVariant, btn: HTMLElement) => void;
-    onUse?: (family: ModelFamily, variant: ModelVariant, btn: HTMLElement) => void;
-    onRemove?: (variant: ModelVariant, btn: HTMLElement) => void;
+    onClick?: (entry: CatalogEntry) => void;
+    onPull?: (entry: CatalogEntry, btn: HTMLElement) => void;
+    onUse?: (entry: CatalogEntry, btn: HTMLElement) => void;
+    onRemove?: (entry: CatalogEntry, btn: HTMLElement) => void;
     showActions?: boolean;
     isActive?: boolean;
 }

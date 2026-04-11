@@ -50,6 +50,10 @@ export class ServerManager {
         return `http://127.0.0.1:${port}`;
     }
 
+    get dataDir(): string {
+        return this.opts.dataDir;
+    }
+
     private get portFilePath(): string {
         return `${this.opts.dataDir}/data/server.port`;
     }

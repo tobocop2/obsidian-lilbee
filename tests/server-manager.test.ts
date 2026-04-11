@@ -96,6 +96,11 @@ describe("ServerManager", () => {
             const mgr = new ServerManager(defaultOpts({ port: 9999 }));
             expect(mgr.serverUrl).toBe("http://127.0.0.1:9999");
         });
+
+        it("dataDir getter returns the configured data dir", () => {
+            const mgr = new ServerManager(defaultOpts({ dataDir: "/var/lilbee" }));
+            expect(mgr.dataDir).toBe("/var/lilbee");
+        });
     });
 
     // ── start() ─────────────────────────────────────────────────────
