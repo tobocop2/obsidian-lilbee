@@ -1,19 +1,12 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { ModelFamily, SSEEvent, SyncDone } from "../types";
+import type { CatalogEntry, SSEEvent, SyncDone } from "../types";
 import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK } from "../types";
 import { CatalogModal } from "./catalog-modal";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
 
-interface FeaturedModel {
-    name: string;
-    size_gb: number;
-    min_ram_gb: number;
-    description: string;
-    source: "native" | "litellm";
-    displayName?: string;
-}
+type FeaturedModel = CatalogEntry;
 
 export function getSystemMemoryGB(): number | null {
     try {
@@ -270,7 +263,6 @@ export class SetupWizard extends Modal {
         memGB: number | null,
         statusEl: HTMLElement,
     ): Promise<void> {
-        let families: ModelFamily[];
         try {
             const result = await this.plugin.api.catalog({
                 task: MODEL_TASK.CHAT,
@@ -282,18 +274,7 @@ export class SetupWizard extends Modal {
                 this.featuredModels = [];
                 return;
             }
-            families = result.value.families;
-            this.featuredModels = families.map((f: ModelFamily) => {
-                const v = f.variants.find((v) => v.name === f.recommended) ?? f.variants[0];
-                return {
-                    name: v.hf_repo,
-                    size_gb: v.size_gb,
-                    min_ram_gb: v.min_ram_gb,
-                    description: v.description,
-                    source: v.source,
-                    displayName: f.family,
-                };
-            });
+            this.featuredModels = result.value.models;
         } catch {
             this.featuredModels = [];
             statusEl.textContent = MESSAGES.ERROR_LOAD_MODELS;
@@ -306,13 +287,11 @@ export class SetupWizard extends Modal {
         container.createDiv({ cls: "lilbee-catalog-section-heading", text: MESSAGES.LABEL_OUR_PICKS });
         const grid = container.createDiv({ cls: "lilbee-catalog-grid" });
 
-        for (let i = 0; i < families.length; i++) {
-            const family = families[i];
-            const variant = family.variants.find((v) => v.name === family.recommended) ?? family.variants[0];
-            const model = this.featuredModels[i];
-            renderModelCard(grid, family, variant, {
+        for (let i = 0; i < this.featuredModels.length; i++) {
+            const entry = this.featuredModels[i];
+            renderModelCard(grid, entry, {
                 isActive: i === recommended,
-                onClick: () => this.selectModel(grid, model),
+                onClick: () => this.selectModel(grid, entry),
             });
         }
     }
@@ -321,7 +300,7 @@ export class SetupWizard extends Modal {
         this.selectedModel = model;
         for (const child of Array.from(grid.children)) {
             const el = child as HTMLElement;
-            if (el.dataset.repo === model.name) {
+            if (el.dataset.name === model.name) {
                 el.classList.add("is-selected");
             } else {
                 el.classList.remove("is-selected");

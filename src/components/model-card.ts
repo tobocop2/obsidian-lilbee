@@ -1,68 +1,48 @@
-import type { ModelFamily, ModelVariant, ModelCardOptions } from "../types";
+import type { CatalogEntry, ModelCardOptions } from "../types";
 import { MESSAGES } from "../locales/en";
-import { renderTaskPill, renderPickPill, PILL_CLS, renderPill } from "./pill";
+import { renderPill, PILL_CLS } from "./pill";
 
-export function renderModelCard(
-    container: HTMLElement,
-    family: ModelFamily,
-    variant: ModelVariant,
-    options: ModelCardOptions,
-): HTMLElement {
+export function renderModelCard(container: HTMLElement, entry: CatalogEntry, options: ModelCardOptions): HTMLElement {
     const card = container.createDiv({ cls: "lilbee-model-card" });
-    card.dataset.repo = variant.hf_repo;
+    card.dataset.name = entry.name;
     if (options.isActive) card.addClass("is-selected");
 
-    renderCardHeader(card, family, variant);
-    renderCardSpecs(card, variant);
-    renderCardStatus(card, variant);
+    renderCardHeader(card, entry);
+    renderCardSpecs(card, entry);
+    renderCardStatus(card, entry);
     if (options.showActions) {
-        renderCardActions(card, family, variant, options);
+        renderCardActions(card, entry, options);
     }
 
     if (options.onClick) {
         const handler = options.onClick;
         card.addEventListener("click", (e: Event) => {
             if ((e.target as HTMLElement)?.tagName === "BUTTON") return;
-            handler(family, variant);
+            handler(entry);
         });
     }
 
     return card;
 }
 
-function renderCardHeader(card: HTMLElement, family: ModelFamily, variant: ModelVariant): void {
+function renderCardHeader(card: HTMLElement, entry: CatalogEntry): void {
     const header = card.createDiv({ cls: "lilbee-model-card-header" });
-    const name = variant.display_name ?? variant.name;
-    header.createEl("span", { text: name, cls: "lilbee-model-card-name" });
-    renderTaskPill(header, variant.task || family.task);
-    const featured = variant.featured ?? family.featured;
-    if (featured) renderPickPill(header);
+    header.createEl("span", { text: entry.display_name, cls: "lilbee-model-card-name" });
 }
 
-function renderCardSpecs(card: HTMLElement, variant: ModelVariant): void {
-    const tier = variant.quality_tier ?? "";
-    const parts = [tier, `${variant.size_gb} GB`].filter(Boolean);
+function renderCardSpecs(card: HTMLElement, entry: CatalogEntry): void {
+    const parts = [entry.quality_tier, `${entry.size_gb} GB`].filter(Boolean);
     card.createDiv({ cls: "lilbee-model-card-specs", text: parts.join(" \u00B7 ") });
 }
 
-function renderCardStatus(card: HTMLElement, variant: ModelVariant): void {
+function renderCardStatus(card: HTMLElement, entry: CatalogEntry): void {
     const status = card.createDiv({ cls: "lilbee-model-card-status" });
-    if (variant.installed) {
+    if (entry.installed) {
         renderPill(status, MESSAGES.LABEL_INSTALLED, PILL_CLS.INSTALLED);
-    } else if (variant.downloads !== undefined) {
-        status.createEl("span", {
-            text: formatDownloads(variant.downloads),
-            cls: "lilbee-model-card-downloads",
-        });
     }
 }
 
-function renderCardActions(
-    card: HTMLElement,
-    family: ModelFamily,
-    variant: ModelVariant,
-    options: ModelCardOptions,
-): void {
+function renderCardActions(card: HTMLElement, entry: CatalogEntry, options: ModelCardOptions): void {
     const actions = card.createDiv({ cls: "lilbee-model-card-actions" });
 
     if (options.isActive) {
@@ -73,14 +53,14 @@ function renderCardActions(
         return;
     }
 
-    if (variant.installed) {
+    if (entry.installed) {
         const useBtn = actions.createEl("button", {
             text: MESSAGES.BUTTON_USE,
             cls: "lilbee-catalog-use",
         });
         if (options.onUse) {
             const handler = options.onUse;
-            useBtn.addEventListener("click", () => handler(family, variant, useBtn));
+            useBtn.addEventListener("click", () => handler(entry, useBtn));
         }
         const removeBtn = actions.createEl("button", {
             text: MESSAGES.BUTTON_REMOVE,
@@ -88,7 +68,7 @@ function renderCardActions(
         });
         if (options.onRemove) {
             const handler = options.onRemove;
-            removeBtn.addEventListener("click", () => handler(variant, removeBtn));
+            removeBtn.addEventListener("click", () => handler(entry, removeBtn));
         }
     } else {
         const pullBtn = actions.createEl("button", {
@@ -97,7 +77,7 @@ function renderCardActions(
         });
         if (options.onPull) {
             const handler = options.onPull;
-            pullBtn.addEventListener("click", () => handler(family, variant, pullBtn));
+            pullBtn.addEventListener("click", () => handler(entry, pullBtn));
         }
     }
 }
@@ -109,10 +89,4 @@ export function renderBrowseMoreCard(container: HTMLElement, onClick: () => void
     });
     card.addEventListener("click", onClick);
     return card;
-}
-
-function formatDownloads(count: number): string {
-    if (count >= 1_000_000) return MESSAGES.LABEL_DOWNLOADS_COUNT(`${(count / 1_000_000).toFixed(1)}M`);
-    if (count >= 1_000) return MESSAGES.LABEL_DOWNLOADS_COUNT(`${(count / 1_000).toFixed(1)}K`);
-    return MESSAGES.LABEL_DOWNLOADS_COUNT(String(count));
 }

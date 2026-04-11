@@ -205,45 +205,13 @@ export const SSE_EVENT = {
 
 export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
-export interface ModelVariant {
-    name: string;
-    hf_repo: string;
-    size_gb: number;
-    min_ram_gb: number;
-    description: string;
-    task: string;
-    installed: boolean;
-    source: "native" | "litellm";
-    display_name?: string;
-    quality_tier?: string;
-    downloads?: number;
-    param_count?: string;
-    quant?: string;
-    featured?: boolean;
-}
-
-export interface ModelFamily {
-    family: string;
-    task: string;
-    featured: boolean;
-    recommended: string;
-    variants: ModelVariant[];
-}
-
-export interface CatalogResponse {
-    total: number;
-    limit: number;
-    offset: number;
-    families: ModelFamily[];
-}
-
 /**
- * Flat shape returned by `GET /api/models/catalog` on servers that haven't yet
- * been updated to emit grouped families. The plugin's `api.catalog()` adapts
- * this shape into `CatalogResponse` so the rest of the code only deals with
- * families/variants. See `bb-jffs` for the server-side follow-up.
+ * A single entry in the model catalog. Shape mirrors the lilbee server's
+ * `CatalogEntryResponse` (see `server/models.py`) exactly — the plugin does
+ * not re-group or reshape. `name` is the canonical identifier passed to
+ * `pullModel()`, `setChatModel()`, `setVisionModel()`, and `deleteModel()`.
  */
-export interface CatalogServerEntry {
+export interface CatalogEntry {
     name: string;
     display_name: string;
     size_gb: number;
@@ -251,25 +219,14 @@ export interface CatalogServerEntry {
     description: string;
     quality_tier: string;
     installed: boolean;
-    source: string;
-    /** Optional — newer servers emit this; older ones do not. */
-    hf_repo?: string;
-    /** Optional — newer servers emit this; older ones do not. */
-    tag?: string;
-    /** Optional — newer servers emit this; older ones do not. */
-    task?: string;
-    /** Optional — newer servers emit this; older ones do not. */
-    featured?: boolean;
-    /** Optional — newer servers emit this; older ones do not. */
-    downloads?: number;
+    source: "native" | "litellm";
 }
 
-export interface CatalogServerResponse {
+export interface CatalogResponse {
     total: number;
     limit: number;
     offset: number;
-    models?: CatalogServerEntry[];
-    families?: ModelFamily[];
+    models: CatalogEntry[];
 }
 
 export interface InstalledModel {
@@ -460,10 +417,10 @@ export interface ModelShowResponse {
 }
 
 export interface ModelCardOptions {
-    onClick?: (family: ModelFamily, variant: ModelVariant) => void;
-    onPull?: (family: ModelFamily, variant: ModelVariant, btn: HTMLElement) => void;
-    onUse?: (family: ModelFamily, variant: ModelVariant, btn: HTMLElement) => void;
-    onRemove?: (variant: ModelVariant, btn: HTMLElement) => void;
+    onClick?: (entry: CatalogEntry) => void;
+    onPull?: (entry: CatalogEntry, btn: HTMLElement) => void;
+    onUse?: (entry: CatalogEntry, btn: HTMLElement) => void;
+    onRemove?: (entry: CatalogEntry, btn: HTMLElement) => void;
     showActions?: boolean;
     isActive?: boolean;
 }
