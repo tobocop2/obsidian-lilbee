@@ -50,8 +50,30 @@ export class ServerManager {
         return `http://127.0.0.1:${port}`;
     }
 
+    get dataDir(): string {
+        return this.opts.dataDir;
+    }
+
     private get portFilePath(): string {
         return `${this.opts.dataDir}/data/server.port`;
+    }
+
+    /**
+     * Read the server's session token from `{dataDir}/data/server.json`.
+     * Returns `null` when the file is missing or malformed. The token must be
+     * passed in the `Authorization: Bearer <token>` header for mutating
+     * endpoints (see the lilbee server's `auth.py`).
+     */
+    readSessionToken(): string | null {
+        const tokenPath = `${this.opts.dataDir}/data/server.json`;
+        try {
+            if (!node.existsSync(tokenPath)) return null;
+            const content = node.readFileSync(tokenPath, "utf-8");
+            const parsed = JSON.parse(content) as { token?: unknown };
+            return typeof parsed.token === "string" ? parsed.token : null;
+        } catch {
+            return null;
+        }
     }
 
     private async waitForPortFile(): Promise<void> {

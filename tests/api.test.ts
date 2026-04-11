@@ -443,7 +443,7 @@ describe("pullModel()", () => {
     });
 
     describe("catalog()", () => {
-        it("calls GET /api/models/catalog and returns parsed response", async () => {
+        it("calls GET /api/models/catalog and adapts empty flat response into families", async () => {
             const data = { total: 50, limit: 20, offset: 0, models: [] };
             fetchMock.mockResolvedValue(jsonResponse(data));
 
@@ -451,7 +451,233 @@ describe("pullModel()", () => {
 
             expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/catalog`, expect.objectContaining({}));
             expect(result.isOk()).toBe(true);
-            expect(result._unsafeUnwrap()).toEqual(data);
+            expect(result._unsafeUnwrap()).toEqual({
+                total: 50,
+                limit: 20,
+                offset: 0,
+                families: [],
+            });
+        });
+
+        it("groups flat models by name and constructs variants with a canonical ref", async () => {
+            const data = {
+                total: 2,
+                limit: 20,
+                offset: 0,
+                models: [
+                    {
+                        name: "qwen3",
+                        display_name: "Qwen3 0.6B",
+                        size_gb: 0.5,
+                        min_ram_gb: 2,
+                        description: "tiny",
+                        quality_tier: "balanced",
+                        installed: true,
+                        source: "litellm",
+                    },
+                    {
+                        name: "qwen3",
+                        display_name: "Qwen3 8B",
+                        size_gb: 5,
+                        min_ram_gb: 8,
+                        description: "medium",
+                        quality_tier: "balanced",
+                        installed: false,
+                        source: "native",
+                    },
+                ],
+            };
+            fetchMock.mockResolvedValue(jsonResponse(data));
+
+            const result = await client.catalog({ task: "chat", featured: true });
+            expect(result.isOk()).toBe(true);
+            const adapted = result._unsafeUnwrap();
+            expect(adapted.families).toHaveLength(1);
+            expect(adapted.families[0].family).toBe("qwen3");
+            expect(adapted.families[0].task).toBe("chat");
+            expect(adapted.families[0].featured).toBe(true);
+            expect(adapted.families[0].variants).toHaveLength(2);
+            // See `bb-jffs`: sibling variants must not collide on a single
+            // synthetic identifier, otherwise pull / set-active / delete
+            // all silently route to the wrong variant.
+            expect(adapted.families[0].variants[0].hf_repo).toBe("qwen3:0.6b");
+            expect(adapted.families[0].variants[0].installed).toBe(true);
+            expect(adapted.families[0].variants[1].hf_repo).toBe("qwen3:8b");
+            expect(adapted.families[0].variants[0].hf_repo).not.toBe(adapted.families[0].variants[1].hf_repo);
+        });
+
+        it("falls back to {name}:latest when a flat entry lacks any disambiguating display_name", async () => {
+            const data = {
+                total: 1,
+                limit: 20,
+                offset: 0,
+                models: [
+                    {
+                        name: "phi4",
+                        display_name: "phi4",
+                        size_gb: 9,
+                        min_ram_gb: 16,
+                        description: "large",
+                        quality_tier: "balanced",
+                        installed: false,
+                        source: "native",
+                    },
+                ],
+            };
+            fetchMock.mockResolvedValue(jsonResponse(data));
+            const result = await client.catalog();
+            expect(result._unsafeUnwrap().families[0].variants[0].hf_repo).toBe("phi4:latest");
+        });
+
+        it("uses an explicit tag when the server emits one", async () => {
+            const data = {
+                total: 1,
+                limit: 20,
+                offset: 0,
+                models: [
+                    {
+                        name: "qwen3",
+                        display_name: "Qwen3 8B",
+                        size_gb: 5,
+                        min_ram_gb: 8,
+                        description: "medium",
+                        quality_tier: "balanced",
+                        installed: false,
+                        source: "native",
+                        tag: "8b-q4",
+                    },
+                ],
+            };
+            fetchMock.mockResolvedValue(jsonResponse(data));
+            const result = await client.catalog();
+            expect(result._unsafeUnwrap().families[0].variants[0].hf_repo).toBe("qwen3:8b-q4");
+        });
+
+        it("falls back to {name}:latest when display_name is entirely missing", async () => {
+            // The CatalogServerEntry interface declares display_name as
+            // required, but a server emitting a partial response could
+            // omit it. `synthesizeRef` should handle the undefined case.
+            const data = {
+                total: 1,
+                limit: 20,
+                offset: 0,
+                models: [
+                    {
+                        name: "mistral",
+                        size_gb: 4.1,
+                        min_ram_gb: 8,
+                        description: "",
+                        quality_tier: "",
+                        installed: false,
+                        source: "native",
+                    },
+                ],
+            };
+            fetchMock.mockResolvedValue(jsonResponse(data));
+            const result = await client.catalog();
+            expect(result._unsafeUnwrap().families[0].variants[0].hf_repo).toBe("mistral:latest");
+        });
+
+        it("passes families through unchanged when a future server emits them directly", async () => {
+            const family = {
+                family: "qwen3",
+                task: "chat",
+                featured: true,
+                recommended: "qwen3:8b",
+                variants: [
+                    {
+                        name: "qwen3",
+                        hf_repo: "qwen3:8b",
+                        size_gb: 5,
+                        min_ram_gb: 8,
+                        description: "medium",
+                        task: "chat",
+                        installed: false,
+                        source: "native" as const,
+                    },
+                ],
+            };
+            fetchMock.mockResolvedValue(jsonResponse({ total: 1, limit: 20, offset: 0, families: [family] }));
+
+            const result = await client.catalog();
+            expect(result.isOk()).toBe(true);
+            expect(result._unsafeUnwrap().families).toEqual([family]);
+        });
+
+        it("falls back to empty task/featured when neither the entry nor the request provides them", async () => {
+            const data = {
+                total: 1,
+                limit: 20,
+                offset: 0,
+                models: [
+                    {
+                        name: "phi4",
+                        display_name: "Phi 4",
+                        size_gb: 9,
+                        min_ram_gb: 16,
+                        description: "large",
+                        quality_tier: "balanced",
+                        installed: false,
+                        source: "native",
+                    },
+                ],
+            };
+            fetchMock.mockResolvedValue(jsonResponse(data));
+
+            // No params at all — no fallback, no entry-side task/featured.
+            const result = await client.catalog();
+            const adapted = result._unsafeUnwrap();
+            expect(adapted.families).toHaveLength(1);
+            expect(adapted.families[0].task).toBe("");
+            expect(adapted.families[0].featured).toBe(false);
+        });
+
+        it("handles a response with neither models nor families", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ total: 0, limit: 20, offset: 0 }));
+            const result = await client.catalog();
+            expect(result.isOk()).toBe(true);
+            expect(result._unsafeUnwrap().families).toEqual([]);
+        });
+
+        it("prefers per-entry task/featured/hf_repo over the request-param fallback", async () => {
+            const data = {
+                total: 1,
+                limit: 20,
+                offset: 0,
+                models: [
+                    {
+                        name: "nomic-embed",
+                        display_name: "Nomic Embed",
+                        size_gb: 0.3,
+                        min_ram_gb: 1,
+                        description: "tiny embed",
+                        quality_tier: "balanced",
+                        installed: false,
+                        source: "native",
+                        // Per-entry values that must override the fallback:
+                        hf_repo: "nomic-ai/nomic-embed-text-v1.5",
+                        task: "embedding",
+                        featured: true,
+                        downloads: 420_000,
+                    },
+                ],
+            };
+            fetchMock.mockResolvedValue(jsonResponse(data));
+
+            // Fallback is task=chat — per-entry task=embedding must win.
+            const result = await client.catalog({ task: "chat", featured: false });
+            const adapted = result._unsafeUnwrap();
+            expect(adapted.families).toHaveLength(1);
+            expect(adapted.families[0].task).toBe("embedding");
+            expect(adapted.families[0].featured).toBe(true);
+            expect(adapted.families[0].variants[0].hf_repo).toBe("nomic-ai/nomic-embed-text-v1.5");
+            expect(adapted.families[0].variants[0].downloads).toBe(420_000);
+        });
+
+        it("returns err(error) when the underlying HTTP call fails", async () => {
+            fetchMock.mockResolvedValue(new Response("boom", { status: 503, statusText: "Service Unavailable" }));
+            const result = await client.catalog();
+            expect(result.isErr()).toBe(true);
         });
 
         it("appends query params when provided", async () => {

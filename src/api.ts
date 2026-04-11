@@ -4,14 +4,18 @@ import { ok, err, Result } from "neverthrow";
 import type {
     AskResponse,
     CatalogResponse,
+    CatalogServerEntry,
+    CatalogServerResponse,
     ConfigUpdateResponse,
     DocumentResult,
     DocumentsResponse,
     GenerationOptions,
     InstalledResponse,
     Message,
+    ModelFamily,
     ModelShowResponse,
     ModelsResponse,
+    ModelVariant,
     SearchChunkType,
     SSEEvent,
     StatusResponse,
@@ -23,6 +27,98 @@ import type {
 const DEFAULT_TIMEOUT_MS = 15_000;
 const RETRY_COUNT = 2;
 const RETRY_BACKOFF_MS = 500;
+
+/**
+ * Adapt a server catalog response to the plugin's expected {families} shape.
+ * Older servers return `{models: CatalogServerEntry[]}` (flat list); newer
+ * servers will return `{families: ModelFamily[]}` directly. This function lets
+ * the plugin work with both. See `bb-jffs`.
+ *
+ * When adapting the flat shape, entries are grouped by `name` into synthetic
+ * families. `task` and `featured` are inferred from the request params where
+ * possible (passed via the fallback arg). `hf_repo` falls back to the entry's
+ * own field when the server emits it; otherwise it's disambiguated via
+ * `synthesizeRef()` so sibling variants (e.g. qwen3 0.6B vs qwen3 8B) do NOT
+ * collide on a single identifier. The server's `pull` / `set` / `delete`
+ * endpoints parse the ref back into a canonical name, so even with a best-
+ * effort ref the downstream request is unambiguous about which variant the
+ * user picked. Once the server starts emitting per-variant `hf_repo` / `tag`
+ * directly, the fallback goes unused.
+ */
+export function adaptCatalogResponse(
+    response: CatalogServerResponse,
+    fallback?: { task?: string; featured?: boolean },
+): CatalogResponse {
+    if (response.families) {
+        return {
+            total: response.total,
+            limit: response.limit,
+            offset: response.offset,
+            families: response.families,
+        };
+    }
+    const entries = response.models ?? [];
+    const familyMap = new Map<string, ModelFamily>();
+    for (const e of entries) {
+        const task = e.task ?? fallback?.task ?? "";
+        const featured = e.featured ?? fallback?.featured ?? false;
+        const variant: ModelVariant = {
+            name: e.name,
+            hf_repo: e.hf_repo ?? synthesizeRef(e),
+            size_gb: e.size_gb,
+            min_ram_gb: e.min_ram_gb,
+            description: e.description,
+            task,
+            installed: e.installed,
+            source: e.source === "litellm" ? "litellm" : "native",
+            display_name: e.display_name,
+            quality_tier: e.quality_tier,
+            downloads: e.downloads,
+            featured: e.featured,
+        };
+        const existing = familyMap.get(e.name);
+        if (existing) {
+            existing.variants.push(variant);
+            if (featured) existing.featured = true;
+        } else {
+            familyMap.set(e.name, {
+                family: e.name,
+                task,
+                featured,
+                recommended: variant.hf_repo,
+                variants: [variant],
+            });
+        }
+    }
+    return {
+        total: response.total,
+        limit: response.limit,
+        offset: response.offset,
+        families: Array.from(familyMap.values()),
+    };
+}
+
+/**
+ * Construct a best-effort `name:tag` identifier for a flat catalog entry
+ * that lacks an explicit `hf_repo` or `tag`. Strategy:
+ *  1. If the entry has an explicit tag, use `{name}:{tag}`.
+ *  2. Otherwise derive a tag from `display_name` by stripping the family
+ *     prefix (e.g. "Qwen3 8B" → "8b"). This gives sibling variants
+ *     distinct refs so `pull`/`set`/`delete` can route to the correct one.
+ *  3. As a last resort — no display_name disambiguator — fall back to
+ *     `latest`, which collapses variants but at least resolves to
+ *     *something* the server understands.
+ */
+function synthesizeRef(e: CatalogServerEntry): string {
+    if (e.tag) return `${e.name}:${e.tag}`;
+    const display = e.display_name?.trim() ?? "";
+    const familyPrefix = e.name.replace(/-/g, " ").toLowerCase();
+    const displayLower = display.toLowerCase();
+    let suffix = displayLower.startsWith(familyPrefix) ? displayLower.slice(familyPrefix.length).trim() : displayLower;
+    suffix = suffix.replace(/\s+/g, "-");
+    if (!suffix || suffix === e.name.toLowerCase()) return `${e.name}:latest`;
+    return `${e.name}:${suffix}`;
+}
 
 export class LilbeeClient {
     private token: string | null = null;
@@ -271,7 +367,14 @@ export class LilbeeClient {
         if (params?.limit !== undefined) qs.set("limit", String(params.limit));
         if (params?.offset !== undefined) qs.set("offset", String(params.offset));
         const suffix = qs.toString() ? `?${qs}` : "";
-        return this.fetchResult<CatalogResponse>(`${this.baseUrl}/api/models/catalog${suffix}`);
+        const raw = await this.fetchResult<CatalogServerResponse>(`${this.baseUrl}/api/models/catalog${suffix}`);
+        if (raw.isErr()) return err(raw.error);
+        return ok(
+            adaptCatalogResponse(raw.value, {
+                task: params?.task,
+                featured: params?.featured,
+            }),
+        );
     }
 
     async installedModels(): Promise<InstalledResponse> {

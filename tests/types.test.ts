@@ -54,6 +54,7 @@ describe("DEFAULT_SETTINGS", () => {
             "seed",
             "serverMode",
             "serverPort",
+            "serverToken",
             "serverUrl",
             "setupCompleted",
             "syncDebounceMs",

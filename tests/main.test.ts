@@ -14,7 +14,8 @@ vi.mock("../src/api", () => ({
         pullModel: vi.fn(),
         setChatModel: vi.fn(),
         setVisionModel: vi.fn(),
-        health: vi.fn(),
+        setToken: vi.fn(),
+        health: vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} }),
         addFiles: vi.fn(),
         wikiLint: vi.fn(),
         wikiGenerate: vi.fn(),
@@ -116,8 +117,12 @@ vi.mock("../src/server-manager", () => ({
             stop: mockServerStop,
             restart: vi.fn(),
             updatePort: mockUpdatePort,
+            readSessionToken: vi.fn().mockReturnValue(null),
             get serverUrl() {
                 return `http://127.0.0.1:${opts.port}`;
+            },
+            get dataDir() {
+                return opts.dataDir;
             },
             get state() {
                 return "ready";
@@ -1211,6 +1216,186 @@ describe("LilbeePlugin", () => {
 
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
+
+        // See `bb-afdd`: `/api/add` emits two `done` events per stream — one
+        // with plain SyncDone shape and one with `{copied, skipped, errors,
+        // sync: SyncDone}`. The plugin must handle both without the task
+        // ending up marked as failed.
+        it("parses a nested {sync: SyncDone} done payload (release/next add shape)", async () => {
+            Notice.clear();
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* withNestedDone() {
+                yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 1 } };
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: { added: ["test.md"], updated: [], removed: [], unchanged: 0, failed: [] },
+                };
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        copied: [],
+                        skipped: [],
+                        errors: [],
+                        sync: { added: ["test.md"], updated: [], removed: [], unchanged: 0, failed: [] },
+                    },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withNestedDone());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
+            expect(plugin.taskQueue.completed[plugin.taskQueue.completed.length - 1].error).toBeNull();
+            const messages = Notice.instances.map((n) => n.message).join(" | ");
+            expect(messages).toContain("1 added");
+        });
+
+        it("defaults missing removed/unchanged/failed fields in partial SyncDone", async () => {
+            Notice.clear();
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* partial() {
+                // Minimal shape — added/updated are arrays, rest are missing.
+                yield { event: SSE_EVENT.DONE, data: { added: ["x.md"], updated: [] } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(partial());
+            await (plugin as any).addToLilbee({ path: "x.md", name: "x.md" });
+
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
+        });
+
+        // Direct unit test for parseAddDoneEvent. The integration tests
+        // above cover the happy path but don't assert the exact defaults
+        // that `coerceSyncDone` fills in, so this pins down the contract.
+        it("parseAddDoneEvent decodes every input shape with stable defaults", async () => {
+            const { parseAddDoneEvent } = await import("../src/main");
+
+            // Plain SyncDone shape with all fields present.
+            expect(
+                parseAddDoneEvent({ added: ["a"], updated: ["b"], removed: ["c"], unchanged: 2, failed: ["d"] }),
+            ).toEqual({
+                added: ["a"],
+                updated: ["b"],
+                removed: ["c"],
+                unchanged: 2,
+                failed: ["d"],
+            });
+
+            // Partial SyncDone shape — missing fields get sensible defaults.
+            expect(parseAddDoneEvent({ added: ["x"], updated: [] })).toEqual({
+                added: ["x"],
+                updated: [],
+                removed: [],
+                unchanged: 0,
+                failed: [],
+            });
+
+            // Nested {sync: SyncDone} shape (the second `done` event server sends).
+            expect(
+                parseAddDoneEvent({
+                    copied: [],
+                    skipped: [],
+                    errors: [],
+                    sync: { added: ["y"], updated: [], removed: [], unchanged: 1, failed: [] },
+                }),
+            ).toEqual({ added: ["y"], updated: [], removed: [], unchanged: 1, failed: [] });
+
+            // Malformed inputs return null.
+            expect(parseAddDoneEvent(null)).toBeNull();
+            expect(parseAddDoneEvent("nope")).toBeNull();
+            expect(parseAddDoneEvent({ not: "sync" })).toBeNull();
+            expect(parseAddDoneEvent({ added: "not-an-array" })).toBeNull();
+        });
+
+        it("ignores malformed done payloads that are neither SyncDone nor nested", async () => {
+            Notice.clear();
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* withBadDone() {
+                yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 1 } };
+                yield { event: SSE_EVENT.DONE, data: { nope: true } };
+                yield { event: SSE_EVENT.DONE, data: null };
+                yield { event: SSE_EVENT.DONE, data: "not an object" };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withBadDone());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            // Task completes successfully (no throw) despite malformed payloads.
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
+        });
+    });
+
+    describe("health probe (bb-hzh7)", () => {
+        it("transitions status bar to error when /api/health fails, and recovers on next success", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+
+            // Health probe is skipped while tasks are active — make sure none are.
+            expect(plugin.taskQueue.activeAll.length).toBe(0);
+
+            // Simulate a broken server: health() returns err Result.
+            plugin.api.health = vi
+                .fn()
+                .mockResolvedValue({ isErr: () => true, isOk: () => false, error: new Error("down") });
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).toContain("error");
+
+            // Running again while already in error state must not flip back.
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).toContain("error");
+
+            // Recovery: health() resolves Ok.
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} });
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).toContain("ready");
+        });
+
+        it("skips probing while there are active tasks or while the server is starting", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.api.health = vi.fn();
+
+            // Enqueue an active task — probe should bail.
+            plugin.taskQueue.enqueue("busy", "sync");
+            await (plugin as any).probeServerHealth();
+            expect(plugin.api.health).not.toHaveBeenCalled();
+
+            plugin.taskQueue.clearHistory();
+            plugin.taskQueue.cancel(plugin.taskQueue.activeAll[0].id);
+
+            // Simulate "startingServer" phase.
+            (plugin as any).startingServer = true;
+            await (plugin as any).probeServerHealth();
+            expect(plugin.api.health).not.toHaveBeenCalled();
+            (plugin as any).startingServer = false;
+        });
+
+        it("calling startHealthProbe twice is a no-op (handle stays the same)", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const handle = (plugin as any).healthProbeHandle;
+            (plugin as any).startHealthProbe();
+            expect((plugin as any).healthProbeHandle).toBe(handle);
+        });
+
+        it("treats a thrown health() as a disconnect (rejected Promise, not an err Result)", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            // api.health() rejects — the probe's `.catch(() => null)` must
+            // turn this into an unreachable transition, not an unhandled
+            // rejection.
+            plugin.api.health = vi.fn().mockRejectedValue(new Error("network disconnect"));
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).toContain("error");
+        });
     });
 
     describe("taskQueue integration", () => {
@@ -1681,6 +1866,40 @@ describe("LilbeePlugin", () => {
             const callsAfter = (LilbeeClient as ReturnType<typeof vi.fn>).mock.calls.length;
 
             expect(callsAfter).toBeGreaterThan(callsBefore);
+        });
+
+        // See `bb-fkn6`: the managed server rewrites `server.json` on every
+        // start/restart. Without this, a restarted server would leave the
+        // plugin's LilbeeClient holding a stale (pre-restart) token and
+        // every mutating endpoint would return 401.
+        it("handleServerStateChange ready re-reads the session token after a restart", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const stateChange = mockServerOpts?.onStateChange;
+            expect(stateChange).toBeDefined();
+
+            // Simulate a restart: server.json now carries a different token.
+            const mgr = (plugin as any).serverManager as {
+                readSessionToken: ReturnType<typeof vi.fn>;
+            };
+            mgr.readSessionToken.mockReturnValue("fresh-token-after-restart");
+
+            stateChange("ready");
+            // Latest LilbeeClient instance received the new token.
+            const instances = (plugin.api as unknown as { setToken: ReturnType<typeof vi.fn> }).setToken;
+            expect(instances).toHaveBeenCalledWith("fresh-token-after-restart");
+        });
+
+        it("handleServerStateChange error sets lilbee-status-error class", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const stateChange = mockServerOpts?.onStateChange;
+            stateChange("error");
+            expect(plugin.statusBarEl?.classList.contains("lilbee-status-error")).toBe(true);
         });
 
         it("sets status bar to downloading only when binary is missing", async () => {
@@ -2569,7 +2788,11 @@ describe("LilbeePlugin", () => {
                 wikiVaultFolder: "lilbee-wiki",
             });
             await plugin.onload();
-            await vi.runAllTimersAsync();
+            // Advance a short window so fire-and-forget setTimeouts from
+            // onload() settle without triggering the recurring health probe
+            // more than a handful of times. Using runAllTimersAsync() would
+            // cycle the probe interval forever. See `bb-hzh7`.
+            await vi.advanceTimersByTimeAsync(10);
 
             plugin.wikiSync = { isWikiPath: (p: string) => p.startsWith("lilbee-wiki/"), reconcile: vi.fn() } as any;
             const syncSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue();

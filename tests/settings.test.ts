@@ -332,6 +332,22 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
+    // See `bb-fkn6`: external mode needs a bearer token so the plugin can
+    // reach auth-gated endpoints on a current lilbee server.
+    describe("serverToken setting onChange", () => {
+        it("updates plugin.settings.serverToken and calls saveSettings", async () => {
+            const plugin = makePlugin({ serverMode: "external" });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // External-mode text inputs in render order: [serverUrl, serverToken, ...]
+            await textOnChanges[1]("bearer-abc");
+            expect(plugin.settings.serverToken).toBe("bearer-abc");
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+    });
+
     describe("topK slider onChange", () => {
         it("updates topK and calls saveSettings", async () => {
             const plugin = makePlugin();

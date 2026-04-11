@@ -246,6 +246,17 @@
     color: var(--text-normal);
 }
 
+.lilbee-chat-message-error {
+    align-self: flex-start;
+    background-color: var(--background-modifier-error, rgba(200, 60, 60, 0.15));
+    color: var(--text-error);
+    border-left: 3px solid var(--text-error);
+}
+
+.lilbee-chat-error-text {
+    font-style: italic;
+}
+
 .lilbee-chat-content {
     white-space: normal;
 }
@@ -672,6 +683,13 @@
 .lilbee-status-ready {
     color: var(--text-on-accent) !important;
     background-color: var(--text-success);
+    border-radius: var(--radius-s, 4px);
+    padding: 0 var(--size-4-2, 8px);
+}
+
+.lilbee-status-error {
+    color: var(--text-on-accent) !important;
+    background-color: var(--text-error);
     border-radius: var(--radius-s, 4px);
     padding: 0 var(--size-4-2, 8px);
 }

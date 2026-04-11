@@ -141,6 +141,12 @@ export interface LilbeeSettings {
     wikiSyncToVault: boolean;
     wikiVaultFolder: string;
     hfToken: string;
+    /**
+     * Bearer token for authenticating against an external lilbee server.
+     * Ignored in managed mode (the plugin reads the token from the managed server's
+     * `server.json` file on startup). Empty string means no token is sent.
+     */
+    serverToken: string;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -168,6 +174,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     wikiSyncToVault: false,
     wikiVaultFolder: "lilbee-wiki",
     hfToken: "",
+    serverToken: "",
 };
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */
@@ -228,6 +235,41 @@ export interface CatalogResponse {
     limit: number;
     offset: number;
     families: ModelFamily[];
+}
+
+/**
+ * Flat shape returned by `GET /api/models/catalog` on servers that haven't yet
+ * been updated to emit grouped families. The plugin's `api.catalog()` adapts
+ * this shape into `CatalogResponse` so the rest of the code only deals with
+ * families/variants. See `bb-jffs` for the server-side follow-up.
+ */
+export interface CatalogServerEntry {
+    name: string;
+    display_name: string;
+    size_gb: number;
+    min_ram_gb: number;
+    description: string;
+    quality_tier: string;
+    installed: boolean;
+    source: string;
+    /** Optional — newer servers emit this; older ones do not. */
+    hf_repo?: string;
+    /** Optional — newer servers emit this; older ones do not. */
+    tag?: string;
+    /** Optional — newer servers emit this; older ones do not. */
+    task?: string;
+    /** Optional — newer servers emit this; older ones do not. */
+    featured?: boolean;
+    /** Optional — newer servers emit this; older ones do not. */
+    downloads?: number;
+}
+
+export interface CatalogServerResponse {
+    total: number;
+    limit: number;
+    offset: number;
+    models?: CatalogServerEntry[];
+    families?: ModelFamily[];
 }
 
 export interface InstalledModel {

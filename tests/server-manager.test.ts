@@ -96,6 +96,54 @@ describe("ServerManager", () => {
             const mgr = new ServerManager(defaultOpts({ port: 9999 }));
             expect(mgr.serverUrl).toBe("http://127.0.0.1:9999");
         });
+
+        it("dataDir getter returns the configured data dir", () => {
+            const mgr = new ServerManager(defaultOpts({ dataDir: "/var/lilbee" }));
+            expect(mgr.dataDir).toBe("/var/lilbee");
+        });
+    });
+
+    // ── readSessionToken() — bb-fkn6 ────────────────────────────────
+
+    describe("readSessionToken()", () => {
+        it("returns the token from {dataDir}/data/server.json", () => {
+            const mgr = new ServerManager(defaultOpts({ dataDir: "/var/lilbee" }));
+            existsSyncSpy.mockImplementation((p: unknown) => p === "/var/lilbee/data/server.json");
+            readFileSyncSpy.mockImplementation((p: unknown) => {
+                if (p === "/var/lilbee/data/server.json") return JSON.stringify({ token: "abc-123" });
+                return "";
+            });
+            expect(mgr.readSessionToken()).toBe("abc-123");
+        });
+
+        it("returns null when the file does not exist", () => {
+            const mgr = new ServerManager(defaultOpts({ dataDir: "/var/lilbee" }));
+            existsSyncSpy.mockReturnValue(false);
+            expect(mgr.readSessionToken()).toBeNull();
+        });
+
+        it("returns null when the file contents are not valid JSON", () => {
+            const mgr = new ServerManager(defaultOpts({ dataDir: "/var/lilbee" }));
+            existsSyncSpy.mockReturnValue(true);
+            readFileSyncSpy.mockReturnValue("not json");
+            expect(mgr.readSessionToken()).toBeNull();
+        });
+
+        it("returns null when the JSON has no string token field", () => {
+            const mgr = new ServerManager(defaultOpts({ dataDir: "/var/lilbee" }));
+            existsSyncSpy.mockReturnValue(true);
+            readFileSyncSpy.mockReturnValue(JSON.stringify({ other: "field" }));
+            expect(mgr.readSessionToken()).toBeNull();
+        });
+
+        it("returns null when readFileSync throws", () => {
+            const mgr = new ServerManager(defaultOpts({ dataDir: "/var/lilbee" }));
+            existsSyncSpy.mockReturnValue(true);
+            readFileSyncSpy.mockImplementation(() => {
+                throw new Error("EPERM");
+            });
+            expect(mgr.readSessionToken()).toBeNull();
+        });
     });
 
     // ── start() ─────────────────────────────────────────────────────
