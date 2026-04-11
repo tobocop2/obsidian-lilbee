@@ -15,7 +15,7 @@ vi.mock("../../src/views/catalog-modal", () => ({
 
 function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     return {
-        name: "qwen3:0.6b",
+        name: "qwen3",
         display_name: "Qwen3 0.6B",
         size_gb: 0.5,
         min_ram_gb: 4,
@@ -23,6 +23,11 @@ function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
         quality_tier: "balanced",
         installed: false,
         source: "native",
+        hf_repo: "qwen/qwen3-0.6B",
+        tag: "0.6b",
+        task: "chat",
+        featured: true,
+        downloads: 0,
         ...overrides,
     };
 }
@@ -463,8 +468,8 @@ describe("SetupWizard", () => {
 
         it("clicking a model card selects it", async () => {
             const entries = [
-                makeEntry({ name: "qwen/qwen3-0.6B", size_gb: 0.5, min_ram_gb: 4 }),
-                makeEntry({ name: "qwen/qwen3-4B", size_gb: 2.5, min_ram_gb: 8 }),
+                makeEntry({ hf_repo: "qwen/qwen3-0.6B", size_gb: 0.5, min_ram_gb: 4 }),
+                makeEntry({ hf_repo: "qwen/qwen3-4B", size_gb: 2.5, min_ram_gb: 8 }),
             ];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));

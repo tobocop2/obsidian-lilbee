@@ -5,14 +5,20 @@ import { MODEL_TASK, SSE_EVENT, TASK_TYPE, CATALOG_VIEW_MODE, ERROR_NAME } from 
 import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
-import { debounce, DEBOUNCE_MS } from "../utils";
-import { renderModelCard } from "../components/model-card";
+import { debounce, DEBOUNCE_MS, formatAbbreviatedCount } from "../utils";
+import { renderModelCard, renderBrowseMoreCard } from "../components/model-card";
 
 const PAGE_SIZE = 20;
 
 type TaskFilter = (typeof FILTERS.TASK)[keyof typeof FILTERS.TASK];
 type SizeFilter = "" | typeof FILTERS.SIZE.SMALL | typeof FILTERS.SIZE.MEDIUM | typeof FILTERS.SIZE.LARGE;
 type SortFilter = (typeof FILTERS.SORT)[keyof typeof FILTERS.SORT];
+
+const TASK_SECTION_LABEL: Record<ModelTask, string> = {
+    [MODEL_TASK.CHAT]: MESSAGES.LABEL_SECTION_CHAT,
+    [MODEL_TASK.VISION]: MESSAGES.LABEL_SECTION_VISION,
+    [MODEL_TASK.EMBEDDING]: MESSAGES.LABEL_SECTION_EMBEDDING,
+};
 
 export class CatalogModal extends Modal {
     private plugin: LilbeePlugin;
@@ -26,6 +32,7 @@ export class CatalogModal extends Modal {
     private resultsEl: HTMLElement | null = null;
     private loadMoreBtn: HTMLElement | null = null;
     private viewMode: CatalogViewMode = CATALOG_VIEW_MODE.GRID;
+    private fullCatalogLoaded = false;
     private sortColumn = "";
     private sortAscending = true;
     private viewToggleBtn: HTMLElement | null = null;
@@ -136,6 +143,14 @@ export class CatalogModal extends Modal {
         void this.fetchPage();
     }
 
+    private loadFullCatalog(): void {
+        // "Browse more" semantics: show the long tail ranked by popularity.
+        // This deliberately overrides any sort the user picked.
+        this.fullCatalogLoaded = true;
+        this.filterSort = FILTERS.SORT.DOWNLOADS;
+        this.resetAndFetch();
+    }
+
     private async fetchPage(): Promise<void> {
         const params: Parameters<typeof this.plugin.api.catalog>[0] = {
             limit: PAGE_SIZE,
@@ -182,13 +197,36 @@ export class CatalogModal extends Modal {
 
     private renderGridView(entries: CatalogEntry[]): void {
         if (!this.resultsEl) return;
-        const installed = entries.filter((e) => e.installed);
-        const rest = entries.filter((e) => !e.installed);
+        const picks = entries.filter((e) => e.featured);
+        const installed = entries.filter((e) => !e.featured && e.installed);
+        const rest = entries.filter((e) => !e.featured && !e.installed);
 
+        if (picks.length > 0) this.renderSection(MESSAGES.LABEL_OUR_PICKS, picks);
         if (installed.length > 0) this.renderSection(MESSAGES.LABEL_SECTION_INSTALLED, installed);
-        if (rest.length > 0) this.renderSection(MESSAGES.LABEL_SECTION_CHAT, rest);
+
+        for (const [task, group] of this.groupByTask(rest)) {
+            this.renderSection(TASK_SECTION_LABEL[task] ?? task, group);
+        }
+
+        if (!this.fullCatalogLoaded) {
+            const grid = this.resultsEl.createDiv({ cls: "lilbee-catalog-grid" });
+            renderBrowseMoreCard(grid, () => this.loadFullCatalog());
+        }
 
         this.renderViewToggleCta();
+    }
+
+    private groupByTask(entries: CatalogEntry[]): [ModelTask, CatalogEntry[]][] {
+        const groups = new Map<ModelTask, CatalogEntry[]>();
+        for (const entry of entries) {
+            const group = groups.get(entry.task);
+            if (group) {
+                group.push(entry);
+            } else {
+                groups.set(entry.task, [entry]);
+            }
+        }
+        return [...groups.entries()];
     }
 
     private renderSection(heading: string, entries: CatalogEntry[]): void {
@@ -204,7 +242,7 @@ export class CatalogModal extends Modal {
     }
 
     private renderCard(container: HTMLElement, entry: CatalogEntry): void {
-        const isActive = this.plugin.activeModel === entry.name || this.plugin.activeVisionModel === entry.name;
+        const isActive = this.isActiveEntry(entry);
         renderModelCard(container, entry, {
             showActions: true,
             isActive,
@@ -212,6 +250,10 @@ export class CatalogModal extends Modal {
             onUse: (e, btn) => this.handleUse(e, btn),
             onRemove: (e, btn) => this.handleRemove(e, btn),
         });
+    }
+
+    private isActiveEntry(entry: CatalogEntry): boolean {
+        return this.plugin.activeModel === entry.hf_repo || this.plugin.activeVisionModel === entry.hf_repo;
     }
 
     private renderViewToggleCta(): void {
@@ -238,8 +280,9 @@ export class CatalogModal extends Modal {
         const header = listEl.createDiv({ cls: "lilbee-catalog-list-header" });
         const cols = [
             { key: "name", label: MESSAGES.LABEL_NAME, cls: "lilbee-catalog-list-col-name" },
+            { key: "task", label: MESSAGES.LABEL_TASK, cls: "lilbee-catalog-list-col-task" },
             { key: "size", label: MESSAGES.LABEL_SIZE, cls: "lilbee-catalog-list-col-size" },
-            { key: "quant", label: MESSAGES.LABEL_QUANT, cls: "lilbee-catalog-list-col-quant" },
+            { key: "downloads", label: MESSAGES.LABEL_DOWNLOADS, cls: "lilbee-catalog-list-col-downloads" },
             { key: "action", label: "", cls: "lilbee-catalog-list-col-action" },
         ];
         for (const col of cols) {
@@ -252,12 +295,17 @@ export class CatalogModal extends Modal {
 
     private renderListRow(listEl: HTMLElement, entry: CatalogEntry): void {
         const row = listEl.createDiv({ cls: "lilbee-catalog-list-row" });
-        row.createEl("span", { text: entry.display_name, cls: "lilbee-catalog-list-col-name" });
+        const nameText = entry.featured ? `\u2605 ${entry.display_name}` : entry.display_name;
+        row.createEl("span", { text: nameText, cls: "lilbee-catalog-list-col-name" });
+        row.createEl("span", { text: entry.task, cls: "lilbee-catalog-list-col-task" });
         row.createEl("span", { text: `${entry.size_gb} GB`, cls: "lilbee-catalog-list-col-size" });
-        row.createEl("span", { text: entry.quality_tier, cls: "lilbee-catalog-list-col-quant" });
+        row.createEl("span", {
+            text: formatAbbreviatedCount(entry.downloads),
+            cls: "lilbee-catalog-list-col-downloads",
+        });
 
         const actionEl = row.createDiv({ cls: "lilbee-catalog-list-col-action" });
-        const isActive = this.plugin.activeModel === entry.name || this.plugin.activeVisionModel === entry.name;
+        const isActive = this.isActiveEntry(entry);
 
         if (isActive) {
             actionEl.createEl("span", { text: MESSAGES.LABEL_ACTIVE, cls: "lilbee-catalog-active" });
@@ -302,10 +350,12 @@ export class CatalogModal extends Modal {
         switch (column) {
             case "name":
                 return entry.display_name;
+            case "task":
+                return entry.task;
             case "size":
                 return entry.size_gb;
-            case "quant":
-                return entry.quality_tier;
+            case "downloads":
+                return entry.downloads;
             default:
                 return "";
         }
@@ -317,7 +367,7 @@ export class CatalogModal extends Modal {
     }
 
     private handleRemove(entry: CatalogEntry, btn: HTMLElement): void {
-        const confirmModal = new ConfirmModal(this.app, MESSAGES.NOTICE_CONFIRM_REMOVE(entry.name));
+        const confirmModal = new ConfirmModal(this.app, MESSAGES.NOTICE_CONFIRM_REMOVE(entry.hf_repo));
         confirmModal.open();
         void confirmModal.result.then((confirmed) => {
             if (!confirmed) return;
@@ -329,15 +379,15 @@ export class CatalogModal extends Modal {
         btn.textContent = MESSAGES.STATUS_REMOVING;
         (btn as HTMLButtonElement).disabled = true;
 
-        const result = await this.plugin.api.deleteModel(entry.name, entry.source);
+        const result = await this.plugin.api.deleteModel(entry.hf_repo, entry.source);
         if (result.isErr()) {
-            new Notice(MESSAGES.ERROR_REMOVE_MODEL.replace("{model}", entry.name));
+            new Notice(MESSAGES.ERROR_REMOVE_MODEL.replace("{model}", entry.hf_repo));
             btn.textContent = MESSAGES.BUTTON_REMOVE;
             (btn as HTMLButtonElement).disabled = false;
             return;
         }
 
-        new Notice(MESSAGES.NOTICE_REMOVED(entry.name));
+        new Notice(MESSAGES.NOTICE_REMOVED(entry.hf_repo));
         this.plugin.fetchActiveModel();
         this.resetAndFetch();
     }
@@ -349,34 +399,34 @@ export class CatalogModal extends Modal {
         const result = await this.setActiveFor(entry);
 
         if (result.isErr()) {
-            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", entry.name));
+            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", entry.hf_repo));
             btn.textContent = MESSAGES.BUTTON_USE;
             (btn as HTMLButtonElement).disabled = false;
             return;
         }
 
         this.plugin.fetchActiveModel();
-        new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(entry.name));
+        new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(entry.hf_repo));
         this.resetAndFetch();
     }
 
     private async setActiveFor(entry: CatalogEntry): ReturnType<typeof this.plugin.api.setChatModel> {
-        if (this.filterTask === MODEL_TASK.VISION) {
-            const result = await this.plugin.api.setVisionModel(entry.name);
-            if (result.isOk()) this.plugin.activeVisionModel = entry.name;
+        if (entry.task === MODEL_TASK.VISION) {
+            const result = await this.plugin.api.setVisionModel(entry.hf_repo);
+            if (result.isOk()) this.plugin.activeVisionModel = entry.hf_repo;
             return result;
         }
-        if (this.filterTask === MODEL_TASK.EMBEDDING) {
-            return this.plugin.api.setEmbeddingModel(entry.name);
+        if (entry.task === MODEL_TASK.EMBEDDING) {
+            return this.plugin.api.setEmbeddingModel(entry.hf_repo);
         }
-        const result = await this.plugin.api.setChatModel(entry.name);
-        if (result.isOk()) this.plugin.activeModel = entry.name;
+        const result = await this.plugin.api.setChatModel(entry.hf_repo);
+        if (result.isOk()) this.plugin.activeModel = entry.hf_repo;
         return result;
     }
 
     private handlePull(entry: CatalogEntry, btn: HTMLElement): void {
         const info = {
-            name: entry.name,
+            name: entry.hf_repo,
             size_gb: entry.size_gb,
             min_ram_gb: entry.min_ram_gb,
             description: entry.description,
@@ -391,18 +441,18 @@ export class CatalogModal extends Modal {
     }
 
     private async executePull(entry: CatalogEntry, btn: HTMLElement): Promise<void> {
-        btn.textContent = MESSAGES.STATUS_PULLING.replace("{model}", entry.name);
+        btn.textContent = MESSAGES.STATUS_PULLING.replace("{model}", entry.hf_repo);
         (btn as HTMLButtonElement).disabled = true;
-        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.name}`, TASK_TYPE.PULL);
+        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.hf_repo}`, TASK_TYPE.PULL);
 
         try {
-            for await (const event of this.plugin.api.pullModel(entry.name, entry.source)) {
+            for await (const event of this.plugin.api.pullModel(entry.hf_repo, entry.source)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { current?: number; total?: number };
                     if (d.total && d.current !== undefined) {
                         const pct = Math.round((d.current / d.total) * 100);
                         btn.textContent = `${pct}%`;
-                        this.plugin.taskQueue.update(taskId, pct, entry.name);
+                        this.plugin.taskQueue.update(taskId, pct, entry.hf_repo);
                     }
                 }
             }
@@ -431,7 +481,7 @@ export class CatalogModal extends Modal {
 
         this.plugin.fetchActiveModel();
         this.plugin.taskQueue.complete(taskId);
-        new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.name));
+        new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.hf_repo));
         btn.textContent = MESSAGES.LABEL_ACTIVE;
         (btn as HTMLButtonElement).disabled = true;
     }

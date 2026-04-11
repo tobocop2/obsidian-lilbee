@@ -1,10 +1,11 @@
 import type { CatalogEntry, ModelCardOptions } from "../types";
 import { MESSAGES } from "../locales/en";
-import { renderPill, PILL_CLS } from "./pill";
+import { formatAbbreviatedCount } from "../utils";
+import { renderPill, renderTaskPill, renderPickPill, PILL_CLS } from "./pill";
 
 export function renderModelCard(container: HTMLElement, entry: CatalogEntry, options: ModelCardOptions): HTMLElement {
     const card = container.createDiv({ cls: "lilbee-model-card" });
-    card.dataset.name = entry.name;
+    card.dataset.repo = entry.hf_repo;
     if (options.isActive) card.addClass("is-selected");
 
     renderCardHeader(card, entry);
@@ -28,6 +29,8 @@ export function renderModelCard(container: HTMLElement, entry: CatalogEntry, opt
 function renderCardHeader(card: HTMLElement, entry: CatalogEntry): void {
     const header = card.createDiv({ cls: "lilbee-model-card-header" });
     header.createEl("span", { text: entry.display_name, cls: "lilbee-model-card-name" });
+    renderTaskPill(header, entry.task);
+    if (entry.featured) renderPickPill(header);
 }
 
 function renderCardSpecs(card: HTMLElement, entry: CatalogEntry): void {
@@ -39,6 +42,11 @@ function renderCardStatus(card: HTMLElement, entry: CatalogEntry): void {
     const status = card.createDiv({ cls: "lilbee-model-card-status" });
     if (entry.installed) {
         renderPill(status, MESSAGES.LABEL_INSTALLED, PILL_CLS.INSTALLED);
+    } else if (entry.downloads > 0) {
+        status.createEl("span", {
+            text: MESSAGES.LABEL_DOWNLOADS_COUNT(formatAbbreviatedCount(entry.downloads)),
+            cls: "lilbee-model-card-downloads",
+        });
     }
 }
 
