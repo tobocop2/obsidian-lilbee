@@ -58,12 +58,6 @@ export class ServerManager {
         return `${this.opts.dataDir}/data/server.port`;
     }
 
-    /**
-     * Read the server's session token from `{dataDir}/data/server.json`.
-     * Returns `null` when the file is missing or malformed. The token must be
-     * passed in the `Authorization: Bearer <token>` header for mutating
-     * endpoints (see the lilbee server's `auth.py`).
-     */
     readSessionToken(): string | null {
         const tokenPath = `${this.opts.dataDir}/data/server.json`;
         try {

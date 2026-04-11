@@ -60,11 +60,9 @@ function summarizeSyncResult(done: SyncDone): string {
 }
 
 /**
- * Parse a `done` event emitted by `/api/add`. The server currently sends two
- * `done` events during a single add stream: the first with plain SyncDone
- * fields, the second with `{copied, skipped, errors, sync}` where `sync`
- * nests the real SyncDone. Accept both shapes. Returns `null` if the payload
- * is neither. See `bb-afdd`.
+ * Parse a `done` event emitted by `/api/add`. The server sends two `done`
+ * events per stream: plain SyncDone and a nested `{sync: SyncDone}`. Accept
+ * both shapes; return null for anything else.
  */
 export function parseAddDoneEvent(data: unknown): SyncDone | null {
     if (!data || typeof data !== "object") return null;
@@ -284,13 +282,7 @@ export default class LilbeePlugin extends Plugin {
             case SERVER_STATE.READY:
                 if (this.serverManager) {
                     this.api = new LilbeeClient(this.serverManager.serverUrl);
-                    // Re-read the session token — on every managed-server
-                    // start/restart the server writes a fresh `server.json`,
-                    // so we must re-apply it to the new LilbeeClient.
-                    // Otherwise every mutating endpoint 401s after a
-                    // restart even though `onload()` / `startManagedServer()`
-                    // set the token on the initial client instance. See
-                    // `bb-fkn6`.
+                    // Re-apply the token — each server start writes a fresh server.json.
                     this.api.setToken(this.serverManager.readSessionToken());
                 }
                 this.serverUnreachable = false;
@@ -501,16 +493,8 @@ export default class LilbeePlugin extends Plugin {
         this.setStatusClass("lilbee-status-ready");
     }
 
-    /**
-     * Start a background health probe so the status bar reflects a server
-     * disconnect even when the user hasn't triggered a fetch. See `bb-hzh7`.
-     * Probe runs every 30s. Skipped while there are active tasks (those already
-     * exercise the server, so a separate probe would be redundant).
-     */
     private startHealthProbe(): void {
         if (this.healthProbeHandle !== null) return;
-        // Use the numeric setInterval overload (global `setInterval`); the
-        // `window` global is not available in Node test environments.
         const handle = setInterval(() => void this.probeServerHealth(), HEALTH_PROBE_INTERVAL_MS) as unknown as number;
         this.registerInterval(handle);
         this.healthProbeHandle = handle;
@@ -628,13 +612,6 @@ export default class LilbeePlugin extends Plugin {
         this.syncController = new AbortController();
 
         try {
-            // Track the most recent SyncDone payload. The server emits two
-            // `done` events during `/api/add`: the first carries the plain
-            // SyncDone shape, the second (emitted after `event: summary`)
-            // carries a combined `{copied, skipped, errors, sync}` payload.
-            // We want the nested `sync` in the second case, but we also
-            // accept the plain shape for backwards compatibility. See
-            // `bb-afdd`.
             let syncResult: SyncDone | null = null;
             for await (const event of this.api.addFiles(
                 paths,

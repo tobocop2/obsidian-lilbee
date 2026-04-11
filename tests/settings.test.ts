@@ -332,8 +332,6 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
-    // See `bb-fkn6`: external mode needs a bearer token so the plugin can
-    // reach auth-gated endpoints on a current lilbee server.
     describe("serverToken setting onChange", () => {
         it("updates plugin.settings.serverToken and calls saveSettings", async () => {
             const plugin = makePlugin({ serverMode: "external" });

@@ -2,9 +2,6 @@ name: CI
 on:
   push:
     branches: [main]
-  # Run CI on every pull request regardless of base branch. PRs that target
-  # integration branches (e.g. feature/server-api-parity) still need the
-  # build / lint / test gate to pass before merging.
   pull_request:
 
 permissions:

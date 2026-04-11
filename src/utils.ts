@@ -23,11 +23,6 @@ export const NOTICE_DURATION_MS = 3000;
 export const NOTICE_ERROR_DURATION_MS = 8000;
 export const NOTICE_PERMANENT = 0;
 export const TIME_REFRESH_INTERVAL_MS = 30000;
-/**
- * How often the plugin pings `/api/health` in the background so the status
- * bar reflects a server disconnect without requiring a user action. See
- * `bb-hzh7`. 30 seconds is a compromise between responsiveness and log noise.
- */
 export const HEALTH_PROBE_INTERVAL_MS = 30_000;
 
 export function relativeTime(timestamp: number): string {

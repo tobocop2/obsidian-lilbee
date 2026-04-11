@@ -1217,11 +1217,7 @@ describe("LilbeePlugin", () => {
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
-        // See `bb-afdd`: `/api/add` emits two `done` events per stream — one
-        // with plain SyncDone shape and one with `{copied, skipped, errors,
-        // sync: SyncDone}`. The plugin must handle both without the task
-        // ending up marked as failed.
-        it("parses a nested {sync: SyncDone} done payload (release/next add shape)", async () => {
+        it("parses a nested {sync: SyncDone} done payload", async () => {
             Notice.clear();
             const plugin = await createPlugin();
             await plugin.onload();
@@ -1333,7 +1329,7 @@ describe("LilbeePlugin", () => {
         });
     });
 
-    describe("health probe (bb-hzh7)", () => {
+    describe("health probe", () => {
         it("transitions status bar to error when /api/health fails, and recovers on next success", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
@@ -1868,10 +1864,6 @@ describe("LilbeePlugin", () => {
             expect(callsAfter).toBeGreaterThan(callsBefore);
         });
 
-        // See `bb-fkn6`: the managed server rewrites `server.json` on every
-        // start/restart. Without this, a restarted server would leave the
-        // plugin's LilbeeClient holding a stale (pre-restart) token and
-        // every mutating endpoint would return 401.
         it("handleServerStateChange ready re-reads the session token after a restart", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
@@ -1880,14 +1872,12 @@ describe("LilbeePlugin", () => {
             const stateChange = mockServerOpts?.onStateChange;
             expect(stateChange).toBeDefined();
 
-            // Simulate a restart: server.json now carries a different token.
             const mgr = (plugin as any).serverManager as {
                 readSessionToken: ReturnType<typeof vi.fn>;
             };
             mgr.readSessionToken.mockReturnValue("fresh-token-after-restart");
 
             stateChange("ready");
-            // Latest LilbeeClient instance received the new token.
             const instances = (plugin.api as unknown as { setToken: ReturnType<typeof vi.fn> }).setToken;
             expect(instances).toHaveBeenCalledWith("fresh-token-after-restart");
         });
@@ -2788,10 +2778,7 @@ describe("LilbeePlugin", () => {
                 wikiVaultFolder: "lilbee-wiki",
             });
             await plugin.onload();
-            // Advance a short window so fire-and-forget setTimeouts from
-            // onload() settle without triggering the recurring health probe
-            // more than a handful of times. Using runAllTimersAsync() would
-            // cycle the probe interval forever. See `bb-hzh7`.
+            // Finite advance — runAllTimersAsync would spin forever on the 30s health probe interval.
             await vi.advanceTimersByTimeAsync(10);
 
             plugin.wikiSync = { isWikiPath: (p: string) => p.startsWith("lilbee-wiki/"), reconcile: vi.fn() } as any;

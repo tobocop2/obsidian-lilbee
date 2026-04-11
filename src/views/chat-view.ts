@@ -479,10 +479,6 @@ export class ChatView extends ItemView {
                 break;
             }
             case SSE_EVENT.ERROR: {
-                // Replace the pending assistant bubble with a persistent
-                // error state instead of dropping it — otherwise the user
-                // has no visible record that their question failed once
-                // the transient Notice disappears. See `bb-w7rj`.
                 const errMsg = extractString(event.data, "message");
                 assistantBubble.empty();
                 assistantBubble.addClass("lilbee-chat-message-error");

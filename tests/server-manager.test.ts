@@ -103,8 +103,6 @@ describe("ServerManager", () => {
         });
     });
 
-    // ── readSessionToken() — bb-fkn6 ────────────────────────────────
-
     describe("readSessionToken()", () => {
         it("returns the token from {dataDir}/data/server.json", () => {
             const mgr = new ServerManager(defaultOpts({ dataDir: "/var/lilbee" }));

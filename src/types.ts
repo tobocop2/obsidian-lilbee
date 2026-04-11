@@ -141,11 +141,6 @@ export interface LilbeeSettings {
     wikiSyncToVault: boolean;
     wikiVaultFolder: string;
     hfToken: string;
-    /**
-     * Bearer token for authenticating against an external lilbee server.
-     * Ignored in managed mode (the plugin reads the token from the managed server's
-     * `server.json` file on startup). Empty string means no token is sent.
-     */
     serverToken: string;
 }
 
@@ -205,12 +200,6 @@ export const SSE_EVENT = {
 
 export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
-/**
- * A single entry in the model catalog. Shape mirrors the lilbee server's
- * `CatalogEntryResponse` (see `server/models.py`) exactly — the plugin does
- * not re-group or reshape. `name` is the canonical identifier passed to
- * `pullModel()`, `setChatModel()`, `setVisionModel()`, and `deleteModel()`.
- */
 export interface CatalogEntry {
     name: string;
     display_name: string;
