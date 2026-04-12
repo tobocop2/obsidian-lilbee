@@ -1245,9 +1245,7 @@ describe("LilbeeSettingTab", () => {
             actionCell: MockElement;
         }
 
-        async function setupPullButton(
-            plugin: ReturnType<typeof makePlugin>,
-        ): Promise<PullSetup> {
+        async function setupPullButton(plugin: ReturnType<typeof makePlugin>): Promise<PullSetup> {
             const tab = makeTab(plugin);
             const table = new MockElement("table") as unknown as HTMLTableElement;
             const catalog = makeModelsResponse();

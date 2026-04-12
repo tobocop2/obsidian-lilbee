@@ -2159,7 +2159,7 @@ describe("ChatView — offline retry", () => {
             if (callCount <= 2) {
                 return Promise.resolve({
                     chat: { active: "", installed: [], catalog: [{ name: "llama3", installed: false }] },
-                    });
+                });
             }
             return Promise.resolve({
                 chat: { active: "llama3", installed: ["llama3"], catalog: [{ name: "llama3", installed: true }] },

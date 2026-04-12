@@ -1,15 +1,7 @@
 import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
 import type { ReleaseInfo } from "./binary-manager";
-import {
-    DEFAULT_SETTINGS,
-    SERVER_MODE,
-    SERVER_STATE,
-    SSE_EVENT,
-    SYNC_MODE,
-    TASK_TYPE,
-    ERROR_NAME,
-} from "./types";
+import { DEFAULT_SETTINGS, SERVER_MODE, SERVER_STATE, SSE_EVENT, SYNC_MODE, TASK_TYPE, ERROR_NAME } from "./types";
 import type { GenerationOptions, ModelCatalog, ModelInfo, ModelsResponse, ServerMode } from "./types";
 import { MESSAGES } from "./locales/en";
 import { CatalogModal } from "./views/catalog-modal";
@@ -868,11 +860,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    private renderModelSection(
-        container: HTMLElement,
-        label: string,
-        catalog: ModelsResponse["chat"],
-    ): void {
+    private renderModelSection(container: HTMLElement, label: string, catalog: ModelsResponse["chat"]): void {
         const section = container.createDiv("lilbee-model-section");
         section.createEl("h4", { text: label });
 
@@ -999,19 +987,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    private async pullModel(
-        btn: HTMLButtonElement,
-        actionCell: HTMLElement,
-        model: ModelInfo,
-    ): Promise<void> {
+    private async pullModel(btn: HTMLButtonElement, actionCell: HTMLElement, model: ModelInfo): Promise<void> {
         await this.executePull(btn, actionCell, model);
     }
 
-    private async executePull(
-        btn: HTMLButtonElement,
-        actionCell: HTMLElement,
-        model: ModelInfo,
-    ): Promise<void> {
+    private async executePull(btn: HTMLButtonElement, actionCell: HTMLElement, model: ModelInfo): Promise<void> {
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
         const controller = new AbortController();
         this.pullAbortController = controller;

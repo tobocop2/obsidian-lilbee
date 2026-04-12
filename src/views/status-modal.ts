@@ -61,7 +61,11 @@ export class StatusModal extends Modal {
 
         const ocrValue = status.config.enable_ocr;
         const ocrLabel =
-            ocrValue === "true" ? MESSAGES.LABEL_OCR_ON : ocrValue === "false" ? MESSAGES.LABEL_OCR_OFF : MESSAGES.LABEL_OCR_AUTO;
+            ocrValue === "true"
+                ? MESSAGES.LABEL_OCR_ON
+                : ocrValue === "false"
+                  ? MESSAGES.LABEL_OCR_OFF
+                  : MESSAGES.LABEL_OCR_AUTO;
         this.addRow(table, MESSAGES.LABEL_STATUS_OCR, ocrLabel);
     }
 
