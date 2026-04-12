@@ -113,7 +113,8 @@ export class CrawlModal extends Modal {
                         this.decide(true);
                         return;
                     }
-                    case SSE_EVENT.CRAWL_ERROR: {
+                    case SSE_EVENT.CRAWL_ERROR:
+                    case SSE_EVENT.ERROR: {
                         const d = event.data as { message?: string };
                         this.plugin.taskQueue.fail(taskId, d.message ?? "unknown");
                         new Notice(MESSAGES.ERROR_CRAWL_ERROR.replace("{msg}", d.message ?? "unknown"));
