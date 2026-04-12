@@ -2554,7 +2554,7 @@ describe("LilbeePlugin", () => {
             expect(plugin.settings.wikiEnabled).toBe(true);
         });
 
-        it("wikiEnabled stays false when wiki is not in status", async () => {
+        it("wikiEnabled preserves setting when wiki is not in status", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
@@ -2569,10 +2569,11 @@ describe("LilbeePlugin", () => {
             plugin.fetchActiveModel();
             await new Promise((r) => setTimeout(r, 0));
 
-            expect((plugin as any).wikiEnabled).toBe(false);
+            // Server has no wiki field — local setting (default true) preserved
+            expect((plugin as any).wikiEnabled).toBe(true);
         });
 
-        it("wiki detection is best-effort and does not fail on status error", async () => {
+        it("wiki detection is best-effort and preserves setting on error", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
@@ -2584,8 +2585,8 @@ describe("LilbeePlugin", () => {
             plugin.fetchActiveModel();
             await new Promise((r) => setTimeout(r, 0));
 
-            // Should not throw, wikiEnabled stays false
-            expect((plugin as any).wikiEnabled).toBe(false);
+            // Should not throw, wikiEnabled preserves setting default
+            expect((plugin as any).wikiEnabled).toBe(true);
         });
     });
 
@@ -2755,6 +2756,8 @@ describe("LilbeePlugin", () => {
                 wikiVaultFolder: "lilbee-wiki",
             });
             await plugin.onload();
+            // Flush async fetchActiveModel which may call initWikiSync
+            await new Promise((r) => setTimeout(r, 0));
 
             plugin.wikiSync = {
                 reconcile: vi.fn().mockResolvedValue({ written: 0, removed: 0 }),

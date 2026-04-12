@@ -251,10 +251,8 @@ export interface WikiPage {
     slug: string;
     title: string;
     page_type: "summary" | "synthesis";
-    sources: string[];
-    faithfulness_score: number;
-    generated_by: string;
-    generated_at: string;
+    source_count: number;
+    created_at: string;
 }
 
 export interface WikiPageDetail extends WikiPage {

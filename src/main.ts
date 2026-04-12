@@ -109,6 +109,7 @@ export default class LilbeePlugin extends Plugin {
 
     async onload(): Promise<void> {
         await this.loadSettings();
+        this.wikiEnabled = this.settings.wikiEnabled;
 
         this.statusBarEl = this.addStatusBarItem();
         this.statusBarEl.style.cursor = "pointer";
@@ -565,8 +566,10 @@ export default class LilbeePlugin extends Plugin {
         try {
             const status = await this.api.status();
             if (status.isOk()) {
-                this.wikiEnabled = !!status.value.wiki?.enabled;
-                this.settings.wikiEnabled = this.wikiEnabled;
+                if (status.value.wiki != null) {
+                    this.wikiEnabled = !!status.value.wiki.enabled;
+                    this.settings.wikiEnabled = this.wikiEnabled;
+                }
                 this.wikiPageCount = status.value.wiki?.page_count ?? 0;
                 this.wikiDraftCount = status.value.wiki?.draft_count ?? 0;
             }
