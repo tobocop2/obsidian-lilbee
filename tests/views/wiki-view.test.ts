@@ -31,13 +31,11 @@ function makePlugin(): LilbeePlugin {
 
 function makePage(overrides: Partial<WikiPage> = {}): WikiPage {
     return {
-        slug: "test-page",
+        slug: "summaries/test-page",
         title: "Test Page",
         page_type: "summary",
-        sources: ["source1.md"],
-        faithfulness_score: 0.85,
-        generated_by: "gpt-4",
-        generated_at: new Date().toISOString(),
+        source_count: 1,
+        created_at: new Date().toISOString(),
         ...overrides,
     };
 }
@@ -335,19 +333,18 @@ describe("WikiView.renderPageItem", () => {
     });
 
     it("renders sources count", () => {
-        (view as any).pages = [makePage({ sources: ["a", "b", "c"] })];
+        (view as any).pages = [makePage({ source_count: 3 })];
         (view as any).renderList();
         const meta = findByClass(listEl, "lilbee-wiki-meta");
         const texts = collectTexts(meta[0]!);
         expect(texts.some((t) => t === "3 sources")).toBe(true);
     });
 
-    it("renders faithfulness score bar", () => {
-        (view as any).pages = [makePage({ faithfulness_score: 0.75 })];
+    it("renders timestamp for page", () => {
+        (view as any).pages = [makePage({ source_count: 2 })];
         (view as any).renderList();
-        const bars = findByClass(listEl, "lilbee-relevance-bar");
-        expect(bars.length).toBe(1);
-        expect(bars[0]!.style.width).toBe("75%");
+        const times = findByClass(listEl, "lilbee-task-time");
+        expect(times.length).toBe(1);
     });
 
     it("adds active class when page is selected", () => {
@@ -466,18 +463,14 @@ describe("WikiView.renderDetail", () => {
         detailEl = (view as any).detailEl as MockElement;
     });
 
-    it("renders metadata header with title, generated_by, score, and date", () => {
+    it("renders metadata header with title and date", () => {
         const detail = makePageDetail({
             title: "My Page",
-            generated_by: "gpt-4",
-            faithfulness_score: 0.92,
         });
         (view as any).renderDetail(detail);
 
         const texts = collectTexts(detailEl);
         expect(texts.some((t) => t === "My Page")).toBe(true);
-        expect(texts.some((t) => t.includes("gpt-4"))).toBe(true);
-        expect(texts.some((t) => t.includes("92%"))).toBe(true);
     });
 
     it("renders markdown content", () => {
@@ -744,7 +737,7 @@ describe("relativeTime via renderPageItem timestamps", () => {
     });
 
     it("shows 'just now' for recent timestamps", () => {
-        (view as any).pages = [makePage({ generated_at: new Date().toISOString() })];
+        (view as any).pages = [makePage({ created_at: new Date().toISOString() })];
         (view as any).renderList();
         const times = findByClass(listEl, "lilbee-task-time");
         expect(times[0]!.textContent).toBe("just now");
@@ -752,7 +745,7 @@ describe("relativeTime via renderPageItem timestamps", () => {
 
     it("shows minutes for timestamps minutes ago", () => {
         const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-        (view as any).pages = [makePage({ generated_at: fiveMinAgo })];
+        (view as any).pages = [makePage({ created_at: fiveMinAgo })];
         (view as any).renderList();
         const times = findByClass(listEl, "lilbee-task-time");
         expect(times[0]!.textContent).toBe("5m ago");
@@ -760,7 +753,7 @@ describe("relativeTime via renderPageItem timestamps", () => {
 
     it("shows hours for timestamps hours ago", () => {
         const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
-        (view as any).pages = [makePage({ generated_at: threeHoursAgo })];
+        (view as any).pages = [makePage({ created_at: threeHoursAgo })];
         (view as any).renderList();
         const times = findByClass(listEl, "lilbee-task-time");
         expect(times[0]!.textContent).toBe("3h ago");
@@ -768,7 +761,7 @@ describe("relativeTime via renderPageItem timestamps", () => {
 
     it("shows days for timestamps days ago", () => {
         const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
-        (view as any).pages = [makePage({ generated_at: twoDaysAgo })];
+        (view as any).pages = [makePage({ created_at: twoDaysAgo })];
         (view as any).renderList();
         const times = findByClass(listEl, "lilbee-task-time");
         expect(times[0]!.textContent).toBe("2d ago");

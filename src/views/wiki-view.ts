@@ -131,14 +131,9 @@ export class WikiView extends ItemView {
         info.createSpan({ cls: "lilbee-task-name", text: page.title });
 
         const meta = item.createDiv({ cls: "lilbee-wiki-meta" });
-        meta.createSpan({ text: MESSAGES.LABEL_WIKI_SOURCES_COUNT(page.sources.length) });
+        meta.createSpan({ text: MESSAGES.LABEL_WIKI_SOURCES_COUNT(page.source_count) });
 
-        // Faithfulness bar
-        const barContainer = meta.createDiv({ cls: "lilbee-relevance-bar-container" });
-        const bar = barContainer.createDiv({ cls: "lilbee-relevance-bar" });
-        bar.style.width = `${Math.round(page.faithfulness_score * 100)}%`;
-
-        const ts = new Date(page.generated_at).getTime();
+        const ts = new Date(page.created_at).getTime();
         meta.createSpan({ text: relativeTime(ts), cls: "lilbee-task-time" });
 
         item.addEventListener("click", () => {
@@ -173,9 +168,7 @@ export class WikiView extends ItemView {
         // Metadata header
         const meta = this.detailEl.createDiv({ cls: "lilbee-wiki-meta" });
         meta.createEl("strong", { text: page.title });
-        meta.createSpan({ text: `${MESSAGES.LABEL_WIKI_GENERATED_BY} ${page.generated_by}` });
-        meta.createSpan({ text: `${MESSAGES.LABEL_WIKI_SCORE}: ${(page.faithfulness_score * 100).toFixed(0)}%` });
-        meta.createSpan({ text: new Date(page.generated_at).toLocaleString() });
+        meta.createSpan({ text: new Date(page.created_at).toLocaleString() });
 
         // Markdown body
         const content = this.detailEl.createDiv({ cls: "lilbee-wiki-content" });
