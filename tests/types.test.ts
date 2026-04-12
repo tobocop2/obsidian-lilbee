@@ -52,6 +52,7 @@ describe("DEFAULT_SETTINGS", () => {
             "repeat_penalty",
             "searchChunkType",
             "seed",
+            "enableOcr",
             "serverMode",
             "serverPort",
             "serverUrl",
@@ -194,11 +195,10 @@ describe("ModelCatalog interface", () => {
 });
 
 describe("ModelsResponse interface", () => {
-    it("has chat and vision catalogs", () => {
+    it("has chat catalog", () => {
         const catalog: ModelCatalog = { active: "m", catalog: [], installed: [] };
-        const r: ModelsResponse = { chat: catalog, vision: catalog };
+        const r: ModelsResponse = { chat: catalog };
         expect(r.chat).toBe(catalog);
-        expect(r.vision).toBe(catalog);
     });
 });
 

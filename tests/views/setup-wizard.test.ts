@@ -55,16 +55,13 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
             catalog: vi.fn().mockResolvedValue(ok(makeCatalogResponse())),
             pullModel: vi.fn(),
             setChatModel: vi.fn().mockResolvedValue(ok({ model: "" })),
-            setVisionModel: vi.fn().mockResolvedValue(ok({ model: "" })),
             health: vi.fn().mockResolvedValue(ok({ status: "ok", version: "1.0.0" })),
             syncStream: vi.fn(),
             listModels: vi.fn().mockResolvedValue({
                 chat: { active: "", catalog: [], installed: [] },
-                vision: { active: "", catalog: [], installed: [] },
             }),
         },
         activeModel: "",
-        activeVisionModel: "",
         fetchActiveModel: vi.fn(),
         serverManager: overrides.serverManager ?? null,
         startManagedServer: vi.fn().mockResolvedValue(undefined),
@@ -1021,7 +1018,7 @@ describe("SetupWizard", () => {
         it("aborts sync controller on close", async () => {
             let capturedSignal: AbortSignal | null = null;
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.syncStream = vi.fn().mockImplementation((_vision: boolean, signal: AbortSignal) => {
+            plugin.api.syncStream = vi.fn().mockImplementation((_enableOcr: boolean | null, signal: AbortSignal) => {
                 capturedSignal = signal;
                 return (async function* () {
                     yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 100 } };

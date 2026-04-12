@@ -58,12 +58,10 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
             catalog: vi.fn().mockResolvedValue(ok(makeCatalogResponse([]))),
             pullModel: vi.fn(),
             setChatModel: vi.fn().mockResolvedValue(ok(undefined)),
-            setVisionModel: vi.fn().mockResolvedValue(ok(undefined)),
             setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
             deleteModel: vi.fn().mockResolvedValue(ok({ deleted: true, model: "", freed_gb: 2.5 })),
         },
         activeModel: "",
-        activeVisionModel: "",
         fetchActiveModel: vi.fn(),
         taskQueue: new TaskQueue(),
         ...overrides,
@@ -603,7 +601,7 @@ describe("CatalogModal", () => {
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
-        it("uses setVisionModel when the entry is a vision task", async () => {
+        it("uses setChatModel when the entry is a vision task", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(
                 ok(makeCatalogResponse([makeEntry({ installed: true, task: "vision" })])),
@@ -614,7 +612,7 @@ describe("CatalogModal", () => {
             useBtn.trigger("click");
             await tick();
             await tick();
-            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("qwen/qwen3-8b");
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen/qwen3-8b");
         });
 
         it("uses setEmbeddingModel when the entry is an embedding task", async () => {

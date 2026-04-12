@@ -65,7 +65,6 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
     const api = {
         listModels: vi.fn(),
         setChatModel: vi.fn(),
-        setVisionModel: vi.fn(),
         pullModel: vi.fn(),
         deleteModel: vi.fn(),
         showModel: vi.fn().mockRejectedValue(new Error("no model")),
@@ -93,7 +92,6 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
         initWikiSync,
         reconcileWiki,
         activeModel: "",
-        activeVisionModel: "",
         wikiEnabled: settings.wikiEnabled ?? false,
         wikiSync: null,
         taskQueue: new TaskQueue(),
@@ -113,13 +111,6 @@ function makeModelsResponse(): ModelsResponse {
             catalog: [
                 { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta Llama 3", installed: true },
                 { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "Microsoft Phi-3", installed: false },
-            ],
-        },
-        vision: {
-            active: "",
-            installed: [],
-            catalog: [
-                { name: "llava", size_gb: 4.5, min_ram_gb: 8, description: "LLaVA vision model", installed: false },
             ],
         },
     };
@@ -305,8 +296,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + systemPrompt + 6 generation + syncDebounce + 3 crawling + 6 advanced (incl. hfToken) = 18
-            expect(textOnChanges.length).toBe(18);
+            // serverPort + systemPrompt + 6 generation + syncDebounce + 3 crawling + wikiVaultFolder + 6 advanced (incl. hfToken) = 19
+            expect(textOnChanges.length).toBe(19);
         });
 
         it("does NOT show sync-debounce when syncMode is 'manual'", () => {
@@ -314,8 +305,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + systemPrompt + 6 generation + 3 crawling + 6 advanced (incl. hfToken) = 17
-            expect(textOnChanges.length).toBe(17);
+            // serverPort + systemPrompt + 6 generation + 3 crawling + wikiVaultFolder + 6 advanced (incl. hfToken) = 18
+            expect(textOnChanges.length).toBe(18);
         });
     });
 
@@ -645,8 +636,8 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-            // Setup wizard + Start + Check for updates + Refresh + Browse Catalog = 5
-            expect(buttonOnClicks.length).toBe(5);
+            // Setup wizard + Start + Check for updates + Refresh + Browse Catalog + Wiki Lint + Wiki Prune = 7
+            expect(buttonOnClicks.length).toBe(7);
             // Refresh is the fourth button (index 3)
             await expect(buttonOnClicks[3]()).resolves.not.toThrow();
         });
@@ -683,7 +674,7 @@ describe("LilbeeSettingTab", () => {
     });
 
     describe("loadModels()", () => {
-        it("renders chat and vision sections on success", async () => {
+        it("renders chat section on success", async () => {
             const plugin = makePlugin();
             const models = makeModelsResponse();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(models);
@@ -691,7 +682,7 @@ describe("LilbeeSettingTab", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
             await (tab as any).loadModels(container);
             const sections = (container as unknown as MockElement).findAll("lilbee-model-section");
-            expect(sections.length).toBe(2);
+            expect(sections.length).toBe(1);
         });
 
         it("shows warning paragraph when API call fails", async () => {
@@ -715,25 +706,11 @@ describe("LilbeeSettingTab", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
 
             const allOptions = captureDropdownOptions(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             expect(allOptions.length).toBeGreaterThan(0);
             expect("" in allOptions[0]).toBe(false);
-        });
-
-        it("vision section includes 'Disabled' option with empty string key", () => {
-            const plugin = makePlugin();
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-
-            const allOptions = captureDropdownOptions(() => {
-                (tab as any).renderModelSection(container, "Vision Model", makeModelsResponse().vision, "vision");
-            });
-
-            expect(allOptions.length).toBeGreaterThan(0);
-            expect("" in allOptions[0]).toBe(true);
-            expect(allOptions[0][""]).toBe("Disabled");
         });
 
         it("active chat model onChange calls setChatModel and shows Notice for installed model", async () => {
@@ -744,7 +721,7 @@ describe("LilbeeSettingTab", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
@@ -754,38 +731,19 @@ describe("LilbeeSettingTab", () => {
             expect(displaySpy).toHaveBeenCalled();
         });
 
-        it("active vision model onChange calls setVisionModel and shows Notice for installed model", async () => {
+        it("setting model to empty string shows 'not set' in Notice", async () => {
             const plugin = makePlugin();
-            (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "llava" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "" });
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
-
-            const vision = {
-                ...makeModelsResponse().vision,
-                installed: ["llava"],
-                catalog: [{ ...makeModelsResponse().vision.catalog[0], installed: true }],
-            };
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Vision Model", vision, "vision");
-            });
-
-            await dropdownOnChanges[0]("llava");
-            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("llava");
-            expect(Notice.instances.some((n) => n.message.includes("llava"))).toBe(true);
-        });
-
-        it("setting model to empty string shows 'disabled' in Notice", async () => {
-            const plugin = makePlugin();
-            (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "" });
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
+            const catalog = { ...makeModelsResponse().chat, active: "" };
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Vision Model", makeModelsResponse().vision, "vision");
+                (tab as any).renderModelSection(container, "Chat Model", catalog);
             });
 
             await dropdownOnChanges[0]("");
-            expect(Notice.instances.some((n) => n.message.includes("disabled"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message.includes("not set"))).toBe(true);
         });
 
         it("active model onChange shows failure Notice on API error for installed model", async () => {
@@ -795,7 +753,7 @@ describe("LilbeeSettingTab", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             // llama3 is installed, so it goes through the direct set path
@@ -807,7 +765,7 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
-            (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+            (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             function findTag(el: MockElement, tag: string): MockElement | null {
                 if (el.tagName === tag.toUpperCase()) return el;
                 for (const child of el.children) {
@@ -825,16 +783,7 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
             expect(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
-            }).not.toThrow();
-        });
-
-        it("desc shows 'Disabled' for vision when active is empty", () => {
-            const plugin = makePlugin();
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-            expect(() => {
-                (tab as any).renderModelSection(container, "Vision Model", makeModelsResponse().vision, "vision");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             }).not.toThrow();
         });
 
@@ -844,7 +793,7 @@ describe("LilbeeSettingTab", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
             const catalog = { ...makeModelsResponse().chat, active: "" };
             expect(() => {
-                (tab as any).renderModelSection(container, "Chat Model", catalog, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", catalog);
             }).not.toThrow();
         });
     });
@@ -855,7 +804,7 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const table = new MockElement("table") as unknown as HTMLTableElement;
             const model = makeModelsResponse().chat.catalog[0];
-            (tab as any).renderCatalogRow(table, model, "chat");
+            (tab as any).renderCatalogRow(table, model);
             const row = (table as unknown as MockElement).children[0];
             const actionCell = row.children[3];
             const badge = actionCell.children[0];
@@ -868,7 +817,7 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const table = new MockElement("table") as unknown as HTMLTableElement;
             const model = makeModelsResponse().chat.catalog[1];
-            (tab as any).renderCatalogRow(table, model, "chat");
+            (tab as any).renderCatalogRow(table, model);
             const row = (table as unknown as MockElement).children[0];
             const actionCell = row.children[3];
             const btn = actionCell.children[0];
@@ -881,7 +830,7 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const table = new MockElement("table") as unknown as HTMLTableElement;
             const model = makeModelsResponse().chat.catalog[0];
-            (tab as any).renderCatalogRow(table, model, "chat");
+            (tab as any).renderCatalogRow(table, model);
             const row = (table as unknown as MockElement).children[0];
             expect(row.children[0].textContent).toBe("llama3");
             expect(row.children[1].textContent).toBe("4.7 GB");
@@ -890,14 +839,13 @@ describe("LilbeeSettingTab", () => {
     });
 
     describe("Delete button", () => {
-        function setupDeleteButton(plugin: ReturnType<typeof makePlugin>, type: "chat" | "vision" = "chat") {
+        function setupDeleteButton(plugin: ReturnType<typeof makePlugin>) {
             const tab = makeTab(plugin);
             const table = new MockElement("table") as unknown as HTMLTableElement;
             const catalog = makeModelsResponse();
-            // Use installed model (index 0 for chat = llama3)
-            const model = type === "chat" ? catalog.chat.catalog[0] : { ...catalog.vision.catalog[0], installed: true };
+            const model = catalog.chat.catalog[0];
 
-            (tab as any).renderCatalogRow(table, model, type);
+            (tab as any).renderCatalogRow(table, model);
 
             const row = (table as unknown as MockElement).children[0];
             const actionCell = row.children[3];
@@ -966,7 +914,7 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
-            const { tab, deleteBtn } = setupDeleteButton(plugin, "chat");
+            const { tab, deleteBtn } = setupDeleteButton(plugin);
             tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
 
             await (deleteBtn as unknown as MockElement).trigger("click");
@@ -974,23 +922,6 @@ describe("LilbeeSettingTab", () => {
 
             expect(plugin.api.setChatModel).toHaveBeenCalledWith("");
             expect(plugin.activeModel).toBe("");
-        });
-
-        it("deleting active vision model clears it", async () => {
-            const plugin = makePlugin();
-            (plugin as any).activeVisionModel = "llava";
-            (plugin.api.deleteModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-
-            const { tab, deleteBtn } = setupDeleteButton(plugin, "vision");
-            tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
-
-            await (deleteBtn as unknown as MockElement).trigger("click");
-            await new Promise((r) => setTimeout(r, 0));
-
-            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("");
-            expect(plugin.activeVisionModel).toBe("");
         });
 
         it("delete failure shows error notice and re-enables button", async () => {
@@ -1022,7 +953,7 @@ describe("LilbeeSettingTab", () => {
                 origAddEventListener.call(this, event, handler);
             };
 
-            (tab as any).renderCatalogRow(table, model, "chat");
+            (tab as any).renderCatalogRow(table, model);
             MockElement.prototype.addEventListener = origAddEventListener;
 
             const row = (table as unknown as MockElement).children[0];
@@ -1109,7 +1040,7 @@ describe("LilbeeSettingTab", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             await dropdownOnChanges[0]("phi3");
@@ -1127,7 +1058,7 @@ describe("LilbeeSettingTab", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             await dropdownOnChanges[0]("phi3");
@@ -1163,7 +1094,7 @@ describe("LilbeeSettingTab", () => {
                 if (event === "click") clickHandlers.push(handler);
                 origAddEventListener.call(this, event, handler);
             };
-            (tab as any).renderCatalogRow(table, model, "chat");
+            (tab as any).renderCatalogRow(table, model);
             MockElement.prototype.addEventListener = origAddEventListener;
 
             const row = (table as unknown as MockElement).children[0];
@@ -1198,7 +1129,7 @@ describe("LilbeeSettingTab", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             await dropdownOnChanges[0]("phi3");
@@ -1228,7 +1159,7 @@ describe("LilbeeSettingTab", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             const pullPromise = dropdownOnChanges[0]("phi3");
@@ -1271,7 +1202,7 @@ describe("LilbeeSettingTab", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             const pullPromise = dropdownOnChanges[0]("phi3");
@@ -1298,7 +1229,7 @@ describe("LilbeeSettingTab", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             // phi3 is uninstalled in catalog — triggers autoPullAndSet
@@ -1314,14 +1245,11 @@ describe("LilbeeSettingTab", () => {
             actionCell: MockElement;
         }
 
-        async function setupPullButton(
-            plugin: ReturnType<typeof makePlugin>,
-            type: "chat" | "vision" = "chat",
-        ): Promise<PullSetup> {
+        async function setupPullButton(plugin: ReturnType<typeof makePlugin>): Promise<PullSetup> {
             const tab = makeTab(plugin);
             const table = new MockElement("table") as unknown as HTMLTableElement;
             const catalog = makeModelsResponse();
-            const model = type === "chat" ? catalog.chat.catalog[1] : catalog.vision.catalog[0];
+            const model = catalog.chat.catalog[1];
 
             let clickHandler: (() => Promise<void>) | null = null;
             const origAddEventListener = MockElement.prototype.addEventListener;
@@ -1332,7 +1260,7 @@ describe("LilbeeSettingTab", () => {
                 origAddEventListener.call(this, event, handler);
             };
 
-            (tab as any).renderCatalogRow(table, model, type);
+            (tab as any).renderCatalogRow(table, model);
             MockElement.prototype.addEventListener = origAddEventListener;
 
             const row = (table as unknown as MockElement).children[0];
@@ -1354,7 +1282,7 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
-            const { tab, clickHandler, actionCell } = await setupPullButton(plugin, "chat");
+            const { tab, clickHandler, actionCell } = await setupPullButton(plugin);
             const modelsContainer = new MockElement("div");
             modelsContainer.classList.add("lilbee-models-container");
             tab.containerEl.children.push(modelsContainer);
@@ -1380,7 +1308,7 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
-            const { tab, clickHandler, actionCell } = await setupPullButton(plugin, "chat");
+            const { tab, clickHandler, actionCell } = await setupPullButton(plugin);
             const modelsContainer = new MockElement("div");
             modelsContainer.classList.add("lilbee-models-container");
             tab.containerEl.children.push(modelsContainer);
@@ -1388,24 +1316,6 @@ describe("LilbeeSettingTab", () => {
             await clickHandler();
 
             expect(capturedProgressText).not.toMatch(/\d+%/);
-        });
-
-        it("pull with vision type calls setVisionModel", async () => {
-            const plugin = makePlugin();
-
-            async function* fakePull() {}
-            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "llava" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-
-            const { tab, clickHandler } = await setupPullButton(plugin, "vision");
-            const modelsContainer = new MockElement("div");
-            modelsContainer.classList.add("lilbee-models-container");
-            tab.containerEl.children.push(modelsContainer);
-
-            await clickHandler();
-
-            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("llava");
         });
 
         it("pull failure: shows failure Notice and re-enables button with 'Pull' text", async () => {
@@ -1416,7 +1326,7 @@ describe("LilbeeSettingTab", () => {
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(failingPull());
 
-            const { tab: _tab, clickHandler, actionCell } = await setupPullButton(plugin, "chat");
+            const { tab: _tab, clickHandler, actionCell } = await setupPullButton(plugin);
             const btn = actionCell.children[0];
 
             await clickHandler();
@@ -1434,7 +1344,7 @@ describe("LilbeeSettingTab", () => {
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(failingPull());
 
-            const { tab: _tab, clickHandler } = await setupPullButton(plugin, "chat");
+            const { tab: _tab, clickHandler } = await setupPullButton(plugin);
             await clickHandler();
 
             const failed = plugin.taskQueue.completed.find((t: any) => t.status === "failed");
@@ -1450,7 +1360,7 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
-            const { clickHandler } = await setupPullButton(plugin, "chat");
+            const { clickHandler } = await setupPullButton(plugin);
 
             await expect(clickHandler()).resolves.not.toThrow();
             expect(Notice.instances.some((n) => n.message.includes("pulled"))).toBe(true);
@@ -1464,7 +1374,7 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
-            const { tab, clickHandler } = await setupPullButton(plugin, "chat");
+            const { tab, clickHandler } = await setupPullButton(plugin);
 
             Object.defineProperty(globalThis, "HTMLElement", {
                 value: MockElement,
@@ -1492,7 +1402,7 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
-            const { tab, clickHandler } = await setupPullButton(plugin, "chat");
+            const { tab, clickHandler } = await setupPullButton(plugin);
             const modelsContainer = new MockElement("div");
             modelsContainer.classList.add("lilbee-models-container");
             tab.containerEl.children.push(modelsContainer);
@@ -1511,7 +1421,7 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
-            const { tab, clickHandler } = await setupPullButton(plugin, "chat");
+            const { tab, clickHandler } = await setupPullButton(plugin);
             const modelsContainer = new MockElement("div");
             modelsContainer.classList.add("lilbee-models-container");
             tab.containerEl.children.push(modelsContainer);
@@ -1532,7 +1442,7 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
-            const { tab, clickHandler } = await setupPullButton(plugin, "chat");
+            const { tab, clickHandler } = await setupPullButton(plugin);
             const modelsContainer = new MockElement("div");
             modelsContainer.classList.add("lilbee-models-container");
             tab.containerEl.children.push(modelsContainer);
@@ -1550,7 +1460,7 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
-            const { tab, clickHandler } = await setupPullButton(plugin, "chat");
+            const { tab, clickHandler } = await setupPullButton(plugin);
             const modelsContainer = new MockElement("div");
             modelsContainer.classList.add("lilbee-models-container");
             tab.containerEl.children.push(modelsContainer);
@@ -1710,7 +1620,7 @@ describe("LilbeeSettingTab", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             await dropdownOnChanges[0](SEPARATOR_KEY);
@@ -1737,7 +1647,7 @@ describe("LilbeeSettingTab", () => {
             tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             // phi3 is uninstalled in catalog, should trigger auto-pull
@@ -1759,7 +1669,7 @@ describe("LilbeeSettingTab", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             await dropdownOnChanges[0]("phi3");
@@ -1780,7 +1690,7 @@ describe("LilbeeSettingTab", () => {
             tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             await dropdownOnChanges[0]("phi3");
@@ -1805,32 +1715,12 @@ describe("LilbeeSettingTab", () => {
             tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             await dropdownOnChanges[0]("phi3");
             // Task should be completed in history with progress
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
-        });
-
-        it("auto-pull for vision type calls setVisionModel", async () => {
-            const plugin = makePlugin();
-
-            async function* fakePull() {}
-            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "llava" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-            tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Vision Model", makeModelsResponse().vision, "vision");
-            });
-
-            await dropdownOnChanges[0]("llava");
-            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("llava");
         });
 
         it("auto-pull completes task in taskQueue", async () => {
@@ -1848,7 +1738,7 @@ describe("LilbeeSettingTab", () => {
             tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             await dropdownOnChanges[0]("phi3");
@@ -1871,7 +1761,7 @@ describe("LilbeeSettingTab", () => {
             tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             await dropdownOnChanges[0]("phi3");
@@ -1895,7 +1785,7 @@ describe("LilbeeSettingTab", () => {
             tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             await expect(dropdownOnChanges[0]("phi3")).resolves.not.toThrow();
@@ -1917,7 +1807,7 @@ describe("LilbeeSettingTab", () => {
             tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             await expect(dropdownOnChanges[0]("phi3")).resolves.not.toThrow();
@@ -1935,7 +1825,7 @@ describe("LilbeeSettingTab", () => {
             const container = new MockElement("div") as unknown as HTMLElement;
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat, "chat");
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
             });
 
             const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
@@ -1955,7 +1845,7 @@ describe("buildModelOptions()", () => {
             ],
             installed: ["llama3", "custom-model"],
         };
-        const options = buildModelOptions(catalog, "chat");
+        const options = buildModelOptions(catalog);
         const keys = Object.keys(options);
         expect(keys).toEqual(["llama3", "phi3", SEPARATOR_KEY, "custom-model"]);
         expect(options["llama3"]).toBe("llama3");
@@ -1964,25 +1854,13 @@ describe("buildModelOptions()", () => {
         expect(options["custom-model"]).toBe("custom-model");
     });
 
-    it("vision: includes Disabled option first", () => {
-        const catalog: ModelCatalog = {
-            active: "",
-            catalog: [{ name: "llava", size_gb: 4.5, min_ram_gb: 8, description: "LLaVA", installed: false }],
-            installed: [],
-        };
-        const options = buildModelOptions(catalog, "vision");
-        const keys = Object.keys(options);
-        expect(keys[0]).toBe("");
-        expect(options[""]).toBe("Disabled");
-    });
-
     it("no separator when all installed models are in catalog", () => {
         const catalog: ModelCatalog = {
             active: "llama3",
             catalog: [{ name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true }],
             installed: ["llama3"],
         };
-        const options = buildModelOptions(catalog, "chat");
+        const options = buildModelOptions(catalog);
         expect(SEPARATOR_KEY in options).toBe(false);
     });
 
@@ -1995,7 +1873,7 @@ describe("buildModelOptions()", () => {
             ],
             installed: ["zeta", "alpha"],
         };
-        const options = buildModelOptions(catalog, "chat");
+        const options = buildModelOptions(catalog);
         const keys = Object.keys(options);
         expect(keys[0]).toBe("zeta");
         expect(keys[1]).toBe("alpha");
@@ -2007,7 +1885,7 @@ describe("buildModelOptions()", () => {
             catalog: [],
             installed: ["zoo", "bar", "foo"],
         };
-        const options = buildModelOptions(catalog, "chat");
+        const options = buildModelOptions(catalog);
         const keys = Object.keys(options);
         // separator then bar, foo, zoo
         expect(keys).toEqual([SEPARATOR_KEY, "bar", "foo", "zoo"]);
@@ -2015,7 +1893,7 @@ describe("buildModelOptions()", () => {
 
     it("empty catalog and empty installed returns empty for chat", () => {
         const catalog: ModelCatalog = { active: "", catalog: [], installed: [] };
-        const options = buildModelOptions(catalog, "chat");
+        const options = buildModelOptions(catalog);
         expect(Object.keys(options).length).toBe(0);
     });
 
@@ -2025,7 +1903,7 @@ describe("buildModelOptions()", () => {
             catalog: [],
             installed: ["mistral:latest", "mistral:7b", "llama3:latest"],
         };
-        const options = buildModelOptions(catalog, "chat");
+        const options = buildModelOptions(catalog);
         const keys = Object.keys(options);
         expect(keys).toContain("mistral:7b");
         expect(keys).not.toContain("mistral:latest");
@@ -2365,8 +2243,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 11: chunk_size
-            await textOnChanges[11]("512");
+            // Index 12: chunk_size (shifted +1 by wikiVaultFolder)
+            await textOnChanges[12]("512");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512 });
         });
 
@@ -2376,8 +2254,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 12: chunk_overlap
-            await textOnChanges[12]("64");
+            // Index 13: chunk_overlap (shifted +1 by wikiVaultFolder)
+            await textOnChanges[13]("64");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_overlap: 64 });
         });
 
@@ -2387,7 +2265,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("");
+            await textOnChanges[12]("");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2397,7 +2275,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("abc");
+            await textOnChanges[12]("abc");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2407,7 +2285,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("-1");
+            await textOnChanges[12]("-1");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2418,7 +2296,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("512");
+            await textOnChanges[12]("512");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
             mockGenericConfirmResult = true;
         });
@@ -2433,7 +2311,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("512");
+            await textOnChanges[12]("512");
             expect(plugin.triggerSync).toHaveBeenCalled();
         });
 
@@ -2444,7 +2322,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("512");
+            await textOnChanges[12]("512");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
     });
@@ -2456,8 +2334,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 13: Embedding model
-            await textOnChanges[13]("nomic-embed-text");
+            // Index 14: Embedding model (shifted +1 by wikiVaultFolder)
+            await textOnChanges[14]("nomic-embed-text");
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
         });
 
@@ -2467,7 +2345,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[13]("");
+            await textOnChanges[14]("");
             expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
         });
 
@@ -2478,7 +2356,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[13]("nomic-embed-text");
+            await textOnChanges[14]("nomic-embed-text");
             expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
             mockGenericConfirmResult = true;
         });
@@ -2490,7 +2368,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[13]("nomic-embed-text");
+            await textOnChanges[14]("nomic-embed-text");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update embedding model"))).toBe(
                 true,
             );
@@ -2602,8 +2480,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 14: API key (0=port, 1=systemPrompt, 2-7=gen fields, 8-10=crawl, 11-12=advanced, 13=embedding model, 14=api key)
-            await textOnChanges[14]("sk-test123");
+            // Index 15: API key (0=port, 1=systemPrompt, 2-7=gen fields, 8-10=crawl, 11=wikiVaultFolder, 12-13=advanced, 14=embedding model, 15=api key)
+            await textOnChanges[15]("sk-test123");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_api_key: "sk-test123" });
         });
 
@@ -2613,7 +2491,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[14]("");
+            await textOnChanges[15]("");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2624,7 +2502,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[14]("sk-test123");
+            await textOnChanges[15]("sk-test123");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to save API key"))).toBe(true);
         });
     });
@@ -2636,8 +2514,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 15: HF token (after API key at 14)
-            await textOnChanges[15]("hf_test123");
+            // Index 16: HF token (after API key at 15)
+            await textOnChanges[16]("hf_test123");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ hf_token: "hf_test123" });
             expect(plugin.settings.hfToken).toBe("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("HuggingFace token saved"))).toBe(true);
@@ -2649,7 +2527,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[15]("");
+            await textOnChanges[16]("");
             expect(plugin.settings.hfToken).toBe("");
         });
 
@@ -2660,7 +2538,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[15]("hf_test123");
+            await textOnChanges[16]("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to save HuggingFace token"))).toBe(
                 true,
             );
@@ -2791,8 +2669,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 16: LiteLLM base URL (shifted by hfToken at 15)
-            await textOnChanges[16]("http://localhost:4000");
+            // Index 17: LiteLLM base URL (shifted by wikiVaultFolder + hfToken at 16)
+            await textOnChanges[17]("http://localhost:4000");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ litellm_base_url: "http://localhost:4000" });
         });
 
@@ -2802,7 +2680,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[16]("  ");
+            await textOnChanges[17]("  ");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2813,7 +2691,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[16]("http://localhost:4000");
+            await textOnChanges[17]("http://localhost:4000");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update LiteLLM URL"))).toBe(true);
         });
     });
@@ -3044,7 +2922,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Last dropdown is the LLM provider (after server mode, chat model, vision model, sync mode)
+            // Last dropdown is the LLM provider (after server mode, chat model, sync mode)
             const providerIdx = dropdownOnChanges.length - 1;
             await dropdownOnChanges[providerIdx]("litellm");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_provider: "litellm" });
