@@ -866,6 +866,33 @@ describe("ChatView.onOpen — model selector", () => {
         expect(plugin.api.setChatModel).not.toHaveBeenCalled();
     });
 
+    it("excludes uninstalled catalog models from dropdown options", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockResolvedValue({
+            chat: {
+                active: "llama3",
+                installed: ["llama3"],
+                catalog: [
+                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+                ],
+            },
+        });
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-chat-model-select")!;
+        const options = select.children.filter((c: MockElement) => c.tagName === "OPTION");
+        const labels = options.map((o: MockElement) => o.textContent);
+        expect(labels).toContain("llama3");
+        expect(labels).not.toContain("phi3 (not installed)");
+        expect(labels).not.toContain("phi3");
+    });
+
     it("selecting uninstalled catalog model triggers auto-pull with progress", async () => {
         Notice.clear();
         const plugin = makePlugin();
