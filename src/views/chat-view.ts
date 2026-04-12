@@ -245,7 +245,11 @@ export class ChatView extends ItemView {
     }
 
     private fillSelectOptions(selectEl: HTMLSelectElement, catalog: ModelCatalog): void {
-        const options = buildModelOptions(catalog);
+        const installedOnly: ModelCatalog = {
+            ...catalog,
+            catalog: catalog.catalog.filter((m) => m.installed),
+        };
+        const options = buildModelOptions(installedOnly);
         for (const [value, label] of Object.entries(options)) {
             const option = selectEl.createEl("option", { text: label });
             (option as HTMLOptionElement).value = value;
