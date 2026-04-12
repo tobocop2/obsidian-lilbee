@@ -1007,7 +1007,10 @@
 
 .lilbee-catalog-list-col-action {
     flex: 0.8;
-    text-align: right;
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+    align-items: center;
 }
 
 /* Crawl Modal */

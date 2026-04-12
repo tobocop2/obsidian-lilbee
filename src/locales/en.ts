@@ -10,7 +10,7 @@ export const MESSAGES = {
     BUTTON_PULL: "Pull",
     BUTTON_PULL_MODEL: "Pull Model",
     BUTTON_USE: "Use",
-    BUTTON_REMOVE: "Remove",
+    BUTTON_REMOVE: "Delete",
     BUTTON_REFRESH: "Refresh",
     BUTTON_BROWSE_CATALOG: "Browse Catalog",
     BUTTON_BROWSE_FULL_CATALOG: "Browse full catalog",
