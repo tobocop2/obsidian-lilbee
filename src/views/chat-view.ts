@@ -293,9 +293,9 @@ export class ChatView extends ItemView {
         try {
             for await (const event of this.plugin.api.pullModel(model.name, "native", this.pullController.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
-                    const d = event.data as { current?: number; total?: number };
-                    if (d.total && d.current !== undefined) {
-                        const pct = Math.round((d.current / d.total) * 100);
+                    const d = event.data as { percent?: number };
+                    if (d.percent !== undefined) {
+                        const pct = d.percent;
                         this.plugin.taskQueue.update(taskId, pct, model.name);
                     }
                 }

@@ -908,7 +908,7 @@ describe("ChatView.onOpen — model selector", () => {
         });
 
         async function* fakePull() {
-            yield { event: "progress", data: { current: 50, total: 100 } };
+            yield { event: "progress", data: { percent: 50 } };
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
         plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
@@ -1048,7 +1048,7 @@ describe("ChatView.onOpen — model selector", () => {
         });
 
         async function* fakePull() {
-            yield { event: "progress", data: { current: 0, total: 0 } };
+            yield { event: "progress", data: { percent: 0 } };
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
         plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
@@ -1843,7 +1843,7 @@ describe("ChatView.onClose — aborts both controllers", () => {
             resolveWait = r;
         });
         async function* slowPull() {
-            yield { event: "progress", data: { current: 50, total: 100 } };
+            yield { event: "progress", data: { percent: 50 } };
             await waitPromise;
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(slowPull());
