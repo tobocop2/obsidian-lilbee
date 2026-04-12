@@ -55,7 +55,9 @@ describe("MESSAGES", () => {
             expect(MESSAGES.LABEL_SIZE).toBe("Size");
             expect(MESSAGES.LABEL_DESCRIPTION).toBe("Description");
             expect(MESSAGES.LABEL_CHAT_MODEL).toBe("Chat Model");
-            expect(MESSAGES.LABEL_VISION_MODEL).toBe("Vision Model");
+            expect(MESSAGES.LABEL_OCR_AUTO).toBe("OCR: Auto");
+            expect(MESSAGES.LABEL_OCR_ON).toBe("OCR: On");
+            expect(MESSAGES.LABEL_OCR_OFF).toBe("OCR: Off");
             expect(MESSAGES.LABEL_REASONING).toBe("Reasoning");
             expect(MESSAGES.LABEL_SOURCES).toBe("Sources");
             expect(MESSAGES.LABEL_OUR_PICKS).toBe("Our picks");
@@ -155,12 +157,12 @@ describe("MESSAGES", () => {
 
         it("NOTICE_SET_MODEL produces correct output", () => {
             expect(MESSAGES.NOTICE_SET_MODEL("Chat model", "llama3")).toBe("Chat model set to llama3");
-            expect(MESSAGES.NOTICE_SET_MODEL("Vision model", "llava")).toBe("Vision model set to llava");
+            expect(MESSAGES.NOTICE_SET_MODEL("Embedding", "bge")).toBe("Embedding set to bge");
         });
 
         it("NOTICE_FAILED_SET_MODEL produces correct output", () => {
             expect(MESSAGES.NOTICE_FAILED_SET_MODEL("chat")).toBe("Failed to set chat model");
-            expect(MESSAGES.NOTICE_FAILED_SET_MODEL("vision")).toBe("Failed to set vision model");
+            expect(MESSAGES.NOTICE_FAILED_SET_MODEL("embedding")).toBe("Failed to set embedding model");
         });
 
         it("NOTICE_UPDATED produces correct output", () => {

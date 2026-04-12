@@ -89,7 +89,6 @@ export default class LilbeePlugin extends Plugin {
     settings: LilbeeSettings = { ...DEFAULT_SETTINGS };
     api: LilbeeClient = new LilbeeClient(DEFAULT_SETTINGS.serverUrl);
     activeModel = "";
-    activeVisionModel = "";
     statusBarEl: HTMLElement | null = null;
     binaryManager: BinaryManager | null = null;
     serverManager: ServerManager | null = null;
@@ -557,7 +556,6 @@ export default class LilbeePlugin extends Plugin {
         try {
             const models = await this.api.listModels();
             this.activeModel = models.chat.active;
-            this.activeVisionModel = models.vision.active;
             this.setStatusReady();
         } catch {
             // Silently fail - will retry on next action
@@ -635,7 +633,7 @@ export default class LilbeePlugin extends Plugin {
             for await (const event of this.api.addFiles(
                 paths,
                 false,
-                this.activeVisionModel || undefined,
+                this.settings.enableOcr,
                 this.syncController.signal,
             )) {
                 if (event.event === SSE_EVENT.FILE_START) {
@@ -842,7 +840,7 @@ export default class LilbeePlugin extends Plugin {
 
         try {
             let syncResult: SyncDone | null = null;
-            for await (const event of this.api.syncStream(!!this.activeVisionModel, this.syncController.signal)) {
+            for await (const event of this.api.syncStream(this.settings.enableOcr, this.syncController.signal)) {
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };
                     const pct = Math.round((d.current_file / d.total_files) * 100);

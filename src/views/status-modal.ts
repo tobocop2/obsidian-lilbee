@@ -59,8 +59,10 @@ export class StatusModal extends Modal {
             await this.renderModelDetails(table, status.config.chat_model);
         }
 
-        const visionModel = status.config.vision_model || MESSAGES.LABEL_DISABLED;
-        this.addRow(table, MESSAGES.LABEL_STATUS_VISION_MODEL, visionModel);
+        const ocrValue = status.config.enable_ocr;
+        const ocrLabel =
+            ocrValue === "true" ? MESSAGES.LABEL_OCR_ON : ocrValue === "false" ? MESSAGES.LABEL_OCR_OFF : MESSAGES.LABEL_OCR_AUTO;
+        this.addRow(table, MESSAGES.LABEL_STATUS_OCR, ocrLabel);
     }
 
     private async renderModelDetails(table: HTMLTableElement, model: string): Promise<void> {

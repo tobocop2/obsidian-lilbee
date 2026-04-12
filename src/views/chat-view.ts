@@ -9,8 +9,9 @@ import {
     WorkspaceLeaf,
 } from "obsidian";
 import type LilbeePlugin from "../main";
-import { MODEL_TYPE, SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
-import type { GenerationOptions, Message, ModelCatalog, ModelType, SearchChunkType, Source, SSEEvent } from "../types";
+import { SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
+import type { GenerationOptions, Message, ModelCatalog, SearchChunkType, Source, SSEEvent } from "../types";
+
 import { renderSourceChip } from "./results";
 import { buildModelOptions, SEPARATOR_KEY } from "../settings";
 import { ConfirmPullModal } from "./confirm-pull-modal";
@@ -72,9 +73,8 @@ export class ChatView extends ItemView {
     private streamController: AbortController | null = null;
     private pullController: AbortController | null = null;
     private chatCatalog: ModelCatalog | null = null;
-    private visionCatalog: ModelCatalog | null = null;
     private chatSelectEl: HTMLSelectElement | null = null;
-    private visionSelectEl: HTMLSelectElement | null = null;
+    private ocrToggleEl: HTMLElement | null = null;
     private static readonly OFFLINE_THRESHOLD = 3;
     private retryTimer: ReturnType<typeof setTimeout> | null = null;
     private retryCount = 0;
@@ -130,15 +130,9 @@ export class ChatView extends ItemView {
         }) as HTMLSelectElement;
         this.attachChatListener(this.chatSelectEl);
 
-        const visionGroup = toolbar.createDiv({ cls: "lilbee-toolbar-group" });
-        const visionIcon = visionGroup.createDiv({ cls: "lilbee-toolbar-icon" });
-        setIcon(visionIcon, "eye");
-        visionIcon.setAttribute("title", MESSAGES.LABEL_VISION_MODEL_ICON);
-
-        this.visionSelectEl = visionGroup.createEl("select", {
-            cls: "lilbee-chat-vision-select",
-        }) as HTMLSelectElement;
-        this.attachVisionListener(this.visionSelectEl);
+        this.ocrToggleEl = toolbar.createDiv({ cls: "lilbee-ocr-toggle" });
+        this.updateOcrToggle();
+        this.ocrToggleEl.addEventListener("click", () => this.cycleOcr());
 
         this.fetchAndFillSelectors();
 
@@ -225,13 +219,10 @@ export class ChatView extends ItemView {
                 }
                 this.retryCount = 0;
                 if (this.chatSelectEl) this.chatSelectEl.empty();
-                if (this.visionSelectEl) this.visionSelectEl.empty();
                 this.chatCatalog = models.chat;
-                this.visionCatalog = models.vision;
-                if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl, models.chat, "chat");
-                if (this.visionSelectEl) this.fillSelectOptions(this.visionSelectEl, models.vision, "vision");
+                if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl, models.chat);
                 // No models installed — show empty state with catalog button
-                if (models.chat.installed.length === 0 && models.vision.installed.length === 0) {
+                if (models.chat.installed.length === 0) {
                     this.showEmptyState();
                     this.retryTimer = setTimeout(() => this.fetchAndFillSelectors(), RETRY_INTERVAL_MS);
                 } else {
@@ -246,10 +237,6 @@ export class ChatView extends ItemView {
                     this.chatSelectEl.empty();
                     this.chatSelectEl.createEl("option", { text: label });
                 }
-                if (this.visionSelectEl) {
-                    this.visionSelectEl.empty();
-                    this.visionSelectEl.createEl("option", { text: label });
-                }
                 if (this.retryCount === ChatView.OFFLINE_THRESHOLD) {
                     new Notice(MESSAGES.ERROR_SERVER_UNREACHABLE);
                 }
@@ -257,8 +244,8 @@ export class ChatView extends ItemView {
             });
     }
 
-    private fillSelectOptions(selectEl: HTMLSelectElement, catalog: ModelCatalog, type: "chat" | "vision"): void {
-        const options = buildModelOptions(catalog, type);
+    private fillSelectOptions(selectEl: HTMLSelectElement, catalog: ModelCatalog): void {
+        const options = buildModelOptions(catalog);
         for (const [value, label] of Object.entries(options)) {
             const option = selectEl.createEl("option", { text: label });
             (option as HTMLOptionElement).value = value;
@@ -280,7 +267,7 @@ export class ChatView extends ItemView {
                 modal.open();
                 void modal.result.then((confirmed) => {
                     if (confirmed) {
-                        void this.autoPullAndSet(uninstalled, MODEL_TYPE.CHAT);
+                        void this.autoPullAndSet(uninstalled);
                     }
                 });
                 return;
@@ -296,32 +283,7 @@ export class ChatView extends ItemView {
         });
     }
 
-    private attachVisionListener(el: HTMLSelectElement): void {
-        el.addEventListener("change", () => {
-            if (el.value === SEPARATOR_KEY) return;
-            const uninstalled = this.visionCatalog?.catalog.find((m) => m.name === el.value && !m.installed);
-            if (uninstalled) {
-                const modal = new ConfirmPullModal(this.plugin.app, uninstalled);
-                modal.open();
-                void modal.result.then((confirmed) => {
-                    if (confirmed) {
-                        void this.autoPullAndSet(uninstalled, MODEL_TYPE.VISION);
-                    }
-                });
-                return;
-            }
-            this.plugin.api.setVisionModel(el.value).then((result) => {
-                if (result.isOk()) {
-                    this.plugin.activeVisionModel = el.value;
-                    this.plugin.fetchActiveModel();
-                } else {
-                    new Notice(MESSAGES.ERROR_SWITCH_VISION_MODEL);
-                }
-            });
-        });
-    }
-
-    private async autoPullAndSet(model: { name: string }, type: ModelType): Promise<void> {
+    private async autoPullAndSet(model: { name: string }): Promise<void> {
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
         this.pullController = new AbortController();
         try {
@@ -334,13 +296,8 @@ export class ChatView extends ItemView {
                     }
                 }
             }
-            if (type === MODEL_TYPE.CHAT) {
-                await this.plugin.api.setChatModel(model.name);
-                this.plugin.activeModel = model.name;
-            } else {
-                await this.plugin.api.setVisionModel(model.name);
-                this.plugin.activeVisionModel = model.name;
-            }
+            await this.plugin.api.setChatModel(model.name);
+            this.plugin.activeModel = model.name;
             this.plugin.fetchActiveModel();
             this.plugin.taskQueue.complete(taskId);
             new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
@@ -358,9 +315,41 @@ export class ChatView extends ItemView {
         }
     }
 
+    private cycleOcr(): void {
+        const current = this.plugin.settings.enableOcr;
+        if (current === null) {
+            this.plugin.settings.enableOcr = true;
+        } else if (current === true) {
+            this.plugin.settings.enableOcr = false;
+        } else {
+            this.plugin.settings.enableOcr = null;
+        }
+        void this.plugin.saveSettings();
+        this.updateOcrToggle();
+    }
+
+    private updateOcrToggle(): void {
+        if (!this.ocrToggleEl) return;
+        this.ocrToggleEl.empty();
+        const iconEl = this.ocrToggleEl.createDiv({ cls: "lilbee-toolbar-icon" });
+        setIcon(iconEl, "eye");
+
+        const state = this.plugin.settings.enableOcr;
+        this.ocrToggleEl.classList.remove("is-auto", "is-on", "is-off");
+        if (state === null) {
+            this.ocrToggleEl.classList.add("is-auto");
+            this.ocrToggleEl.setAttribute("title", MESSAGES.LABEL_OCR_AUTO);
+        } else if (state === true) {
+            this.ocrToggleEl.classList.add("is-on");
+            this.ocrToggleEl.setAttribute("title", MESSAGES.LABEL_OCR_ON);
+        } else {
+            this.ocrToggleEl.classList.add("is-off");
+            this.ocrToggleEl.setAttribute("title", MESSAGES.LABEL_OCR_OFF);
+        }
+    }
+
     private refreshModelSelector(): void {
         if (this.chatSelectEl) this.chatSelectEl.empty();
-        if (this.visionSelectEl) this.visionSelectEl.empty();
         this.fetchAndFillSelectors();
     }
 

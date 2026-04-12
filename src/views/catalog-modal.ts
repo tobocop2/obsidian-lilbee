@@ -253,7 +253,7 @@ export class CatalogModal extends Modal {
     }
 
     private isActiveEntry(entry: CatalogEntry): boolean {
-        return this.plugin.activeModel === entry.hf_repo || this.plugin.activeVisionModel === entry.hf_repo;
+        return this.plugin.activeModel === entry.hf_repo;
     }
 
     private renderViewToggleCta(): void {
@@ -411,11 +411,6 @@ export class CatalogModal extends Modal {
     }
 
     private async setActiveFor(entry: CatalogEntry): ReturnType<typeof this.plugin.api.setChatModel> {
-        if (entry.task === MODEL_TASK.VISION) {
-            const result = await this.plugin.api.setVisionModel(entry.hf_repo);
-            if (result.isOk()) this.plugin.activeVisionModel = entry.hf_repo;
-            return result;
-        }
         if (entry.task === MODEL_TASK.EMBEDDING) {
             return this.plugin.api.setEmbeddingModel(entry.hf_repo);
         }

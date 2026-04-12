@@ -561,6 +561,32 @@
     height: 14px;
 }
 
+.lilbee-ocr-toggle {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: var(--radius-s, 4px);
+}
+
+.lilbee-ocr-toggle:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-ocr-toggle.is-auto .lilbee-toolbar-icon {
+    color: var(--text-muted);
+    opacity: 0.6;
+}
+
+.lilbee-ocr-toggle.is-on .lilbee-toolbar-icon {
+    color: var(--text-accent);
+}
+
+.lilbee-ocr-toggle.is-off .lilbee-toolbar-icon {
+    color: var(--text-faint);
+    opacity: 0.4;
+}
+
 .lilbee-generation-details summary {
     cursor: pointer;
     font-weight: var(--font-semibold, 600);
