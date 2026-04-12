@@ -48,7 +48,6 @@ export interface ModelCatalog {
 
 export interface ModelsResponse {
     chat: ModelCatalog;
-    vision: ModelCatalog;
 }
 
 export interface StatusResponse {
@@ -107,13 +106,6 @@ export const SERVER_MODE = {
     EXTERNAL: "external",
 } as const satisfies Record<string, ServerMode>;
 
-export type ModelType = "chat" | "vision";
-
-export const MODEL_TYPE = {
-    CHAT: "chat",
-    VISION: "vision",
-} as const satisfies Record<string, ModelType>;
-
 export type SearchChunkType = "all" | "wiki" | "raw";
 
 export interface LilbeeSettings {
@@ -141,6 +133,7 @@ export interface LilbeeSettings {
     wikiSyncToVault: boolean;
     wikiVaultFolder: string;
     hfToken: string;
+    enableOcr: boolean | null;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -161,13 +154,14 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     lilbeeVersion: "",
     systemPrompt: "",
     setupCompleted: false,
-    wikiEnabled: false,
+    wikiEnabled: true,
     wikiPruneRaw: false,
     wikiFaithfulnessThreshold: 0.7,
     searchChunkType: "all",
     wikiSyncToVault: false,
     wikiVaultFolder: "lilbee-wiki",
     hfToken: "",
+    enableOcr: null,
 };
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */

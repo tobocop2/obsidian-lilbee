@@ -312,28 +312,47 @@ describe("addFiles()", () => {
         expect(events[0].event).toBe("done");
     });
 
-    it("includes vision_model when provided", async () => {
+    it("includes enable_ocr when provided", async () => {
         fetchMock.mockResolvedValue(sseResponse([]));
 
-        await collect(client.addFiles(["/vault/doc.pdf"], true, "llava"));
+        await collect(client.addFiles(["/vault/doc.pdf"], true, true));
 
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
         expect(body.force).toBe(true);
-        expect(body.vision_model).toBe("llava");
+        expect(body.enable_ocr).toBe(true);
     });
 
-    it("omits vision_model when not provided", async () => {
+    it("includes ocr_timeout when provided", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.addFiles(["/vault/doc.pdf"], false, true, undefined, 30));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.enable_ocr).toBe(true);
+        expect(body.ocr_timeout).toBe(30);
+    });
+
+    it("omits enable_ocr when null", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.addFiles(["/vault/a.md"], false, null));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.enable_ocr).toBeUndefined();
+    });
+
+    it("omits enable_ocr when not provided", async () => {
         fetchMock.mockResolvedValue(sseResponse([]));
 
         await collect(client.addFiles(["/vault/a.md"]));
 
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-        expect(body.vision_model).toBeUndefined();
+        expect(body.enable_ocr).toBeUndefined();
     });
 });
 
 describe("syncStream()", () => {
-    it("POSTs to /api/sync with force_vision false by default", async () => {
+    it("POSTs to /api/sync with empty body by default", async () => {
         fetchMock.mockResolvedValue(
             sseResponse(['event: progress\ndata: {"file":"a.md","status":"ingested","current":1,"total":1}\n\n']),
         );
@@ -343,25 +362,34 @@ describe("syncStream()", () => {
         expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/sync`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ force_vision: false }),
+            body: JSON.stringify({}),
         });
         expect(events[0].event).toBe("progress");
     });
 
-    it("sends force_vision true when requested", async () => {
+    it("sends enable_ocr true when requested", async () => {
         fetchMock.mockResolvedValue(sseResponse([]));
 
         await collect(client.syncStream(true));
 
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-        expect(body.force_vision).toBe(true);
+        expect(body.enable_ocr).toBe(true);
+    });
+
+    it("omits enable_ocr when null", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.syncStream(null));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.enable_ocr).toBeUndefined();
     });
 });
 
 describe("listModels()", () => {
     it("calls GET /api/models and returns the parsed response", async () => {
         const catalog = { active: "llama3", catalog: [], installed: [] };
-        const data = { chat: catalog, vision: catalog };
+        const data = { chat: catalog };
         fetchMock.mockResolvedValue(jsonResponse(data));
 
         const result = await client.listModels();
@@ -721,37 +749,6 @@ describe("setChatModel()", () => {
         const result = await client.setChatModel("mistral");
         expect(result.isErr()).toBe(true);
         expect(result._unsafeUnwrapErr().message).toBe("Server responded 500: ");
-    });
-});
-
-describe("setVisionModel()", () => {
-    it("PUTs to /api/models/vision and returns the result", async () => {
-        fetchMock.mockResolvedValue(jsonResponse({ model: "llava" }));
-
-        const result = await client.setVisionModel("llava");
-
-        expect(fetchMock).toHaveBeenCalledWith(
-            `${BASE_URL}/api/models/vision`,
-            expect.objectContaining({
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ model: "llava" }),
-            }),
-        );
-        expect(result.isOk()).toBe(true);
-    });
-
-    it("returns error when response is not ok", async () => {
-        fetchMock.mockResolvedValue({
-            ok: false,
-            status: 422,
-            statusText: "Unprocessable Entity",
-            text: () => Promise.resolve(""),
-        } as unknown as Response);
-
-        const result = await client.setVisionModel("llava");
-        expect(result.isErr()).toBe(true);
-        expect(result._unsafeUnwrapErr().message).toBe("Server responded 422: ");
     });
 });
 

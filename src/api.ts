@@ -188,11 +188,13 @@ export class LilbeeClient {
     async *addFiles(
         paths: string[],
         force = false,
-        visionModel?: string,
+        enableOcr?: boolean | null,
         signal?: AbortSignal,
+        ocrTimeout?: number | null,
     ): AsyncGenerator<SSEEvent> {
         const body: Record<string, unknown> = { paths, force };
-        if (visionModel) body.vision_model = visionModel;
+        if (enableOcr !== undefined && enableOcr !== null) body.enable_ocr = enableOcr;
+        if (ocrTimeout !== undefined && ocrTimeout !== null) body.ocr_timeout = ocrTimeout;
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/add`,
             {
@@ -205,13 +207,15 @@ export class LilbeeClient {
         yield* this.parseSSE(res);
     }
 
-    async *syncStream(forceVision = false, signal?: AbortSignal): AsyncGenerator<SSEEvent> {
+    async *syncStream(enableOcr?: boolean | null, signal?: AbortSignal): AsyncGenerator<SSEEvent> {
+        const body: Record<string, unknown> = {};
+        if (enableOcr !== undefined && enableOcr !== null) body.enable_ocr = enableOcr;
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/sync`,
             {
                 method: "POST",
                 headers: { ...JSON_HEADERS, ...this.authHeaders() },
-                body: JSON.stringify({ force_vision: forceVision }),
+                body: JSON.stringify(body),
             },
             { stream: true, signal },
         );
@@ -239,14 +243,6 @@ export class LilbeeClient {
 
     async setChatModel(model: string): Promise<Result<void, Error>> {
         return this.fetchResult<void>(`${this.baseUrl}/api/models/chat`, {
-            method: "PUT",
-            headers: { ...JSON_HEADERS, ...this.authHeaders() },
-            body: JSON.stringify({ model }),
-        });
-    }
-
-    async setVisionModel(model: string): Promise<Result<void, Error>> {
-        return this.fetchResult<void>(`${this.baseUrl}/api/models/vision`, {
             method: "PUT",
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ model }),

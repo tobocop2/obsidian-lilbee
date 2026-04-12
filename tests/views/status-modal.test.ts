@@ -6,10 +6,9 @@ import { MockElement } from "../__mocks__/obsidian";
 import type LilbeePlugin from "../../src/main";
 import type { StatusResponse } from "../../src/types";
 
-function makePlugin(overrides: Partial<{ activeModel: string; activeVisionModel: string }> = {}): LilbeePlugin {
+function makePlugin(overrides: Partial<{ activeModel: string }> = {}): LilbeePlugin {
     return {
         activeModel: overrides.activeModel ?? "mistral:7b",
-        activeVisionModel: overrides.activeVisionModel ?? "",
         api: {
             status: vi.fn(),
             showModel: vi.fn(),
@@ -19,7 +18,7 @@ function makePlugin(overrides: Partial<{ activeModel: string; activeVisionModel:
 
 function makeStatus(overrides: Partial<StatusResponse> = {}): StatusResponse {
     return {
-        config: { chat_model: "mistral:7b", vision_model: "", embedding_model: "nomic-embed-text" },
+        config: { chat_model: "mistral:7b", embedding_model: "nomic-embed-text" },
         sources: [
             { filename: "a.md", chunk_count: 3 },
             { filename: "b.md", chunk_count: 2 },
@@ -149,7 +148,7 @@ describe("StatusModal", () => {
         expect(Notice.instances.some((n: any) => n.message.includes("cannot connect"))).toBe(true);
     });
 
-    it("shows disabled for vision model when not set", async () => {
+    it("shows OCR: Auto when enable_ocr is not set", async () => {
         const plugin = makePlugin();
         (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus()));
         (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
@@ -164,7 +163,47 @@ describe("StatusModal", () => {
         const content = (modal as any).contentEl as MockElement;
         const values = content.findAll("lilbee-status-value");
         const texts = values.map((v: MockElement) => v.textContent);
-        expect(texts).toContain("Disabled");
+        expect(texts).toContain("OCR: Auto");
+    });
+
+    it("shows OCR: On when enable_ocr is true", async () => {
+        const plugin = makePlugin();
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(
+            ok(makeStatus({ config: { chat_model: "mistral:7b", enable_ocr: "true" } })),
+        );
+        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
+
+        const modal = new StatusModal(new App(), plugin);
+        modal.open();
+        await vi.waitFor(() => {
+            const content = (modal as any).contentEl as MockElement;
+            expect(content.findAll("lilbee-status-table").length).toBeGreaterThanOrEqual(2);
+        });
+
+        const content = (modal as any).contentEl as MockElement;
+        const values = content.findAll("lilbee-status-value");
+        const texts = values.map((v: MockElement) => v.textContent);
+        expect(texts).toContain("OCR: On");
+    });
+
+    it("shows OCR: Off when enable_ocr is false", async () => {
+        const plugin = makePlugin();
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(
+            ok(makeStatus({ config: { chat_model: "mistral:7b", enable_ocr: "false" } })),
+        );
+        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
+
+        const modal = new StatusModal(new App(), plugin);
+        modal.open();
+        await vi.waitFor(() => {
+            const content = (modal as any).contentEl as MockElement;
+            expect(content.findAll("lilbee-status-table").length).toBeGreaterThanOrEqual(2);
+        });
+
+        const content = (modal as any).contentEl as MockElement;
+        const values = content.findAll("lilbee-status-value");
+        const texts = values.map((v: MockElement) => v.textContent);
+        expect(texts).toContain("OCR: Off");
     });
 
     it("handles showModel failure gracefully", async () => {
@@ -213,7 +252,7 @@ describe("StatusModal", () => {
     it("skips model details when no chat model set", async () => {
         const plugin = makePlugin();
         (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(
-            ok(makeStatus({ config: { chat_model: "", vision_model: "" } })),
+            ok(makeStatus({ config: { chat_model: "" } })),
         );
 
         const modal = new StatusModal(new App(), plugin);

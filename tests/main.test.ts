@@ -13,7 +13,6 @@ vi.mock("../src/api", () => ({
         listModels: vi.fn().mockRejectedValue(new Error("offline")),
         pullModel: vi.fn(),
         setChatModel: vi.fn(),
-        setVisionModel: vi.fn(),
         setToken: vi.fn(),
         health: vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} }),
         addFiles: vi.fn(),
@@ -875,7 +874,7 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/notes/test.md"],
                 false,
-                undefined,
+                null,
                 expect.any(AbortSignal),
             );
         });
@@ -1029,16 +1028,16 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/home/user/doc.pdf", "/tmp/notes.md"],
                 false,
-                undefined,
+                null,
                 expect.any(AbortSignal),
             );
         });
 
-        it("passes vision model when activeVisionModel is set", async () => {
+        it("passes enableOcr setting when set", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "llama3";
-            plugin.activeVisionModel = "minicpm-v:latest";
+            plugin.settings.enableOcr = true;
 
             async function* noEvents() {}
             plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
@@ -1048,7 +1047,7 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/home/user/scan.pdf"],
                 false,
-                "minicpm-v:latest",
+                true,
                 expect.any(AbortSignal),
             );
         });
@@ -1438,7 +1437,6 @@ describe("LilbeePlugin", () => {
 
             plugin.api.listModels = vi.fn().mockResolvedValue({
                 chat: { active: "qwen3:8b", installed: ["qwen3:8b"], catalog: [] },
-                vision: { active: "", installed: [], catalog: [] },
             });
 
             plugin.fetchActiveModel();
@@ -2543,7 +2541,6 @@ describe("LilbeePlugin", () => {
 
             plugin.api.listModels = vi.fn().mockResolvedValue({
                 chat: { active: "llama3", installed: ["llama3"], catalog: [] },
-                vision: { active: "", installed: [], catalog: [] },
             });
             plugin.api.status = vi.fn().mockResolvedValue({
                 isOk: () => true,
@@ -2563,7 +2560,6 @@ describe("LilbeePlugin", () => {
 
             plugin.api.listModels = vi.fn().mockResolvedValue({
                 chat: { active: "llama3", installed: ["llama3"], catalog: [] },
-                vision: { active: "", installed: [], catalog: [] },
             });
             plugin.api.status = vi.fn().mockResolvedValue({
                 isOk: () => true,
@@ -2582,7 +2578,6 @@ describe("LilbeePlugin", () => {
 
             plugin.api.listModels = vi.fn().mockResolvedValue({
                 chat: { active: "llama3", installed: ["llama3"], catalog: [] },
-                vision: { active: "", installed: [], catalog: [] },
             });
             plugin.api.status = vi.fn().mockRejectedValue(new Error("offline"));
 
@@ -2605,7 +2600,6 @@ describe("LilbeePlugin", () => {
 
             plugin.api.listModels = vi.fn().mockResolvedValue({
                 chat: { active: "llama3", installed: ["llama3"], catalog: [] },
-                vision: { active: "", installed: [], catalog: [] },
             });
             plugin.api.status = vi.fn().mockResolvedValue({
                 isOk: () => true,
@@ -2630,7 +2624,6 @@ describe("LilbeePlugin", () => {
 
             plugin.api.listModels = vi.fn().mockResolvedValue({
                 chat: { active: "llama3", installed: ["llama3"], catalog: [] },
-                vision: { active: "", installed: [], catalog: [] },
             });
             plugin.api.status = vi.fn().mockResolvedValue({
                 isOk: () => true,

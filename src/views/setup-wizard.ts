@@ -397,7 +397,7 @@ export class SetupWizard extends Modal {
         try {
             let lastEvent: SSEEvent | null = null;
             for await (const event of this.plugin.api.syncStream(
-                !!this.plugin.activeVisionModel,
+                this.plugin.settings.enableOcr,
                 this.syncController.signal,
             )) {
                 if (event.event === SSE_EVENT.FILE_START) {
