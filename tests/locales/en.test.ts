@@ -14,7 +14,7 @@ describe("MESSAGES", () => {
             expect(MESSAGES.BUTTON_PULL).toBe("Pull");
             expect(MESSAGES.BUTTON_PULL_MODEL).toBe("Pull Model");
             expect(MESSAGES.BUTTON_USE).toBe("Use");
-            expect(MESSAGES.BUTTON_REMOVE).toBe("Remove");
+            expect(MESSAGES.BUTTON_REMOVE).toBe("Delete");
             expect(MESSAGES.BUTTON_REFRESH).toBe("Refresh");
             expect(MESSAGES.BUTTON_BROWSE_CATALOG).toBe("Browse Catalog");
             expect(MESSAGES.BUTTON_BROWSE_FULL_CATALOG).toBe("Browse full catalog");
