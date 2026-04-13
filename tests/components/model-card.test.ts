@@ -152,6 +152,18 @@ describe("renderModelCard", () => {
             expect(card.find("lilbee-catalog-use")).toBeNull();
         });
 
+        it("adds is-featured class when entry is featured", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry({ featured: true }), {}) as unknown as MockElement;
+            expect(card.classList.contains("is-featured")).toBe(true);
+        });
+
+        it("does not add is-featured class when entry is not featured", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry({ featured: false }), {}) as unknown as MockElement;
+            expect(card.classList.contains("is-featured")).toBe(false);
+        });
+
         it("adds is-selected class when isActive", () => {
             const c = container();
             const card = renderModelCard(c, makeEntry(), { isActive: true }) as unknown as MockElement;

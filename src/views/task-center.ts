@@ -1,19 +1,10 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
-import { TASK_STATUS, type TaskEntry, type TaskType } from "../types";
+import { TASK_STATUS, type TaskEntry } from "../types";
 import { MESSAGES } from "../locales/en";
 import { relativeTime, TIME_REFRESH_INTERVAL_MS } from "../utils";
 
 export const VIEW_TYPE_TASKS = "lilbee-tasks";
-
-const TYPE_COLORS: Record<TaskType, string> = {
-    sync: "#3b82f6",
-    add: "#f97316",
-    pull: "#a855f7",
-    crawl: "#22c55e",
-    download: "#06b6d4",
-    wiki: "#10b981",
-};
 
 export class TaskCenterView extends ItemView {
     private plugin: LilbeePlugin;
@@ -156,6 +147,9 @@ export class TaskCenterView extends ItemView {
         const row = container.createDiv({ cls: "lilbee-task-row" });
 
         if (isActive) {
+            const progressBg = row.createDiv({ cls: `lilbee-task-progress-bg lilbee-task-progress-bg-${task.type}` });
+            progressBg.style.width = `${task.progress}%`;
+
             const progressContainer = row.createDiv({ cls: "lilbee-task-progress-bar" });
             const progressFill = progressContainer.createDiv({ cls: "lilbee-task-progress-fill" });
             progressFill.style.width = `${task.progress}%`;
@@ -165,7 +159,7 @@ export class TaskCenterView extends ItemView {
 
         const typeBadge = info.createSpan({ cls: "lilbee-task-type-badge" });
         typeBadge.textContent = task.type.toUpperCase();
-        typeBadge.style.backgroundColor = TYPE_COLORS[task.type];
+        typeBadge.classList.add(`lilbee-task-badge-${task.type}`);
 
         const name = info.createSpan({ cls: "lilbee-task-name" });
         name.textContent = task.name;
@@ -210,7 +204,7 @@ export class TaskCenterView extends ItemView {
 
         const typeBadge = info.createSpan({ cls: "lilbee-task-type-badge" });
         typeBadge.textContent = task.type.toUpperCase();
-        typeBadge.style.backgroundColor = TYPE_COLORS[task.type];
+        typeBadge.classList.add(`lilbee-task-badge-${task.type}`);
 
         const name = info.createSpan({ cls: "lilbee-task-name" });
         name.textContent = task.name;

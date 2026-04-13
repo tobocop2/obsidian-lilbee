@@ -100,6 +100,90 @@ describe("SetupWizard", () => {
         vi.useRealTimers();
     });
 
+    describe("Step indicator", () => {
+        it("renders 4 dots and 3 lines on welcome step", () => {
+            const plugin = makePlugin();
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const indicator = el.find("lilbee-wizard-step-indicator");
+            expect(indicator).not.toBeNull();
+            const dots = indicator!.findAll("lilbee-wizard-step-dot");
+            const lines = indicator!.findAll("lilbee-wizard-step-line");
+            expect(dots.length).toBe(4);
+            expect(lines.length).toBe(3);
+        });
+
+        it("marks current step dot as is-active on welcome (step 0)", () => {
+            const plugin = makePlugin();
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const dots = el.find("lilbee-wizard-step-indicator")!.findAll("lilbee-wizard-step-dot");
+            expect(dots[0].classList.contains("is-active")).toBe(true);
+            expect(dots[0].classList.contains("is-done")).toBe(false);
+            expect(dots[1].classList.contains("is-active")).toBe(false);
+        });
+
+        it("marks previous dots as is-done and current as is-active on step 2", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 2;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const indicator = el.find("lilbee-wizard-step-indicator")!;
+            const dots = indicator.findAll("lilbee-wizard-step-dot");
+            const lines = indicator.findAll("lilbee-wizard-step-line");
+            expect(dots[0].classList.contains("is-done")).toBe(true);
+            expect(dots[1].classList.contains("is-done")).toBe(true);
+            expect(dots[2].classList.contains("is-active")).toBe(true);
+            expect(dots[3].classList.contains("is-active")).toBe(false);
+            expect(dots[3].classList.contains("is-done")).toBe(false);
+            expect(lines[0].classList.contains("is-done")).toBe(true);
+            expect(lines[1].classList.contains("is-done")).toBe(true);
+            expect(lines[2].classList.contains("is-done")).toBe(false);
+        });
+
+        it("marks all dots as is-done on done step (step 4)", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const dots = el.find("lilbee-wizard-step-indicator")!.findAll("lilbee-wizard-step-dot");
+            const lines = el.find("lilbee-wizard-step-indicator")!.findAll("lilbee-wizard-step-line");
+            for (const dot of dots) {
+                expect(dot.classList.contains("is-done")).toBe(true);
+            }
+            for (const line of lines) {
+                expect(line.classList.contains("is-done")).toBe(true);
+            }
+        });
+
+        it("marks lines before current step as is-done", () => {
+            const plugin = makePlugin({ serverManager: null });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 1;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const indicator = el.find("lilbee-wizard-step-indicator")!;
+            const lines = indicator.findAll("lilbee-wizard-step-line");
+            expect(lines[0].classList.contains("is-done")).toBe(true);
+            expect(lines[1].classList.contains("is-done")).toBe(false);
+            expect(lines[2].classList.contains("is-done")).toBe(false);
+        });
+    });
+
     describe("Step 0: Welcome", () => {
         it("renders welcome screen on open", () => {
             const plugin = makePlugin();
@@ -918,6 +1002,49 @@ describe("SetupWizard", () => {
             const texts = collectTexts(el);
             expect(texts.some((t) => t.includes("chat panel"))).toBe(true);
             expect(texts.some((t) => t.includes("search command"))).toBe(true);
+        });
+
+        it("renders done icon with party emoji", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const icon = el.find("lilbee-wizard-done-icon");
+            expect(icon).not.toBeNull();
+            expect(icon!.textContent).toBe("\u{1F389}");
+        });
+
+        it("renders summary in summary-card div", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).pulledModelName = "test-model";
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const card = el.find("lilbee-wizard-summary-card");
+            expect(card).not.toBeNull();
+        });
+
+        it("renders tips with icon spans", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const tipDivs = el.findAll("lilbee-wizard-tip");
+            expect(tipDivs.length).toBe(3);
+            const tipIcons = el.findAll("lilbee-wizard-tip-icon");
+            expect(tipIcons.length).toBe(3);
+            expect(tipIcons[0].textContent).toBe("\u{1F4AC}");
+            expect(tipIcons[1].textContent).toBe("\u{1F50D}");
+            expect(tipIcons[2].textContent).toBe("\u{1F4C4}");
         });
     });
 

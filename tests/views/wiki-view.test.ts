@@ -325,6 +325,20 @@ describe("WikiView.renderPageItem", () => {
         expect(badges[0]!.textContent).toBe("summary");
     });
 
+    it("adds lilbee-wiki-type-summary class to summary badge", () => {
+        (view as any).pages = [makePage({ page_type: "summary" })];
+        (view as any).renderList();
+        const badges = findByClass(listEl, "lilbee-wiki-type-badge");
+        expect(badges[0]!.classList.contains("lilbee-wiki-type-summary")).toBe(true);
+    });
+
+    it("adds lilbee-wiki-type-synthesis class to synthesis badge", () => {
+        (view as any).pages = [makePage({ page_type: "synthesis" })];
+        (view as any).renderList();
+        const badges = findByClass(listEl, "lilbee-wiki-type-badge");
+        expect(badges[0]!.classList.contains("lilbee-wiki-type-synthesis")).toBe(true);
+    });
+
     it("renders page title", () => {
         (view as any).pages = [makePage({ title: "My Title" })];
         (view as any).renderList();

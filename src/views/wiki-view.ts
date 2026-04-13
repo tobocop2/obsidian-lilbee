@@ -126,6 +126,7 @@ export class WikiView extends ItemView {
         const info = item.createDiv({ cls: "lilbee-task-info" });
 
         const typeBadge = info.createSpan({ cls: "lilbee-wiki-type-badge" });
+        typeBadge.addClass(`lilbee-wiki-type-${page.page_type}`);
         typeBadge.textContent = page.page_type;
 
         info.createSpan({ cls: "lilbee-task-name", text: page.title });

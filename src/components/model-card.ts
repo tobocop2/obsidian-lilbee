@@ -7,6 +7,7 @@ export function renderModelCard(container: HTMLElement, entry: CatalogEntry, opt
     const card = container.createDiv({ cls: "lilbee-model-card" });
     card.dataset.repo = entry.hf_repo;
     if (options.isActive) card.addClass("is-selected");
+    if (entry.featured) card.addClass("is-featured");
 
     renderCardHeader(card, entry);
     renderCardSpecs(card, entry);

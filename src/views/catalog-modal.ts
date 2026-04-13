@@ -201,7 +201,7 @@ export class CatalogModal extends Modal {
         const installed = entries.filter((e) => !e.featured && e.installed);
         const rest = entries.filter((e) => !e.featured && !e.installed);
 
-        if (picks.length > 0) this.renderSection(MESSAGES.LABEL_OUR_PICKS, picks);
+        if (picks.length > 0) this.renderSection(MESSAGES.LABEL_OUR_PICKS, picks, "lilbee-catalog-section-heading-featured");
         if (installed.length > 0) this.renderSection(MESSAGES.LABEL_SECTION_INSTALLED, installed);
 
         for (const [task, group] of this.groupByTask(rest)) {
@@ -229,12 +229,13 @@ export class CatalogModal extends Modal {
         return [...groups.entries()];
     }
 
-    private renderSection(heading: string, entries: CatalogEntry[]): void {
+    private renderSection(heading: string, entries: CatalogEntry[], headingCls?: string): void {
         if (!this.resultsEl) return;
-        this.resultsEl.createDiv({
+        const headingEl = this.resultsEl.createDiv({
             cls: "lilbee-catalog-section-heading",
             text: heading,
         });
+        if (headingCls) headingEl.addClass(headingCls);
         const grid = this.resultsEl.createDiv({ cls: "lilbee-catalog-grid" });
         for (const entry of entries) {
             this.renderCard(grid, entry);

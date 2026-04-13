@@ -373,8 +373,10 @@ export class ChatView extends ItemView {
         this.history.push({ role: "user", content: text });
 
         const assistantBubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message assistant" });
-        const spinner = assistantBubble.createDiv({ cls: "lilbee-loading" });
-        spinner.textContent = MESSAGES.LABEL_THINKING;
+        const spinner = assistantBubble.createDiv({ cls: "lilbee-thinking-dots" });
+        spinner.createDiv({ cls: "lilbee-thinking-dot" });
+        spinner.createDiv({ cls: "lilbee-thinking-dot" });
+        spinner.createDiv({ cls: "lilbee-thinking-dot" });
         const textEl = assistantBubble.createDiv({ cls: "lilbee-chat-content" });
         textEl.style.display = "none";
         this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
@@ -541,7 +543,9 @@ export class ChatView extends ItemView {
     private showEmptyState(): void {
         if (this.emptyStateEl || !this.messagesEl) return;
         this.emptyStateEl = this.messagesEl.createDiv({ cls: "lilbee-chat-empty-state" });
-        this.emptyStateEl.createEl("p", { text: MESSAGES.NOTICE_NO_MODELS_INSTALLED });
+        this.emptyStateEl.createDiv({ cls: "lilbee-chat-empty-icon", text: "🔬" });
+        this.emptyStateEl.createDiv({ cls: "lilbee-chat-empty-heading", text: MESSAGES.NOTICE_NO_MODELS_INSTALLED });
+        this.emptyStateEl.createEl("p", { text: "Download a model to start chatting with your notes" });
         const btn = this.emptyStateEl.createEl("button", { text: MESSAGES.BUTTON_BROWSE_CATALOG, cls: "mod-cta" });
         btn.addEventListener("click", () => {
             new CatalogModal(this.app, this.plugin).open();

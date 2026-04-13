@@ -81,9 +81,24 @@ export class SetupWizard extends Modal {
         }
     }
 
+    private renderStepIndicator(container: HTMLElement): void {
+        const indicator = container.createDiv({ cls: "lilbee-wizard-step-indicator" });
+        const STEP_COUNT = 4;
+        for (let i = 0; i < STEP_COUNT; i++) {
+            if (i > 0) {
+                const line = indicator.createDiv({ cls: "lilbee-wizard-step-line" });
+                if (i <= this.step) line.addClass("is-done");
+            }
+            const dot = indicator.createDiv({ cls: "lilbee-wizard-step-dot" });
+            if (i < this.step) dot.addClass("is-done");
+            else if (i === this.step) dot.addClass("is-active");
+        }
+    }
+
     private renderWelcome(): void {
         const { contentEl } = this;
         const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
+        this.renderStepIndicator(step);
 
         step.createEl("h2", { text: MESSAGES.TITLE_WELCOME });
         step.createEl("p", { text: MESSAGES.WIZARD_INTRO_DESC });
@@ -106,6 +121,7 @@ export class SetupWizard extends Modal {
     private renderServerMode(): void {
         const { contentEl } = this;
         const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
+        this.renderStepIndicator(step);
 
         step.createEl("h2", { text: MESSAGES.TITLE_SERVER_MODE });
 
@@ -207,6 +223,7 @@ export class SetupWizard extends Modal {
     private renderModelPicker(): void {
         const { contentEl } = this;
         const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
+        this.renderStepIndicator(step);
 
         step.createEl("h2", { text: MESSAGES.TITLE_PICK_MODEL });
         step.createEl("p", { text: MESSAGES.WIZARD_MODEL_HELP });
@@ -362,6 +379,7 @@ export class SetupWizard extends Modal {
     private renderSync(): void {
         const { contentEl } = this;
         const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
+        this.renderStepIndicator(step);
 
         step.createEl("h2", { text: MESSAGES.TITLE_INDEX_VAULT });
         step.createEl("p", { text: MESSAGES.WIZARD_SYNC_HELP });
@@ -439,10 +457,12 @@ export class SetupWizard extends Modal {
     private renderDone(): void {
         const { contentEl } = this;
         const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
+        this.renderStepIndicator(step);
 
+        step.createDiv({ cls: "lilbee-wizard-done-icon", text: "\u{1F389}" });
         step.createEl("h2", { text: MESSAGES.TITLE_ALL_SET });
 
-        const summary = step.createDiv({ cls: "lilbee-wizard-summary" });
+        const summary = step.createDiv({ cls: "lilbee-wizard-summary-card" });
         if (this.pulledModelName) {
             summary.createEl("p", { text: MESSAGES.WIZARD_SUMMARY_MODEL.replace("{model}", this.pulledModelName) });
         }
@@ -458,9 +478,17 @@ export class SetupWizard extends Modal {
         const tips = step.createDiv({ cls: "lilbee-wizard-tips" });
         tips.createEl("p", { text: MESSAGES.WIZARD_TIPS });
         const ul = tips.createEl("ul");
-        ul.createEl("li", { text: MESSAGES.WIZARD_TIP_CHAT });
-        ul.createEl("li", { text: MESSAGES.WIZARD_TIP_SEARCH });
-        ul.createEl("li", { text: MESSAGES.WIZARD_TIP_DRAG });
+        const tipData: [string, string][] = [
+            ["\u{1F4AC}", MESSAGES.WIZARD_TIP_CHAT],
+            ["\u{1F50D}", MESSAGES.WIZARD_TIP_SEARCH],
+            ["\u{1F4C4}", MESSAGES.WIZARD_TIP_DRAG],
+        ];
+        for (const [icon, text] of tipData) {
+            const li = ul.createEl("li");
+            const tipDiv = li.createDiv({ cls: "lilbee-wizard-tip" });
+            tipDiv.createEl("span", { cls: "lilbee-wizard-tip-icon", text: icon });
+            tipDiv.createEl("span", { text });
+        }
 
         step.createEl("p", { text: MESSAGES.WIZARD_CHANGE_SETTINGS });
 

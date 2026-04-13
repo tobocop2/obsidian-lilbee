@@ -2,10 +2,15 @@
 
 .lilbee-document-card {
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-m, 6px);
+    border-radius: 10px;
     padding: var(--size-4-3, 12px);
     margin-bottom: var(--size-4-2, 8px);
     background-color: var(--background-primary);
+    transition: border-color 150ms ease;
+}
+
+.lilbee-document-card:hover {
+    border-color: var(--interactive-accent);
 }
 
 .lilbee-document-card-header {
@@ -33,7 +38,7 @@
 .lilbee-relevance-bar-container {
     height: 3px;
     background-color: var(--background-modifier-border);
-    border-radius: 2px;
+    border-radius: 3px;
     margin-bottom: var(--size-4-2, 8px);
     overflow: hidden;
 }
@@ -41,7 +46,7 @@
 .lilbee-relevance-bar {
     height: 100%;
     background-color: var(--interactive-accent);
-    border-radius: 2px;
+    border-radius: 3px;
     min-width: 2px;
     transition: width 0.2s ease;
 }
@@ -77,12 +82,13 @@
 
 .lilbee-source-chip {
     display: inline-block;
-    padding: 1px var(--size-4-2, 8px);
-    border-radius: 999px;
-    background-color: var(--background-secondary);
-    color: var(--text-muted);
+    padding: 2px 10px;
+    border-radius: 10px;
+    background-color: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+    color: var(--interactive-accent);
     font-size: var(--font-smallest, 10px);
-    border: 1px solid var(--background-modifier-border);
+    font-weight: var(--font-medium, 500);
+    border: none;
     margin: 2px 2px 0 0;
     cursor: default;
 }
@@ -166,16 +172,16 @@
 }
 
 .lilbee-progress-bar-container {
-    height: 3px;
+    height: 4px;
     background-color: var(--background-modifier-border);
-    border-radius: 2px;
+    border-radius: 4px;
     overflow: hidden;
 }
 
 .lilbee-progress-bar {
     height: 100%;
     background-color: var(--interactive-accent);
-    border-radius: 2px;
+    border-radius: 4px;
     width: 0%;
     transition: width 200ms ease-out;
 }
@@ -219,9 +225,8 @@
 }
 
 .lilbee-chat-message {
-    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
-    border-radius: var(--radius-m, 6px);
-    max-width: 88%;
+    padding: 10px 16px;
+    max-width: 80%;
     line-height: var(--line-height-normal, 1.5);
     font-size: var(--font-text-size, 15px);
     word-break: break-word;
@@ -236,14 +241,16 @@
 
 .lilbee-chat-message.user {
     align-self: flex-end;
-    background-color: var(--interactive-accent);
-    color: var(--text-on-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 15%, transparent);
+    color: var(--text-normal);
+    border-radius: 16px 16px 4px 16px;
 }
 
 .lilbee-chat-message.assistant {
     align-self: flex-start;
-    background-color: var(--background-secondary);
+    background-color: color-mix(in srgb, var(--background-modifier-border) 40%, transparent);
     color: var(--text-normal);
+    border-radius: 4px 16px 16px 16px;
 }
 
 .lilbee-chat-message-error {
@@ -294,8 +301,8 @@
     background-color: var(--background-secondary);
     color: var(--text-normal);
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-m, 6px);
-    padding: 6px var(--size-4-2, 8px);
+    border-radius: 12px;
+    padding: 10px 14px;
     font-family: var(--font-interface);
     font-size: var(--font-text-size, 15px);
     line-height: 1.4;
@@ -317,7 +324,7 @@
     cursor: pointer;
     color: var(--text-muted);
     padding: var(--size-4-2, 8px);
-    border-radius: var(--radius-s, 4px);
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -332,14 +339,14 @@
 
 .lilbee-chat-send {
     flex-shrink: 0;
-    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    padding: 8px 18px;
     background-color: var(--interactive-accent);
     color: var(--text-on-accent);
     border: none;
-    border-radius: var(--radius-m, 6px);
+    border-radius: 10px;
     cursor: pointer;
     font-size: var(--font-small, 13px);
-    font-weight: var(--font-medium, 500);
+    font-weight: var(--font-semibold, 600);
     line-height: 1;
     min-height: 36px;
 }
@@ -365,11 +372,11 @@
 
 .lilbee-search-input {
     width: 100%;
-    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    padding: 10px 14px;
     background-color: var(--background-secondary);
     color: var(--text-normal);
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-m, 6px);
+    border-radius: 12px;
     font-size: var(--font-text-size, 15px);
     outline: none;
     box-sizing: border-box;
@@ -415,12 +422,13 @@
 }
 
 .lilbee-ask-answer {
-    padding: var(--size-4-3, 12px);
+    padding: 14px;
     color: var(--text-normal);
     font-size: var(--font-text-size, 15px);
     line-height: var(--line-height-normal, 1.5);
-    border-radius: var(--radius-m, 6px);
+    border-radius: 12px;
     background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
     margin-bottom: var(--size-4-2, 8px);
 }
 
@@ -760,9 +768,9 @@
 
 .lilbee-catalog-filters select,
 .lilbee-catalog-search {
-    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    padding: 5px 12px;
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-s, 4px);
+    border-radius: 8px;
     background-color: var(--background-secondary);
     color: var(--text-normal);
     font-size: var(--font-small, 13px);
@@ -790,9 +798,9 @@
 }
 
 .lilbee-catalog-pull {
-    padding: 2px var(--size-4-2, 8px);
+    padding: 4px 12px;
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-s, 4px);
+    border-radius: 8px;
     background: none;
     cursor: pointer;
     color: var(--text-normal);
@@ -805,9 +813,9 @@
 
 .lilbee-catalog-use,
 .lilbee-catalog-remove {
-    padding: 2px var(--size-4-2, 8px);
+    padding: 4px 12px;
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-s, 4px);
+    border-radius: 8px;
     background: none;
     cursor: pointer;
     color: var(--text-normal);
@@ -852,19 +860,32 @@
 
 .lilbee-model-card {
     border: 1px solid var(--background-modifier-border);
-    border-radius: 6px;
-    padding: 12px;
+    border-radius: 10px;
+    padding: 14px;
     cursor: pointer;
-    transition: border-color 0.15s;
+    transition: all 150ms ease;
+    background-color: var(--background-secondary);
 }
 
 .lilbee-model-card:hover {
     border-color: var(--interactive-accent);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .lilbee-model-card.is-selected {
     border-color: var(--interactive-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
     box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+.lilbee-model-card.is-featured {
+    background-color: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
+    border-color: color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+}
+
+.lilbee-model-card.is-featured:hover {
+    border-color: color-mix(in srgb, var(--interactive-accent) 40%, transparent);
 }
 
 .lilbee-model-card-header {
@@ -906,7 +927,7 @@
 .lilbee-pill {
     display: inline-block;
     padding: 1px 8px;
-    border-radius: 999px;
+    border-radius: 10px;
     font-size: 10px;
     font-weight: 500;
 }
@@ -937,16 +958,18 @@
 
 .lilbee-browse-more-card {
     border: 1px dashed var(--background-modifier-border);
-    border-radius: 6px;
+    border-radius: 10px;
     padding: 24px;
     text-align: center;
     cursor: pointer;
     color: var(--text-muted);
+    transition: all 150ms ease;
 }
 
 .lilbee-browse-more-card:hover {
     border-color: var(--interactive-accent);
-    color: var(--text-normal);
+    color: var(--interactive-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
 }
 
 /* Section Headings */
@@ -959,6 +982,10 @@
     letter-spacing: 0.05em;
     margin: 16px 0 8px;
     padding: 0 4px;
+}
+
+.lilbee-catalog-section-heading-featured {
+    color: var(--interactive-accent);
 }
 
 /* View Toggle CTA Banner */
@@ -1207,6 +1234,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    flex: 1;
     gap: var(--size-4-3, 12px);
     padding: var(--size-4-8, 32px) var(--size-4-4, 16px);
     color: var(--text-faint);
@@ -1216,6 +1244,59 @@
 
 .lilbee-chat-empty-state p {
     margin: 0;
+}
+
+.lilbee-chat-empty-icon {
+    font-size: 32px;
+    opacity: 0.4;
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-chat-empty-heading {
+    color: var(--text-muted);
+    font-weight: var(--font-semibold, 600);
+    font-size: var(--font-text-size, 14px);
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-chat-empty-state .mod-cta {
+    margin-top: var(--size-4-2, 8px);
+    padding: 8px 20px;
+    border-radius: 10px;
+    background-color: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+    color: var(--interactive-accent);
+    border: 1px solid color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+    font-size: var(--font-small, 13px);
+    cursor: pointer;
+}
+
+.lilbee-chat-empty-state .mod-cta:hover {
+    background-color: color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+}
+
+/* Thinking dots animation */
+
+.lilbee-thinking-dots {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    padding: 12px 16px;
+}
+
+.lilbee-thinking-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--text-faint);
+    animation: lilbee-pulse 1.4s infinite;
+}
+
+.lilbee-thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+.lilbee-thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes lilbee-pulse {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1); }
 }
 
 /* Server Defaults (read-only config display) */
@@ -1260,11 +1341,12 @@
 
 .lilbee-wizard-model-option {
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-m, 6px);
-    padding: var(--size-4-3, 12px);
+    border-radius: 10px;
+    padding: 14px 16px;
     margin-bottom: var(--size-4-2, 8px);
     cursor: pointer;
-    transition: border-color 150ms ease;
+    transition: all 150ms ease;
+    background-color: var(--background-secondary);
 }
 
 .lilbee-wizard-model-option:hover {
@@ -1272,8 +1354,9 @@
 }
 
 .lilbee-wizard-model-option.selected {
-    border-color: var(--interactive-accent);
-    background-color: var(--background-secondary);
+    border-color: color-mix(in srgb, var(--interactive-accent) 40%, transparent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 15%, transparent);
 }
 
 .lilbee-wizard-model-option strong {
@@ -1331,12 +1414,96 @@
     margin-top: var(--size-4-4, 16px);
 }
 
+.lilbee-wizard-actions button {
+    border-radius: 10px;
+}
+
 .lilbee-wizard-summary p {
     font-weight: var(--font-medium, 500);
 }
 
 .lilbee-wizard-tips {
     margin-top: var(--size-4-2, 8px);
+}
+
+/* Step indicator */
+
+.lilbee-wizard-step-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: var(--size-4-6, 24px);
+}
+
+.lilbee-wizard-step-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--background-modifier-border);
+    transition: all 300ms ease;
+}
+
+.lilbee-wizard-step-dot.is-active {
+    background-color: var(--interactive-accent);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--interactive-accent) 50%, transparent);
+}
+
+.lilbee-wizard-step-dot.is-done {
+    background-color: var(--text-success);
+}
+
+.lilbee-wizard-step-line {
+    width: 32px;
+    height: 2px;
+    background-color: var(--background-modifier-border);
+}
+
+.lilbee-wizard-step-line.is-done {
+    background-color: var(--text-success);
+}
+
+/* Wizard summary card */
+
+.lilbee-wizard-summary-card {
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    padding: 14px;
+    margin: var(--size-4-4, 16px) 0;
+}
+
+.lilbee-wizard-summary-card p {
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    margin: 0 0 var(--size-4-1, 4px);
+}
+
+.lilbee-wizard-summary-card strong {
+    color: var(--text-normal);
+}
+
+/* Wizard done icon */
+
+.lilbee-wizard-done-icon {
+    font-size: 36px;
+    text-align: center;
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+/* Wizard tip */
+
+.lilbee-wizard-tip {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--size-4-2, 8px);
+    padding: 6px 0;
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+}
+
+.lilbee-wizard-tip-icon {
+    color: var(--interactive-accent);
+    flex-shrink: 0;
 }
 
 .lilbee-wizard-hint {
@@ -1358,7 +1525,7 @@
     background-color: var(--background-secondary);
     color: var(--text-normal);
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-m, 6px);
+    border-radius: 10px;
     font-size: var(--font-text-size, 15px);
     outline: none;
     box-sizing: border-box;
@@ -1392,12 +1559,12 @@
 
 .lilbee-tasks-clear {
     background: none;
-    border: none;
+    border: 1px solid var(--background-modifier-border);
     cursor: pointer;
     color: var(--text-muted);
     font-size: var(--font-small, 13px);
-    padding: 2px var(--size-4-2, 8px);
-    border-radius: var(--radius-s, 4px);
+    padding: 4px 12px;
+    border-radius: 8px;
 }
 
 .lilbee-tasks-clear:hover {
@@ -1422,14 +1589,19 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--size-4-1, 4px);
-    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
-    border-radius: var(--radius-s, 4px);
-    margin-bottom: 2px;
+    gap: var(--size-4-2, 8px);
+    padding: 8px 10px;
+    border-radius: 8px;
+    margin-bottom: 4px;
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    transition: border-color 150ms ease;
+    position: relative;
+    overflow: hidden;
 }
 
 .lilbee-task-row:hover {
-    background-color: var(--background-modifier-hover);
+    border-color: color-mix(in srgb, var(--text-normal) 15%, transparent);
 }
 
 .lilbee-task-info {
@@ -1442,14 +1614,41 @@
 
 .lilbee-task-type-badge {
     display: inline-block;
-    padding: 1px 6px;
-    border-radius: 999px;
-    color: #fff;
+    padding: 2px 8px;
+    border-radius: 8px;
     font-size: 9px;
     font-weight: var(--font-semibold, 600);
-    letter-spacing: 0.03em;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     flex-shrink: 0;
 }
+
+/* Type-specific badge colors */
+.lilbee-task-badge-sync { background-color: color-mix(in srgb, #3b82f6 12%, transparent); color: #3b82f6; }
+.lilbee-task-badge-add { background-color: color-mix(in srgb, #f97316 12%, transparent); color: #f97316; }
+.lilbee-task-badge-pull { background-color: color-mix(in srgb, #a855f7 12%, transparent); color: #a855f7; }
+.lilbee-task-badge-crawl { background-color: color-mix(in srgb, #22c55e 12%, transparent); color: #22c55e; }
+.lilbee-task-badge-download { background-color: color-mix(in srgb, #06b6d4 12%, transparent); color: #06b6d4; }
+.lilbee-task-badge-wiki { background-color: color-mix(in srgb, #10b981 12%, transparent); color: #10b981; }
+
+/* Task progress background */
+.lilbee-task-progress-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    border-radius: 8px;
+    opacity: 0.08;
+    transition: width 300ms ease;
+    pointer-events: none;
+}
+
+.lilbee-task-progress-bg-sync { background-color: #3b82f6; }
+.lilbee-task-progress-bg-add { background-color: #f97316; }
+.lilbee-task-progress-bg-pull { background-color: #a855f7; }
+.lilbee-task-progress-bg-crawl { background-color: #22c55e; }
+.lilbee-task-progress-bg-download { background-color: #06b6d4; }
+.lilbee-task-progress-bg-wiki { background-color: #10b981; }
 
 .lilbee-task-name {
     font-size: var(--font-small, 13px);
@@ -1463,7 +1662,7 @@
     width: 100%;
     height: 3px;
     background-color: var(--background-modifier-border);
-    border-radius: 2px;
+    border-radius: 3px;
     overflow: hidden;
     flex-basis: 100%;
 }
@@ -1471,7 +1670,7 @@
 .lilbee-task-progress-fill {
     height: 100%;
     background-color: var(--interactive-accent);
-    border-radius: 2px;
+    border-radius: 3px;
     transition: width 200ms ease-out;
 }
 
@@ -1493,19 +1692,25 @@
 
 .lilbee-task-cancel {
     background: none;
-    border: none;
+    border: 1px solid transparent;
     cursor: pointer;
-    color: var(--text-muted);
-    font-size: 14px;
+    color: var(--text-faint);
+    font-size: 13px;
     line-height: 1;
     padding: 2px;
-    border-radius: var(--radius-s, 4px);
+    border-radius: 6px;
     flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .lilbee-task-cancel:hover {
     color: var(--text-error);
-    background-color: var(--background-modifier-hover);
+    border-color: var(--text-error);
+    background-color: color-mix(in srgb, var(--text-error) 10%, transparent);
 }
 
 .lilbee-task-status-icon {
@@ -1577,30 +1782,41 @@
 }
 
 .lilbee-wiki-page-item {
-    padding: var(--size-4-2, 8px);
-    border-radius: var(--radius-s, 4px);
+    padding: 8px 10px;
+    border-radius: 8px;
     cursor: pointer;
     margin-bottom: var(--size-4-1, 4px);
+    transition: all 120ms ease;
 }
 
 .lilbee-wiki-page-item:hover {
-    background-color: var(--background-modifier-hover);
+    background-color: color-mix(in srgb, var(--text-normal) 5%, transparent);
 }
 
 .lilbee-wiki-page-item.active {
-    background-color: var(--background-modifier-active-hover);
+    background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+    border-left: 3px solid var(--interactive-accent);
+    padding-left: 7px;
 }
 
 .lilbee-wiki-type-badge {
     display: inline-block;
-    font-size: var(--font-smallest, 10px);
+    font-size: 9px;
     font-weight: var(--font-semibold, 600);
     text-transform: uppercase;
-    padding: 1px 6px;
-    border-radius: var(--radius-s, 4px);
-    background-color: #10b981;
-    color: #fff;
+    padding: 1px 7px;
+    border-radius: 8px;
     margin-right: var(--size-4-1, 4px);
+}
+
+.lilbee-wiki-type-summary {
+    background-color: color-mix(in srgb, #10b981 12%, transparent);
+    color: #10b981;
+}
+
+.lilbee-wiki-type-synthesis {
+    background-color: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+    color: var(--interactive-accent);
 }
 
 .lilbee-wiki-detail {
@@ -1621,14 +1837,14 @@
 
 .lilbee-wiki-content {
     font-size: var(--font-text-size, 14px);
-    line-height: var(--line-height-normal, 1.5);
+    line-height: 1.7;
 }
 
 /* ── Source chip wiki modifier ── */
 
 .lilbee-source-chip-wiki {
-    border-left: 3px solid #10b981;
-    padding-left: 6px;
+    background-color: color-mix(in srgb, #10b981 12%, transparent);
+    color: #10b981;
 }
 
 .lilbee-claim-fact {
@@ -1774,30 +1990,31 @@
 
 .lilbee-search-mode {
     display: flex;
-    gap: 0;
+    gap: 4px;
     margin: var(--size-4-2, 8px) 0;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-m, 6px);
-    overflow: hidden;
     width: fit-content;
 }
 
 .lilbee-search-mode-btn {
-    padding: var(--size-4-1, 4px) var(--size-4-3, 12px);
+    padding: 3px 12px;
     font-size: var(--font-small, 13px);
     background: transparent;
-    border: none;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
     cursor: pointer;
-    color: var(--text-muted);
+    color: var(--text-faint);
+    transition: all 150ms ease;
 }
 
 .lilbee-search-mode-btn:hover {
     background-color: var(--background-modifier-hover);
+    color: var(--text-muted);
 }
 
 .lilbee-search-mode-btn.active {
-    background-color: var(--interactive-accent);
-    color: #fff;
+    background-color: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+    color: var(--interactive-accent);
 }
 
 /* Download progress panel (browser-style) */
@@ -1822,13 +2039,13 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding: 8px 12px;
-    background-color: var(--background-secondary);
+    padding: 10px 12px;
+    background-color: var(--background-primary);
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-m, 6px);
-    box-shadow: var(--shadow-s);
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
     opacity: 1;
-    transition: opacity 300ms ease;
+    transition: all 300ms ease;
 }
 
 .lilbee-dp-info {
@@ -1859,46 +2076,62 @@
 
 .lilbee-dp-cancel {
     background: none;
-    border: none;
+    border: 1px solid transparent;
     cursor: pointer;
-    color: var(--text-muted);
-    padding: 0 2px;
-    font-size: 14px;
+    color: var(--text-faint);
+    padding: 0;
+    font-size: 12px;
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .lilbee-dp-cancel:hover {
     color: var(--text-error);
+    border-color: var(--text-error);
+    background-color: color-mix(in srgb, var(--text-error) 10%, transparent);
 }
 
 .lilbee-dp-bar-container {
     height: 3px;
     background-color: var(--background-modifier-border);
-    border-radius: 2px;
+    border-radius: 3px;
     overflow: hidden;
 }
 
 .lilbee-dp-bar-fill {
     height: 100%;
     background-color: var(--interactive-accent);
-    border-radius: 2px;
+    border-radius: 3px;
     width: 0%;
     transition: width 200ms ease-out;
 }
 
+.lilbee-dp-done {
+    border-color: color-mix(in srgb, var(--text-success) 25%, transparent);
+}
+
 .lilbee-dp-done .lilbee-dp-name {
-    color: var(--color-green);
+    color: var(--text-success);
 }
 
 .lilbee-dp-done .lilbee-dp-bar-fill {
-    background-color: var(--color-green);
+    background-color: var(--text-success);
+}
+
+.lilbee-dp-failed {
+    border-color: color-mix(in srgb, var(--text-error) 25%, transparent);
 }
 
 .lilbee-dp-failed .lilbee-dp-name {
-    color: var(--color-red);
+    color: var(--text-error);
 }
 
 .lilbee-dp-failed .lilbee-dp-bar-fill {
-    background-color: var(--color-red);
+    background-color: var(--text-error);
 }
 
 .lilbee-dp-queued {
