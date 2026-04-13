@@ -592,7 +592,7 @@ describe("CatalogModal", () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
-                yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
+                yield { event: SSE_EVENT.PROGRESS, data: { percent: 50 } };
             });
             plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
             const modal = await openModal(plugin);

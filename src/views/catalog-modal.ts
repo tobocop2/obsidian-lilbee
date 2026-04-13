@@ -445,9 +445,9 @@ export class CatalogModal extends Modal {
         try {
             for await (const event of this.plugin.api.pullModel(entry.hf_repo, entry.source)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
-                    const d = event.data as { current?: number; total?: number };
-                    if (d.total && d.current !== undefined) {
-                        const pct = Math.round((d.current / d.total) * 100);
+                    const d = event.data as { percent?: number };
+                    if (d.percent !== undefined) {
+                        const pct = d.percent;
                         btn.textContent = `${pct}%`;
                         this.plugin.taskQueue.update(taskId, pct, entry.hf_repo);
                     }

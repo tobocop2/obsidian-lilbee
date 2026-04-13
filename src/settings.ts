@@ -853,10 +853,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             const models = await this.plugin.api.listModels();
             this.renderModelSection(container, MESSAGES.LABEL_CHAT_MODEL, models.chat);
         } catch {
-            container.createEl("p", {
-                text: MESSAGES.ERROR_COULD_NOT_REACH,
-                cls: "mod-warning",
-            });
+            // Connection status is shown via the Test button — no duplicate warning needed
         }
     }
 
@@ -932,9 +929,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         try {
             for await (const event of this.plugin.api.pullModel(model.name, "native", controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
-                    const d = event.data as { current?: number; total?: number };
-                    if (d.total && d.current !== undefined) {
-                        const pct = Math.round((d.current / d.total) * 100);
+                    const d = event.data as { percent?: number };
+                    if (d.percent !== undefined) {
+                        const pct = d.percent;
                         label.textContent = MESSAGES.STATUS_PULLING_PCT.replace("{model}", model.name).replace(
                             "{pct}",
                             String(pct),
@@ -1000,9 +997,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         try {
             for await (const event of this.plugin.api.pullModel(model.name, "native", controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
-                    const d = event.data as { current?: number; total?: number };
-                    if (d.total && d.current !== undefined) {
-                        const pct = Math.round((d.current / d.total) * 100);
+                    const d = event.data as { percent?: number };
+                    if (d.percent !== undefined) {
+                        const pct = d.percent;
                         progress.textContent = `${pct}%`;
                         this.plugin.taskQueue.update(taskId, pct, model.name);
                     }

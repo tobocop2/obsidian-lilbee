@@ -685,7 +685,7 @@ describe("LilbeeSettingTab", () => {
             expect(sections.length).toBe(1);
         });
 
-        it("shows warning paragraph when API call fails", async () => {
+        it("silently handles API failure without showing warning", async () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("network"));
             const tab = makeTab(plugin);
@@ -694,8 +694,7 @@ describe("LilbeeSettingTab", () => {
             const p = (container as unknown as MockElement).children.find(
                 (c) => c.tagName === "P" && c.textContent.includes("Could not connect"),
             );
-            expect(p).toBeDefined();
-            expect(p?.classList.contains("mod-warning")).toBe(true);
+            expect(p).toBeUndefined();
         });
     });
 
@@ -997,7 +996,7 @@ describe("LilbeeSettingTab", () => {
 
             let aborted = false;
             async function* slowPull() {
-                yield { event: "progress", data: { current: 10, total: 100 } };
+                yield { event: "progress", data: { percent: 10 } };
                 // Wait until abort or completion
                 while (!aborted) {
                     await new Promise((r) => setTimeout(r, 1));
@@ -1072,7 +1071,7 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             let aborted = false;
             async function* slowPull() {
-                yield { event: "progress", data: { current: 10, total: 100 } };
+                yield { event: "progress", data: { percent: 10 } };
                 while (!aborted) {
                     await new Promise((r) => setTimeout(r, 1));
                 }
@@ -1119,7 +1118,7 @@ describe("LilbeeSettingTab", () => {
         it("shows cancel banner during auto-pull and removes it after", async () => {
             const plugin = makePlugin();
             async function* fakePull() {
-                yield { event: "progress", data: { current: 50, total: 100 } };
+                yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
@@ -1145,7 +1144,7 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             let aborted = false;
             async function* slowPull() {
-                yield { event: "progress", data: { current: 10, total: 100 } };
+                yield { event: "progress", data: { percent: 10 } };
                 while (!aborted) {
                     await new Promise((r) => setTimeout(r, 1));
                 }
@@ -1187,7 +1186,7 @@ describe("LilbeeSettingTab", () => {
             });
             let bannerLabel: MockElement | undefined;
             async function* slowPull() {
-                yield { event: "progress", data: { current: 75, total: 100 } };
+                yield { event: "progress", data: { percent: 75 } };
                 // Capture the label text at this point
                 bannerLabel = (container as unknown as MockElement).children
                     .find((c) => c.classList.contains("lilbee-pull-banner"))
@@ -1274,7 +1273,7 @@ describe("LilbeeSettingTab", () => {
             let capturedProgressText = "";
 
             async function* fakePull() {
-                yield { event: "progress", data: { current: 75, total: 100 } };
+                yield { event: "progress", data: { percent: 75 } };
                 // Capture progress text mid-pull (before finally removes it)
                 capturedProgressText = actionCell.find("lilbee-pull-progress")?.textContent ?? "";
             }
@@ -1296,12 +1295,12 @@ describe("LilbeeSettingTab", () => {
             expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
         });
 
-        it("progress event with total=0: does not set percentage text", async () => {
+        it("progress event with percent=0: shows 0% text", async () => {
             const plugin = makePlugin();
             let capturedProgressText = "";
 
             async function* fakePull() {
-                yield { event: "progress", data: { current: 0, total: 0 } };
+                yield { event: "progress", data: { percent: 0 } };
                 capturedProgressText = actionCell.find("lilbee-pull-progress")?.textContent ?? "";
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
@@ -1315,7 +1314,7 @@ describe("LilbeeSettingTab", () => {
 
             await clickHandler();
 
-            expect(capturedProgressText).not.toMatch(/\d+%/);
+            expect(capturedProgressText).toBe("0%");
         });
 
         it("pull failure: shows failure Notice and re-enables button with 'Pull' text", async () => {
@@ -1396,7 +1395,7 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
 
             async function* fakePull() {
-                yield { event: "progress", data: { current: 45, total: 100 } };
+                yield { event: "progress", data: { percent: 45 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
@@ -1436,7 +1435,7 @@ describe("LilbeeSettingTab", () => {
             (plugin as any).statusBarEl = null;
 
             async function* fakePull() {
-                yield { event: "progress", data: { current: 50, total: 100 } };
+                yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
@@ -1633,7 +1632,7 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
 
             async function* fakePull() {
-                yield { event: "progress", data: { current: 50, total: 100 } };
+                yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
@@ -1704,7 +1703,7 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
 
             async function* fakePull() {
-                yield { event: "progress", data: { current: 75, total: 100 } };
+                yield { event: "progress", data: { percent: 75 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
@@ -1750,7 +1749,7 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
 
             async function* fakePull() {
-                yield { event: "progress", data: { current: 0, total: 0 } };
+                yield { event: "progress", data: { percent: 0 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
@@ -1774,7 +1773,7 @@ describe("LilbeeSettingTab", () => {
             (plugin as any).statusBarEl = null;
 
             async function* fakePull() {
-                yield { event: "progress", data: { current: 50, total: 100 } };
+                yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
@@ -1796,7 +1795,7 @@ describe("LilbeeSettingTab", () => {
             (plugin as any).statusBarEl = null;
 
             async function* fakePull() {
-                yield { event: "progress", data: { current: 50, total: 100 } };
+                yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });

@@ -636,8 +636,8 @@ describe("SetupWizard", () => {
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
-                    yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
-                    yield { event: SSE_EVENT.PROGRESS, data: { current: 100, total: 100 } };
+                    yield { event: SSE_EVENT.PROGRESS, data: { percent: 50 } };
+                    yield { event: SSE_EVENT.PROGRESS, data: { percent: 100 } };
                 })(),
             );
             // syncStream will be called when step 3 auto-starts
@@ -778,7 +778,7 @@ describe("SetupWizard", () => {
                 .mockImplementation((_name: string, _source: string, signal?: AbortSignal) => {
                     abortSignal = signal ?? null;
                     return (async function* () {
-                        yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
+                        yield { event: SSE_EVENT.PROGRESS, data: { percent: 50 } };
                         // Wait forever
                         await new Promise(() => {});
                     })();
@@ -1124,7 +1124,7 @@ describe("SetupWizard", () => {
                 .mockImplementation((_model: string, _source: string, signal: AbortSignal) => {
                     capturedSignal = signal;
                     return (async function* () {
-                        yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
+                        yield { event: SSE_EVENT.PROGRESS, data: { percent: 50 } };
                         await new Promise(() => {});
                     })();
                 });
@@ -1190,7 +1190,7 @@ describe("SetupWizard", () => {
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
                 (async function* () {
-                    yield { event: SSE_EVENT.PROGRESS, data: { current: 100, total: 100 } };
+                    yield { event: SSE_EVENT.PROGRESS, data: { percent: 100 } };
                 })(),
             );
             plugin.api.syncStream = vi.fn().mockReturnValue(

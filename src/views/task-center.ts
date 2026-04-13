@@ -80,8 +80,8 @@ export class TaskCenterView extends ItemView {
     private renderActive(): void {
         if (!this.activeSection) return;
         const container = this.activeSection;
-        const existingRows = container.querySelectorAll(".lilbee-task-row");
-        existingRows.forEach((el) => el.remove());
+        container.querySelectorAll(".lilbee-task-row").forEach((el) => el.remove());
+        container.querySelectorAll(".lilbee-tasks-empty").forEach((el) => el.remove());
 
         const allActive = this.plugin.taskQueue.activeAll;
 
@@ -91,9 +91,6 @@ export class TaskCenterView extends ItemView {
             return;
         }
 
-        const existingEmpty = container.querySelector(".lilbee-tasks-empty");
-        if (existingEmpty) existingEmpty.remove();
-
         for (const task of allActive) {
             this.renderTaskRow(container, task, true);
         }
@@ -102,8 +99,8 @@ export class TaskCenterView extends ItemView {
     private renderQueued(): void {
         if (!this.queuedSection) return;
         const container = this.queuedSection;
-        const existingRows = container.querySelectorAll(".lilbee-task-row");
-        existingRows.forEach((el) => el.remove());
+        container.querySelectorAll(".lilbee-task-row").forEach((el) => el.remove());
+        container.querySelectorAll(".lilbee-tasks-empty").forEach((el) => el.remove());
 
         const queued = this.plugin.taskQueue.queued;
 
@@ -113,9 +110,6 @@ export class TaskCenterView extends ItemView {
             return;
         }
 
-        const existingEmpty = container.querySelector(".lilbee-tasks-empty");
-        if (existingEmpty) existingEmpty.remove();
-
         for (const task of queued) {
             this.renderTaskRow(container, task, false);
         }
@@ -124,8 +118,8 @@ export class TaskCenterView extends ItemView {
     private renderCompleted(): void {
         if (!this.completedSection) return;
         const container = this.completedSection;
-        const existingRows = container.querySelectorAll(".lilbee-task-row");
-        existingRows.forEach((el) => el.remove());
+        container.querySelectorAll(".lilbee-task-row").forEach((el) => el.remove());
+        container.querySelectorAll(".lilbee-tasks-empty").forEach((el) => el.remove());
 
         const completed = this.plugin.taskQueue.completed;
 
@@ -134,9 +128,6 @@ export class TaskCenterView extends ItemView {
             empty.textContent = MESSAGES.LABEL_NO_COMPLETED_TASKS;
             return;
         }
-
-        const existingEmpty = container.querySelector(".lilbee-tasks-empty");
-        if (existingEmpty) existingEmpty.remove();
 
         for (const task of completed) {
             this.renderCompletedRow(container, task);
