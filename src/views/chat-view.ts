@@ -210,10 +210,7 @@ export class ChatView extends ItemView {
     }
 
     private fetchAndFillSelectors(): void {
-        Promise.all([
-            this.plugin.api.listModels(),
-            this.plugin.api.installedModels().catch(() => ({ models: [] })),
-        ])
+        Promise.all([this.plugin.api.listModels(), this.plugin.api.installedModels().catch(() => ({ models: [] }))])
             .then(([models, installed]) => {
                 if (this.retryTimer) {
                     clearTimeout(this.retryTimer);
