@@ -61,9 +61,10 @@ function summarizeSyncResult(done: SyncDone): string {
 }
 
 /**
- * Parse a `done` event emitted by `/api/add`. The server sends two `done`
- * events per stream: plain SyncDone and a nested `{sync: SyncDone}`. Accept
- * both shapes; return null for anything else.
+ * Parse the `done` event emitted by `/api/add`. The payload contains
+ * `{copied, skipped, errors, sync: SyncDone}`. Extract the nested
+ * sync result; fall back to treating the whole object as SyncDone
+ * for backwards compatibility.
  */
 export function parseAddDoneEvent(data: unknown): SyncDone | null {
     if (!data || typeof data !== "object") return null;
