@@ -201,7 +201,8 @@ export class CatalogModal extends Modal {
         const installed = entries.filter((e) => !e.featured && e.installed);
         const rest = entries.filter((e) => !e.featured && !e.installed);
 
-        if (picks.length > 0) this.renderSection(MESSAGES.LABEL_OUR_PICKS, picks, "lilbee-catalog-section-heading-featured");
+        if (picks.length > 0)
+            this.renderSection(MESSAGES.LABEL_OUR_PICKS, picks, "lilbee-catalog-section-heading-featured");
         if (installed.length > 0) this.renderSection(MESSAGES.LABEL_SECTION_INSTALLED, installed);
 
         for (const [task, group] of this.groupByTask(rest)) {
