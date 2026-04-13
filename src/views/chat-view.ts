@@ -545,7 +545,7 @@ export class ChatView extends ItemView {
         this.emptyStateEl = this.messagesEl.createDiv({ cls: "lilbee-chat-empty-state" });
         this.emptyStateEl.createDiv({ cls: "lilbee-chat-empty-icon", text: "🔬" });
         this.emptyStateEl.createDiv({ cls: "lilbee-chat-empty-heading", text: MESSAGES.NOTICE_NO_MODELS_INSTALLED });
-        this.emptyStateEl.createEl("p", { text: "Download a model to start chatting with your notes" });
+        this.emptyStateEl.createEl("p", { text: MESSAGES.NOTICE_NO_MODELS_DESCRIPTION });
         const btn = this.emptyStateEl.createEl("button", { text: MESSAGES.BUTTON_BROWSE_CATALOG, cls: "mod-cta" });
         btn.addEventListener("click", () => {
             new CatalogModal(this.app, this.plugin).open();

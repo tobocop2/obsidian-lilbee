@@ -1,5 +1,16 @@
 /* lilbee Obsidian plugin styles */
 
+/* ── Design tokens ── */
+
+:root {
+    --lilbee-color-sync: #3b82f6;
+    --lilbee-color-add: #f97316;
+    --lilbee-color-pull: #a855f7;
+    --lilbee-color-crawl: #22c55e;
+    --lilbee-color-download: #06b6d4;
+    --lilbee-color-wiki: #10b981;
+}
+
 .lilbee-document-card {
     border: 1px solid var(--background-modifier-border);
     border-radius: 10px;
@@ -863,7 +874,7 @@
     border-radius: 10px;
     padding: 14px;
     cursor: pointer;
-    transition: all 150ms ease;
+    transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
     background-color: var(--background-secondary);
 }
 
@@ -963,7 +974,7 @@
     text-align: center;
     cursor: pointer;
     color: var(--text-muted);
-    transition: all 150ms ease;
+    transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease;
 }
 
 .lilbee-browse-more-card:hover {
@@ -1345,7 +1356,7 @@
     padding: 14px 16px;
     margin-bottom: var(--size-4-2, 8px);
     cursor: pointer;
-    transition: all 150ms ease;
+    transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
     background-color: var(--background-secondary);
 }
 
@@ -1624,12 +1635,12 @@
 }
 
 /* Type-specific badge colors */
-.lilbee-task-badge-sync { background-color: color-mix(in srgb, #3b82f6 12%, transparent); color: #3b82f6; }
-.lilbee-task-badge-add { background-color: color-mix(in srgb, #f97316 12%, transparent); color: #f97316; }
-.lilbee-task-badge-pull { background-color: color-mix(in srgb, #a855f7 12%, transparent); color: #a855f7; }
-.lilbee-task-badge-crawl { background-color: color-mix(in srgb, #22c55e 12%, transparent); color: #22c55e; }
-.lilbee-task-badge-download { background-color: color-mix(in srgb, #06b6d4 12%, transparent); color: #06b6d4; }
-.lilbee-task-badge-wiki { background-color: color-mix(in srgb, #10b981 12%, transparent); color: #10b981; }
+.lilbee-task-badge-sync { background-color: color-mix(in srgb, var(--lilbee-color-sync) 12%, transparent); color: var(--lilbee-color-sync); }
+.lilbee-task-badge-add { background-color: color-mix(in srgb, var(--lilbee-color-add) 12%, transparent); color: var(--lilbee-color-add); }
+.lilbee-task-badge-pull { background-color: color-mix(in srgb, var(--lilbee-color-pull) 12%, transparent); color: var(--lilbee-color-pull); }
+.lilbee-task-badge-crawl { background-color: color-mix(in srgb, var(--lilbee-color-crawl) 12%, transparent); color: var(--lilbee-color-crawl); }
+.lilbee-task-badge-download { background-color: color-mix(in srgb, var(--lilbee-color-download) 12%, transparent); color: var(--lilbee-color-download); }
+.lilbee-task-badge-wiki { background-color: color-mix(in srgb, var(--lilbee-color-wiki) 12%, transparent); color: var(--lilbee-color-wiki); }
 
 /* Task progress background */
 .lilbee-task-progress-bg {
@@ -1643,12 +1654,12 @@
     pointer-events: none;
 }
 
-.lilbee-task-progress-bg-sync { background-color: #3b82f6; }
-.lilbee-task-progress-bg-add { background-color: #f97316; }
-.lilbee-task-progress-bg-pull { background-color: #a855f7; }
-.lilbee-task-progress-bg-crawl { background-color: #22c55e; }
-.lilbee-task-progress-bg-download { background-color: #06b6d4; }
-.lilbee-task-progress-bg-wiki { background-color: #10b981; }
+.lilbee-task-progress-bg-sync { background-color: var(--lilbee-color-sync); }
+.lilbee-task-progress-bg-add { background-color: var(--lilbee-color-add); }
+.lilbee-task-progress-bg-pull { background-color: var(--lilbee-color-pull); }
+.lilbee-task-progress-bg-crawl { background-color: var(--lilbee-color-crawl); }
+.lilbee-task-progress-bg-download { background-color: var(--lilbee-color-download); }
+.lilbee-task-progress-bg-wiki { background-color: var(--lilbee-color-wiki); }
 
 .lilbee-task-name {
     font-size: var(--font-small, 13px);
@@ -1810,8 +1821,8 @@
 }
 
 .lilbee-wiki-type-summary {
-    background-color: color-mix(in srgb, #10b981 12%, transparent);
-    color: #10b981;
+    background-color: color-mix(in srgb, var(--lilbee-color-wiki) 12%, transparent);
+    color: var(--lilbee-color-wiki);
 }
 
 .lilbee-wiki-type-synthesis {
@@ -1843,8 +1854,8 @@
 /* ── Source chip wiki modifier ── */
 
 .lilbee-source-chip-wiki {
-    background-color: color-mix(in srgb, #10b981 12%, transparent);
-    color: #10b981;
+    background-color: color-mix(in srgb, var(--lilbee-color-wiki) 12%, transparent);
+    color: var(--lilbee-color-wiki);
 }
 
 .lilbee-claim-fact {
