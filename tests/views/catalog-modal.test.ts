@@ -177,6 +177,9 @@ describe("CatalogModal", () => {
             const content = contentEl(modal);
             const headings = content.findAll("lilbee-catalog-section-heading").map((el) => el.textContent);
             expect(headings).toContain(MESSAGES.LABEL_OUR_PICKS);
+            const featuredHeading = content.find("lilbee-catalog-section-heading-featured");
+            expect(featuredHeading).not.toBeNull();
+            expect(featuredHeading?.textContent).toBe(MESSAGES.LABEL_OUR_PICKS);
         });
 
         it("groups non-featured entries by task", async () => {

@@ -288,6 +288,7 @@ export const MESSAGES = {
     NOTICE_INDEXING_CANCELLED: "lilbee: indexing cancelled",
     NOTICE_NOTHING_SAVE: "Nothing to save",
     NOTICE_NO_MODELS_INSTALLED: "No models installed.",
+    NOTICE_NO_MODELS_DESCRIPTION: "Download a model to start chatting with your notes",
     NOTICE_CONFIRM_CANCEL:
         "This operation is already in progress on the server. Canceling will hide it from the task center, but it may still complete. Continue?",
     NOTICE_CONFIRM_REMOVE: (model: string) => `Remove ${model}? This deletes the model file from disk.`,

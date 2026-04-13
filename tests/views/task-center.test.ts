@@ -464,7 +464,7 @@ describe("TaskCenterView — render edge cases", () => {
         await view.onClose();
     });
 
-    it("type badge color is applied via inline style", async () => {
+    it("type badge color is applied via CSS class", async () => {
         const plugin = makePlugin();
         const view = new TaskCenterView(makeLeaf(), plugin);
         await view.onOpen();
@@ -474,7 +474,25 @@ describe("TaskCenterView — render edge cases", () => {
         (view as any).render();
 
         const badges = findByClass(contentEl, "lilbee-task-type-badge");
-        expect(badges[0]!.style.backgroundColor).toBe("#a855f7");
+        expect(badges[0]!.classList.contains("lilbee-task-badge-pull")).toBe(true);
+
+        await view.onClose();
+    });
+
+    it("renders progress background div for active tasks", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+        const contentEl = (view as any).contentEl as MockElement;
+
+        const id = plugin.taskQueue.enqueue("Sync", TASK_TYPE.SYNC);
+        plugin.taskQueue.update(id, 60);
+        (view as any).render();
+
+        const progressBg = findByClass(contentEl, "lilbee-task-progress-bg");
+        expect(progressBg.length).toBe(1);
+        expect(progressBg[0]!.classList.contains("lilbee-task-progress-bg-sync")).toBe(true);
+        expect(progressBg[0]!.style.width).toBe("60%");
 
         await view.onClose();
     });
