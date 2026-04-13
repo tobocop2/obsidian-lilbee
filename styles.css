@@ -965,6 +965,12 @@
     color: var(--text-on-accent);
 }
 
+.lilbee-pill-provider {
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+    font-style: italic;
+}
+
 /* Browse More CTA Card */
 
 .lilbee-browse-more-card {

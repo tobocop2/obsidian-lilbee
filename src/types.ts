@@ -200,7 +200,7 @@ export interface CatalogEntry {
     description: string;
     quality_tier: string;
     installed: boolean;
-    source: "native" | "litellm";
+    source: string;
     hf_repo: string;
     tag: string;
     task: ModelTask;
@@ -339,6 +339,10 @@ export const MODEL_TASK = {
     VISION: "vision",
     EMBEDDING: "embedding",
 } as const satisfies Record<string, ModelTask>;
+
+export const MODEL_SOURCE = {
+    NATIVE: "native",
+} as const;
 
 export const ERROR_NAME = {
     ABORT_ERROR: "AbortError",

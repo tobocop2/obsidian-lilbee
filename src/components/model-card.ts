@@ -1,7 +1,7 @@
 import type { CatalogEntry, ModelCardOptions } from "../types";
 import { MESSAGES } from "../locales/en";
 import { formatAbbreviatedCount } from "../utils";
-import { renderPill, renderTaskPill, renderPickPill, PILL_CLS } from "./pill";
+import { renderPill, renderTaskPill, renderPickPill, renderProviderPill, PILL_CLS } from "./pill";
 
 export function renderModelCard(container: HTMLElement, entry: CatalogEntry, options: ModelCardOptions): HTMLElement {
     const card = container.createDiv({ cls: "lilbee-model-card" });
@@ -32,6 +32,7 @@ function renderCardHeader(card: HTMLElement, entry: CatalogEntry): void {
     header.createEl("span", { text: entry.display_name, cls: "lilbee-model-card-name" });
     renderTaskPill(header, entry.task);
     if (entry.featured) renderPickPill(header);
+    renderProviderPill(header, entry.source);
 }
 
 function renderCardSpecs(card: HTMLElement, entry: CatalogEntry): void {

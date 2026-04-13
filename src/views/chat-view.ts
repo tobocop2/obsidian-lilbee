@@ -9,7 +9,7 @@ import {
     WorkspaceLeaf,
 } from "obsidian";
 import type LilbeePlugin from "../main";
-import { SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
+import { SSE_EVENT, TASK_TYPE, ERROR_NAME, MODEL_SOURCE } from "../types";
 import type { GenerationOptions, Message, ModelCatalog, SearchChunkType, Source, SSEEvent } from "../types";
 
 import { renderSourceChip } from "./results";
@@ -210,9 +210,11 @@ export class ChatView extends ItemView {
     }
 
     private fetchAndFillSelectors(): void {
-        this.plugin.api
-            .listModels()
-            .then((models) => {
+        Promise.all([
+            this.plugin.api.listModels(),
+            this.plugin.api.installedModels().catch(() => ({ models: [] })),
+        ])
+            .then(([models, installed]) => {
                 if (this.retryTimer) {
                     clearTimeout(this.retryTimer);
                     this.retryTimer = null;
@@ -220,7 +222,8 @@ export class ChatView extends ItemView {
                 this.retryCount = 0;
                 if (this.chatSelectEl) this.chatSelectEl.empty();
                 this.chatCatalog = models.chat;
-                if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl, models.chat);
+                const sourceMap = new Map(installed.models.map((m) => [m.name, m.source]));
+                if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl, models.chat, sourceMap);
                 // No models installed — show empty state with catalog button
                 if (models.chat.installed.length === 0) {
                     this.showEmptyState();
@@ -244,14 +247,20 @@ export class ChatView extends ItemView {
             });
     }
 
-    private fillSelectOptions(selectEl: HTMLSelectElement, catalog: ModelCatalog): void {
+    private fillSelectOptions(
+        selectEl: HTMLSelectElement,
+        catalog: ModelCatalog,
+        sourceMap: Map<string, string> = new Map(),
+    ): void {
         const installedOnly: ModelCatalog = {
             ...catalog,
             catalog: catalog.catalog.filter((m) => m.installed),
         };
         const options = buildModelOptions(installedOnly);
         for (const [value, label] of Object.entries(options)) {
-            const option = selectEl.createEl("option", { text: label });
+            const source = sourceMap.get(value) ?? "";
+            const suffix = source && source !== MODEL_SOURCE.NATIVE ? ` [${source}]` : "";
+            const option = selectEl.createEl("option", { text: `${label}${suffix}` });
             (option as HTMLOptionElement).value = value;
             if (value === SEPARATOR_KEY) {
                 (option as HTMLOptionElement).disabled = true;

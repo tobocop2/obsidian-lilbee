@@ -86,6 +86,12 @@ function makePlugin(): LilbeePlugin {
             listModels: vi.fn().mockResolvedValue({
                 chat: { active: "llama3", installed: ["llama3", "phi3"], catalog: [] },
             }),
+            installedModels: vi.fn().mockResolvedValue({
+                models: [
+                    { name: "llama3", source: "native" },
+                    { name: "phi3", source: "native" },
+                ],
+            }),
             setChatModel: vi.fn().mockResolvedValue(ok({ model: "phi3" })),
             pullModel: vi.fn(),
         },
@@ -781,6 +787,28 @@ describe("ChatView.onOpen — model selector", () => {
         expect(options[0].disabled).toBe(true); // separator
         expect(options[1].textContent).toBe("llama3");
         expect(options[2].textContent).toBe("phi3");
+    });
+
+    it("appends provider suffix for non-native installed models", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.installedModels = vi.fn().mockResolvedValue({
+            models: [
+                { name: "llama3", source: "native" },
+                { name: "phi3", source: "ollama" },
+            ],
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const c = view.containerEl.children[1] as unknown as MockElement;
+        const select = c.find("lilbee-chat-model-select")!;
+        const options = select.children.filter((ch) => ch.tagName === "OPTION");
+        const labels = options.map((o) => o.textContent);
+        expect(labels).toContain("llama3");
+        expect(labels).toContain("phi3 [ollama]");
+        await view.onClose();
     });
 
     it("shows (connecting...) option on both selects when listModels fails", async () => {

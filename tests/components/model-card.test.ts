@@ -112,6 +112,20 @@ describe("renderModelCard", () => {
         expect(card.find(PILL_CLS.PICK)).toBeNull();
     });
 
+    it("renders a provider pill for non-native sources", () => {
+        const c = container();
+        const card = renderModelCard(c, makeEntry({ source: "litellm" }), {}) as unknown as MockElement;
+        const pill = card.find(PILL_CLS.PROVIDER);
+        expect(pill).not.toBeNull();
+        expect(pill?.textContent).toBe("litellm");
+    });
+
+    it("omits the provider pill for native sources", () => {
+        const c = container();
+        const card = renderModelCard(c, makeEntry({ source: "native" }), {}) as unknown as MockElement;
+        expect(card.find(PILL_CLS.PROVIDER)).toBeNull();
+    });
+
     describe("actions", () => {
         it("does not render actions when showActions is false", () => {
             const c = container();
