@@ -24,6 +24,7 @@ export const NOTICE_ERROR_DURATION_MS = 8000;
 export const NOTICE_PERMANENT = 0;
 export const TIME_REFRESH_INTERVAL_MS = 30000;
 export const HEALTH_PROBE_INTERVAL_MS = 30_000;
+export const SPINNER_MIN_DISPLAY_MS = 300;
 
 export function formatAbbreviatedCount(count: number): string {
     if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;

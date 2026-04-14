@@ -1337,29 +1337,38 @@ describe("ChatView.sendMessage — loading indicator", () => {
     });
 
     it("shows loading spinner in assistant bubble before first token", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const { mockFn, done } = makeStream([
-            { event: SSE_EVENT.TOKEN, data: "Hi" },
-            { event: SSE_EVENT.DONE, data: {} },
-        ]);
-        plugin.api.chatStream = mockFn;
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const textarea = container.find("lilbee-chat-textarea")!;
-        textarea.value = "spinner test";
+        vi.useFakeTimers();
+        try {
+            Notice.clear();
+            const plugin = makePlugin();
+            const { mockFn, done } = makeStream([
+                { event: SSE_EVENT.TOKEN, data: "Hi" },
+                { event: SSE_EVENT.DONE, data: {} },
+            ]);
+            plugin.api.chatStream = mockFn;
+            const view = new ChatView(makeLeaf(), plugin);
+            await view.onOpen();
+            const container = view.containerEl.children[1] as unknown as MockElement;
+            const textarea = container.find("lilbee-chat-textarea")!;
+            textarea.value = "spinner test";
 
-        container.find("lilbee-chat-send")!.trigger("click");
-        await done;
-        await tick();
+            container.find("lilbee-chat-send")!.trigger("click");
+            await vi.advanceTimersByTimeAsync(0);
+            await done;
+            await vi.advanceTimersByTimeAsync(0);
 
-        // After streaming, spinner should be removed and text visible
-        const messagesEl = container.find("lilbee-chat-messages")!;
-        const assistantBubble = messagesEl.children[1];
-        const textEl = assistantBubble.find("lilbee-chat-content");
-        expect(textEl!.textContent).toBe("Hi");
-        expect(textEl!.style.display).toBe("");
+            // Advance past the minimum spinner display time
+            await vi.advanceTimersByTimeAsync(400);
+
+            // After streaming, spinner should be removed and text visible
+            const messagesEl = container.find("lilbee-chat-messages")!;
+            const assistantBubble = messagesEl.children[1];
+            const textEl = assistantBubble.find("lilbee-chat-content");
+            expect(textEl!.textContent).toBe("Hi");
+            expect(textEl!.style.display).toBe("");
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
 

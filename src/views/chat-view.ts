@@ -18,7 +18,7 @@ import { ConfirmPullModal } from "./confirm-pull-modal";
 import { CatalogModal } from "./catalog-modal";
 import { CrawlModal } from "./crawl-modal";
 import { MESSAGES } from "../locales/en";
-import { RETRY_INTERVAL_MS } from "../utils";
+import { RETRY_INTERVAL_MS, SPINNER_MIN_DISPLAY_MS } from "../utils";
 
 interface OpenDialogResult {
     canceled: boolean;
@@ -396,9 +396,14 @@ export class ChatView extends ItemView {
 
         const state = { fullContent: "", reasoningContent: "", sources: [] as Source[], renderPending: false };
 
+        const spinnerCreatedAt = Date.now();
         const revealContent = (): void => {
-            if (spinner.parentElement) spinner.remove();
-            textEl.style.display = "";
+            const elapsed = Date.now() - spinnerCreatedAt;
+            const delay = Math.max(0, SPINNER_MIN_DISPLAY_MS - elapsed);
+            setTimeout(() => {
+                if (spinner.parentElement) spinner.remove();
+                textEl.style.display = "";
+            }, delay);
         };
 
         const scrollToBottom = (): void => {
