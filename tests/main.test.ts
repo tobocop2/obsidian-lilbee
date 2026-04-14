@@ -16,6 +16,7 @@ vi.mock("../src/api", () => ({
         setToken: vi.fn(),
         health: vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} }),
         addFiles: vi.fn(),
+        crawl: vi.fn(),
         wikiLint: vi.fn(),
         wikiGenerate: vi.fn(),
         wikiPrune: vi.fn(),
@@ -1275,6 +1276,139 @@ describe("LilbeePlugin", () => {
 
             expect(Notice.instances.some((n) => n.message.includes("sync failed"))).toBe(true);
             expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+    });
+
+    describe("runCrawl()", () => {
+        it("handles CRAWL_DONE and triggers sync", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_START, data: {} };
+                    yield { event: SSE_EVENT.CRAWL_PAGE, data: { url: "https://example.com" } };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 1 } };
+                })(),
+            );
+            const syncSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            expect(plugin.api.crawl).toHaveBeenCalledWith("https://example.com", 0, 50, expect.any(AbortSignal));
+            expect(Notice.instances.some((n) => n.message.includes("crawl done"))).toBe(true);
+            expect(syncSpy).toHaveBeenCalled();
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
+        });
+
+        it("CRAWL_DONE without pages_crawled uses local pageCount", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_PAGE, data: { url: "https://example.com/p1" } };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: {} };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            expect(Notice.instances.some((n) => n.message.includes("1 pages"))).toBe(true);
+        });
+
+        it("handles CRAWL_ERROR event", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_ERROR, data: { message: "bad url" } };
+                })(),
+            );
+
+            await plugin.runCrawl("https://bad.com", 0, 50);
+
+            expect(Notice.instances.some((n) => n.message.includes("crawl error"))).toBe(true);
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+
+        it("handles SSE_EVENT.ERROR event", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.ERROR, data: { message: "server error" } };
+                })(),
+            );
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            expect(Notice.instances.some((n) => n.message.includes("crawl error"))).toBe(true);
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+
+        it("handles CRAWL_ERROR without message", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_ERROR, data: {} };
+                })(),
+            );
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            expect(Notice.instances.some((n) => n.message.includes("unknown"))).toBe(true);
+        });
+
+        it("handles network error", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    throw new Error("network error");
+                })(),
+            );
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            expect(Notice.instances.some((n) => n.message.includes("crawl failed"))).toBe(true);
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+
+        it("handles non-Error throw", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    throw "string error";
+                })(),
+            );
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            expect(Notice.instances.some((n) => n.message.includes("unknown error"))).toBe(true);
+        });
+
+        it("completes task when stream ends without explicit DONE", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_START, data: {} };
+                })(),
+            );
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
     });
 

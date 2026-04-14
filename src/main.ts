@@ -830,6 +830,44 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    async runCrawl(url: string, depth: number, maxPages: number): Promise<void> {
+        const taskId = this.taskQueue.enqueue(`Crawl ${url}`, TASK_TYPE.CRAWL);
+        const controller = new AbortController();
+        try {
+            let pageCount = 0;
+            for await (const event of this.api.crawl(url, depth, maxPages, controller.signal)) {
+                switch (event.event) {
+                    case SSE_EVENT.CRAWL_START:
+                        break;
+                    case SSE_EVENT.CRAWL_PAGE: {
+                        pageCount++;
+                        this.taskQueue.update(taskId, -1, `${pageCount} pages`);
+                        break;
+                    }
+                    case SSE_EVENT.CRAWL_DONE: {
+                        const d = event.data as { pages_crawled?: number };
+                        this.taskQueue.complete(taskId);
+                        new Notice(MESSAGES.NOTICE_CRAWL_DONE(d.pages_crawled ?? pageCount));
+                        void this.triggerSync();
+                        return;
+                    }
+                    case SSE_EVENT.CRAWL_ERROR:
+                    case SSE_EVENT.ERROR: {
+                        const d = event.data as { message?: string };
+                        this.taskQueue.fail(taskId, d.message ?? "unknown");
+                        new Notice(MESSAGES.ERROR_CRAWL_ERROR.replace("{msg}", d.message ?? "unknown"));
+                        return;
+                    }
+                }
+            }
+            this.taskQueue.complete(taskId);
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "unknown error";
+            this.taskQueue.fail(taskId, msg);
+            new Notice(MESSAGES.ERROR_CRAWL_FAILED.replace("{msg}", msg));
+        }
+    }
+
     async triggerSync(): Promise<void> {
         if (!this.statusBarEl) return;
         const taskId = this.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
