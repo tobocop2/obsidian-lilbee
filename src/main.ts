@@ -627,7 +627,7 @@ export default class LilbeePlugin extends Plugin {
             let syncResult: SyncDone | null = null;
             for await (const event of this.api.addFiles(
                 paths,
-                false,
+                true,
                 this.settings.enableOcr,
                 this.syncController.signal,
             )) {

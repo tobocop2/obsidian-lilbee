@@ -874,7 +874,7 @@ describe("LilbeePlugin", () => {
 
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/notes/test.md"],
-                false,
+                true,
                 null,
                 expect.any(AbortSignal),
             );
@@ -1076,7 +1076,7 @@ describe("LilbeePlugin", () => {
 
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/home/user/doc.pdf", "/tmp/notes.md"],
-                false,
+                true,
                 null,
                 expect.any(AbortSignal),
             );
@@ -1095,7 +1095,7 @@ describe("LilbeePlugin", () => {
 
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/home/user/scan.pdf"],
-                false,
+                true,
                 true,
                 expect.any(AbortSignal),
             );
