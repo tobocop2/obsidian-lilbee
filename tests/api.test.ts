@@ -1084,17 +1084,17 @@ describe("wikiCitationsForSource()", () => {
 });
 
 describe("wikiLint()", () => {
-    it("POSTs to /api/wiki/lint and yields SSE events", async () => {
-        fetchMock.mockResolvedValue(sseResponse(['event: wiki_lint_done\ndata: {"issues":[]}\n\n']));
+    it("POSTs to /api/wiki/lint and returns JSON result", async () => {
+        const data = { task_id: "t1", status: "done", issues: [], checked_at: null };
+        fetchMock.mockResolvedValue(jsonResponse(data));
 
-        const events = await collect(client.wikiLint());
+        const result = await client.wikiLint();
 
         expect(fetchMock).toHaveBeenCalledWith(
             `${BASE_URL}/api/wiki/lint`,
             expect.objectContaining({ method: "POST" }),
         );
-        expect(events).toHaveLength(1);
-        expect(events[0].event).toBe("wiki_lint_done");
+        expect(result).toEqual(data);
     });
 });
 

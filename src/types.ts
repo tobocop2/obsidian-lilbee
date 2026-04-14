@@ -185,8 +185,6 @@ export const SSE_EVENT = {
     WIKI_GENERATE_START: "wiki_generate_start",
     WIKI_GENERATE_DONE: "wiki_generate_done",
     WIKI_GENERATE_ERROR: "wiki_generate_error",
-    WIKI_LINT_PROGRESS: "wiki_lint_progress",
-    WIKI_LINT_DONE: "wiki_lint_done",
     WIKI_PRUNE_DONE: "wiki_prune_done",
 } as const;
 

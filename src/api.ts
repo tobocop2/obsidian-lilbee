@@ -15,6 +15,7 @@ import type {
     SearchChunkType,
     SSEEvent,
     StatusResponse,
+    LintResult,
     WikiCitationChain,
     WikiDraft,
     WikiPage,
@@ -379,16 +380,12 @@ export class LilbeeClient {
         return res.json();
     }
 
-    async *wikiLint(signal?: AbortSignal): AsyncGenerator<SSEEvent> {
-        const res = await this.fetchWithRetry(
-            `${this.baseUrl}/api/wiki/lint`,
-            {
-                method: "POST",
-                headers: this.authHeaders(),
-            },
-            { stream: true, signal },
-        );
-        yield* this.parseSSE(res);
+    async wikiLint(): Promise<LintResult> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/lint`, {
+            method: "POST",
+            headers: this.authHeaders(),
+        });
+        return res.json();
     }
 
     async *wikiGenerate(source: string, signal?: AbortSignal): AsyncGenerator<SSEEvent> {

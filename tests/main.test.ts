@@ -2191,15 +2191,17 @@ describe("LilbeePlugin", () => {
     });
 
     describe("runWikiLint", () => {
-        it("success path: collects issues, completes task, shows notice, opens modal", async () => {
+        it("success path: completes task, shows notice, opens modal", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            async function* lintStream() {
-                yield { event: SSE_EVENT.WIKI_LINT_PROGRESS, data: { checked: 1, total: 2 } };
-                yield { event: SSE_EVENT.WIKI_LINT_DONE, data: { issues: [{ slug: "a", status: "stale" }] } };
-            }
-            plugin.api.wikiLint = vi.fn().mockReturnValue(lintStream());
+            const lintResult = {
+                task_id: "t1",
+                status: "done",
+                issues: [{ wiki_page: "a", citation_key: "k", status: "stale_hash", detail: "" }],
+                checked_at: null,
+            };
+            plugin.api.wikiLint = vi.fn().mockResolvedValue(lintResult);
 
             await plugin.runWikiLint();
 
@@ -2212,11 +2214,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            async function* failStream() {
-                throw new Error("lint failed");
-                yield; // unreachable, makes it a generator
-            }
-            plugin.api.wikiLint = vi.fn().mockReturnValue(failStream());
+            plugin.api.wikiLint = vi.fn().mockRejectedValue(new Error("lint failed"));
 
             await plugin.runWikiLint();
 
@@ -2227,11 +2225,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            async function* throwStream() {
-                throw "string error";
-                yield;
-            }
-            plugin.api.wikiLint = vi.fn().mockReturnValue(throwStream());
+            plugin.api.wikiLint = vi.fn().mockRejectedValue("string error");
 
             await plugin.runWikiLint();
 
@@ -2551,7 +2545,25 @@ describe("LilbeePlugin", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             expect((plugin as any).wikiEnabled).toBe(true);
-            expect(plugin.settings.wikiEnabled).toBe(true);
+        });
+
+        it("does not overwrite settings.wikiEnabled with server status", async () => {
+            const plugin = await createPlugin({ serverMode: "external", wikiEnabled: false });
+            await plugin.onload();
+
+            plugin.api.listModels = vi.fn().mockResolvedValue({
+                chat: { active: "llama3", installed: ["llama3"], catalog: [] },
+            });
+            plugin.api.status = vi.fn().mockResolvedValue({
+                isOk: () => true,
+                value: { sources: [], total_chunks: 0, wiki: { enabled: true } },
+            });
+
+            await plugin.fetchActiveModel();
+
+            // Runtime flag reflects server, but settings preserve user preference
+            expect((plugin as any).wikiEnabled).toBe(true);
+            expect(plugin.settings.wikiEnabled).toBe(false);
         });
 
         it("wikiEnabled preserves setting when wiki is not in status", async () => {

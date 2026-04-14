@@ -14,7 +14,6 @@ import {
     SYNC_MODE,
     TASK_TYPE,
     type LilbeeSettings,
-    type LintIssue,
     type ServerMode,
     type ServerState,
     type SyncDone,
@@ -37,13 +36,6 @@ import { DownloadPanel } from "./views/download-panel";
 import { TaskQueue } from "./task-queue";
 import { WikiSync } from "./wiki-sync";
 
-interface LintProgressData {
-    checked: number;
-    total: number;
-}
-interface LintDoneData {
-    issues: LintIssue[];
-}
 interface GenerateErrorData {
     message?: string;
 }
@@ -569,7 +561,6 @@ export default class LilbeePlugin extends Plugin {
             if (status.isOk()) {
                 if (status.value.wiki != null) {
                     this.wikiEnabled = !!status.value.wiki.enabled;
-                    this.settings.wikiEnabled = this.wikiEnabled;
                 }
                 this.wikiPageCount = status.value.wiki?.page_count ?? 0;
                 this.wikiDraftCount = status.value.wiki?.draft_count ?? 0;
@@ -760,20 +751,10 @@ export default class LilbeePlugin extends Plugin {
     async runWikiLint(): Promise<void> {
         const taskId = this.taskQueue.enqueue("Wiki lint", TASK_TYPE.WIKI);
         try {
-            const issues: LintIssue[] = [];
-            for await (const event of this.api.wikiLint()) {
-                if (event.event === SSE_EVENT.WIKI_LINT_PROGRESS) {
-                    const d = event.data as LintProgressData;
-                    const pct = Math.round((d.checked / d.total) * 100);
-                    this.taskQueue.update(taskId, pct, `${d.checked}/${d.total}`);
-                } else if (event.event === SSE_EVENT.WIKI_LINT_DONE) {
-                    const d = event.data as LintDoneData;
-                    issues.push(...d.issues);
-                }
-            }
+            const result = await this.api.wikiLint();
             this.taskQueue.complete(taskId);
-            new Notice(MESSAGES.NOTICE_WIKI_LINT_DONE(issues.length), NOTICE_DURATION_MS);
-            new LintModal(this.app, issues).open();
+            new Notice(MESSAGES.NOTICE_WIKI_LINT_DONE(result.issues.length), NOTICE_DURATION_MS);
+            new LintModal(this.app, result.issues).open();
         } catch (err) {
             const msg = err instanceof Error ? err.message : "unknown error";
             this.taskQueue.fail(taskId, msg);
