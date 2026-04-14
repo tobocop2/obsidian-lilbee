@@ -604,6 +604,38 @@ describe("CatalogModal", () => {
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
+        it("progress event with no percent and no total skips update", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
+                yield { event: SSE_EVENT.PROGRESS, data: {} };
+            });
+            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
+            pullBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
+        });
+
+        it("computes progress from current/total when percent is missing", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
+                yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
+            });
+            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
+            pullBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
+        });
+
         it("uses setChatModel when the entry is a vision task", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(
@@ -731,6 +763,54 @@ describe("CatalogModal", () => {
             await tick();
             await tick();
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_FAILED);
+        });
+
+        it("SSE_EVENT.ERROR shows notice, fails task, and resets button", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
+                yield { event: SSE_EVENT.ERROR, data: { message: "pull exploded" } };
+            });
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
+            pullBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_FAILED);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with string data fails the task", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
+                yield { event: SSE_EVENT.ERROR, data: "raw error string" };
+            });
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
+            pullBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_FAILED);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with empty object uses fallback message", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
+                yield { event: SSE_EVENT.ERROR, data: {} };
+            });
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
+            pullBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_FAILED);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
 
         it("fails the task when setChatModel after a successful pull returns err", async () => {

@@ -9,7 +9,7 @@ import {
     SEPARATOR_LABEL,
 } from "../src/settings";
 import type { LilbeeSettings, ModelCatalog, ModelsResponse } from "../src/types";
-import { DEFAULT_SETTINGS } from "../src/types";
+import { DEFAULT_SETTINGS, SSE_EVENT } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import { ok, err } from "neverthrow";
 import { TaskQueue } from "../src/task-queue";
@@ -1237,6 +1237,71 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
+    describe("Auto-pull SSE_EVENT.ERROR", () => {
+        it("shows failure notice and fails task on SSE error event", async () => {
+            const plugin = makePlugin();
+
+            async function* errorPull() {
+                yield { event: SSE_EVENT.ERROR, data: { message: "pull exploded" } };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+
+            const { dropdownOnChanges } = captureSettingCallbacks(() => {
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
+            });
+
+            await dropdownOnChanges[0]("phi3");
+            expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
+        });
+
+        it("handles SSE error event with string data", async () => {
+            const plugin = makePlugin();
+
+            async function* errorPull() {
+                yield { event: SSE_EVENT.ERROR, data: "raw error string" };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+
+            const { dropdownOnChanges } = captureSettingCallbacks(() => {
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
+            });
+
+            await dropdownOnChanges[0]("phi3");
+            expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
+        });
+
+        it("handles SSE error event with empty object (no message)", async () => {
+            const plugin = makePlugin();
+
+            async function* errorPull() {
+                yield { event: SSE_EVENT.ERROR, data: {} };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+
+            const { dropdownOnChanges } = captureSettingCallbacks(() => {
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
+            });
+
+            await dropdownOnChanges[0]("phi3");
+            expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
+        });
+    });
+
     describe("Pull button", () => {
         interface PullSetup {
             tab: LilbeeSettingTab;
@@ -1295,6 +1360,49 @@ describe("LilbeeSettingTab", () => {
             expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
         });
 
+        it("progress event with no percent and no total: skips update", async () => {
+            const plugin = makePlugin();
+
+            async function* fakePull() {
+                yield { event: "progress", data: {} };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+
+            const { tab, clickHandler, actionCell } = await setupPullButton(plugin);
+            const modelsContainer = new MockElement("div");
+            modelsContainer.classList.add("lilbee-models-container");
+            tab.containerEl.children.push(modelsContainer);
+
+            await clickHandler();
+
+            // Progress div should still be empty since pct was undefined
+            expect(actionCell.find("lilbee-pull-progress")?.textContent ?? "").toBe("");
+        });
+
+        it("progress event with current/total (no percent): computes percentage", async () => {
+            const plugin = makePlugin();
+            let capturedProgressText = "";
+
+            async function* fakePull() {
+                yield { event: "progress", data: { current: 50, total: 100 } };
+                capturedProgressText = actionCell.find("lilbee-pull-progress")?.textContent ?? "";
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+
+            const { tab, clickHandler, actionCell } = await setupPullButton(plugin);
+            const modelsContainer = new MockElement("div");
+            modelsContainer.classList.add("lilbee-models-container");
+            tab.containerEl.children.push(modelsContainer);
+
+            await clickHandler();
+
+            expect(capturedProgressText).toBe("50%");
+        });
+
         it("progress event with percent=0: shows 0% text", async () => {
             const plugin = makePlugin();
             let capturedProgressText = "";
@@ -1349,6 +1457,57 @@ describe("LilbeeSettingTab", () => {
             const failed = plugin.taskQueue.completed.find((t: any) => t.status === "failed");
             expect(failed).toBeDefined();
             expect(failed!.error).toBe("unknown");
+        });
+
+        it("SSE_EVENT.ERROR shows failure notice and fails the task", async () => {
+            const plugin = makePlugin();
+
+            async function* errorPull() {
+                yield { event: SSE_EVENT.ERROR, data: { message: "pull exploded" } };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+
+            const { tab: _tab, clickHandler } = await setupPullButton(plugin);
+            await clickHandler();
+
+            expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with string data fails the task", async () => {
+            const plugin = makePlugin();
+
+            async function* errorPull() {
+                yield { event: SSE_EVENT.ERROR, data: "raw error string" };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+
+            const { tab: _tab, clickHandler } = await setupPullButton(plugin);
+            await clickHandler();
+
+            expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with empty object uses fallback message", async () => {
+            const plugin = makePlugin();
+
+            async function* errorPull() {
+                yield { event: SSE_EVENT.ERROR, data: {} };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+
+            const { tab: _tab, clickHandler } = await setupPullButton(plugin);
+            await clickHandler();
+
+            expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
 
         it("successful pull without models container: does not crash", async () => {
@@ -1743,6 +1902,28 @@ describe("LilbeeSettingTab", () => {
             await dropdownOnChanges[0]("phi3");
             const done = plugin.taskQueue.completed.find((t: any) => t.status === "done");
             expect(done).toBeDefined();
+        });
+
+        it("auto-pull progress with no percent and no total skips update", async () => {
+            const plugin = makePlugin();
+
+            async function* fakePull() {
+                yield { event: "progress", data: {} };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+            tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
+
+            const { dropdownOnChanges } = captureSettingCallbacks(() => {
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
+            });
+
+            await dropdownOnChanges[0]("phi3");
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
         it("auto-pull with total=0 does not update status bar", async () => {

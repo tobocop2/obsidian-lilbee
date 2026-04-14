@@ -958,6 +958,74 @@ describe("ChatView.onOpen — model selector", () => {
         expect(Notice.instances.some((n) => n.message === "lilbee: phi3 pulled and activated")).toBe(true);
     });
 
+    it("auto-pull progress with no percent and no total skips update", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockResolvedValue({
+            chat: {
+                active: "llama3",
+                installed: ["llama3"],
+                catalog: [
+                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+                ],
+            },
+        });
+
+        async function* fakePull() {
+            yield { event: "progress", data: {} };
+        }
+        plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-chat-model-select")!;
+        (select as any).value = "phi3";
+        select.trigger("change");
+        await tick();
+        await new Promise((r) => setTimeout(r, 50));
+
+        expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
+    });
+
+    it("auto-pull progress with current/total computes percentage", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockResolvedValue({
+            chat: {
+                active: "llama3",
+                installed: ["llama3"],
+                catalog: [
+                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+                ],
+            },
+        });
+
+        async function* fakePull() {
+            yield { event: "progress", data: { current: 50, total: 100 } };
+        }
+        plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-chat-model-select")!;
+        (select as any).value = "phi3";
+        select.trigger("change");
+        await tick();
+        await new Promise((r) => setTimeout(r, 50));
+
+        expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
+    });
+
     it("auto-pull failure shows failure notice", async () => {
         Notice.clear();
         const plugin = makePlugin();
@@ -989,6 +1057,108 @@ describe("ChatView.onOpen — model selector", () => {
         await new Promise((r) => setTimeout(r, 50));
 
         expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
+    });
+
+    it("auto-pull SSE_EVENT.ERROR shows failure notice and fails task", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockResolvedValue({
+            chat: {
+                active: "llama3",
+                installed: ["llama3"],
+                catalog: [
+                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+                ],
+            },
+        });
+
+        async function* errorPull() {
+            yield { event: SSE_EVENT.ERROR, data: { message: "pull exploded" } };
+        }
+        plugin.api.pullModel = vi.fn().mockReturnValue(errorPull());
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-chat-model-select")!;
+        (select as any).value = "phi3";
+        select.trigger("change");
+        await tick();
+        await new Promise((r) => setTimeout(r, 50));
+
+        expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
+        expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
+    });
+
+    it("auto-pull SSE_EVENT.ERROR with string data fails the task", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockResolvedValue({
+            chat: {
+                active: "llama3",
+                installed: ["llama3"],
+                catalog: [
+                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+                ],
+            },
+        });
+
+        async function* errorPull() {
+            yield { event: SSE_EVENT.ERROR, data: "raw error string" };
+        }
+        plugin.api.pullModel = vi.fn().mockReturnValue(errorPull());
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-chat-model-select")!;
+        (select as any).value = "phi3";
+        select.trigger("change");
+        await tick();
+        await new Promise((r) => setTimeout(r, 50));
+
+        expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
+        expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
+    });
+
+    it("auto-pull SSE_EVENT.ERROR with empty object uses fallback message", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockResolvedValue({
+            chat: {
+                active: "llama3",
+                installed: ["llama3"],
+                catalog: [
+                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+                ],
+            },
+        });
+
+        async function* errorPull() {
+            yield { event: SSE_EVENT.ERROR, data: {} };
+        }
+        plugin.api.pullModel = vi.fn().mockReturnValue(errorPull());
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-chat-model-select")!;
+        (select as any).value = "phi3";
+        select.trigger("change");
+        await tick();
+        await new Promise((r) => setTimeout(r, 50));
+
+        expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
+        expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
     });
 
     it("auto-pull AbortError shows Pull cancelled notice", async () => {

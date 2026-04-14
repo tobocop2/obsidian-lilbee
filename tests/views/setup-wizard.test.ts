@@ -630,6 +630,68 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("Please select a model first"))).toBe(true);
         });
 
+        it("pull progress with no percent and no total skips update", async () => {
+            const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: {} };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: { added: [], updated: [], removed: [], unchanged: 0, failed: [] },
+                    };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const downloadBtn = findButtons(el).find((b) => b.textContent === "Download & continue")!;
+            downloadBtn.trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.api.pullModel).toHaveBeenCalled();
+        });
+
+        it("pull progress with current/total computes percentage", async () => {
+            const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: { added: [], updated: [], removed: [], unchanged: 0, failed: [] },
+                    };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const downloadBtn = findButtons(el).find((b) => b.textContent === "Download & continue")!;
+            downloadBtn.trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.api.pullModel).toHaveBeenCalled();
+        });
+
         it("Download & continue pulls model and advances to sync step", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
@@ -693,6 +755,75 @@ describe("SetupWizard", () => {
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("Download failed"))).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR during pull shows notice and updates status", async () => {
+            const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.ERROR, data: { message: "pull exploded" } };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const downloadBtn = findButtons(el).find((b) => b.textContent === "Download & continue")!;
+            downloadBtn.trigger("click");
+            await tick();
+            await tick();
+
+            expect(Notice.instances.some((n) => n.message.includes("Download failed"))).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with string data during pull updates status", async () => {
+            const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.ERROR, data: "raw error" };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const downloadBtn = findButtons(el).find((b) => b.textContent === "Download & continue")!;
+            downloadBtn.trigger("click");
+            await tick();
+            await tick();
+
+            expect(Notice.instances.some((n) => n.message.includes("Download failed"))).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with empty object during pull uses fallback message", async () => {
+            const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.ERROR, data: {} };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const downloadBtn = findButtons(el).find((b) => b.textContent === "Download & continue")!;
+            downloadBtn.trigger("click");
+            await tick();
+            await tick();
+
+            expect(Notice.instances.some((n) => n.message.includes("Download failed"))).toBe(true);
         });
 
         it("handles pull abort", async () => {
@@ -876,6 +1007,60 @@ describe("SetupWizard", () => {
             plugin.api.syncStream = vi.fn().mockReturnValue(
                 (async function* () {
                     throw new Error("network");
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Indexing failed"))).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR during sync sets progress label and shows indexing failed", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.ERROR, data: { message: "sync exploded" } };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Indexing failed"))).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with string data during sync shows indexing failed", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.ERROR, data: "raw sync error" };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Indexing failed"))).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with empty object during sync uses fallback message", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.ERROR, data: {} };
                 })(),
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);

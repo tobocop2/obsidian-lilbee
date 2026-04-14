@@ -1001,6 +1001,54 @@ describe("LilbeePlugin", () => {
 
             expect(Notice.instances.some((n) => n.message.includes("1 failed"))).toBe(true);
         });
+
+        it("SSE_EVENT.ERROR shows add-failed notice and fails the task", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* withError() {
+                yield { event: SSE_EVENT.ERROR, data: { message: "add exploded" } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withError());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(Notice.instances.some((n) => n.message.includes("add exploded"))).toBe(true);
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with string data fails the task", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* withError() {
+                yield { event: SSE_EVENT.ERROR, data: "raw add error" };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withError());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(Notice.instances.some((n) => n.message.includes("raw add error"))).toBe(true);
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with empty object uses fallback message", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* withError() {
+                yield { event: SSE_EVENT.ERROR, data: {} };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withError());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(Notice.instances.some((n) => n.message.includes("unknown error"))).toBe(true);
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
     });
 
     describe("addExternalFiles()", () => {
@@ -1182,6 +1230,51 @@ describe("LilbeePlugin", () => {
             await plugin.triggerSync();
 
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
+        });
+
+        it("SSE_EVENT.ERROR shows notice and fails the task", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* withError() {
+                yield { event: SSE_EVENT.ERROR, data: { message: "sync exploded" } };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(withError());
+
+            await plugin.triggerSync();
+
+            expect(Notice.instances.some((n) => n.message.includes("sync failed"))).toBe(true);
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with string data shows notice and fails the task", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* withError() {
+                yield { event: SSE_EVENT.ERROR, data: "raw sync error" };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(withError());
+
+            await plugin.triggerSync();
+
+            expect(Notice.instances.some((n) => n.message.includes("sync failed"))).toBe(true);
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with empty object uses fallback message", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* withError() {
+                yield { event: SSE_EVENT.ERROR, data: {} };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(withError());
+
+            await plugin.triggerSync();
+
+            expect(Notice.instances.some((n) => n.message.includes("sync failed"))).toBe(true);
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
         });
     });
 
@@ -2295,6 +2388,48 @@ describe("LilbeePlugin", () => {
 
             expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
         });
+
+        it("SSE_EVENT.ERROR with object data fails the task", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* errStream() {
+                yield { event: SSE_EVENT.ERROR, data: { message: "server exploded" } };
+            }
+            plugin.api.wikiGenerate = vi.fn().mockReturnValue(errStream());
+
+            await plugin.runWikiGenerate("notes/bad.md");
+
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with string data fails the task", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* errStream() {
+                yield { event: SSE_EVENT.ERROR, data: "raw string error" };
+            }
+            plugin.api.wikiGenerate = vi.fn().mockReturnValue(errStream());
+
+            await plugin.runWikiGenerate("notes/bad.md");
+
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with empty object uses fallback message", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* errStream() {
+                yield { event: SSE_EVENT.ERROR, data: {} };
+            }
+            plugin.api.wikiGenerate = vi.fn().mockReturnValue(errStream());
+
+            await plugin.runWikiGenerate("notes/bad.md");
+
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
     });
 
     describe("runWikiPrune", () => {
@@ -2376,6 +2511,51 @@ describe("LilbeePlugin", () => {
             await plugin.runWikiPrune();
 
             expect(Notice.instances.some((n) => n.message.includes("pruned 0 pages"))).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with object data fails the task", async () => {
+            mockConfirmModalResult = true;
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* errStream() {
+                yield { event: SSE_EVENT.ERROR, data: { message: "prune exploded" } };
+            }
+            plugin.api.wikiPrune = vi.fn().mockReturnValue(errStream());
+
+            await plugin.runWikiPrune();
+
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with string data fails the task", async () => {
+            mockConfirmModalResult = true;
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* errStream() {
+                yield { event: SSE_EVENT.ERROR, data: "raw prune error" };
+            }
+            plugin.api.wikiPrune = vi.fn().mockReturnValue(errStream());
+
+            await plugin.runWikiPrune();
+
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+
+        it("SSE_EVENT.ERROR with empty object uses fallback message", async () => {
+            mockConfirmModalResult = true;
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* errStream() {
+                yield { event: SSE_EVENT.ERROR, data: {} };
+            }
+            plugin.api.wikiPrune = vi.fn().mockReturnValue(errStream());
+
+            await plugin.runWikiPrune();
+
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
         });
     });
 
