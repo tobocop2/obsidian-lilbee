@@ -445,12 +445,20 @@ export class CatalogModal extends Modal {
         try {
             for await (const event of this.plugin.api.pullModel(entry.hf_repo, entry.source)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
-                    const d = event.data as { percent?: number };
-                    if (d.percent !== undefined) {
-                        const pct = d.percent;
+                    const d = event.data as { percent?: number; current?: number; total?: number };
+                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    if (pct !== undefined) {
                         btn.textContent = `${pct}%`;
                         this.plugin.taskQueue.update(taskId, pct, entry.hf_repo);
                     }
+                } else if (event.event === SSE_EVENT.ERROR) {
+                    const d = event.data as { message?: string } | string;
+                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    new Notice(MESSAGES.NOTICE_PULL_FAILED);
+                    this.plugin.taskQueue.fail(taskId, msg);
+                    btn.textContent = MESSAGES.BUTTON_PULL;
+                    (btn as HTMLButtonElement).disabled = false;
+                    return;
                 }
             }
         } catch (err) {

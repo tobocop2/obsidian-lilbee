@@ -929,15 +929,21 @@ export class LilbeeSettingTab extends PluginSettingTab {
         try {
             for await (const event of this.plugin.api.pullModel(model.name, "native", controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
-                    const d = event.data as { percent?: number };
-                    if (d.percent !== undefined) {
-                        const pct = d.percent;
+                    const d = event.data as { percent?: number; current?: number; total?: number };
+                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    if (pct !== undefined) {
                         label.textContent = MESSAGES.STATUS_PULLING_PCT.replace("{model}", model.name).replace(
                             "{pct}",
                             String(pct),
                         );
                         this.plugin.taskQueue.update(taskId, pct, model.name);
                     }
+                } else if (event.event === SSE_EVENT.ERROR) {
+                    const d = event.data as { message?: string } | string;
+                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    new Notice(MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name));
+                    this.plugin.taskQueue.fail(taskId, msg);
+                    break;
                 }
             }
             await this.setModel(model);
@@ -997,12 +1003,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
         try {
             for await (const event of this.plugin.api.pullModel(model.name, "native", controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
-                    const d = event.data as { percent?: number };
-                    if (d.percent !== undefined) {
-                        const pct = d.percent;
+                    const d = event.data as { percent?: number; current?: number; total?: number };
+                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    if (pct !== undefined) {
                         progress.textContent = `${pct}%`;
                         this.plugin.taskQueue.update(taskId, pct, model.name);
                     }
+                } else if (event.event === SSE_EVENT.ERROR) {
+                    const d = event.data as { message?: string } | string;
+                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    new Notice(MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name));
+                    this.plugin.taskQueue.fail(taskId, msg);
+                    break;
                 }
             }
             this.plugin.taskQueue.complete(taskId);

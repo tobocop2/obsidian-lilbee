@@ -299,11 +299,17 @@ export class ChatView extends ItemView {
         try {
             for await (const event of this.plugin.api.pullModel(model.name, "native", this.pullController.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
-                    const d = event.data as { percent?: number };
-                    if (d.percent !== undefined) {
-                        const pct = d.percent;
+                    const d = event.data as { percent?: number; current?: number; total?: number };
+                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    if (pct !== undefined) {
                         this.plugin.taskQueue.update(taskId, pct, model.name);
                     }
+                } else if (event.event === SSE_EVENT.ERROR) {
+                    const d = event.data as { message?: string } | string;
+                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    new Notice(MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name));
+                    this.plugin.taskQueue.fail(taskId, msg);
+                    break;
                 }
             }
             await this.plugin.api.setChatModel(model.name);

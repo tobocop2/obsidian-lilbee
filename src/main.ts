@@ -644,6 +644,12 @@ export default class LilbeePlugin extends Plugin {
                 } else if (event.event === SSE_EVENT.DONE) {
                     const parsed = parseAddDoneEvent(event.data);
                     if (parsed) syncResult = parsed;
+                } else if (event.event === SSE_EVENT.ERROR) {
+                    const d = event.data as { message?: string } | string;
+                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    new Notice(MESSAGES.ERROR_ADD_FAILED_DETAIL(msg));
+                    this.taskQueue.fail(taskId, msg);
+                    return;
                 }
             }
 
@@ -770,6 +776,9 @@ export default class LilbeePlugin extends Plugin {
                 } else if (event.event === SSE_EVENT.WIKI_GENERATE_ERROR) {
                     const d = event.data as GenerateErrorData;
                     throw new Error(d.message ?? "generation failed");
+                } else if (event.event === SSE_EVENT.ERROR) {
+                    const d = event.data as { message?: string } | string;
+                    throw new Error(typeof d === "string" ? d : (d.message ?? "unknown error"));
                 }
             }
             this.taskQueue.complete(taskId);
@@ -801,6 +810,9 @@ export default class LilbeePlugin extends Plugin {
                 if (event.event === SSE_EVENT.WIKI_PRUNE_DONE) {
                     const d = event.data as PruneData;
                     archived = d.archived ?? 0;
+                } else if (event.event === SSE_EVENT.ERROR) {
+                    const d = event.data as { message?: string } | string;
+                    throw new Error(typeof d === "string" ? d : (d.message ?? "unknown error"));
                 }
             }
             this.taskQueue.complete(taskId);
@@ -839,6 +851,12 @@ export default class LilbeePlugin extends Plugin {
                 } else if (event.event === SSE_EVENT.DONE) {
                     const parsed = parseAddDoneEvent(event.data);
                     if (parsed) syncResult = parsed;
+                } else if (event.event === SSE_EVENT.ERROR) {
+                    const d = event.data as { message?: string } | string;
+                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    new Notice(MESSAGES.STATUS_SYNC_FAILED);
+                    this.taskQueue.fail(taskId, msg);
+                    return;
                 }
             }
 

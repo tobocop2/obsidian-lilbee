@@ -345,15 +345,21 @@ export class SetupWizard extends Modal {
                 this.pullController.signal,
             )) {
                 if (event.event === SSE_EVENT.PROGRESS) {
-                    const d = event.data as { percent?: number };
-                    if (d.percent !== undefined) {
-                        const pct = d.percent;
+                    const d = event.data as { percent?: number; current?: number; total?: number };
+                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    if (pct !== undefined) {
                         progressFill.style.width = `${pct}%`;
                         progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL_PCT.replace(
                             "{model}",
                             model.hf_repo,
                         ).replace("{pct}", String(pct));
                     }
+                } else if (event.event === SSE_EVENT.ERROR) {
+                    const d = event.data as { message?: string } | string;
+                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    new Notice(MESSAGES.ERROR_DOWNLOAD_FAILED);
+                    statusEl.textContent = msg;
+                    break;
                 }
             }
 
@@ -432,6 +438,11 @@ export class SetupWizard extends Modal {
                     if (d.file) {
                         progressLabel.textContent = MESSAGES.STATUS_INDEXING.replace("{file}", d.file);
                     }
+                } else if (event.event === SSE_EVENT.ERROR) {
+                    const d = event.data as { message?: string } | string;
+                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    progressLabel.textContent = msg;
+                    throw new Error(msg);
                 }
                 lastEvent = event;
             }
