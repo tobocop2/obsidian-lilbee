@@ -391,8 +391,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 }
             })
             .catch(() => {
-                container.empty();
-                container.createEl("p", { text: MESSAGES.ERROR_SERVER_UNREACHABLE, cls: "mod-warning" });
+                // Connection status is shown via the Test button — no duplicate warning needed
             });
     }
 
