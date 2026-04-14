@@ -912,6 +912,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         try {
             await this.setModel({ name: value });
             new Notice(MESSAGES.NOTICE_SET_MODEL(label, value || MESSAGES.LABEL_NOT_SET.toLowerCase()));
+            this.plugin.fetchActiveModel();
             this.display();
         } catch {
             new Notice(MESSAGES.NOTICE_FAILED_SET_MODEL("chat"));
