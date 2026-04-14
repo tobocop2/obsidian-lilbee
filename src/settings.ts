@@ -942,7 +942,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
                     const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
-                    new Notice(MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name));
+                    new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${msg}`);
                     this.plugin.taskQueue.fail(taskId, msg);
                     break;
                 }
@@ -957,8 +957,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
-                new Notice(MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name));
-                this.plugin.taskQueue.fail(taskId, err instanceof Error ? err.message : "unknown");
+                const reason = err instanceof Error ? err.message : "unknown error";
+                new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${reason}`);
+                this.plugin.taskQueue.fail(taskId, reason);
             }
         } finally {
             banner.remove();
@@ -1013,7 +1014,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
                     const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
-                    new Notice(MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name));
+                    new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${msg}`);
                     this.plugin.taskQueue.fail(taskId, msg);
                     break;
                 }
@@ -1028,8 +1029,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
-                new Notice(MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name));
-                this.plugin.taskQueue.fail(taskId, err instanceof Error ? err.message : "unknown");
+                const reason = err instanceof Error ? err.message : "unknown error";
+                new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${reason}`);
+                this.plugin.taskQueue.fail(taskId, reason);
             }
             btn.disabled = false;
             btn.textContent = MESSAGES.BUTTON_PULL;

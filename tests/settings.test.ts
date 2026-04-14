@@ -1456,7 +1456,7 @@ describe("LilbeeSettingTab", () => {
 
             const failed = plugin.taskQueue.completed.find((t: any) => t.status === "failed");
             expect(failed).toBeDefined();
-            expect(failed!.error).toBe("unknown");
+            expect(failed!.error).toBe("unknown error");
         });
 
         it("SSE_EVENT.ERROR shows failure notice and fails the task", async () => {
@@ -1855,7 +1855,7 @@ describe("LilbeeSettingTab", () => {
 
             const failed = plugin.taskQueue.completed.find((t: any) => t.status === "failed");
             expect(failed).toBeDefined();
-            expect(failed!.error).toBe("unknown");
+            expect(failed!.error).toBe("unknown error");
         });
 
         it("auto-pull updates taskQueue with progress", async () => {

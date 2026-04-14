@@ -323,8 +323,9 @@ export class ChatView extends ItemView {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
-                new Notice(MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name));
-                this.plugin.taskQueue.fail(taskId, err instanceof Error ? err.message : "unknown");
+                const reason = err instanceof Error ? err.message : "unknown error";
+                new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${reason}`);
+                this.plugin.taskQueue.fail(taskId, reason);
             }
         } finally {
             this.pullController = null;

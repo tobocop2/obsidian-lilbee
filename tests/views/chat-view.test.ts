@@ -1228,7 +1228,7 @@ describe("ChatView.onOpen — model selector", () => {
 
         const failed = plugin.taskQueue.completed.find((t: any) => t.status === "failed");
         expect(failed).toBeDefined();
-        expect(failed!.error).toBe("unknown");
+        expect(failed!.error).toBe("unknown error");
     });
 
     it("auto-pull with total=0 does not send progress", async () => {
