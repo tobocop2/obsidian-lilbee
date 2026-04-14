@@ -737,6 +737,37 @@ describe("WikiView.renderDetail", () => {
     });
 });
 
+describe("WikiView handles missing created_at", () => {
+    let view: WikiView;
+    let plugin: LilbeePlugin;
+    let listEl: MockElement;
+
+    beforeEach(async () => {
+        plugin = makePlugin();
+        view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        listEl = (view as any).listEl as MockElement;
+    });
+
+    it("does not render time span when page.created_at is null", () => {
+        (view as any).pages = [makePage({ created_at: null })];
+        (view as any).renderList();
+        const times = findByClass(listEl, "lilbee-task-time");
+        expect(times.length).toBe(0);
+    });
+
+    it("does not render date span in detail when page.created_at is null", () => {
+        const detail = makePageDetail({ created_at: null });
+        const detailEl = (view as any).detailEl as MockElement;
+        (view as any).renderDetail(detail);
+        const meta = findByClass(detailEl, "lilbee-wiki-meta");
+        // Should have the strong (title) but no date span
+        const spans = meta[0]!.children.filter((c: MockElement) => c.tagName === "SPAN");
+        expect(spans.length).toBe(0);
+    });
+});
+
 describe("relativeTime via renderPageItem timestamps", () => {
     let view: WikiView;
     let plugin: LilbeePlugin;

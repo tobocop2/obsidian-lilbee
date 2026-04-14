@@ -11,6 +11,7 @@ function makePlugin() {
             crawl: vi.fn(),
         },
         taskQueue: new TaskQueue(),
+        triggerSync: vi.fn(),
     };
 }
 
@@ -134,6 +135,28 @@ describe("CrawlModal", () => {
         expect(result).toBe(true);
         expect(plugin.api.crawl).toHaveBeenCalledWith("https://example.com", 0, 50, expect.any(AbortSignal));
         expect(Notice.instances.some((n) => n.message.includes("crawl done"))).toBe(true);
+    });
+
+    it("calls triggerSync after CRAWL_DONE", async () => {
+        const app = new App();
+        const plugin = makePlugin();
+        plugin.api.crawl.mockReturnValue(
+            (async function* () {
+                yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 3 } };
+            })(),
+        );
+        const modal = new CrawlModal(app as any, plugin as any);
+        modal.onOpen();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const urlInput = el.find("lilbee-crawl-url")!;
+        (urlInput as any).value = "https://example.com";
+        const crawlBtn = findButtons(el).find((b) => b.textContent === "Crawl")!;
+        crawlBtn.trigger("click");
+        await tick();
+
+        await modal.result;
+        expect(plugin.triggerSync).toHaveBeenCalled();
     });
 
     it("handles CRAWL_ERROR event", async () => {

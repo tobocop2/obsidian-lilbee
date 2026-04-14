@@ -134,8 +134,10 @@ export class WikiView extends ItemView {
         const meta = item.createDiv({ cls: "lilbee-wiki-meta" });
         meta.createSpan({ text: MESSAGES.LABEL_WIKI_SOURCES_COUNT(page.source_count) });
 
-        const ts = new Date(page.created_at).getTime();
-        meta.createSpan({ text: relativeTime(ts), cls: "lilbee-task-time" });
+        if (page.created_at) {
+            const ts = new Date(page.created_at).getTime();
+            meta.createSpan({ text: relativeTime(ts), cls: "lilbee-task-time" });
+        }
 
         item.addEventListener("click", () => {
             this.selectedSlug = page.slug;
@@ -169,7 +171,9 @@ export class WikiView extends ItemView {
         // Metadata header
         const meta = this.detailEl.createDiv({ cls: "lilbee-wiki-meta" });
         meta.createEl("strong", { text: page.title });
-        meta.createSpan({ text: new Date(page.created_at).toLocaleString() });
+        if (page.created_at) {
+            meta.createSpan({ text: new Date(page.created_at).toLocaleString() });
+        }
 
         // Markdown body
         const content = this.detailEl.createDiv({ cls: "lilbee-wiki-content" });

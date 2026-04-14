@@ -252,7 +252,7 @@ export interface WikiPage {
     title: string;
     page_type: "summary" | "synthesis";
     source_count: number;
-    created_at: string;
+    created_at: string | null;
 }
 
 export interface WikiPageDetail extends WikiPage {

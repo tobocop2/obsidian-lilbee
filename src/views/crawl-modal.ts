@@ -110,6 +110,7 @@ export class CrawlModal extends Modal {
                         const d = event.data as { pages_crawled?: number };
                         this.plugin.taskQueue.complete(taskId);
                         new Notice(MESSAGES.NOTICE_CRAWL_DONE(d.pages_crawled ?? pageCount));
+                        this.plugin.triggerSync();
                         this.decide(true);
                         return;
                     }
