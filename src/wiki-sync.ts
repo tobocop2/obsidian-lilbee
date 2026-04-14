@@ -96,7 +96,7 @@ export class WikiSync {
 
         const match = content.match(/generated_at:\s*(.+)/);
         if (!match) return true;
-        return match[1].trim() !== page.created_at;
+        return page.created_at === null || match[1].trim() !== page.created_at;
     }
 
     private async ensureFolders(): Promise<void> {
