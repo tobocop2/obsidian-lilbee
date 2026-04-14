@@ -1357,8 +1357,8 @@ describe("ChatView.sendMessage — loading indicator", () => {
             await done;
             await vi.advanceTimersByTimeAsync(0);
 
-            // Advance past the minimum spinner display time
-            await vi.advanceTimersByTimeAsync(400);
+            // Advance past the minimum spinner display time (SPINNER_MIN_DISPLAY_MS = 800)
+            await vi.advanceTimersByTimeAsync(900);
 
             // After streaming, spinner should be removed and text visible
             const messagesEl = container.find("lilbee-chat-messages")!;
