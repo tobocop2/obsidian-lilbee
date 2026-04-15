@@ -3002,8 +3002,8 @@ describe("LilbeePlugin", () => {
             plugin.fetchActiveModel();
             await new Promise((r) => setTimeout(r, 0));
 
-            // Server has no wiki field — local setting (default true) preserved
-            expect((plugin as any).wikiEnabled).toBe(true);
+            // Server has no wiki field — local setting (default false) preserved
+            expect((plugin as any).wikiEnabled).toBe(false);
         });
 
         it("wiki detection is best-effort and preserves setting on error", async () => {
@@ -3019,7 +3019,7 @@ describe("LilbeePlugin", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             // Should not throw, wikiEnabled preserves setting default
-            expect((plugin as any).wikiEnabled).toBe(true);
+            expect((plugin as any).wikiEnabled).toBe(false);
         });
     });
 

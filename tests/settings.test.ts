@@ -61,7 +61,7 @@ vi.mock("../src/views/confirm-modal", () => ({
 }));
 
 function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
-    const settings: LilbeeSettings = { ...DEFAULT_SETTINGS, ...overrides };
+    const settings: LilbeeSettings = { ...DEFAULT_SETTINGS, wikiEnabled: true, ...overrides };
     const api = {
         listModels: vi.fn(),
         setChatModel: vi.fn(),
