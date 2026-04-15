@@ -24,6 +24,7 @@ function makePlugin(): LilbeePlugin {
             syncMode: "manual" as const,
             syncDebounceMs: 5000,
             searchChunkType: "all" as const,
+            wikiEnabled: true,
         },
         saveSettings: vi.fn(),
     } as unknown as LilbeePlugin;
@@ -496,6 +497,35 @@ describe("SearchModal", () => {
             buttons[1].trigger("click");
             expect(plugin.settings.searchChunkType).toBe("wiki");
             expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+
+        it("hides wiki button when wikiEnabled is false", () => {
+            plugin.settings.wikiEnabled = false;
+            const modal = new SearchModal(app, plugin, "search");
+            modal.open();
+            const modeGroup = modal.contentEl.find("lilbee-search-mode")!;
+            const buttons = modeGroup.children.filter((c: any) => c.tagName === "BUTTON");
+            expect(buttons).toHaveLength(2);
+            expect(buttons[0].textContent).toBe("All");
+            expect(buttons[1].textContent).toBe("Raw");
+        });
+
+        it("shows wiki button when wikiEnabled is true", () => {
+            plugin.settings.wikiEnabled = true;
+            const modal = new SearchModal(app, plugin, "search");
+            modal.open();
+            const modeGroup = modal.contentEl.find("lilbee-search-mode")!;
+            const buttons = modeGroup.children.filter((c: any) => c.tagName === "BUTTON");
+            expect(buttons).toHaveLength(3);
+            expect(buttons[1].textContent).toBe("Wiki");
+        });
+
+        it("falls back searchChunkType from wiki to all when wikiEnabled is false", () => {
+            plugin.settings.wikiEnabled = false;
+            plugin.settings.searchChunkType = "wiki";
+            const modal = new SearchModal(app, plugin, "search");
+            modal.open();
+            expect(plugin.settings.searchChunkType).toBe("all");
         });
 
         it("clicking a mode button with active query re-triggers search", async () => {

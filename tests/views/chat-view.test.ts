@@ -95,7 +95,7 @@ function makePlugin(): LilbeePlugin {
             setChatModel: vi.fn().mockResolvedValue(ok({ model: "phi3" })),
             pullModel: vi.fn(),
         },
-        settings: { topK: 5, enableOcr: null as boolean | null },
+        settings: { topK: 5, enableOcr: null as boolean | null, wikiEnabled: true, searchChunkType: "all" as const },
         activeModel: "llama3",
         fetchActiveModel: vi.fn(),
         saveSettings: vi.fn().mockResolvedValue(undefined),
@@ -2196,6 +2196,46 @@ describe("ChatView.createToolbar — search mode buttons", () => {
         buttons[1].trigger("click");
         expect(plugin.settings.searchChunkType).toBe("wiki");
         expect(plugin.saveSettings).toHaveBeenCalled();
+        await view.onClose();
+    });
+
+    it("hides wiki button when wikiEnabled is false", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.settings.wikiEnabled = false;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const modeGroup = container.find("lilbee-search-mode")!;
+        const buttons = modeGroup.children.filter((c: any) => c.tagName === "BUTTON");
+        expect(buttons).toHaveLength(2);
+        expect(buttons[0].textContent).toBe("All");
+        expect(buttons[1].textContent).toBe("Raw");
+        await view.onClose();
+    });
+
+    it("shows wiki button when wikiEnabled is true", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.settings.wikiEnabled = true;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const modeGroup = container.find("lilbee-search-mode")!;
+        const buttons = modeGroup.children.filter((c: any) => c.tagName === "BUTTON");
+        expect(buttons).toHaveLength(3);
+        expect(buttons[1].textContent).toBe("Wiki");
+        await view.onClose();
+    });
+
+    it("falls back searchChunkType from wiki to all when wikiEnabled is false", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.settings.wikiEnabled = false;
+        plugin.settings.searchChunkType = "wiki";
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        expect(plugin.settings.searchChunkType).toBe("all");
         await view.onClose();
     });
 });
