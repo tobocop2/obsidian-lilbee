@@ -2077,6 +2077,18 @@ describe("buildModelOptions()", () => {
         expect(Object.keys(options).length).toBe(0);
     });
 
+    it("shows source tag when model has source", () => {
+        const catalog: ModelCatalog = {
+            active: "llama3",
+            catalog: [
+                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true, source: "native" },
+            ],
+            installed: ["llama3"],
+        };
+        const options = buildModelOptions(catalog);
+        expect(options["llama3"]).toBe("llama3 [native]");
+    });
+
     it("deduplicates :latest when a specific tag exists", () => {
         const catalog: ModelCatalog = {
             active: "mistral:7b",
