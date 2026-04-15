@@ -92,7 +92,7 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
         initWikiSync,
         reconcileWiki,
         activeModel: "",
-        wikiEnabled: settings.wikiEnabled ?? false,
+        wikiEnabled: overrides.wikiEnabled !== undefined ? settings.wikiEnabled : true,
         wikiSync: null,
         taskQueue: new TaskQueue(),
     } as unknown as InstanceType<typeof import("../src/main").default>;

@@ -353,7 +353,8 @@ export const WIZARD_STEP = {
     SERVER_MODE: 1,
     MODEL_PICKER: 2,
     SYNC: 3,
-    DONE: 4,
+    WIKI: 4,
+    DONE: 5,
 } as const satisfies Record<string, number>;
 
 export const DOWNLOAD_PANEL = {
