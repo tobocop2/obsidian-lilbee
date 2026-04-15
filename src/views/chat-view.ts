@@ -137,10 +137,14 @@ export class ChatView extends ItemView {
         this.fetchAndFillSelectors();
 
         // Search mode toggle
+        const wikiEnabled = this.plugin.settings.wikiEnabled;
+        if (!wikiEnabled && this.plugin.settings.searchChunkType === "wiki") {
+            this.plugin.settings.searchChunkType = "all";
+        }
         const modeGroup = toolbar.createDiv({ cls: "lilbee-search-mode" });
         const modes: { value: SearchChunkType; label: string }[] = [
             { value: "all", label: MESSAGES.LABEL_SEARCH_ALL },
-            { value: "wiki", label: MESSAGES.LABEL_SEARCH_WIKI },
+            ...(wikiEnabled ? [{ value: "wiki" as SearchChunkType, label: MESSAGES.LABEL_SEARCH_WIKI }] : []),
             { value: "raw", label: MESSAGES.LABEL_SEARCH_RAW },
         ];
         for (const mode of modes) {

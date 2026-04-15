@@ -41,6 +41,14 @@ describe("DEFAULT_SETTINGS", () => {
         expect(DEFAULT_SETTINGS.syncDebounceMs).toBe(5000);
     });
 
+    it("has wikiEnabled defaulting to false", () => {
+        expect(DEFAULT_SETTINGS.wikiEnabled).toBe(false);
+    });
+
+    it("has searchChunkType defaulting to raw", () => {
+        expect(DEFAULT_SETTINGS.searchChunkType).toBe("raw");
+    });
+
     it("is a plain object with exactly the expected keys", () => {
         const keys = Object.keys(DEFAULT_SETTINGS).sort();
         const expected = [
