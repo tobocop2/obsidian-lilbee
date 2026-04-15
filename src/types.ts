@@ -213,6 +213,7 @@ export interface CatalogResponse {
     limit: number;
     offset: number;
     models: CatalogEntry[];
+    has_more: boolean;
 }
 
 export interface InstalledModel {

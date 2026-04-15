@@ -38,6 +38,7 @@ function makeCatalogResponse(models: CatalogEntry[] = []): CatalogResponse {
         limit: 4,
         offset: 0,
         models,
+        has_more: false,
     };
 }
 

@@ -515,7 +515,7 @@ describe("pullModel()", () => {
         });
 
         it("appends query params when provided", async () => {
-            fetchMock.mockResolvedValue(jsonResponse({ total: 0, limit: 10, offset: 0, models: [] }));
+            fetchMock.mockResolvedValue(jsonResponse({ total: 0, limit: 10, offset: 0, models: [], has_more: false }));
 
             await client.catalog({
                 task: "chat",

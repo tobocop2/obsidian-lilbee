@@ -381,7 +381,8 @@ describe("CatalogResponse interface", () => {
             total: 50,
             limit: 20,
             offset: 0,
-            families: [],
+            models: [],
+            has_more: false,
         };
         expect(r.total).toBe(50);
     });

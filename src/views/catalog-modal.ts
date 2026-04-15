@@ -27,7 +27,7 @@ export class CatalogModal extends Modal {
     private filterSort: SortFilter = FILTERS.SORT.FEATURED;
     private filterSearch = "";
     private offset = 0;
-    private total = 0;
+    private hasMore = false;
     private entries: CatalogEntry[] = [];
     private resultsEl: HTMLElement | null = null;
     private loadMoreBtn: HTMLElement | null = null;
@@ -168,7 +168,7 @@ export class CatalogModal extends Modal {
         }
 
         const response = result.value;
-        this.total = response.total;
+        this.hasMore = response.has_more;
         this.entries.push(...response.models);
         this.offset += response.models.length;
 
@@ -365,7 +365,7 @@ export class CatalogModal extends Modal {
 
     private updateLoadMore(): void {
         if (!this.loadMoreBtn) return;
-        this.loadMoreBtn.style.display = this.offset < this.total ? "" : "none";
+        this.loadMoreBtn.style.display = this.hasMore ? "" : "none";
     }
 
     private handleRemove(entry: CatalogEntry, btn: HTMLElement): void {

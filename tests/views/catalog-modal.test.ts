@@ -48,8 +48,12 @@ function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     };
 }
 
-function makeCatalogResponse(models: CatalogEntry[] = [makeEntry()], total?: number): CatalogResponse {
-    return { total: total ?? models.length, limit: 20, offset: 0, models };
+function makeCatalogResponse(
+    models: CatalogEntry[] = [makeEntry()],
+    total?: number,
+    has_more = false,
+): CatalogResponse {
+    return { total: total ?? models.length, limit: 20, offset: 0, models, has_more };
 }
 
 function makePlugin(overrides: Record<string, unknown> = {}) {
@@ -521,18 +525,22 @@ describe("CatalogModal", () => {
     });
 
     describe("load more", () => {
-        it("shows load-more button when offset < total", async () => {
+        it("shows load-more button when has_more is true", async () => {
             const plugin = makePlugin();
-            plugin.api.catalog.mockResolvedValue(ok({ total: 40, limit: 20, offset: 0, models: [makeEntry()] }));
+            plugin.api.catalog.mockResolvedValue(
+                ok({ total: 40, limit: 20, offset: 0, models: [makeEntry()], has_more: true }),
+            );
             const modal = await openModal(plugin);
             const content = contentEl(modal);
             const btn = content.find("lilbee-catalog-load-more")! as unknown as MockElement;
             expect(btn.style.display).toBe("");
         });
 
-        it("hides load-more button when offset >= total", async () => {
+        it("hides load-more button when has_more is false", async () => {
             const plugin = makePlugin();
-            plugin.api.catalog.mockResolvedValue(ok({ total: 1, limit: 20, offset: 0, models: [makeEntry()] }));
+            plugin.api.catalog.mockResolvedValue(
+                ok({ total: 1, limit: 20, offset: 0, models: [makeEntry()], has_more: false }),
+            );
             const modal = await openModal(plugin);
             const content = contentEl(modal);
             const btn = content.find("lilbee-catalog-load-more")! as unknown as MockElement;
@@ -544,8 +552,8 @@ describe("CatalogModal", () => {
             const first = makeEntry({ name: "a", display_name: "A" });
             const second = makeEntry({ name: "b", display_name: "B" });
             plugin.api.catalog
-                .mockResolvedValueOnce(ok({ total: 2, limit: 1, offset: 0, models: [first] }))
-                .mockResolvedValueOnce(ok({ total: 2, limit: 1, offset: 1, models: [second] }));
+                .mockResolvedValueOnce(ok({ total: 2, limit: 1, offset: 0, models: [first], has_more: true }))
+                .mockResolvedValueOnce(ok({ total: 2, limit: 1, offset: 1, models: [second], has_more: false }));
             const modal = await openModal(plugin);
             const content = contentEl(modal);
             content.find("lilbee-catalog-load-more")!.trigger("click");
