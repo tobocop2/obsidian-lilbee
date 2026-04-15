@@ -3,6 +3,7 @@ import { Notice } from "obsidian";
 import { App, WorkspaceLeaf } from "./__mocks__/obsidian";
 import { SSE_EVENT } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
+import { ConfirmModal } from "../src/views/confirm-modal";
 vi.mock("../src/api", () => ({
     LilbeeClient: vi.fn().mockImplementation(() => ({
         status: vi.fn(),
@@ -878,6 +879,60 @@ describe("LilbeePlugin", () => {
                 null,
                 expect.any(AbortSignal),
             );
+        });
+
+        it("addToLilbee shows confirmation when file is already indexed and proceeds on confirm", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            plugin.api.listDocuments = vi.fn().mockResolvedValue({
+                documents: [{ filename: "test.md", chunk_count: 10, ingested_at: "2026-01-01" }],
+                total: 1,
+                limit: 1,
+                offset: 0,
+            });
+
+            const origCtor = ConfirmModal;
+            const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
+            mockConfirm.mockImplementation((app: any, msg: string) => {
+                const inst = { open: vi.fn(), result: Promise.resolve(true), close: vi.fn() };
+                return inst as any;
+            });
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+
+            await (plugin as any).addToLilbee({ path: "notes/test.md", name: "test.md" });
+
+            expect(plugin.api.addFiles).toHaveBeenCalled();
+            mockConfirm.mockRestore();
+        });
+
+        it("addToLilbee cancels when file is already indexed and user declines", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            plugin.api.listDocuments = vi.fn().mockResolvedValue({
+                documents: [{ filename: "test.md", chunk_count: 10, ingested_at: "2026-01-01" }],
+                total: 1,
+                limit: 1,
+                offset: 0,
+            });
+
+            const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
+            mockConfirm.mockImplementation((app: any, msg: string) => {
+                const inst = { open: vi.fn(), result: Promise.resolve(false), close: vi.fn() };
+                return inst as any;
+            });
+
+            plugin.api.addFiles = vi.fn();
+
+            await (plugin as any).addToLilbee({ path: "notes/test.md", name: "test.md" });
+
+            expect(plugin.api.addFiles).not.toHaveBeenCalled();
+            mockConfirm.mockRestore();
         });
 
         it("addToLilbee shows summary Notice on done event", async () => {

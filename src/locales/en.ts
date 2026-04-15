@@ -1,6 +1,7 @@
 import { MODEL_TASK } from "../types";
 
 export const MESSAGES = {
+    CONFIRM_REINDEX: (name: string): string => `"${name}" is already indexed. Re-add it?`,
     BUTTON_SKIP_SETUP: "Skip setup",
     BUTTON_GET_STARTED: "Get started",
     BUTTON_BACK: "Back",

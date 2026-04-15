@@ -301,7 +301,9 @@ export class LilbeeClient {
         if (limit !== undefined) qs.set("limit", String(limit));
         if (offset !== undefined) qs.set("offset", String(offset));
         const suffix = qs.toString() ? `?${qs}` : "";
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/documents${suffix}`);
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/documents${suffix}`, {
+            headers: this.authHeaders(),
+        });
         return res.json();
     }
 

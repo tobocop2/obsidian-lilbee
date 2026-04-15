@@ -610,6 +610,20 @@ export default class LilbeePlugin extends Plugin {
         if (!this.assertActiveModel()) return;
         const absolutePath = `${this.getVaultBasePath()}/${file.path}`;
         const name = file.name ?? file.path;
+
+        try {
+            const searchName = name.replace(/\.md$/, "");
+            const listing = await this.api.listDocuments(searchName, 1);
+            if (listing.documents.length > 0) {
+                const modal = new ConfirmModal(this.app, MESSAGES.CONFIRM_REINDEX(searchName));
+                modal.open();
+                const confirmed = await modal.result;
+                if (!confirmed) return;
+            }
+        } catch {
+            // graceful fallback: proceed with add if check fails
+        }
+
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", name));
         await this.runAdd([absolutePath]);
     }
