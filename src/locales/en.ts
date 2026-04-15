@@ -366,6 +366,8 @@ export const MESSAGES = {
     // Wiki settings
     LABEL_WIKI_SECTION: "Wiki",
     LABEL_WIKI_NOT_ENABLED: "Wiki (not enabled)",
+    LABEL_WIKI_ENABLE_TOGGLE: "Enable wiki",
+    DESC_WIKI_ENABLE_TOGGLE: "Show wiki search mode and use wiki-enhanced results",
     LABEL_WIKI_STATUS: "Wiki status",
     LABEL_WIKI_PRUNE_RAW: "Prune raw chunks",
     LABEL_WIKI_FAITHFULNESS: "Faithfulness threshold",

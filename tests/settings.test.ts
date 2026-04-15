@@ -2915,10 +2915,62 @@ describe("managed mode settings", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { toggleOnChanges, buttonOnClicks } = captureSettingCallbacks(() => tab.display());
-            // Wiki section adds: 1 toggle (prune raw) + 1 slider (faithfulness) + 1 dropdown (search mode) + 2 buttons (lint, prune)
-            // toggleOnChanges: adaptiveThreshold + wikiPruneRaw
-            expect(toggleOnChanges.length).toBeGreaterThanOrEqual(2);
+            // Wiki section adds: 1 toggle (enable) + 1 toggle (prune raw) + 1 slider (faithfulness) + 1 dropdown (search mode) + 2 buttons (lint, prune)
+            // toggleOnChanges: adaptiveThreshold + wikiEnable + wikiPruneRaw + wikiSyncToVault
+            expect(toggleOnChanges.length).toBeGreaterThanOrEqual(3);
             expect(buttonOnClicks.length).toBeGreaterThanOrEqual(2);
+        });
+
+        it("wiki enable toggle saves setting and toggles sub-settings visibility", async () => {
+            const plugin = makePlugin({ wikiEnabled: true });
+            (plugin as any).wikiEnabled = true;
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // The wiki enable toggle is third from the end (enable, prune raw, sync-to-vault)
+            const wikiEnableToggleIdx = toggleOnChanges.length - 3;
+            await toggleOnChanges[wikiEnableToggleIdx](false);
+            expect(plugin.settings.wikiEnabled).toBe(false);
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+
+        it("sub-settings hidden when wikiEnabled setting is false", () => {
+            const plugin = makePlugin({ wikiEnabled: false });
+            (plugin as any).wikiEnabled = true; // server says enabled, but user toggle off
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+            const details = tab.containerEl.children.find(
+                (c) =>
+                    c.tagName === "DETAILS" &&
+                    c.children.some((s: any) => s.tagName === "SUMMARY" && s.textContent.includes("Wiki")),
+            );
+            expect(details).toBeDefined();
+            const subContainer = details!.children.find(
+                (c: any) => c.classList && c.classList.contains("lilbee-wiki-sub-settings"),
+            );
+            expect(subContainer).toBeDefined();
+            expect((subContainer as any).style.display).toBe("none");
+        });
+
+        it("sub-settings visible when wikiEnabled setting is true", () => {
+            const plugin = makePlugin({ wikiEnabled: true });
+            (plugin as any).wikiEnabled = true;
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+            const details = tab.containerEl.children.find(
+                (c) =>
+                    c.tagName === "DETAILS" &&
+                    c.children.some((s: any) => s.tagName === "SUMMARY" && s.textContent.includes("Wiki")),
+            );
+            expect(details).toBeDefined();
+            const subContainer = details!.children.find(
+                (c: any) => c.classList && c.classList.contains("lilbee-wiki-sub-settings"),
+            );
+            expect(subContainer).toBeDefined();
+            expect((subContainer as any).style.display).toBe("");
         });
 
         it("prune raw toggle calls updateConfig", async () => {

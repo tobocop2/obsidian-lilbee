@@ -554,7 +554,8 @@ export default class LilbeePlugin extends Plugin {
             const status = await this.api.status();
             if (status.isOk()) {
                 if (status.value.wiki != null) {
-                    this.wikiEnabled = !!status.value.wiki.enabled;
+                    const serverWikiEnabled = !!status.value.wiki.enabled;
+                    this.wikiEnabled = this.settings.wikiEnabled ? serverWikiEnabled : false;
                 }
                 this.wikiPageCount = status.value.wiki?.page_count ?? 0;
                 this.wikiDraftCount = status.value.wiki?.draft_count ?? 0;
