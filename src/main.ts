@@ -519,7 +519,7 @@ export default class LilbeePlugin extends Plugin {
         if (ok) {
             if (this.serverUnreachable) {
                 this.serverUnreachable = false;
-                this.setStatusReady();
+                void this.fetchActiveModel();
             }
         } else if (!this.serverUnreachable) {
             this.serverUnreachable = true;

@@ -1683,6 +1683,10 @@ describe("LilbeePlugin", () => {
 
             // Recovery: health() resolves Ok.
             plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} });
+            plugin.api.listModels = vi
+                .fn()
+                .mockResolvedValue({ chat: { active: "qwen3:4b", catalog: [], installed: [] } });
+            plugin.api.status = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
             await (plugin as any).probeServerHealth();
             expect((plugin.statusBarEl as any)?.textContent).toContain("ready");
         });
