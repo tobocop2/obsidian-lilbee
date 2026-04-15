@@ -84,7 +84,6 @@ describe("MESSAGES", () => {
     describe("TITLE_ constants", () => {
         it("has all title constants", () => {
             expect(MESSAGES.TITLE_SEARCH).toBe("Search knowledge base");
-            expect(MESSAGES.TITLE_ASK).toBe("Ask a question");
             expect(MESSAGES.TITLE_MODEL_CATALOG).toBe("Model Catalog");
             expect(MESSAGES.TITLE_DOCUMENTS).toBe("Documents");
             expect(MESSAGES.TITLE_CRAWL_WEB_PAGE).toBe("Crawl web page");
@@ -118,7 +117,6 @@ describe("MESSAGES", () => {
             expect(MESSAGES.PLACEHOLDER_SEARCH_MODELS).toBe("Search models...");
             expect(MESSAGES.PLACEHOLDER_SEARCH_DOCUMENTS).toBe("Search documents...");
             expect(MESSAGES.PLACEHOLDER_TYPE_SEARCH).toBe("Type to search...");
-            expect(MESSAGES.PLACEHOLDER_ASK_ANYTHING).toBe("Ask anything...");
             expect(MESSAGES.PLACEHOLDER_HTTP_LOCALHOST).toBe("http://127.0.0.1:7433");
         });
     });
@@ -280,7 +278,6 @@ describe("MESSAGES", () => {
     describe("COMMAND_ constants", () => {
         it("has all command names", () => {
             expect(MESSAGES.COMMAND_SEARCH).toBe("Search knowledge base");
-            expect(MESSAGES.COMMAND_ASK).toBe("Ask a question");
             expect(MESSAGES.COMMAND_CHAT).toBe("Open chat");
             expect(MESSAGES.COMMAND_ADD_FILE).toBe("Add current file to lilbee");
             expect(MESSAGES.COMMAND_ADD_FOLDER).toBe("Add current folder to lilbee");

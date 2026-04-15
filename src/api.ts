@@ -127,35 +127,6 @@ export class LilbeeClient {
         return res.json();
     }
 
-    async ask(question: string, topK?: number): Promise<AskResponse> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/ask`, {
-            method: "POST",
-            headers: { ...JSON_HEADERS, ...this.authHeaders() },
-            body: JSON.stringify({ question, top_k: topK ?? 0 }),
-        });
-        return res.json();
-    }
-
-    async *askStream(
-        question: string,
-        topK?: number,
-        signal?: AbortSignal,
-        options?: GenerationOptions,
-    ): AsyncGenerator<SSEEvent> {
-        const body: Record<string, unknown> = { question, top_k: topK ?? 0 };
-        if (options && Object.keys(options).length > 0) body.options = options;
-        const res = await this.fetchWithRetry(
-            `${this.baseUrl}/api/ask/stream`,
-            {
-                method: "POST",
-                headers: { ...JSON_HEADERS, ...this.authHeaders() },
-                body: JSON.stringify(body),
-            },
-            { stream: true, signal },
-        );
-        yield* this.parseSSE(res);
-    }
-
     async chat(question: string, history: Message[], topK?: number): Promise<AskResponse> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/chat`, {
             method: "POST",

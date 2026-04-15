@@ -1,20 +1,18 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { DocumentResult, SearchChunkType } from "../types";
-import { renderDocumentResult, renderSourceChip } from "./results";
+import { renderDocumentResult } from "./results";
 import { MESSAGES } from "../locales/en";
 import { debounce, DEBOUNCE_MS } from "../utils";
 
 export class SearchModal extends Modal {
     private plugin: LilbeePlugin;
-    private mode: "search" | "ask";
     private debouncedSearch: () => void;
     private resultsContainer: HTMLElement | null = null;
 
-    constructor(app: App, plugin: LilbeePlugin, mode: "search" | "ask" = "search") {
+    constructor(app: App, plugin: LilbeePlugin) {
         super(app);
         this.plugin = plugin;
-        this.mode = mode;
         const debounced = debounce(() => {
             if (this.lastSearchQuery) {
                 this.runSearch(this.lastSearchQuery);
@@ -33,35 +31,23 @@ export class SearchModal extends Modal {
         contentEl.empty();
         contentEl.addClass("lilbee-modal");
 
-        const title = this.mode === "search" ? MESSAGES.TITLE_SEARCH : MESSAGES.TITLE_ASK;
-        contentEl.createEl("h2", { text: title });
+        contentEl.createEl("h2", { text: MESSAGES.TITLE_SEARCH });
 
         const input = contentEl.createEl("input", {
             type: "text",
             cls: "lilbee-search-input",
-            placeholder: this.mode === "search" ? MESSAGES.PLACEHOLDER_TYPE_SEARCH : MESSAGES.PLACEHOLDER_ASK_ANYTHING,
+            placeholder: MESSAGES.PLACEHOLDER_TYPE_SEARCH,
         });
 
-        // Search mode toggle (only for search mode)
-        if (this.mode === "search") {
-            this.renderSearchModeToggle(contentEl);
-        }
+        this.renderSearchModeToggle(contentEl);
 
         this.resultsContainer = contentEl.createDiv({ cls: "lilbee-modal-results" });
         this.renderEmptyState(MESSAGES.LABEL_ENTER_QUERY);
 
-        if (this.mode === "search") {
-            input.addEventListener("input", () => {
-                this.lastSearchQuery = input.value.trim();
-                this.debouncedSearch();
-            });
-        } else {
-            input.addEventListener("keydown", (e) => {
-                if (e.key === "Enter" && input.value.trim()) {
-                    this.runAsk(input.value.trim());
-                }
-            });
-        }
+        input.addEventListener("input", () => {
+            this.lastSearchQuery = input.value.trim();
+            this.debouncedSearch();
+        });
 
         setTimeout(() => input.focus(), 0);
     }
@@ -133,31 +119,6 @@ export class SearchModal extends Modal {
             }
             for (const result of results) {
                 renderDocumentResult(this.resultsContainer, result, this.app);
-            }
-        } catch {
-            new Notice(MESSAGES.ERROR_COULD_NOT_CONNECT);
-            this.renderEmptyState(MESSAGES.ERROR_SEARCH_CONNECT);
-        }
-    }
-
-    private async runAsk(question: string): Promise<void> {
-        this.renderLoading();
-        try {
-            const response = await this.plugin.api.ask(question, this.plugin.settings.topK);
-            if (!this.resultsContainer) return;
-            this.resultsContainer.empty();
-
-            this.resultsContainer.createEl("p", {
-                text: response.answer,
-                cls: "lilbee-ask-answer",
-            });
-
-            if (response.sources.length > 0) {
-                const sourcesEl = this.resultsContainer.createDiv({ cls: "lilbee-ask-sources" });
-                sourcesEl.createEl("span", { text: `${MESSAGES.LABEL_SOURCES}: ` });
-                for (const source of response.sources) {
-                    renderSourceChip(sourcesEl, source);
-                }
             }
         } catch {
             new Notice(MESSAGES.ERROR_COULD_NOT_CONNECT);
