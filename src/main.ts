@@ -330,12 +330,6 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:ask",
-            name: "Ask a question",
-            callback: () => new SearchModal(this.app, this, "ask").open(),
-        });
-
-        this.addCommand({
             id: "lilbee:chat",
             name: "Open chat",
             callback: () => this.activateChatView(),

@@ -165,7 +165,6 @@ export const MESSAGES = {
     PLACEHOLDER_SEARCH_MODELS: "Search models...",
     PLACEHOLDER_SEARCH_DOCUMENTS: "Search documents...",
     PLACEHOLDER_TYPE_SEARCH: "Type to search...",
-    PLACEHOLDER_ASK_ANYTHING: "Ask anything...",
     PLACEHOLDER_ASK_SOMETHING: "Ask something...",
     PLACEHOLDER_FILTER_SETTINGS: "Filter settings...",
     PLACEHOLDER_HTTP_LOCALHOST: "http://127.0.0.1:7433",
@@ -183,7 +182,6 @@ export const MESSAGES = {
     ERROR_SEARCH_CONNECT: "Error: could not connect to lilbee server.",
 
     TITLE_SEARCH: "Search knowledge base",
-    TITLE_ASK: "Ask a question",
     TITLE_MODEL_CATALOG: "Model Catalog",
     TITLE_DOCUMENTS: "Documents",
     TITLE_CRAWL_WEB_PAGE: "Crawl web page",
@@ -297,7 +295,6 @@ export const MESSAGES = {
         `Delete ${count} document(s) from index and disk? This cannot be undone.`,
 
     COMMAND_SEARCH: "Search knowledge base",
-    COMMAND_ASK: "Ask a question",
     COMMAND_CHAT: "Open chat",
     COMMAND_ADD_FILE: "Add current file to lilbee",
     COMMAND_ADD_FOLDER: "Add current folder to lilbee",

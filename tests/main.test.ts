@@ -187,10 +187,9 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(15);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(14);
             const ids = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(ids).toContain("lilbee:search");
-            expect(ids).toContain("lilbee:ask");
             expect(ids).toContain("lilbee:chat");
             expect(ids).toContain("lilbee:add-file");
             expect(ids).toContain("lilbee:add-folder");
@@ -689,19 +688,6 @@ describe("LilbeePlugin", () => {
             expect(SearchModal).toHaveBeenCalled();
             const instance = (SearchModal as ReturnType<typeof vi.fn>).mock.results[0].value;
             expect(instance.open).toHaveBeenCalled();
-        });
-
-        it("lilbee:ask opens SearchModal in 'ask' mode", async () => {
-            const { SearchModal } = await import("../src/views/search-modal");
-            const plugin = await createPlugin();
-            await plugin.onload();
-
-            const cb = await getCommandCallback(plugin, "lilbee:ask");
-            cb?.();
-
-            const calls = (SearchModal as ReturnType<typeof vi.fn>).mock.calls;
-            const askCall = calls.find((c: any[]) => c[2] === "ask");
-            expect(askCall).toBeDefined();
         });
 
         it("lilbee:chat calls activateChatView", async () => {
