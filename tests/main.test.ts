@@ -893,11 +893,10 @@ describe("LilbeePlugin", () => {
                 offset: 0,
             });
 
-            const origCtor = ConfirmModal;
             const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
-            mockConfirm.mockImplementation((app: any, msg: string) => {
+            mockConfirm.mockImplementation((_app: unknown, _msg: string) => {
                 const inst = { open: vi.fn(), result: Promise.resolve(true), close: vi.fn() };
-                return inst as any;
+                return inst as unknown as ConfirmModal;
             });
 
             async function* noEvents() {}
@@ -922,9 +921,9 @@ describe("LilbeePlugin", () => {
             });
 
             const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
-            mockConfirm.mockImplementation((app: any, msg: string) => {
+            mockConfirm.mockImplementation((_app: unknown, _msg: string) => {
                 const inst = { open: vi.fn(), result: Promise.resolve(false), close: vi.fn() };
-                return inst as any;
+                return inst as unknown as ConfirmModal;
             });
 
             plugin.api.addFiles = vi.fn();
@@ -1224,6 +1223,59 @@ describe("LilbeePlugin", () => {
             await plugin.addExternalFiles(["/home/user/doc.pdf"]);
 
             expect((plugin as any).statusBarEl?.textContent).toContain("ready");
+        });
+
+        it("addExternalFiles shows confirmation when single file is already indexed", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            plugin.api.listDocuments = vi.fn().mockResolvedValue({
+                documents: [{ filename: "doc.pdf", chunk_count: 100, ingested_at: "2026-01-01" }],
+                total: 1,
+                limit: 1,
+                offset: 0,
+            });
+
+            const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
+            mockConfirm.mockImplementation((_app: unknown, _msg: string) => {
+                const inst = { open: vi.fn(), result: Promise.resolve(true), close: vi.fn() };
+                return inst as unknown as ConfirmModal;
+            });
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+
+            expect(plugin.api.addFiles).toHaveBeenCalled();
+            mockConfirm.mockRestore();
+        });
+
+        it("addExternalFiles cancels when user declines re-add", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            plugin.api.listDocuments = vi.fn().mockResolvedValue({
+                documents: [{ filename: "doc.pdf", chunk_count: 100, ingested_at: "2026-01-01" }],
+                total: 1,
+                limit: 1,
+                offset: 0,
+            });
+
+            const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
+            mockConfirm.mockImplementation((_app: unknown, _msg: string) => {
+                const inst = { open: vi.fn(), result: Promise.resolve(false), close: vi.fn() };
+                return inst as unknown as ConfirmModal;
+            });
+
+            plugin.api.addFiles = vi.fn();
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+
+            expect(plugin.api.addFiles).not.toHaveBeenCalled();
+            mockConfirm.mockRestore();
         });
 
         it("shows error Notice on API failure", async () => {

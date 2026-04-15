@@ -597,10 +597,28 @@ export default class LilbeePlugin extends Plugin {
         return false;
     }
 
+    private async confirmReindexIfNeeded(name: string): Promise<boolean> {
+        try {
+            const searchName = name.replace(/\.md$/, "");
+            const listing = await this.api.listDocuments(searchName, 1);
+            if (listing.documents.length > 0) {
+                const modal = new ConfirmModal(this.app, MESSAGES.CONFIRM_REINDEX(searchName));
+                modal.open();
+                return await modal.result;
+            }
+        } catch {
+            // graceful fallback: proceed with add if check fails
+        }
+        return true;
+    }
+
     async addExternalFiles(paths: string[]): Promise<void> {
         if (!this.statusBarEl || paths.length === 0) return;
         if (!this.assertActiveModel()) return;
         const label = paths.length === 1 ? paths[0].split("/").pop() || paths[0] : `${paths.length} files`;
+
+        if (paths.length === 1 && !(await this.confirmReindexIfNeeded(label))) return;
+
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", label));
         await this.runAdd(paths);
     }
@@ -611,18 +629,7 @@ export default class LilbeePlugin extends Plugin {
         const absolutePath = `${this.getVaultBasePath()}/${file.path}`;
         const name = file.name ?? file.path;
 
-        try {
-            const searchName = name.replace(/\.md$/, "");
-            const listing = await this.api.listDocuments(searchName, 1);
-            if (listing.documents.length > 0) {
-                const modal = new ConfirmModal(this.app, MESSAGES.CONFIRM_REINDEX(searchName));
-                modal.open();
-                const confirmed = await modal.result;
-                if (!confirmed) return;
-            }
-        } catch {
-            // graceful fallback: proceed with add if check fails
-        }
+        if (!(await this.confirmReindexIfNeeded(name))) return;
 
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", name));
         await this.runAdd([absolutePath]);
