@@ -68,7 +68,7 @@ function makePlugin(): LilbeePlugin {
             pull: vi.fn(),
             delete: vi.fn(),
         },
-        settings: { topK: 5 },
+        settings: { topK: 5, wikiEnabled: false, searchChunkType: "raw" },
         activeModel: "llama3",
         activeVisionModel: "",
         fetchActiveModel: vi.fn(),
@@ -2764,6 +2764,67 @@ describe("ChatView — offline retry", () => {
         await vi.advanceTimersByTimeAsync(5000);
         expect((view as any).retryCount).toBe(0);
 
+        await view.onClose();
+    });
+});
+
+describe("ChatView.renderSearchModeToggle", () => {
+    beforeEach(() => {
+        Notice.clear();
+    });
+
+    it("hides wiki button when wikiEnabled is false", async () => {
+        const plugin = makePlugin();
+        plugin.settings.wikiEnabled = false;
+        plugin.settings.searchChunkType = "raw";
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const toggle = container.find("lilbee-search-mode-toggle");
+        expect(toggle).not.toBeNull();
+        const buttons = toggle!.children.filter(c => c.tagName === "BUTTON");
+        expect(buttons.map(b => b.textContent)).toEqual(["all", "raw"]);
+        await view.onClose();
+    });
+
+    it("shows wiki button when wikiEnabled is true", async () => {
+        const plugin = makePlugin();
+        plugin.settings.wikiEnabled = true;
+        plugin.settings.searchChunkType = "raw";
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const toggle = container.find("lilbee-search-mode-toggle");
+        const buttons = toggle!.children.filter(c => c.tagName === "BUTTON");
+        expect(buttons.map(b => b.textContent)).toEqual(["all", "raw", "wiki"]);
+        await view.onClose();
+    });
+
+    it("falls back to all when wiki disabled and searchChunkType is wiki", async () => {
+        const plugin = makePlugin();
+        plugin.settings.wikiEnabled = false;
+        plugin.settings.searchChunkType = "wiki";
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        expect(plugin.settings.searchChunkType).toBe("all");
+        await view.onClose();
+    });
+
+    it("clicking a button updates searchChunkType", async () => {
+        const plugin = makePlugin();
+        plugin.settings.wikiEnabled = false;
+        plugin.settings.searchChunkType = "raw";
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const toggle = container.find("lilbee-search-mode-toggle")!;
+        const buttons = toggle.children.filter(c => c.tagName === "BUTTON");
+        const allBtn = buttons.find(b => b.textContent === "all")!;
+        allBtn.trigger("click");
+        expect(plugin.settings.searchChunkType).toBe("all");
+        expect(allBtn.classList.contains("is-active")).toBe(true);
+        const rawBtn = buttons.find(b => b.textContent === "raw")!;
+        expect(rawBtn.classList.contains("is-active")).toBe(false);
         await view.onClose();
     });
 });

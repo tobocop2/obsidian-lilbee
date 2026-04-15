@@ -126,6 +126,14 @@ export const NOTICE = {
     ADD_CANCELLED: "lilbee: add cancelled",
 } as const;
 
+export type SearchChunkType = "all" | "raw" | "wiki";
+
+export const SEARCH_CHUNK_TYPE = {
+    ALL: "all",
+    RAW: "raw",
+    WIKI: "wiki",
+} as const satisfies Record<string, SearchChunkType>;
+
 export interface LilbeeSettings {
     serverUrl: string;
     topK: number;
@@ -142,6 +150,8 @@ export interface LilbeeSettings {
     serverPort: number | null;
     lilbeeVersion: string;
     systemPrompt: string;
+    wikiEnabled: boolean;
+    searchChunkType: SearchChunkType;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -160,6 +170,8 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     serverPort: null,
     lilbeeVersion: "",
     systemPrompt: "",
+    wikiEnabled: false,
+    searchChunkType: "raw",
 };
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */

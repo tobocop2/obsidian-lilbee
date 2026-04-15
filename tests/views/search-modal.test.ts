@@ -12,7 +12,7 @@ vi.mock("../../src/views/results", () => ({
 import { SearchModal } from "../../src/views/search-modal";
 import { renderDocumentResult, renderSourceChip } from "../../src/views/results";
 
-function makePlugin(): LilbeePlugin {
+function makePlugin(overrides: Record<string, unknown> = {}): LilbeePlugin {
     return {
         api: {
             search: vi.fn(),
@@ -23,6 +23,9 @@ function makePlugin(): LilbeePlugin {
             topK: 5,
             syncMode: "manual" as const,
             syncDebounceMs: 5000,
+            wikiEnabled: false,
+            searchChunkType: "raw",
+            ...overrides,
         },
     } as unknown as LilbeePlugin;
 }
@@ -223,6 +226,56 @@ describe("SearchModal", () => {
             await vi.runAllTimersAsync();
 
             expect(plugin.api.ask).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("renderSearchModeToggle", () => {
+        it("hides wiki button when wikiEnabled is false", () => {
+            const modal = new SearchModal(app, plugin, "search");
+            modal.open();
+            const toggle = modal.contentEl.find("lilbee-search-mode-toggle");
+            expect(toggle).not.toBeNull();
+            const buttons = toggle!.children.filter(c => c.tagName === "BUTTON");
+            expect(buttons.map(b => b.textContent)).toEqual(["all", "raw"]);
+        });
+
+        it("shows wiki button when wikiEnabled is true", () => {
+            const wikiPlugin = makePlugin({ wikiEnabled: true });
+            const modal = new SearchModal(app, wikiPlugin, "search");
+            modal.open();
+            const toggle = modal.contentEl.find("lilbee-search-mode-toggle");
+            const buttons = toggle!.children.filter(c => c.tagName === "BUTTON");
+            expect(buttons.map(b => b.textContent)).toEqual(["all", "raw", "wiki"]);
+        });
+
+        it("falls back to all when wiki disabled and searchChunkType is wiki", () => {
+            const wikiPlugin = makePlugin({ wikiEnabled: false, searchChunkType: "wiki" });
+            const modal = new SearchModal(app, wikiPlugin, "search");
+            modal.open();
+            expect(wikiPlugin.settings.searchChunkType).toBe("all");
+        });
+
+        it("marks active button with is-active class", () => {
+            const modal = new SearchModal(app, plugin, "search");
+            modal.open();
+            const toggle = modal.contentEl.find("lilbee-search-mode-toggle");
+            const buttons = toggle!.children.filter(c => c.tagName === "BUTTON");
+            const active = buttons.filter(b => b.classList.contains("is-active"));
+            expect(active).toHaveLength(1);
+            expect(active[0].textContent).toBe("raw");
+        });
+
+        it("clicking a button updates searchChunkType and active class", () => {
+            const modal = new SearchModal(app, plugin, "search");
+            modal.open();
+            const toggle = modal.contentEl.find("lilbee-search-mode-toggle");
+            const buttons = toggle!.children.filter(c => c.tagName === "BUTTON");
+            const allBtn = buttons.find(b => b.textContent === "all")!;
+            allBtn.trigger("click");
+            expect(plugin.settings.searchChunkType).toBe("all");
+            expect(allBtn.classList.contains("is-active")).toBe(true);
+            const rawBtn = buttons.find(b => b.textContent === "raw")!;
+            expect(rawBtn.classList.contains("is-active")).toBe(false);
         });
     });
 

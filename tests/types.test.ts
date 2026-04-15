@@ -1,5 +1,5 @@
 import { vi, describe, it, expect } from "vitest";
-import { DEFAULT_SETTINGS, SSE_EVENT, JSON_HEADERS, SERVER_MODE } from "../src/types";
+import { DEFAULT_SETTINGS, SSE_EVENT, JSON_HEADERS, SERVER_MODE, SEARCH_CHUNK_TYPE } from "../src/types";
 import type {
     Excerpt,
     DocumentResult,
@@ -14,6 +14,7 @@ import type {
     Message,
     LilbeeSettings,
     GenerationOptions,
+    SearchChunkType,
 } from "../src/types";
 
 describe("DEFAULT_SETTINGS", () => {
@@ -33,9 +34,17 @@ describe("DEFAULT_SETTINGS", () => {
         expect(DEFAULT_SETTINGS.syncDebounceMs).toBe(5000);
     });
 
+    it("has wikiEnabled set to false", () => {
+        expect(DEFAULT_SETTINGS.wikiEnabled).toBe(false);
+    });
+
+    it("has searchChunkType set to raw", () => {
+        expect(DEFAULT_SETTINGS.searchChunkType).toBe("raw");
+    });
+
     it("is a plain object with exactly the expected keys", () => {
         const keys = Object.keys(DEFAULT_SETTINGS).sort();
-        expect(keys).toEqual(["lilbeeVersion", "num_ctx", "ollamaUrl", "repeat_penalty", "seed", "serverMode", "serverPort", "serverUrl", "syncDebounceMs", "syncMode", "systemPrompt", "temperature", "topK", "top_k_sampling", "top_p"].sort());
+        expect(keys).toEqual(["lilbeeVersion", "num_ctx", "ollamaUrl", "repeat_penalty", "searchChunkType", "seed", "serverMode", "serverPort", "serverUrl", "syncDebounceMs", "syncMode", "systemPrompt", "temperature", "topK", "top_k_sampling", "top_p", "wikiEnabled"].sort());
     });
 });
 
@@ -229,6 +238,8 @@ describe("LilbeeSettings interface", () => {
             num_ctx: null,
             seed: null,
             systemPrompt: "",
+            wikiEnabled: false,
+            searchChunkType: "raw",
         };
         expect(s.syncMode).toBe("manual");
     });
@@ -247,8 +258,17 @@ describe("LilbeeSettings interface", () => {
             num_ctx: null,
             seed: null,
             systemPrompt: "",
+            wikiEnabled: true,
+            searchChunkType: "wiki",
         };
         expect(s.syncMode).toBe("auto");
+    });
+});
+
+describe("SearchChunkType type", () => {
+    it("accepts all valid values", () => {
+        const values: SearchChunkType[] = ["all", "raw", "wiki"];
+        expect(values).toHaveLength(3);
     });
 });
 
@@ -271,6 +291,14 @@ describe("SERVER_MODE constants", () => {
     it("has MANAGED and EXTERNAL values", () => {
         expect(SERVER_MODE.MANAGED).toBe("managed");
         expect(SERVER_MODE.EXTERNAL).toBe("external");
+    });
+});
+
+describe("SEARCH_CHUNK_TYPE constants", () => {
+    it("has ALL, RAW, and WIKI values", () => {
+        expect(SEARCH_CHUNK_TYPE.ALL).toBe("all");
+        expect(SEARCH_CHUNK_TYPE.RAW).toBe("raw");
+        expect(SEARCH_CHUNK_TYPE.WIKI).toBe("wiki");
     });
 });
 

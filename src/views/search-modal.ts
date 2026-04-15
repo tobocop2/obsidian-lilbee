@@ -1,6 +1,7 @@
 import { App, Modal } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { DocumentResult } from "../types";
+import type { DocumentResult, SearchChunkType } from "../types";
+import { SEARCH_CHUNK_TYPE } from "../types";
 import { renderDocumentResult, renderSourceChip } from "./results";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -31,6 +32,7 @@ export class SearchModal extends Modal {
             placeholder: this.mode === "search" ? "Type to search..." : "Ask anything...",
         });
 
+        this.renderSearchModeToggle(contentEl);
         this.resultsContainer = contentEl.createDiv({ cls: "lilbee-modal-results" });
         this.renderEmptyState("Enter a query to begin.");
 
@@ -72,6 +74,33 @@ export class SearchModal extends Modal {
         if (!this.resultsContainer) return;
         this.resultsContainer.empty();
         this.resultsContainer.createDiv({ cls: "lilbee-loading" });
+    }
+
+    private renderSearchModeToggle(container: HTMLElement): void {
+        if (!this.plugin.settings.wikiEnabled
+            && this.plugin.settings.searchChunkType === SEARCH_CHUNK_TYPE.WIKI) {
+            this.plugin.settings.searchChunkType = SEARCH_CHUNK_TYPE.ALL;
+        }
+        const group = container.createDiv({ cls: "lilbee-search-mode-toggle" });
+        const modes: SearchChunkType[] = this.plugin.settings.wikiEnabled
+            ? [SEARCH_CHUNK_TYPE.ALL, SEARCH_CHUNK_TYPE.RAW, SEARCH_CHUNK_TYPE.WIKI]
+            : [SEARCH_CHUNK_TYPE.ALL, SEARCH_CHUNK_TYPE.RAW];
+        const buttons: HTMLElement[] = [];
+        for (const mode of modes) {
+            const btn = group.createEl("button", {
+                text: mode,
+                cls: "lilbee-search-mode-btn",
+            });
+            if (mode === this.plugin.settings.searchChunkType) {
+                btn.addClass("is-active");
+            }
+            btn.addEventListener("click", () => {
+                this.plugin.settings.searchChunkType = mode;
+                for (const b of buttons) b.removeClass("is-active");
+                btn.addClass("is-active");
+            });
+            buttons.push(btn);
+        }
     }
 
     private async runSearch(query: string): Promise<void> {

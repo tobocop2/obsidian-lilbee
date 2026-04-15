@@ -1,7 +1,7 @@
 import { FuzzySuggestModal, ItemView, MarkdownRenderer, Menu, Notice, setIcon, type TFile, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
-import { MODEL_TYPE, NOTICE, SSE_EVENT } from "../types";
-import type { GenerationOptions, Message, ModelCatalog, ModelType, OllamaPullProgress, Source, SSEEvent } from "../types";
+import { MODEL_TYPE, NOTICE, SEARCH_CHUNK_TYPE, SSE_EVENT } from "../types";
+import type { GenerationOptions, Message, ModelCatalog, ModelType, OllamaPullProgress, SearchChunkType, Source, SSEEvent } from "../types";
 import { PullQueue } from "../pull-queue";
 import { renderSourceChip } from "./results";
 import { buildModelOptions, SEPARATOR_KEY } from "../settings";
@@ -159,6 +159,8 @@ export class ChatView extends ItemView {
 
         this.fetchAndFillSelectors();
 
+        this.renderSearchModeToggle(toolbar);
+
         toolbar.createDiv({ cls: "lilbee-toolbar-spacer" });
 
         const saveBtn = toolbar.createEl("button", { cls: "lilbee-chat-save" });
@@ -171,6 +173,33 @@ export class ChatView extends ItemView {
             cls: "lilbee-chat-clear",
         });
         clearBtn.addEventListener("click", () => this.clearChat());
+    }
+
+    private renderSearchModeToggle(container: HTMLElement): void {
+        if (!this.plugin.settings.wikiEnabled
+            && this.plugin.settings.searchChunkType === SEARCH_CHUNK_TYPE.WIKI) {
+            this.plugin.settings.searchChunkType = SEARCH_CHUNK_TYPE.ALL;
+        }
+        const group = container.createDiv({ cls: "lilbee-search-mode-toggle" });
+        const modes: SearchChunkType[] = this.plugin.settings.wikiEnabled
+            ? [SEARCH_CHUNK_TYPE.ALL, SEARCH_CHUNK_TYPE.RAW, SEARCH_CHUNK_TYPE.WIKI]
+            : [SEARCH_CHUNK_TYPE.ALL, SEARCH_CHUNK_TYPE.RAW];
+        const buttons: HTMLElement[] = [];
+        for (const mode of modes) {
+            const btn = group.createEl("button", {
+                text: mode,
+                cls: "lilbee-search-mode-btn",
+            });
+            if (mode === this.plugin.settings.searchChunkType) {
+                btn.addClass("is-active");
+            }
+            btn.addEventListener("click", () => {
+                this.plugin.settings.searchChunkType = mode;
+                for (const b of buttons) b.removeClass("is-active");
+                btn.addClass("is-active");
+            });
+            buttons.push(btn);
+        }
     }
 
     private createBanner(
