@@ -62,7 +62,7 @@ describe("pageVaultPath", () => {
 });
 
 describe("buildFileContent", () => {
-    it("prepends managed marker and uses server content as-is", () => {
+    it("injects managed marker into existing frontmatter", () => {
         const detail = makeDetail({
             content: "---\ngenerated_by: qwen3\n---\nBody text",
         });
@@ -71,8 +71,18 @@ describe("buildFileContent", () => {
         expect(result).toContain(MANAGED_MARKER);
         expect(result).toContain("Body text");
         expect(result).toContain("generated_by: qwen3");
-        // Marker is an HTML comment on the first line
-        expect(result.startsWith(`<!-- ${MANAGED_MARKER} -->`)).toBe(true);
+        // Frontmatter must start on the first line for Obsidian to parse it
+        expect(result.startsWith("---\n")).toBe(true);
+        expect(result).toBe(`---\n${MANAGED_MARKER}: true\ngenerated_by: qwen3\n---\nBody text`);
+    });
+
+    it("wraps content with frontmatter when none exists", () => {
+        const detail = makeDetail({ content: "Just body text" });
+        const result = buildFileContent(detail);
+
+        expect(result).toContain(MANAGED_MARKER);
+        expect(result.startsWith("---\n")).toBe(true);
+        expect(result).toBe(`---\n${MANAGED_MARKER}: true\n---\n\nJust body text`);
     });
 });
 
@@ -283,10 +293,7 @@ describe("writePage", () => {
 
         await sync.writePage("concepts/concept-x");
 
-        expect(mockVault.write).toHaveBeenCalledWith(
-            "wiki/concepts/concept-x.md",
-            expect.stringContaining(detail.content),
-        );
+        expect(mockVault.write).toHaveBeenCalledWith("wiki/concepts/concept-x.md", expect.stringContaining("# Hello"));
     });
 
     it("creates folders if they don't exist", async () => {

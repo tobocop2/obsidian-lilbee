@@ -2,7 +2,7 @@ import type { DataAdapter } from "obsidian";
 import type { WikiPage, WikiPageDetail } from "./types";
 import type { LilbeeClient } from "./api";
 
-const MANAGED_MARKER = "lilbee_managed: true";
+const MANAGED_MARKER = "lilbee_managed";
 
 function pageVaultPath(folder: string, page: WikiPage): string {
     // The slug already includes the subdir (e.g. "summaries/lilbee for Obsidian")
@@ -10,10 +10,15 @@ function pageVaultPath(folder: string, page: WikiPage): string {
 }
 
 function buildFileContent(page: WikiPageDetail): string {
-    // The server's content already includes frontmatter (generated_by, sources, etc.).
-    // We prepend only the managed marker so the plugin can identify synced files.
-    const marker = `<!-- ${MANAGED_MARKER} -->\n`;
-    return `${marker}${page.content}`;
+    // The server's content already includes YAML frontmatter (generated_by, sources, etc.).
+    // Inject the managed marker into the frontmatter so Obsidian parses it correctly.
+    // Obsidian requires `---` as the very first line to recognize frontmatter.
+    const content = page.content;
+    if (content.startsWith("---\n")) {
+        return content.replace("---\n", `---\n${MANAGED_MARKER}: true\n`);
+    }
+    // No frontmatter — wrap content with frontmatter containing only the marker
+    return `---\n${MANAGED_MARKER}: true\n---\n\n${content}`;
 }
 
 function isManagedFile(content: string): boolean {
