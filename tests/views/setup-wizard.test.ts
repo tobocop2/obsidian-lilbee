@@ -50,6 +50,8 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
             serverMode: "managed",
             setupCompleted: false,
             syncMode: "manual",
+            wikiEnabled: false,
+            enableOcr: null,
             ...((overrides.settings as Record<string, unknown>) || {}),
         },
         api: {
@@ -102,7 +104,7 @@ describe("SetupWizard", () => {
     });
 
     describe("Step indicator", () => {
-        it("renders 4 dots and 3 lines on welcome step", () => {
+        it("renders 5 dots and 4 lines on welcome step", () => {
             const plugin = makePlugin();
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -112,8 +114,8 @@ describe("SetupWizard", () => {
             expect(indicator).not.toBeNull();
             const dots = indicator!.findAll("lilbee-wizard-step-dot");
             const lines = indicator!.findAll("lilbee-wizard-step-line");
-            expect(dots.length).toBe(4);
-            expect(lines.length).toBe(3);
+            expect(dots.length).toBe(5);
+            expect(lines.length).toBe(4);
         });
 
         it("marks current step dot as is-active on welcome (step 0)", () => {
@@ -146,16 +148,19 @@ describe("SetupWizard", () => {
             expect(dots[2].classList.contains("is-active")).toBe(true);
             expect(dots[3].classList.contains("is-active")).toBe(false);
             expect(dots[3].classList.contains("is-done")).toBe(false);
+            expect(dots[4].classList.contains("is-active")).toBe(false);
+            expect(dots[4].classList.contains("is-done")).toBe(false);
             expect(lines[0].classList.contains("is-done")).toBe(true);
             expect(lines[1].classList.contains("is-done")).toBe(true);
             expect(lines[2].classList.contains("is-done")).toBe(false);
+            expect(lines[3].classList.contains("is-done")).toBe(false);
         });
 
-        it("marks all dots as is-done on done step (step 4)", () => {
+        it("marks all dots as is-done on done step (step 5)", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -182,6 +187,7 @@ describe("SetupWizard", () => {
             expect(lines[0].classList.contains("is-done")).toBe(true);
             expect(lines[1].classList.contains("is-done")).toBe(false);
             expect(lines[2].classList.contains("is-done")).toBe(false);
+            expect(lines[3].classList.contains("is-done")).toBe(false);
         });
     });
 
@@ -726,12 +732,12 @@ describe("SetupWizard", () => {
 
             expect(plugin.api.pullModel).toHaveBeenCalledWith("qwen/qwen3-0.6B", "native", expect.any(AbortSignal));
             expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen/qwen3-0.6B");
-            // After pull completes, it goes to step 3 (sync), which auto-starts and finishes, going to step 4 (done)
+            // After pull completes, it goes to step 3 (sync), which auto-starts and finishes, going to step 4 (wiki)
             await tick();
             await tick();
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            // Could be on sync step or done step depending on timing
-            expect(texts.some((t) => t.includes("Index your vault") || t.includes("You're all set!"))).toBe(true);
+            // Could be on sync step or wiki step depending on timing
+            expect(texts.some((t) => t.includes("Index your vault") || t.includes("Wiki Knowledge Base"))).toBe(true);
         });
 
         it("handles pull failure", async () => {
@@ -979,9 +985,9 @@ describe("SetupWizard", () => {
             await tick();
             await tick();
 
-            // Should have advanced to done
+            // Should have advanced to wiki step
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            expect(texts.some((t) => t.includes("You're all set!"))).toBe(true);
+            expect(texts.some((t) => t.includes("Wiki Knowledge Base"))).toBe(true);
         });
 
         it("sync abort shows notice", async () => {
@@ -1122,7 +1128,211 @@ describe("SetupWizard", () => {
         });
     });
 
-    describe("Step 4: Done", () => {
+    describe("Step 4: Wiki", () => {
+        it("renders wiki step with title, description, pros and cons", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const texts = collectTexts(el);
+            expect(texts.some((t) => t.includes("Wiki Knowledge Base"))).toBe(true);
+            expect(texts.some((t) => t.includes("synthesized pages"))).toBe(true);
+            expect(texts.some((t) => t.includes("What it adds"))).toBe(true);
+            expect(texts.some((t) => t.includes("Trade-offs"))).toBe(true);
+            expect(texts.some((t) => t.includes("Summarized, structured overviews"))).toBe(true);
+            expect(texts.some((t) => t.includes("cross-references"))).toBe(true);
+            expect(texts.some((t) => t.includes("LLM processing time"))).toBe(true);
+            expect(texts.some((t) => t.includes("inaccurate synthesis"))).toBe(true);
+        });
+
+        it("renders enable and disable option cards", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const options = el.findAll("lilbee-wizard-model-option");
+            expect(options.length).toBe(2);
+            const texts = collectTexts(el);
+            expect(texts.some((t) => t.includes("Enable wiki"))).toBe(true);
+            expect(texts.some((t) => t.includes("Keep disabled"))).toBe(true);
+        });
+
+        it("defaults to disabled (matching wikiEnabled=false)", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", wikiEnabled: false } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const options = el.findAll("lilbee-wizard-model-option");
+            // Disable option (second) should be selected
+            expect(options[1].classList.contains("selected")).toBe(true);
+            expect(options[0].classList.contains("selected")).toBe(false);
+        });
+
+        it("pre-selects enable when wikiEnabled is true", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", wikiEnabled: true } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const options = el.findAll("lilbee-wizard-model-option");
+            // Enable option (first) should be selected
+            expect(options[0].classList.contains("selected")).toBe(true);
+            expect(options[1].classList.contains("selected")).toBe(false);
+        });
+
+        it("clicking enable selects it and deselects disable", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const options = el.findAll("lilbee-wizard-model-option");
+            options[0].trigger("click");
+            expect(options[0].classList.contains("selected")).toBe(true);
+            expect(options[1].classList.contains("selected")).toBe(false);
+        });
+
+        it("clicking disable selects it and deselects enable", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external", wikiEnabled: true } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const options = el.findAll("lilbee-wizard-model-option");
+            options[1].trigger("click");
+            expect(options[1].classList.contains("selected")).toBe(true);
+            expect(options[0].classList.contains("selected")).toBe(false);
+        });
+
+        it("Next saves wikiEnabled=true to settings when enabled", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            // Click enable
+            const options = el.findAll("lilbee-wizard-model-option");
+            options[0].trigger("click");
+
+            const nextBtn = findButtons(el).find((b) => b.textContent === "Next")!;
+            nextBtn.trigger("click");
+            await tick();
+
+            expect(plugin.settings.wikiEnabled).toBe(true);
+            expect(plugin.saveSettings).toHaveBeenCalled();
+            // Should advance to done
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("You're all set!"))).toBe(true);
+        });
+
+        it("Next saves wikiEnabled=false to settings when disabled", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const nextBtn = findButtons(el).find((b) => b.textContent === "Next")!;
+            nextBtn.trigger("click");
+            await tick();
+
+            expect(plugin.settings.wikiEnabled).toBe(false);
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+
+        it("Back returns to sync step", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const backBtn = findButtons(el).find((b) => b.textContent === "Back")!;
+            backBtn.trigger("click");
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
+        });
+
+        it("Skip setup closes the wizard", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            const closeSpy = vi.spyOn(wizard, "close");
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const skipBtn = findButtons(el).find((b) => b.textContent === "Skip setup")!;
+            skipBtn.trigger("click");
+            expect(closeSpy).toHaveBeenCalled();
+        });
+
+        it("renders step indicator on wiki step", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const indicator = el.find("lilbee-wizard-step-indicator");
+            expect(indicator).not.toBeNull();
+            const dots = indicator!.findAll("lilbee-wizard-step-dot");
+            expect(dots.length).toBe(5);
+        });
+
+        it("renders pros list items", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const texts = collectTexts(el);
+            expect(texts.some((t) => t.includes("coherent answers"))).toBe(true);
+        });
+
+        it("renders cons list items", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const texts = collectTexts(el);
+            expect(texts.some((t) => t.includes("prioritize wiki chunks"))).toBe(true);
+            expect(texts.some((t) => t.includes("Adds complexity"))).toBe(true);
+        });
+    });
+
+    describe("Step 5: Done", () => {
         it("renders done screen with summary", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
@@ -1135,7 +1345,7 @@ describe("SetupWizard", () => {
                 unchanged: 8,
                 failed: [],
             };
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1150,7 +1360,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1163,7 +1373,7 @@ describe("SetupWizard", () => {
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             const closeSpy = vi.spyOn(wizard, "close");
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1181,7 +1391,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1194,7 +1404,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1208,7 +1418,7 @@ describe("SetupWizard", () => {
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).pulledModelName = "test-model";
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1220,7 +1430,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1282,20 +1492,15 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(true);
         });
 
-        it("back() at step 4 goes to step 3", () => {
+        it("back() at step 5 goes to step 4 (wiki)", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.syncStream = vi.fn().mockReturnValue(
-                (async function* () {
-                    await new Promise(() => {});
-                })(),
-            );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             wizard.back();
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
+            expect(texts.some((t) => t.includes("Wiki Knowledge Base"))).toBe(true);
         });
     });
 
@@ -1370,7 +1575,7 @@ describe("SetupWizard", () => {
     });
 
     describe("Full flow integration", () => {
-        it("complete flow: welcome -> model -> sync -> done", async () => {
+        it("complete flow: welcome -> model -> sync -> wiki -> done", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
@@ -1408,11 +1613,19 @@ describe("SetupWizard", () => {
             await tick();
             await tick();
 
-            // Step 3: Sync (auto-starts, should auto-advance)
+            // Step 3: Sync (auto-starts, should auto-advance to wiki)
             await tick();
             await tick();
 
-            // Step 4: Done -> Open chat
+            // Step 4: Wiki -> Next (keep disabled)
+            el = wizard.contentEl as unknown as MockElement;
+            expect(collectTexts(el).some((t) => t.includes("Wiki Knowledge Base"))).toBe(true);
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+            await tick();
+
+            // Step 5: Done -> Open chat
             el = wizard.contentEl as unknown as MockElement;
             expect(collectTexts(el).some((t) => t.includes("You're all set!"))).toBe(true);
 
@@ -1480,7 +1693,7 @@ describe("SetupWizard", () => {
             await tick();
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            expect(texts.some((t) => t.includes("You're all set!"))).toBe(true);
+            expect(texts.some((t) => t.includes("Wiki Knowledge Base"))).toBe(true);
         });
     });
 
@@ -1535,9 +1748,9 @@ describe("SetupWizard", () => {
             await tick();
             await tick();
 
-            // Should reach done
+            // Should reach wiki step
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            expect(texts.some((t) => t.includes("You're all set!"))).toBe(true);
+            expect(texts.some((t) => t.includes("Wiki Knowledge Base"))).toBe(true);
         });
     });
 
@@ -1554,7 +1767,7 @@ describe("SetupWizard", () => {
                 unchanged: 6,
                 failed: [],
             };
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1574,7 +1787,7 @@ describe("SetupWizard", () => {
                 unchanged: 10,
                 failed: [],
             };
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;

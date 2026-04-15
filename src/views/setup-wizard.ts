@@ -75,6 +75,9 @@ export class SetupWizard extends Modal {
             case WIZARD_STEP.SYNC:
                 this.renderSync();
                 break;
+            case WIZARD_STEP.WIKI:
+                this.renderWiki();
+                break;
             case WIZARD_STEP.DONE:
                 this.renderDone();
                 break;
@@ -83,7 +86,7 @@ export class SetupWizard extends Modal {
 
     private renderStepIndicator(container: HTMLElement): void {
         const indicator = container.createDiv({ cls: "lilbee-wizard-step-indicator" });
-        const STEP_COUNT = 4;
+        const STEP_COUNT = 5;
         for (let i = 0; i < STEP_COUNT; i++) {
             if (i > 0) {
                 const line = indicator.createDiv({ cls: "lilbee-wizard-step-line" });
@@ -452,7 +455,7 @@ export class SetupWizard extends Modal {
             }
             progressFill.style.width = "100%";
             progressLabel.textContent = MESSAGES.STATUS_DONE;
-            this.step = WIZARD_STEP.DONE;
+            this.step = WIZARD_STEP.WIKI;
             this.renderStep();
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
@@ -463,6 +466,69 @@ export class SetupWizard extends Modal {
         } finally {
             this.syncController = null;
         }
+    }
+
+    private renderWiki(): void {
+        const { contentEl } = this;
+        const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
+        this.renderStepIndicator(step);
+
+        step.createEl("h2", { text: MESSAGES.WIZARD_WIKI_TITLE });
+        step.createEl("p", { text: MESSAGES.WIZARD_WIKI_DESC });
+
+        const prosSection = step.createDiv({ cls: "lilbee-wizard-wiki-section" });
+        prosSection.createEl("h3", { text: MESSAGES.WIZARD_WIKI_PROS_HEADING });
+        const prosList = prosSection.createEl("ul");
+        prosList.createEl("li", { text: MESSAGES.WIZARD_WIKI_PRO_SUMMARIES });
+        prosList.createEl("li", { text: MESSAGES.WIZARD_WIKI_PRO_CROSSREFS });
+        prosList.createEl("li", { text: MESSAGES.WIZARD_WIKI_PRO_ANSWERS });
+
+        const consSection = step.createDiv({ cls: "lilbee-wizard-wiki-section" });
+        consSection.createEl("h3", { text: MESSAGES.WIZARD_WIKI_CONS_HEADING });
+        const consList = consSection.createEl("ul");
+        consList.createEl("li", { text: MESSAGES.WIZARD_WIKI_CON_TOKENS });
+        consList.createEl("li", { text: MESSAGES.WIZARD_WIKI_CON_ACCURACY });
+        consList.createEl("li", { text: MESSAGES.WIZARD_WIKI_CON_SEARCH });
+        consList.createEl("li", { text: MESSAGES.WIZARD_WIKI_CON_COMPLEXITY });
+
+        let wikiEnabled = this.plugin.settings.wikiEnabled ?? false;
+
+        const enableOption = step.createDiv({
+            cls: `lilbee-wizard-model-option${wikiEnabled ? " selected" : ""}`,
+        });
+        enableOption.createEl("strong", { text: MESSAGES.WIZARD_WIKI_ENABLE });
+        enableOption.createEl("p", { text: MESSAGES.WIZARD_WIKI_ENABLE_DESC });
+
+        const disableOption = step.createDiv({
+            cls: `lilbee-wizard-model-option${!wikiEnabled ? " selected" : ""}`,
+        });
+        disableOption.createEl("strong", { text: MESSAGES.WIZARD_WIKI_DISABLE });
+        disableOption.createEl("p", { text: MESSAGES.WIZARD_WIKI_DISABLE_DESC });
+
+        enableOption.addEventListener("click", () => {
+            wikiEnabled = true;
+            enableOption.classList.add("selected");
+            disableOption.classList.remove("selected");
+        });
+
+        disableOption.addEventListener("click", () => {
+            wikiEnabled = false;
+            disableOption.classList.add("selected");
+            enableOption.classList.remove("selected");
+        });
+
+        const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
+        const backBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BACK });
+        backBtn.addEventListener("click", () => this.back());
+        const skipBtn = actions.createEl("button", { text: MESSAGES.BUTTON_SKIP_SETUP });
+        skipBtn.addEventListener("click", () => this.skip());
+
+        const nextBtn = actions.createEl("button", { text: MESSAGES.BUTTON_NEXT, cls: "mod-cta" });
+        nextBtn.addEventListener("click", () => {
+            this.plugin.settings.wikiEnabled = wikiEnabled;
+            void this.plugin.saveSettings();
+            this.next();
+        });
     }
 
     private renderDone(): void {
