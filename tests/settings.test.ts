@@ -338,6 +338,42 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
+    describe("wiki toggle", () => {
+        it("renders a toggle for wikiEnabled", () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            expect(toggleOnChanges.length).toBeGreaterThanOrEqual(1);
+        });
+
+        it("toggles wikiEnabled on, saves, and re-renders", async () => {
+            const plugin = makePlugin({ wikiEnabled: false });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
+
+            await toggleOnChanges[0](true);
+            expect(plugin.settings.wikiEnabled).toBe(true);
+            expect(plugin.saveSettings).toHaveBeenCalled();
+            expect(displaySpy).toHaveBeenCalled();
+        });
+
+        it("toggles wikiEnabled off, saves, and re-renders", async () => {
+            const plugin = makePlugin({ wikiEnabled: true });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
+
+            await toggleOnChanges[0](false);
+            expect(plugin.settings.wikiEnabled).toBe(false);
+            expect(plugin.saveSettings).toHaveBeenCalled();
+            expect(displaySpy).toHaveBeenCalled();
+        });
+    });
+
     describe("ollamaUrl setting onChange", () => {
         it("updates ollamaUrl and calls saveSettings", async () => {
             const plugin = makePlugin();

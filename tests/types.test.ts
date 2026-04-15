@@ -33,9 +33,13 @@ describe("DEFAULT_SETTINGS", () => {
         expect(DEFAULT_SETTINGS.syncDebounceMs).toBe(5000);
     });
 
+    it("has wikiEnabled defaulting to false", () => {
+        expect(DEFAULT_SETTINGS.wikiEnabled).toBe(false);
+    });
+
     it("is a plain object with exactly the expected keys", () => {
         const keys = Object.keys(DEFAULT_SETTINGS).sort();
-        expect(keys).toEqual(["lilbeeVersion", "num_ctx", "ollamaUrl", "repeat_penalty", "seed", "serverMode", "serverPort", "serverUrl", "syncDebounceMs", "syncMode", "systemPrompt", "temperature", "topK", "top_k_sampling", "top_p"].sort());
+        expect(keys).toEqual(["lilbeeVersion", "num_ctx", "ollamaUrl", "repeat_penalty", "seed", "serverMode", "serverPort", "serverUrl", "syncDebounceMs", "syncMode", "systemPrompt", "temperature", "topK", "top_k_sampling", "top_p", "wikiEnabled"].sort());
     });
 });
 

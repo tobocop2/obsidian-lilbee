@@ -142,6 +142,7 @@ export interface LilbeeSettings {
     serverPort: number | null;
     lilbeeVersion: string;
     systemPrompt: string;
+    wikiEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -160,6 +161,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     serverPort: null,
     lilbeeVersion: "",
     systemPrompt: "",
+    wikiEnabled: false,
 };
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */

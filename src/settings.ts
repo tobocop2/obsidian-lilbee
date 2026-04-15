@@ -87,6 +87,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderModelsSection(containerEl);
         this.renderGeneralSettings(containerEl);
         this.renderSyncSettings(containerEl);
+        this.renderWikiSettings(containerEl);
         this.renderGenerationSettings(containerEl);
         this.loadModelDefaults();
     }
@@ -424,6 +425,24 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         }),
                 );
         }
+    }
+
+    private renderWikiSettings(containerEl: HTMLElement): void {
+        const details = containerEl.createEl("details", { cls: "lilbee-wiki-details" });
+        details.createEl("summary", { text: "Wiki" });
+
+        new Setting(details)
+            .setName("Wiki enabled")
+            .setDesc("Show wiki search mode and use wiki-enhanced results. Disable to search raw document chunks only.")
+            .addToggle((toggle) =>
+                toggle
+                    .setValue(this.plugin.settings.wikiEnabled)
+                    .onChange(async (value) => {
+                        this.plugin.settings.wikiEnabled = value;
+                        await this.plugin.saveSettings();
+                        this.display();
+                    }),
+            );
     }
 
     async checkEndpoint(url: string, statusEl: HTMLSpanElement): Promise<void> {
