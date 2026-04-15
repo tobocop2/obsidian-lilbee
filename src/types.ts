@@ -38,6 +38,7 @@ export interface ModelInfo {
     min_ram_gb: number;
     description: string;
     installed: boolean;
+    source?: string;
 }
 
 export interface ModelCatalog {

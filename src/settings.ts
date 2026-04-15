@@ -32,7 +32,8 @@ export function buildModelOptions(catalog: ModelCatalog): Record<string, string>
     const catalogNames = new Set(catalog.catalog.map((m) => m.name));
     for (const model of catalog.catalog) {
         const suffix = model.installed ? "" : MESSAGES.LABEL_NOT_INSTALLED;
-        options[model.name] = `${model.name}${suffix}`;
+        const sourceTag = model.source ? ` [${model.source}]` : "";
+        options[model.name] = `${model.name}${sourceTag}${suffix}`;
     }
 
     const otherInstalled = deduplicateLatest(catalog.installed.filter((name) => !catalogNames.has(name))).sort();
