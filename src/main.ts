@@ -315,6 +315,9 @@ export default class LilbeePlugin extends Plugin {
      * itself does (LILBEE_DATA env > .lilbee walk-up > platform default).
      */
     private readCurrentToken(): string | null {
+        if (this.settings.manualToken) {
+            return this.settings.manualToken;
+        }
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
             return this.serverManager ? readSessionToken(this.serverManager.dataDir) : null;
         }
@@ -553,10 +556,7 @@ export default class LilbeePlugin extends Plugin {
         try {
             const status = await this.api.status();
             if (status.isOk()) {
-                if (status.value.wiki != null) {
-                    const serverWikiEnabled = !!status.value.wiki.enabled;
-                    this.wikiEnabled = this.settings.wikiEnabled ? serverWikiEnabled : false;
-                }
+                this.wikiEnabled = this.settings.wikiEnabled;
                 this.wikiPageCount = status.value.wiki?.page_count ?? 0;
                 this.wikiDraftCount = status.value.wiki?.draft_count ?? 0;
             }

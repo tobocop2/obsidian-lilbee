@@ -63,6 +63,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
             listModels: vi.fn().mockResolvedValue({
                 chat: { active: "", catalog: [], installed: [] },
             }),
+            setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
         },
         activeModel: "",
         fetchActiveModel: vi.fn(),
@@ -114,8 +115,8 @@ describe("SetupWizard", () => {
             expect(indicator).not.toBeNull();
             const dots = indicator!.findAll("lilbee-wizard-step-dot");
             const lines = indicator!.findAll("lilbee-wizard-step-line");
-            expect(dots.length).toBe(5);
-            expect(lines.length).toBe(4);
+            expect(dots.length).toBe(6);
+            expect(lines.length).toBe(5);
         });
 
         it("marks current step dot as is-active on welcome (step 0)", () => {
@@ -150,17 +151,20 @@ describe("SetupWizard", () => {
             expect(dots[3].classList.contains("is-done")).toBe(false);
             expect(dots[4].classList.contains("is-active")).toBe(false);
             expect(dots[4].classList.contains("is-done")).toBe(false);
+            expect(dots[5].classList.contains("is-active")).toBe(false);
+            expect(dots[5].classList.contains("is-done")).toBe(false);
             expect(lines[0].classList.contains("is-done")).toBe(true);
             expect(lines[1].classList.contains("is-done")).toBe(true);
             expect(lines[2].classList.contains("is-done")).toBe(false);
             expect(lines[3].classList.contains("is-done")).toBe(false);
+            expect(lines[4].classList.contains("is-done")).toBe(false);
         });
 
-        it("marks all dots as is-done on done step (step 5)", () => {
+        it("marks all dots as is-done on done step (step 6)", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -188,6 +192,7 @@ describe("SetupWizard", () => {
             expect(lines[1].classList.contains("is-done")).toBe(false);
             expect(lines[2].classList.contains("is-done")).toBe(false);
             expect(lines[3].classList.contains("is-done")).toBe(false);
+            expect(lines[4].classList.contains("is-done")).toBe(false);
         });
     });
 
@@ -732,12 +737,18 @@ describe("SetupWizard", () => {
 
             expect(plugin.api.pullModel).toHaveBeenCalledWith("qwen/qwen3-0.6B", "native", expect.any(AbortSignal));
             expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen/qwen3-0.6B");
-            // After pull completes, it goes to step 3 (sync), which auto-starts and finishes, going to step 4 (wiki)
+            // After pull completes, it goes to step 3 (embedding picker)
             await tick();
             await tick();
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            // Could be on sync step or wiki step depending on timing
-            expect(texts.some((t) => t.includes("Index your vault") || t.includes("Wiki Knowledge Base"))).toBe(true);
+            expect(
+                texts.some(
+                    (t) =>
+                        t.includes("Pick an embedding model") ||
+                        t.includes("Index your vault") ||
+                        t.includes("Wiki Knowledge Base"),
+                ),
+            ).toBe(true);
         });
 
         it("handles pull failure", async () => {
@@ -980,7 +991,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 3;
+            (wizard as any).step = 4;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1001,7 +1012,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 3;
+            (wizard as any).step = 4;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1018,7 +1029,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 3;
+            (wizard as any).step = 4;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1036,7 +1047,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 3;
+            (wizard as any).step = 4;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1054,7 +1065,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 3;
+            (wizard as any).step = 4;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1072,7 +1083,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 3;
+            (wizard as any).step = 4;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1093,7 +1104,7 @@ describe("SetupWizard", () => {
             });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 3;
+            (wizard as any).step = 4;
             (wizard as any).renderStep();
             await tick();
 
@@ -1117,7 +1128,7 @@ describe("SetupWizard", () => {
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             const closeSpy = vi.spyOn(wizard, "close");
             wizard.open();
-            (wizard as any).step = 3;
+            (wizard as any).step = 4;
             (wizard as any).renderStep();
             await tick();
 
@@ -1133,7 +1144,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1152,7 +1163,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1167,7 +1178,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", wikiEnabled: false } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1181,7 +1192,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", wikiEnabled: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1195,7 +1206,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1209,7 +1220,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", wikiEnabled: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1223,7 +1234,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1246,7 +1257,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1267,7 +1278,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1283,7 +1294,7 @@ describe("SetupWizard", () => {
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             const closeSpy = vi.spyOn(wizard, "close");
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1296,21 +1307,21 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
             const indicator = el.find("lilbee-wizard-step-indicator");
             expect(indicator).not.toBeNull();
             const dots = indicator!.findAll("lilbee-wizard-step-dot");
-            expect(dots.length).toBe(5);
+            expect(dots.length).toBe(6);
         });
 
         it("renders pros list items", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1322,7 +1333,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1345,7 +1356,7 @@ describe("SetupWizard", () => {
                 unchanged: 8,
                 failed: [],
             };
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1360,7 +1371,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1373,7 +1384,7 @@ describe("SetupWizard", () => {
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             const closeSpy = vi.spyOn(wizard, "close");
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1391,7 +1402,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1404,7 +1415,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1418,7 +1429,7 @@ describe("SetupWizard", () => {
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).pulledModelName = "test-model";
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1430,7 +1441,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1483,20 +1494,19 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 3;
+            (wizard as any).step = 4;
             wizard.back();
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            // step 2 goes back to step 0 in external mode (since server is ready)
-            // So from step 3, back() goes to step 2 (model picker)
-            expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(true);
+            // From step 4 (sync), back() goes to step 3 (embedding picker)
+            expect(texts.some((t) => t.includes("Pick an embedding model"))).toBe(true);
         });
 
         it("back() at step 5 goes to step 4 (wiki)", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             wizard.back();
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
@@ -1545,7 +1555,7 @@ describe("SetupWizard", () => {
             });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 3;
+            (wizard as any).step = 4;
             (wizard as any).renderStep();
             await tick();
 
@@ -1613,11 +1623,19 @@ describe("SetupWizard", () => {
             await tick();
             await tick();
 
-            // Step 3: Sync (auto-starts, should auto-advance to wiki)
+            // Step 3: Embedding picker -> Download & continue (skips to sync when no selection)
+            el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Download & continue")!
+                .trigger("click");
             await tick();
             await tick();
 
-            // Step 4: Wiki -> Next (keep disabled)
+            // Step 4: Sync (auto-starts, should auto-advance to wiki)
+            await tick();
+            await tick();
+
+            // Step 5: Wiki -> Next (keep disabled)
             el = wizard.contentEl as unknown as MockElement;
             expect(collectTexts(el).some((t) => t.includes("Wiki Knowledge Base"))).toBe(true);
             findButtons(el)
@@ -1625,7 +1643,7 @@ describe("SetupWizard", () => {
                 .trigger("click");
             await tick();
 
-            // Step 5: Done -> Open chat
+            // Step 6: Done -> Open chat
             el = wizard.contentEl as unknown as MockElement;
             expect(collectTexts(el).some((t) => t.includes("You're all set!"))).toBe(true);
 
@@ -1687,7 +1705,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 3;
+            (wizard as any).step = 4;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1708,6 +1726,415 @@ describe("SetupWizard", () => {
             await (wizard as any).pullSelectedModel(el, el, el, el, el);
             // Should return without calling pullModel
             expect(plugin.api.pullModel).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("Step 3: Embedding Picker", () => {
+        it("renders embedding picker step", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+            await tick();
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Pick an embedding model"))).toBe(true);
+        });
+
+        it("back from embedding picker goes to model picker and aborts pull", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+            await tick();
+
+            // Set a pull controller so the ?.abort() branch is covered
+            const mockAbort = vi.fn();
+            (wizard as any).pullController = { abort: mockAbort };
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const backBtn = findButtons(el).find((b) => b.textContent === "Back")!;
+            backBtn.trigger("click");
+
+            expect(mockAbort).toHaveBeenCalled();
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(true);
+        });
+
+        it("skip button closes wizard and aborts pull if running", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            const closeSpy = vi.spyOn(wizard, "close");
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+
+            // Set a pull controller so the ?.abort() branch is covered
+            const mockAbort = vi.fn();
+            (wizard as any).pullController = { abort: mockAbort };
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const skipBtn = findButtons(el).find((b) => b.textContent === "Skip setup")!;
+            skipBtn.trigger("click");
+            expect(closeSpy).toHaveBeenCalled();
+            expect(mockAbort).toHaveBeenCalled();
+        });
+
+        it("download & continue with no selection skips to sync", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Download & continue")!
+                .trigger("click");
+            await tick();
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
+        });
+
+        it("download & continue with installed model sets embedding and skips to sync", async () => {
+            const entries = [
+                makeEntry({
+                    name: "nomic-embed-text",
+                    hf_repo: "nomic/nomic-embed-text",
+                    task: "embedding",
+                    installed: true,
+                }),
+            ];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Download & continue")!
+                .trigger("click");
+            await tick();
+
+            expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
+        });
+
+        it("pullEmbeddingModel early return when selectedEmbedding is null", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedEmbedding = null;
+            const el = new MockElement("div");
+            await (wizard as any).pullEmbeddingModel(el, el, el, el, el);
+            expect(plugin.api.pullModel).not.toHaveBeenCalled();
+        });
+
+        it("pullEmbeddingModel handles pull failure", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    throw new Error("network error");
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedEmbedding = makeEntry({
+                name: "nomic-embed-text",
+                hf_repo: "nomic/nomic-embed-text",
+                task: "embedding",
+                installed: false,
+            });
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullEmbeddingModel(btn, el, el, el, el);
+            expect((btn as unknown as MockElement).disabled).toBe(false);
+        });
+
+        it("pullEmbeddingModel handles AbortError", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    const e = new Error("abort");
+                    e.name = "AbortError";
+                    throw e;
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedEmbedding = makeEntry({
+                name: "nomic-embed-text",
+                hf_repo: "nomic/nomic-embed-text",
+                task: "embedding",
+                installed: false,
+            });
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullEmbeddingModel(btn, el, el, el, el);
+            expect(Notice.instances.some((n) => n.message.includes("download cancelled"))).toBe(true);
+        });
+
+        it("pullEmbeddingModel succeeds and sets embedding model", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: { percent: 50 } };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedEmbedding = makeEntry({
+                name: "nomic-embed-text",
+                hf_repo: "nomic/nomic-embed-text",
+                task: "embedding",
+                installed: false,
+            });
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullEmbeddingModel(btn, el, el, el, el);
+            expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic/nomic-embed-text");
+        });
+
+        it("pullEmbeddingModel handles progress with current/total", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: { current: 50, total: 100 } };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedEmbedding = makeEntry({
+                name: "nomic-embed-text",
+                hf_repo: "nomic/nomic-embed-text",
+                task: "embedding",
+                installed: false,
+            });
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullEmbeddingModel(btn, el, el, el, el);
+            expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic/nomic-embed-text");
+        });
+
+        it("pullEmbeddingModel handles progress with no percent and no total", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: {} };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedEmbedding = makeEntry({
+                name: "nomic-embed-text",
+                hf_repo: "nomic/nomic-embed-text",
+                task: "embedding",
+                installed: false,
+            });
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullEmbeddingModel(btn, el, el, el, el);
+            expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic/nomic-embed-text");
+        });
+
+        it("pullEmbeddingModel handles SSE error with string data", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.ERROR, data: "raw string error" };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedEmbedding = makeEntry({
+                name: "nomic-embed-text",
+                hf_repo: "nomic/nomic-embed-text",
+                task: "embedding",
+                installed: false,
+            });
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullEmbeddingModel(btn, el, el, el, el);
+            expect(Notice.instances.some((n) => n.message.includes("Download failed"))).toBe(true);
+        });
+
+        it("pullEmbeddingModel handles SSE error event", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.ERROR, data: { message: "pull failed" } };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedEmbedding = makeEntry({
+                name: "nomic-embed-text",
+                hf_repo: "nomic/nomic-embed-text",
+                task: "embedding",
+                installed: false,
+            });
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullEmbeddingModel(btn, el, el, el, el);
+            expect(Notice.instances.some((n) => n.message.includes("Download failed"))).toBe(true);
+        });
+
+        it("pullEmbeddingModel handles SSE error with empty object", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.ERROR, data: {} };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedEmbedding = makeEntry({
+                name: "nomic-embed-text",
+                hf_repo: "nomic/nomic-embed-text",
+                task: "embedding",
+                installed: false,
+            });
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullEmbeddingModel(btn, el, el, el, el);
+            expect(Notice.instances.some((n) => n.message.includes("Download failed"))).toBe(true);
+        });
+
+        it("selectEmbedding updates selection on grid", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            const grid = new MockElement("div") as unknown as HTMLElement;
+            const child = (grid as unknown as MockElement).createDiv();
+            child.dataset.repo = "nomic/nomic-embed-text";
+            const other = (grid as unknown as MockElement).createDiv();
+            other.dataset.repo = "bge/bge-small";
+            other.classList.add("is-selected");
+            const model = makeEntry({ hf_repo: "nomic/nomic-embed-text", task: "embedding" });
+            (wizard as any).selectEmbedding(grid, model);
+            expect((wizard as any).selectedEmbedding).toBe(model);
+            expect(child.classList.contains("is-selected")).toBe(true);
+            expect(other.classList.contains("is-selected")).toBe(false);
+        });
+
+        it("loadEmbeddingModels handles catalog error", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockRejectedValue(new Error("fail"));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const statusEl = new MockElement("div") as unknown as HTMLElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            expect((wizard as any).embeddingModels).toEqual([]);
+            expect((statusEl as unknown as MockElement).textContent).toContain("Could not load models");
+        });
+
+        it("loadEmbeddingModels handles catalog isErr result", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("fail")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const statusEl = new MockElement("div") as unknown as HTMLElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            expect((wizard as any).embeddingModels).toEqual([]);
+        });
+
+        it("loadEmbeddingModels renders model cards with onClick that calls selectEmbedding", async () => {
+            const entries = [
+                makeEntry({ name: "nomic-embed-text", hf_repo: "nomic/nomic-embed-text", task: "embedding" }),
+                makeEntry({ name: "bge-small", hf_repo: "bge/bge-small", task: "embedding" }),
+            ];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const statusEl = new MockElement("div") as unknown as HTMLElement;
+
+            // Capture onClick callbacks
+            const onClicks: Array<() => void> = [];
+            const origRenderModelCard = (await import("../../src/components/model-card")).renderModelCard;
+            vi.spyOn(await import("../../src/components/model-card"), "renderModelCard").mockImplementation(
+                (container, entry, opts) => {
+                    if (opts?.onClick) onClicks.push(() => opts.onClick!(entry));
+                    return origRenderModelCard(container, entry, opts);
+                },
+            );
+            await (wizard as any).loadEmbeddingModels(container, statusEl);
+
+            // Exercise the onClick
+            expect(onClicks.length).toBe(2);
+            onClicks[1](); // Click second model
+            expect((wizard as any).selectedEmbedding?.name).toBe("bge-small");
+        });
+
+        it("loadEmbeddingModels renders model cards and selects nomic default", async () => {
+            const entries = [
+                makeEntry({ name: "nomic-embed-text", hf_repo: "nomic/nomic-embed-text", task: "embedding" }),
+                makeEntry({ name: "bge-small", hf_repo: "bge/bge-small", task: "embedding" }),
+            ];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const statusEl = new MockElement("div") as unknown as HTMLElement;
+            await (wizard as any).loadEmbeddingModels(container, statusEl);
+            expect((wizard as any).selectedEmbedding?.name).toBe("nomic-embed-text");
+            expect((wizard as any).embeddingModels.length).toBe(2);
         });
     });
 
@@ -1743,7 +2170,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 3;
+            (wizard as any).step = 4;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1767,7 +2194,7 @@ describe("SetupWizard", () => {
                 unchanged: 6,
                 failed: [],
             };
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1787,7 +2214,7 @@ describe("SetupWizard", () => {
                 unchanged: 10,
                 failed: [],
             };
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;

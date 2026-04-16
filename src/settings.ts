@@ -94,6 +94,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderWikiSettings(containerEl);
         this.renderAdvancedSettings(containerEl);
         this.loadModelDefaults();
+        this.loadServerDefaults();
     }
 
     private filterSettings(containerEl: HTMLElement, query: string): void {
@@ -287,6 +288,19 @@ export class LilbeeSettingTab extends PluginSettingTab {
         new Setting(containerEl).setName(MESSAGES.LABEL_SESSION_TOKEN).setDesc(MESSAGES.DESC_SESSION_TOKEN_AUTO);
 
         new Setting(containerEl)
+            .setName(MESSAGES.LABEL_MANUAL_TOKEN)
+            .setDesc(MESSAGES.DESC_MANUAL_TOKEN)
+            .addText((text) => {
+                text.setPlaceholder("")
+                    .setValue(this.plugin.settings.manualToken)
+                    .onChange(async (value) => {
+                        this.plugin.settings.manualToken = value.trim();
+                        await this.plugin.saveSettings();
+                    });
+                text.inputEl.type = "password";
+            });
+
+        new Setting(containerEl)
             .setName(MESSAGES.LABEL_SWITCH_MANAGED)
             .setDesc(MESSAGES.DESC_SWITCH_MANAGED)
             .addButton((btn) =>
@@ -364,30 +378,40 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }),
             );
-
-        const serverDefaultsEl = containerEl.createDiv({ cls: "lilbee-server-defaults" });
-        this.loadServerDefaults(serverDefaultsEl);
     }
 
-    private loadServerDefaults(container: HTMLElement): void {
+    private loadServerDefaults(): void {
         this.plugin.api
             .config()
             .then((cfg: Record<string, unknown>) => {
-                container.empty();
-                const fields: [string, string][] = [
-                    ["chunk_size", MESSAGES.DESC_CHUNK_SIZE],
-                    ["chunk_overlap", MESSAGES.DESC_CHUNK_OVERLAP],
-                    ["embedding_model", MESSAGES.LABEL_EMBEDDING_MODEL],
-                ];
-                for (const [key, label] of fields) {
-                    if (cfg[key] !== undefined) {
-                        new Setting(container).setName(label).setDesc(String(cfg[key]));
-                    }
-                }
                 // Populate editable crawl and advanced inputs with current server values
                 for (const [key, inputEl] of this.serverConfigInputs) {
                     if (cfg[key] !== undefined) {
                         inputEl.value = String(cfg[key]);
+                    }
+                }
+                // Populate generation field placeholders from server config
+                const genConfigMap: Record<string, GenKey> = {
+                    temperature: "temperature",
+                    top_p: "top_p",
+                    top_k: "top_k_sampling",
+                    repeat_penalty: "repeat_penalty",
+                    num_ctx: "num_ctx",
+                    seed: "seed",
+                };
+                for (const [cfgKey, genKey] of Object.entries(genConfigMap)) {
+                    if (cfg[cfgKey] !== undefined) {
+                        const inputEl = this.genInputs.get(genKey);
+                        if (inputEl) {
+                            inputEl.placeholder = String(cfg[cfgKey]);
+                        }
+                    }
+                }
+                // Populate system prompt placeholder from server config
+                if (cfg.system_prompt !== undefined) {
+                    const sysPromptInput = this.serverConfigInputs.get("system_prompt");
+                    if (sysPromptInput) {
+                        sysPromptInput.placeholder = String(cfg.system_prompt);
                     }
                 }
             })
@@ -408,15 +432,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
         new Setting(details)
             .setName(MESSAGES.LABEL_SYSTEM_PROMPT)
             .setDesc(MESSAGES.DESC_SYSTEM_PROMPT)
-            .addText((text) =>
-                text
-                    .setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT)
+            .addTextArea((text) => {
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT)
                     .setValue(this.plugin.settings.systemPrompt)
                     .onChange(async (value) => {
                         this.plugin.settings.systemPrompt = value;
                         await this.plugin.saveSettings();
-                    }),
-            );
+                    });
+                this.serverConfigInputs.set("system_prompt", text.inputEl as unknown as HTMLInputElement);
+            });
 
         this.genInputs.clear();
         const fields: { key: GenKey; name: string; desc: string; integer: boolean }[] = [
@@ -500,6 +524,72 @@ export class LilbeeSettingTab extends PluginSettingTab {
             })
             .catch(() => {
                 // Server unreachable — leave "Not set" placeholders
+            });
+    }
+
+    private loadEmbeddingDropdown(container: HTMLElement): void {
+        this.plugin.api
+            .catalog({ task: "embedding" })
+            .then((result) => {
+                if (result.isErr()) {
+                    this.renderEmbeddingFallback(container);
+                    return;
+                }
+                const models = result.value.models;
+                new Setting(container)
+                    .setName(MESSAGES.LABEL_EMBEDDING_MODEL)
+                    .setDesc(MESSAGES.DESC_EMBEDDING_MODEL)
+                    .addDropdown((dropdown) => {
+                        for (const model of models) {
+                            const suffix = model.installed ? "" : MESSAGES.LABEL_NOT_INSTALLED;
+                            dropdown.addOption(model.name, `${model.name}${suffix}`);
+                        }
+                        dropdown.onChange(async (value) => {
+                            if (!value) return;
+                            const confirmModal = new ConfirmModal(this.app, MESSAGES.DESC_EMBEDDING_REINDEX_WARNING);
+                            confirmModal.open();
+                            const confirmed = await confirmModal.result;
+                            if (!confirmed) return;
+                            try {
+                                await this.plugin.api.setEmbeddingModel(value);
+                                new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
+                                new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
+                                void this.plugin.triggerSync();
+                            } catch {
+                                new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
+                            }
+                        });
+                    });
+            })
+            .catch(() => {
+                this.renderEmbeddingFallback(container);
+            });
+    }
+
+    private renderEmbeddingFallback(container: HTMLElement): void {
+        new Setting(container)
+            .setName(MESSAGES.LABEL_EMBEDDING_MODEL)
+            .setDesc(MESSAGES.DESC_EMBEDDING_MODEL)
+            .addText((text) => {
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT)
+                    .setValue("")
+                    .onChange(async (value) => {
+                        const trimmed = value.trim();
+                        if (trimmed === "") return;
+                        const confirmModal = new ConfirmModal(this.app, MESSAGES.DESC_EMBEDDING_REINDEX_WARNING);
+                        confirmModal.open();
+                        const confirmed = await confirmModal.result;
+                        if (!confirmed) return;
+                        try {
+                            await this.plugin.api.setEmbeddingModel(trimmed);
+                            new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
+                            new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
+                            void this.plugin.triggerSync();
+                        } catch {
+                            new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
+                        }
+                    });
+                this.serverConfigInputs.set("embedding_model", text.inputEl as unknown as HTMLInputElement);
             });
     }
 
@@ -587,20 +677,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private renderWikiSettings(containerEl: HTMLElement): void {
-        const wikiEnabled = this.plugin.wikiEnabled;
-        const heading = wikiEnabled ? MESSAGES.LABEL_WIKI_SECTION : MESSAGES.LABEL_WIKI_NOT_ENABLED;
         const details = containerEl.createEl("details", { cls: "lilbee-advanced-details lilbee-settings-section" });
-        details.createEl("summary", { text: heading });
+        details.createEl("summary", { text: MESSAGES.LABEL_WIKI_SECTION });
 
-        if (!wikiEnabled) {
-            details.createEl("p", {
-                text: MESSAGES.DESC_WIKI_NOT_ENABLED,
-                cls: "setting-item-description",
-            });
-            return;
-        }
-
-        // Enable wiki toggle (user preference)
+        // Enable wiki toggle (user preference — independent of server)
         const subSettingsContainer = details.createDiv({ cls: "lilbee-wiki-sub-settings" });
 
         new Setting(details)
@@ -610,7 +690,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 toggle.setValue(this.plugin.settings.wikiEnabled);
                 toggle.onChange(async (value) => {
                     this.plugin.settings.wikiEnabled = value;
-                    this.plugin.wikiEnabled = value && this.plugin.wikiEnabled;
+                    this.plugin.wikiEnabled = value;
                     await this.plugin.saveSettings();
                     this.setSubSettingsVisible(subSettingsContainer, value);
                 });
@@ -791,31 +871,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 });
         }
 
-        new Setting(details)
-            .setName(MESSAGES.LABEL_EMBEDDING_MODEL)
-            .setDesc(MESSAGES.DESC_EMBEDDING_MODEL)
-            .addText((text) => {
-                text.setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT)
-                    .setValue("")
-                    .onChange(async (value) => {
-                        const trimmed = value.trim();
-                        if (trimmed === "") return;
-                        const confirmModal = new ConfirmModal(this.app, MESSAGES.DESC_EMBEDDING_REINDEX_WARNING);
-                        confirmModal.open();
-                        const confirmed = await confirmModal.result;
-                        if (!confirmed) return;
-                        try {
-                            await this.plugin.api.setEmbeddingModel(trimmed);
-                            new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
-                            new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-                            void this.plugin.triggerSync();
-                        } catch {
-                            new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
-                        }
-                    });
-                this.serverConfigInputs.set("embedding_model", text.inputEl as unknown as HTMLInputElement);
-            });
-
         const litellmContainer = details.createDiv({ cls: "lilbee-litellm-container" });
 
         new Setting(details)
@@ -839,24 +894,43 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 this.serverConfigInputs.set("llm_provider", dropdown.selectEl as unknown as HTMLInputElement);
             });
 
-        new Setting(details)
-            .setName(MESSAGES.LABEL_API_KEY)
-            .setDesc(MESSAGES.DESC_API_KEY)
-            .addText((text) => {
-                text.setPlaceholder(MESSAGES.PLACEHOLDER_SK)
-                    .setValue("")
-                    .onChange(async (value) => {
-                        const trimmed = value.trim();
+        const apiKeyFields: { label: string; desc: string; configKey: string }[] = [
+            {
+                label: MESSAGES.LABEL_OPENAI_API_KEY,
+                desc: MESSAGES.DESC_OPENAI_API_KEY,
+                configKey: "openai_api_key",
+            },
+            {
+                label: MESSAGES.LABEL_ANTHROPIC_API_KEY,
+                desc: MESSAGES.DESC_ANTHROPIC_API_KEY,
+                configKey: "anthropic_api_key",
+            },
+            {
+                label: MESSAGES.LABEL_GEMINI_API_KEY,
+                desc: MESSAGES.DESC_GEMINI_API_KEY,
+                configKey: "gemini_api_key",
+            },
+        ];
+
+        for (const apiField of apiKeyFields) {
+            new Setting(details)
+                .setName(apiField.label)
+                .setDesc(apiField.desc)
+                .addText((text) => {
+                    text.setPlaceholder(MESSAGES.PLACEHOLDER_SK).setValue("");
+                    text.inputEl.type = "password";
+                    text.inputEl.addEventListener("blur", async () => {
+                        const trimmed = text.inputEl.value.trim();
                         if (trimmed === "") return;
                         try {
-                            await this.plugin.api.updateConfig({ llm_api_key: trimmed });
+                            await this.plugin.api.updateConfig({ [apiField.configKey]: trimmed });
                             new Notice(MESSAGES.NOTICE_API_KEY_SAVED);
                         } catch {
                             new Notice(MESSAGES.NOTICE_FAILED_SAVE_KEY);
                         }
                     });
-                text.inputEl.type = "password";
-            });
+                });
+        }
 
         new Setting(details)
             .setName(MESSAGES.LABEL_HF_TOKEN)
@@ -925,6 +999,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         } catch {
             // Connection status is shown via the Test button — no duplicate warning needed
         }
+        const embeddingContainer = container.createDiv({ cls: "lilbee-embedding-container" });
+        this.loadEmbeddingDropdown(embeddingContainer);
     }
 
     private renderModelSection(container: HTMLElement, label: string, catalog: ModelsResponse["chat"]): void {

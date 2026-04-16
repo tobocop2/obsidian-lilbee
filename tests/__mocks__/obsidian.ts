@@ -444,6 +444,10 @@ export class Setting {
         cb(new MockTextComponent());
         return this;
     }
+    addTextArea(cb: (text: MockTextAreaComponent) => void): this {
+        cb(new MockTextAreaComponent());
+        return this;
+    }
     addSlider(cb: (slider: MockSliderComponent) => void): this {
         cb(new MockSliderComponent());
         return this;
@@ -462,9 +466,37 @@ export class Setting {
     }
 }
 
+function mockInputEl(): {
+    placeholder: string;
+    type: string;
+    value: string;
+    addEventListener: ReturnType<typeof vi.fn>;
+} {
+    return { placeholder: "", type: "text", value: "", addEventListener: vi.fn() };
+}
+
 class MockTextComponent {
     private _onChange: ((v: string) => void) | null = null;
-    inputEl: { placeholder: string } = { placeholder: "" };
+    inputEl = mockInputEl();
+    setPlaceholder(p: string): this {
+        this.inputEl.placeholder = p;
+        return this;
+    }
+    setValue(_v: string): this {
+        return this;
+    }
+    onChange(cb: (v: string) => void): this {
+        this._onChange = cb;
+        return this;
+    }
+    triggerChange(v: string): void {
+        this._onChange?.(v);
+    }
+}
+
+class MockTextAreaComponent {
+    private _onChange: ((v: string) => void) | null = null;
+    inputEl = mockInputEl();
     setPlaceholder(p: string): this {
         this.inputEl.placeholder = p;
         return this;

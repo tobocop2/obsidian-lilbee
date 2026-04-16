@@ -71,6 +71,7 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
         config: vi.fn().mockRejectedValue(new Error("unreachable")),
         updateConfig: vi.fn().mockResolvedValue({ updated: [], reindex_required: false }),
         setEmbeddingModel: vi.fn().mockResolvedValue({ model: "" }),
+        catalog: vi.fn().mockResolvedValue(err(new Error("unreachable"))),
     };
     const saveSettings = vi.fn().mockResolvedValue(undefined);
     const statusBarEl = { setText: vi.fn(), textContent: "" };
@@ -122,8 +123,16 @@ type DropdownOnChange = (v: string) => Promise<void>;
 type ToggleOnChange = (v: boolean) => Promise<void>;
 type ButtonOnClick = () => Promise<void>;
 
+type BlurHandler = () => Promise<void>;
+interface BlurCapture {
+    handler: BlurHandler;
+    inputEl: { value: string };
+}
+
 interface Captured {
     textOnChanges: TextOnChange[];
+    textAreaOnChanges: TextOnChange[];
+    blurHandlers: BlurCapture[];
     sliderOnChanges: SliderOnChange[];
     dropdownOnChanges: DropdownOnChange[];
     toggleOnChanges: ToggleOnChange[];
@@ -132,12 +141,15 @@ interface Captured {
 
 function captureSettingCallbacks(fn: () => void): Captured {
     const textOnChanges: TextOnChange[] = [];
+    const textAreaOnChanges: TextOnChange[] = [];
+    const blurHandlers: BlurCapture[] = [];
     const sliderOnChanges: SliderOnChange[] = [];
     const dropdownOnChanges: DropdownOnChange[] = [];
     const toggleOnChanges: ToggleOnChange[] = [];
     const buttonOnClicks: ButtonOnClick[] = [];
 
     const origAddText = Setting.prototype.addText;
+    const origAddTextArea = (Setting.prototype as any).addTextArea;
     const origAddSlider = Setting.prototype.addSlider;
     const origAddDropdown = Setting.prototype.addDropdown;
     const origAddToggle = (Setting.prototype as any).addToggle;
@@ -151,7 +163,28 @@ function captureSettingCallbacks(fn: () => void): Captured {
                 textOnChanges.push(handler);
                 return fakeText;
             },
-            inputEl: { placeholder: "" },
+            inputEl: {
+                placeholder: "",
+                type: "text",
+                value: "",
+                addEventListener: (event: string, handler: BlurHandler) => {
+                    if (event === "blur") blurHandlers.push({ handler, inputEl: fakeText.inputEl });
+                },
+            },
+        };
+        cb(fakeText);
+        return this;
+    };
+
+    (Setting.prototype as any).addTextArea = function (cb: (text: any) => void) {
+        const fakeText = {
+            setPlaceholder: () => fakeText,
+            setValue: () => fakeText,
+            onChange: (handler: TextOnChange) => {
+                textAreaOnChanges.push(handler);
+                return fakeText;
+            },
+            inputEl: { placeholder: "", addEventListener: vi.fn() },
         };
         cb(fakeText);
         return this;
@@ -214,13 +247,22 @@ function captureSettingCallbacks(fn: () => void): Captured {
         fn();
     } finally {
         Setting.prototype.addText = origAddText;
+        (Setting.prototype as any).addTextArea = origAddTextArea;
         Setting.prototype.addSlider = origAddSlider;
         Setting.prototype.addDropdown = origAddDropdown;
         (Setting.prototype as any).addToggle = origAddToggle;
         Setting.prototype.addButton = origAddButton;
     }
 
-    return { textOnChanges, sliderOnChanges, dropdownOnChanges, toggleOnChanges, buttonOnClicks };
+    return {
+        textOnChanges,
+        textAreaOnChanges,
+        blurHandlers,
+        sliderOnChanges,
+        dropdownOnChanges,
+        toggleOnChanges,
+        buttonOnClicks,
+    };
 }
 
 function captureDropdownOptions(fn: () => void): Array<Record<string, string>> {
@@ -296,8 +338,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + systemPrompt + 6 generation + syncDebounce + 3 crawling + wikiVaultFolder + 6 advanced (incl. hfToken) = 19
-            expect(textOnChanges.length).toBe(19);
+            // serverPort + 6 generation + syncDebounce + 3 crawling + wikiVaultFolder + 2 chunks + hfToken + litellm = 16
+            expect(textOnChanges.length).toBe(16);
         });
 
         it("does NOT show sync-debounce when syncMode is 'manual'", () => {
@@ -305,8 +347,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + systemPrompt + 6 generation + 3 crawling + wikiVaultFolder + 6 advanced (incl. hfToken) = 18
-            expect(textOnChanges.length).toBe(18);
+            // serverPort + 6 generation + 3 crawling + wikiVaultFolder + 2 chunks + hfToken + litellm = 15
+            expect(textOnChanges.length).toBe(15);
         });
     });
 
@@ -320,6 +362,20 @@ describe("LilbeeSettingTab", () => {
             await textOnChanges[0]("http://localhost:9999");
             expect(plugin.settings.serverUrl).toBe("http://localhost:9999");
             expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe("manual token setting onChange", () => {
+        it("updates manualToken and calls saveSettings", async () => {
+            const plugin = makePlugin({ serverMode: "external" });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // In external mode: [0]=serverUrl, [1]=manualToken
+            await textOnChanges[1]("my-token-123");
+            expect(plugin.settings.manualToken).toBe("my-token-123");
+            expect(plugin.saveSettings).toHaveBeenCalled();
         });
     });
 
@@ -400,9 +456,9 @@ describe("LilbeeSettingTab", () => {
     });
 
     describe("syncDebounce text onChange", () => {
-        // With syncMode=auto, text fields are (render order: connection → models → general → sync → generation):
-        // [0] port, [1] syncDebounce, [2] systemPrompt, [3-8] generation settings
-        const DEBOUNCE_IDX = 8;
+        // With syncMode=auto, text fields are (render order: connection → models → search → generation → sync):
+        // [0] port, [1-6] generation, [7] syncDebounce
+        const DEBOUNCE_IDX = 7;
 
         it("updates syncDebounceMs for valid positive number", async () => {
             const plugin = makePlugin({ syncMode: "auto" });
@@ -457,10 +513,10 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 1 is systemPrompt (0=serverUrl)
-            await textOnChanges[1]("You are a pirate.");
+            // System prompt is now a textarea — textAreaOnChanges[0]
+            await textAreaOnChanges[0]("You are a pirate.");
             expect(plugin.settings.systemPrompt).toBe("You are a pirate.");
             expect(plugin.saveSettings).toHaveBeenCalled();
         });
@@ -468,12 +524,12 @@ describe("LilbeeSettingTab", () => {
 
     describe("generation settings", () => {
         const GEN_FIELDS = [
-            { idx: 2, key: "temperature", value: "0.7", expected: 0.7 },
-            { idx: 3, key: "top_p", value: "0.9", expected: 0.9 },
-            { idx: 4, key: "top_k_sampling", value: "40", expected: 40 },
-            { idx: 5, key: "repeat_penalty", value: "1.1", expected: 1.1 },
-            { idx: 6, key: "num_ctx", value: "4096", expected: 4096 },
-            { idx: 7, key: "seed", value: "42", expected: 42 },
+            { idx: 1, key: "temperature", value: "0.7", expected: 0.7 },
+            { idx: 2, key: "top_p", value: "0.9", expected: 0.9 },
+            { idx: 3, key: "top_k_sampling", value: "40", expected: 40 },
+            { idx: 4, key: "repeat_penalty", value: "1.1", expected: 1.1 },
+            { idx: 5, key: "num_ctx", value: "4096", expected: 4096 },
+            { idx: 6, key: "seed", value: "42", expected: 42 },
         ] as const;
 
         for (const { idx, key, value, expected } of GEN_FIELDS) {
@@ -508,7 +564,7 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[4]("not-a-number");
+            await textOnChanges[3]("not-a-number");
             expect(plugin.settings.top_k_sampling).toBeNull();
         });
 
@@ -518,7 +574,7 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[2]("abc");
+            await textOnChanges[1]("abc");
             expect(plugin.settings.temperature).toBeNull();
         });
 
@@ -538,7 +594,7 @@ describe("LilbeeSettingTab", () => {
                         return fakeText;
                     },
                     onChange: () => fakeText,
-                    inputEl: { placeholder: "" },
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 return this;
@@ -547,8 +603,8 @@ describe("LilbeeSettingTab", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // Index 2 is temperature (0=port, 1=systemPrompt)
-            expect(setValues[2]).toBe("0.5");
+            // Index 1 is temperature (0=port, systemPrompt is textarea)
+            expect(setValues[1]).toBe("0.5");
         });
 
         it("renders inside a <details> element", () => {
@@ -579,7 +635,7 @@ describe("LilbeeSettingTab", () => {
                     },
                     setValue: () => fakeText,
                     onChange: () => fakeText,
-                    inputEl: { placeholder: "" },
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 return this;
@@ -588,8 +644,8 @@ describe("LilbeeSettingTab", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // Indices 2-7 are generation fields (0=port, 1=systemPrompt)
-            for (let i = 2; i <= 7; i++) {
+            // Indices 1-6 are generation fields (0=port, systemPrompt is textarea)
+            for (let i = 1; i <= 6; i++) {
                 expect(placeholders[i]).toBe("Not set");
             }
         });
@@ -2435,8 +2491,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 12: chunk_size (shifted +1 by wikiVaultFolder)
-            await textOnChanges[12]("512");
+            // Index 11: chunk_size (0=port, 1-6=gen, 7-9=crawl, 10=wikiVaultFolder, 11=chunk_size)
+            await textOnChanges[11]("512");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512 });
         });
 
@@ -2446,8 +2502,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 13: chunk_overlap (shifted +1 by wikiVaultFolder)
-            await textOnChanges[13]("64");
+            // Index 12: chunk_overlap
+            await textOnChanges[12]("64");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_overlap: 64 });
         });
 
@@ -2457,7 +2513,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[12]("");
+            await textOnChanges[11]("");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2467,7 +2523,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[12]("abc");
+            await textOnChanges[11]("abc");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2477,7 +2533,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[12]("-1");
+            await textOnChanges[11]("-1");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2488,7 +2544,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[12]("512");
+            await textOnChanges[11]("512");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
             mockGenericConfirmResult = true;
         });
@@ -2503,7 +2559,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[12]("512");
+            await textOnChanges[11]("512");
             expect(plugin.triggerSync).toHaveBeenCalled();
         });
 
@@ -2514,53 +2570,329 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[12]("512");
+            await textOnChanges[11]("512");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
     });
 
-    describe("Embedding model onChange", () => {
-        it("calls setEmbeddingModel on non-empty value", async () => {
+    describe("Embedding model dropdown", () => {
+        it("calls setEmbeddingModel when catalog loads successfully", async () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [{ name: "nomic-embed-text", installed: true, task: "embedding" }],
+                    has_more: false,
+                }),
+            );
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            tab.display();
 
-            // Index 14: Embedding model (shifted +1 by wikiVaultFolder)
-            await textOnChanges[14]("nomic-embed-text");
+            // Wait for async catalog load
+            await new Promise((r) => setTimeout(r, 0));
+
+            // The embedding dropdown is rendered via loadEmbeddingDropdown — just verify catalog was called
+            expect(plugin.api.catalog).toHaveBeenCalledWith({ task: "embedding" });
+        });
+
+        it("embedding dropdown onChange sets model and triggers sync", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            (plugin.api.setEmbeddingModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 2,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        { name: "nomic-embed-text", installed: true, task: "embedding" },
+                        { name: "bge-small", installed: false, task: "embedding" },
+                    ],
+                    has_more: false,
+                }),
+            );
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+
+            // Capture callbacks from the async loadEmbeddingDropdown
+            const dropdowns: DropdownOnChange[] = [];
+            const origAddDropdown = Setting.prototype.addDropdown;
+            Setting.prototype.addDropdown = function (cb: (dropdown: any) => void) {
+                const fakeDropdown = {
+                    addOption: () => fakeDropdown,
+                    setValue: () => fakeDropdown,
+                    onChange: (handler: DropdownOnChange) => {
+                        dropdowns.push(handler);
+                        return fakeDropdown;
+                    },
+                };
+                cb(fakeDropdown);
+                return this;
+            };
+            await (tab as any).loadEmbeddingDropdown(container);
+            await new Promise((r) => setTimeout(r, 0));
+            Setting.prototype.addDropdown = origAddDropdown;
+
+            expect(dropdowns.length).toBe(1);
+            await dropdowns[0]("nomic-embed-text");
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
         });
 
-        it("skips empty value", async () => {
-            const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-            const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-
-            await textOnChanges[14]("");
-            expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
-        });
-
-        it("aborts when user cancels confirm", async () => {
+        it("embedding dropdown onChange aborts when user cancels confirm", async () => {
             mockGenericConfirmResult = false;
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [{ name: "nomic-embed-text", installed: true, task: "embedding" }],
+                    has_more: false,
+                }),
+            );
+            const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[14]("nomic-embed-text");
+            const dropdowns: DropdownOnChange[] = [];
+            const origAddDropdown = Setting.prototype.addDropdown;
+            Setting.prototype.addDropdown = function (cb: (dropdown: any) => void) {
+                const fakeDropdown = {
+                    addOption: () => fakeDropdown,
+                    setValue: () => fakeDropdown,
+                    onChange: (handler: DropdownOnChange) => {
+                        dropdowns.push(handler);
+                        return fakeDropdown;
+                    },
+                };
+                cb(fakeDropdown);
+                return this;
+            };
+            await (tab as any).loadEmbeddingDropdown(container);
+            await new Promise((r) => setTimeout(r, 0));
+            Setting.prototype.addDropdown = origAddDropdown;
+
+            await dropdowns[0]("nomic-embed-text");
             expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
             mockGenericConfirmResult = true;
         });
 
-        it("shows error notice on failure", async () => {
+        it("embedding dropdown shows error notice on failure", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            (plugin.api.setEmbeddingModel as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [{ name: "nomic-embed-text", installed: true, task: "embedding" }],
+                    has_more: false,
+                }),
+            );
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+
+            const dropdowns: DropdownOnChange[] = [];
+            const origAddDropdown = Setting.prototype.addDropdown;
+            Setting.prototype.addDropdown = function (cb: (dropdown: any) => void) {
+                const fakeDropdown = {
+                    addOption: () => fakeDropdown,
+                    setValue: () => fakeDropdown,
+                    onChange: (handler: DropdownOnChange) => {
+                        dropdowns.push(handler);
+                        return fakeDropdown;
+                    },
+                };
+                cb(fakeDropdown);
+                return this;
+            };
+            await (tab as any).loadEmbeddingDropdown(container);
+            await new Promise((r) => setTimeout(r, 0));
+            Setting.prototype.addDropdown = origAddDropdown;
+
+            await dropdowns[0]("nomic-embed-text");
+            expect(Notice.instances.some((n: any) => n.message.includes("failed to update embedding model"))).toBe(
+                true,
+            );
+        });
+
+        it("embedding dropdown skips empty value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [{ name: "nomic-embed-text", installed: true, task: "embedding" }],
+                    has_more: false,
+                }),
+            );
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+
+            const dropdowns: DropdownOnChange[] = [];
+            const origAddDropdown = Setting.prototype.addDropdown;
+            Setting.prototype.addDropdown = function (cb: (dropdown: any) => void) {
+                const fakeDropdown = {
+                    addOption: () => fakeDropdown,
+                    setValue: () => fakeDropdown,
+                    onChange: (handler: DropdownOnChange) => {
+                        dropdowns.push(handler);
+                        return fakeDropdown;
+                    },
+                };
+                cb(fakeDropdown);
+                return this;
+            };
+            await (tab as any).loadEmbeddingDropdown(container);
+            await new Promise((r) => setTimeout(r, 0));
+            Setting.prototype.addDropdown = origAddDropdown;
+
+            await dropdowns[0]("");
+            expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
+        });
+
+        it("falls back to text input when catalog fails", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            const tab = makeTab(plugin);
+            tab.display();
+
+            await new Promise((r) => setTimeout(r, 0));
+            // Fallback renders a text input — verify no crash
+            expect(plugin.api.catalog).toHaveBeenCalled();
+        });
+
+        it("falls back to text input when catalog returns error result", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+
+            await new Promise((r) => setTimeout(r, 0));
+            // Default mock returns err() — fallback should render
+            expect(plugin.api.catalog).toHaveBeenCalled();
+        });
+
+        it("fallback text input calls setEmbeddingModel on non-empty value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+
+            const texts: TextOnChange[] = [];
+            const origAddText = Setting.prototype.addText;
+            Setting.prototype.addText = function (cb: (text: any) => void) {
+                const fakeText = {
+                    setPlaceholder: () => fakeText,
+                    setValue: () => fakeText,
+                    onChange: (handler: TextOnChange) => {
+                        texts.push(handler);
+                        return fakeText;
+                    },
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
+                };
+                cb(fakeText);
+                return this;
+            };
+            (tab as any).renderEmbeddingFallback(container);
+            Setting.prototype.addText = origAddText;
+
+            expect(texts.length).toBe(1);
+            await texts[0]("nomic-embed-text");
+            expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
+        });
+
+        it("fallback text input skips empty value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+
+            const texts: TextOnChange[] = [];
+            const origAddText = Setting.prototype.addText;
+            Setting.prototype.addText = function (cb: (text: any) => void) {
+                const fakeText = {
+                    setPlaceholder: () => fakeText,
+                    setValue: () => fakeText,
+                    onChange: (handler: TextOnChange) => {
+                        texts.push(handler);
+                        return fakeText;
+                    },
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
+                };
+                cb(fakeText);
+                return this;
+            };
+            (tab as any).renderEmbeddingFallback(container);
+            Setting.prototype.addText = origAddText;
+
+            await texts[0]("");
+            expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
+        });
+
+        it("fallback text input aborts when user cancels confirm", async () => {
+            mockGenericConfirmResult = false;
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+
+            const texts: TextOnChange[] = [];
+            const origAddText = Setting.prototype.addText;
+            Setting.prototype.addText = function (cb: (text: any) => void) {
+                const fakeText = {
+                    setPlaceholder: () => fakeText,
+                    setValue: () => fakeText,
+                    onChange: (handler: TextOnChange) => {
+                        texts.push(handler);
+                        return fakeText;
+                    },
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
+                };
+                cb(fakeText);
+                return this;
+            };
+            (tab as any).renderEmbeddingFallback(container);
+            Setting.prototype.addText = origAddText;
+
+            await texts[0]("nomic-embed-text");
+            expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
+            mockGenericConfirmResult = true;
+        });
+
+        it("fallback text input shows error notice on failure", async () => {
             const plugin = makePlugin();
             (plugin.api.setEmbeddingModel as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[14]("nomic-embed-text");
+            const texts: TextOnChange[] = [];
+            const origAddText = Setting.prototype.addText;
+            Setting.prototype.addText = function (cb: (text: any) => void) {
+                const fakeText = {
+                    setPlaceholder: () => fakeText,
+                    setValue: () => fakeText,
+                    onChange: (handler: TextOnChange) => {
+                        texts.push(handler);
+                        return fakeText;
+                    },
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
+                };
+                cb(fakeText);
+                return this;
+            };
+            (tab as any).renderEmbeddingFallback(container);
+            Setting.prototype.addText = origAddText;
+
+            await texts[0]("nomic-embed-text");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update embedding model"))).toBe(
                 true,
             );
@@ -2574,8 +2906,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Indices 8-10: crawl_max_depth, crawl_max_pages, crawl_timeout
-            await textOnChanges[8]("3");
+            // Indices 7-9: crawl_max_depth, crawl_max_pages, crawl_timeout
+            await textOnChanges[7]("3");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_depth: 3 });
         });
 
@@ -2585,7 +2917,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[9]("100");
+            await textOnChanges[8]("100");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_pages: 100 });
         });
 
@@ -2595,7 +2927,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[8]("");
+            await textOnChanges[7]("");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2605,7 +2937,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[8]("abc");
+            await textOnChanges[7]("abc");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2615,7 +2947,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[8]("-5");
+            await textOnChanges[7]("-5");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2626,7 +2958,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[8]("3");
+            await textOnChanges[7]("3");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
     });
@@ -2663,27 +2995,108 @@ describe("managed mode settings", () => {
 
             expect(plugin.api.config).toHaveBeenCalled();
         });
+
+        it("populates generation field placeholders from server config", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                temperature: 0.7,
+                top_p: 0.9,
+                top_k: 40,
+                repeat_penalty: 1.1,
+                num_ctx: 4096,
+                seed: 42,
+                system_prompt: "You are helpful.",
+            });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+
+            // Track input elements to verify placeholders
+            const inputs: Array<{ placeholder: string }> = [];
+            const origAddText = Setting.prototype.addText;
+            Setting.prototype.addText = function (cb: (text: any) => void) {
+                const fakeText = {
+                    setPlaceholder: () => fakeText,
+                    setValue: () => fakeText,
+                    onChange: () => fakeText,
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
+                };
+                cb(fakeText);
+                inputs.push(fakeText.inputEl);
+                return this;
+            };
+            const textAreas: Array<{ placeholder: string }> = [];
+            const origAddTextArea = (Setting.prototype as any).addTextArea;
+            (Setting.prototype as any).addTextArea = function (cb: (text: any) => void) {
+                const fakeText = {
+                    setPlaceholder: () => fakeText,
+                    setValue: () => fakeText,
+                    onChange: () => fakeText,
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
+                };
+                cb(fakeText);
+                textAreas.push(fakeText.inputEl);
+                return this;
+            };
+            tab.display();
+            Setting.prototype.addText = origAddText;
+            (Setting.prototype as any).addTextArea = origAddTextArea;
+
+            // Wait for async loadServerDefaults
+            await new Promise((r) => setTimeout(r, 0));
+
+            // Gen field placeholders should be set from server config
+            // inputs[1] = temperature (0=port)
+            expect(inputs[1].placeholder).toBe("0.7");
+            expect(inputs[2].placeholder).toBe("0.9");
+
+            // System prompt textarea placeholder should be set
+            expect(textAreas[0].placeholder).toBe("You are helpful.");
+        });
     });
 
-    describe("API key onChange", () => {
-        it("calls updateConfig on non-empty value", async () => {
+    describe("API key on blur", () => {
+        it("calls updateConfig with openai_api_key on blur", async () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
 
-            // Index 15: API key (0=port, 1=systemPrompt, 2-7=gen fields, 8-10=crawl, 11=wikiVaultFolder, 12-13=advanced, 14=embedding model, 15=api key)
-            await textOnChanges[15]("sk-test123");
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_api_key: "sk-test123" });
+            // blur[0]=openai, blur[1]=anthropic, blur[2]=gemini
+            blurHandlers[0].inputEl.value = "sk-test123";
+            await blurHandlers[0].handler();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ openai_api_key: "sk-test123" });
         });
 
-        it("skips empty value", async () => {
+        it("calls updateConfig with anthropic_api_key on blur", async () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[15]("");
+            blurHandlers[1].inputEl.value = "sk-ant-test";
+            await blurHandlers[1].handler();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ anthropic_api_key: "sk-ant-test" });
+        });
+
+        it("calls updateConfig with gemini_api_key on blur", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
+
+            blurHandlers[2].inputEl.value = "AIza-test";
+            await blurHandlers[2].handler();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ gemini_api_key: "AIza-test" });
+        });
+
+        it("skips empty value on blur", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
+
+            blurHandlers[0].inputEl.value = "";
+            await blurHandlers[0].handler();
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2692,9 +3105,10 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[15]("sk-test123");
+            blurHandlers[0].inputEl.value = "sk-test123";
+            await blurHandlers[0].handler();
             expect(Notice.instances.some((n: any) => n.message.includes("failed to save API key"))).toBe(true);
         });
     });
@@ -2706,8 +3120,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 16: HF token (after API key at 15)
-            await textOnChanges[16]("hf_test123");
+            // Index 13: HF token (0=port, 1-6=gen, 7-9=crawl, 10=wikiVaultFolder, 11-12=chunks, 13=hfToken)
+            await textOnChanges[13]("hf_test123");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ hf_token: "hf_test123" });
             expect(plugin.settings.hfToken).toBe("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("HuggingFace token saved"))).toBe(true);
@@ -2719,7 +3133,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[16]("");
+            await textOnChanges[13]("");
             expect(plugin.settings.hfToken).toBe("");
         });
 
@@ -2730,7 +3144,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[16]("hf_test123");
+            await textOnChanges[13]("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to save HuggingFace token"))).toBe(
                 true,
             );
@@ -2861,8 +3275,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 17: LiteLLM base URL (shifted by wikiVaultFolder + hfToken at 16)
-            await textOnChanges[17]("http://localhost:4000");
+            // Index 14: LiteLLM base URL (after hfToken at 13)
+            await textOnChanges[14]("http://localhost:4000");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ litellm_base_url: "http://localhost:4000" });
         });
 
@@ -2872,7 +3286,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[17]("  ");
+            await textOnChanges[14]("  ");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2883,13 +3297,13 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[17]("http://localhost:4000");
+            await textOnChanges[14]("http://localhost:4000");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update LiteLLM URL"))).toBe(true);
         });
     });
 
     describe("renderWikiSettings", () => {
-        it("shows disabled message when wikiEnabled is false", () => {
+        it("always renders wiki section heading even when wikiEnabled is false", () => {
             const plugin = makePlugin({ wikiEnabled: false });
             (plugin as any).wikiEnabled = false;
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
@@ -2898,15 +3312,15 @@ describe("managed mode settings", () => {
             const details = tab.containerEl.children.find(
                 (c) =>
                     c.tagName === "DETAILS" &&
-                    c.children.some(
-                        (s: any) => s.tagName === "SUMMARY" && s.textContent.includes("Wiki (not enabled)"),
-                    ),
+                    c.children.some((s: any) => s.tagName === "SUMMARY" && s.textContent.includes("Wiki (beta)")),
             );
             expect(details).toBeDefined();
-            const desc = details!.children.find(
-                (c: any) => c.tagName === "P" && c.textContent.includes("Enable wiki on the server"),
+            // Sub-settings should be hidden when wikiEnabled is false
+            const subContainer = details!.children.find(
+                (c: any) => c.classList && c.classList.contains("lilbee-wiki-sub-settings"),
             );
-            expect(desc).toBeDefined();
+            expect(subContainer).toBeDefined();
+            expect((subContainer as any).style.display).toBe("none");
         });
 
         it("shows wiki settings when wikiEnabled is true", () => {
@@ -2947,7 +3361,7 @@ describe("managed mode settings", () => {
 
         it("wiki enable toggle re-enables sub-settings when toggled back on", async () => {
             const plugin = makePlugin({ wikiEnabled: false });
-            (plugin as any).wikiEnabled = true; // server supports wiki, but user has toggle off
+            (plugin as any).wikiEnabled = false;
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
@@ -2970,7 +3384,7 @@ describe("managed mode settings", () => {
 
         it("sub-settings hidden when wikiEnabled setting is false", () => {
             const plugin = makePlugin({ wikiEnabled: false });
-            (plugin as any).wikiEnabled = true; // server says enabled, but user toggle off
+            (plugin as any).wikiEnabled = false;
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             tab.display();
@@ -3230,7 +3644,7 @@ describe("managed mode settings", () => {
     });
 
     describe("password masking for sensitive fields", () => {
-        it("sets API key input type to password", () => {
+        it("sets API key input types to password", () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
@@ -3241,7 +3655,7 @@ describe("managed mode settings", () => {
                     setPlaceholder: () => fakeText,
                     setValue: () => fakeText,
                     onChange: () => fakeText,
-                    inputEl: { placeholder: "", type: "text" },
+                    inputEl: { placeholder: "", type: "text", addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 inputs.push(fakeText.inputEl);
@@ -3250,7 +3664,9 @@ describe("managed mode settings", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // API key is index 15 (0=port, 1=systemPrompt, 2-7=gen fields, 8-10=crawl, 11=wikiVaultFolder, 12-13=advanced, 14=embedding, 15=apiKey)
+            // 3 API keys at indices 13-15 (0=port, 1-6=gen, 7-9=crawl, 10=wikiVaultFolder, 11-12=chunks, 13-15=apiKeys)
+            expect(inputs[13].type).toBe("password");
+            expect(inputs[14].type).toBe("password");
             expect(inputs[15].type).toBe("password");
         });
 
@@ -3265,7 +3681,7 @@ describe("managed mode settings", () => {
                     setPlaceholder: () => fakeText,
                     setValue: () => fakeText,
                     onChange: () => fakeText,
-                    inputEl: { placeholder: "", type: "text" },
+                    inputEl: { placeholder: "", type: "text", addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 inputs.push(fakeText.inputEl);
@@ -3274,7 +3690,7 @@ describe("managed mode settings", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // HF token is index 16 (after API key at 15)
+            // HF token is index 16 (after 3 API keys at 13-15)
             expect(inputs[16].type).toBe("password");
         });
     });
