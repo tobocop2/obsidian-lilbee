@@ -135,6 +135,7 @@ export interface LilbeeSettings {
     wikiVaultFolder: string;
     hfToken: string;
     enableOcr: boolean | null;
+    manualToken: string;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -163,6 +164,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     wikiVaultFolder: "lilbee-wiki",
     hfToken: "",
     enableOcr: null,
+    manualToken: "",
 };
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */
@@ -352,9 +354,10 @@ export const WIZARD_STEP = {
     WELCOME: 0,
     SERVER_MODE: 1,
     MODEL_PICKER: 2,
-    SYNC: 3,
-    WIKI: 4,
-    DONE: 5,
+    EMBEDDING_PICKER: 3,
+    SYNC: 4,
+    WIKI: 5,
+    DONE: 6,
 } as const satisfies Record<string, number>;
 
 export const DOWNLOAD_PANEL = {

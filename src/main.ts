@@ -315,6 +315,9 @@ export default class LilbeePlugin extends Plugin {
      * itself does (LILBEE_DATA env > .lilbee walk-up > platform default).
      */
     private readCurrentToken(): string | null {
+        if (this.settings.manualToken) {
+            return this.settings.manualToken;
+        }
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
             return this.serverManager ? readSessionToken(this.serverManager.dataDir) : null;
         }

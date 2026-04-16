@@ -2196,6 +2196,13 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).readCurrentToken()).toBeNull();
         });
 
+        it("readCurrentToken returns manualToken when set", async () => {
+            const plugin = await createPlugin({ serverMode: "external", manualToken: "my-manual-token" });
+            await plugin.onload();
+            await flush();
+            expect((plugin as any).readCurrentToken()).toBe("my-manual-token");
+        });
+
         it("handleServerStateChange ready re-reads the session token after a restart", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();

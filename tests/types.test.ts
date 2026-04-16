@@ -55,6 +55,7 @@ describe("DEFAULT_SETTINGS", () => {
             "adaptiveThreshold",
             "hfToken",
             "lilbeeVersion",
+            "manualToken",
             "maxDistance",
             "num_ctx",
             "repeat_penalty",

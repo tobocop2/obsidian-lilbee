@@ -81,6 +81,12 @@ export const MESSAGES = {
     LABEL_EMBEDDING_MODEL: "Embedding model",
     LABEL_LLM_PROVIDER: "AI backend",
     LABEL_API_KEY: "API key",
+    LABEL_OPENAI_API_KEY: "OpenAI API key",
+    DESC_OPENAI_API_KEY: "For GPT models via litellm",
+    LABEL_ANTHROPIC_API_KEY: "Anthropic API key",
+    DESC_ANTHROPIC_API_KEY: "For Claude models via litellm",
+    LABEL_GEMINI_API_KEY: "Gemini API key",
+    DESC_GEMINI_API_KEY: "For Gemini models via litellm",
     LABEL_HF_TOKEN: "HuggingFace token",
     LABEL_LITELLM_BASE_URL: "External AI endpoint",
     LABEL_TASK_CENTER: "Task Center",
@@ -131,6 +137,9 @@ export const MESSAGES = {
     DESC_SERVER_URL_HELP: "Address of the lilbee HTTP server",
     DESC_SESSION_TOKEN_AUTO:
         "Read automatically from the lilbee data directory on every request. Works when the server runs on the same machine as Obsidian. Set LILBEE_DATA if you use a non-default data directory.",
+    LABEL_MANUAL_TOKEN: "Session token",
+    DESC_MANUAL_TOKEN:
+        "Paste a session token for remote servers. Leave blank for automatic discovery (local servers only).",
     DESC_SWITCH_MANAGED: "Stop using an external server and start the built-in one",
     DESC_MODELS_HELP: "Browse the catalog for available models. Requires the lilbee server.",
     DESC_REFRESH_MODELS: "Fetch available models from the server",
@@ -364,10 +373,10 @@ export const MESSAGES = {
     LABEL_LINT_STATUS_MODEL: "model changed",
 
     // Wiki settings
-    LABEL_WIKI_SECTION: "Wiki",
+    LABEL_WIKI_SECTION: "Wiki (beta)",
     LABEL_WIKI_NOT_ENABLED: "Wiki (not enabled)",
     LABEL_WIKI_ENABLE_TOGGLE: "Enable wiki",
-    DESC_WIKI_ENABLE_TOGGLE: "Show wiki search mode and use wiki-enhanced results",
+    DESC_WIKI_ENABLE_TOGGLE: "Generate AI-written summaries of your documents. This feature is in beta.",
     LABEL_WIKI_STATUS: "Wiki status",
     LABEL_WIKI_PRUNE_RAW: "Remove source duplicates",
     LABEL_WIKI_FAITHFULNESS: "Summary accuracy",
@@ -448,6 +457,11 @@ export const MESSAGES = {
     WIZARD_WIKI_DISABLE: "Keep disabled",
     WIZARD_WIKI_ENABLE_DESC: "Generate wiki pages from your documents after indexing.",
     WIZARD_WIKI_DISABLE_DESC: "Use raw document search only. You can enable wiki later in settings.",
+    TITLE_PICK_EMBEDDING: "Pick an embedding model",
+    WIZARD_EMBEDDING_HELP:
+        "The embedding model converts your documents into searchable vectors. The default works well for most users.",
+    WIZARD_EMBEDDING_RECOMMENDED: "Recommended",
+
     WIZARD_FILE_PICKER_VAULT: "From vault",
     WIZARD_FILE_PICKER_DISK: "Files from disk",
     WIZARD_FOLDER_PICKER_DISK: "Folder from disk",

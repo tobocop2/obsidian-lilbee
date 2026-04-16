@@ -135,6 +135,23 @@ describe("MESSAGES", () => {
             expect(MESSAGES.DESC_API_KEY).toBe(
                 "Your API key for external AI services (OpenAI, Anthropic, etc.). Stored securely on the server.",
             );
+            expect(MESSAGES.LABEL_OPENAI_API_KEY).toBe("OpenAI API key");
+            expect(MESSAGES.DESC_OPENAI_API_KEY).toBe("For GPT models via litellm");
+            expect(MESSAGES.LABEL_ANTHROPIC_API_KEY).toBe("Anthropic API key");
+            expect(MESSAGES.DESC_ANTHROPIC_API_KEY).toBe("For Claude models via litellm");
+            expect(MESSAGES.LABEL_GEMINI_API_KEY).toBe("Gemini API key");
+            expect(MESSAGES.DESC_GEMINI_API_KEY).toBe("For Gemini models via litellm");
+            expect(MESSAGES.LABEL_MANUAL_TOKEN).toBe("Session token");
+            expect(MESSAGES.DESC_MANUAL_TOKEN).toBe(
+                "Paste a session token for remote servers. Leave blank for automatic discovery (local servers only).",
+            );
+            expect(MESSAGES.LABEL_WIKI_SECTION).toBe("Wiki (beta)");
+            expect(MESSAGES.DESC_WIKI_ENABLE_TOGGLE).toBe(
+                "Generate AI-written summaries of your documents. This feature is in beta.",
+            );
+            expect(MESSAGES.TITLE_PICK_EMBEDDING).toBe("Pick an embedding model");
+            expect(MESSAGES.WIZARD_EMBEDDING_HELP).toContain("embedding model");
+            expect(MESSAGES.WIZARD_EMBEDDING_RECOMMENDED).toBe("Recommended");
             expect(MESSAGES.DESC_HF_TOKEN).toBe(
                 "Needed for some models. Get one free at huggingface.co/settings/tokens",
             );

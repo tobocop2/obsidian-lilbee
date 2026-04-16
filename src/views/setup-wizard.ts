@@ -7,6 +7,7 @@ import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
 
 type FeaturedModel = CatalogEntry;
+type EmbeddingModel = CatalogEntry;
 
 export function getSystemMemoryGB(): number | null {
     try {
@@ -40,6 +41,8 @@ export class SetupWizard extends Modal {
     private syncController: AbortController | null = null;
     private syncResult: SyncDone | null = null;
     private pulledModelName = "";
+    private selectedEmbedding: EmbeddingModel | null = null;
+    private embeddingModels: EmbeddingModel[] = [];
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app);
@@ -72,6 +75,9 @@ export class SetupWizard extends Modal {
             case WIZARD_STEP.MODEL_PICKER:
                 this.renderModelPicker();
                 break;
+            case WIZARD_STEP.EMBEDDING_PICKER:
+                this.renderEmbeddingPicker();
+                break;
             case WIZARD_STEP.SYNC:
                 this.renderSync();
                 break;
@@ -86,7 +92,7 @@ export class SetupWizard extends Modal {
 
     private renderStepIndicator(container: HTMLElement): void {
         const indicator = container.createDiv({ cls: "lilbee-wizard-step-indicator" });
-        const STEP_COUNT = 5;
+        const STEP_COUNT = 6;
         for (let i = 0; i < STEP_COUNT; i++) {
             if (i > 0) {
                 const line = indicator.createDiv({ cls: "lilbee-wizard-step-line" });
@@ -370,6 +376,155 @@ export class SetupWizard extends Modal {
             this.plugin.activeModel = model.hf_repo;
             this.plugin.fetchActiveModel();
             this.pulledModelName = model.hf_repo;
+            this.step = WIZARD_STEP.EMBEDDING_PICKER;
+            this.renderStep();
+        } catch (err) {
+            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
+                new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELLED);
+            } else {
+                statusEl.textContent = MESSAGES.ERROR_DOWNLOAD_FAILED;
+            }
+            progressEl.style.display = "none";
+            (downloadBtn as HTMLButtonElement).disabled = false;
+        } finally {
+            this.pullController = null;
+        }
+    }
+
+    private renderEmbeddingPicker(): void {
+        const { contentEl } = this;
+        const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
+        this.renderStepIndicator(step);
+
+        step.createEl("h2", { text: MESSAGES.TITLE_PICK_EMBEDDING });
+        step.createEl("p", { text: MESSAGES.WIZARD_EMBEDDING_HELP });
+
+        const modelsContainer = step.createDiv({ cls: "lilbee-wizard-models" });
+        const statusEl = step.createDiv({ cls: "lilbee-wizard-status" });
+        const progressEl = step.createDiv({ cls: "lilbee-wizard-progress" });
+        progressEl.style.display = "none";
+        const progressBar = progressEl.createDiv({ cls: "lilbee-progress-bar-container" });
+        const progressFill = progressBar.createDiv({ cls: "lilbee-progress-bar" });
+        const progressLabel = progressEl.createDiv({ cls: "lilbee-wizard-progress-label" });
+
+        const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
+        const backBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BACK });
+        backBtn.addEventListener("click", () => {
+            this.pullController?.abort();
+            this.back();
+        });
+        const skipBtn = actions.createEl("button", { text: MESSAGES.BUTTON_SKIP_SETUP });
+        skipBtn.addEventListener("click", () => {
+            this.pullController?.abort();
+            this.skip();
+        });
+
+        const downloadBtn = actions.createEl("button", { text: MESSAGES.BUTTON_DOWNLOAD_CONTINUE, cls: "mod-cta" });
+        downloadBtn.addEventListener("click", () => {
+            if (!this.selectedEmbedding) {
+                this.step = WIZARD_STEP.SYNC;
+                this.renderStep();
+                return;
+            }
+            if (this.selectedEmbedding.installed) {
+                void this.plugin.api.setEmbeddingModel(this.selectedEmbedding.name);
+                this.step = WIZARD_STEP.SYNC;
+                this.renderStep();
+                return;
+            }
+            downloadBtn.disabled = true;
+            statusEl.textContent = "";
+            void this.pullEmbeddingModel(downloadBtn, progressEl, progressFill, progressLabel, statusEl);
+        });
+
+        void this.loadEmbeddingModels(modelsContainer, statusEl);
+    }
+
+    private async loadEmbeddingModels(container: HTMLElement, statusEl: HTMLElement): Promise<void> {
+        try {
+            const result = await this.plugin.api.catalog({
+                task: MODEL_TASK.EMBEDDING,
+                sort: FILTERS.SORT.FEATURED,
+                limit: 4,
+            });
+            if (result.isErr()) {
+                this.embeddingModels = [];
+                return;
+            }
+            this.embeddingModels = result.value.models;
+        } catch {
+            this.embeddingModels = [];
+            statusEl.textContent = MESSAGES.ERROR_LOAD_MODELS;
+            return;
+        }
+
+        const recommended = this.embeddingModels.findIndex((m) => m.name.includes("nomic-embed-text"));
+        const defaultIdx = recommended >= 0 ? recommended : 0;
+        this.selectedEmbedding = this.embeddingModels[defaultIdx] ?? null;
+
+        container.createDiv({ cls: "lilbee-catalog-section-heading", text: MESSAGES.WIZARD_EMBEDDING_RECOMMENDED });
+        const grid = container.createDiv({ cls: "lilbee-catalog-grid" });
+
+        for (let i = 0; i < this.embeddingModels.length; i++) {
+            const entry = this.embeddingModels[i];
+            renderModelCard(grid, entry, {
+                isActive: i === defaultIdx,
+                onClick: () => this.selectEmbedding(grid, entry),
+            });
+        }
+    }
+
+    private selectEmbedding(grid: HTMLElement, model: EmbeddingModel): void {
+        this.selectedEmbedding = model;
+        for (const child of Array.from(grid.children)) {
+            const el = child as HTMLElement;
+            if (el.dataset.repo === model.hf_repo) {
+                el.classList.add("is-selected");
+            } else {
+                el.classList.remove("is-selected");
+            }
+        }
+    }
+
+    private async pullEmbeddingModel(
+        downloadBtn: HTMLElement,
+        progressEl: HTMLElement,
+        progressFill: HTMLElement,
+        progressLabel: HTMLElement,
+        statusEl: HTMLElement,
+    ): Promise<void> {
+        if (!this.selectedEmbedding) return;
+        const model = this.selectedEmbedding;
+        progressEl.style.display = "";
+        progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL.replace("{model}", model.hf_repo);
+        this.pullController = new AbortController();
+
+        try {
+            for await (const event of this.plugin.api.pullModel(
+                model.hf_repo,
+                model.source,
+                this.pullController.signal,
+            )) {
+                if (event.event === SSE_EVENT.PROGRESS) {
+                    const d = event.data as { percent?: number; current?: number; total?: number };
+                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    if (pct !== undefined) {
+                        progressFill.style.width = `${pct}%`;
+                        progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL_PCT.replace(
+                            "{model}",
+                            model.hf_repo,
+                        ).replace("{pct}", String(pct));
+                    }
+                } else if (event.event === SSE_EVENT.ERROR) {
+                    const d = event.data as { message?: string } | string;
+                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    new Notice(MESSAGES.ERROR_DOWNLOAD_FAILED);
+                    statusEl.textContent = msg;
+                    break;
+                }
+            }
+
+            await this.plugin.api.setEmbeddingModel(model.hf_repo);
             this.step = WIZARD_STEP.SYNC;
             this.renderStep();
         } catch (err) {
@@ -592,6 +747,8 @@ export class SetupWizard extends Modal {
                 this.plugin.serverManager?.state === SERVER_STATE.READY ||
                 this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL;
             this.step = serverReady ? WIZARD_STEP.WELCOME : WIZARD_STEP.SERVER_MODE;
+        } else if (this.step === WIZARD_STEP.EMBEDDING_PICKER) {
+            this.step = WIZARD_STEP.MODEL_PICKER;
         } else {
             this.step = Math.max(0, this.step - 1);
         }
