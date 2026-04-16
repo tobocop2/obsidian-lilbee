@@ -2928,14 +2928,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Find the wiki enable toggle by effect: it's the one that changes wikiEnabled
-            const wikiToggle = toggleOnChanges.find((cb) => {
-                const before = plugin.settings.wikiEnabled;
-                // dry-run: call with opposite value and check if wikiEnabled changed
-                plugin.settings.wikiEnabled = before; // reset after find
-                return true; // we'll identify by calling each and checking
-            });
-            // Instead of fragile index, call each toggle with false until wikiEnabled flips
+            // Find the wiki enable toggle by effect: call each with false until wikiEnabled flips
             let wikiToggleIdx = -1;
             for (let i = 0; i < toggleOnChanges.length; i++) {
                 plugin.settings.wikiEnabled = true; // reset
