@@ -677,20 +677,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private renderWikiSettings(containerEl: HTMLElement): void {
-        const wikiEnabled = this.plugin.wikiEnabled;
-        const heading = wikiEnabled ? MESSAGES.LABEL_WIKI_SECTION : MESSAGES.LABEL_WIKI_NOT_ENABLED;
         const details = containerEl.createEl("details", { cls: "lilbee-advanced-details lilbee-settings-section" });
-        details.createEl("summary", { text: heading });
+        details.createEl("summary", { text: MESSAGES.LABEL_WIKI_SECTION });
 
-        if (!wikiEnabled) {
-            details.createEl("p", {
-                text: MESSAGES.DESC_WIKI_NOT_ENABLED,
-                cls: "setting-item-description",
-            });
-            return;
-        }
-
-        // Enable wiki toggle (user preference)
+        // Enable wiki toggle (user preference — independent of server)
         const subSettingsContainer = details.createDiv({ cls: "lilbee-wiki-sub-settings" });
 
         new Setting(details)
@@ -700,7 +690,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 toggle.setValue(this.plugin.settings.wikiEnabled);
                 toggle.onChange(async (value) => {
                     this.plugin.settings.wikiEnabled = value;
-                    this.plugin.wikiEnabled = value && this.plugin.wikiEnabled;
+                    this.plugin.wikiEnabled = value;
                     await this.plugin.saveSettings();
                     this.setSubSettingsVisible(subSettingsContainer, value);
                 });
@@ -927,19 +917,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 .setName(apiField.label)
                 .setDesc(apiField.desc)
                 .addText((text) => {
-                    text.setPlaceholder(MESSAGES.PLACEHOLDER_SK)
-                        .setValue("")
-                        .onChange(async (value) => {
-                            const trimmed = value.trim();
-                            if (trimmed === "") return;
-                            try {
-                                await this.plugin.api.updateConfig({ [apiField.configKey]: trimmed });
-                                new Notice(MESSAGES.NOTICE_API_KEY_SAVED);
-                            } catch {
-                                new Notice(MESSAGES.NOTICE_FAILED_SAVE_KEY);
-                            }
-                        });
+                    text.setPlaceholder(MESSAGES.PLACEHOLDER_SK).setValue("");
                     text.inputEl.type = "password";
+                    text.inputEl.addEventListener("blur", async () => {
+                        const trimmed = text.inputEl.value.trim();
+                        if (trimmed === "") return;
+                        try {
+                            await this.plugin.api.updateConfig({ [apiField.configKey]: trimmed });
+                            new Notice(MESSAGES.NOTICE_API_KEY_SAVED);
+                        } catch {
+                            new Notice(MESSAGES.NOTICE_FAILED_SAVE_KEY);
+                        }
+                    });
                 });
         }
 
