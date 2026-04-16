@@ -71,7 +71,7 @@ export const MESSAGES = {
     LABEL_SEARCH_RETRIEVAL: "Search & Retrieval",
     LABEL_RESULTS_COUNT: "Results count",
     LABEL_MAX_DISTANCE: "Search strictness",
-    LABEL_ADAPTIVE_THRESHOLD: "Auto-expand search",
+    LABEL_ADAPTIVE_THRESHOLD: "Adaptive threshold",
     LABEL_GENERATION: "Advanced settings",
     LABEL_SYSTEM_PROMPT: "System prompt",
     LABEL_SYNC_MODE: "Sync mode",
