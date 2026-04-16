@@ -123,9 +123,16 @@ type DropdownOnChange = (v: string) => Promise<void>;
 type ToggleOnChange = (v: boolean) => Promise<void>;
 type ButtonOnClick = () => Promise<void>;
 
+type BlurHandler = () => Promise<void>;
+interface BlurCapture {
+    handler: BlurHandler;
+    inputEl: { value: string };
+}
+
 interface Captured {
     textOnChanges: TextOnChange[];
     textAreaOnChanges: TextOnChange[];
+    blurHandlers: BlurCapture[];
     sliderOnChanges: SliderOnChange[];
     dropdownOnChanges: DropdownOnChange[];
     toggleOnChanges: ToggleOnChange[];
@@ -135,6 +142,7 @@ interface Captured {
 function captureSettingCallbacks(fn: () => void): Captured {
     const textOnChanges: TextOnChange[] = [];
     const textAreaOnChanges: TextOnChange[] = [];
+    const blurHandlers: BlurCapture[] = [];
     const sliderOnChanges: SliderOnChange[] = [];
     const dropdownOnChanges: DropdownOnChange[] = [];
     const toggleOnChanges: ToggleOnChange[] = [];
@@ -155,7 +163,14 @@ function captureSettingCallbacks(fn: () => void): Captured {
                 textOnChanges.push(handler);
                 return fakeText;
             },
-            inputEl: { placeholder: "" },
+            inputEl: {
+                placeholder: "",
+                type: "text",
+                value: "",
+                addEventListener: (event: string, handler: BlurHandler) => {
+                    if (event === "blur") blurHandlers.push({ handler, inputEl: fakeText.inputEl });
+                },
+            },
         };
         cb(fakeText);
         return this;
@@ -169,7 +184,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
                 textAreaOnChanges.push(handler);
                 return fakeText;
             },
-            inputEl: { placeholder: "" },
+            inputEl: { placeholder: "", addEventListener: vi.fn() },
         };
         cb(fakeText);
         return this;
@@ -239,7 +254,15 @@ function captureSettingCallbacks(fn: () => void): Captured {
         Setting.prototype.addButton = origAddButton;
     }
 
-    return { textOnChanges, textAreaOnChanges, sliderOnChanges, dropdownOnChanges, toggleOnChanges, buttonOnClicks };
+    return {
+        textOnChanges,
+        textAreaOnChanges,
+        blurHandlers,
+        sliderOnChanges,
+        dropdownOnChanges,
+        toggleOnChanges,
+        buttonOnClicks,
+    };
 }
 
 function captureDropdownOptions(fn: () => void): Array<Record<string, string>> {
@@ -315,8 +338,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + 6 generation + syncDebounce + 3 crawling + wikiVaultFolder + 2 chunks + 3 API keys + hfToken + litellm = 19
-            expect(textOnChanges.length).toBe(19);
+            // serverPort + 6 generation + syncDebounce + 3 crawling + wikiVaultFolder + 2 chunks + hfToken + litellm = 16
+            expect(textOnChanges.length).toBe(16);
         });
 
         it("does NOT show sync-debounce when syncMode is 'manual'", () => {
@@ -324,8 +347,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + 6 generation + 3 crawling + wikiVaultFolder + 2 chunks + 3 API keys + hfToken + litellm = 18
-            expect(textOnChanges.length).toBe(18);
+            // serverPort + 6 generation + 3 crawling + wikiVaultFolder + 2 chunks + hfToken + litellm = 15
+            expect(textOnChanges.length).toBe(15);
         });
     });
 
@@ -571,7 +594,7 @@ describe("LilbeeSettingTab", () => {
                         return fakeText;
                     },
                     onChange: () => fakeText,
-                    inputEl: { placeholder: "" },
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 return this;
@@ -612,7 +635,7 @@ describe("LilbeeSettingTab", () => {
                     },
                     setValue: () => fakeText,
                     onChange: () => fakeText,
-                    inputEl: { placeholder: "" },
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 return this;
@@ -2773,7 +2796,7 @@ describe("managed mode settings", () => {
                         texts.push(handler);
                         return fakeText;
                     },
-                    inputEl: { placeholder: "" },
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 return this;
@@ -2802,7 +2825,7 @@ describe("managed mode settings", () => {
                         texts.push(handler);
                         return fakeText;
                     },
-                    inputEl: { placeholder: "" },
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 return this;
@@ -2831,7 +2854,7 @@ describe("managed mode settings", () => {
                         texts.push(handler);
                         return fakeText;
                     },
-                    inputEl: { placeholder: "" },
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 return this;
@@ -2861,7 +2884,7 @@ describe("managed mode settings", () => {
                         texts.push(handler);
                         return fakeText;
                     },
-                    inputEl: { placeholder: "" },
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 return this;
@@ -2995,7 +3018,7 @@ describe("managed mode settings", () => {
                     setPlaceholder: () => fakeText,
                     setValue: () => fakeText,
                     onChange: () => fakeText,
-                    inputEl: { placeholder: "" },
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 inputs.push(fakeText.inputEl);
@@ -3008,7 +3031,7 @@ describe("managed mode settings", () => {
                     setPlaceholder: () => fakeText,
                     setValue: () => fakeText,
                     onChange: () => fakeText,
-                    inputEl: { placeholder: "" },
+                    inputEl: { placeholder: "", addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 textAreas.push(fakeText.inputEl);
@@ -3031,47 +3054,49 @@ describe("managed mode settings", () => {
         });
     });
 
-    describe("API key onChange", () => {
-        it("calls updateConfig with openai_api_key on non-empty value", async () => {
+    describe("API key on blur", () => {
+        it("calls updateConfig with openai_api_key on blur", async () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
 
-            // Index 13: OpenAI API key (0=port, 1-6=gen, 7-9=crawl, 10=wikiVaultFolder, 11-12=chunks, 13=openai)
-            await textOnChanges[13]("sk-test123");
+            // blur[0]=openai, blur[1]=anthropic, blur[2]=gemini
+            blurHandlers[0].inputEl.value = "sk-test123";
+            await blurHandlers[0].handler();
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ openai_api_key: "sk-test123" });
         });
 
-        it("calls updateConfig with anthropic_api_key", async () => {
+        it("calls updateConfig with anthropic_api_key on blur", async () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
 
-            // Index 14: Anthropic API key
-            await textOnChanges[14]("sk-ant-test");
+            blurHandlers[1].inputEl.value = "sk-ant-test";
+            await blurHandlers[1].handler();
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ anthropic_api_key: "sk-ant-test" });
         });
 
-        it("calls updateConfig with gemini_api_key", async () => {
+        it("calls updateConfig with gemini_api_key on blur", async () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
 
-            // Index 15: Gemini API key
-            await textOnChanges[15]("AIza-test");
+            blurHandlers[2].inputEl.value = "AIza-test";
+            await blurHandlers[2].handler();
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ gemini_api_key: "AIza-test" });
         });
 
-        it("skips empty value", async () => {
+        it("skips empty value on blur", async () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[13]("");
+            blurHandlers[0].inputEl.value = "";
+            await blurHandlers[0].handler();
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -3080,9 +3105,10 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[13]("sk-test123");
+            blurHandlers[0].inputEl.value = "sk-test123";
+            await blurHandlers[0].handler();
             expect(Notice.instances.some((n: any) => n.message.includes("failed to save API key"))).toBe(true);
         });
     });
@@ -3094,8 +3120,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 16: HF token (after API key at 15)
-            await textOnChanges[16]("hf_test123");
+            // Index 13: HF token (0=port, 1-6=gen, 7-9=crawl, 10=wikiVaultFolder, 11-12=chunks, 13=hfToken)
+            await textOnChanges[13]("hf_test123");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ hf_token: "hf_test123" });
             expect(plugin.settings.hfToken).toBe("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("HuggingFace token saved"))).toBe(true);
@@ -3107,7 +3133,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[16]("");
+            await textOnChanges[13]("");
             expect(plugin.settings.hfToken).toBe("");
         });
 
@@ -3118,7 +3144,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[16]("hf_test123");
+            await textOnChanges[13]("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to save HuggingFace token"))).toBe(
                 true,
             );
@@ -3249,8 +3275,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 17: LiteLLM base URL (after hfToken at 16)
-            await textOnChanges[17]("http://localhost:4000");
+            // Index 14: LiteLLM base URL (after hfToken at 13)
+            await textOnChanges[14]("http://localhost:4000");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ litellm_base_url: "http://localhost:4000" });
         });
 
@@ -3260,7 +3286,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[17]("  ");
+            await textOnChanges[14]("  ");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -3271,13 +3297,13 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[17]("http://localhost:4000");
+            await textOnChanges[14]("http://localhost:4000");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update LiteLLM URL"))).toBe(true);
         });
     });
 
     describe("renderWikiSettings", () => {
-        it("shows disabled message when wikiEnabled is false", () => {
+        it("always renders wiki section heading even when wikiEnabled is false", () => {
             const plugin = makePlugin({ wikiEnabled: false });
             (plugin as any).wikiEnabled = false;
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
@@ -3286,15 +3312,15 @@ describe("managed mode settings", () => {
             const details = tab.containerEl.children.find(
                 (c) =>
                     c.tagName === "DETAILS" &&
-                    c.children.some(
-                        (s: any) => s.tagName === "SUMMARY" && s.textContent.includes("Wiki (not enabled)"),
-                    ),
+                    c.children.some((s: any) => s.tagName === "SUMMARY" && s.textContent.includes("Wiki (beta)")),
             );
             expect(details).toBeDefined();
-            const desc = details!.children.find(
-                (c: any) => c.tagName === "P" && c.textContent.includes("Enable wiki on the server"),
+            // Sub-settings should be hidden when wikiEnabled is false
+            const subContainer = details!.children.find(
+                (c: any) => c.classList && c.classList.contains("lilbee-wiki-sub-settings"),
             );
-            expect(desc).toBeDefined();
+            expect(subContainer).toBeDefined();
+            expect((subContainer as any).style.display).toBe("none");
         });
 
         it("shows wiki settings when wikiEnabled is true", () => {
@@ -3335,7 +3361,7 @@ describe("managed mode settings", () => {
 
         it("wiki enable toggle re-enables sub-settings when toggled back on", async () => {
             const plugin = makePlugin({ wikiEnabled: false });
-            (plugin as any).wikiEnabled = true; // server supports wiki, but user has toggle off
+            (plugin as any).wikiEnabled = false;
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
@@ -3358,7 +3384,7 @@ describe("managed mode settings", () => {
 
         it("sub-settings hidden when wikiEnabled setting is false", () => {
             const plugin = makePlugin({ wikiEnabled: false });
-            (plugin as any).wikiEnabled = true; // server says enabled, but user toggle off
+            (plugin as any).wikiEnabled = false;
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             tab.display();
@@ -3629,7 +3655,7 @@ describe("managed mode settings", () => {
                     setPlaceholder: () => fakeText,
                     setValue: () => fakeText,
                     onChange: () => fakeText,
-                    inputEl: { placeholder: "", type: "text" },
+                    inputEl: { placeholder: "", type: "text", addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 inputs.push(fakeText.inputEl);
@@ -3655,7 +3681,7 @@ describe("managed mode settings", () => {
                     setPlaceholder: () => fakeText,
                     setValue: () => fakeText,
                     onChange: () => fakeText,
-                    inputEl: { placeholder: "", type: "text" },
+                    inputEl: { placeholder: "", type: "text", addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 inputs.push(fakeText.inputEl);

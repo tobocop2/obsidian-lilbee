@@ -466,9 +466,18 @@ export class Setting {
     }
 }
 
+function mockInputEl(): {
+    placeholder: string;
+    type: string;
+    value: string;
+    addEventListener: ReturnType<typeof vi.fn>;
+} {
+    return { placeholder: "", type: "text", value: "", addEventListener: vi.fn() };
+}
+
 class MockTextComponent {
     private _onChange: ((v: string) => void) | null = null;
-    inputEl: { placeholder: string } = { placeholder: "" };
+    inputEl = mockInputEl();
     setPlaceholder(p: string): this {
         this.inputEl.placeholder = p;
         return this;
@@ -487,7 +496,7 @@ class MockTextComponent {
 
 class MockTextAreaComponent {
     private _onChange: ((v: string) => void) | null = null;
-    inputEl: { placeholder: string } = { placeholder: "" };
+    inputEl = mockInputEl();
     setPlaceholder(p: string): this {
         this.inputEl.placeholder = p;
         return this;
