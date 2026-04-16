@@ -2940,8 +2940,8 @@ describe("LilbeePlugin", () => {
     });
 
     describe("fetchActiveModel — wiki detection", () => {
-        it("sets wikiEnabled from status response", async () => {
-            const plugin = await createPlugin();
+        it("sets wikiEnabled from status response when user toggle is on", async () => {
+            const plugin = await createPlugin({ wikiEnabled: true });
             await plugin.onload();
 
             plugin.api.listModels = vi.fn().mockResolvedValue({
@@ -2958,7 +2958,7 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).wikiEnabled).toBe(true);
         });
 
-        it("does not overwrite settings.wikiEnabled with server status", async () => {
+        it("server wiki enabled does not override user-disabled setting", async () => {
             const plugin = await createPlugin({ serverMode: "external", wikiEnabled: false });
             await plugin.onload();
 
@@ -2972,8 +2972,8 @@ describe("LilbeePlugin", () => {
 
             await plugin.fetchActiveModel();
 
-            // Runtime flag reflects server, but settings preserve user preference
-            expect((plugin as any).wikiEnabled).toBe(true);
+            // User toggle is off — runtime flag stays false even though server has wiki
+            expect((plugin as any).wikiEnabled).toBe(false);
             expect(plugin.settings.wikiEnabled).toBe(false);
         });
 
@@ -3017,6 +3017,7 @@ describe("LilbeePlugin", () => {
         it("fetchActiveModel initializes WikiSync when wikiSyncToVault is true", async () => {
             const plugin = await createPlugin({
                 serverMode: "external",
+                wikiEnabled: true,
                 wikiSyncToVault: true,
                 wikiVaultFolder: "lilbee-wiki",
             });

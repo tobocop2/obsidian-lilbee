@@ -566,12 +566,30 @@ export class LilbeeSettingTab extends PluginSettingTab {
             return;
         }
 
+        // Enable wiki toggle (user preference)
+        const subSettingsContainer = details.createDiv({ cls: "lilbee-wiki-sub-settings" });
+
+        new Setting(details)
+            .setName(MESSAGES.LABEL_WIKI_ENABLE_TOGGLE)
+            .setDesc(MESSAGES.DESC_WIKI_ENABLE_TOGGLE)
+            .addToggle((toggle) => {
+                toggle.setValue(this.plugin.settings.wikiEnabled);
+                toggle.onChange(async (value) => {
+                    this.plugin.settings.wikiEnabled = value;
+                    this.plugin.wikiEnabled = value && this.plugin.wikiEnabled;
+                    await this.plugin.saveSettings();
+                    this.setSubSettingsVisible(subSettingsContainer, value);
+                });
+            });
+
+        this.setSubSettingsVisible(subSettingsContainer, this.plugin.settings.wikiEnabled);
+
         // Wiki status (display only)
         const statusDesc = `Enabled — ${this.plugin.wikiPageCount} pages, ${this.plugin.wikiDraftCount} drafts`;
-        new Setting(details).setName(MESSAGES.LABEL_WIKI_STATUS).setDesc(statusDesc).setDisabled(true);
+        new Setting(subSettingsContainer).setName(MESSAGES.LABEL_WIKI_STATUS).setDesc(statusDesc).setDisabled(true);
 
         // Prune raw chunks
-        new Setting(details)
+        new Setting(subSettingsContainer)
             .setName(MESSAGES.LABEL_WIKI_PRUNE_RAW)
             .setDesc(MESSAGES.DESC_WIKI_PRUNE_RAW)
             .addToggle((toggle) => {
@@ -589,7 +607,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
 
         // Faithfulness threshold
-        new Setting(details)
+        new Setting(subSettingsContainer)
             .setName(MESSAGES.LABEL_WIKI_FAITHFULNESS)
             .setDesc(MESSAGES.DESC_WIKI_FAITHFULNESS)
             .addSlider((slider) => {
@@ -610,7 +628,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
 
         // Default search mode
-        new Setting(details)
+        new Setting(subSettingsContainer)
             .setName(MESSAGES.LABEL_WIKI_SEARCH_MODE)
             .setDesc(MESSAGES.DESC_WIKI_SEARCH_MODE)
             .addDropdown((dropdown) => {
@@ -626,7 +644,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
 
         // Sync wiki to vault
-        new Setting(details)
+        new Setting(subSettingsContainer)
             .setName(MESSAGES.LABEL_WIKI_SYNC_TO_VAULT)
             .setDesc(MESSAGES.DESC_WIKI_SYNC_TO_VAULT)
             .addToggle((toggle) => {
@@ -644,7 +662,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
 
         // Wiki vault folder
-        new Setting(details)
+        new Setting(subSettingsContainer)
             .setName(MESSAGES.LABEL_WIKI_VAULT_FOLDER)
             .setDesc(MESSAGES.DESC_WIKI_VAULT_FOLDER)
             .addText((text) => {
@@ -659,7 +677,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
 
         // Run lint button
-        new Setting(details).setName(MESSAGES.LABEL_WIKI_RUN_LINT).addButton((btn) => {
+        new Setting(subSettingsContainer).setName(MESSAGES.LABEL_WIKI_RUN_LINT).addButton((btn) => {
             btn.setButtonText(MESSAGES.LABEL_WIKI_RUN_LINT);
             btn.onClick(() => {
                 void this.plugin.runWikiLint();
@@ -667,12 +685,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
         });
 
         // Run prune button
-        new Setting(details).setName(MESSAGES.LABEL_WIKI_RUN_PRUNE).addButton((btn) => {
+        new Setting(subSettingsContainer).setName(MESSAGES.LABEL_WIKI_RUN_PRUNE).addButton((btn) => {
             btn.setButtonText(MESSAGES.LABEL_WIKI_RUN_PRUNE);
             btn.onClick(() => {
                 void this.plugin.runWikiPrune();
             });
         });
+    }
+
+    private setSubSettingsVisible(container: HTMLElement, visible: boolean): void {
+        container.style.display = visible ? "" : "none";
     }
 
     private renderAdvancedSettings(containerEl: HTMLElement): void {
