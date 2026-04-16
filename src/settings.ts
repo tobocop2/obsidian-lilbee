@@ -881,9 +881,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 });
         }
 
-        const embeddingContainer = details.createDiv({ cls: "lilbee-embedding-container" });
-        this.loadEmbeddingDropdown(embeddingContainer);
-
         const litellmContainer = details.createDiv({ cls: "lilbee-litellm-container" });
 
         new Setting(details)
@@ -1013,6 +1010,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         } catch {
             // Connection status is shown via the Test button — no duplicate warning needed
         }
+        const embeddingContainer = container.createDiv({ cls: "lilbee-embedding-container" });
+        this.loadEmbeddingDropdown(embeddingContainer);
     }
 
     private renderModelSection(container: HTMLElement, label: string, catalog: ModelsResponse["chat"]): void {
