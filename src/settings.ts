@@ -400,6 +400,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const details = containerEl.createEl("details", { cls: "lilbee-generation-details lilbee-settings-section" });
         const modelLabel = this.plugin.activeModel || MESSAGES.LABEL_NO_MODEL_SELECTED;
         details.createEl("summary", { text: `${MESSAGES.LABEL_GENERATION} (${modelLabel})` });
+        details.createEl("p", {
+            text: "Fine-tune AI responses. Defaults work well for most users.",
+            cls: "setting-item-description",
+        });
 
         new Setting(details)
             .setName(MESSAGES.LABEL_SYSTEM_PROMPT)
@@ -416,12 +420,42 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         this.genInputs.clear();
         const fields: { key: GenKey; name: string; desc: string; integer: boolean }[] = [
-            { key: "temperature", name: "Temperature", desc: "Controls randomness (0.0–2.0)", integer: false },
-            { key: "top_p", name: "Top P", desc: "Nucleus sampling threshold (0.0–1.0)", integer: false },
-            { key: "top_k_sampling", name: "Top K (sampling)", desc: "Limits token choices per step", integer: true },
-            { key: "repeat_penalty", name: "Repeat penalty", desc: "Penalizes repeated tokens (1.0+)", integer: false },
-            { key: "num_ctx", name: "Context length", desc: "Max context window in tokens", integer: true },
-            { key: "seed", name: "Seed", desc: "Fixed seed for reproducible output", integer: true },
+            {
+                key: "temperature",
+                name: "Creativity",
+                desc: "Higher = more creative and varied responses, lower = more focused and predictable",
+                integer: false,
+            },
+            {
+                key: "top_p",
+                name: "Top P",
+                desc: "Controls response diversity. Most users should leave this at the default.",
+                integer: false,
+            },
+            {
+                key: "top_k_sampling",
+                name: "Top K (sampling)",
+                desc: "Limits which words the AI considers. Most users should leave this at the default.",
+                integer: true,
+            },
+            {
+                key: "repeat_penalty",
+                name: "Repetition penalty",
+                desc: "How strongly to avoid repeating the same phrases",
+                integer: false,
+            },
+            {
+                key: "num_ctx",
+                name: "Context window",
+                desc: "Maximum amount of text the AI can consider at once",
+                integer: true,
+            },
+            {
+                key: "seed",
+                name: "Seed",
+                desc: "Set a number for reproducible responses. Leave blank for varied answers.",
+                integer: true,
+            },
         ];
 
         for (const field of fields) {
@@ -510,19 +544,19 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const crawlFields: { key: string; name: string; desc: string; placeholder: string }[] = [
             {
                 key: "crawl_max_depth",
-                name: "Max depth",
+                name: "Crawl depth",
                 desc: MESSAGES.DESC_CRAWL_MAX_DEPTH,
                 placeholder: MESSAGES.PLACEHOLDER_0,
             },
             {
                 key: "crawl_max_pages",
-                name: "Max pages",
+                name: "Page limit",
                 desc: MESSAGES.DESC_CRAWL_MAX_PAGES,
                 placeholder: MESSAGES.PLACEHOLDER_50,
             },
             {
                 key: "crawl_timeout",
-                name: "Timeout (seconds)",
+                name: "Page timeout",
                 desc: MESSAGES.DESC_CRAWL_TIMEOUT,
                 placeholder: MESSAGES.PLACEHOLDER_30,
             },
@@ -677,20 +711,26 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
 
         // Run lint button
-        new Setting(subSettingsContainer).setName(MESSAGES.LABEL_WIKI_RUN_LINT).addButton((btn) => {
-            btn.setButtonText(MESSAGES.LABEL_WIKI_RUN_LINT);
-            btn.onClick(() => {
-                void this.plugin.runWikiLint();
+        new Setting(subSettingsContainer)
+            .setName(MESSAGES.LABEL_WIKI_RUN_LINT)
+            .setDesc(MESSAGES.DESC_WIKI_RUN_LINT)
+            .addButton((btn) => {
+                btn.setButtonText(MESSAGES.LABEL_WIKI_RUN_LINT);
+                btn.onClick(() => {
+                    void this.plugin.runWikiLint();
+                });
             });
-        });
 
         // Run prune button
-        new Setting(subSettingsContainer).setName(MESSAGES.LABEL_WIKI_RUN_PRUNE).addButton((btn) => {
-            btn.setButtonText(MESSAGES.LABEL_WIKI_RUN_PRUNE);
-            btn.onClick(() => {
-                void this.plugin.runWikiPrune();
+        new Setting(subSettingsContainer)
+            .setName(MESSAGES.LABEL_WIKI_RUN_PRUNE)
+            .setDesc(MESSAGES.DESC_WIKI_RUN_PRUNE)
+            .addButton((btn) => {
+                btn.setButtonText(MESSAGES.LABEL_WIKI_RUN_PRUNE);
+                btn.onClick(() => {
+                    void this.plugin.runWikiPrune();
+                });
             });
-        });
     }
 
     private setSubSettingsVisible(container: HTMLElement, visible: boolean): void {
@@ -700,6 +740,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private renderAdvancedSettings(containerEl: HTMLElement): void {
         const details = containerEl.createEl("details", { cls: "lilbee-advanced-details lilbee-settings-section" });
         details.createEl("summary", { text: MESSAGES.LABEL_ADVANCED });
+        details.createEl("p", {
+            text: "These settings affect how your documents are processed. Only change if you know what you're doing.",
+            cls: "setting-item-description",
+        });
 
         const advancedFields: { key: string; name: string; desc: string; reindex: boolean }[] = [
             { key: "chunk_size", name: MESSAGES.DESC_CHUNK_SIZE, desc: MESSAGES.DESC_CHUNK_SIZE, reindex: true },
@@ -772,6 +816,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 this.serverConfigInputs.set("embedding_model", text.inputEl as unknown as HTMLInputElement);
             });
 
+        const litellmContainer = details.createDiv({ cls: "lilbee-litellm-container" });
+
         new Setting(details)
             .setName(MESSAGES.LABEL_LLM_PROVIDER)
             .setDesc(MESSAGES.DESC_LLM_PROVIDER)
@@ -785,6 +831,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         try {
                             await this.plugin.api.updateConfig({ llm_provider: value });
                             new Notice(MESSAGES.NOTICE_LLM_UPDATED);
+                            litellmContainer.style.display = value === "litellm" ? "" : "none";
                         } catch {
                             new Notice(MESSAGES.NOTICE_FAILED_LLM);
                         }
@@ -831,7 +878,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 text.inputEl.type = "password";
             });
 
-        new Setting(details)
+        litellmContainer.style.display = "none";
+        new Setting(litellmContainer)
             .setName(MESSAGES.LABEL_LITELLM_BASE_URL)
             .setDesc(MESSAGES.DESC_LITELLM_BASE_URL)
             .addText((text) => {
