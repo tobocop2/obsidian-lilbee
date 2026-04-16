@@ -576,6 +576,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 toggle.setValue(this.plugin.settings.wikiEnabled);
                 toggle.onChange(async (value) => {
                     this.plugin.settings.wikiEnabled = value;
+                    this.plugin.wikiEnabled = value && this.plugin.wikiEnabled;
                     await this.plugin.saveSettings();
                     this.setSubSettingsVisible(subSettingsContainer, value);
                 });

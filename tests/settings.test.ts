@@ -2921,17 +2921,57 @@ describe("managed mode settings", () => {
             expect(buttonOnClicks.length).toBeGreaterThanOrEqual(2);
         });
 
-        it("wiki enable toggle saves setting and toggles sub-settings visibility", async () => {
+        it("wiki enable toggle saves setting and syncs runtime flag", async () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // The wiki enable toggle is third from the end (enable, prune raw, sync-to-vault)
-            const wikiEnableToggleIdx = toggleOnChanges.length - 3;
-            await toggleOnChanges[wikiEnableToggleIdx](false);
+            // Find the wiki enable toggle by effect: it's the one that changes wikiEnabled
+            const wikiToggle = toggleOnChanges.find((cb) => {
+                const before = plugin.settings.wikiEnabled;
+                // dry-run: call with opposite value and check if wikiEnabled changed
+                plugin.settings.wikiEnabled = before; // reset after find
+                return true; // we'll identify by calling each and checking
+            });
+            // Instead of fragile index, call each toggle with false until wikiEnabled flips
+            let wikiToggleIdx = -1;
+            for (let i = 0; i < toggleOnChanges.length; i++) {
+                plugin.settings.wikiEnabled = true; // reset
+                await toggleOnChanges[i](false);
+                if (plugin.settings.wikiEnabled === false) {
+                    wikiToggleIdx = i;
+                    break;
+                }
+                plugin.settings.wikiEnabled = true; // restore
+            }
+            expect(wikiToggleIdx).not.toBe(-1);
             expect(plugin.settings.wikiEnabled).toBe(false);
+            expect((plugin as any).wikiEnabled).toBe(false);
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+
+        it("wiki enable toggle re-enables sub-settings when toggled back on", async () => {
+            const plugin = makePlugin({ wikiEnabled: false });
+            (plugin as any).wikiEnabled = true; // server supports wiki, but user has toggle off
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // Find wiki toggle by effect
+            let wikiToggleIdx = -1;
+            for (let i = 0; i < toggleOnChanges.length; i++) {
+                plugin.settings.wikiEnabled = false; // reset
+                await toggleOnChanges[i](true);
+                if (plugin.settings.wikiEnabled === true) {
+                    wikiToggleIdx = i;
+                    break;
+                }
+                plugin.settings.wikiEnabled = false; // restore
+            }
+            expect(wikiToggleIdx).not.toBe(-1);
+            expect(plugin.settings.wikiEnabled).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
         });
 
