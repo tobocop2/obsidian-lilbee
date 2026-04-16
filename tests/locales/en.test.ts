@@ -106,6 +106,53 @@ describe("MESSAGES", () => {
             );
             expect(MESSAGES.DESC_SYNC_MANUAL).toBe("Manual (command only)");
             expect(MESSAGES.DESC_SYNC_AUTO).toBe("Auto (watch for changes)");
+            expect(MESSAGES.DESC_RESULTS_COUNT).toBe(
+                "How many matching passages to return when you search or ask a question",
+            );
+            expect(MESSAGES.DESC_MAX_DISTANCE).toBe(
+                "How closely results must match your query. Lower = only very close matches, higher = broader results",
+            );
+            expect(MESSAGES.DESC_ADAPTIVE_THRESHOLD).toBe(
+                "Automatically broaden the search if too few results are found",
+            );
+            expect(MESSAGES.DESC_CRAWL_MAX_DEPTH).toBe("How many links deep to follow (0 = just the page itself)");
+            expect(MESSAGES.DESC_CRAWL_MAX_PAGES).toBe("Maximum number of pages to crawl from a website");
+            expect(MESSAGES.DESC_CRAWL_TIMEOUT).toBe("How long to wait for each page to load before giving up");
+            expect(MESSAGES.DESC_CHUNK_SIZE).toBe(
+                "How many tokens per text segment. Most users should not change this.",
+            );
+            expect(MESSAGES.DESC_CHUNK_OVERLAP).toBe(
+                "Token overlap between segments. Most users should not change this.",
+            );
+            expect(MESSAGES.DESC_EMBEDDING_MODEL).toBe(
+                "The AI model used to understand your documents. Changing requires re-indexing.",
+            );
+            expect(MESSAGES.DESC_LLM_PROVIDER).toBe(
+                "Auto picks the best available. Use External to connect to OpenAI, Claude, or other services.",
+            );
+            expect(MESSAGES.DESC_LLM_PROVIDER_AUTO).toBe("Auto (recommended)");
+            expect(MESSAGES.DESC_LLM_PROVIDER_EXTERNAL).toBe("External (OpenAI, Claude, etc.)");
+            expect(MESSAGES.DESC_API_KEY).toBe(
+                "Your API key for external AI services (OpenAI, Anthropic, etc.). Stored securely on the server.",
+            );
+            expect(MESSAGES.DESC_HF_TOKEN).toBe(
+                "Needed for some models. Get one free at huggingface.co/settings/tokens",
+            );
+            expect(MESSAGES.DESC_LITELLM_BASE_URL).toBe(
+                "The URL of your external AI service. Only needed when using the External backend.",
+            );
+            expect(MESSAGES.DESC_WIKI_PRUNE_RAW).toBe(
+                "After wiki summaries are created, remove the original text chunks that were summarized",
+            );
+            expect(MESSAGES.DESC_WIKI_FAITHFULNESS).toBe(
+                "How accurate wiki summaries must be. Higher = stricter quality, lower = more content",
+            );
+            expect(MESSAGES.DESC_WIKI_RUN_LINT).toBe(
+                "Scan wiki pages for broken references, missing sources, or outdated content",
+            );
+            expect(MESSAGES.DESC_WIKI_RUN_PRUNE).toBe(
+                "Remove wiki pages that are outdated or no longer have valid sources",
+            );
         });
     });
 

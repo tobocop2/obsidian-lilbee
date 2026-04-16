@@ -3205,6 +3205,17 @@ describe("managed mode settings", () => {
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_provider: "litellm" });
         });
 
+        it("hides litellm container when provider is not litellm", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            const providerIdx = dropdownOnChanges.length - 1;
+            await dropdownOnChanges[providerIdx]("auto");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_provider: "auto" });
+        });
+
         it("shows error notice on failure", async () => {
             const plugin = makePlugin();
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
@@ -3215,6 +3226,56 @@ describe("managed mode settings", () => {
             const providerIdx = dropdownOnChanges.length - 1;
             await dropdownOnChanges[providerIdx]("litellm");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update LLM provider"))).toBe(true);
+        });
+    });
+
+    describe("password masking for sensitive fields", () => {
+        it("sets API key input type to password", () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const inputs: Array<{ type?: string }> = [];
+            const origAddText = Setting.prototype.addText;
+            Setting.prototype.addText = function (cb: (text: any) => void) {
+                const fakeText = {
+                    setPlaceholder: () => fakeText,
+                    setValue: () => fakeText,
+                    onChange: () => fakeText,
+                    inputEl: { placeholder: "", type: "text" },
+                };
+                cb(fakeText);
+                inputs.push(fakeText.inputEl);
+                return this;
+            };
+            tab.display();
+            Setting.prototype.addText = origAddText;
+
+            // API key is index 15 (0=port, 1=systemPrompt, 2-7=gen fields, 8-10=crawl, 11=wikiVaultFolder, 12-13=advanced, 14=embedding, 15=apiKey)
+            expect(inputs[15].type).toBe("password");
+        });
+
+        it("sets HF token input type to password", () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const inputs: Array<{ type?: string }> = [];
+            const origAddText = Setting.prototype.addText;
+            Setting.prototype.addText = function (cb: (text: any) => void) {
+                const fakeText = {
+                    setPlaceholder: () => fakeText,
+                    setValue: () => fakeText,
+                    onChange: () => fakeText,
+                    inputEl: { placeholder: "", type: "text" },
+                };
+                cb(fakeText);
+                inputs.push(fakeText.inputEl);
+                return this;
+            };
+            tab.display();
+            Setting.prototype.addText = origAddText;
+
+            // HF token is index 16 (after API key at 15)
+            expect(inputs[16].type).toBe("password");
         });
     });
 });
