@@ -7,10 +7,19 @@ export class TaskQueue {
     private tasks: Map<string, TaskEntry> = new Map();
     private queues: Map<TaskType, string[]> = new Map();
     private activeIds: Map<TaskType, string | null> = new Map();
+    private aborts: Map<string, AbortController> = new Map();
     private history: TaskEntry[] = [];
     private listeners: TaskChangeListener[] = [];
 
     static readonly MAX_HISTORY = 50;
+
+    registerAbort(id: string, controller: AbortController): void {
+        const task = this.tasks.get(id);
+        if (!task) return;
+        this.aborts.set(id, controller);
+        task.canCancel = true;
+        this.notify();
+    }
 
     onChange(listener: TaskChangeListener): () => void {
         this.listeners.push(listener);
@@ -114,11 +123,13 @@ export class TaskQueue {
                 if (idx >= 0) q.splice(idx, 1);
             }
             this.tasks.delete(id);
+            this.aborts.delete(id);
             this.notify();
             return;
         }
 
         if (task.status === TASK_STATUS.ACTIVE) {
+            this.aborts.get(id)?.abort();
             task.status = TASK_STATUS.CANCELLED;
             task.completedAt = Date.now();
             this.moveToHistory(id);
@@ -132,6 +143,7 @@ export class TaskQueue {
             this.activeIds.set(task.type, null);
         }
 
+        this.aborts.delete(id);
         this.history.unshift(task);
         if (this.history.length > TaskQueue.MAX_HISTORY) {
             this.history.pop();

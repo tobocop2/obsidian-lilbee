@@ -1069,6 +1069,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
         const controller = new AbortController();
         this.pullAbortController = controller;
+        this.plugin.taskQueue.registerAbort(taskId, controller);
         const banner = container.createDiv("lilbee-pull-banner");
         const label = banner.createEl("span", { text: MESSAGES.STATUS_PULLING.replace("{model}", model.name) });
         const cancelBtn = banner.createEl("button", { text: MESSAGES.BUTTON_CANCEL, cls: "lilbee-pull-banner-cancel" });
@@ -1146,6 +1147,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
         const controller = new AbortController();
         this.pullAbortController = controller;
+        this.plugin.taskQueue.registerAbort(taskId, controller);
         btn.textContent = MESSAGES.BUTTON_CANCEL;
         const progress = actionCell.createDiv("lilbee-pull-progress");
         try {

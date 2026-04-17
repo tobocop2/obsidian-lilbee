@@ -400,6 +400,7 @@ export class ChatView extends ItemView {
     private async autoPullAndSet(model: { name: string }): Promise<void> {
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
         this.pullController = new AbortController();
+        this.plugin.taskQueue.registerAbort(taskId, this.pullController);
         try {
             for await (const event of this.plugin.api.pullModel(model.name, "native", this.pullController.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {

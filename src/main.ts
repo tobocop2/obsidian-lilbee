@@ -656,6 +656,7 @@ export default class LilbeePlugin extends Plugin {
     private async runAdd(paths: string[]): Promise<void> {
         const taskId = this.taskQueue.enqueue("Adding files", TASK_TYPE.ADD);
         this.syncController = new AbortController();
+        this.taskQueue.registerAbort(taskId, this.syncController);
 
         try {
             let syncResult: SyncDone | null = null;
@@ -803,8 +804,10 @@ export default class LilbeePlugin extends Plugin {
 
     async runWikiGenerate(source: string): Promise<void> {
         const taskId = this.taskQueue.enqueue(`Generate wiki: ${source}`, TASK_TYPE.WIKI);
+        const controller = new AbortController();
+        this.taskQueue.registerAbort(taskId, controller);
         try {
-            for await (const event of this.api.wikiGenerate(source)) {
+            for await (const event of this.api.wikiGenerate(source, controller.signal)) {
                 if (event.event === SSE_EVENT.WIKI_GENERATE_DONE) {
                     break;
                 } else if (event.event === SSE_EVENT.WIKI_GENERATE_ERROR) {
@@ -838,9 +841,11 @@ export default class LilbeePlugin extends Plugin {
         if (!confirmed) return;
 
         const taskId = this.taskQueue.enqueue("Wiki prune", TASK_TYPE.WIKI);
+        const controller = new AbortController();
+        this.taskQueue.registerAbort(taskId, controller);
         try {
             let archived = 0;
-            for await (const event of this.api.wikiPrune()) {
+            for await (const event of this.api.wikiPrune(controller.signal)) {
                 if (event.event === SSE_EVENT.WIKI_PRUNE_DONE) {
                     const d = event.data as PruneData;
                     archived = d.archived ?? 0;
@@ -867,6 +872,7 @@ export default class LilbeePlugin extends Plugin {
     async runCrawl(url: string, depth: number, maxPages: number): Promise<void> {
         const taskId = this.taskQueue.enqueue(`Crawl ${url}`, TASK_TYPE.CRAWL);
         const controller = new AbortController();
+        this.taskQueue.registerAbort(taskId, controller);
         try {
             let pageCount = 0;
             for await (const event of this.api.crawl(url, depth, maxPages, controller.signal)) {
@@ -906,6 +912,7 @@ export default class LilbeePlugin extends Plugin {
         if (!this.statusBarEl) return;
         const taskId = this.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
         this.syncController = new AbortController();
+        this.taskQueue.registerAbort(taskId, this.syncController);
 
         try {
             let syncResult: SyncDone | null = null;

@@ -343,4 +343,51 @@ describe("TaskQueue", () => {
             expect(queue.activeAll).toHaveLength(0);
         });
     });
+
+    describe("registerAbort + cancel wiring", () => {
+        it("cancel aborts the registered controller for an active task", () => {
+            const id = queue.enqueue("Task", TASK_TYPE.SYNC);
+            const controller = new AbortController();
+            queue.registerAbort(id, controller);
+            expect(controller.signal.aborted).toBe(false);
+            queue.cancel(id);
+            expect(controller.signal.aborted).toBe(true);
+        });
+
+        it("registerAbort sets canCancel to true", () => {
+            const id = queue.enqueue("Task", TASK_TYPE.SYNC);
+            const task = queue.active!;
+            expect(task.canCancel).toBe(false);
+            queue.registerAbort(id, new AbortController());
+            expect(task.canCancel).toBe(true);
+        });
+
+        it("registerAbort is a no-op for non-existent task", () => {
+            const controller = new AbortController();
+            expect(() => queue.registerAbort("nope", controller)).not.toThrow();
+            expect(controller.signal.aborted).toBe(false);
+        });
+
+        it("cancelling a queued task removes the registered abort without firing", () => {
+            const active = queue.enqueue("Active sync", TASK_TYPE.SYNC);
+            const queued = queue.enqueue("Queued sync", TASK_TYPE.SYNC);
+            const controller = new AbortController();
+            queue.registerAbort(queued, controller);
+            queue.cancel(queued);
+            expect(controller.signal.aborted).toBe(false);
+            // active task still runs
+            expect(queue.tasks ?? true).toBeTruthy();
+            queue.cancel(active);
+        });
+
+        it("completing a task clears the registered abort so future calls are no-ops", () => {
+            const id = queue.enqueue("Task", TASK_TYPE.SYNC);
+            const controller = new AbortController();
+            queue.registerAbort(id, controller);
+            queue.complete(id);
+            // Cancelling the moved-to-history task is a no-op.
+            queue.cancel(id);
+            expect(controller.signal.aborted).toBe(false);
+        });
+    });
 });

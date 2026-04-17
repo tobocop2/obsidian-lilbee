@@ -440,6 +440,7 @@ export class CatalogModal extends Modal {
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.hf_repo}`, TASK_TYPE.PULL);
         const controller = new AbortController();
         this.pullController = controller;
+        this.plugin.taskQueue.registerAbort(taskId, controller);
         const pullErrorPrefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.hf_repo);
 
         try {
