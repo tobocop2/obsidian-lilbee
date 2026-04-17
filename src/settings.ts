@@ -1198,13 +1198,21 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private async deleteModel(btn: HTMLButtonElement, model: ModelInfo): Promise<void> {
+        const taskId = this.plugin.taskQueue.enqueue(`Remove ${model.name}`, TASK_TYPE.DELETE);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         btn.disabled = true;
+        this.plugin.taskQueue.update(taskId, -1, model.name);
         const result = await this.plugin.api.deleteModel(model.name);
         if (result.isErr()) {
             new Notice(MESSAGES.ERROR_DELETE_MODEL.replace("{model}", model.name));
+            this.plugin.taskQueue.fail(taskId, result.error.message);
             btn.disabled = false;
             return;
         }
+        this.plugin.taskQueue.complete(taskId);
         new Notice(MESSAGES.NOTICE_REMOVED(model.name));
         if (model.name === this.plugin.activeModel) {
             await this.plugin.api.setChatModel("");

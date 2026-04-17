@@ -62,15 +62,27 @@ function _findInputs(el: MockElement): MockElement[] {
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
+class NoopIntersectionObserver {
+    constructor(_cb: IntersectionObserverCallback) {}
+    observe(): void {}
+    disconnect(): void {}
+    unobserve(): void {}
+    takeRecords(): IntersectionObserverEntry[] {
+        return [];
+    }
+}
+
 describe("DocumentsModal", () => {
     beforeEach(() => {
         Notice.clear();
         mockConfirmResult = true;
         vi.useFakeTimers();
+        vi.stubGlobal("IntersectionObserver", NoopIntersectionObserver);
     });
 
     afterEach(() => {
         vi.useRealTimers();
+        vi.unstubAllGlobals();
     });
 
     it("renders title and search on open", async () => {
@@ -260,24 +272,21 @@ describe("DocumentsModal", () => {
         await vi.runAllTimersAsync();
 
         const el = modal.contentEl as unknown as MockElement;
-        const loadMore = el.find("lilbee-documents-load-more")!;
-        expect(loadMore.style.display).toBe("");
+        expect(el.find("lilbee-documents-sentinel")).not.toBeNull();
     });
 
-    it("hides Load more when all loaded", async () => {
-        const plugin = makePlugin();
-        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc()], 1));
-        const app = new App();
-        const modal = new DocumentsModal(app as any, plugin as any);
-        modal.open();
-        await vi.runAllTimersAsync();
-
-        const el = modal.contentEl as unknown as MockElement;
-        const loadMore = el.find("lilbee-documents-load-more")!;
-        expect(loadMore.style.display).toBe("none");
-    });
-
-    it("Load more fetches next page", async () => {
+    it("sentinel intersection fetches next page when more remain", async () => {
+        const observers: IntersectionObserverCallback[] = [];
+        vi.stubGlobal(
+            "IntersectionObserver",
+            class {
+                constructor(cb: IntersectionObserverCallback) {
+                    observers.push(cb);
+                }
+                observe() {}
+                disconnect() {}
+            },
+        );
         const page1 = Array.from({ length: 20 }, (_, i) => makeDoc({ filename: `f${i}.md` }));
         const page2 = [makeDoc({ filename: "f20.md" })];
         const plugin = makePlugin();
@@ -289,13 +298,96 @@ describe("DocumentsModal", () => {
         modal.open();
         await vi.runAllTimersAsync();
 
-        const el = modal.contentEl as unknown as MockElement;
-        const loadMore = el.find("lilbee-documents-load-more")!;
-        loadMore.trigger("click");
+        observers[0]([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
         await vi.runAllTimersAsync();
 
         expect(plugin.api.listDocuments).toHaveBeenCalledTimes(2);
         expect(plugin.api.listDocuments).toHaveBeenLastCalledWith(undefined, 20, 20);
+    });
+
+    it("sentinel intersection is ignored when no more documents remain", async () => {
+        const observers: IntersectionObserverCallback[] = [];
+        vi.stubGlobal(
+            "IntersectionObserver",
+            class {
+                constructor(cb: IntersectionObserverCallback) {
+                    observers.push(cb);
+                }
+                observe() {}
+                disconnect() {}
+            },
+        );
+        const plugin = makePlugin();
+        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc()], 1));
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+        plugin.api.listDocuments.mockClear();
+
+        observers[0]([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+        await vi.runAllTimersAsync();
+
+        expect(plugin.api.listDocuments).not.toHaveBeenCalled();
+    });
+
+    it("sentinel intersection ignores non-intersecting entries", async () => {
+        const observers: IntersectionObserverCallback[] = [];
+        vi.stubGlobal(
+            "IntersectionObserver",
+            class {
+                constructor(cb: IntersectionObserverCallback) {
+                    observers.push(cb);
+                }
+                observe() {}
+                disconnect() {}
+            },
+        );
+        const plugin = makePlugin();
+        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc()], 40));
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+        plugin.api.listDocuments.mockClear();
+
+        observers[0]([{ isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver);
+        await vi.runAllTimersAsync();
+
+        expect(plugin.api.listDocuments).not.toHaveBeenCalled();
+    });
+
+    it("disconnects observer on close", async () => {
+        const disconnectSpy = vi.fn();
+        vi.stubGlobal(
+            "IntersectionObserver",
+            class {
+                constructor(_cb: IntersectionObserverCallback) {}
+                observe() {}
+                disconnect() {
+                    disconnectSpy();
+                }
+            },
+        );
+        const plugin = makePlugin();
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+        modal.close();
+        expect(disconnectSpy).toHaveBeenCalled();
+    });
+
+    it("fetchPage is a no-op when already fetching", async () => {
+        const plugin = makePlugin();
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+        plugin.api.listDocuments.mockClear();
+        (modal as any).isFetching = true;
+        await (modal as any).fetchPage();
+        expect(plugin.api.listDocuments).not.toHaveBeenCalled();
     });
 
     it("search input triggers debounced fetch", async () => {
@@ -387,15 +479,6 @@ describe("DocumentsModal", () => {
         searchInput.trigger("input");
         expect((modal as any).debouncedSearch).toBeDefined();
         modal.onClose();
-    });
-
-    it("updateLoadMore returns early when loadMoreBtn is null", () => {
-        const plugin = makePlugin();
-        const app = new App();
-        const modal = new DocumentsModal(app as any, plugin as any);
-        (modal as any).loadMoreBtn = null;
-        (modal as any).updateLoadMore();
-        // Should not throw
     });
 
     it("updateRemoveBtn returns early when removeBtn is null", () => {

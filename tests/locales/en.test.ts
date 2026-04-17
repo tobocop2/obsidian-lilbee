@@ -20,7 +20,6 @@ describe("MESSAGES", () => {
             expect(MESSAGES.BUTTON_BROWSE_FULL_CATALOG).toBe("Browse full catalog");
             expect(MESSAGES.BUTTON_DOWNLOAD_CONTINUE).toBe("Download & continue");
             expect(MESSAGES.BUTTON_DELETE_SELECTED).toBe("Delete selected");
-            expect(MESSAGES.BUTTON_LOAD_MORE).toBe("Load more");
             expect(MESSAGES.BUTTON_CRAWL).toBe("Crawl");
             expect(MESSAGES.BUTTON_START).toBe("Start");
             expect(MESSAGES.BUTTON_STOP).toBe("Stop");

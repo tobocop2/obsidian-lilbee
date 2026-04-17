@@ -371,17 +371,25 @@ export class CatalogModal extends Modal {
     }
 
     private async executeRemove(entry: CatalogEntry, btn: HTMLElement): Promise<void> {
+        const taskId = this.plugin.taskQueue.enqueue(`Remove ${entry.hf_repo}`, TASK_TYPE.DELETE);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         btn.textContent = MESSAGES.STATUS_REMOVING;
         (btn as HTMLButtonElement).disabled = true;
+        this.plugin.taskQueue.update(taskId, -1, entry.hf_repo);
 
         const result = await this.plugin.api.deleteModel(entry.hf_repo, entry.source);
         if (result.isErr()) {
             new Notice(MESSAGES.ERROR_REMOVE_MODEL.replace("{model}", entry.hf_repo));
+            this.plugin.taskQueue.fail(taskId, result.error.message);
             btn.textContent = MESSAGES.BUTTON_REMOVE;
             (btn as HTMLButtonElement).disabled = false;
             return;
         }
 
+        this.plugin.taskQueue.complete(taskId);
         new Notice(MESSAGES.NOTICE_REMOVED(entry.hf_repo));
         this.plugin.fetchActiveModel();
         this.resetAndFetch();

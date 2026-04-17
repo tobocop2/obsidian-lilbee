@@ -316,7 +316,7 @@ export const TASK_STATUS = {
     CANCELLED: "cancelled",
 } as const satisfies Record<string, TaskStatus>;
 
-export type TaskType = "sync" | "add" | "pull" | "crawl" | "download" | "wiki";
+export type TaskType = "sync" | "add" | "pull" | "crawl" | "download" | "wiki" | "delete";
 
 export const TASK_TYPE = {
     SYNC: "sync",
@@ -325,6 +325,7 @@ export const TASK_TYPE = {
     CRAWL: "crawl",
     DOWNLOAD: "download",
     WIKI: "wiki",
+    DELETE: "delete",
 } as const satisfies Record<string, TaskType>;
 
 export type SyncMode = "manual" | "auto";
@@ -377,6 +378,7 @@ export const BACKGROUND_TASK_TYPES: ReadonlySet<TaskType> = new Set<TaskType>([
     TASK_TYPE.CRAWL,
     TASK_TYPE.DOWNLOAD,
     TASK_TYPE.WIKI,
+    TASK_TYPE.DELETE,
 ]);
 
 export const PLATFORM = {

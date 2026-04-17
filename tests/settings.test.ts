@@ -2094,6 +2094,17 @@ describe("LilbeeSettingTab", () => {
             await (tab as any).executePull(btn, actionCell, { name: "phi3" });
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_QUEUE_FULL)).toBe(true);
         });
+
+        it("deleteModel surfaces NOTICE_QUEUE_FULL when enqueue returns null", async () => {
+            const plugin = makePlugin();
+            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+            const tab = makeTab(plugin);
+            const btn = new MockElement("button") as unknown as HTMLButtonElement;
+            Notice.clear();
+            await (tab as any).deleteModel(btn, { name: "phi3" });
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_QUEUE_FULL)).toBe(true);
+            expect(plugin.api.deleteModel).not.toHaveBeenCalled();
+        });
     });
 });
 

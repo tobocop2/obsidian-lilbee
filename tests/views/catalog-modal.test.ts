@@ -1004,6 +1004,53 @@ describe("CatalogModal", () => {
             expect(plugin.api.pullModel).not.toHaveBeenCalled();
         });
 
+        it("executeRemove shows NOTICE_QUEUE_FULL when enqueue returns null", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+            plugin.api.deleteModel = vi.fn();
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const removeBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_REMOVE)!;
+            removeBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.deleteModel).not.toHaveBeenCalled();
+        });
+
+        it("executeRemove enqueues a DELETE task and completes on success", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            plugin.api.deleteModel = vi
+                .fn()
+                .mockResolvedValue(ok({ deleted: true, model: "qwen/qwen3-8b", freed_gb: 5 }));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const removeBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_REMOVE)!;
+            removeBtn.trigger("click");
+            await tick();
+            await tick();
+            const done = plugin.taskQueue.completed.find((t: any) => t.type === "delete");
+            expect(done).toBeDefined();
+            expect(done!.status).toBe("done");
+        });
+
+        it("executeRemove fails the task when deleteModel errors", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            plugin.api.deleteModel = vi.fn().mockResolvedValue(err(new Error("disk i/o")));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const removeBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_REMOVE)!;
+            removeBtn.trigger("click");
+            await tick();
+            await tick();
+            const failed = plugin.taskQueue.completed.find((t: any) => t.type === "delete");
+            expect(failed!.status).toBe("failed");
+            expect(failed!.error).toBe("disk i/o");
+        });
+
         it("second click during an active pull aborts the controller", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));

@@ -9,6 +9,7 @@
     --lilbee-color-crawl: #22c55e;
     --lilbee-color-download: #06b6d4;
     --lilbee-color-wiki: #10b981;
+    --lilbee-color-delete: #ef4444;
 }
 
 .lilbee-document-card {
@@ -1200,20 +1201,9 @@
     font-size: var(--font-smallest, 10px);
 }
 
-.lilbee-documents-load-more {
-    width: 100%;
-    padding: var(--size-4-2, 8px);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-s, 4px);
-    background: none;
-    cursor: pointer;
-    color: var(--text-muted);
-    font-size: var(--font-small, 13px);
-    text-align: center;
-}
-
-.lilbee-documents-load-more:hover {
-    background-color: var(--background-modifier-hover);
+.lilbee-documents-sentinel {
+    height: 1px;
+    margin-top: 8px;
 }
 
 /* Chat Empty State */
@@ -1629,6 +1619,7 @@
 .lilbee-task-badge-crawl { background-color: color-mix(in srgb, var(--lilbee-color-crawl) 12%, transparent); color: var(--lilbee-color-crawl); }
 .lilbee-task-badge-download { background-color: color-mix(in srgb, var(--lilbee-color-download) 12%, transparent); color: var(--lilbee-color-download); }
 .lilbee-task-badge-wiki { background-color: color-mix(in srgb, var(--lilbee-color-wiki) 12%, transparent); color: var(--lilbee-color-wiki); }
+.lilbee-task-badge-delete { background-color: color-mix(in srgb, var(--lilbee-color-delete) 12%, transparent); color: var(--lilbee-color-delete); }
 
 /* Task progress background */
 .lilbee-task-progress-bg {
@@ -1648,6 +1639,7 @@
 .lilbee-task-progress-bg-crawl { background-color: var(--lilbee-color-crawl); }
 .lilbee-task-progress-bg-download { background-color: var(--lilbee-color-download); }
 .lilbee-task-progress-bg-wiki { background-color: var(--lilbee-color-wiki); }
+.lilbee-task-progress-bg-delete { background-color: var(--lilbee-color-delete); }
 
 .lilbee-task-name {
     font-size: var(--font-small, 13px);
