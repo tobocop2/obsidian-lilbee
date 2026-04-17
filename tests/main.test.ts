@@ -1716,6 +1716,55 @@ describe("LilbeePlugin", () => {
             await (plugin as any).probeServerHealth();
             expect((plugin.statusBarEl as any)?.textContent).toContain("error");
         });
+
+        it("fires external-mode no-token notice when health fails and token is null", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).readCurrentToken = vi.fn(() => null);
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            Notice.clear();
+            await (plugin as any).probeServerHealth();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_TOKEN_EXTERNAL);
+        });
+
+        it("fires managed-mode no-token notice when health fails and token is null", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            (plugin as any).startingServer = false;
+            (plugin as any).serverUnreachable = false;
+            (plugin as any).readCurrentToken = vi.fn(() => null);
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            Notice.clear();
+            await (plugin as any).probeServerHealth();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_TOKEN_MANAGED);
+        });
+
+        it("fires the no-token notice at most once per plugin load", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).readCurrentToken = vi.fn(() => null);
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            Notice.clear();
+            await (plugin as any).probeServerHealth();
+            (plugin as any).serverUnreachable = false;
+            await (plugin as any).probeServerHealth();
+            const count = Notice.instances.filter((n) => n.message === MESSAGES.NOTICE_NO_TOKEN_EXTERNAL).length;
+            expect(count).toBe(1);
+        });
+
+        it("skips the no-token notice when a token exists", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).readCurrentToken = vi.fn(() => "token");
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            Notice.clear();
+            await (plugin as any).probeServerHealth();
+            const fired = Notice.instances.some(
+                (n) =>
+                    n.message === MESSAGES.NOTICE_NO_TOKEN_MANAGED || n.message === MESSAGES.NOTICE_NO_TOKEN_EXTERNAL,
+            );
+            expect(fired).toBe(false);
+        });
     });
 
     describe("taskQueue integration", () => {

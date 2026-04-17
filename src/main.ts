@@ -526,7 +526,21 @@ export default class LilbeePlugin extends Plugin {
             this.serverUnreachable = true;
             this.updateStatusBar(MESSAGES.STATUS_ERROR);
             this.setStatusClass("lilbee-status-error");
+            this.maybeWarnMissingToken();
         }
+    }
+
+    private missingTokenNoticeFired = false;
+
+    private maybeWarnMissingToken(): void {
+        if (this.missingTokenNoticeFired) return;
+        if (this.readCurrentToken() !== null) return;
+        this.missingTokenNoticeFired = true;
+        const msg =
+            this.settings.serverMode === SERVER_MODE.MANAGED
+                ? MESSAGES.NOTICE_NO_TOKEN_MANAGED
+                : MESSAGES.NOTICE_NO_TOKEN_EXTERNAL;
+        new Notice(msg, NOTICE_DURATION_MS);
     }
 
     private updateStatusBarFromQueue(): void {
