@@ -112,6 +112,7 @@ export default class LilbeePlugin extends Plugin {
         this.registerView(VIEW_TYPE_WIKI, (leaf) => new WikiView(leaf, this));
         this.addSettingTab(new LilbeeSettingTab(this.app, this));
         this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
+        this.taskQueue.onChange(() => this.schedulePersistHistory());
         this.downloadPanel = new DownloadPanel(this);
         this.downloadPanel.attach();
         this.registerCommands();
@@ -188,7 +189,7 @@ export default class LilbeePlugin extends Plugin {
                 try {
                     const release = await getLatestRelease();
                     this.settings.lilbeeVersion = release.tag;
-                    await this.saveData(this.settings);
+                    await this.persistAll();
                 } catch {
                     /* version tracking is best-effort */
                 }
@@ -250,7 +251,7 @@ export default class LilbeePlugin extends Plugin {
 
         // Save the new version
         this.settings.lilbeeVersion = release.tag;
-        await this.saveData(this.settings);
+        await this.persistAll();
 
         // Restart if in managed mode
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
@@ -447,14 +448,24 @@ export default class LilbeePlugin extends Plugin {
     }
 
     async loadSettings(): Promise<void> {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        const blob = (await this.loadData()) as (LilbeeSettings & { taskHistory?: { history?: unknown[] } }) | null;
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, blob ?? {});
         this.previousServerMode = this.settings.serverMode;
+        this.taskQueue.loadFromJSON(blob?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
+    }
+
+    private async persistAll(): Promise<void> {
+        await this.saveData({ ...this.settings, taskHistory: this.taskQueue.toJSON() });
+    }
+
+    private schedulePersistHistory(): void {
+        void this.persistAll();
     }
 
     async saveSettings(): Promise<void> {
         const previousMode = this.previousServerMode;
         this.previousServerMode = this.settings.serverMode;
-        await this.saveData(this.settings);
+        await this.persistAll();
 
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
             if (previousMode !== SERVER_MODE.MANAGED) {

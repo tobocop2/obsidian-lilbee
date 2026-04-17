@@ -394,6 +394,55 @@ describe("TaskQueue", () => {
         });
     });
 
+    describe("toJSON / loadFromJSON", () => {
+        it("serializes history", () => {
+            const id1 = queue.enqueue("Task 1", TASK_TYPE.SYNC);
+            queue.complete(id1);
+            const data = queue.toJSON();
+            expect(data.history).toHaveLength(1);
+            expect(data.history[0]!.name).toBe("Task 1");
+        });
+
+        it("loadFromJSON restores history into a fresh queue", () => {
+            const src = new TaskQueue();
+            const id = src.enqueue("Old task", TASK_TYPE.CRAWL);
+            src.complete(id);
+            const data = src.toJSON();
+
+            const dest = new TaskQueue();
+            dest.loadFromJSON(data);
+            expect(dest.completed).toHaveLength(1);
+            expect(dest.completed[0]!.name).toBe("Old task");
+        });
+
+        it("loadFromJSON is a no-op when given undefined", () => {
+            queue.loadFromJSON(undefined);
+            expect(queue.completed).toHaveLength(0);
+        });
+
+        it("loadFromJSON ignores malformed payload (non-array history)", () => {
+            queue.loadFromJSON({ history: undefined });
+            expect(queue.completed).toHaveLength(0);
+        });
+
+        it("loadFromJSON caps restored history at MAX_HISTORY", () => {
+            const many = Array.from({ length: TaskQueue.MAX_HISTORY + 10 }, (_, i) => ({
+                id: `old-${i}`,
+                name: `Old ${i}`,
+                type: TASK_TYPE.SYNC,
+                status: TASK_STATUS.DONE,
+                progress: 100,
+                detail: "",
+                startedAt: i,
+                completedAt: i,
+                error: null,
+                canCancel: false,
+            }));
+            queue.loadFromJSON({ history: many });
+            expect(queue.completed).toHaveLength(TaskQueue.MAX_HISTORY);
+        });
+    });
+
     describe("registerAbort + cancel wiring", () => {
         it("cancel aborts the registered controller for an active task", () => {
             const id = queue.enqueue("Task", TASK_TYPE.SYNC);

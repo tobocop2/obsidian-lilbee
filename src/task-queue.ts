@@ -216,4 +216,14 @@ export class TaskQueue {
         this.history = [];
         this.notify();
     }
+
+    toJSON(): { history: TaskEntry[] } {
+        return { history: [...this.history] };
+    }
+
+    loadFromJSON(data: { history?: TaskEntry[] } | undefined): void {
+        if (!data || !Array.isArray(data.history)) return;
+        this.history = data.history.slice(0, TaskQueue.MAX_HISTORY);
+        this.notify();
+    }
 }

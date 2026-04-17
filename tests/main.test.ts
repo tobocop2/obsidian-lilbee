@@ -385,7 +385,7 @@ describe("LilbeePlugin", () => {
             plugin.settings.serverUrl = "http://newserver:8080";
             await plugin.saveSettings();
 
-            expect(plugin.saveData).toHaveBeenCalledWith(plugin.settings);
+            expect(plugin.saveData).toHaveBeenCalledWith(expect.objectContaining({ ...plugin.settings }));
             const callsAfter = (LilbeeClient as ReturnType<typeof vi.fn>).mock.calls.length;
             expect(callsAfter).toBeGreaterThan(callsBefore);
         });
