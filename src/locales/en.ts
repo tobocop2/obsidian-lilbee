@@ -99,6 +99,7 @@ export const MESSAGES = {
     LABEL_CANCEL_TASK: "Cancel task",
     LABEL_DOWNLOAD_QUEUED: "+{count} queued",
     LABEL_CHAT_MODEL_ICON: "Chat model",
+    LABEL_EMBEDDING_MODEL_ICON: "Embed",
     LABEL_ADD_FILE: "Add file",
     LABEL_SAVE_VAULT: "Save to vault",
     LABEL_THINKING: "Thinking...",
