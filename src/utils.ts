@@ -32,6 +32,11 @@ export function formatAbbreviatedCount(count: number): string {
     return String(count);
 }
 
+export function ensureUrlScheme(url: string): string {
+    if (/^https?:\/\//i.test(url)) return url;
+    return `https://${url}`;
+}
+
 export function relativeTime(timestamp: number): string {
     const seconds = Math.floor((Date.now() - timestamp) / 1000);
     if (seconds < 60) return "just now";

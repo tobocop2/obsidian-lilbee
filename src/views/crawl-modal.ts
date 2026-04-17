@@ -1,6 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import { MESSAGES } from "../locales/en";
+import { ensureUrlScheme } from "../utils";
 
 export class CrawlModal extends Modal {
     private plugin: LilbeePlugin;
@@ -42,11 +43,12 @@ export class CrawlModal extends Modal {
         const actions = contentEl.createDiv({ cls: "lilbee-crawl-actions" });
         const crawlBtn = actions.createEl("button", { text: MESSAGES.BUTTON_CRAWL, cls: "mod-cta" });
         crawlBtn.addEventListener("click", () => {
-            const url = (urlInput as unknown as HTMLInputElement).value.trim();
-            if (!url) {
+            const raw = (urlInput as unknown as HTMLInputElement).value.trim();
+            if (!raw) {
                 new Notice(MESSAGES.NOTICE_ENTER_URL);
                 return;
             }
+            const url = ensureUrlScheme(raw);
             const depth = parseInt((depthInput as unknown as HTMLInputElement).value, 10) || 0;
             const maxPages = parseInt((maxInput as unknown as HTMLInputElement).value, 10) || 50;
             this.plugin.runCrawl(url, depth, maxPages);
