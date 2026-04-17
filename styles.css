@@ -845,20 +845,9 @@
     font-size: var(--font-small, 13px);
 }
 
-.lilbee-catalog-load-more {
-    width: 100%;
-    padding: var(--size-4-2, 8px);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-s, 4px);
-    background: none;
-    cursor: pointer;
-    color: var(--text-muted);
-    font-size: var(--font-small, 13px);
-    text-align: center;
-}
-
-.lilbee-catalog-load-more:hover {
-    background-color: var(--background-modifier-hover);
+.lilbee-catalog-sentinel {
+    height: 1px;
+    margin-top: 8px;
 }
 
 /* Card Grid Layout */
@@ -971,23 +960,6 @@
     font-style: italic;
 }
 
-/* Browse More CTA Card */
-
-.lilbee-browse-more-card {
-    border: 1px dashed var(--background-modifier-border);
-    border-radius: 10px;
-    padding: 24px;
-    text-align: center;
-    cursor: pointer;
-    color: var(--text-muted);
-    transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease;
-}
-
-.lilbee-browse-more-card:hover {
-    border-color: var(--interactive-accent);
-    color: var(--interactive-accent);
-    background-color: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
-}
 
 /* Section Headings */
 

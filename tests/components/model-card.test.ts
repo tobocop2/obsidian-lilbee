@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { MockElement } from "../__mocks__/obsidian";
-import { renderModelCard, renderBrowseMoreCard } from "../../src/components/model-card";
+import { renderModelCard } from "../../src/components/model-card";
 import { PILL_CLS } from "../../src/components/pill";
 import type { CatalogEntry } from "../../src/types";
 import { MESSAGES } from "../../src/locales/en";
@@ -258,22 +258,5 @@ describe("renderModelCard", () => {
             card.trigger("click", { target: { tagName: "BUTTON" } });
             expect(onClick).not.toHaveBeenCalled();
         });
-    });
-});
-
-describe("renderBrowseMoreCard", () => {
-    it("creates card with correct text and class", () => {
-        const c = container();
-        const card = renderBrowseMoreCard(c, vi.fn()) as unknown as MockElement;
-        expect(card.classList.contains("lilbee-browse-more-card")).toBe(true);
-        expect(card.textContent).toBe(MESSAGES.LABEL_BROWSE_MORE);
-    });
-
-    it("calls onClick when clicked", () => {
-        const c = container();
-        const onClick = vi.fn();
-        const card = renderBrowseMoreCard(c, onClick) as unknown as MockElement;
-        card.trigger("click");
-        expect(onClick).toHaveBeenCalled();
     });
 });

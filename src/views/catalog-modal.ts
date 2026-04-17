@@ -6,9 +6,10 @@ import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import { debounce, DEBOUNCE_MS, formatAbbreviatedCount } from "../utils";
-import { renderModelCard, renderBrowseMoreCard } from "../components/model-card";
+import { renderModelCard } from "../components/model-card";
 
 const PAGE_SIZE = 20;
+const SENTINEL_ROOT_MARGIN = "200px";
 
 type TaskFilter = (typeof FILTERS.TASK)[keyof typeof FILTERS.TASK];
 type SizeFilter = "" | typeof FILTERS.SIZE.SMALL | typeof FILTERS.SIZE.MEDIUM | typeof FILTERS.SIZE.LARGE;
@@ -28,11 +29,12 @@ export class CatalogModal extends Modal {
     private filterSearch = "";
     private offset = 0;
     private hasMore = false;
+    private isFetching = false;
     private entries: CatalogEntry[] = [];
     private resultsEl: HTMLElement | null = null;
-    private loadMoreBtn: HTMLElement | null = null;
+    private sentinelEl: HTMLElement | null = null;
+    private observer: IntersectionObserver | null = null;
     private viewMode: CatalogViewMode = CATALOG_VIEW_MODE.GRID;
-    private fullCatalogLoaded = false;
     private sortColumn = "";
     private sortAscending = true;
     private viewToggleBtn: HTMLElement | null = null;
@@ -56,19 +58,26 @@ export class CatalogModal extends Modal {
         this.renderFilterBar(contentEl);
 
         this.resultsEl = contentEl.createDiv({ cls: "lilbee-catalog-results" });
-
-        this.loadMoreBtn = contentEl.createEl("button", {
-            text: MESSAGES.BUTTON_LOAD_MORE,
-            cls: "lilbee-catalog-load-more",
-        });
-        this.loadMoreBtn.style.display = "none";
-        this.loadMoreBtn.addEventListener("click", () => this.fetchMore());
+        this.sentinelEl = contentEl.createDiv({ cls: "lilbee-catalog-sentinel" });
+        this.observer = new IntersectionObserver(
+            (entries) => {
+                for (const entry of entries) {
+                    if (entry.isIntersecting && this.hasMore && !this.isFetching) {
+                        void this.fetchPage();
+                    }
+                }
+            },
+            { root: contentEl, rootMargin: SENTINEL_ROOT_MARGIN },
+        );
+        this.observer.observe(this.sentinelEl);
 
         this.resetAndFetch();
     }
 
     onClose(): void {
         this.cancelDebouncedSearch();
+        this.observer?.disconnect();
+        this.observer = null;
     }
 
     private renderFilterBar(parent: HTMLElement): void {
@@ -139,19 +148,9 @@ export class CatalogModal extends Modal {
         void this.fetchPage();
     }
 
-    private fetchMore(): void {
-        void this.fetchPage();
-    }
-
-    private loadFullCatalog(): void {
-        // "Browse more" semantics: show the long tail ranked by popularity.
-        // This deliberately overrides any sort the user picked.
-        this.fullCatalogLoaded = true;
-        this.filterSort = FILTERS.SORT.DOWNLOADS;
-        this.resetAndFetch();
-    }
-
     private async fetchPage(): Promise<void> {
+        if (this.isFetching) return;
+        this.isFetching = true;
         const params: Parameters<typeof this.plugin.api.catalog>[0] = {
             limit: PAGE_SIZE,
             offset: this.offset,
@@ -161,19 +160,22 @@ export class CatalogModal extends Modal {
         if (this.filterSize) params.size = this.filterSize as ModelSize;
         if (this.filterSearch) params.search = this.filterSearch;
 
-        const result = await this.plugin.api.catalog(params);
-        if (result.isErr()) {
-            new Notice(MESSAGES.ERROR_LOAD_CATALOG);
-            return;
+        try {
+            const result = await this.plugin.api.catalog(params);
+            if (result.isErr()) {
+                new Notice(MESSAGES.ERROR_LOAD_CATALOG);
+                return;
+            }
+
+            const response = result.value;
+            this.hasMore = response.has_more;
+            this.entries.push(...response.models);
+            this.offset += response.models.length;
+
+            this.renderResults();
+        } finally {
+            this.isFetching = false;
         }
-
-        const response = result.value;
-        this.hasMore = response.has_more;
-        this.entries.push(...response.models);
-        this.offset += response.models.length;
-
-        this.renderResults();
-        this.updateLoadMore();
     }
 
     private renderResults(): void {
@@ -207,11 +209,6 @@ export class CatalogModal extends Modal {
 
         for (const [task, group] of this.groupByTask(rest)) {
             this.renderSection(TASK_SECTION_LABEL[task] ?? task, group);
-        }
-
-        if (!this.fullCatalogLoaded) {
-            const grid = this.resultsEl.createDiv({ cls: "lilbee-catalog-grid" });
-            renderBrowseMoreCard(grid, () => this.loadFullCatalog());
         }
 
         this.renderViewToggleCta();
@@ -361,11 +358,6 @@ export class CatalogModal extends Modal {
             default:
                 return "";
         }
-    }
-
-    private updateLoadMore(): void {
-        if (!this.loadMoreBtn) return;
-        this.loadMoreBtn.style.display = this.hasMore ? "" : "none";
     }
 
     private handleRemove(entry: CatalogEntry, btn: HTMLElement): void {

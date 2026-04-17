@@ -68,7 +68,6 @@ describe("MESSAGES", () => {
             expect(MESSAGES.LABEL_PICK).toBe("pick");
             expect(MESSAGES.LABEL_SWITCH_TO_LIST).toBe("Switch to list view");
             expect(MESSAGES.LABEL_SWITCH_TO_GRID).toBe("Switch to grid view");
-            expect(MESSAGES.LABEL_BROWSE_MORE).toBe("Browse more models");
             expect(MESSAGES.LABEL_VIEW_TOGGLE_CTA).toBe("Switch to list view for the full catalog");
             expect(MESSAGES.LABEL_NO_MODELS_FOUND).toBe("No models match your filters.");
             expect(MESSAGES.LABEL_TASK).toBe("Task");

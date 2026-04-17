@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { CatalogModal } from "../../src/views/catalog-modal";
@@ -104,11 +104,26 @@ function contentEl(modal: CatalogModal): MockElement {
     return (modal as unknown as { contentEl: MockElement }).contentEl;
 }
 
+class NoopIntersectionObserver {
+    constructor(_cb: IntersectionObserverCallback) {}
+    observe(): void {}
+    disconnect(): void {}
+    unobserve(): void {}
+    takeRecords(): IntersectionObserverEntry[] {
+        return [];
+    }
+}
+
 describe("CatalogModal", () => {
     beforeEach(() => {
         Notice.clear();
         mockConfirmResult = true;
         mockConfirmRemoveResult = true;
+        vi.stubGlobal("IntersectionObserver", NoopIntersectionObserver);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
     });
 
     describe("opening and layout", () => {
@@ -214,27 +229,6 @@ describe("CatalogModal", () => {
             const content = contentEl(modal);
             const headings = content.findAll("lilbee-catalog-section-heading").map((el) => el.textContent);
             expect(headings).toContain("custom");
-        });
-
-        it("renders a Browse more models card until the full catalog is loaded", async () => {
-            const plugin = makePlugin();
-            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ featured: true })])));
-            const modal = await openModal(plugin);
-            const content = contentEl(modal);
-            expect(content.find("lilbee-browse-more-card")).not.toBeNull();
-        });
-
-        it("clicking the Browse more card loads the full catalog and drops the card", async () => {
-            const plugin = makePlugin();
-            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ featured: true })])));
-            const modal = await openModal(plugin);
-            const content = contentEl(modal);
-            content.find("lilbee-browse-more-card")!.trigger("click");
-            await tick();
-            await tick();
-            expect(content.find("lilbee-browse-more-card")).toBeNull();
-            // The sort filter should now be downloads (loadFullCatalog side effect)
-            expect(plugin.api.catalog).toHaveBeenLastCalledWith(expect.objectContaining({ sort: "downloads" }));
         });
 
         it("renders the view-toggle CTA banner", async () => {
@@ -524,30 +518,41 @@ describe("CatalogModal", () => {
         });
     });
 
-    describe("load more", () => {
-        it("shows load-more button when has_more is true", async () => {
-            const plugin = makePlugin();
-            plugin.api.catalog.mockResolvedValue(
-                ok({ total: 40, limit: 20, offset: 0, models: [makeEntry()], has_more: true }),
+    describe("infinite scroll", () => {
+        it("appends a sentinel element and observes it", async () => {
+            const observeSpy = vi.fn();
+            vi.stubGlobal(
+                "IntersectionObserver",
+                class {
+                    constructor(_cb: IntersectionObserverCallback) {}
+                    observe(el: Element) {
+                        observeSpy(el);
+                    }
+                    disconnect() {}
+                },
             );
+            const plugin = makePlugin();
             const modal = await openModal(plugin);
             const content = contentEl(modal);
-            const btn = content.find("lilbee-catalog-load-more")! as unknown as MockElement;
-            expect(btn.style.display).toBe("");
+            const sentinel = content.find("lilbee-catalog-sentinel");
+            expect(sentinel).not.toBeNull();
+            expect(observeSpy).toHaveBeenCalledTimes(1);
+            modal.close();
+            vi.unstubAllGlobals();
         });
 
-        it("hides load-more button when has_more is false", async () => {
-            const plugin = makePlugin();
-            plugin.api.catalog.mockResolvedValue(
-                ok({ total: 1, limit: 20, offset: 0, models: [makeEntry()], has_more: false }),
+        it("fetches next page when sentinel intersects and hasMore is true", async () => {
+            const observers: IntersectionObserverCallback[] = [];
+            vi.stubGlobal(
+                "IntersectionObserver",
+                class {
+                    constructor(cb: IntersectionObserverCallback) {
+                        observers.push(cb);
+                    }
+                    observe() {}
+                    disconnect() {}
+                },
             );
-            const modal = await openModal(plugin);
-            const content = contentEl(modal);
-            const btn = content.find("lilbee-catalog-load-more")! as unknown as MockElement;
-            expect(btn.style.display).toBe("none");
-        });
-
-        it("fetching more appends entries and bumps offset", async () => {
             const plugin = makePlugin();
             const first = makeEntry({ name: "a", display_name: "A" });
             const second = makeEntry({ name: "b", display_name: "B" });
@@ -555,11 +560,127 @@ describe("CatalogModal", () => {
                 .mockResolvedValueOnce(ok({ total: 2, limit: 1, offset: 0, models: [first], has_more: true }))
                 .mockResolvedValueOnce(ok({ total: 2, limit: 1, offset: 1, models: [second], has_more: false }));
             const modal = await openModal(plugin);
-            const content = contentEl(modal);
-            content.find("lilbee-catalog-load-more")!.trigger("click");
+            observers[0](
+                [{ isIntersecting: true } as IntersectionObserverEntry],
+                {} as unknown as IntersectionObserver,
+            );
             await tick();
             await tick();
             expect(plugin.api.catalog).toHaveBeenCalledTimes(2);
+            modal.close();
+            vi.unstubAllGlobals();
+        });
+
+        it("ignores sentinel intersection when hasMore is false", async () => {
+            const observers: IntersectionObserverCallback[] = [];
+            vi.stubGlobal(
+                "IntersectionObserver",
+                class {
+                    constructor(cb: IntersectionObserverCallback) {
+                        observers.push(cb);
+                    }
+                    observe() {}
+                    disconnect() {}
+                },
+            );
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok({ total: 1, limit: 20, offset: 0, models: [makeEntry()], has_more: false }),
+            );
+            const modal = await openModal(plugin);
+            plugin.api.catalog.mockClear();
+            observers[0](
+                [{ isIntersecting: true } as IntersectionObserverEntry],
+                {} as unknown as IntersectionObserver,
+            );
+            await tick();
+            expect(plugin.api.catalog).not.toHaveBeenCalled();
+            modal.close();
+            vi.unstubAllGlobals();
+        });
+
+        it("ignores a second intersection while a fetch is already in flight", async () => {
+            const observers: IntersectionObserverCallback[] = [];
+            vi.stubGlobal(
+                "IntersectionObserver",
+                class {
+                    constructor(cb: IntersectionObserverCallback) {
+                        observers.push(cb);
+                    }
+                    observe() {}
+                    disconnect() {}
+                },
+            );
+            const plugin = makePlugin();
+            let resolveFirst!: (value: unknown) => void;
+            plugin.api.catalog.mockImplementationOnce(
+                () =>
+                    new Promise((r) => {
+                        resolveFirst = r;
+                    }),
+            );
+            new CatalogModal(new App() as any, plugin as any).open();
+            await tick();
+            observers[0](
+                [{ isIntersecting: true } as IntersectionObserverEntry],
+                {} as unknown as IntersectionObserver,
+            );
+            observers[0](
+                [{ isIntersecting: true } as IntersectionObserverEntry],
+                {} as unknown as IntersectionObserver,
+            );
+            resolveFirst(ok(makeCatalogResponse([makeEntry()], 1, false)));
+            await tick();
+            await tick();
+            expect(plugin.api.catalog).toHaveBeenCalledTimes(1);
+            vi.unstubAllGlobals();
+        });
+
+        it("ignores non-intersecting entries from the observer", async () => {
+            const observers: IntersectionObserverCallback[] = [];
+            vi.stubGlobal(
+                "IntersectionObserver",
+                class {
+                    constructor(cb: IntersectionObserverCallback) {
+                        observers.push(cb);
+                    }
+                    observe() {}
+                    disconnect() {}
+                },
+            );
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok({ total: 40, limit: 20, offset: 0, models: [makeEntry()], has_more: true }),
+            );
+            const modal = await openModal(plugin);
+            plugin.api.catalog.mockClear();
+            observers[0](
+                [{ isIntersecting: false } as IntersectionObserverEntry],
+                {} as unknown as IntersectionObserver,
+            );
+            await tick();
+            expect(plugin.api.catalog).not.toHaveBeenCalled();
+            modal.close();
+            vi.unstubAllGlobals();
+        });
+
+        it("disconnects the observer on close", async () => {
+            const disconnectSpy = vi.fn();
+            vi.stubGlobal(
+                "IntersectionObserver",
+                class {
+                    constructor(_cb: IntersectionObserverCallback) {}
+                    observe() {}
+                    disconnect() {
+                        disconnectSpy();
+                    }
+                },
+            );
+            const plugin = makePlugin();
+            const modal = await openModal(plugin);
+            modal.close();
+            expect(disconnectSpy).toHaveBeenCalled();
+            vi.unstubAllGlobals();
         });
     });
 
@@ -885,13 +1006,6 @@ describe("CatalogModal", () => {
             const modal = await openModal(plugin);
             (modal as any).resultsEl = null;
             expect(() => (modal as any).renderListView([makeEntry()])).not.toThrow();
-        });
-
-        it("updateLoadMore bails when loadMoreBtn is null", async () => {
-            const plugin = makePlugin();
-            const modal = await openModal(plugin);
-            (modal as any).loadMoreBtn = null;
-            expect(() => (modal as any).updateLoadMore()).not.toThrow();
         });
 
         it("updateToggleLabel bails when viewToggleBtn is null", async () => {

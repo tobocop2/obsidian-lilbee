@@ -117,7 +117,6 @@ export const MESSAGES = {
     LABEL_PICK: "pick",
     LABEL_SWITCH_TO_LIST: "Switch to list view",
     LABEL_SWITCH_TO_GRID: "Switch to grid view",
-    LABEL_BROWSE_MORE: "Browse more models",
     LABEL_VIEW_TOGGLE_CTA: "Switch to list view for the full catalog",
     LABEL_NO_MODELS_FOUND: "No models match your filters.",
     LABEL_TASK: "Task",
