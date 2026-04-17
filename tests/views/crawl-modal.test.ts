@@ -129,6 +129,36 @@ describe("CrawlModal", () => {
         expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, 50);
     });
 
+    it("prepends https:// when URL has no scheme", () => {
+        const app = new App();
+        const plugin = makePlugin();
+        const modal = new CrawlModal(app as any, plugin as any);
+        modal.onOpen();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const urlInput = el.find("lilbee-crawl-url")!;
+        (urlInput as any).value = "example.com";
+        const crawlBtn = findButtons(el).find((b) => b.textContent === "Crawl")!;
+        crawlBtn.trigger("click");
+
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, 50);
+    });
+
+    it("preserves http:// when already present", () => {
+        const app = new App();
+        const plugin = makePlugin();
+        const modal = new CrawlModal(app as any, plugin as any);
+        modal.onOpen();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const urlInput = el.find("lilbee-crawl-url")!;
+        (urlInput as any).value = "http://example.com";
+        const crawlBtn = findButtons(el).find((b) => b.textContent === "Crawl")!;
+        crawlBtn.trigger("click");
+
+        expect(plugin.runCrawl).toHaveBeenCalledWith("http://example.com", 0, 50);
+    });
+
     it("passes custom depth and maxPages", () => {
         const app = new App();
         const plugin = makePlugin();
