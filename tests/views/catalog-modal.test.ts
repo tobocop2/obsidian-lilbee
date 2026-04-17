@@ -599,6 +599,16 @@ describe("CatalogModal", () => {
             vi.unstubAllGlobals();
         });
 
+        it("fetchPage bails when isFetching is already true", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin);
+            plugin.api.catalog.mockClear();
+            (modal as any).isFetching = true;
+            await (modal as any).fetchPage();
+            expect(plugin.api.catalog).not.toHaveBeenCalled();
+            modal.close();
+        });
+
         it("ignores a second intersection while a fetch is already in flight", async () => {
             const observers: IntersectionObserverCallback[] = [];
             vi.stubGlobal(
@@ -700,7 +710,7 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            expect(plugin.api.pullModel).toHaveBeenCalledWith("qwen/qwen3-8b", "native");
+            expect(plugin.api.pullModel).toHaveBeenCalledWith("qwen/qwen3-8b", "native", expect.any(AbortSignal));
         });
 
         it("does not run pull when user cancels the confirm modal", async () => {
@@ -879,11 +889,11 @@ describe("CatalogModal", () => {
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_CANCELLED);
         });
 
-        it("fails the task and surfaces a Notice when pull fails with generic error", async () => {
+        it("fails the task and surfaces a Notice with the real error when pull throws", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
-                throw new Error("network");
+                throw new Error("Server responded 403: forbidden");
             });
             const modal = await openModal(plugin);
             const content = contentEl(modal);
@@ -891,10 +901,27 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_FAILED);
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: Server responded 403: forbidden`);
         });
 
-        it("SSE_EVENT.ERROR shows notice, fails task, and resets button", async () => {
+        it("reports 'unknown' when pull throws a non-Error value", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
+                throw "string-error";
+            });
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
+            pullBtn.trigger("click");
+            await tick();
+            await tick();
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: unknown`);
+        });
+
+        it("SSE_EVENT.ERROR shows notice with real message, fails task, and resets button", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
@@ -906,11 +933,12 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_FAILED);
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: pull exploded`);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
 
-        it("SSE_EVENT.ERROR with string data fails the task", async () => {
+        it("SSE_EVENT.ERROR with string data fails the task with raw payload", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
@@ -922,7 +950,8 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_FAILED);
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: raw error string`);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
 
@@ -938,11 +967,12 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_FAILED);
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: unknown error`);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
 
-        it("fails the task when setChatModel after a successful pull returns err", async () => {
+        it("fails the task with the real error when setChatModel after pull returns err", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
@@ -955,7 +985,37 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_FAILED);
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: activate-failed`);
+        });
+
+        it("second click during an active pull aborts the controller", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            let receivedSignal: AbortSignal | undefined;
+            plugin.api.pullModel = vi.fn().mockImplementation(async function* (
+                _name: string,
+                _source: string,
+                signal: AbortSignal,
+            ) {
+                receivedSignal = signal;
+                while (!signal.aborted) {
+                    await new Promise((r) => setTimeout(r, 10));
+                }
+                const abort = new Error("aborted");
+                (abort as Error).name = "AbortError";
+                throw abort;
+            });
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
+            pullBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(receivedSignal).toBeDefined();
+            pullBtn.trigger("click");
+            await new Promise((r) => setTimeout(r, 50));
+            expect(receivedSignal?.aborted).toBe(true);
         });
     });
 

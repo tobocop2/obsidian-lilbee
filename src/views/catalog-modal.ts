@@ -40,6 +40,7 @@ export class CatalogModal extends Modal {
     private viewToggleBtn: HTMLElement | null = null;
     private debouncedSearch: () => void;
     private cancelDebouncedSearch: () => void;
+    private pullController: AbortController | null = null;
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app);
@@ -430,12 +431,19 @@ export class CatalogModal extends Modal {
     }
 
     private async executePull(entry: CatalogEntry, btn: HTMLElement): Promise<void> {
+        if (this.pullController) {
+            this.pullController.abort();
+            return;
+        }
         btn.textContent = MESSAGES.STATUS_PULLING.replace("{model}", entry.hf_repo);
-        (btn as HTMLButtonElement).disabled = true;
+        (btn as HTMLButtonElement).disabled = false;
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.hf_repo}`, TASK_TYPE.PULL);
+        const controller = new AbortController();
+        this.pullController = controller;
+        const pullErrorPrefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.hf_repo);
 
         try {
-            for await (const event of this.plugin.api.pullModel(entry.hf_repo, entry.source)) {
+            for await (const event of this.plugin.api.pullModel(entry.hf_repo, entry.source, controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
@@ -446,10 +454,11 @@ export class CatalogModal extends Modal {
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
                     const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
-                    new Notice(MESSAGES.NOTICE_PULL_FAILED);
+                    new Notice(`${pullErrorPrefix}: ${msg}`);
                     this.plugin.taskQueue.fail(taskId, msg);
                     btn.textContent = MESSAGES.BUTTON_PULL;
                     (btn as HTMLButtonElement).disabled = false;
+                    this.pullController = null;
                     return;
                 }
             }
@@ -458,18 +467,22 @@ export class CatalogModal extends Modal {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
-                new Notice(MESSAGES.NOTICE_PULL_FAILED);
-                this.plugin.taskQueue.fail(taskId, err instanceof Error ? err.message : "unknown");
+                const msg = err instanceof Error ? err.message : "unknown";
+                new Notice(`${pullErrorPrefix}: ${msg}`);
+                this.plugin.taskQueue.fail(taskId, msg);
             }
             btn.textContent = MESSAGES.BUTTON_PULL;
             (btn as HTMLButtonElement).disabled = false;
+            this.pullController = null;
             return;
+        } finally {
+            this.pullController = null;
         }
 
         const result = await this.setActiveFor(entry);
         if (result.isErr()) {
-            new Notice(MESSAGES.NOTICE_PULL_FAILED);
             const e = result.error;
+            new Notice(`${pullErrorPrefix}: ${e.message}`);
             this.plugin.taskQueue.fail(taskId, e.message);
             btn.textContent = MESSAGES.BUTTON_PULL;
             (btn as HTMLButtonElement).disabled = false;
