@@ -242,13 +242,13 @@ describe("TaskQueue", () => {
     });
 
     describe("concurrent per-type queues", () => {
-        it("runs one task per type at a time", () => {
+        it("runs MAX_CONCURRENT_BACKGROUND tasks across types before queuing the rest", () => {
             queue.enqueue("Sync 1", TASK_TYPE.SYNC);
             queue.enqueue("Add 1", TASK_TYPE.ADD);
             queue.enqueue("Download 1", TASK_TYPE.DOWNLOAD);
 
-            expect(queue.activeAll).toHaveLength(3);
-            expect(queue.queued).toHaveLength(0);
+            expect(queue.activeAll).toHaveLength(2);
+            expect(queue.queued).toHaveLength(1);
         });
 
         it("queues second task of same type", () => {
@@ -289,16 +289,16 @@ describe("TaskQueue", () => {
             expect(queue.activeAll).toHaveLength(0);
         });
 
-        it("returns all concurrently active tasks", () => {
+        it("returns all concurrently active tasks up to the global cap", () => {
             queue.enqueue("Sync", TASK_TYPE.SYNC);
             queue.enqueue("Add", TASK_TYPE.ADD);
             queue.enqueue("Download", TASK_TYPE.DOWNLOAD);
 
             const active = queue.activeAll;
-            expect(active).toHaveLength(3);
+            expect(active).toHaveLength(2);
             expect(active.map((t) => t.type)).toContain("sync");
             expect(active.map((t) => t.type)).toContain("add");
-            expect(active.map((t) => t.type)).toContain("download");
+            expect(queue.queued.map((t) => t.type)).toContain("download");
         });
     });
 
@@ -341,6 +341,56 @@ describe("TaskQueue", () => {
         it("returns null from active when no tasks enqueued", () => {
             expect(queue.active).toBeNull();
             expect(queue.activeAll).toHaveLength(0);
+        });
+    });
+
+    describe("global background cap", () => {
+        it("queues a third background task when two are already active", () => {
+            queue.enqueue("Sync", TASK_TYPE.SYNC);
+            queue.enqueue("Add", TASK_TYPE.ADD);
+            const id3 = queue.enqueue("Crawl", TASK_TYPE.CRAWL);
+
+            expect(queue.activeAll).toHaveLength(2);
+            const queued = queue.queued.map((t) => t.id);
+            expect(queued).toContain(id3);
+        });
+
+        it("auto-activates the next queued background task when one completes", () => {
+            const id1 = queue.enqueue("Sync", TASK_TYPE.SYNC);
+            queue.enqueue("Add", TASK_TYPE.ADD);
+            const id3 = queue.enqueue("Crawl", TASK_TYPE.CRAWL);
+
+            queue.complete(id1);
+
+            const active = queue.activeAll;
+            expect(active.map((t) => t.id)).toContain(id3);
+        });
+    });
+
+    describe("per-type queue cap", () => {
+        it("returns null when the per-type queue limit is exceeded", () => {
+            queue.enqueue("Sync 1", TASK_TYPE.SYNC); // active
+            const queuedIds: (string | null)[] = [];
+            for (let i = 0; i < 10; i++) {
+                queuedIds.push(queue.enqueue(`Sync ${i + 2}`, TASK_TYPE.SYNC));
+            }
+            const rejected = queuedIds.filter((id) => id === null).length;
+            expect(rejected).toBeGreaterThan(0);
+        });
+
+        it("allows enqueuing again after queued tasks drain", () => {
+            queue.enqueue("Active", TASK_TYPE.SYNC); // active
+            const ids: (string | null)[] = [];
+            for (let i = 0; i < 5; i++) {
+                ids.push(queue.enqueue(`Queued ${i}`, TASK_TYPE.SYNC));
+            }
+            // Now at the per-type cap.
+            expect(queue.enqueue("Over cap", TASK_TYPE.SYNC)).toBeNull();
+            // Drain one queued task (still queued — needs activation).
+            const first = ids[0]!;
+            queue.cancel(first);
+            // Space in the per-type queue again.
+            expect(queue.enqueue("Now ok", TASK_TYPE.SYNC)).not.toBeNull();
         });
     });
 

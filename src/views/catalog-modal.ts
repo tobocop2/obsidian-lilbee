@@ -435,9 +435,13 @@ export class CatalogModal extends Modal {
             this.pullController.abort();
             return;
         }
+        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.hf_repo}`, TASK_TYPE.PULL);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         btn.textContent = MESSAGES.STATUS_PULLING.replace("{model}", entry.hf_repo);
         (btn as HTMLButtonElement).disabled = false;
-        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.hf_repo}`, TASK_TYPE.PULL);
         const controller = new AbortController();
         this.pullController = controller;
         this.plugin.taskQueue.registerAbort(taskId, controller);

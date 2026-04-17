@@ -1067,6 +1067,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private async autoPullAndSet(model: ModelInfo, container: HTMLElement): Promise<void> {
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         const controller = new AbortController();
         this.pullAbortController = controller;
         this.plugin.taskQueue.registerAbort(taskId, controller);
@@ -1145,6 +1149,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private async executePull(btn: HTMLButtonElement, actionCell: HTMLElement, model: ModelInfo): Promise<void> {
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         const controller = new AbortController();
         this.pullAbortController = controller;
         this.plugin.taskQueue.registerAbort(taskId, controller);

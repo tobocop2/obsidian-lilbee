@@ -3336,4 +3336,63 @@ describe("LilbeePlugin", () => {
             expect(plugin.settings.lilbeeVersion).toBe("v0.3.0");
         });
     });
+
+    describe("queue-full notices", () => {
+        async function setupQueueFull() {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+            plugin.api.syncStream = vi.fn();
+            plugin.api.addFiles = vi.fn();
+            plugin.api.crawl = vi.fn();
+            plugin.api.wikiLint = vi.fn();
+            plugin.api.wikiGenerate = vi.fn();
+            plugin.api.wikiPrune = vi.fn();
+            Notice.clear();
+            return plugin;
+        }
+
+        it("triggerSync surfaces NOTICE_QUEUE_FULL and skips API call", async () => {
+            const plugin = await setupQueueFull();
+            await plugin.triggerSync();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.syncStream).not.toHaveBeenCalled();
+        });
+
+        it("runAdd surfaces NOTICE_QUEUE_FULL and skips API call", async () => {
+            const plugin = await setupQueueFull();
+            await (plugin as any).runAdd(["x.md"]);
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.addFiles).not.toHaveBeenCalled();
+        });
+
+        it("runCrawl surfaces NOTICE_QUEUE_FULL and skips API call", async () => {
+            const plugin = await setupQueueFull();
+            await plugin.runCrawl("https://x", 1, 1);
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.crawl).not.toHaveBeenCalled();
+        });
+
+        it("runWikiLint surfaces NOTICE_QUEUE_FULL and skips API call", async () => {
+            const plugin = await setupQueueFull();
+            await plugin.runWikiLint();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.wikiLint).not.toHaveBeenCalled();
+        });
+
+        it("runWikiGenerate surfaces NOTICE_QUEUE_FULL and skips API call", async () => {
+            const plugin = await setupQueueFull();
+            await plugin.runWikiGenerate("foo");
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.wikiGenerate).not.toHaveBeenCalled();
+        });
+
+        it("runWikiPrune surfaces NOTICE_QUEUE_FULL and skips API call", async () => {
+            const plugin = await setupQueueFull();
+            mockConfirmModalResult = true;
+            await plugin.runWikiPrune();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.wikiPrune).not.toHaveBeenCalled();
+        });
+    });
 });

@@ -2069,6 +2069,32 @@ describe("LilbeeSettingTab", () => {
             expect(displaySpy).toHaveBeenCalled();
         });
     });
+
+    describe("queue-full on pull", () => {
+        it("autoPullAndSet surfaces NOTICE_QUEUE_FULL when enqueue returns null", async () => {
+            const plugin = makePlugin();
+            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const { dropdownOnChanges } = captureSettingCallbacks(() => {
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
+            });
+            Notice.clear();
+            await dropdownOnChanges[0]("phi3");
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_QUEUE_FULL)).toBe(true);
+        });
+
+        it("executePull (manual) surfaces NOTICE_QUEUE_FULL when enqueue returns null", async () => {
+            const plugin = makePlugin();
+            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+            const tab = makeTab(plugin);
+            const btn = new MockElement("button") as unknown as HTMLButtonElement;
+            const actionCell = new MockElement("td") as unknown as HTMLElement;
+            Notice.clear();
+            await (tab as any).executePull(btn, actionCell, { name: "phi3" });
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_QUEUE_FULL)).toBe(true);
+        });
+    });
 });
 
 describe("buildModelOptions()", () => {

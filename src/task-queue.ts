@@ -1,5 +1,5 @@
 import type { TaskEntry, TaskType } from "./types";
-import { TASK_STATUS } from "./types";
+import { BACKGROUND_TASK_TYPES, TASK_QUEUE, TASK_STATUS } from "./types";
 
 export type TaskChangeListener = () => void;
 
@@ -44,7 +44,10 @@ export class TaskQueue {
         return q;
     }
 
-    enqueue(name: string, type: TaskType): string {
+    enqueue(name: string, type: TaskType): string | null {
+        if (this.typeQueue(type).length >= TASK_QUEUE.MAX_QUEUED_PER_TYPE) {
+            return null;
+        }
         const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
         const task: TaskEntry = {
             id,
@@ -64,13 +67,30 @@ export class TaskQueue {
         return id;
     }
 
+    private backgroundActiveCount(): number {
+        let count = 0;
+        for (const [type, id] of this.activeIds) {
+            if (id && BACKGROUND_TASK_TYPES.has(type)) count++;
+        }
+        return count;
+    }
+
     private processType(type: TaskType): void {
         if (this.activeIds.get(type)) return;
         const q = this.queues.get(type);
         if (!q || q.length === 0) return;
+        if (BACKGROUND_TASK_TYPES.has(type) && this.backgroundActiveCount() >= TASK_QUEUE.MAX_CONCURRENT_BACKGROUND) {
+            return;
+        }
 
         const nextId = q.shift()!;
         this.activate(nextId);
+    }
+
+    private processAll(): void {
+        for (const type of this.queues.keys()) {
+            this.processType(type);
+        }
     }
 
     activate(id: string): void {
@@ -151,7 +171,7 @@ export class TaskQueue {
 
         this.tasks.delete(id);
         this.notify();
-        this.processType(task.type);
+        this.processAll();
     }
 
     /** Returns the first active task found (backward compat). */

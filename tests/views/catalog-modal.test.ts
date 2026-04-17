@@ -989,6 +989,21 @@ describe("CatalogModal", () => {
             expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: activate-failed`);
         });
 
+        it("shows NOTICE_QUEUE_FULL when enqueue returns null (per-type cap)", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+            plugin.api.pullModel = vi.fn();
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
+            pullBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.pullModel).not.toHaveBeenCalled();
+        });
+
         it("second click during an active pull aborts the controller", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));

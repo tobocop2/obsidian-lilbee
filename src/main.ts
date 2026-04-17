@@ -655,6 +655,10 @@ export default class LilbeePlugin extends Plugin {
 
     private async runAdd(paths: string[]): Promise<void> {
         const taskId = this.taskQueue.enqueue("Adding files", TASK_TYPE.ADD);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         this.syncController = new AbortController();
         this.taskQueue.registerAbort(taskId, this.syncController);
 
@@ -791,6 +795,10 @@ export default class LilbeePlugin extends Plugin {
 
     async runWikiLint(): Promise<void> {
         const taskId = this.taskQueue.enqueue("Wiki lint", TASK_TYPE.WIKI);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         try {
             const result = await this.api.wikiLint();
             this.taskQueue.complete(taskId);
@@ -804,6 +812,10 @@ export default class LilbeePlugin extends Plugin {
 
     async runWikiGenerate(source: string): Promise<void> {
         const taskId = this.taskQueue.enqueue(`Generate wiki: ${source}`, TASK_TYPE.WIKI);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         const controller = new AbortController();
         this.taskQueue.registerAbort(taskId, controller);
         try {
@@ -841,6 +853,10 @@ export default class LilbeePlugin extends Plugin {
         if (!confirmed) return;
 
         const taskId = this.taskQueue.enqueue("Wiki prune", TASK_TYPE.WIKI);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         const controller = new AbortController();
         this.taskQueue.registerAbort(taskId, controller);
         try {
@@ -871,6 +887,10 @@ export default class LilbeePlugin extends Plugin {
 
     async runCrawl(url: string, depth: number, maxPages: number): Promise<void> {
         const taskId = this.taskQueue.enqueue(`Crawl ${url}`, TASK_TYPE.CRAWL);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         const controller = new AbortController();
         this.taskQueue.registerAbort(taskId, controller);
         try {
@@ -911,6 +931,10 @@ export default class LilbeePlugin extends Plugin {
     async triggerSync(): Promise<void> {
         if (!this.statusBarEl) return;
         const taskId = this.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         this.syncController = new AbortController();
         this.taskQueue.registerAbort(taskId, this.syncController);
 

@@ -2918,3 +2918,17 @@ describe("ChatView — embedding model selector", () => {
         (view as any).fillEmbeddingSelector(null, null);
     });
 });
+
+describe("ChatView — queue-full notice on auto-pull", () => {
+    it("shows NOTICE_QUEUE_FULL when enqueue returns null", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+        plugin.api.pullModel = vi.fn();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await (view as any).autoPullAndSet({ name: "phi3" });
+        expect(Notice.instances.map((n: any) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+        expect(plugin.api.pullModel).not.toHaveBeenCalled();
+    });
+});
