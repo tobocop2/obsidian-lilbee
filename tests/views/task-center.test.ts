@@ -271,6 +271,76 @@ describe("TaskCenterView rendering", () => {
     });
 });
 
+describe("TaskCenterView — cap pill", () => {
+    it("hides cap pill when below MAX_CONCURRENT_BACKGROUND", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+        const contentEl = (view as any).contentEl as MockElement;
+        plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
+        (view as any).render();
+        const pill = contentEl.find("lilbee-tasks-cap-pill")!;
+        expect(pill.style.display).toBe("none");
+        await view.onClose();
+    });
+
+    it("shows cap pill with 2/2 running when saturated", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+        const contentEl = (view as any).contentEl as MockElement;
+        plugin.taskQueue.enqueue("Sync", TASK_TYPE.SYNC);
+        plugin.taskQueue.enqueue("Pull", TASK_TYPE.PULL);
+        (view as any).render();
+        const pill = contentEl.find("lilbee-tasks-cap-pill")!;
+        expect(pill.style.display).toBe("");
+        expect(pill.textContent).toBe("2/2 running");
+        await view.onClose();
+    });
+});
+
+describe("TaskCenterView — cap pill defensive guards", () => {
+    it("renderCapPill bails when capPill is null", () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        (view as any).capPill = null;
+        expect(() => (view as any).renderCapPill()).not.toThrow();
+    });
+});
+
+describe("TaskCenterView — indeterminate progress", () => {
+    it("renders indeterminate bar when progress is -1", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+        const contentEl = (view as any).contentEl as MockElement;
+        const id = plugin.taskQueue.enqueue("Adding", TASK_TYPE.ADD);
+        plugin.taskQueue.update(id, -1, "preparing…");
+        (view as any).render();
+        const fills = contentEl.findAll("lilbee-task-progress-fill");
+        expect(fills.length).toBe(1);
+        expect(fills[0]!.classList.contains("lilbee-task-progress-indeterminate")).toBe(true);
+        const pctTexts = contentEl.findAll("lilbee-task-progress-text");
+        expect(pctTexts.length).toBe(0);
+        await view.onClose();
+    });
+
+    it("renders percentage text when progress >= 0", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+        const contentEl = (view as any).contentEl as MockElement;
+        const id = plugin.taskQueue.enqueue("Pull", TASK_TYPE.PULL);
+        plugin.taskQueue.update(id, 40);
+        (view as any).render();
+        const fills = contentEl.findAll("lilbee-task-progress-fill");
+        expect(fills[0]!.classList.contains("lilbee-task-progress-indeterminate")).toBe(false);
+        const pctTexts = contentEl.findAll("lilbee-task-progress-text");
+        expect(pctTexts[0]!.textContent).toBe("40%");
+        await view.onClose();
+    });
+});
+
 describe("TaskCenterView — clear history", () => {
     it("clear button removes completed tasks", async () => {
         const plugin = makePlugin();

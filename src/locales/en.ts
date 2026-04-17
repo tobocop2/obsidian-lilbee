@@ -90,6 +90,7 @@ export const MESSAGES = {
     LABEL_HF_TOKEN: "HuggingFace token",
     LABEL_LITELLM_BASE_URL: "External AI endpoint",
     LABEL_TASK_CENTER: "Task Center",
+    LABEL_TASK_CAP_PILL: "{active}/{cap} running",
     LABEL_ACTIVE_TASKS: "ACTIVE",
     LABEL_QUEUED_TASKS: "QUEUED",
     LABEL_COMPLETED_TASKS: "COMPLETED",

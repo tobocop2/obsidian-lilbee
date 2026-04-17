@@ -78,7 +78,7 @@ export class TaskQueue {
     update(id: string, progress: number, detail?: string): void {
         const task = this.tasks.get(id);
         if (!task) return;
-        if (progress >= 0) task.progress = progress;
+        task.progress = progress;
         if (detail !== undefined) task.detail = detail;
         this.notify();
     }

@@ -89,15 +89,14 @@ describe("TaskQueue", () => {
             expect(active.detail).toBe("processing file 1");
         });
 
-        it("preserves progress when update called with -1", () => {
+        it("sets progress to -1 to mark indeterminate state", () => {
             queue.enqueue("Task", TASK_TYPE.SYNC);
             const active = queue.active!;
 
-            queue.update(active.id, 50);
-            queue.update(active.id, -1, "new detail");
+            queue.update(active.id, -1, "preparing");
 
-            expect(active.progress).toBe(50);
-            expect(active.detail).toBe("new detail");
+            expect(active.progress).toBe(-1);
+            expect(active.detail).toBe("preparing");
         });
     });
 

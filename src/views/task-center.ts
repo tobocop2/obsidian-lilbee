@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
-import { TASK_STATUS, type TaskEntry } from "../types";
+import { BACKGROUND_TASK_TYPES, TASK_QUEUE, TASK_STATUS, type TaskEntry } from "../types";
 import { MESSAGES } from "../locales/en";
 import { relativeTime, TIME_REFRESH_INTERVAL_MS } from "../utils";
 
@@ -9,6 +9,7 @@ export const VIEW_TYPE_TASKS = "lilbee-tasks";
 export class TaskCenterView extends ItemView {
     private plugin: LilbeePlugin;
     private unsubscribe: (() => void) | null = null;
+    private capPill: HTMLElement | null = null;
     private activeSection: HTMLElement | null = null;
     private queuedSection: HTMLElement | null = null;
     private completedSection: HTMLElement | null = null;
@@ -38,6 +39,9 @@ export class TaskCenterView extends ItemView {
 
         const header = contentEl.createDiv({ cls: "lilbee-tasks-header" });
         header.createEl("h2", { text: MESSAGES.LABEL_TASK_CENTER });
+
+        this.capPill = header.createEl("span", { cls: "lilbee-tasks-cap-pill" });
+        this.capPill.style.display = "none";
 
         const clearBtn = header.createEl("button", { cls: "lilbee-tasks-clear" });
         clearBtn.textContent = MESSAGES.BUTTON_CLEAR_TASKS;
@@ -72,9 +76,28 @@ export class TaskCenterView extends ItemView {
     private render(): void {
         if (!this.activeSection || !this.queuedSection || !this.completedSection) return;
 
+        this.renderCapPill();
         this.renderActive();
         this.renderQueued();
         this.renderCompleted();
+    }
+
+    private renderCapPill(): void {
+        if (!this.capPill) return;
+        const backgroundActive = this.plugin.taskQueue.activeAll.filter((t) =>
+            BACKGROUND_TASK_TYPES.has(t.type),
+        ).length;
+        const cap = TASK_QUEUE.MAX_CONCURRENT_BACKGROUND;
+        if (backgroundActive >= cap) {
+            this.capPill.textContent = MESSAGES.LABEL_TASK_CAP_PILL.replace(
+                "{active}",
+                String(backgroundActive),
+            ).replace("{cap}", String(cap));
+            this.capPill.style.display = "";
+        } else {
+            this.capPill.textContent = "";
+            this.capPill.style.display = "none";
+        }
     }
 
     private renderActive(): void {
@@ -136,14 +159,16 @@ export class TaskCenterView extends ItemView {
 
     private renderTaskRow(container: HTMLElement, task: TaskEntry, isActive: boolean): void {
         const row = container.createDiv({ cls: "lilbee-task-row" });
+        const isIndeterminate = task.progress < 0;
 
         if (isActive) {
             const progressBg = row.createDiv({ cls: `lilbee-task-progress-bg lilbee-task-progress-bg-${task.type}` });
-            progressBg.style.width = `${task.progress}%`;
+            progressBg.style.width = isIndeterminate ? "100%" : `${task.progress}%`;
 
             const progressContainer = row.createDiv({ cls: "lilbee-task-progress-bar" });
             const progressFill = progressContainer.createDiv({ cls: "lilbee-task-progress-fill" });
-            progressFill.style.width = `${task.progress}%`;
+            if (isIndeterminate) progressFill.classList.add("lilbee-task-progress-indeterminate");
+            progressFill.style.width = isIndeterminate ? "100%" : `${task.progress}%`;
         }
 
         const info = row.createDiv({ cls: "lilbee-task-info" });
@@ -160,7 +185,7 @@ export class TaskCenterView extends ItemView {
             detail.textContent = task.detail;
         }
 
-        if (isActive) {
+        if (isActive && !isIndeterminate) {
             const progressText = row.createSpan({ cls: "lilbee-task-progress-text" });
             progressText.textContent = `${task.progress}%`;
         }

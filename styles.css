@@ -1546,6 +1546,16 @@
     font-weight: var(--font-semibold, 600);
 }
 
+.lilbee-tasks-cap-pill {
+    font-size: var(--font-smallest, 11px);
+    color: var(--text-on-accent, #fff);
+    background-color: var(--interactive-accent);
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: auto;
+    margin-right: var(--size-4-2, 8px);
+}
+
 .lilbee-tasks-clear {
     background: none;
     border: 1px solid var(--background-modifier-border);
@@ -1661,6 +1671,22 @@
     background-color: var(--interactive-accent);
     border-radius: 3px;
     transition: width 200ms ease-out;
+}
+
+.lilbee-task-progress-fill.lilbee-task-progress-indeterminate {
+    background: linear-gradient(
+        90deg,
+        var(--background-modifier-border) 0%,
+        var(--interactive-accent) 50%,
+        var(--background-modifier-border) 100%
+    );
+    background-size: 200% 100%;
+    animation: lilbee-task-indeterminate 1.2s linear infinite;
+}
+
+@keyframes lilbee-task-indeterminate {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
 }
 
 .lilbee-task-detail {

@@ -365,6 +365,20 @@ export const DOWNLOAD_PANEL = {
     DISMISS_DELAY_MS: 1500,
 } as const;
 
+export const TASK_QUEUE = {
+    MAX_CONCURRENT_BACKGROUND: 2,
+    MAX_QUEUED_PER_TYPE: 5,
+} as const;
+
+export const BACKGROUND_TASK_TYPES: ReadonlySet<TaskType> = new Set<TaskType>([
+    TASK_TYPE.SYNC,
+    TASK_TYPE.ADD,
+    TASK_TYPE.PULL,
+    TASK_TYPE.CRAWL,
+    TASK_TYPE.DOWNLOAD,
+    TASK_TYPE.WIKI,
+]);
+
 export const PLATFORM = {
     DARWIN: "darwin",
     LINUX: "linux",
