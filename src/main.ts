@@ -130,6 +130,7 @@ export default class LilbeePlugin extends Plugin {
             void this.startManagedServer();
         } else {
             this.api = new LilbeeClient(this.settings.serverUrl);
+            this.api.setTokenProvider(() => this.readCurrentToken());
             this.api.setToken(this.readCurrentToken());
             this.setStatusReady();
             this.fetchActiveModel();
@@ -211,6 +212,7 @@ export default class LilbeePlugin extends Plugin {
                 this.setStatusClass("lilbee-status-starting");
                 await this.serverManager.start();
                 this.api = new LilbeeClient(this.serverManager.serverUrl);
+                this.api.setTokenProvider(() => this.readCurrentToken());
                 this.api.setToken(this.readCurrentToken());
                 this.fetchActiveModel();
             } catch (err) {
@@ -276,7 +278,7 @@ export default class LilbeePlugin extends Plugin {
             case SERVER_STATE.READY:
                 if (this.serverManager) {
                     this.api = new LilbeeClient(this.serverManager.serverUrl);
-                    // Re-apply the token — each server start writes a fresh server.json.
+                    this.api.setTokenProvider(() => this.readCurrentToken());
                     this.api.setToken(this.readCurrentToken());
                 }
                 this.serverUnreachable = false;
@@ -460,6 +462,7 @@ export default class LilbeePlugin extends Plugin {
             } else if (this.serverManager) {
                 this.serverManager.updatePort(this.settings.serverPort);
                 this.api = new LilbeeClient(this.serverManager.serverUrl);
+                this.api.setTokenProvider(() => this.readCurrentToken());
                 this.api.setToken(this.readCurrentToken());
             }
         } else {
@@ -469,6 +472,7 @@ export default class LilbeePlugin extends Plugin {
                 this.binaryManager = null;
             }
             this.api = new LilbeeClient(this.settings.serverUrl);
+            this.api.setTokenProvider(() => this.readCurrentToken());
             this.api.setToken(this.readCurrentToken());
         }
 

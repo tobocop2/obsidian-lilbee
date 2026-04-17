@@ -15,6 +15,7 @@ vi.mock("../src/api", () => ({
         pullModel: vi.fn(),
         setChatModel: vi.fn(),
         setToken: vi.fn(),
+        setTokenProvider: vi.fn(),
         health: vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} }),
         addFiles: vi.fn(),
         crawl: vi.fn(),
