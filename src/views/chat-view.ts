@@ -10,11 +10,20 @@ import {
 } from "obsidian";
 import type LilbeePlugin from "../main";
 import { SSE_EVENT, TASK_TYPE, ERROR_NAME, MODEL_SOURCE } from "../types";
-import type { GenerationOptions, Message, ModelCatalog, SearchChunkType, Source, SSEEvent } from "../types";
+import type {
+    CatalogEntry,
+    GenerationOptions,
+    Message,
+    ModelCatalog,
+    SearchChunkType,
+    Source,
+    SSEEvent,
+} from "../types";
 
 import { renderSourceChip } from "./results";
 import { buildModelOptions, SEPARATOR_KEY } from "../settings";
 import { ConfirmPullModal } from "./confirm-pull-modal";
+import { ConfirmModal } from "./confirm-modal";
 import { CatalogModal } from "./catalog-modal";
 import { CrawlModal } from "./crawl-modal";
 import { MESSAGES } from "../locales/en";
@@ -74,6 +83,9 @@ export class ChatView extends ItemView {
     private pullController: AbortController | null = null;
     private chatCatalog: ModelCatalog | null = null;
     private chatSelectEl: HTMLSelectElement | null = null;
+    private embeddingSelectEl: HTMLSelectElement | null = null;
+    private embeddingModels: CatalogEntry[] = [];
+    private activeEmbeddingModel = "";
     private ocrToggleEl: HTMLElement | null = null;
     private static readonly OFFLINE_THRESHOLD = 3;
     private retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -129,6 +141,16 @@ export class ChatView extends ItemView {
             cls: "lilbee-chat-model-select",
         }) as HTMLSelectElement;
         this.attachChatListener(this.chatSelectEl);
+
+        const embedGroup = toolbar.createDiv({ cls: "lilbee-toolbar-group lilbee-toolbar-group-embed" });
+        const embedIcon = embedGroup.createDiv({ cls: "lilbee-toolbar-icon" });
+        setIcon(embedIcon, "database");
+        embedIcon.setAttribute("title", MESSAGES.LABEL_EMBEDDING_MODEL_ICON);
+
+        this.embeddingSelectEl = embedGroup.createEl("select", {
+            cls: "lilbee-embed-model-select",
+        }) as HTMLSelectElement;
+        this.attachEmbeddingListener(this.embeddingSelectEl);
 
         this.ocrToggleEl = toolbar.createDiv({ cls: "lilbee-ocr-toggle" });
         this.updateOcrToggle();
@@ -214,8 +236,13 @@ export class ChatView extends ItemView {
     }
 
     private fetchAndFillSelectors(): void {
-        Promise.all([this.plugin.api.listModels(), this.plugin.api.installedModels().catch(() => ({ models: [] }))])
-            .then(([models, installed]) => {
+        Promise.all([
+            this.plugin.api.listModels(),
+            this.plugin.api.installedModels().catch(() => ({ models: [] })),
+            this.plugin.api.catalog({ task: "embedding" }).catch(() => null),
+            this.plugin.api.config().catch(() => null),
+        ])
+            .then(([models, installed, embeddingResult, serverConfig]) => {
                 if (this.retryTimer) {
                     clearTimeout(this.retryTimer);
                     this.retryTimer = null;
@@ -225,6 +252,9 @@ export class ChatView extends ItemView {
                 this.chatCatalog = models.chat;
                 const sourceMap = new Map(installed.models.map((m) => [m.name, m.source]));
                 if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl, models.chat, sourceMap);
+
+                this.fillEmbeddingSelector(embeddingResult, serverConfig);
+
                 // No models installed — show empty state with catalog button
                 if (models.chat.installed.length === 0) {
                     this.showEmptyState();
@@ -241,11 +271,44 @@ export class ChatView extends ItemView {
                     this.chatSelectEl.empty();
                     this.chatSelectEl.createEl("option", { text: label });
                 }
+                if (this.embeddingSelectEl) {
+                    this.embeddingSelectEl.empty();
+                    this.embeddingSelectEl.createEl("option", { text: label });
+                }
                 if (this.retryCount === ChatView.OFFLINE_THRESHOLD) {
                     new Notice(MESSAGES.ERROR_SERVER_UNREACHABLE);
                 }
                 this.retryTimer = setTimeout(() => this.fetchAndFillSelectors(), RETRY_INTERVAL_MS);
             });
+    }
+
+    private fillEmbeddingSelector(
+        embeddingResult: import("neverthrow").Result<import("../types").CatalogResponse, Error> | null,
+        serverConfig: Record<string, unknown> | null,
+    ): void {
+        if (!this.embeddingSelectEl) return;
+        this.embeddingSelectEl.empty();
+
+        const activeModel = serverConfig ? String(serverConfig["embedding_model"] ?? "") : "";
+        this.activeEmbeddingModel = activeModel;
+
+        const models =
+            embeddingResult && embeddingResult.isOk() ? embeddingResult.value.models.filter((m) => m.installed) : [];
+        this.embeddingModels = models;
+
+        for (const model of models) {
+            const option = this.embeddingSelectEl.createEl("option", { text: model.name });
+            (option as HTMLOptionElement).value = model.name;
+            if (model.name === activeModel) {
+                (option as HTMLOptionElement).selected = true;
+            }
+        }
+
+        if (models.length === 0 && activeModel) {
+            const option = this.embeddingSelectEl.createEl("option", { text: activeModel });
+            (option as HTMLOptionElement).value = activeModel;
+            (option as HTMLOptionElement).selected = true;
+        }
     }
 
     private fillSelectOptions(
@@ -295,6 +358,43 @@ export class ChatView extends ItemView {
                 }
             });
         });
+    }
+
+    private attachEmbeddingListener(el: HTMLSelectElement): void {
+        el.addEventListener("change", () => {
+            if (!el.value) return;
+            const previous = this.activeEmbeddingModel;
+            const modal = new ConfirmModal(this.plugin.app, MESSAGES.DESC_EMBEDDING_REINDEX_WARNING);
+            modal.open();
+            void modal.result.then((confirmed) => {
+                if (confirmed) {
+                    this.plugin.api
+                        .setEmbeddingModel(el.value)
+                        .then((result) => {
+                            if (result.isOk()) {
+                                this.activeEmbeddingModel = el.value;
+                                new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
+                                new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
+                                void this.plugin.triggerSync();
+                            } else {
+                                new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
+                                this.revertEmbeddingSelect(previous);
+                            }
+                        })
+                        .catch(() => {
+                            new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
+                            this.revertEmbeddingSelect(previous);
+                        });
+                } else {
+                    this.revertEmbeddingSelect(previous);
+                }
+            });
+        });
+    }
+
+    private revertEmbeddingSelect(previousValue: string): void {
+        if (!this.embeddingSelectEl) return;
+        this.embeddingSelectEl.value = previousValue;
     }
 
     private async autoPullAndSet(model: { name: string }): Promise<void> {
@@ -371,6 +471,7 @@ export class ChatView extends ItemView {
 
     private refreshModelSelector(): void {
         if (this.chatSelectEl) this.chatSelectEl.empty();
+        if (this.embeddingSelectEl) this.embeddingSelectEl.empty();
         this.fetchAndFillSelectors();
     }
 

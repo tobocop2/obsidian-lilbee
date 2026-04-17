@@ -46,6 +46,17 @@ vi.mock("../../src/views/catalog-modal", () => ({
         open: vi.fn(),
     })),
 }));
+
+let confirmModalResult = true;
+vi.mock("../../src/views/confirm-modal", () => ({
+    ConfirmModal: vi.fn().mockImplementation(() => ({
+        open: vi.fn(),
+        get result() {
+            return Promise.resolve(confirmModalResult);
+        },
+        close: vi.fn(),
+    })),
+}));
 import type { SSEEvent, Source } from "../../src/types";
 import { TaskQueue } from "../../src/task-queue";
 
@@ -93,13 +104,41 @@ function makePlugin(): LilbeePlugin {
                 ],
             }),
             setChatModel: vi.fn().mockResolvedValue(ok({ model: "phi3" })),
+            setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
             pullModel: vi.fn(),
+            catalog: vi.fn().mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 50,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "nomic-embed-text",
+                            display_name: "nomic-embed-text",
+                            size_gb: 0.3,
+                            min_ram_gb: 1,
+                            description: "Embedding",
+                            installed: true,
+                            source: "native",
+                            hf_repo: "nomic-embed-text",
+                            tag: "",
+                            task: "embedding",
+                            featured: true,
+                            downloads: 1000,
+                            quality_tier: "good",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            ),
+            config: vi.fn().mockResolvedValue({ embedding_model: "nomic-embed-text" }),
         },
         settings: { topK: 5, enableOcr: null as boolean | null, wikiEnabled: true, searchChunkType: "all" as const },
         activeModel: "llama3",
         fetchActiveModel: vi.fn(),
         saveSettings: vi.fn().mockResolvedValue(undefined),
         cancelSync: vi.fn(),
+        triggerSync: vi.fn().mockResolvedValue(undefined),
         taskQueue: new TaskQueue(),
         app: {
             vault: {
@@ -188,7 +227,7 @@ describe("ChatView.onOpen — DOM structure", () => {
 
     it("creates toolbar groups for icon+select pairs", () => {
         const groups = container.findAll("lilbee-toolbar-group");
-        expect(groups.length).toBe(1);
+        expect(groups.length).toBe(2);
     });
 
     it("creates a spacer div in the toolbar", () => {
@@ -1409,7 +1448,7 @@ describe("ChatView — toolbar groups and tooltips", () => {
         await view.onOpen();
         const container = view.containerEl.children[1] as unknown as MockElement;
         const groups = container.findAll("lilbee-toolbar-group");
-        expect(groups.length).toBe(1);
+        expect(groups.length).toBe(2);
         const chatGroup = groups[0];
         expect(chatGroup.find("lilbee-toolbar-icon")).not.toBeNull();
         expect(chatGroup.find("lilbee-chat-model-select")).not.toBeNull();
@@ -2241,17 +2280,20 @@ describe("ChatView.createToolbar — search mode buttons", () => {
 });
 
 describe("ChatView.createToolbar — toolbar icons", () => {
-    it("renders message-circle and eye icons inside toolbar groups", async () => {
+    it("renders message-circle and database icons inside toolbar groups", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         const container = view.containerEl.children[1] as unknown as MockElement;
         const groups = container.findAll("lilbee-toolbar-group");
-        expect(groups.length).toBe(1);
+        expect(groups.length).toBe(2);
         const chatIcon = groups[0].find("lilbee-toolbar-icon")!;
         expect(chatIcon.attributes["data-icon"]).toBe("message-circle");
         expect(chatIcon.attributes["title"]).toBe("Chat model");
+        const embedIcon = groups[1].find("lilbee-toolbar-icon")!;
+        expect(embedIcon.attributes["data-icon"]).toBe("database");
+        expect(embedIcon.attributes["title"]).toBe("Embed");
         // OCR toggle is a separate element, not in a toolbar-group
         const ocrToggle = container.find("lilbee-ocr-toggle");
         expect(ocrToggle).not.toBeNull();
@@ -2531,5 +2573,348 @@ describe("ChatView — offline retry", () => {
         expect((view as any).retryCount).toBe(0);
 
         await view.onClose();
+    });
+});
+
+describe("ChatView — embedding model selector", () => {
+    beforeEach(() => {
+        Notice.clear();
+        confirmModalResult = true;
+    });
+
+    it("creates an embedding select element with class lilbee-embed-model-select", async () => {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select");
+        expect(select).not.toBeNull();
+        expect(select!.tagName).toBe("SELECT");
+    });
+
+    it("populates embedding options from catalog API", async () => {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        const options = select.children.filter((c) => c.tagName === "OPTION");
+        expect(options.length).toBe(1);
+        expect(options[0].textContent).toBe("nomic-embed-text");
+        expect(options[0].value).toBe("nomic-embed-text");
+    });
+
+    it("marks the active embedding model as selected", async () => {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        const options = select.children.filter((c) => c.tagName === "OPTION");
+        expect(options[0].selected).toBe(true);
+    });
+
+    it("shows fallback option from config when catalog is empty", async () => {
+        const plugin = makePlugin();
+        plugin.api.catalog = vi
+            .fn()
+            .mockResolvedValue(ok({ total: 0, limit: 50, offset: 0, models: [], has_more: false }));
+        plugin.api.config = vi.fn().mockResolvedValue({ embedding_model: "custom-embed" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        const options = select.children.filter((c) => c.tagName === "OPTION");
+        expect(options.length).toBe(1);
+        expect(options[0].textContent).toBe("custom-embed");
+        expect(options[0].selected).toBe(true);
+    });
+
+    it("shows fallback option when catalog returns error", async () => {
+        const plugin = makePlugin();
+        plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("fail")));
+        plugin.api.config = vi.fn().mockResolvedValue({ embedding_model: "fallback-embed" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        const options = select.children.filter((c) => c.tagName === "OPTION");
+        expect(options.length).toBe(1);
+        expect(options[0].textContent).toBe("fallback-embed");
+    });
+
+    it("shows no options when catalog is empty and config has no embedding_model", async () => {
+        const plugin = makePlugin();
+        plugin.api.catalog = vi
+            .fn()
+            .mockResolvedValue(ok({ total: 0, limit: 50, offset: 0, models: [], has_more: false }));
+        plugin.api.config = vi.fn().mockResolvedValue({});
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        const options = select.children.filter((c) => c.tagName === "OPTION");
+        expect(options.length).toBe(0);
+    });
+
+    it("shows confirmation modal when embedding model is changed", async () => {
+        const { ConfirmModal } = await import("../../src/views/confirm-modal");
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        (select as any).value = "nomic-embed-text";
+        select.trigger("change");
+        await tick();
+
+        expect(ConfirmModal).toHaveBeenCalled();
+    });
+
+    it("calls setEmbeddingModel and shows notices on confirm", async () => {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        (select as any).value = "nomic-embed-text";
+        select.trigger("change");
+        await tick();
+
+        expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
+        expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_EMBEDDING_UPDATED)).toBe(true);
+        expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_REINDEX_REQUIRED)).toBe(true);
+        expect(plugin.triggerSync).toHaveBeenCalled();
+    });
+
+    it("reverts dropdown on cancel", async () => {
+        confirmModalResult = false;
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        (select as any).value = "other-model";
+        select.trigger("change");
+        await tick();
+
+        expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
+        expect(select.value).toBe("nomic-embed-text");
+    });
+
+    it("reverts dropdown and shows notice on setEmbeddingModel failure", async () => {
+        const plugin = makePlugin();
+        plugin.api.setEmbeddingModel = vi.fn().mockResolvedValue(err(new Error("fail")));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        (select as any).value = "other-model";
+        select.trigger("change");
+        await tick();
+
+        expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_EMBEDDING)).toBe(true);
+        expect(select.value).toBe("nomic-embed-text");
+    });
+
+    it("reverts dropdown and shows notice on setEmbeddingModel network error", async () => {
+        const plugin = makePlugin();
+        plugin.api.setEmbeddingModel = vi.fn().mockRejectedValue(new Error("network"));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        (select as any).value = "other-model";
+        select.trigger("change");
+        await tick();
+
+        expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_EMBEDDING)).toBe(true);
+        expect(select.value).toBe("nomic-embed-text");
+    });
+
+    it("does nothing when change value is empty", async () => {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        (select as any).value = "";
+        select.trigger("change");
+        await tick();
+
+        expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
+    });
+
+    it("shows connecting label on embedding select when offline", async () => {
+        vi.useFakeTimers();
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await vi.advanceTimersByTimeAsync(0);
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const embedSelect = container.find("lilbee-embed-model-select")!;
+        const options = embedSelect.children.filter((c) => c.tagName === "OPTION");
+        expect(options.some((o) => o.textContent === "(connecting...)")).toBe(true);
+
+        await view.onClose();
+        vi.useRealTimers();
+    });
+
+    it("shows offline label on embedding select after threshold", async () => {
+        vi.useFakeTimers();
+        const plugin = makePlugin();
+        plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+
+        // Failure 1
+        await vi.advanceTimersByTimeAsync(0);
+        // Failure 2
+        await vi.advanceTimersByTimeAsync(5000);
+        // Failure 3 — threshold
+        await vi.advanceTimersByTimeAsync(5000);
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const embedSelect = container.find("lilbee-embed-model-select")!;
+        const options = embedSelect.children.filter((c) => c.tagName === "OPTION");
+        expect(options.some((o) => o.textContent === "(offline)")).toBe(true);
+
+        await view.onClose();
+        vi.useRealTimers();
+    });
+
+    it("embedding group has lilbee-toolbar-group-embed class", async () => {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const embedGroup = container.find("lilbee-toolbar-group-embed");
+        expect(embedGroup).not.toBeNull();
+        expect(embedGroup!.find("lilbee-embed-model-select")).not.toBeNull();
+    });
+
+    it("filters to only installed models from catalog", async () => {
+        const plugin = makePlugin();
+        plugin.api.catalog = vi.fn().mockResolvedValue(
+            ok({
+                total: 2,
+                limit: 50,
+                offset: 0,
+                models: [
+                    {
+                        name: "nomic-embed-text",
+                        display_name: "nomic-embed-text",
+                        size_gb: 0.3,
+                        min_ram_gb: 1,
+                        description: "Embedding",
+                        installed: true,
+                        source: "native",
+                        hf_repo: "nomic",
+                        tag: "",
+                        task: "embedding",
+                        featured: true,
+                        downloads: 1000,
+                        quality_tier: "good",
+                    },
+                    {
+                        name: "bge-large",
+                        display_name: "bge-large",
+                        size_gb: 1.3,
+                        min_ram_gb: 4,
+                        description: "BGE",
+                        installed: false,
+                        source: "native",
+                        hf_repo: "bge",
+                        tag: "",
+                        task: "embedding",
+                        featured: false,
+                        downloads: 500,
+                        quality_tier: "good",
+                    },
+                ],
+                has_more: false,
+            }),
+        );
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        const options = select.children.filter((c) => c.tagName === "OPTION");
+        expect(options.length).toBe(1);
+        expect(options[0].textContent).toBe("nomic-embed-text");
+    });
+
+    it("handles null config gracefully", async () => {
+        const plugin = makePlugin();
+        plugin.api.config = vi.fn().mockRejectedValue(new Error("fail"));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        const options = select.children.filter((c) => c.tagName === "OPTION");
+        // Should still show models from catalog, just none marked active
+        expect(options.length).toBe(1);
+        expect(options[0].textContent).toBe("nomic-embed-text");
+    });
+
+    it("revertEmbeddingSelect no-ops when embeddingSelectEl is null", async () => {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        (view as any).embeddingSelectEl = null;
+        // Should not throw
+        (view as any).revertEmbeddingSelect("test");
+    });
+
+    it("handles null catalog result in fillEmbeddingSelector", async () => {
+        const plugin = makePlugin();
+        plugin.api.catalog = vi.fn().mockRejectedValue(new Error("fail"));
+        plugin.api.config = vi.fn().mockResolvedValue({ embedding_model: "fallback" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        const options = select.children.filter((c) => c.tagName === "OPTION");
+        expect(options.length).toBe(1);
+        expect(options[0].textContent).toBe("fallback");
+    });
+
+    it("fillEmbeddingSelector with null embeddingSelectEl is a no-op", async () => {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        (view as any).embeddingSelectEl = null;
+        // Should not throw
+        (view as any).fillEmbeddingSelector(null, null);
     });
 });
