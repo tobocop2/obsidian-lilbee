@@ -214,6 +214,7 @@ export class ChatView extends ItemView {
         }) as HTMLButtonElement;
 
         const handleSend = (): void => {
+            if (this.sending) return;
             const text = textarea.value.trim();
             if (!text) return;
             textarea.value = "";

@@ -731,8 +731,6 @@ describe("ChatView.sendMessage — messagesEl null guard", () => {
         const view = new ChatView(makeLeaf(), plugin);
         // Do NOT call onOpen — messagesEl stays null
 
-        // Access the private method directly for coverage
-
         await (view as any).sendMessage("test");
 
         expect(plugin.api.chatStream).not.toHaveBeenCalled();
@@ -2930,5 +2928,37 @@ describe("ChatView — queue-full notice on auto-pull", () => {
         await (view as any).autoPullAndSet({ name: "phi3" });
         expect(Notice.instances.map((n: any) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
         expect(plugin.api.pullModel).not.toHaveBeenCalled();
+    });
+});
+
+describe("ChatView — Send is a no-op while a stream is in flight", () => {
+    it("second Enter while sending does not wipe textarea or fire a second request", async () => {
+        const plugin = makePlugin();
+        let resolveStream!: () => void;
+        plugin.api.chatStream = vi.fn().mockImplementation(async function* () {
+            await new Promise<void>((r) => {
+                resolveStream = r;
+            });
+            yield { event: SSE_EVENT.DONE, data: null };
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const textarea = container.find("lilbee-chat-textarea")!;
+        (textarea as any).value = "first";
+        textarea.trigger("keydown", { key: "Enter", shiftKey: false, preventDefault: vi.fn() });
+        await tick();
+
+        expect(plugin.api.chatStream).toHaveBeenCalledTimes(1);
+
+        // Second Enter while sending — typed text stays, no extra call
+        (textarea as any).value = "second";
+        textarea.trigger("keydown", { key: "Enter", shiftKey: false, preventDefault: vi.fn() });
+        await tick();
+        expect(plugin.api.chatStream).toHaveBeenCalledTimes(1);
+        expect((textarea as any).value).toBe("second");
+
+        resolveStream();
     });
 });
