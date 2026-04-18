@@ -75,13 +75,6 @@ vi.mock("../src/views/confirm-modal", () => ({
     })),
 }));
 
-vi.mock("../src/views/download-panel", () => ({
-    DownloadPanel: vi.fn().mockImplementation(() => ({
-        attach: vi.fn(),
-        detach: vi.fn(),
-    })),
-}));
-
 const mockEnsureBinary = vi.fn().mockResolvedValue("/fake/bin/lilbee");
 const mockBinaryExists = vi.fn().mockReturnValue(true);
 const mockDownload = vi.fn().mockResolvedValue(undefined);
@@ -345,14 +338,6 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
             expect(() => plugin.onunload()).not.toThrow();
-        });
-
-        it("calls downloadPanel.detach()", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            const detachSpy = plugin.downloadPanel!.detach;
-            plugin.onunload();
-            expect(detachSpy).toHaveBeenCalled();
         });
     });
 

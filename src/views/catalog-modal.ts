@@ -240,7 +240,7 @@ export class CatalogModal extends Modal {
         renderModelCard(container, entry, {
             showActions: true,
             isActive,
-            onPull: (e, btn) => this.handlePull(e, btn),
+            onPull: (e) => this.handlePull(e),
             onUse: (e, btn) => this.handleUse(e, btn),
             onRemove: (e, btn) => this.handleRemove(e, btn),
         });
@@ -313,7 +313,7 @@ export class CatalogModal extends Modal {
             removeBtn.addEventListener("click", () => this.handleRemove(entry, removeBtn));
         } else {
             const pullBtn = actionEl.createEl("button", { text: MESSAGES.BUTTON_PULL, cls: "lilbee-catalog-pull" });
-            pullBtn.addEventListener("click", () => this.handlePull(entry, pullBtn));
+            pullBtn.addEventListener("click", () => this.handlePull(entry));
         }
     }
 
@@ -416,7 +416,7 @@ export class CatalogModal extends Modal {
         return result;
     }
 
-    private handlePull(entry: CatalogEntry, btn: HTMLElement): void {
+    private handlePull(entry: CatalogEntry): void {
         const info = {
             name: entry.hf_repo,
             size_gb: entry.size_gb,
@@ -428,22 +428,16 @@ export class CatalogModal extends Modal {
         confirmModal.open();
         void confirmModal.result.then((confirmed) => {
             if (!confirmed) return;
-            void this.executePull(entry, btn);
+            void this.executePull(entry);
         });
     }
 
-    private async executePull(entry: CatalogEntry, btn: HTMLElement): Promise<void> {
-        if (this.pullController) {
-            this.pullController.abort();
-            return;
-        }
+    private async executePull(entry: CatalogEntry): Promise<void> {
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.hf_repo}`, TASK_TYPE.PULL);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
         }
-        btn.textContent = MESSAGES.STATUS_PULLING.replace("{model}", entry.hf_repo);
-        (btn as HTMLButtonElement).disabled = false;
         const controller = new AbortController();
         this.pullController = controller;
         this.plugin.taskQueue.registerAbort(taskId, controller);
@@ -455,7 +449,6 @@ export class CatalogModal extends Modal {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
                     if (pct !== undefined) {
-                        btn.textContent = `${pct}%`;
                         this.plugin.taskQueue.update(taskId, pct, entry.hf_repo);
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
@@ -463,9 +456,6 @@ export class CatalogModal extends Modal {
                     const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
                     new Notice(`${pullErrorPrefix}: ${msg}`);
                     this.plugin.taskQueue.fail(taskId, msg);
-                    btn.textContent = MESSAGES.BUTTON_PULL;
-                    (btn as HTMLButtonElement).disabled = false;
-                    this.pullController = null;
                     return;
                 }
             }
@@ -478,9 +468,6 @@ export class CatalogModal extends Modal {
                 new Notice(`${pullErrorPrefix}: ${msg}`);
                 this.plugin.taskQueue.fail(taskId, msg);
             }
-            btn.textContent = MESSAGES.BUTTON_PULL;
-            (btn as HTMLButtonElement).disabled = false;
-            this.pullController = null;
             return;
         } finally {
             this.pullController = null;
@@ -491,15 +478,12 @@ export class CatalogModal extends Modal {
             const e = result.error;
             new Notice(`${pullErrorPrefix}: ${e.message}`);
             this.plugin.taskQueue.fail(taskId, e.message);
-            btn.textContent = MESSAGES.BUTTON_PULL;
-            (btn as HTMLButtonElement).disabled = false;
             return;
         }
 
         this.plugin.fetchActiveModel();
         this.plugin.taskQueue.complete(taskId);
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.hf_repo));
-        btn.textContent = MESSAGES.LABEL_ACTIVE;
-        (btn as HTMLButtonElement).disabled = true;
+        this.resetAndFetch();
     }
 }

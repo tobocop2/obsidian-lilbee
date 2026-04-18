@@ -970,7 +970,7 @@ describe("CatalogModal", () => {
             expect(failed!.error).toBe("disk i/o");
         });
 
-        it("second click during an active pull aborts the controller", async () => {
+        it("taskQueue.cancel aborts the registered controller for an active pull", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             let receivedSignal: AbortSignal | undefined;
@@ -994,7 +994,9 @@ describe("CatalogModal", () => {
             await tick();
             await tick();
             expect(receivedSignal).toBeDefined();
-            pullBtn.trigger("click");
+            const active = plugin.taskQueue.active;
+            expect(active).toBeTruthy();
+            plugin.taskQueue.cancel(active!.id);
             await new Promise((r) => setTimeout(r, 50));
             expect(receivedSignal?.aborted).toBe(true);
         });

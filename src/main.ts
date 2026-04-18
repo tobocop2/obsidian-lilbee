@@ -32,7 +32,6 @@ import { WikiView, VIEW_TYPE_WIKI } from "./views/wiki-view";
 import { LintModal } from "./views/lint-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { StatusModal } from "./views/status-modal";
-import { DownloadPanel } from "./views/download-panel";
 import { TaskQueue } from "./task-queue";
 import { WikiSync } from "./wiki-sync";
 
@@ -92,7 +91,6 @@ export default class LilbeePlugin extends Plugin {
     private startingServer = false;
     private serverStartFailed = false;
     taskQueue: TaskQueue = new TaskQueue();
-    downloadPanel: DownloadPanel | null = null;
     wikiEnabled = false;
     wikiPageCount = 0;
     wikiDraftCount = 0;
@@ -113,8 +111,6 @@ export default class LilbeePlugin extends Plugin {
         this.addSettingTab(new LilbeeSettingTab(this.app, this));
         this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
         this.taskQueue.onChange(() => this.schedulePersistHistory());
-        this.downloadPanel = new DownloadPanel(this);
-        this.downloadPanel.attach();
         this.registerCommands();
 
         this.registerEvent(
@@ -440,7 +436,6 @@ export default class LilbeePlugin extends Plugin {
     }
 
     onunload(): void {
-        this.downloadPanel?.detach();
         if (this.syncTimeout) {
             clearTimeout(this.syncTimeout);
         }

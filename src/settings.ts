@@ -62,7 +62,6 @@ const GEN_DEFAULTS_MAP: Record<GenKey, keyof GenerationOptions> = {
 
 export class LilbeeSettingTab extends PluginSettingTab {
     plugin: LilbeePlugin;
-    private pullAbortController: AbortController | null = null;
     private genInputs: Map<GenKey, HTMLInputElement> = new Map();
     private serverConfigInputs: Map<string, HTMLInputElement> = new Map();
 
@@ -1065,29 +1064,20 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    private async autoPullAndSet(model: ModelInfo, container: HTMLElement): Promise<void> {
+    private async autoPullAndSet(model: ModelInfo, _container: HTMLElement): Promise<void> {
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
         }
         const controller = new AbortController();
-        this.pullAbortController = controller;
         this.plugin.taskQueue.registerAbort(taskId, controller);
-        const banner = container.createDiv("lilbee-pull-banner");
-        const label = banner.createEl("span", { text: MESSAGES.STATUS_PULLING.replace("{model}", model.name) });
-        const cancelBtn = banner.createEl("button", { text: MESSAGES.BUTTON_CANCEL, cls: "lilbee-pull-banner-cancel" });
-        cancelBtn.addEventListener("click", () => controller.abort(), { once: true });
         try {
             for await (const event of this.plugin.api.pullModel(model.name, "native", controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
                     if (pct !== undefined) {
-                        label.textContent = MESSAGES.STATUS_PULLING_PCT.replace("{model}", model.name).replace(
-                            "{pct}",
-                            String(pct),
-                        );
                         this.plugin.taskQueue.update(taskId, pct, model.name);
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
@@ -1112,9 +1102,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${reason}`);
                 this.plugin.taskQueue.fail(taskId, reason);
             }
-        } finally {
-            banner.remove();
-            this.pullAbortController = null;
         }
     }
 
@@ -1133,38 +1120,28 @@ export class LilbeeSettingTab extends PluginSettingTab {
             deleteBtn.addEventListener("click", () => this.deleteModel(deleteBtn, model));
         } else {
             const btn = actionCell.createEl("button", { text: MESSAGES.BUTTON_PULL }) as HTMLButtonElement;
-            btn.addEventListener("click", () => {
-                if (this.plugin.taskQueue.active) {
-                    this.pullAbortController?.abort();
-                    return;
-                }
-                return this.pullModel(btn, actionCell, model);
-            });
+            btn.addEventListener("click", () => this.pullModel(model));
         }
     }
 
-    private async pullModel(btn: HTMLButtonElement, actionCell: HTMLElement, model: ModelInfo): Promise<void> {
-        await this.executePull(btn, actionCell, model);
+    private async pullModel(model: ModelInfo): Promise<void> {
+        await this.executePull(model);
     }
 
-    private async executePull(btn: HTMLButtonElement, actionCell: HTMLElement, model: ModelInfo): Promise<void> {
+    private async executePull(model: ModelInfo): Promise<void> {
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
         }
         const controller = new AbortController();
-        this.pullAbortController = controller;
         this.plugin.taskQueue.registerAbort(taskId, controller);
-        btn.textContent = MESSAGES.BUTTON_CANCEL;
-        const progress = actionCell.createDiv("lilbee-pull-progress");
         try {
             for await (const event of this.plugin.api.pullModel(model.name, "native", controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
                     if (pct !== undefined) {
-                        progress.textContent = `${pct}%`;
                         this.plugin.taskQueue.update(taskId, pct, model.name);
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
@@ -1189,11 +1166,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${reason}`);
                 this.plugin.taskQueue.fail(taskId, reason);
             }
-            btn.disabled = false;
-            btn.textContent = MESSAGES.BUTTON_PULL;
-        } finally {
-            progress.remove();
-            this.pullAbortController = null;
         }
     }
 

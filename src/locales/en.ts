@@ -227,8 +227,6 @@ export const MESSAGES = {
     STATUS_CRAWLING: "Crawling...",
     STATUS_CRAWL_STARTED: "Crawl started...",
     STATUS_CRAWLED_PAGES: "Crawled {count} pages — {url}",
-    STATUS_PULLING: "Pulling {model}...",
-    STATUS_PULLING_PCT: "Pulling {model} — {pct}%",
     STATUS_REMOVING: "Removing...",
     STATUS_SETTING: "Setting...",
 

@@ -506,14 +506,6 @@
     font-weight: var(--font-medium, 500);
 }
 
-.lilbee-pull-progress {
-    display: inline-block;
-    color: var(--text-muted);
-    font-size: var(--font-smallest, 10px);
-    min-width: 2.5em;
-    text-align: right;
-}
-
 .lilbee-progress-row {
     display: flex;
     align-items: center;
@@ -612,35 +604,6 @@
     font-weight: var(--font-semibold, 600);
     padding: var(--size-4-2, 8px) 0;
     color: var(--text-normal);
-}
-
-.lilbee-pull-banner {
-    display: flex;
-    align-items: center;
-    gap: var(--size-4-2, 8px);
-    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
-    background-color: var(--background-secondary);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-m, 6px);
-    margin: var(--size-4-2, 8px) 0;
-    font-size: var(--font-small, 13px);
-    color: var(--text-muted);
-}
-
-.lilbee-pull-banner-cancel {
-    margin-left: auto;
-    background: none;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-s, 4px);
-    cursor: pointer;
-    color: var(--text-muted);
-    padding: 2px var(--size-4-2, 8px);
-    font-size: var(--font-smallest, 10px);
-}
-
-.lilbee-pull-banner-cancel:hover {
-    color: var(--text-error);
-    border-color: var(--text-error);
 }
 
 .lilbee-health-status {
@@ -2020,127 +1983,3 @@
     color: var(--interactive-accent);
 }
 
-/* Download progress panel (browser-style) */
-
-.lilbee-dp-container {
-    position: fixed;
-    bottom: 32px;
-    right: 16px;
-    z-index: 30;
-    max-width: 320px;
-    pointer-events: none;
-}
-
-.lilbee-dp-panels {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.lilbee-dp-panel {
-    pointer-events: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 10px 12px;
-    background-color: var(--background-primary);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 10px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-    opacity: 1;
-    transition: all 300ms ease;
-}
-
-.lilbee-dp-info {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: var(--font-small, 13px);
-}
-
-.lilbee-dp-icon {
-    flex-shrink: 0;
-    width: 1em;
-    text-align: center;
-}
-
-.lilbee-dp-name {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.lilbee-dp-pct {
-    color: var(--text-muted);
-    min-width: 2.5em;
-    text-align: right;
-}
-
-.lilbee-dp-cancel {
-    background: none;
-    border: 1px solid transparent;
-    cursor: pointer;
-    color: var(--text-faint);
-    padding: 0;
-    font-size: 12px;
-    width: 18px;
-    height: 18px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.lilbee-dp-cancel:hover {
-    color: var(--text-error);
-    border-color: var(--text-error);
-    background-color: color-mix(in srgb, var(--text-error) 10%, transparent);
-}
-
-.lilbee-dp-bar-container {
-    height: 3px;
-    background-color: var(--background-modifier-border);
-    border-radius: 3px;
-    overflow: hidden;
-}
-
-.lilbee-dp-bar-fill {
-    height: 100%;
-    background-color: var(--interactive-accent);
-    border-radius: 3px;
-    width: 0%;
-    transition: width 500ms ease-out;
-    transition: width 200ms ease-out;
-}
-
-.lilbee-dp-done {
-    border-color: color-mix(in srgb, var(--text-success) 25%, transparent);
-}
-
-.lilbee-dp-done .lilbee-dp-name {
-    color: var(--text-success);
-}
-
-.lilbee-dp-done .lilbee-dp-bar-fill {
-    background-color: var(--text-success);
-}
-
-.lilbee-dp-failed {
-    border-color: color-mix(in srgb, var(--text-error) 25%, transparent);
-}
-
-.lilbee-dp-failed .lilbee-dp-name {
-    color: var(--text-error);
-}
-
-.lilbee-dp-failed .lilbee-dp-bar-fill {
-    background-color: var(--text-error);
-}
-
-.lilbee-dp-queued {
-    font-size: var(--font-smallest, 10px);
-    color: var(--text-muted);
-    text-align: right;
-    padding: 0 4px;
-}

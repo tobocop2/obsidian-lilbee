@@ -993,93 +993,47 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
-    describe("Pull cancel", () => {
-        function setupPullCancelButton(plugin: ReturnType<typeof makePlugin>) {
-            const tab = makeTab(plugin);
-            const table = new MockElement("table") as unknown as HTMLTableElement;
-            const model = makeModelsResponse().chat.catalog[1]; // phi3 — uninstalled
-
-            const clickHandlers: Function[] = [];
-            const origAddEventListener = MockElement.prototype.addEventListener;
-            MockElement.prototype.addEventListener = function (event: string, handler: Function) {
-                if (event === "click") {
-                    clickHandlers.push(handler);
-                }
-                origAddEventListener.call(this, event, handler);
-            };
-
-            (tab as any).renderCatalogRow(table, model);
-            MockElement.prototype.addEventListener = origAddEventListener;
-
-            const row = (table as unknown as MockElement).children[0];
-            const actionCell = row.children[3];
-            const btn = actionCell.children[0];
-
-            return { tab, btn, actionCell, clickHandlers };
-        }
-
-        it("button text changes to 'Cancel' during pull", async () => {
+    describe("Pull cancel via task queue", () => {
+        it("taskQueue.cancel aborts the pull and shows cancellation notice", async () => {
             const plugin = makePlugin();
-            let resolve: () => void;
-            const blockingPromise = new Promise<void>((r) => {
-                resolve = r;
-            });
-
-            async function* slowPull() {
-                await blockingPromise;
-            }
-            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(slowPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-
-            const { tab, btn, clickHandlers } = setupPullCancelButton(plugin);
-            const modelsContainer = new MockElement("div");
-            modelsContainer.classList.add("lilbee-models-container");
-            tab.containerEl.children.push(modelsContainer);
-
-            // First click handler starts the pull
-            const pullPromise = clickHandlers[0]();
-
-            // Button text should now be "Cancel"
-            expect(btn.textContent).toBe("Cancel");
-
-            resolve!();
-            await pullPromise;
-        });
-
-        it("clicking Cancel during pull aborts and shows notice", async () => {
-            const plugin = makePlugin();
-
             let aborted = false;
-            async function* slowPull() {
+            async function* slowPull(_name: string, _source: string, signal: AbortSignal) {
                 yield { event: "progress", data: { percent: 10 } };
-                // Wait until abort or completion
                 while (!aborted) {
+                    if (signal.aborted) break;
                     await new Promise((r) => setTimeout(r, 1));
                 }
                 const err = new Error("The operation was aborted");
                 err.name = "AbortError";
                 throw err;
             }
-            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockImplementation(() => slowPull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockImplementation(
+                (n: string, s: string, sig: AbortSignal) => slowPull(n, s, sig),
+            );
 
-            const { tab: _tab, btn, actionCell, clickHandlers } = setupPullCancelButton(plugin);
+            const tab = makeTab(plugin);
+            const table = new MockElement("table") as unknown as HTMLTableElement;
+            const model = makeModelsResponse().chat.catalog[1];
 
-            // Start the pull
+            const clickHandlers: Function[] = [];
+            const origAddEventListener = MockElement.prototype.addEventListener;
+            MockElement.prototype.addEventListener = function (event: string, handler: Function) {
+                if (event === "click") clickHandlers.push(handler);
+                origAddEventListener.call(this, event, handler);
+            };
+            (tab as any).renderCatalogRow(table, model);
+            MockElement.prototype.addEventListener = origAddEventListener;
+
             const pullPromise = clickHandlers[0]();
             await new Promise((r) => setTimeout(r, 10));
 
-            // Click Cancel button (triggers the once listener that calls controller.abort())
+            const active = plugin.taskQueue.active;
+            expect(active).toBeTruthy();
             aborted = true;
-            btn.trigger("click");
+            plugin.taskQueue.cancel(active!.id);
             await pullPromise;
 
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_PULL_CANCELLED)).toBe(true);
-            expect(btn.textContent).toBe("Pull");
-            expect(btn.disabled).toBe(false);
-            // Progress div should be cleaned up
-            const progressDiv = actionCell.children.find((c: any) => c.classList?.contains("lilbee-pull-progress"));
-            expect(progressDiv).toBeUndefined();
         });
     });
 
@@ -1122,56 +1076,8 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
-    describe("Pull via taskQueue", () => {
-        it("pullModel second click on same button aborts instead of queuing", async () => {
-            const plugin = makePlugin();
-            let aborted = false;
-            async function* slowPull() {
-                yield { event: "progress", data: { percent: 10 } };
-                while (!aborted) {
-                    await new Promise((r) => setTimeout(r, 1));
-                }
-                const err = new Error("The operation was aborted");
-                err.name = "AbortError";
-                throw err;
-            }
-            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockImplementation(() => slowPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-
-            const tab = makeTab(plugin);
-            const table = new MockElement("table") as unknown as HTMLTableElement;
-            const model = makeModelsResponse().chat.catalog[1]; // phi3 -- uninstalled
-
-            const clickHandlers: Function[] = [];
-            const origAddEventListener = MockElement.prototype.addEventListener;
-            MockElement.prototype.addEventListener = function (event: string, handler: Function) {
-                if (event === "click") clickHandlers.push(handler);
-                origAddEventListener.call(this, event, handler);
-            };
-            (tab as any).renderCatalogRow(table, model);
-            MockElement.prototype.addEventListener = origAddEventListener;
-
-            const row = (table as unknown as MockElement).children[0];
-            const _actionCell = row.children[3];
-
-            // Start pull
-            const pullPromise = clickHandlers[0]();
-            await new Promise((r) => setTimeout(r, 10));
-            expect(plugin.api.pullModel).toHaveBeenCalledTimes(1);
-
-            // Second click aborts (since taskQueue has active task)
-            aborted = true;
-            clickHandlers[0]();
-            await pullPromise;
-
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_PULL_CANCELLED)).toBe(true);
-            expect(plugin.api.pullModel).toHaveBeenCalledTimes(1);
-        });
-    });
-
-    describe("Auto-pull cancel banner", () => {
-        it("shows cancel banner during auto-pull and removes it after", async () => {
+    describe("Auto-pull task queue updates", () => {
+        it("progress events update the task queue with percent", async () => {
             const plugin = makePlugin();
             async function* fakePull() {
                 yield { event: "progress", data: { percent: 50 } };
@@ -1180,6 +1086,7 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
+            const updateSpy = vi.spyOn(plugin.taskQueue, "update");
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
 
@@ -1189,26 +1096,25 @@ describe("LilbeeSettingTab", () => {
 
             await dropdownOnChanges[0]("phi3");
 
-            // Banner should be removed after pull completes
-            const banner = (container as unknown as MockElement).children.find((c) =>
-                c.classList.contains("lilbee-pull-banner"),
-            );
-            expect(banner).toBeUndefined();
+            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 50, "phi3");
         });
 
-        it("clicking cancel on auto-pull banner aborts and shows notice", async () => {
+        it("taskQueue.cancel during auto-pull aborts and shows notice", async () => {
             const plugin = makePlugin();
             let aborted = false;
-            async function* slowPull() {
+            async function* slowPull(_n: string, _s: string, signal: AbortSignal) {
                 yield { event: "progress", data: { percent: 10 } };
                 while (!aborted) {
+                    if (signal.aborted) break;
                     await new Promise((r) => setTimeout(r, 1));
                 }
                 const err = new Error("The operation was aborted");
                 err.name = "AbortError";
                 throw err;
             }
-            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockImplementation(() => slowPull());
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockImplementation(
+                (n: string, s: string, sig: AbortSignal) => slowPull(n, s, sig),
+            );
 
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
@@ -1220,52 +1126,13 @@ describe("LilbeeSettingTab", () => {
             const pullPromise = dropdownOnChanges[0]("phi3");
             await new Promise((r) => setTimeout(r, 10));
 
-            // Find the cancel button in the banner
-            const banner = (container as unknown as MockElement).children.find((c) =>
-                c.classList.contains("lilbee-pull-banner"),
-            );
-            expect(banner).toBeDefined();
-            const cancelBtn = banner!.children.find((c) => c.textContent === "Cancel");
-            expect(cancelBtn).toBeDefined();
+            const active = plugin.taskQueue.active;
+            expect(active).toBeTruthy();
             aborted = true;
-            cancelBtn!.trigger("click");
+            plugin.taskQueue.cancel(active!.id);
             await pullPromise;
 
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_PULL_CANCELLED)).toBe(true);
-        });
-
-        it("auto-pull banner label updates with progress percentage", async () => {
-            const plugin = makePlugin();
-            let resolveWait!: () => void;
-            const waitPromise = new Promise<void>((r) => {
-                resolveWait = r;
-            });
-            let bannerLabel: MockElement | undefined;
-            async function* slowPull() {
-                yield { event: "progress", data: { percent: 75 } };
-                // Capture the label text at this point
-                bannerLabel = (container as unknown as MockElement).children
-                    .find((c) => c.classList.contains("lilbee-pull-banner"))
-                    ?.children.find((c) => c.tagName === "SPAN");
-                await waitPromise;
-            }
-            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(slowPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            const pullPromise = dropdownOnChanges[0]("phi3");
-            await new Promise((r) => setTimeout(r, 0));
-
-            expect(bannerLabel?.textContent).toContain("75%");
-            resolveWait();
-            await pullPromise;
         });
     });
 
@@ -1389,34 +1256,30 @@ describe("LilbeeSettingTab", () => {
             return { tab, clickHandler: clickHandler!, actionCell };
         }
 
-        it("successful pull: shows progress percentage and success Notice, sets model", async () => {
+        it("successful pull: updates taskQueue with percent and shows success Notice", async () => {
             const plugin = makePlugin();
-            let capturedProgressText = "";
 
             async function* fakePull() {
                 yield { event: "progress", data: { percent: 75 } };
-                // Capture progress text mid-pull (before finally removes it)
-                capturedProgressText = actionCell.find("lilbee-pull-progress")?.textContent ?? "";
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
-            const { tab, clickHandler, actionCell } = await setupPullButton(plugin);
+            const updateSpy = vi.spyOn(plugin.taskQueue, "update");
+            const { tab, clickHandler } = await setupPullButton(plugin);
             const modelsContainer = new MockElement("div");
             modelsContainer.classList.add("lilbee-models-container");
             tab.containerEl.children.push(modelsContainer);
 
             await clickHandler();
 
-            expect(capturedProgressText).toBe("75%");
-            // Progress div cleaned up after completion
-            expect(actionCell.find("lilbee-pull-progress")).toBeNull();
+            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 75, "phi3");
             expect(Notice.instances.some((n) => n.message.includes("phi3") && n.message.includes("pulled"))).toBe(true);
             expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
         });
 
-        it("progress event with no percent and no total: skips update", async () => {
+        it("progress event with no percent and no total: skips taskQueue.update", async () => {
             const plugin = makePlugin();
 
             async function* fakePull() {
@@ -1426,59 +1289,57 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
-            const { tab, clickHandler, actionCell } = await setupPullButton(plugin);
+            const updateSpy = vi.spyOn(plugin.taskQueue, "update");
+            const { tab, clickHandler } = await setupPullButton(plugin);
             const modelsContainer = new MockElement("div");
             modelsContainer.classList.add("lilbee-models-container");
             tab.containerEl.children.push(modelsContainer);
 
             await clickHandler();
 
-            // Progress div should still be empty since pct was undefined
-            expect(actionCell.find("lilbee-pull-progress")?.textContent ?? "").toBe("");
+            expect(updateSpy).not.toHaveBeenCalled();
         });
 
         it("progress event with current/total (no percent): computes percentage", async () => {
             const plugin = makePlugin();
-            let capturedProgressText = "";
 
             async function* fakePull() {
                 yield { event: "progress", data: { current: 50, total: 100 } };
-                capturedProgressText = actionCell.find("lilbee-pull-progress")?.textContent ?? "";
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
-            const { tab, clickHandler, actionCell } = await setupPullButton(plugin);
+            const updateSpy = vi.spyOn(plugin.taskQueue, "update");
+            const { tab, clickHandler } = await setupPullButton(plugin);
             const modelsContainer = new MockElement("div");
             modelsContainer.classList.add("lilbee-models-container");
             tab.containerEl.children.push(modelsContainer);
 
             await clickHandler();
 
-            expect(capturedProgressText).toBe("50%");
+            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 50, "phi3");
         });
 
-        it("progress event with percent=0: shows 0% text", async () => {
+        it("progress event with percent=0: updates taskQueue with 0", async () => {
             const plugin = makePlugin();
-            let capturedProgressText = "";
 
             async function* fakePull() {
                 yield { event: "progress", data: { percent: 0 } };
-                capturedProgressText = actionCell.find("lilbee-pull-progress")?.textContent ?? "";
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
-            const { tab, clickHandler, actionCell } = await setupPullButton(plugin);
+            const updateSpy = vi.spyOn(plugin.taskQueue, "update");
+            const { tab, clickHandler } = await setupPullButton(plugin);
             const modelsContainer = new MockElement("div");
             modelsContainer.classList.add("lilbee-models-container");
             tab.containerEl.children.push(modelsContainer);
 
             await clickHandler();
 
-            expect(capturedProgressText).toBe("0%");
+            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 0, "phi3");
         });
 
         it("pull failure: shows failure Notice and re-enables button with 'Pull' text", async () => {
