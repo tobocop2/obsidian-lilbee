@@ -110,6 +110,13 @@ export class MockElement {
         this._listeners[event].push(handler);
     }
 
+    removeEventListener(event: string, handler: Function, _options?: unknown): void {
+        const handlers = this._listeners[event];
+        if (!handlers) return;
+        const i = handlers.indexOf(handler);
+        if (i >= 0) handlers.splice(i, 1);
+    }
+
     // Test helper: trigger an event
     trigger(event: string, ...args: unknown[]): void {
         for (const handler of this._listeners[event] ?? []) {

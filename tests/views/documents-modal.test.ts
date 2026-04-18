@@ -62,22 +62,11 @@ function _findInputs(el: MockElement): MockElement[] {
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-class NoopIntersectionObserver {
-    constructor(_cb: IntersectionObserverCallback) {}
-    observe(): void {}
-    disconnect(): void {}
-    unobserve(): void {}
-    takeRecords(): IntersectionObserverEntry[] {
-        return [];
-    }
-}
-
 describe("DocumentsModal", () => {
     beforeEach(() => {
         Notice.clear();
         mockConfirmResult = true;
         vi.useFakeTimers();
-        vi.stubGlobal("IntersectionObserver", NoopIntersectionObserver);
     });
 
     afterEach(() => {
@@ -262,7 +251,7 @@ describe("DocumentsModal", () => {
         expect(plugin.api.removeDocuments).not.toHaveBeenCalled();
     });
 
-    it("shows Load more when total > loaded", async () => {
+    it("attaches a scroll listener to the results element", async () => {
         const docs = Array.from({ length: 20 }, (_, i) => makeDoc({ filename: `f${i}.md` }));
         const plugin = makePlugin();
         plugin.api.listDocuments.mockResolvedValue(makeDocsResponse(docs, 40));
@@ -271,22 +260,12 @@ describe("DocumentsModal", () => {
         modal.open();
         await vi.runAllTimersAsync();
 
-        const el = modal.contentEl as unknown as MockElement;
-        expect(el.find("lilbee-documents-sentinel")).not.toBeNull();
+        const resultsEl = (modal as any).resultsEl as MockElement;
+        expect(resultsEl).not.toBeNull();
+        expect(typeof (modal as any).onScroll).toBe("function");
     });
 
-    it("sentinel intersection fetches next page when more remain", async () => {
-        const observers: IntersectionObserverCallback[] = [];
-        vi.stubGlobal(
-            "IntersectionObserver",
-            class {
-                constructor(cb: IntersectionObserverCallback) {
-                    observers.push(cb);
-                }
-                observe() {}
-                disconnect() {}
-            },
-        );
+    it("fetches next page when user scrolls near the bottom and more remain", async () => {
         const page1 = Array.from({ length: 20 }, (_, i) => makeDoc({ filename: `f${i}.md` }));
         const page2 = [makeDoc({ filename: "f20.md" })];
         const plugin = makePlugin();
@@ -298,25 +277,16 @@ describe("DocumentsModal", () => {
         modal.open();
         await vi.runAllTimersAsync();
 
-        observers[0]([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+        const el = (modal as any).resultsEl as MockElement;
+        Object.assign(el, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+        (modal as any).onScroll();
         await vi.runAllTimersAsync();
 
         expect(plugin.api.listDocuments).toHaveBeenCalledTimes(2);
         expect(plugin.api.listDocuments).toHaveBeenLastCalledWith(undefined, 20, 20);
     });
 
-    it("sentinel intersection is ignored when no more documents remain", async () => {
-        const observers: IntersectionObserverCallback[] = [];
-        vi.stubGlobal(
-            "IntersectionObserver",
-            class {
-                constructor(cb: IntersectionObserverCallback) {
-                    observers.push(cb);
-                }
-                observe() {}
-                disconnect() {}
-            },
-        );
+    it("does not fetch when no more documents remain", async () => {
         const plugin = makePlugin();
         plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc()], 1));
         const app = new App();
@@ -325,24 +295,15 @@ describe("DocumentsModal", () => {
         await vi.runAllTimersAsync();
         plugin.api.listDocuments.mockClear();
 
-        observers[0]([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+        const el = (modal as any).resultsEl as MockElement;
+        Object.assign(el, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+        (modal as any).onScroll();
         await vi.runAllTimersAsync();
 
         expect(plugin.api.listDocuments).not.toHaveBeenCalled();
     });
 
-    it("sentinel intersection ignores non-intersecting entries", async () => {
-        const observers: IntersectionObserverCallback[] = [];
-        vi.stubGlobal(
-            "IntersectionObserver",
-            class {
-                constructor(cb: IntersectionObserverCallback) {
-                    observers.push(cb);
-                }
-                observe() {}
-                disconnect() {}
-            },
-        );
+    it("does not fetch when not near the bottom", async () => {
         const plugin = makePlugin();
         plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc()], 40));
         const app = new App();
@@ -351,31 +312,50 @@ describe("DocumentsModal", () => {
         await vi.runAllTimersAsync();
         plugin.api.listDocuments.mockClear();
 
-        observers[0]([{ isIntersecting: false } as IntersectionObserverEntry], {} as IntersectionObserver);
+        const el = (modal as any).resultsEl as MockElement;
+        Object.assign(el, { scrollTop: 10, clientHeight: 400, scrollHeight: 2000 });
+        (modal as any).onScroll();
         await vi.runAllTimersAsync();
 
         expect(plugin.api.listDocuments).not.toHaveBeenCalled();
     });
 
-    it("disconnects observer on close", async () => {
-        const disconnectSpy = vi.fn();
-        vi.stubGlobal(
-            "IntersectionObserver",
-            class {
-                constructor(_cb: IntersectionObserverCallback) {}
-                observe() {}
-                disconnect() {
-                    disconnectSpy();
-                }
-            },
-        );
+    it("removes scroll listener on close", async () => {
         const plugin = makePlugin();
         const app = new App();
         const modal = new DocumentsModal(app as any, plugin as any);
         modal.open();
         await vi.runAllTimersAsync();
+        const el = (modal as any).resultsEl as MockElement;
+        const removeSpy = vi.spyOn(el as any, "removeEventListener");
         modal.close();
-        expect(disconnectSpy).toHaveBeenCalled();
+        expect(removeSpy).toHaveBeenCalledWith("scroll", expect.any(Function));
+    });
+
+    it("onScroll bails when resultsEl is null (defensive)", async () => {
+        const plugin = makePlugin();
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+        (modal as any).resultsEl = null;
+        expect(() => (modal as any).onScroll()).not.toThrow();
+    });
+
+    it("onScroll bails while a fetch is already in flight", async () => {
+        const plugin = makePlugin();
+        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc()], 40));
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+        plugin.api.listDocuments.mockClear();
+        (modal as any).isFetching = true;
+        const el = (modal as any).resultsEl as MockElement;
+        Object.assign(el, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+        (modal as any).onScroll();
+        await vi.runAllTimersAsync();
+        expect(plugin.api.listDocuments).not.toHaveBeenCalled();
     });
 
     it("fetchPage is a no-op when already fetching", async () => {

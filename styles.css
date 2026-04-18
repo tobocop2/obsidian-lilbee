@@ -846,10 +846,6 @@
     font-size: var(--font-small, 13px);
 }
 
-.lilbee-catalog-sentinel {
-    height: 1px;
-    margin-top: 8px;
-}
 
 /* Card Grid Layout */
 

@@ -9,7 +9,7 @@ import { debounce, DEBOUNCE_MS, formatAbbreviatedCount } from "../utils";
 import { renderModelCard } from "../components/model-card";
 
 const PAGE_SIZE = 20;
-const SENTINEL_ROOT_MARGIN = "200px";
+const SCROLL_BOTTOM_THRESHOLD_PX = 200;
 
 type TaskFilter = (typeof FILTERS.TASK)[keyof typeof FILTERS.TASK];
 type SizeFilter = "" | typeof FILTERS.SIZE.SMALL | typeof FILTERS.SIZE.MEDIUM | typeof FILTERS.SIZE.LARGE;
@@ -32,8 +32,6 @@ export class CatalogModal extends Modal {
     private isFetching = false;
     private entries: CatalogEntry[] = [];
     private resultsEl: HTMLElement | null = null;
-    private sentinelEl: HTMLElement | null = null;
-    private observer: IntersectionObserver | null = null;
     private viewMode: CatalogViewMode = CATALOG_VIEW_MODE.GRID;
     private sortColumn = "";
     private sortAscending = true;
@@ -59,27 +57,23 @@ export class CatalogModal extends Modal {
         this.renderFilterBar(contentEl);
 
         this.resultsEl = contentEl.createDiv({ cls: "lilbee-catalog-results" });
-        this.sentinelEl = contentEl.createDiv({ cls: "lilbee-catalog-sentinel" });
-        this.observer = new IntersectionObserver(
-            (entries) => {
-                for (const entry of entries) {
-                    if (entry.isIntersecting && this.hasMore && !this.isFetching) {
-                        void this.fetchPage();
-                    }
-                }
-            },
-            { root: contentEl, rootMargin: SENTINEL_ROOT_MARGIN },
-        );
-        this.observer.observe(this.sentinelEl);
+        this.resultsEl.addEventListener("scroll", this.onScroll);
 
         this.resetAndFetch();
     }
 
     onClose(): void {
         this.cancelDebouncedSearch();
-        this.observer?.disconnect();
-        this.observer = null;
+        this.resultsEl?.removeEventListener("scroll", this.onScroll);
     }
+
+    private onScroll = (): void => {
+        if (!this.resultsEl || this.isFetching || !this.hasMore) return;
+        const { scrollTop, clientHeight, scrollHeight } = this.resultsEl;
+        if (scrollTop + clientHeight >= scrollHeight - SCROLL_BOTTOM_THRESHOLD_PX) {
+            void this.fetchPage();
+        }
+    };
 
     private renderFilterBar(parent: HTMLElement): void {
         const filters = parent.createDiv({ cls: "lilbee-catalog-filters" });

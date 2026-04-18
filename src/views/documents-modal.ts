@@ -6,7 +6,7 @@ import { MESSAGES } from "../locales/en";
 import { debounce, DEBOUNCE_MS } from "../utils";
 
 const PAGE_SIZE = 20;
-const SENTINEL_ROOT_MARGIN = "200px";
+const SCROLL_BOTTOM_THRESHOLD_PX = 200;
 
 export class DocumentsModal extends Modal {
     private plugin: LilbeePlugin;
@@ -16,8 +16,6 @@ export class DocumentsModal extends Modal {
     private documents: DocumentEntry[] = [];
     private selected = new Set<string>();
     private resultsEl: HTMLElement | null = null;
-    private sentinelEl: HTMLElement | null = null;
-    private observer: IntersectionObserver | null = null;
     private removeBtn: HTMLElement | null = null;
     private searchQuery = "";
     private debouncedSearch: () => void;
@@ -56,27 +54,23 @@ export class DocumentsModal extends Modal {
         this.removeBtn.addEventListener("click", () => void this.removeSelected());
 
         this.resultsEl = contentEl.createDiv({ cls: "lilbee-documents-results" });
-        this.sentinelEl = contentEl.createDiv({ cls: "lilbee-documents-sentinel" });
-        this.observer = new IntersectionObserver(
-            (entries) => {
-                for (const entry of entries) {
-                    if (entry.isIntersecting && this.offset < this.total && !this.isFetching) {
-                        void this.fetchPage();
-                    }
-                }
-            },
-            { root: contentEl, rootMargin: SENTINEL_ROOT_MARGIN },
-        );
-        this.observer.observe(this.sentinelEl);
+        this.resultsEl.addEventListener("scroll", this.onScroll);
 
         this.resetAndFetch();
     }
 
     onClose(): void {
         this.cancelDebouncedSearch();
-        this.observer?.disconnect();
-        this.observer = null;
+        this.resultsEl?.removeEventListener("scroll", this.onScroll);
     }
+
+    private onScroll = (): void => {
+        if (!this.resultsEl || this.isFetching || this.offset >= this.total) return;
+        const { scrollTop, clientHeight, scrollHeight } = this.resultsEl;
+        if (scrollTop + clientHeight >= scrollHeight - SCROLL_BOTTOM_THRESHOLD_PX) {
+            void this.fetchPage();
+        }
+    };
 
     private resetAndFetch(): void {
         this.offset = 0;

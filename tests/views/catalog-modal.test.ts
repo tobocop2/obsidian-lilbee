@@ -104,22 +104,11 @@ function contentEl(modal: CatalogModal): MockElement {
     return (modal as unknown as { contentEl: MockElement }).contentEl;
 }
 
-class NoopIntersectionObserver {
-    constructor(_cb: IntersectionObserverCallback) {}
-    observe(): void {}
-    disconnect(): void {}
-    unobserve(): void {}
-    takeRecords(): IntersectionObserverEntry[] {
-        return [];
-    }
-}
-
 describe("CatalogModal", () => {
     beforeEach(() => {
         Notice.clear();
         mockConfirmResult = true;
         mockConfirmRemoveResult = true;
-        vi.stubGlobal("IntersectionObserver", NoopIntersectionObserver);
     });
 
     afterEach(() => {
@@ -519,40 +508,25 @@ describe("CatalogModal", () => {
     });
 
     describe("infinite scroll", () => {
-        it("appends a sentinel element and observes it", async () => {
-            const observeSpy = vi.fn();
-            vi.stubGlobal(
-                "IntersectionObserver",
-                class {
-                    constructor(_cb: IntersectionObserverCallback) {}
-                    observe(el: Element) {
-                        observeSpy(el);
-                    }
-                    disconnect() {}
-                },
-            );
+        function setScroll(
+            modal: CatalogModal,
+            geometry: { scrollTop: number; clientHeight: number; scrollHeight: number },
+        ): MockElement {
+            const el = (modal as any).resultsEl as MockElement;
+            Object.assign(el, geometry);
+            return el;
+        }
+
+        it("attaches a scroll listener to the results element", async () => {
             const plugin = makePlugin();
             const modal = await openModal(plugin);
-            const content = contentEl(modal);
-            const sentinel = content.find("lilbee-catalog-sentinel");
-            expect(sentinel).not.toBeNull();
-            expect(observeSpy).toHaveBeenCalledTimes(1);
+            const resultsEl = (modal as any).resultsEl as MockElement;
+            expect(resultsEl).not.toBeNull();
+            expect(typeof (modal as any).onScroll).toBe("function");
             modal.close();
-            vi.unstubAllGlobals();
         });
 
-        it("fetches next page when sentinel intersects and hasMore is true", async () => {
-            const observers: IntersectionObserverCallback[] = [];
-            vi.stubGlobal(
-                "IntersectionObserver",
-                class {
-                    constructor(cb: IntersectionObserverCallback) {
-                        observers.push(cb);
-                    }
-                    observe() {}
-                    disconnect() {}
-                },
-            );
+        it("fetches the next page when the user scrolls near the bottom and hasMore is true", async () => {
             const plugin = makePlugin();
             const first = makeEntry({ name: "a", display_name: "A" });
             const second = makeEntry({ name: "b", display_name: "B" });
@@ -560,43 +534,40 @@ describe("CatalogModal", () => {
                 .mockResolvedValueOnce(ok({ total: 2, limit: 1, offset: 0, models: [first], has_more: true }))
                 .mockResolvedValueOnce(ok({ total: 2, limit: 1, offset: 1, models: [second], has_more: false }));
             const modal = await openModal(plugin);
-            observers[0](
-                [{ isIntersecting: true } as IntersectionObserverEntry],
-                {} as unknown as IntersectionObserver,
-            );
+            setScroll(modal, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+            (modal as any).onScroll();
             await tick();
             await tick();
             expect(plugin.api.catalog).toHaveBeenCalledTimes(2);
             modal.close();
-            vi.unstubAllGlobals();
         });
 
-        it("ignores sentinel intersection when hasMore is false", async () => {
-            const observers: IntersectionObserverCallback[] = [];
-            vi.stubGlobal(
-                "IntersectionObserver",
-                class {
-                    constructor(cb: IntersectionObserverCallback) {
-                        observers.push(cb);
-                    }
-                    observe() {}
-                    disconnect() {}
-                },
+        it("does not fetch when scrolling is not near the bottom", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok({ total: 40, limit: 20, offset: 0, models: [makeEntry()], has_more: true }),
             );
+            const modal = await openModal(plugin);
+            plugin.api.catalog.mockClear();
+            setScroll(modal, { scrollTop: 10, clientHeight: 400, scrollHeight: 2000 });
+            (modal as any).onScroll();
+            await tick();
+            expect(plugin.api.catalog).not.toHaveBeenCalled();
+            modal.close();
+        });
+
+        it("does not fetch when hasMore is false", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(
                 ok({ total: 1, limit: 20, offset: 0, models: [makeEntry()], has_more: false }),
             );
             const modal = await openModal(plugin);
             plugin.api.catalog.mockClear();
-            observers[0](
-                [{ isIntersecting: true } as IntersectionObserverEntry],
-                {} as unknown as IntersectionObserver,
-            );
+            setScroll(modal, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+            (modal as any).onScroll();
             await tick();
             expect(plugin.api.catalog).not.toHaveBeenCalled();
             modal.close();
-            vi.unstubAllGlobals();
         });
 
         it("fetchPage bails when isFetching is already true", async () => {
@@ -609,88 +580,36 @@ describe("CatalogModal", () => {
             modal.close();
         });
 
-        it("ignores a second intersection while a fetch is already in flight", async () => {
-            const observers: IntersectionObserverCallback[] = [];
-            vi.stubGlobal(
-                "IntersectionObserver",
-                class {
-                    constructor(cb: IntersectionObserverCallback) {
-                        observers.push(cb);
-                    }
-                    observe() {}
-                    disconnect() {}
-                },
-            );
-            const plugin = makePlugin();
-            let resolveFirst!: (value: unknown) => void;
-            plugin.api.catalog.mockImplementationOnce(
-                () =>
-                    new Promise((r) => {
-                        resolveFirst = r;
-                    }),
-            );
-            new CatalogModal(new App() as any, plugin as any).open();
-            await tick();
-            observers[0](
-                [{ isIntersecting: true } as IntersectionObserverEntry],
-                {} as unknown as IntersectionObserver,
-            );
-            observers[0](
-                [{ isIntersecting: true } as IntersectionObserverEntry],
-                {} as unknown as IntersectionObserver,
-            );
-            resolveFirst(ok(makeCatalogResponse([makeEntry()], 1, false)));
-            await tick();
-            await tick();
-            expect(plugin.api.catalog).toHaveBeenCalledTimes(1);
-            vi.unstubAllGlobals();
-        });
-
-        it("ignores non-intersecting entries from the observer", async () => {
-            const observers: IntersectionObserverCallback[] = [];
-            vi.stubGlobal(
-                "IntersectionObserver",
-                class {
-                    constructor(cb: IntersectionObserverCallback) {
-                        observers.push(cb);
-                    }
-                    observe() {}
-                    disconnect() {}
-                },
-            );
+        it("onScroll bails while a fetch is already in flight", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(
                 ok({ total: 40, limit: 20, offset: 0, models: [makeEntry()], has_more: true }),
             );
             const modal = await openModal(plugin);
             plugin.api.catalog.mockClear();
-            observers[0](
-                [{ isIntersecting: false } as IntersectionObserverEntry],
-                {} as unknown as IntersectionObserver,
-            );
+            (modal as any).isFetching = true;
+            setScroll(modal, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+            (modal as any).onScroll();
             await tick();
             expect(plugin.api.catalog).not.toHaveBeenCalled();
             modal.close();
-            vi.unstubAllGlobals();
         });
 
-        it("disconnects the observer on close", async () => {
-            const disconnectSpy = vi.fn();
-            vi.stubGlobal(
-                "IntersectionObserver",
-                class {
-                    constructor(_cb: IntersectionObserverCallback) {}
-                    observe() {}
-                    disconnect() {
-                        disconnectSpy();
-                    }
-                },
-            );
+        it("onScroll bails when resultsEl is null (defensive)", async () => {
             const plugin = makePlugin();
             const modal = await openModal(plugin);
+            (modal as any).resultsEl = null;
+            expect(() => (modal as any).onScroll()).not.toThrow();
             modal.close();
-            expect(disconnectSpy).toHaveBeenCalled();
-            vi.unstubAllGlobals();
+        });
+
+        it("removes the scroll listener on close", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin);
+            const el = (modal as any).resultsEl as MockElement;
+            const removeSpy = vi.spyOn(el as any, "removeEventListener");
+            modal.close();
+            expect(removeSpy).toHaveBeenCalledWith("scroll", expect.any(Function));
         });
     });
 
