@@ -2110,6 +2110,7 @@
     background-color: var(--interactive-accent);
     border-radius: 3px;
     width: 0%;
+    transition: width 500ms ease-out;
     transition: width 200ms ease-out;
 }
 
