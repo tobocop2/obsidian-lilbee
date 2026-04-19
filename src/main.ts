@@ -31,6 +31,9 @@ import {
     NOTICE_DURATION_MS,
     NOTICE_ERROR_DURATION_MS,
     NOTICE_PERMANENT,
+    STREAM_IDLE_TIMEOUT_MS,
+    StreamIdleError,
+    withIdleTimeout,
 } from "./utils";
 import { CatalogModal } from "./views/catalog-modal";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
@@ -139,6 +142,7 @@ export default class LilbeePlugin extends Plugin {
     api: LilbeeClient = new LilbeeClient(DEFAULT_SETTINGS.serverUrl);
     activeModel = "";
     statusBarEl: HTMLElement | null = null;
+    ribbonIconEl: HTMLElement | null = null;
     binaryManager: BinaryManager | null = null;
     serverManager: ServerManager | null = null;
     syncController: AbortController | null = null;
@@ -162,11 +166,16 @@ export default class LilbeePlugin extends Plugin {
         this.statusBarEl = this.addStatusBarItem();
         this.statusBarEl.style.cursor = "pointer";
         this.statusBarEl.addEventListener("click", () => this.activateTaskView());
+        this.ribbonIconEl = this.addRibbonIcon("list-checks", MESSAGES.LABEL_RIBBON_OPEN_TASK_CENTER, () =>
+            this.activateTaskView(),
+        );
+        this.ribbonIconEl.addClass("lilbee-ribbon-icon");
         this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
         this.registerView(VIEW_TYPE_TASKS, (leaf) => new TaskCenterView(leaf, this));
         this.registerView(VIEW_TYPE_WIKI, (leaf) => new WikiView(leaf, this));
         this.addSettingTab(new LilbeeSettingTab(this.app, this));
         this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
+        this.taskQueue.onChange(() => this.updateRibbonFromQueue());
         this.taskQueue.onChange(() => this.schedulePersistHistory());
         this.registerCommands();
 
@@ -656,6 +665,24 @@ export default class LilbeePlugin extends Plugin {
         this.setStatusClass("lilbee-status-adding");
     }
 
+    private updateRibbonFromQueue(): void {
+        if (!this.ribbonIconEl) return;
+        const el = this.ribbonIconEl;
+        el.removeClass("lilbee-ribbon-active", "lilbee-ribbon-success", "lilbee-ribbon-error");
+        const allActive = this.taskQueue.activeAll;
+        const queued = this.taskQueue.queued;
+        const completed = this.taskQueue.completed;
+        if (allActive.length > 0 || queued.length > 0) {
+            el.addClass("lilbee-ribbon-active");
+            return;
+        }
+        const recent = completed[0];
+        if (!recent || recent.completedAt === null) return;
+        if (Date.now() - recent.completedAt >= TASK_FLASH_WINDOW_MS) return;
+        if (recent.status === TASK_STATUS.DONE) el.addClass("lilbee-ribbon-success");
+        else if (recent.status === TASK_STATUS.FAILED) el.addClass("lilbee-ribbon-error");
+    }
+
     private renderStatusFlash(recent: TaskEntry, completed: readonly TaskEntry[]): void {
         if (recent.status === TASK_STATUS.DONE) {
             const recentDone = countRecentByStatus(completed, TASK_STATUS.DONE);
@@ -785,12 +812,9 @@ export default class LilbeePlugin extends Plugin {
         try {
             const progress = new FileProgressTracker();
             let syncResult: SyncDone | null = null;
-            for await (const event of this.api.addFiles(
-                paths,
-                true,
-                this.settings.enableOcr,
-                this.syncController.signal,
-            )) {
+            const controller = this.syncController;
+            const rawStream = this.api.addFiles(paths, true, this.settings.enableOcr, controller.signal);
+            for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };
                     progress.startFile(d.current_file, d.total_files);
@@ -841,7 +865,10 @@ export default class LilbeePlugin extends Plugin {
             }
             this.taskQueue.complete(taskId);
         } catch (err) {
-            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
+            if (err instanceof StreamIdleError) {
+                new Notice(MESSAGES.ERROR_STREAM_IDLE);
+                this.taskQueue.fail(taskId, MESSAGES.ERROR_STREAM_IDLE);
+            } else if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.STATUS_ADD_CANCELLED);
                 this.taskQueue.cancel(taskId);
             } else {
@@ -1038,7 +1065,8 @@ export default class LilbeePlugin extends Plugin {
         this.taskQueue.registerAbort(taskId, controller);
         try {
             let pageCount = 0;
-            for await (const event of this.api.crawl(url, depth, maxPages, controller.signal)) {
+            const rawStream = this.api.crawl(url, depth, maxPages, controller.signal);
+            for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 switch (event.event) {
                     case SSE_EVENT.CRAWL_START:
                         break;
@@ -1065,6 +1093,11 @@ export default class LilbeePlugin extends Plugin {
             }
             this.taskQueue.complete(taskId);
         } catch (err) {
+            if (err instanceof StreamIdleError) {
+                new Notice(MESSAGES.ERROR_STREAM_IDLE);
+                this.taskQueue.fail(taskId, MESSAGES.ERROR_STREAM_IDLE);
+                return;
+            }
             const msg = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
             this.taskQueue.fail(taskId, msg);
             new Notice(MESSAGES.ERROR_CRAWL_FAILED.replace("{msg}", msg));
@@ -1084,7 +1117,9 @@ export default class LilbeePlugin extends Plugin {
         try {
             const progress = new FileProgressTracker();
             let syncResult: SyncDone | null = null;
-            for await (const event of this.api.syncStream(this.settings.enableOcr, this.syncController.signal)) {
+            const controller = this.syncController;
+            const rawStream = this.api.syncStream(this.settings.enableOcr, controller.signal);
+            for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };
                     progress.startFile(d.current_file, d.total_files);
@@ -1135,7 +1170,10 @@ export default class LilbeePlugin extends Plugin {
             }
             this.taskQueue.complete(taskId);
         } catch (err) {
-            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
+            if (err instanceof StreamIdleError) {
+                new Notice(MESSAGES.ERROR_STREAM_IDLE);
+                this.taskQueue.fail(taskId, MESSAGES.ERROR_STREAM_IDLE);
+            } else if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.STATUS_SYNC_CANCELLED);
                 this.taskQueue.cancel(taskId);
             } else {
