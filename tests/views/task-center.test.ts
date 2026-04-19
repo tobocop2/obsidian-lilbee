@@ -589,6 +589,29 @@ describe("TaskCenterView — render edge cases", () => {
         await view.onClose();
     });
 
+    it("caps active progress at 99% so active rows never show 100%", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+        const contentEl = (view as any).contentEl as MockElement;
+
+        const id = plugin.taskQueue.enqueue("Sync", TASK_TYPE.SYNC);
+        plugin.taskQueue.update(id, 100);
+        (view as any).render();
+
+        const fill = findByClass(contentEl, "lilbee-task-progress-fill");
+        expect(fill[0]!.style.width).toBe("99%");
+        const pctLabels = findByClass(contentEl, "lilbee-task-pct");
+        expect(pctLabels[0]!.textContent).toBe("99%");
+
+        plugin.taskQueue.complete(id);
+        (view as any).render();
+        const doneFill = findByClass(contentEl, "lilbee-task-progress-fill");
+        expect(doneFill[0]!.style.width).toBe("100%");
+
+        await view.onClose();
+    });
+
     it("completed task without completedAt shows no time", async () => {
         const plugin = makePlugin();
         const view = new TaskCenterView(makeLeaf(), plugin);

@@ -5,6 +5,8 @@ import { MESSAGES } from "../locales/en";
 import { FLASH_WINDOW_MS } from "../task-queue";
 import { formatBytes, formatElapsed, formatRate, relativeTime, TIME_REFRESH_INTERVAL_MS } from "../utils";
 
+const ACTIVE_PCT_CAP = 99;
+
 export const VIEW_TYPE_TASKS = "lilbee-tasks";
 
 const ACTIVE_REFRESH_INTERVAL_MS = 1000;
@@ -197,7 +199,8 @@ export class TaskCenterView extends ItemView {
         const isTerminal =
             state === TASK_STATUS.DONE || state === TASK_STATUS.FAILED || state === TASK_STATUS.CANCELLED;
         const isIndeterminate = isActive && task.progress < 0;
-        const pct = isIndeterminate ? 100 : Math.max(0, Math.min(100, task.progress));
+        const rawPct = Math.max(0, Math.min(100, task.progress));
+        const pct = isIndeterminate ? 100 : isActive ? Math.min(rawPct, ACTIVE_PCT_CAP) : rawPct;
 
         if (isTerminal && isWithinFlashWindow(task)) {
             row.addClass("lilbee-task-flash");
