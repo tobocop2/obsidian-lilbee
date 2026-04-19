@@ -2,6 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Notice } from "obsidian";
 import { App, WorkspaceLeaf } from "./__mocks__/obsidian";
 import { SSE_EVENT } from "../src/types";
+import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
 import { ConfirmModal } from "../src/views/confirm-modal";
 vi.mock("../src/api", () => ({
@@ -160,6 +161,7 @@ describe("LilbeePlugin", () => {
     beforeEach(() => {
         Notice.clear();
         vi.clearAllMocks();
+        vi.useRealTimers();
         mockLastStderr = "";
     });
 
@@ -3489,5 +3491,62 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
             expect(plugin.api.wikiPrune).not.toHaveBeenCalled();
         });
+    });
+});
+
+describe("FileProgressTracker", () => {
+    it("returns 0 before any file starts", () => {
+        const t = new FileProgressTracker();
+        expect(t.percent()).toBe(0);
+    });
+
+    it("advances on FILE_START proportionally to files remaining", () => {
+        const t = new FileProgressTracker();
+        t.startFile(1, 4);
+        expect(t.percent()).toBe(0);
+        t.startFile(2, 4);
+        expect(t.percent()).toBe(25);
+        t.startFile(4, 4);
+        expect(t.percent()).toBe(75);
+    });
+
+    it("blends extract fraction into the current file's share", () => {
+        const t = new FileProgressTracker();
+        t.startFile(1, 2);
+        t.setExtractFraction(1, 2);
+        // intra = 0.5 * 0.5 = 0.25 ; filesDone = 0 ; pct = 0.25 / 2 * 100 = 12.5 → 13
+        expect(t.percent()).toBe(13);
+    });
+
+    it("blends embed fraction as the second half of a file's work", () => {
+        const t = new FileProgressTracker();
+        t.startFile(1, 2);
+        t.setEmbedFraction(1, 1);
+        // intra = 0 * 0.5 + 1 * 0.5 = 0.5 ; filesDone = 0 ; pct = 0.5 / 2 * 100 = 25
+        expect(t.percent()).toBe(25);
+    });
+
+    it("resets intra-file fractions when a new file starts", () => {
+        const t = new FileProgressTracker();
+        t.startFile(1, 2);
+        t.setEmbedFraction(1, 1);
+        expect(t.percent()).toBe(25);
+        t.startFile(2, 2);
+        expect(t.percent()).toBe(50);
+    });
+
+    it("is clamped to 100", () => {
+        const t = new FileProgressTracker();
+        t.startFile(2, 2);
+        t.setEmbedFraction(10, 1);
+        expect(t.percent()).toBeLessThanOrEqual(100);
+    });
+
+    it("ignores zero/negative totals to avoid NaN", () => {
+        const t = new FileProgressTracker();
+        t.startFile(1, 0);
+        t.setExtractFraction(1, 0);
+        t.setEmbedFraction(1, 0);
+        expect(t.percent()).toBe(0);
     });
 });

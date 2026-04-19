@@ -88,6 +88,11 @@ export const MESSAGES = {
     DESC_GEMINI_API_KEY: "For Gemini models via litellm",
     LABEL_HF_TOKEN: "HuggingFace token",
     LABEL_LITELLM_BASE_URL: "External AI endpoint",
+    LABEL_DELETE_MODEL: "Delete model",
+    LABEL_GENERATION_HELP: "Fine-tune AI responses. Defaults work well for most users.",
+    LABEL_ADVANCED_HELP:
+        "These settings affect how your documents are processed. Only change if you know what you're doing.",
+    LABEL_CLOSE_GLYPH: "\u00D7",
     LABEL_TASK_CENTER: "Task Center",
     LABEL_TASK_CAP_PILL: "{active}/{cap} running",
     LABEL_TASK_COUNTERS: "{active} running · {queued} queued · {done} done",
@@ -116,6 +121,7 @@ export const MESSAGES = {
     LABEL_SAVE_VAULT: "Save to vault",
     LABEL_THINKING: "Thinking...",
     LABEL_STOPPED: "(stopped)",
+    LABEL_STOPPED_MD: "*(stopped)*",
     LABEL_CONNECTING: "(connecting...)",
     LABEL_OFFLINE: "(offline)",
     LABEL_CHAT_VIEW: "lilbee Chat",
@@ -234,6 +240,10 @@ export const MESSAGES = {
     STATUS_DOWNLOADING_MODEL: "Downloading {model}...",
     STATUS_DOWNLOADING_MODEL_PCT: "Downloading {model}... {pct}%",
     STATUS_PROCESSING_FILES: "Processing {current}/{total} files",
+    STATUS_TASK_FILE: "file {current}/{total}",
+    STATUS_TASK_SYNCING_FILE: "syncing {current}/{total}",
+    STATUS_TASK_EXTRACTING: "extracting {file} p{page}/{total}",
+    STATUS_TASK_EMBEDDING: "embedding chunk {chunk}/{total}",
     STATUS_INDEXING: "Indexing: {file}",
     STATUS_DONE: "Done!",
     STATUS_CRAWLING: "Crawling...",
@@ -241,6 +251,8 @@ export const MESSAGES = {
     STATUS_CRAWLED_PAGES: "Crawled {count} pages — {url}",
     STATUS_REMOVING: "Removing...",
     STATUS_SETTING: "Setting...",
+    ERROR_UNKNOWN: "unknown error",
+    ERROR_CANNOT_CONNECT: "cannot connect to server",
 
     ERROR_COULD_NOT_CONNECT: "lilbee: cannot connect to server",
     ERROR_SERVER_CRASHED: "lilbee: server crashed after multiple restarts",
@@ -530,15 +542,4 @@ export const CATALOG_FILTERS = {
         [FILTERS.SORT.SIZE_ASC, MESSAGES.LABEL_SIZE_ASC],
         [FILTERS.SORT.SIZE_DESC, MESSAGES.LABEL_SIZE_DESC],
     ] as const,
-} as const;
-
-/**
- * @deprecated Use relativeTime() from utils.ts instead.
- * Kept for backward compatibility with external consumers.
- */
-export const RELATIVE_TIME = {
-    JUST_NOW: "just now",
-    MINUTES_AGO: (m: number) => `${m}m ago`,
-    HOURS_AGO: (h: number) => `${h}h ago`,
-    DAYS_AGO: (d: number) => `${d}d ago`,
 } as const;

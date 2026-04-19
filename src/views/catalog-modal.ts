@@ -5,7 +5,14 @@ import { MODEL_TASK, SSE_EVENT, TASK_TYPE, CATALOG_VIEW_MODE, ERROR_NAME } from 
 import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
-import { debounce, DEBOUNCE_MS, formatAbbreviatedCount } from "../utils";
+import {
+    debounce,
+    DEBOUNCE_MS,
+    formatAbbreviatedCount,
+    percentFromSse,
+    errorMessage,
+    extractSseErrorMessage,
+} from "../utils";
 import { renderModelCard } from "../components/model-card";
 
 const PAGE_SIZE = 20;
@@ -445,9 +452,7 @@ export class CatalogModal extends Modal {
             for await (const event of this.plugin.api.pullModel(entry.hf_repo, entry.source, controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
-                    const pct =
-                        d.percent ??
-                        (d.total && d.current !== undefined ? Math.round((d.current / d.total) * 100) : undefined);
+                    const pct = percentFromSse(d);
                     if (pct !== undefined) {
                         this.plugin.taskQueue.update(taskId, pct, entry.hf_repo, {
                             current: d.current,
@@ -456,7 +461,7 @@ export class CatalogModal extends Modal {
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
-                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     new Notice(`${pullErrorPrefix}: ${msg}`);
                     this.plugin.taskQueue.fail(taskId, msg);
                     return;
@@ -467,7 +472,7 @@ export class CatalogModal extends Modal {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
-                const msg = err instanceof Error ? err.message : "unknown";
+                const msg = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
                 new Notice(`${pullErrorPrefix}: ${msg}`);
                 this.plugin.taskQueue.fail(taskId, msg);
             }

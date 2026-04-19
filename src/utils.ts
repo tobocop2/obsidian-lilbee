@@ -68,6 +68,43 @@ export function formatRate(bytesPerSecond: number): string {
     return `${formatBytes(bytesPerSecond)}/s`;
 }
 
+/**
+ * Pull a human-readable message out of an unknown thrown value.
+ * Centralizes the `err instanceof Error ? err.message : <fallback>` pattern.
+ */
+export function errorMessage(err: unknown, fallback: string): string {
+    return err instanceof Error ? err.message : fallback;
+}
+
+/**
+ * Pull a human-readable error message out of an SSE `error` event payload.
+ * Server may send either a raw string or `{message: string}`. Falls back to
+ * the given `unknownFallback` if neither shape matches. Centralizes the
+ * `typeof d === "string" ? d : (d.message ?? "unknown error")` pattern.
+ */
+export function extractSseErrorMessage(data: unknown, unknownFallback: string): string {
+    if (typeof data === "string") return data;
+    if (data && typeof data === "object" && "message" in data) {
+        const msg = (data as { message?: unknown }).message;
+        if (typeof msg === "string") return msg;
+    }
+    return unknownFallback;
+}
+
+/**
+ * Compute a percent (0–100) from a server SSE progress payload.
+ * Accepts `{percent, current, total}` shape and prefers `percent` if present;
+ * otherwise derives from `current/total`. Returns undefined when neither is usable
+ * (e.g. total is zero/missing, or current is missing).
+ */
+export function percentFromSse(data: { percent?: number; current?: number; total?: number }): number | undefined {
+    if (data.percent !== undefined) return data.percent;
+    if (data.total && data.current !== undefined) {
+        return Math.round((data.current / data.total) * 100);
+    }
+    return undefined;
+}
+
 export function formatElapsed(ms: number): string {
     if (!Number.isFinite(ms) || ms < 0) return "00:00";
     const totalSeconds = Math.floor(ms / 1000);

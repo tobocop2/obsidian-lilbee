@@ -837,7 +837,7 @@ describe("CatalogModal", () => {
             await tick();
             await tick();
             const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
-            expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: unknown`);
+            expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: unknown error`);
         });
 
         it("SSE_EVENT.ERROR shows notice with real message, fails task, and resets button", async () => {
@@ -1088,7 +1088,7 @@ describe("CatalogModal", () => {
             await tick();
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
             const last = plugin.taskQueue.completed[plugin.taskQueue.completed.length - 1];
-            expect(last.error).toBe("unknown");
+            expect(last.error).toBe("unknown error");
         });
     });
 

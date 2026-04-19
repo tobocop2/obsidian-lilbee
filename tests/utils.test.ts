@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ensureUrlScheme, formatBytes, formatRate, formatElapsed } from "../src/utils";
+import { ensureUrlScheme, formatBytes, formatRate, formatElapsed, percentFromSse } from "../src/utils";
 
 describe("ensureUrlScheme", () => {
     it("returns URL unchanged when it starts with https://", () => {
@@ -89,5 +89,31 @@ describe("formatElapsed", () => {
     it("formats h:mm:ss over an hour", () => {
         expect(formatElapsed(3600_000)).toBe("1:00:00");
         expect(formatElapsed(3725_000)).toBe("1:02:05");
+    });
+});
+
+describe("percentFromSse", () => {
+    it("returns percent field when present", () => {
+        expect(percentFromSse({ percent: 42 })).toBe(42);
+    });
+
+    it("derives from current/total when percent is missing", () => {
+        expect(percentFromSse({ current: 50, total: 100 })).toBe(50);
+    });
+
+    it("prefers percent over current/total", () => {
+        expect(percentFromSse({ percent: 10, current: 500, total: 1000 })).toBe(10);
+    });
+
+    it("returns undefined when total is zero", () => {
+        expect(percentFromSse({ current: 5, total: 0 })).toBeUndefined();
+    });
+
+    it("returns undefined when current is missing", () => {
+        expect(percentFromSse({ total: 100 })).toBeUndefined();
+    });
+
+    it("returns undefined when nothing is usable", () => {
+        expect(percentFromSse({})).toBeUndefined();
     });
 });

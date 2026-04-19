@@ -2,8 +2,9 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { SetupWizard, getSystemMemoryGB, recommendedIndex } from "../../src/views/setup-wizard";
-import { SSE_EVENT } from "../../src/types";
+import { SSE_EVENT, WIZARD_STEP } from "../../src/types";
 import { ok, err } from "neverthrow";
+import { MESSAGES } from "../../src/locales/en";
 import type { CatalogEntry, CatalogResponse } from "../../src/types";
 
 vi.mock("../../src/views/catalog-modal", () => ({
@@ -57,7 +58,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         api: {
             catalog: vi.fn().mockResolvedValue(ok(makeCatalogResponse())),
             pullModel: vi.fn(),
-            setChatModel: vi.fn().mockResolvedValue(ok({ model: "" })),
+            setChatModel: vi.fn().mockResolvedValue(ok(undefined)),
             health: vi.fn().mockResolvedValue(ok({ status: "ok", version: "1.0.0" })),
             syncStream: vi.fn(),
             listModels: vi.fn().mockResolvedValue({
@@ -1727,6 +1728,31 @@ describe("SetupWizard", () => {
             // Should return without calling pullModel
             expect(plugin.api.pullModel).not.toHaveBeenCalled();
         });
+
+        it("surfaces notice and keeps step when setChatModel returns err after successful pull", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: { percent: 100 } };
+                })(),
+            );
+            plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("activate fail")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedModel = makeEntry({
+                name: "qwen3-0.6b",
+                hf_repo: "qwen/qwen3-0.6B",
+                task: "chat",
+                installed: false,
+            });
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullSelectedModel(btn, el, el, el, el);
+            const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "qwen/qwen3-0.6B");
+            expect(Notice.instances.some((n: any) => n.message === setFailed)).toBe(true);
+            expect((wizard as any).step).not.toBe(WIZARD_STEP.EMBEDDING_PICKER);
+        });
     });
 
     describe("Step 3: Embedding Picker", () => {
@@ -1842,6 +1868,41 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
         });
 
+        it("installed-embedding click surfaces notice when setEmbeddingModel returns err", async () => {
+            Notice.clear();
+            const entries = [
+                makeEntry({
+                    name: "nomic-embed-text",
+                    hf_repo: "nomic/nomic-embed-text",
+                    task: "embedding",
+                    installed: true,
+                }),
+            ];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.setEmbeddingModel = vi.fn().mockResolvedValue(err(new Error("activate fail")));
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 3;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Download & continue")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "nomic-embed-text");
+            expect(Notice.instances.some((n: any) => n.message === setFailed)).toBe(true);
+        });
+
         it("pullEmbeddingModel early return when selectedEmbedding is null", async () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
@@ -1920,6 +1981,31 @@ describe("SetupWizard", () => {
             const btn = new MockElement("button") as unknown as HTMLElement;
             await (wizard as any).pullEmbeddingModel(btn, el, el, el, el);
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic/nomic-embed-text");
+        });
+
+        it("pullEmbeddingModel surfaces notice and keeps step when setEmbeddingModel returns err", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: { percent: 100 } };
+                })(),
+            );
+            plugin.api.setEmbeddingModel = vi.fn().mockResolvedValue(err(new Error("activate fail")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedEmbedding = makeEntry({
+                name: "nomic-embed-text",
+                hf_repo: "nomic/nomic-embed-text",
+                task: "embedding",
+                installed: false,
+            });
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullEmbeddingModel(btn, el, el, el, el);
+            const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "nomic/nomic-embed-text");
+            expect(Notice.instances.some((n: any) => n.message === setFailed)).toBe(true);
+            expect((wizard as any).step).not.toBe(WIZARD_STEP.SYNC);
         });
 
         it("pullEmbeddingModel handles progress with current/total", async () => {

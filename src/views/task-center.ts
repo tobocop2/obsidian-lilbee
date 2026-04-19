@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
-import { BACKGROUND_TASK_TYPES, TASK_QUEUE, TASK_STATUS, type TaskEntry } from "../types";
+import { BACKGROUND_TASK_TYPES, TASK_QUEUE, TASK_STATUS, type TaskEntry, type TaskStatus } from "../types";
 import { MESSAGES } from "../locales/en";
 import { FLASH_WINDOW_MS } from "../task-queue";
 import { formatBytes, formatElapsed, formatRate, relativeTime, TIME_REFRESH_INTERVAL_MS } from "../utils";
@@ -8,8 +8,6 @@ import { formatBytes, formatElapsed, formatRate, relativeTime, TIME_REFRESH_INTE
 export const VIEW_TYPE_TASKS = "lilbee-tasks";
 
 const ACTIVE_REFRESH_INTERVAL_MS = 1000;
-
-type RowState = "active" | "queued" | "done" | "failed" | "cancelled";
 
 export class TaskCenterView extends ItemView {
     private plugin: LilbeePlugin;
@@ -148,7 +146,7 @@ export class TaskCenterView extends ItemView {
         }
 
         for (const task of allActive) {
-            this.renderTaskRow(container, task, "active");
+            this.renderTaskRow(container, task, TASK_STATUS.ACTIVE);
         }
     }
 
@@ -167,7 +165,7 @@ export class TaskCenterView extends ItemView {
         }
 
         for (const task of queued) {
-            this.renderTaskRow(container, task, "queued");
+            this.renderTaskRow(container, task, TASK_STATUS.QUEUED);
         }
     }
 
@@ -186,22 +184,22 @@ export class TaskCenterView extends ItemView {
         }
 
         for (const task of completed) {
-            const state = completedRowState(task);
-            this.renderTaskRow(container, task, state);
+            this.renderTaskRow(container, task, task.status);
         }
     }
 
-    private renderTaskRow(container: HTMLElement, task: TaskEntry, state: RowState): void {
+    private renderTaskRow(container: HTMLElement, task: TaskEntry, state: TaskStatus): void {
         const row = container.createDiv({ cls: "lilbee-task-row" });
         row.dataset.state = state;
         row.dataset.type = task.type;
 
-        const isActive = state === "active";
-        const isDone = state === "done" || state === "failed" || state === "cancelled";
+        const isActive = state === TASK_STATUS.ACTIVE;
+        const isTerminal =
+            state === TASK_STATUS.DONE || state === TASK_STATUS.FAILED || state === TASK_STATUS.CANCELLED;
         const isIndeterminate = isActive && task.progress < 0;
         const pct = isIndeterminate ? 100 : Math.max(0, Math.min(100, task.progress));
 
-        if (isDone && isWithinFlashWindow(task)) {
+        if (isTerminal && isWithinFlashWindow(task)) {
             row.addClass("lilbee-task-flash");
         }
 
@@ -229,7 +227,7 @@ export class TaskCenterView extends ItemView {
 
         if (isActive && task.canCancel) {
             const cancelBtn = row.createEl("button", { cls: "lilbee-task-cancel" });
-            cancelBtn.textContent = "×";
+            cancelBtn.textContent = MESSAGES.LABEL_CLOSE_GLYPH;
             cancelBtn.title = MESSAGES.LABEL_CANCEL_TASK;
             cancelBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
@@ -237,7 +235,7 @@ export class TaskCenterView extends ItemView {
             });
         }
 
-        if (task.error && state === "failed") {
+        if (task.error && state === TASK_STATUS.FAILED) {
             row.title = task.error;
         }
     }
@@ -256,30 +254,24 @@ export class TaskCenterView extends ItemView {
     }
 }
 
-function completedRowState(task: TaskEntry): RowState {
-    if (task.status === TASK_STATUS.DONE) return "done";
-    if (task.status === TASK_STATUS.FAILED) return "failed";
-    return "cancelled";
-}
-
-function metaForRow(task: TaskEntry, state: RowState): string {
-    if (state === "active") {
+function metaForRow(task: TaskEntry, state: TaskStatus): string {
+    if (state === TASK_STATUS.ACTIVE) {
         return formatElapsed(Date.now() - task.startedAt);
     }
-    if (state === "queued") {
+    if (state === TASK_STATUS.QUEUED) {
         return MESSAGES.LABEL_TASK_STATE_QUEUED;
     }
-    if (state === "done") {
+    if (state === TASK_STATUS.DONE) {
         return task.completedAt !== null ? relativeTime(task.completedAt) : MESSAGES.LABEL_TASK_STATE_DONE;
     }
-    if (state === "failed") {
+    if (state === TASK_STATUS.FAILED) {
         return task.completedAt !== null ? relativeTime(task.completedAt) : MESSAGES.LABEL_TASK_STATE_FAILED;
     }
     return task.completedAt !== null ? relativeTime(task.completedAt) : MESSAGES.LABEL_TASK_STATE_CANCELLED;
 }
 
-function statsLine(task: TaskEntry, state: RowState): string {
-    if (state !== "active") {
+function statsLine(task: TaskEntry, state: TaskStatus): string {
+    if (state !== TASK_STATUS.ACTIVE) {
         if (task.detail) return task.detail;
         if (task.error) return task.error;
         return "";
