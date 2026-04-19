@@ -1,5 +1,13 @@
-import { describe, it, expect } from "vitest";
-import { ensureUrlScheme, formatBytes, formatRate, formatElapsed, percentFromSse } from "../src/utils";
+import { describe, it, expect, vi } from "vitest";
+import {
+    ensureUrlScheme,
+    formatBytes,
+    formatRate,
+    formatElapsed,
+    percentFromSse,
+    StreamIdleError,
+    withIdleTimeout,
+} from "../src/utils";
 
 describe("ensureUrlScheme", () => {
     it("returns URL unchanged when it starts with https://", () => {
@@ -115,5 +123,43 @@ describe("percentFromSse", () => {
 
     it("returns undefined when nothing is usable", () => {
         expect(percentFromSse({})).toBeUndefined();
+    });
+});
+
+describe("withIdleTimeout", () => {
+    it("yields events when they arrive before the idle timeout", async () => {
+        async function* gen() {
+            yield "a";
+            yield "b";
+        }
+        const abort = vi.fn();
+        const out: string[] = [];
+        for await (const v of withIdleTimeout(gen(), 1000, abort)) out.push(v);
+        expect(out).toEqual(["a", "b"]);
+        expect(abort).not.toHaveBeenCalled();
+    });
+
+    it("throws StreamIdleError and calls abort when no event arrives in timeout", async () => {
+        async function* gen(): AsyncGenerator<string> {
+            await new Promise(() => {});
+        }
+        const abort = vi.fn();
+        let caught: unknown = null;
+        try {
+            for await (const _ of withIdleTimeout(gen(), 10, abort)) void _;
+        } catch (e) {
+            caught = e;
+        }
+        expect(caught).toBeInstanceOf(StreamIdleError);
+        expect(abort).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops cleanly when source generator completes", async () => {
+        async function* gen() {
+            yield 1;
+        }
+        const out: number[] = [];
+        for await (const v of withIdleTimeout(gen(), 1000, vi.fn())) out.push(v);
+        expect(out).toEqual([1]);
     });
 });

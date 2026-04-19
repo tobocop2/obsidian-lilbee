@@ -654,6 +654,22 @@ describe("LilbeePlugin", () => {
 
             expect(syncStreamSpy).not.toHaveBeenCalled();
         });
+
+        it("fails the task and shows idle-stream notice when server stops sending events", async () => {
+            const { StreamIdleError } = await import("../src/utils");
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* throwIdle(): AsyncGenerator<never> {
+                throw new StreamIdleError(1);
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(throwIdle());
+
+            await plugin.triggerSync();
+
+            expect(Notice.instances.some((n) => n.message.includes("stopped sending events"))).toBe(true);
+            expect(plugin.taskQueue.completed[0]?.status).toBe("failed");
+        });
     });
 
     describe("commands", () => {
@@ -1264,6 +1280,23 @@ describe("LilbeePlugin", () => {
             await plugin.addExternalFiles(["/some/file.pdf"]);
 
             expect(Notice.instances.some((n) => n.message.includes("add failed"))).toBe(true);
+        });
+
+        it("fails the task and shows idle-stream notice when add stream hangs", async () => {
+            const { StreamIdleError } = await import("../src/utils");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* throwIdle(): AsyncGenerator<never> {
+                throw new StreamIdleError(1);
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(throwIdle());
+
+            await plugin.addExternalFiles(["/some/file.pdf"]);
+
+            expect(Notice.instances.some((n) => n.message.includes("stopped sending events"))).toBe(true);
+            expect(plugin.taskQueue.completed[0]?.status).toBe("failed");
         });
 
         it("shows failed count in Notice", async () => {
@@ -2007,6 +2040,105 @@ describe("LilbeePlugin", () => {
             expect(() => {
                 (plugin as any).setStatusClass("lilbee-status-ready");
             }).not.toThrow();
+        });
+
+        it("ribbon icon click invokes activateTaskView", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const spy = vi.spyOn(plugin, "activateTaskView").mockResolvedValue(undefined);
+            const calls = (plugin.addRibbonIcon as ReturnType<typeof vi.fn>).mock.calls;
+            const callback = calls[0]?.[2] as () => void;
+            callback();
+            expect(spy).toHaveBeenCalledTimes(1);
+        });
+
+        it("ribbon icon toggles lilbee-ribbon-active while any task is active", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const ribbon = (plugin as any).ribbonIconEl as any;
+            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
+
+            plugin.taskQueue.enqueue("Sync vault", "sync");
+            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(true);
+        });
+
+        it("ribbon icon shows success dot during flash window after done", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const ribbon = (plugin as any).ribbonIconEl as any;
+
+            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
+            plugin.taskQueue.complete(id);
+
+            expect(ribbon.classList.contains("lilbee-ribbon-success")).toBe(true);
+            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
+        });
+
+        it("ribbon icon shows error dot during flash window after fail", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const ribbon = (plugin as any).ribbonIconEl as any;
+
+            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
+            plugin.taskQueue.fail(id, "boom");
+
+            expect(ribbon.classList.contains("lilbee-ribbon-error")).toBe(true);
+        });
+
+        it("ribbon icon clears after flash window expires", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const ribbon = (plugin as any).ribbonIconEl as any;
+
+            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
+            plugin.taskQueue.complete(id);
+            const completed = plugin.taskQueue.completed[0]!;
+            (completed as any).completedAt = Date.now() - 10_000;
+            (plugin as any).updateRibbonFromQueue();
+
+            expect(ribbon.classList.contains("lilbee-ribbon-success")).toBe(false);
+            expect(ribbon.classList.contains("lilbee-ribbon-error")).toBe(false);
+            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
+        });
+
+        it("updateRibbonFromQueue no-ops when ribbonIconEl is null", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).ribbonIconEl = null;
+            expect(() => {
+                (plugin as any).updateRibbonFromQueue();
+            }).not.toThrow();
+        });
+
+        it("updateRibbonFromQueue no-ops when last completed has null completedAt", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const ribbon = (plugin as any).ribbonIconEl as any;
+            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
+            plugin.taskQueue.complete(id);
+            (plugin.taskQueue.completed[0] as any).completedAt = null;
+            (plugin as any).updateRibbonFromQueue();
+            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
+            expect(ribbon.classList.contains("lilbee-ribbon-success")).toBe(false);
+        });
+
+        it("updateRibbonFromQueue leaves classes cleared when no tasks at all", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const ribbon = (plugin as any).ribbonIconEl as any;
+            (plugin as any).updateRibbonFromQueue();
+            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
+        });
+
+        it("ribbon icon does not highlight for cancelled tasks", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const ribbon = (plugin as any).ribbonIconEl as any;
+            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
+            plugin.taskQueue.cancel(id);
+            expect(ribbon.classList.contains("lilbee-ribbon-success")).toBe(false);
+            expect(ribbon.classList.contains("lilbee-ribbon-error")).toBe(false);
+            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
         });
     });
 

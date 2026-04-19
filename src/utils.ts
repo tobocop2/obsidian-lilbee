@@ -25,6 +25,37 @@ export const NOTICE_PERMANENT = 0;
 export const TIME_REFRESH_INTERVAL_MS = 30000;
 export const HEALTH_PROBE_INTERVAL_MS = 30_000;
 export const SPINNER_MIN_DISPLAY_MS = 800;
+export const STREAM_IDLE_TIMEOUT_MS = 120_000;
+
+export class StreamIdleError extends Error {
+    constructor(timeoutMs: number) {
+        super(`stream idle for ${Math.round(timeoutMs / 1000)}s`);
+        this.name = "StreamIdleError";
+    }
+}
+
+export async function* withIdleTimeout<T>(
+    gen: AsyncGenerator<T>,
+    timeoutMs: number,
+    abort: () => void,
+): AsyncGenerator<T> {
+    const iter = gen[Symbol.asyncIterator]();
+    while (true) {
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        const idle = new Promise<"idle">((resolve) => {
+            timer = setTimeout(() => resolve("idle"), timeoutMs);
+        });
+        const race = await Promise.race([iter.next(), idle]);
+        if (timer !== null && typeof clearTimeout === "function") clearTimeout(timer);
+        if (race === "idle") {
+            abort();
+            throw new StreamIdleError(timeoutMs);
+        }
+        const { done, value } = race as IteratorResult<T>;
+        if (done) return;
+        yield value;
+    }
+}
 
 export function formatAbbreviatedCount(count: number): string {
     if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;

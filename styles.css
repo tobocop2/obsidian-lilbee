@@ -1773,6 +1773,43 @@
     100% { background-position: -200% 0; }
 }
 
+.lilbee-ribbon-icon {
+    position: relative;
+}
+
+.lilbee-ribbon-icon.lilbee-ribbon-active::after,
+.lilbee-ribbon-icon.lilbee-ribbon-success::after,
+.lilbee-ribbon-icon.lilbee-ribbon-error::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1.5px solid var(--background-primary);
+    pointer-events: none;
+}
+
+.lilbee-ribbon-icon.lilbee-ribbon-active::after {
+    background-color: var(--interactive-accent);
+    animation: lilbee-dot-pulse 1s ease-in-out infinite;
+}
+
+.lilbee-ribbon-icon.lilbee-ribbon-success::after {
+    background-color: var(--text-success, #22c55e);
+}
+
+.lilbee-ribbon-icon.lilbee-ribbon-error::after {
+    background-color: var(--text-error, #ef4444);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .lilbee-ribbon-icon.lilbee-ribbon-active::after {
+        animation: none;
+    }
+}
+
 .lilbee-task-cancel {
     background: none;
     border: 1px solid transparent;

@@ -376,6 +376,11 @@ export class Plugin {
         return el;
     });
 
+    addRibbonIcon = vi.fn((_icon: string, _title: string, _callback: () => void) => {
+        const el = new MockElement("div");
+        return el;
+    });
+
     registerView = vi.fn();
     registerEvent = vi.fn();
     registerInterval = vi.fn((handle: number) => handle);
