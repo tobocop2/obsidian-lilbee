@@ -1495,6 +1495,23 @@ describe("LilbeePlugin", () => {
             expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
         });
 
+        it("fails the task and shows idle-stream notice when crawl stream hangs", async () => {
+            const { StreamIdleError } = await import("../src/utils");
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* (): AsyncGenerator<never> {
+                    throw new StreamIdleError(1);
+                })(),
+            );
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            expect(Notice.instances.some((n) => n.message.includes("stopped sending events"))).toBe(true);
+            expect(plugin.taskQueue.completed[0]?.status).toBe("failed");
+        });
+
         it("handles non-Error throw", async () => {
             const plugin = await createPlugin();
             await plugin.onload();

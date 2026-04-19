@@ -1773,13 +1773,13 @@
     100% { background-position: -200% 0; }
 }
 
-.lilbee-ribbon-icon {
+.side-dock-ribbon-action.lilbee-ribbon-icon {
     position: relative;
 }
 
-.lilbee-ribbon-icon.lilbee-ribbon-active::after,
-.lilbee-ribbon-icon.lilbee-ribbon-success::after,
-.lilbee-ribbon-icon.lilbee-ribbon-error::after {
+.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-active::after,
+.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-success::after,
+.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-error::after {
     content: "";
     position: absolute;
     top: 4px;
@@ -1791,21 +1791,21 @@
     pointer-events: none;
 }
 
-.lilbee-ribbon-icon.lilbee-ribbon-active::after {
+.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-active::after {
     background-color: var(--interactive-accent);
     animation: lilbee-dot-pulse 1s ease-in-out infinite;
 }
 
-.lilbee-ribbon-icon.lilbee-ribbon-success::after {
+.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-success::after {
     background-color: var(--text-success, #22c55e);
 }
 
-.lilbee-ribbon-icon.lilbee-ribbon-error::after {
+.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-error::after {
     background-color: var(--text-error, #ef4444);
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .lilbee-ribbon-icon.lilbee-ribbon-active::after {
+    .side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-active::after {
         animation: none;
     }
 }

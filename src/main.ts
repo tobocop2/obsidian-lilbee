@@ -1065,7 +1065,8 @@ export default class LilbeePlugin extends Plugin {
         this.taskQueue.registerAbort(taskId, controller);
         try {
             let pageCount = 0;
-            for await (const event of this.api.crawl(url, depth, maxPages, controller.signal)) {
+            const rawStream = this.api.crawl(url, depth, maxPages, controller.signal);
+            for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 switch (event.event) {
                     case SSE_EVENT.CRAWL_START:
                         break;
@@ -1092,6 +1093,11 @@ export default class LilbeePlugin extends Plugin {
             }
             this.taskQueue.complete(taskId);
         } catch (err) {
+            if (err instanceof StreamIdleError) {
+                new Notice(MESSAGES.ERROR_STREAM_IDLE);
+                this.taskQueue.fail(taskId, MESSAGES.ERROR_STREAM_IDLE);
+                return;
+            }
             const msg = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
             this.taskQueue.fail(taskId, msg);
             new Notice(MESSAGES.ERROR_CRAWL_FAILED.replace("{msg}", msg));
