@@ -109,7 +109,7 @@ export class TaskQueue {
         if (task.status !== TASK_STATUS.QUEUED) return;
 
         task.status = TASK_STATUS.ACTIVE;
-        task.canCancel = false;
+        task.canCancel = this.aborts.has(id);
         this.activeIds.set(task.type, id);
         this.notify();
     }
