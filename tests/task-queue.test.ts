@@ -591,5 +591,15 @@ describe("TaskQueue", () => {
             queue.cancel(id);
             expect(controller.signal.aborted).toBe(false);
         });
+
+        it("auto-promoted task keeps canCancel=true when abort was registered while queued", () => {
+            const active = queue.enqueue("Active sync", TASK_TYPE.SYNC);
+            const queued = queue.enqueue("Queued sync", TASK_TYPE.SYNC);
+            queue.registerAbort(queued, new AbortController());
+            queue.cancel(active);
+            const promoted = queue.tasks.get(queued)!;
+            expect(promoted.status).toBe(TASK_STATUS.ACTIVE);
+            expect(promoted.canCancel).toBe(true);
+        });
     });
 });
