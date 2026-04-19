@@ -1072,6 +1072,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
         const controller = new AbortController();
         this.plugin.taskQueue.registerAbort(taskId, controller);
+        let pullFailed = false;
         try {
             for await (const event of this.plugin.api.pullModel(model.name, "native", controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
@@ -1088,14 +1089,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
                     new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${msg}`);
                     this.plugin.taskQueue.fail(taskId, msg);
+                    pullFailed = true;
                     break;
                 }
             }
-            await this.setModel(model);
-            this.plugin.taskQueue.complete(taskId);
-            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
-            this.plugin.fetchActiveModel();
-            this.display();
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
@@ -1105,7 +1102,21 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${reason}`);
                 this.plugin.taskQueue.fail(taskId, reason);
             }
+            return;
         }
+
+        if (pullFailed) return;
+
+        this.plugin.taskQueue.complete(taskId);
+
+        try {
+            await this.setModel(model);
+            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
+        } catch {
+            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name));
+        }
+        this.plugin.fetchActiveModel();
+        this.display();
     }
 
     private renderCatalogRow(table: HTMLTableElement, model: ModelInfo): void {
@@ -1139,6 +1150,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
         const controller = new AbortController();
         this.plugin.taskQueue.registerAbort(taskId, controller);
+        let pullFailed = false;
         try {
             for await (const event of this.plugin.api.pullModel(model.name, "native", controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
@@ -1155,14 +1167,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
                     new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${msg}`);
                     this.plugin.taskQueue.fail(taskId, msg);
+                    pullFailed = true;
                     break;
                 }
             }
-            this.plugin.taskQueue.complete(taskId);
-            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
-            await this.setModel(model);
-            this.plugin.fetchActiveModel();
-            this.display();
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
@@ -1172,7 +1180,21 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${reason}`);
                 this.plugin.taskQueue.fail(taskId, reason);
             }
+            return;
         }
+
+        if (pullFailed) return;
+
+        this.plugin.taskQueue.complete(taskId);
+
+        try {
+            await this.setModel(model);
+            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
+        } catch {
+            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name));
+        }
+        this.plugin.fetchActiveModel();
+        this.display();
     }
 
     private async deleteModel(btn: HTMLButtonElement, model: ModelInfo): Promise<void> {

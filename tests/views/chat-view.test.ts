@@ -2931,6 +2931,24 @@ describe("ChatView — queue-full notice on auto-pull", () => {
     });
 });
 
+describe("ChatView — autoPullAndSet post-pull set failure", () => {
+    it("completes pull task and shows ERROR_SET_MODEL notice when setChatModel throws", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
+            // happy pull, no events
+        });
+        plugin.api.setChatModel = vi.fn().mockRejectedValue(new Error("activate-failed"));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await (view as any).autoPullAndSet({ name: "phi3" });
+        const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "phi3");
+        expect(Notice.instances.map((n: any) => n.message)).toContain(setFailed);
+        expect(plugin.taskQueue.completed.some((t: any) => t.status === "done")).toBe(true);
+        expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(false);
+    });
+});
+
 describe("ChatView — Send is a no-op while a stream is in flight", () => {
     it("second Enter while sending does not wipe textarea or fire a second request", async () => {
         const plugin = makePlugin();

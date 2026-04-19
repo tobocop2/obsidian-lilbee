@@ -1949,10 +1949,8 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             plugin.taskQueue.enqueue = vi.fn(() => null) as any;
             const tab = makeTab(plugin);
-            const btn = new MockElement("button") as unknown as HTMLButtonElement;
-            const actionCell = new MockElement("td") as unknown as HTMLElement;
             Notice.clear();
-            await (tab as any).executePull(btn, actionCell, { name: "phi3" });
+            await (tab as any).executePull({ name: "phi3" });
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_QUEUE_FULL)).toBe(true);
         });
 
@@ -1965,6 +1963,46 @@ describe("LilbeeSettingTab", () => {
             await (tab as any).deleteModel(btn, { name: "phi3" });
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_QUEUE_FULL)).toBe(true);
             expect(plugin.api.deleteModel).not.toHaveBeenCalled();
+        });
+
+        it("autoPullAndSet completes pull and shows set-failed notice when setModel throws", async () => {
+            const plugin = makePlugin();
+            async function* fakePull() {}
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("set fail"));
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const { dropdownOnChanges } = captureSettingCallbacks(() => {
+                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
+            });
+            Notice.clear();
+
+            await dropdownOnChanges[0]("phi3");
+
+            const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "phi3");
+            expect(Notice.instances.some((n) => n.message === setFailed)).toBe(true);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "done")).toBe(true);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(false);
+        });
+
+        it("executePull (manual) completes pull and shows set-failed notice when setModel throws", async () => {
+            const plugin = makePlugin();
+            async function* fakePull() {}
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("set fail"));
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+
+            const tab = makeTab(plugin);
+            Notice.clear();
+
+            await (tab as any).executePull({ name: "phi3" });
+
+            const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "phi3");
+            expect(Notice.instances.some((n) => n.message === setFailed)).toBe(true);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "done")).toBe(true);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(false);
         });
     });
 });

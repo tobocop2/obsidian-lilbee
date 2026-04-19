@@ -891,11 +891,11 @@ describe("CatalogModal", () => {
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
 
-        it("fails the task with the real error when setChatModel after pull returns err", async () => {
+        it("completes the pull task even when setChatModel fails and shows a set-failed notice", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
-                // stream ends with no progress / no error — happy path
+                // stream ends with no progress / no error — pull succeeded
             });
             plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("activate-failed")));
             const modal = await openModal(plugin);
@@ -904,8 +904,10 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
-            expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: activate-failed`);
+            const setFailedNotice = MESSAGES.ERROR_SET_MODEL.replace("{model}", "qwen/qwen3-8b");
+            expect(Notice.instances.map((n) => n.message)).toContain(setFailedNotice);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "done")).toBe(true);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(false);
         });
 
         it("shows NOTICE_QUEUE_FULL when enqueue returns null (per-type cap)", async () => {

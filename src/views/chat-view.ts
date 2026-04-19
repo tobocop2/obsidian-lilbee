@@ -406,6 +406,7 @@ export class ChatView extends ItemView {
         }
         this.pullController = new AbortController();
         this.plugin.taskQueue.registerAbort(taskId, this.pullController);
+        let pullFailed = false;
         try {
             for await (const event of this.plugin.api.pullModel(model.name, "native", this.pullController.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
@@ -422,15 +423,10 @@ export class ChatView extends ItemView {
                     const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
                     new Notice(MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name));
                     this.plugin.taskQueue.fail(taskId, msg);
+                    pullFailed = true;
                     break;
                 }
             }
-            await this.plugin.api.setChatModel(model.name);
-            this.plugin.activeModel = model.name;
-            this.plugin.fetchActiveModel();
-            this.plugin.taskQueue.complete(taskId);
-            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
-            this.refreshModelSelector();
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
@@ -440,9 +436,24 @@ export class ChatView extends ItemView {
                 new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${reason}`);
                 this.plugin.taskQueue.fail(taskId, reason);
             }
-        } finally {
             this.pullController = null;
+            return;
         }
+        this.pullController = null;
+
+        if (pullFailed) return;
+
+        this.plugin.taskQueue.complete(taskId);
+
+        try {
+            await this.plugin.api.setChatModel(model.name);
+            this.plugin.activeModel = model.name;
+            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
+        } catch {
+            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name));
+        }
+        this.plugin.fetchActiveModel();
+        this.refreshModelSelector();
     }
 
     private cycleOcr(): void {

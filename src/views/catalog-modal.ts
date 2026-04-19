@@ -476,16 +476,17 @@ export class CatalogModal extends Modal {
             this.pullController = null;
         }
 
+        this.plugin.taskQueue.complete(taskId);
+
         const result = await this.setActiveFor(entry);
         if (result.isErr()) {
-            const e = result.error;
-            new Notice(`${pullErrorPrefix}: ${e.message}`);
-            this.plugin.taskQueue.fail(taskId, e.message);
+            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", entry.hf_repo));
+            this.plugin.fetchActiveModel();
+            this.resetAndFetch();
             return;
         }
 
         this.plugin.fetchActiveModel();
-        this.plugin.taskQueue.complete(taskId);
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.hf_repo));
         this.resetAndFetch();
     }
