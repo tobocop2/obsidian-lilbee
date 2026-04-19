@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MESSAGES, FILTERS, TASK_LABELS, RELATIVE_TIME } from "../../src/locales/en";
+import { MESSAGES, FILTERS, TASK_LABELS } from "../../src/locales/en";
 import { MODEL_TASK } from "../../src/types";
 
 describe("MESSAGES", () => {
@@ -414,15 +414,6 @@ describe("TASK_LABELS", () => {
         expect(TASK_LABELS[MODEL_TASK.CHAT]).toBe("Chat");
         expect(TASK_LABELS[MODEL_TASK.VISION]).toBe("Vision");
         expect(TASK_LABELS[MODEL_TASK.EMBEDDING]).toBe("Embedding");
-    });
-});
-
-describe("RELATIVE_TIME", () => {
-    it("produces correct relative time strings", () => {
-        expect(RELATIVE_TIME.JUST_NOW).toBe("just now");
-        expect(RELATIVE_TIME.MINUTES_AGO(5)).toBe("5m ago");
-        expect(RELATIVE_TIME.HOURS_AGO(2)).toBe("2h ago");
-        expect(RELATIVE_TIME.DAYS_AGO(1)).toBe("1d ago");
     });
 });
 

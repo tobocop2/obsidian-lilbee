@@ -1533,17 +1533,23 @@
     margin-bottom: var(--size-4-1, 4px);
 }
 
+.lilbee-tasks-counters {
+    font-size: var(--font-smallest, 11px);
+    color: var(--text-muted);
+    margin-left: auto;
+    margin-right: var(--size-4-2, 8px);
+}
+
 .lilbee-task-row {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
+    align-items: stretch;
     gap: var(--size-4-2, 8px);
-    padding: 8px 10px;
+    padding: 8px 10px 8px 0;
     border-radius: 8px;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
     background-color: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
-    transition: border-color 150ms ease;
+    transition: border-color 150ms ease, background-color 400ms ease;
     position: relative;
     overflow: hidden;
 }
@@ -1552,17 +1558,122 @@
     border-color: color-mix(in srgb, var(--text-normal) 15%, transparent);
 }
 
-.lilbee-task-info {
+.lilbee-task-rail {
+    flex-shrink: 0;
+    width: 4px;
+    align-self: stretch;
+    border-radius: 0 2px 2px 0;
+    background-color: var(--text-faint);
+}
+
+.lilbee-task-row[data-state="active"] .lilbee-task-rail {
+    background-color: var(--interactive-accent);
+    animation: lilbee-rail-pulse 1s ease-in-out infinite;
+}
+
+@keyframes lilbee-rail-pulse {
+    0%, 100% {
+        background-color: var(--interactive-accent);
+        opacity: 1;
+    }
+    50% {
+        background-color: color-mix(in srgb, var(--interactive-accent) 55%, transparent);
+        opacity: 0.7;
+    }
+}
+
+.lilbee-statusbar-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+    background-color: var(--text-muted);
+    animation: lilbee-dot-pulse 1s ease-in-out infinite;
+}
+
+.lilbee-statusbar-dot.is-primary {
+    background-color: var(--interactive-accent);
+}
+
+.lilbee-statusbar-dot.is-success {
+    background-color: var(--text-success, #22c55e);
+}
+
+.lilbee-statusbar-dot.is-error {
+    background-color: var(--text-error, #ef4444);
+}
+
+@keyframes lilbee-dot-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .lilbee-task-row[data-state="active"] .lilbee-task-rail,
+    .lilbee-statusbar-dot,
+    .lilbee-task-progress-fill.lilbee-task-progress-indeterminate,
+    .lilbee-status-downloading::before,
+    .lilbee-status-starting::before,
+    .lilbee-status-adding::before {
+        animation: none;
+    }
+}
+
+.lilbee-task-row[data-state="queued"] .lilbee-task-rail {
+    background-color: var(--text-muted);
+}
+
+.lilbee-task-row[data-state="done"] .lilbee-task-rail {
+    background-color: var(--text-success, #22c55e);
+}
+
+.lilbee-task-row[data-state="failed"] .lilbee-task-rail {
+    background-color: var(--text-error, #ef4444);
+}
+
+.lilbee-task-row[data-state="cancelled"] .lilbee-task-rail {
+    background-color: var(--text-faint);
+}
+
+.lilbee-task-row[data-state="cancelled"] .lilbee-task-name,
+.lilbee-task-row[data-state="cancelled"] .lilbee-task-progress-fill {
+    text-decoration: line-through;
+    opacity: 0.7;
+}
+
+.lilbee-task-flash {
+    background-color: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-secondary));
+}
+
+.lilbee-task-row[data-state="failed"].lilbee-task-flash {
+    background-color: color-mix(in srgb, var(--text-error, #ef4444) 10%, var(--background-secondary));
+}
+
+.lilbee-task-row[data-state="done"].lilbee-task-flash {
+    background-color: color-mix(in srgb, var(--text-success, #22c55e) 10%, var(--background-secondary));
+}
+
+.lilbee-task-body {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex: 1;
+    min-width: 0;
+    padding: 2px 0;
+}
+
+.lilbee-task-head {
     display: flex;
     align-items: center;
-    gap: var(--size-4-1, 4px);
-    flex: 1;
+    gap: var(--size-4-2, 8px);
     min-width: 0;
 }
 
 .lilbee-task-type-badge {
     display: inline-block;
-    padding: 2px 8px;
+    padding: 2px 7px;
     border-radius: 8px;
     font-size: 9px;
     font-weight: var(--font-semibold, 600);
@@ -1571,7 +1682,6 @@
     flex-shrink: 0;
 }
 
-/* Type-specific badge colors */
 .lilbee-task-badge-sync { background-color: color-mix(in srgb, var(--lilbee-color-sync) 12%, transparent); color: var(--lilbee-color-sync); }
 .lilbee-task-badge-add { background-color: color-mix(in srgb, var(--lilbee-color-add) 12%, transparent); color: var(--lilbee-color-add); }
 .lilbee-task-badge-pull { background-color: color-mix(in srgb, var(--lilbee-color-pull) 12%, transparent); color: var(--lilbee-color-pull); }
@@ -1580,41 +1690,52 @@
 .lilbee-task-badge-wiki { background-color: color-mix(in srgb, var(--lilbee-color-wiki) 12%, transparent); color: var(--lilbee-color-wiki); }
 .lilbee-task-badge-delete { background-color: color-mix(in srgb, var(--lilbee-color-delete) 12%, transparent); color: var(--lilbee-color-delete); }
 
-/* Task progress background */
-.lilbee-task-progress-bg {
-    position: absolute;
-    top: 0;
-    left: 0;
-    height: 100%;
-    border-radius: 8px;
-    opacity: 0.08;
-    transition: width 300ms ease;
-    pointer-events: none;
-}
-
-.lilbee-task-progress-bg-sync { background-color: var(--lilbee-color-sync); }
-.lilbee-task-progress-bg-add { background-color: var(--lilbee-color-add); }
-.lilbee-task-progress-bg-pull { background-color: var(--lilbee-color-pull); }
-.lilbee-task-progress-bg-crawl { background-color: var(--lilbee-color-crawl); }
-.lilbee-task-progress-bg-download { background-color: var(--lilbee-color-download); }
-.lilbee-task-progress-bg-wiki { background-color: var(--lilbee-color-wiki); }
-.lilbee-task-progress-bg-delete { background-color: var(--lilbee-color-delete); }
-
 .lilbee-task-name {
     font-size: var(--font-small, 13px);
     color: var(--text-normal);
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
+.lilbee-task-meta {
+    font-size: var(--font-smallest, 10px);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+.lilbee-task-stats {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--size-4-2, 8px);
+    font-size: var(--font-smallest, 10px);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    min-height: 12px;
+}
+
+.lilbee-task-stats-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.lilbee-task-pct {
+    flex-shrink: 0;
+}
+
 .lilbee-task-progress-bar {
     width: 100%;
-    height: 3px;
+    height: 4px;
     background-color: var(--background-modifier-border);
     border-radius: 3px;
     overflow: hidden;
-    flex-basis: 100%;
+    margin-top: 2px;
 }
 
 .lilbee-task-progress-fill {
@@ -1622,6 +1743,18 @@
     background-color: var(--interactive-accent);
     border-radius: 3px;
     transition: width 200ms ease-out;
+}
+
+.lilbee-task-row[data-state="done"] .lilbee-task-progress-fill {
+    background-color: var(--text-success, #22c55e);
+}
+
+.lilbee-task-row[data-state="failed"] .lilbee-task-progress-fill {
+    background-color: var(--text-error, #ef4444);
+}
+
+.lilbee-task-row[data-state="cancelled"] .lilbee-task-progress-fill {
+    background-color: var(--text-faint);
 }
 
 .lilbee-task-progress-fill.lilbee-task-progress-indeterminate {
@@ -1640,22 +1773,6 @@
     100% { background-position: -200% 0; }
 }
 
-.lilbee-task-detail {
-    width: 100%;
-    font-size: 9px;
-    color: var(--text-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    flex-basis: 100%;
-}
-
-.lilbee-task-progress-text {
-    font-size: var(--font-smallest, 10px);
-    color: var(--text-muted);
-    flex-shrink: 0;
-}
-
 .lilbee-task-cancel {
     background: none;
     border: 1px solid transparent;
@@ -1671,6 +1788,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    align-self: center;
 }
 
 .lilbee-task-cancel:hover {
@@ -1679,23 +1797,19 @@
     background-color: color-mix(in srgb, var(--text-error) 10%, transparent);
 }
 
-.lilbee-task-status-icon {
+.lilbee-tasks-empty {
     font-size: var(--font-small, 13px);
-    flex-shrink: 0;
-    width: 16px;
-    text-align: center;
-}
-
-.lilbee-task-status-done {
-    color: var(--text-success);
-}
-
-.lilbee-task-status-failed {
-    color: var(--text-error);
-}
-
-.lilbee-task-status-cancelled {
     color: var(--text-muted);
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    font-style: italic;
+}
+
+.lilbee-task-info {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1, 4px);
+    flex: 1;
+    min-width: 0;
 }
 
 .lilbee-task-time {
@@ -1703,13 +1817,6 @@
     color: var(--text-faint);
     flex-shrink: 0;
     margin-left: auto;
-}
-
-.lilbee-tasks-empty {
-    font-size: var(--font-small, 13px);
-    color: var(--text-muted);
-    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
-    font-style: italic;
 }
 
 /* ── Wiki view ── */

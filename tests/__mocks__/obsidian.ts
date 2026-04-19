@@ -10,8 +10,21 @@ import { vi } from "vitest";
 
 export class MockElement {
     tagName: string;
-    textContent: string = "";
+    private _textContent: string = "";
+    private _textContentExplicit = false;
     children: MockElement[] = [];
+
+    get textContent(): string {
+        if (this._textContentExplicit || this.children.length === 0) {
+            return this._textContent;
+        }
+        return this.children.map((c) => c.textContent).join("");
+    }
+
+    set textContent(value: string) {
+        this._textContent = value;
+        this._textContentExplicit = true;
+    }
     classList: {
         list: string[];
         add: (...classes: string[]) => void;
@@ -80,11 +93,14 @@ export class MockElement {
 
     empty(): void {
         this.children = [];
-        this.textContent = "";
+        this._textContent = "";
+        this._textContentExplicit = false;
     }
 
     setText(text: string): void {
-        this.textContent = text;
+        this.children = [];
+        this._textContent = text;
+        this._textContentExplicit = true;
     }
 
     setAttribute(name: string, value: string): void {

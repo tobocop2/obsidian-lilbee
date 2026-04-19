@@ -5,7 +5,14 @@ import { MODEL_TASK, SSE_EVENT, TASK_TYPE, CATALOG_VIEW_MODE, ERROR_NAME } from 
 import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
-import { debounce, DEBOUNCE_MS, formatAbbreviatedCount } from "../utils";
+import {
+    debounce,
+    DEBOUNCE_MS,
+    formatAbbreviatedCount,
+    percentFromSse,
+    errorMessage,
+    extractSseErrorMessage,
+} from "../utils";
 import { renderModelCard } from "../components/model-card";
 
 const PAGE_SIZE = 20;
@@ -38,7 +45,6 @@ export class CatalogModal extends Modal {
     private viewToggleBtn: HTMLElement | null = null;
     private debouncedSearch: () => void;
     private cancelDebouncedSearch: () => void;
-    private pullController: AbortController | null = null;
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app);
@@ -439,7 +445,6 @@ export class CatalogModal extends Modal {
             return;
         }
         const controller = new AbortController();
-        this.pullController = controller;
         this.plugin.taskQueue.registerAbort(taskId, controller);
         const pullErrorPrefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.hf_repo);
 
@@ -447,13 +452,16 @@ export class CatalogModal extends Modal {
             for await (const event of this.plugin.api.pullModel(entry.hf_repo, entry.source, controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
-                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    const pct = percentFromSse(d);
                     if (pct !== undefined) {
-                        this.plugin.taskQueue.update(taskId, pct, entry.hf_repo);
+                        this.plugin.taskQueue.update(taskId, pct, entry.hf_repo, {
+                            current: d.current,
+                            total: d.total,
+                        });
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
-                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     new Notice(`${pullErrorPrefix}: ${msg}`);
                     this.plugin.taskQueue.fail(taskId, msg);
                     return;
@@ -464,25 +472,24 @@ export class CatalogModal extends Modal {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
-                const msg = err instanceof Error ? err.message : "unknown";
+                const msg = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
                 new Notice(`${pullErrorPrefix}: ${msg}`);
                 this.plugin.taskQueue.fail(taskId, msg);
             }
             return;
-        } finally {
-            this.pullController = null;
         }
+
+        this.plugin.taskQueue.complete(taskId);
 
         const result = await this.setActiveFor(entry);
         if (result.isErr()) {
-            const e = result.error;
-            new Notice(`${pullErrorPrefix}: ${e.message}`);
-            this.plugin.taskQueue.fail(taskId, e.message);
+            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", entry.hf_repo));
+            this.plugin.fetchActiveModel();
+            this.resetAndFetch();
             return;
         }
 
         this.plugin.fetchActiveModel();
-        this.plugin.taskQueue.complete(taskId);
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.hf_repo));
         this.resetAndFetch();
     }

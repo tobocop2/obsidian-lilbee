@@ -3,6 +3,9 @@ import { BACKGROUND_TASK_TYPES, TASK_QUEUE, TASK_STATUS } from "./types";
 
 export type TaskChangeListener = () => void;
 
+const RATE_SAMPLE_FLOOR_MS = 500;
+export const FLASH_WINDOW_MS = 2000;
+
 export class TaskQueue {
     private tasks: Map<string, TaskEntry> = new Map();
     private queues: Map<TaskType, string[]> = new Map();
@@ -10,8 +13,15 @@ export class TaskQueue {
     private aborts: Map<string, AbortController> = new Map();
     private history: TaskEntry[] = [];
     private listeners: TaskChangeListener[] = [];
+    private flashTimers: Set<ReturnType<typeof setTimeout>> = new Set();
 
     static readonly MAX_HISTORY = 50;
+
+    /** Clear pending flash-clear timers — call from plugin unload to avoid zombie notifies. */
+    dispose(): void {
+        for (const handle of this.flashTimers) clearTimeout(handle);
+        this.flashTimers.clear();
+    }
 
     registerAbort(id: string, controller: AbortController): void {
         const task = this.tasks.get(id);
@@ -104,11 +114,31 @@ export class TaskQueue {
         this.notify();
     }
 
-    update(id: string, progress: number, detail?: string): void {
+    update(id: string, progress: number, detail?: string, bytes?: { current?: number; total?: number }): void {
         const task = this.tasks.get(id);
         if (!task) return;
         task.progress = progress;
         if (detail !== undefined) task.detail = detail;
+        if (bytes) {
+            if (bytes.total !== undefined) task.bytesTotal = bytes.total;
+            if (bytes.current !== undefined) {
+                const now = Date.now();
+                const prevBytes = task.bytesCurrent;
+                const prevAt = task.lastRateAt;
+                task.bytesCurrent = bytes.current;
+                if (prevBytes !== undefined && prevAt !== undefined) {
+                    const elapsedMs = now - prevAt;
+                    if (elapsedMs >= RATE_SAMPLE_FLOOR_MS) {
+                        const deltaBytes = bytes.current - prevBytes;
+                        const rate = (deltaBytes / elapsedMs) * 1000;
+                        task.rateBps = rate > 0 ? rate : 0;
+                        task.lastRateAt = now;
+                    }
+                } else {
+                    task.lastRateAt = now;
+                }
+            }
+        }
         this.notify();
     }
 
@@ -171,7 +201,16 @@ export class TaskQueue {
 
         this.tasks.delete(id);
         this.notify();
+        this.scheduleFlashClear();
         this.processAll();
+    }
+
+    private scheduleFlashClear(): void {
+        const handle = setTimeout(() => {
+            this.flashTimers.delete(handle);
+            this.notify();
+        }, FLASH_WINDOW_MS);
+        this.flashTimers.add(handle);
     }
 
     /** Returns the first active task found (backward compat). */
