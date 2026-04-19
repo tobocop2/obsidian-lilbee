@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ensureUrlScheme } from "../src/utils";
+import { ensureUrlScheme, formatBytes, formatRate, formatElapsed } from "../src/utils";
 
 describe("ensureUrlScheme", () => {
     it("returns URL unchanged when it starts with https://", () => {
@@ -26,5 +26,68 @@ describe("ensureUrlScheme", () => {
 
     it("prepends https:// for URLs with subdomains but no scheme", () => {
         expect(ensureUrlScheme("www.example.com")).toBe("https://www.example.com");
+    });
+});
+
+describe("formatBytes", () => {
+    it("returns 0 B for non-finite or negative inputs", () => {
+        expect(formatBytes(NaN)).toBe("0 B");
+        expect(formatBytes(Infinity)).toBe("0 B");
+        expect(formatBytes(-1)).toBe("0 B");
+    });
+
+    it("formats sub-kilobyte values in bytes without decimals", () => {
+        expect(formatBytes(0)).toBe("0 B");
+        expect(formatBytes(512)).toBe("512 B");
+        expect(formatBytes(1023)).toBe("1023 B");
+    });
+
+    it("formats kilobytes with one decimal until 100", () => {
+        expect(formatBytes(1024)).toBe("1.0 KB");
+        expect(formatBytes(1536)).toBe("1.5 KB");
+    });
+
+    it("formats megabytes and gigabytes", () => {
+        expect(formatBytes(1024 * 1024)).toBe("1.0 MB");
+        expect(formatBytes(1.2 * 1024 * 1024 * 1024)).toBe("1.2 GB");
+    });
+
+    it("drops decimals once value >= 100 in its unit", () => {
+        expect(formatBytes(150 * 1024 * 1024)).toBe("150 MB");
+    });
+
+    it("caps at TB", () => {
+        expect(formatBytes(2 * 1024 ** 4)).toBe("2.0 TB");
+    });
+});
+
+describe("formatRate", () => {
+    it("returns empty string for zero or negative rate", () => {
+        expect(formatRate(0)).toBe("");
+        expect(formatRate(-10)).toBe("");
+        expect(formatRate(NaN)).toBe("");
+    });
+
+    it("appends /s to formatted bytes", () => {
+        expect(formatRate(1_400_000)).toBe("1.3 MB/s");
+    });
+});
+
+describe("formatElapsed", () => {
+    it("returns 00:00 for non-finite or negative input", () => {
+        expect(formatElapsed(NaN)).toBe("00:00");
+        expect(formatElapsed(-1)).toBe("00:00");
+    });
+
+    it("formats mm:ss under an hour", () => {
+        expect(formatElapsed(0)).toBe("00:00");
+        expect(formatElapsed(5_000)).toBe("00:05");
+        expect(formatElapsed(65_000)).toBe("01:05");
+        expect(formatElapsed(59 * 60 * 1000 + 59_000)).toBe("59:59");
+    });
+
+    it("formats h:mm:ss over an hour", () => {
+        expect(formatElapsed(3600_000)).toBe("1:00:00");
+        expect(formatElapsed(3725_000)).toBe("1:02:05");
     });
 });

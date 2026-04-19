@@ -12,11 +12,13 @@ import {
     SERVER_STATE,
     SSE_EVENT,
     SYNC_MODE,
+    TASK_STATUS,
     TASK_TYPE,
     type LilbeeSettings,
     type ServerMode,
     type ServerState,
     type SyncDone,
+    type TaskEntry,
     type VaultAdapter,
 } from "./types";
 import { MESSAGES } from "./locales/en";
@@ -32,7 +34,7 @@ import { WikiView, VIEW_TYPE_WIKI } from "./views/wiki-view";
 import { LintModal } from "./views/lint-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { StatusModal } from "./views/status-modal";
-import { TaskQueue } from "./task-queue";
+import { TaskQueue, FLASH_WINDOW_MS as TASK_FLASH_WINDOW_MS } from "./task-queue";
 import { WikiSync } from "./wiki-sync";
 
 interface GenerateErrorData {
@@ -485,10 +487,15 @@ export default class LilbeePlugin extends Plugin {
         this.updateAutoSync();
     }
 
-    private updateStatusBar(text: string): void {
+    private updateStatusBar(text: string, dotState: "primary" | "success" | "error" | null = null): void {
         if (!this.statusBarEl) return;
         const model = this.activeModel ? ` (${this.activeModel})` : "";
-        this.statusBarEl.setText(`${text}${model}`);
+        this.statusBarEl.empty();
+        if (dotState) {
+            const dot = this.statusBarEl.createSpan({ cls: `lilbee-statusbar-dot is-${dotState}` });
+            dot.setAttribute("aria-hidden", "true");
+        }
+        this.statusBarEl.createSpan({ text: `${text}${model}` });
     }
 
     private setStatusClass(cls: string | null): void {
@@ -552,19 +559,68 @@ export default class LilbeePlugin extends Plugin {
     private updateStatusBarFromQueue(): void {
         const allActive = this.taskQueue.activeAll;
         const queued = this.taskQueue.queued;
+        const completed = this.taskQueue.completed;
 
         if (allActive.length === 0 && queued.length === 0) {
+            const recent = completed[0];
+            if (recent && recent.completedAt && Date.now() - recent.completedAt < TASK_FLASH_WINDOW_MS) {
+                this.renderStatusFlash(recent, completed);
+                return;
+            }
             this.setStatusReady();
             return;
         }
 
-        const parts = allActive.map((t) => {
-            const pct = t.progress > 0 ? ` ${t.progress}%` : "";
-            return `${t.name}${pct}`;
-        });
+        if (allActive.length === 0 && queued.length > 0) {
+            this.updateStatusBar(
+                `lilbee: ${MESSAGES.STATUS_TASKS_QUEUED_ONLY.replace("{count}", String(queued.length))}`,
+                "primary",
+            );
+            this.setStatusClass("lilbee-status-adding");
+            return;
+        }
+
+        const first = allActive[0]!;
+        const pct = first.progress > 0 ? first.progress : 0;
         const suffix = queued.length > 0 ? ` +${queued.length}` : "";
-        this.updateStatusBar(`lilbee: ${parts.join(" | ")}${suffix}`);
+
+        if (allActive.length === 1) {
+            const text = MESSAGES.STATUS_TASK_RUNNING_SINGLE.replace("{name}", first.name).replace(
+                "{pct}",
+                String(pct),
+            );
+            this.updateStatusBar(`lilbee: ${text}${suffix}`, "primary");
+        } else {
+            const text = MESSAGES.STATUS_TASKS_RUNNING_PLURAL.replace("{count}", String(allActive.length))
+                .replace("{name}", first.name)
+                .replace("{pct}", String(pct));
+            this.updateStatusBar(`lilbee: ${text}${suffix}`, "primary");
+        }
         this.setStatusClass("lilbee-status-adding");
+    }
+
+    private renderStatusFlash(recent: TaskEntry, completed: readonly TaskEntry[]): void {
+        if (recent.status === TASK_STATUS.DONE) {
+            const text = MESSAGES.STATUS_TASK_DONE_FLASH.replace("{name}", recent.name);
+            this.updateStatusBar(`lilbee: ${text}`, "success");
+            this.setStatusClass("lilbee-status-ready");
+            return;
+        }
+        if (recent.status === TASK_STATUS.FAILED) {
+            const recentFailed = completed.filter(
+                (t) =>
+                    t.status === TASK_STATUS.FAILED &&
+                    t.completedAt &&
+                    Date.now() - t.completedAt < TASK_FLASH_WINDOW_MS,
+            );
+            const count = recentFailed.length;
+            const template = count > 1 ? MESSAGES.STATUS_TASKS_FAILED_FLASH : MESSAGES.STATUS_TASK_FAILED_FLASH;
+            const text = template.replace("{count}", String(count)).replace("{name}", recent.name);
+            this.updateStatusBar(`lilbee: ${text}`, "error");
+            this.setStatusClass("lilbee-status-error");
+            return;
+        }
+        this.setStatusReady();
     }
 
     async fetchActiveModel(): Promise<void> {

@@ -403,6 +403,10 @@ export interface TaskEntry {
     completedAt: number | null;
     error: string | null;
     canCancel: boolean;
+    bytesCurrent?: number;
+    bytesTotal?: number;
+    rateBps?: number;
+    lastRateAt?: number;
 }
 
 export type ModelSize = "small" | "medium" | "large";

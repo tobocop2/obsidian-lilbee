@@ -449,7 +449,10 @@ export class CatalogModal extends Modal {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
                     if (pct !== undefined) {
-                        this.plugin.taskQueue.update(taskId, pct, entry.hf_repo);
+                        this.plugin.taskQueue.update(taskId, pct, entry.hf_repo, {
+                            current: d.current,
+                            total: d.total,
+                        });
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;

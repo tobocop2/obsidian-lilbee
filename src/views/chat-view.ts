@@ -412,7 +412,10 @@ export class ChatView extends ItemView {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
                     if (pct !== undefined) {
-                        this.plugin.taskQueue.update(taskId, pct, model.name);
+                        this.plugin.taskQueue.update(taskId, pct, model.name, {
+                            current: d.current,
+                            total: d.total,
+                        });
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;

@@ -559,7 +559,7 @@ describe("LilbeePlugin", () => {
     });
 
     describe("triggerSync()", () => {
-        it("updates status bar during sync and resets to ready", async () => {
+        it("updates status bar during sync and flashes done on completion", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
@@ -568,7 +568,7 @@ describe("LilbeePlugin", () => {
 
             await plugin.triggerSync();
 
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
+            expect((plugin as any).statusBarEl?.textContent).toContain("Done");
         });
 
         it("shows Notice with all stats when done event has populated arrays", async () => {
@@ -1194,7 +1194,7 @@ describe("LilbeePlugin", () => {
 
             await plugin.addExternalFiles(["/home/user/doc.pdf"]);
 
-            expect((plugin as any).statusBarEl?.textContent).toContain("ready");
+            expect((plugin as any).statusBarEl?.textContent).toContain("Done");
         });
 
         it("addExternalFiles shows confirmation when single file is already indexed", async () => {
@@ -1818,7 +1818,7 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
         });
 
-        it("status bar shows task name during sync", async () => {
+        it("status bar shows task name during sync and flashes done after", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -1830,11 +1830,10 @@ describe("LilbeePlugin", () => {
 
             await plugin.triggerSync();
 
-            // After sync completes, status bar should be ready
-            expect((plugin as any).statusBarEl?.textContent).toContain("ready");
+            expect((plugin as any).statusBarEl?.textContent).toContain("Done");
         });
 
-        it("taskQueue updates status bar when task is active", async () => {
+        it("taskQueue updates status bar when task is active and flashes on completion", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "";
@@ -1843,7 +1842,8 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).statusBarEl?.textContent).toContain("Sync vault");
 
             plugin.taskQueue.complete(id);
-            expect((plugin as any).statusBarEl?.textContent).toContain("ready");
+            expect((plugin as any).statusBarEl?.textContent).toContain("Done");
+            expect((plugin as any).statusBarEl?.textContent).toContain("Sync vault");
         });
 
         it("taskQueue status bar shows queued count suffix on update", async () => {
@@ -1851,19 +1851,115 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             plugin.activeModel = "";
 
-            const statusTexts: string[] = [];
-            const origSetText = (plugin as any).statusBarEl!.setText.bind((plugin as any).statusBarEl);
-            (plugin as any).statusBarEl!.setText = (text: string) => {
-                statusTexts.push(text);
-                origSetText(text);
-            };
-
             const id1 = plugin.taskQueue.enqueue("Sync vault", "sync");
             plugin.taskQueue.enqueue("Sync again", "sync");
-            // Update the active task to trigger a re-render with queued count
             plugin.taskQueue.update(id1, 50);
 
-            expect(statusTexts.some((t) => t.includes("+1"))).toBe(true);
+            expect((plugin as any).statusBarEl?.textContent).toContain("+1");
+        });
+
+        it("status bar shows plural-aware copy with N tasks running", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            plugin.taskQueue.enqueue("Sync vault", "sync");
+            plugin.taskQueue.enqueue("Pull demo", "pull");
+
+            const text = (plugin as any).statusBarEl?.textContent;
+            expect(text).toContain("2 tasks running");
+            expect(text).toContain("Sync vault");
+        });
+
+        it("status bar shows queued-only count when no active tasks remain", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            // Seed three queued tasks of same type; only one activates
+            plugin.taskQueue.enqueue("Task A", "sync");
+            plugin.taskQueue.enqueue("Task B", "sync");
+            plugin.taskQueue.enqueue("Task C", "sync");
+
+            // Manually null out activeIds so only queued remain (simulates mid-transition state)
+            (plugin.taskQueue as any).tasks.clear();
+            (plugin.taskQueue as any).activeIds.clear();
+            const ids = ["q1", "q2"];
+            for (const id of ids) {
+                (plugin.taskQueue as any).tasks.set(id, {
+                    id,
+                    name: id,
+                    type: "sync",
+                    status: "queued",
+                    progress: 0,
+                    detail: "",
+                    startedAt: Date.now(),
+                    completedAt: null,
+                    error: null,
+                    canCancel: true,
+                });
+            }
+            (plugin.taskQueue as any).queues.set("sync", ids);
+            (plugin as any).updateStatusBarFromQueue();
+
+            const text = (plugin as any).statusBarEl?.textContent;
+            expect(text).toContain("2 queued");
+        });
+
+        it("status bar shows failure flash after a pull fails", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            const id = plugin.taskQueue.enqueue("Pull demo", "pull");
+            plugin.taskQueue.fail(id, "boom");
+
+            const text = (plugin as any).statusBarEl?.textContent;
+            expect(text).toContain("failed");
+            expect(text).toContain("Pull demo");
+        });
+
+        it("status bar flash uses plural copy when multiple tasks failed in window", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            const id1 = plugin.taskQueue.enqueue("Pull A", "pull");
+            plugin.taskQueue.fail(id1, "boom");
+            const id2 = plugin.taskQueue.enqueue("Sync B", "sync");
+            plugin.taskQueue.fail(id2, "crash");
+
+            const text = (plugin as any).statusBarEl?.textContent;
+            expect(text).toContain("2 tasks failed");
+        });
+
+        it("status bar goes to ready after cancelled task (no flash)", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            const id = plugin.taskQueue.enqueue("Sync", "sync");
+            plugin.taskQueue.cancel(id);
+
+            const text = (plugin as any).statusBarEl?.textContent;
+            expect(text).toContain("ready");
+        });
+
+        it("status bar returns to ready after flash window expires", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            const id = plugin.taskQueue.enqueue("Sync", "sync");
+            plugin.taskQueue.complete(id);
+
+            // Simulate flash window having expired
+            const completed = plugin.taskQueue.completed[0]!;
+            (completed as any).completedAt = Date.now() - 10_000;
+            (plugin as any).updateStatusBarFromQueue();
+
+            const text = (plugin as any).statusBarEl?.textContent;
+            expect(text).toContain("ready");
         });
 
         it("taskQueue status bar shows progress percentage", async () => {
@@ -2273,10 +2369,10 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
 
             const statusTexts: string[] = [];
-            const origSetText = (plugin as any).statusBarEl!.setText.bind((plugin as any).statusBarEl);
-            (plugin as any).statusBarEl!.setText = (text: string) => {
+            const origUpdate = (plugin as any).updateStatusBar.bind(plugin);
+            (plugin as any).updateStatusBar = (text: string, dot?: string | null) => {
                 statusTexts.push(text);
-                origSetText(text);
+                origUpdate(text, dot);
             };
 
             mockBinaryExists.mockReturnValueOnce(false);
@@ -2290,10 +2386,10 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
 
             const statusTexts: string[] = [];
-            const origSetText = (plugin as any).statusBarEl!.setText.bind((plugin as any).statusBarEl);
-            (plugin as any).statusBarEl!.setText = (text: string) => {
+            const origUpdate = (plugin as any).updateStatusBar.bind(plugin);
+            (plugin as any).updateStatusBar = (text: string, dot?: string | null) => {
                 statusTexts.push(text);
-                origSetText(text);
+                origUpdate(text, dot);
             };
 
             await (plugin as any).startManagedServer();

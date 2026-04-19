@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { TaskQueue } from "../src/task-queue";
+import { TaskQueue, FLASH_WINDOW_MS } from "../src/task-queue";
 import { TASK_TYPE, TASK_STATUS } from "../src/types";
 
 describe("TaskQueue", () => {
@@ -98,6 +98,72 @@ describe("TaskQueue", () => {
             expect(active.progress).toBe(-1);
             expect(active.detail).toBe("preparing");
         });
+
+        it("stores bytes and leaves rate undefined on first sample", () => {
+            queue.enqueue("Pull", TASK_TYPE.PULL);
+            const active = queue.active!;
+
+            queue.update(active.id, 10, "", { current: 1024, total: 10_240 });
+
+            expect(active.bytesCurrent).toBe(1024);
+            expect(active.bytesTotal).toBe(10_240);
+            expect(active.rateBps).toBeUndefined();
+            expect(active.lastRateAt).toBeTypeOf("number");
+        });
+
+        it("computes rate on second sample when >= 500ms has passed", () => {
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date("2026-04-19T00:00:00Z"));
+            queue.enqueue("Pull", TASK_TYPE.PULL);
+            const active = queue.active!;
+
+            queue.update(active.id, 5, "", { current: 1000, total: 10_000 });
+            vi.setSystemTime(new Date("2026-04-19T00:00:01Z"));
+            queue.update(active.id, 15, "", { current: 3000, total: 10_000 });
+
+            expect(active.rateBps).toBe(2000);
+            vi.useRealTimers();
+        });
+
+        it("skips rate recompute when delta < 500ms floor", () => {
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date("2026-04-19T00:00:00.000Z"));
+            queue.enqueue("Pull", TASK_TYPE.PULL);
+            const active = queue.active!;
+
+            queue.update(active.id, 5, "", { current: 1000, total: 10_000 });
+            vi.setSystemTime(new Date("2026-04-19T00:00:00.100Z"));
+            queue.update(active.id, 10, "", { current: 2000, total: 10_000 });
+
+            expect(active.bytesCurrent).toBe(2000);
+            expect(active.rateBps).toBeUndefined();
+            vi.useRealTimers();
+        });
+
+        it("clamps negative rate to 0", () => {
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date("2026-04-19T00:00:00Z"));
+            queue.enqueue("Pull", TASK_TYPE.PULL);
+            const active = queue.active!;
+
+            queue.update(active.id, 10, "", { current: 5000 });
+            vi.setSystemTime(new Date("2026-04-19T00:00:01Z"));
+            queue.update(active.id, 5, "", { current: 2000 });
+
+            expect(active.rateBps).toBe(0);
+            vi.useRealTimers();
+        });
+
+        it("accepts bytes object with only total (no current)", () => {
+            queue.enqueue("Pull", TASK_TYPE.PULL);
+            const active = queue.active!;
+
+            queue.update(active.id, 0, "", { total: 5_000 });
+
+            expect(active.bytesTotal).toBe(5_000);
+            expect(active.bytesCurrent).toBeUndefined();
+            expect(active.lastRateAt).toBeUndefined();
+        });
     });
 
     describe("complete()", () => {
@@ -113,6 +179,27 @@ describe("TaskQueue", () => {
             expect(completed[0]!.status).toBe(TASK_STATUS.DONE);
             expect(completed[0]!.progress).toBe(100);
             expect(completed[0]!.completedAt).not.toBeNull();
+        });
+
+        it("schedules a flash-clear notify after FLASH_WINDOW_MS", () => {
+            vi.useFakeTimers();
+            const listener = vi.fn();
+            queue.onChange(listener);
+
+            const id = queue.enqueue("Task", TASK_TYPE.SYNC);
+            listener.mockClear();
+            queue.complete(id);
+
+            const immediateCalls = listener.mock.calls.length;
+            expect(immediateCalls).toBeGreaterThan(0);
+
+            vi.advanceTimersByTime(FLASH_WINDOW_MS - 1);
+            expect(listener.mock.calls.length).toBe(immediateCalls);
+
+            vi.advanceTimersByTime(2);
+            expect(listener.mock.calls.length).toBe(immediateCalls + 1);
+
+            vi.useRealTimers();
         });
 
         it("activates next queued task", () => {

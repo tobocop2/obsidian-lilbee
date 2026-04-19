@@ -47,3 +47,37 @@ export function relativeTime(timestamp: number): string {
     const days = Math.floor(hours / 24);
     return `${days}d ago`;
 }
+
+const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
+
+export function formatBytes(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
+    if (bytes < 1024) return `${bytes} B`;
+    let value = bytes;
+    let unit = 0;
+    while (value >= 1024 && unit < BYTE_UNITS.length - 1) {
+        value /= 1024;
+        unit++;
+    }
+    const rounded = value >= 100 ? value.toFixed(0) : value.toFixed(1);
+    return `${rounded} ${BYTE_UNITS[unit]}`;
+}
+
+export function formatRate(bytesPerSecond: number): string {
+    if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return "";
+    return `${formatBytes(bytesPerSecond)}/s`;
+}
+
+export function formatElapsed(ms: number): string {
+    if (!Number.isFinite(ms) || ms < 0) return "00:00";
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const mm = String(minutes).padStart(2, "0");
+    const ss = String(seconds).padStart(2, "0");
+    if (hours > 0) {
+        return `${hours}:${mm}:${ss}`;
+    }
+    return `${mm}:${ss}`;
+}

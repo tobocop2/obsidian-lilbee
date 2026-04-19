@@ -1096,7 +1096,7 @@ describe("LilbeeSettingTab", () => {
 
             await dropdownOnChanges[0]("phi3");
 
-            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 50, "phi3");
+            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 50, "phi3", expect.any(Object));
         });
 
         it("taskQueue.cancel during auto-pull aborts and shows notice", async () => {
@@ -1274,7 +1274,7 @@ describe("LilbeeSettingTab", () => {
 
             await clickHandler();
 
-            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 75, "phi3");
+            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 75, "phi3", expect.any(Object));
             expect(Notice.instances.some((n) => n.message.includes("phi3") && n.message.includes("pulled"))).toBe(true);
             expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
         });
@@ -1318,7 +1318,7 @@ describe("LilbeeSettingTab", () => {
 
             await clickHandler();
 
-            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 50, "phi3");
+            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 50, "phi3", expect.any(Object));
         });
 
         it("progress event with percent=0: updates taskQueue with 0", async () => {
@@ -1339,7 +1339,7 @@ describe("LilbeeSettingTab", () => {
 
             await clickHandler();
 
-            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 0, "phi3");
+            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 0, "phi3", expect.any(Object));
         });
 
         it("pull failure: shows failure Notice and re-enables button with 'Pull' text", async () => {
