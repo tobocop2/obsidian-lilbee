@@ -549,14 +549,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
                             confirmModal.open();
                             const confirmed = await confirmModal.result;
                             if (!confirmed) return;
-                            try {
-                                await this.plugin.api.setEmbeddingModel(value);
-                                new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
-                                new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-                                void this.plugin.triggerSync();
-                            } catch {
+                            const result = await this.plugin.api.setEmbeddingModel(value);
+                            if (result.isErr()) {
                                 new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
+                                return;
                             }
+                            new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
+                            new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
+                            void this.plugin.triggerSync();
                         });
                     });
             })
@@ -579,14 +579,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         confirmModal.open();
                         const confirmed = await confirmModal.result;
                         if (!confirmed) return;
-                        try {
-                            await this.plugin.api.setEmbeddingModel(trimmed);
-                            new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
-                            new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-                            void this.plugin.triggerSync();
-                        } catch {
+                        const result = await this.plugin.api.setEmbeddingModel(trimmed);
+                        if (result.isErr()) {
                             new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
+                            return;
                         }
+                        new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
+                        new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
+                        void this.plugin.triggerSync();
                     });
                 this.serverConfigInputs.set("embedding_model", text.inputEl as unknown as HTMLInputElement);
             });
@@ -1035,8 +1035,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    private async setModel(model: { name: string }): Promise<void> {
-        await this.plugin.api.setChatModel(model.name);
+    private async setModel(model: { name: string }): ReturnType<typeof this.plugin.api.setChatModel> {
+        return this.plugin.api.setChatModel(model.name);
     }
 
     private async handleModelChange(
@@ -1054,14 +1054,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
             await this.autoPullAndSet(uninstalledCatalogModel, container);
             return;
         }
-        try {
-            await this.setModel({ name: value });
-            new Notice(MESSAGES.NOTICE_SET_MODEL(label, value || MESSAGES.LABEL_NOT_SET.toLowerCase()));
-            this.plugin.fetchActiveModel();
-            this.display();
-        } catch {
+        const result = await this.setModel({ name: value });
+        if (result.isErr()) {
             new Notice(MESSAGES.NOTICE_FAILED_SET_MODEL("chat"));
+            return;
         }
+        new Notice(MESSAGES.NOTICE_SET_MODEL(label, value || MESSAGES.LABEL_NOT_SET.toLowerCase()));
+        this.plugin.fetchActiveModel();
+        this.display();
     }
 
     private async autoPullAndSet(model: ModelInfo, _container: HTMLElement): Promise<void> {
@@ -1077,7 +1077,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
             for await (const event of this.plugin.api.pullModel(model.name, "native", controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
-                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    const pct =
+                        d.percent ??
+                        (d.total && d.current !== undefined ? Math.round((d.current / d.total) * 100) : undefined);
                     if (pct !== undefined) {
                         this.plugin.taskQueue.update(taskId, pct, model.name, {
                             current: d.current,
@@ -1109,11 +1111,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         this.plugin.taskQueue.complete(taskId);
 
-        try {
-            await this.setModel(model);
-            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
-        } catch {
+        const setResult = await this.setModel(model);
+        if (setResult.isErr()) {
             new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name));
+        } else {
+            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
         }
         this.plugin.fetchActiveModel();
         this.display();
@@ -1155,7 +1157,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
             for await (const event of this.plugin.api.pullModel(model.name, "native", controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
-                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    const pct =
+                        d.percent ??
+                        (d.total && d.current !== undefined ? Math.round((d.current / d.total) * 100) : undefined);
                     if (pct !== undefined) {
                         this.plugin.taskQueue.update(taskId, pct, model.name, {
                             current: d.current,
@@ -1187,11 +1191,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         this.plugin.taskQueue.complete(taskId);
 
-        try {
-            await this.setModel(model);
-            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
-        } catch {
+        const setResult = await this.setModel(model);
+        if (setResult.isErr()) {
             new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name));
+        } else {
+            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
         }
         this.plugin.fetchActiveModel();
         this.display();
@@ -1215,8 +1219,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.plugin.taskQueue.complete(taskId);
         new Notice(MESSAGES.NOTICE_REMOVED(model.name));
         if (model.name === this.plugin.activeModel) {
-            await this.plugin.api.setChatModel("");
-            this.plugin.activeModel = "";
+            const clearResult = await this.plugin.api.setChatModel("");
+            if (clearResult.isOk()) {
+                this.plugin.activeModel = "";
+            }
         }
         this.plugin.fetchActiveModel();
         const modelsContainer = this.containerEl.querySelector(`.${CLS_MODELS_CONTAINER}`);

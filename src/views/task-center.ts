@@ -2,12 +2,12 @@ import { ItemView, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
 import { BACKGROUND_TASK_TYPES, TASK_QUEUE, TASK_STATUS, type TaskEntry } from "../types";
 import { MESSAGES } from "../locales/en";
+import { FLASH_WINDOW_MS } from "../task-queue";
 import { formatBytes, formatElapsed, formatRate, relativeTime, TIME_REFRESH_INTERVAL_MS } from "../utils";
 
 export const VIEW_TYPE_TASKS = "lilbee-tasks";
 
 const ACTIVE_REFRESH_INTERVAL_MS = 1000;
-const FLASH_WINDOW_MS = 2000;
 
 type RowState = "active" | "queued" | "done" | "failed" | "cancelled";
 
@@ -270,12 +270,12 @@ function metaForRow(task: TaskEntry, state: RowState): string {
         return MESSAGES.LABEL_TASK_STATE_QUEUED;
     }
     if (state === "done") {
-        return task.completedAt ? relativeTime(task.completedAt) : MESSAGES.LABEL_TASK_STATE_DONE;
+        return task.completedAt !== null ? relativeTime(task.completedAt) : MESSAGES.LABEL_TASK_STATE_DONE;
     }
     if (state === "failed") {
-        return task.completedAt ? relativeTime(task.completedAt) : MESSAGES.LABEL_TASK_STATE_FAILED;
+        return task.completedAt !== null ? relativeTime(task.completedAt) : MESSAGES.LABEL_TASK_STATE_FAILED;
     }
-    return task.completedAt ? relativeTime(task.completedAt) : MESSAGES.LABEL_TASK_STATE_CANCELLED;
+    return task.completedAt !== null ? relativeTime(task.completedAt) : MESSAGES.LABEL_TASK_STATE_CANCELLED;
 }
 
 function statsLine(task: TaskEntry, state: RowState): string {
@@ -298,6 +298,6 @@ function statsLine(task: TaskEntry, state: RowState): string {
 }
 
 function isWithinFlashWindow(task: TaskEntry): boolean {
-    if (!task.completedAt) return false;
+    if (task.completedAt === null) return false;
     return Date.now() - task.completedAt < FLASH_WINDOW_MS;
 }

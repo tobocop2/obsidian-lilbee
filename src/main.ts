@@ -53,6 +53,13 @@ function summarizeSyncResult(done: SyncDone): string {
     return parts.join(", ");
 }
 
+function countRecentByStatus(completed: readonly TaskEntry[], status: TaskEntry["status"]): number {
+    const now = Date.now();
+    return completed.filter(
+        (t) => t.status === status && t.completedAt !== null && now - t.completedAt < TASK_FLASH_WINDOW_MS,
+    ).length;
+}
+
 /**
  * Parse the `done` event emitted by `/api/add`. The payload contains
  * `{copied, skipped, errors, sync: SyncDone}`. Extract the nested
@@ -157,7 +164,7 @@ export default class LilbeePlugin extends Plugin {
 
             const needsDownload = !this.binaryManager.binaryExists();
             if (needsDownload) {
-                this.updateStatusBar(MESSAGES.STATUS_DOWNLOADING);
+                this.updateStatusBar(MESSAGES.STATUS_DOWNLOADING, "primary");
                 this.setStatusClass("lilbee-status-downloading");
             }
 
@@ -165,7 +172,7 @@ export default class LilbeePlugin extends Plugin {
             let downloadNotice: Notice | undefined;
             try {
                 binaryPath = await this.binaryManager.ensureBinary((msg, url) => {
-                    this.updateStatusBar(`lilbee: ${msg}`);
+                    this.updateStatusBar(`lilbee: ${msg}`, "primary");
                     if (!downloadNotice && needsDownload) {
                         const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
                         downloadNotice = new Notice(text, NOTICE_PERMANENT);
@@ -207,7 +214,7 @@ export default class LilbeePlugin extends Plugin {
                     },
                 });
 
-                this.updateStatusBar(MESSAGES.STATUS_STARTING);
+                this.updateStatusBar(MESSAGES.STATUS_STARTING, "primary");
                 this.setStatusClass("lilbee-status-starting");
                 await this.serverManager.start();
                 this.api = new LilbeeClient(this.serverManager.serverUrl);
@@ -267,7 +274,7 @@ export default class LilbeePlugin extends Plugin {
         const detail = err instanceof Error ? err.message : String(err);
         const stderrTail = stderr ? `\n${stderr.split("\n").slice(-5).join("\n")}` : "";
         new Notice(`lilbee: ${label} — ${detail}${stderrTail}`, NOTICE_ERROR_DURATION_MS);
-        this.updateStatusBar(MESSAGES.STATUS_ERROR);
+        this.updateStatusBar(MESSAGES.STATUS_ERROR, "error");
         this.setStatusClass(null);
         this.serverStartFailed = true;
     }
@@ -285,11 +292,11 @@ export default class LilbeePlugin extends Plugin {
                 new Notice(MESSAGES.STATUS_READY, NOTICE_DURATION_MS);
                 break;
             case SERVER_STATE.STARTING:
-                this.updateStatusBar(MESSAGES.STATUS_STARTING);
+                this.updateStatusBar(MESSAGES.STATUS_STARTING, "primary");
                 this.setStatusClass("lilbee-status-starting");
                 break;
             case SERVER_STATE.ERROR:
-                this.updateStatusBar(MESSAGES.STATUS_ERROR);
+                this.updateStatusBar(MESSAGES.STATUS_ERROR, "error");
                 this.setStatusClass("lilbee-status-error");
                 break;
             case SERVER_STATE.STOPPED:
@@ -441,6 +448,7 @@ export default class LilbeePlugin extends Plugin {
         if (this.syncTimeout) {
             clearTimeout(this.syncTimeout);
         }
+        this.taskQueue.dispose();
         void this.serverManager?.stop();
     }
 
@@ -537,7 +545,7 @@ export default class LilbeePlugin extends Plugin {
             }
         } else if (!this.serverUnreachable) {
             this.serverUnreachable = true;
-            this.updateStatusBar(MESSAGES.STATUS_ERROR);
+            this.updateStatusBar(MESSAGES.STATUS_ERROR, "error");
             this.setStatusClass("lilbee-status-error");
             this.maybeWarnMissingToken();
         }
@@ -563,7 +571,7 @@ export default class LilbeePlugin extends Plugin {
 
         if (allActive.length === 0 && queued.length === 0) {
             const recent = completed[0];
-            if (recent && recent.completedAt && Date.now() - recent.completedAt < TASK_FLASH_WINDOW_MS) {
+            if (recent && recent.completedAt !== null && Date.now() - recent.completedAt < TASK_FLASH_WINDOW_MS) {
                 this.renderStatusFlash(recent, completed);
                 return;
             }
@@ -601,21 +609,22 @@ export default class LilbeePlugin extends Plugin {
 
     private renderStatusFlash(recent: TaskEntry, completed: readonly TaskEntry[]): void {
         if (recent.status === TASK_STATUS.DONE) {
-            const text = MESSAGES.STATUS_TASK_DONE_FLASH.replace("{name}", recent.name);
+            const recentDone = countRecentByStatus(completed, TASK_STATUS.DONE);
+            const text =
+                recentDone > 1
+                    ? MESSAGES.STATUS_TASKS_DONE_FLASH.replace("{count}", String(recentDone)).replace(
+                          "{name}",
+                          recent.name,
+                      )
+                    : MESSAGES.STATUS_TASK_DONE_FLASH.replace("{name}", recent.name);
             this.updateStatusBar(`lilbee: ${text}`, "success");
             this.setStatusClass("lilbee-status-ready");
             return;
         }
         if (recent.status === TASK_STATUS.FAILED) {
-            const recentFailed = completed.filter(
-                (t) =>
-                    t.status === TASK_STATUS.FAILED &&
-                    t.completedAt &&
-                    Date.now() - t.completedAt < TASK_FLASH_WINDOW_MS,
-            );
-            const count = recentFailed.length;
-            const template = count > 1 ? MESSAGES.STATUS_TASKS_FAILED_FLASH : MESSAGES.STATUS_TASK_FAILED_FLASH;
-            const text = template.replace("{count}", String(count)).replace("{name}", recent.name);
+            const recentFailed = countRecentByStatus(completed, TASK_STATUS.FAILED);
+            const template = recentFailed > 1 ? MESSAGES.STATUS_TASKS_FAILED_FLASH : MESSAGES.STATUS_TASK_FAILED_FLASH;
+            const text = template.replace("{count}", String(recentFailed)).replace("{name}", recent.name);
             this.updateStatusBar(`lilbee: ${text}`, "error");
             this.setStatusClass("lilbee-status-error");
             return;

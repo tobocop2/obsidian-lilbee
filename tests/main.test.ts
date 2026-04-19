@@ -1846,6 +1846,20 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).statusBarEl?.textContent).toContain("Sync vault");
         });
 
+        it("status bar flash uses plural copy when multiple tasks done in window", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            const id1 = plugin.taskQueue.enqueue("Pull A", "pull");
+            plugin.taskQueue.complete(id1);
+            const id2 = plugin.taskQueue.enqueue("Sync B", "sync");
+            plugin.taskQueue.complete(id2);
+
+            const text = (plugin as any).statusBarEl?.textContent;
+            expect(text).toContain("2 tasks done");
+        });
+
         it("taskQueue status bar shows queued count suffix on update", async () => {
             const plugin = await createPlugin();
             await plugin.onload();

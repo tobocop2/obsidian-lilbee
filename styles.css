@@ -1612,7 +1612,11 @@
 
 @media (prefers-reduced-motion: reduce) {
     .lilbee-task-row[data-state="active"] .lilbee-task-rail,
-    .lilbee-statusbar-dot {
+    .lilbee-statusbar-dot,
+    .lilbee-task-progress-fill.lilbee-task-progress-indeterminate,
+    .lilbee-status-downloading::before,
+    .lilbee-status-starting::before,
+    .lilbee-status-adding::before {
         animation: none;
     }
 }
@@ -1798,6 +1802,21 @@
     color: var(--text-muted);
     padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
     font-style: italic;
+}
+
+.lilbee-task-info {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1, 4px);
+    flex: 1;
+    min-width: 0;
+}
+
+.lilbee-task-time {
+    font-size: var(--font-smallest, 10px);
+    color: var(--text-faint);
+    flex-shrink: 0;
+    margin-left: auto;
 }
 
 /* ── Wiki view ── */

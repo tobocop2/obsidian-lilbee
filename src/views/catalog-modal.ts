@@ -38,7 +38,6 @@ export class CatalogModal extends Modal {
     private viewToggleBtn: HTMLElement | null = null;
     private debouncedSearch: () => void;
     private cancelDebouncedSearch: () => void;
-    private pullController: AbortController | null = null;
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app);
@@ -439,7 +438,6 @@ export class CatalogModal extends Modal {
             return;
         }
         const controller = new AbortController();
-        this.pullController = controller;
         this.plugin.taskQueue.registerAbort(taskId, controller);
         const pullErrorPrefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.hf_repo);
 
@@ -447,7 +445,9 @@ export class CatalogModal extends Modal {
             for await (const event of this.plugin.api.pullModel(entry.hf_repo, entry.source, controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
-                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    const pct =
+                        d.percent ??
+                        (d.total && d.current !== undefined ? Math.round((d.current / d.total) * 100) : undefined);
                     if (pct !== undefined) {
                         this.plugin.taskQueue.update(taskId, pct, entry.hf_repo, {
                             current: d.current,
@@ -472,8 +472,6 @@ export class CatalogModal extends Modal {
                 this.plugin.taskQueue.fail(taskId, msg);
             }
             return;
-        } finally {
-            this.pullController = null;
         }
 
         this.plugin.taskQueue.complete(taskId);

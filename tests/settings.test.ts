@@ -70,7 +70,7 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
         showModel: vi.fn().mockRejectedValue(new Error("no model")),
         config: vi.fn().mockRejectedValue(new Error("unreachable")),
         updateConfig: vi.fn().mockResolvedValue({ updated: [], reindex_required: false }),
-        setEmbeddingModel: vi.fn().mockResolvedValue({ model: "" }),
+        setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
         catalog: vi.fn().mockResolvedValue(err(new Error("unreachable"))),
     };
     const saveSettings = vi.fn().mockResolvedValue(undefined);
@@ -770,7 +770,7 @@ describe("LilbeeSettingTab", () => {
 
         it("active chat model onChange calls setChatModel and shows Notice for installed model", async () => {
             const plugin = makePlugin();
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "llama3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
@@ -788,7 +788,7 @@ describe("LilbeeSettingTab", () => {
 
         it("setting model to empty string shows 'not set' in Notice", async () => {
             const plugin = makePlugin();
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
             const catalog = { ...makeModelsResponse().chat, active: "" };
@@ -803,7 +803,7 @@ describe("LilbeeSettingTab", () => {
 
         it("active model onChange shows failure Notice on API error for installed model", async () => {
             const plugin = makePlugin();
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("fail")));
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
 
@@ -1042,7 +1042,7 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const tab = makeTab(plugin);
@@ -1083,7 +1083,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const updateSpy = vi.spyOn(plugin.taskQueue, "update");
@@ -1168,7 +1168,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: SSE_EVENT.ERROR, data: { message: "pull exploded" } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
 
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
@@ -1189,7 +1189,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: SSE_EVENT.ERROR, data: "raw error string" };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
 
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
@@ -1210,7 +1210,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: SSE_EVENT.ERROR, data: {} };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
 
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
@@ -1263,7 +1263,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 75 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const updateSpy = vi.spyOn(plugin.taskQueue, "update");
@@ -1286,7 +1286,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: {} };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const updateSpy = vi.spyOn(plugin.taskQueue, "update");
@@ -1307,7 +1307,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { current: 50, total: 100 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const updateSpy = vi.spyOn(plugin.taskQueue, "update");
@@ -1328,7 +1328,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 0 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const updateSpy = vi.spyOn(plugin.taskQueue, "update");
@@ -1383,7 +1383,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: SSE_EVENT.ERROR, data: { message: "pull exploded" } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const { tab: _tab, clickHandler } = await setupPullButton(plugin);
@@ -1400,7 +1400,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: SSE_EVENT.ERROR, data: "raw error string" };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const { tab: _tab, clickHandler } = await setupPullButton(plugin);
@@ -1417,7 +1417,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: SSE_EVENT.ERROR, data: {} };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const { tab: _tab, clickHandler } = await setupPullButton(plugin);
@@ -1432,7 +1432,7 @@ describe("LilbeeSettingTab", () => {
 
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const { clickHandler } = await setupPullButton(plugin);
@@ -1446,7 +1446,7 @@ describe("LilbeeSettingTab", () => {
 
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const { tab, clickHandler } = await setupPullButton(plugin);
@@ -1474,7 +1474,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 45 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const { tab, clickHandler } = await setupPullButton(plugin);
@@ -1493,7 +1493,7 @@ describe("LilbeeSettingTab", () => {
 
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const { tab, clickHandler } = await setupPullButton(plugin);
@@ -1514,7 +1514,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const { tab, clickHandler } = await setupPullButton(plugin);
@@ -1532,7 +1532,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "other", data: {} };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const { tab, clickHandler } = await setupPullButton(plugin);
@@ -1711,7 +1711,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const tab = makeTab(plugin);
@@ -1782,7 +1782,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 75 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const tab = makeTab(plugin);
@@ -1805,7 +1805,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { current: 60, total: 100 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const tab = makeTab(plugin);
@@ -1828,7 +1828,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: {} };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const tab = makeTab(plugin);
@@ -1850,7 +1850,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 0 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const tab = makeTab(plugin);
@@ -1874,7 +1874,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const tab = makeTab(plugin);
@@ -1896,7 +1896,7 @@ describe("LilbeeSettingTab", () => {
                 yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const tab = makeTab(plugin);
@@ -1915,7 +1915,7 @@ describe("LilbeeSettingTab", () => {
 
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue({ model: "phi3" });
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const tab = makeTab(plugin);
@@ -1969,7 +1969,7 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("set fail"));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("set fail")));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const tab = makeTab(plugin);
@@ -1991,7 +1991,7 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("set fail"));
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("set fail")));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const tab = makeTab(plugin);
@@ -2619,7 +2619,7 @@ describe("managed mode settings", () => {
         it("embedding dropdown shows error notice on failure", async () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-            (plugin.api.setEmbeddingModel as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            (plugin.api.setEmbeddingModel as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("fail")));
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
                     total: 1,
@@ -2805,7 +2805,7 @@ describe("managed mode settings", () => {
 
         it("fallback text input shows error notice on failure", async () => {
             const plugin = makePlugin();
-            (plugin.api.setEmbeddingModel as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            (plugin.api.setEmbeddingModel as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("fail")));
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);

@@ -103,7 +103,7 @@ function makePlugin(): LilbeePlugin {
                     { name: "phi3", source: "native" },
                 ],
             }),
-            setChatModel: vi.fn().mockResolvedValue(ok({ model: "phi3" })),
+            setChatModel: vi.fn().mockResolvedValue(ok(undefined)),
             setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
             pullModel: vi.fn(),
             catalog: vi.fn().mockResolvedValue(
@@ -976,7 +976,7 @@ describe("ChatView.onOpen — model selector", () => {
             yield { event: "progress", data: { percent: 50 } };
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -1013,7 +1013,7 @@ describe("ChatView.onOpen — model selector", () => {
             yield { event: "progress", data: {} };
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -1047,7 +1047,7 @@ describe("ChatView.onOpen — model selector", () => {
             yield { event: "progress", data: { current: 50, total: 100 } };
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -1286,7 +1286,7 @@ describe("ChatView.onOpen — model selector", () => {
             yield { event: "progress", data: { percent: 0 } };
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -2091,7 +2091,7 @@ describe("ChatView.onClose — aborts both controllers", () => {
             await waitPromise;
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(slowPull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -2735,7 +2735,7 @@ describe("ChatView — embedding model selector", () => {
 
     it("reverts dropdown and shows notice on setEmbeddingModel network error", async () => {
         const plugin = makePlugin();
-        plugin.api.setEmbeddingModel = vi.fn().mockRejectedValue(new Error("network"));
+        plugin.api.setEmbeddingModel = vi.fn().mockResolvedValue(err(new Error("network")));
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         await tick();
@@ -2932,13 +2932,13 @@ describe("ChatView — queue-full notice on auto-pull", () => {
 });
 
 describe("ChatView — autoPullAndSet post-pull set failure", () => {
-    it("completes pull task and shows ERROR_SET_MODEL notice when setChatModel throws", async () => {
+    it("completes pull task and shows ERROR_SET_MODEL notice when setChatModel returns err", async () => {
         Notice.clear();
         const plugin = makePlugin();
         plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
             // happy pull, no events
         });
-        plugin.api.setChatModel = vi.fn().mockRejectedValue(new Error("activate-failed"));
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("activate-failed")));
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         await (view as any).autoPullAndSet({ name: "phi3" });

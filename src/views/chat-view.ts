@@ -367,28 +367,21 @@ export class ChatView extends ItemView {
             const previous = this.activeEmbeddingModel;
             const modal = new ConfirmModal(this.plugin.app, MESSAGES.DESC_EMBEDDING_REINDEX_WARNING);
             modal.open();
-            void modal.result.then((confirmed) => {
-                if (confirmed) {
-                    this.plugin.api
-                        .setEmbeddingModel(el.value)
-                        .then((result) => {
-                            if (result.isOk()) {
-                                this.activeEmbeddingModel = el.value;
-                                new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
-                                new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-                                void this.plugin.triggerSync();
-                            } else {
-                                new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
-                                this.revertEmbeddingSelect(previous);
-                            }
-                        })
-                        .catch(() => {
-                            new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
-                            this.revertEmbeddingSelect(previous);
-                        });
-                } else {
+            void modal.result.then(async (confirmed) => {
+                if (!confirmed) {
                     this.revertEmbeddingSelect(previous);
+                    return;
                 }
+                const result = await this.plugin.api.setEmbeddingModel(el.value);
+                if (result.isErr()) {
+                    new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
+                    this.revertEmbeddingSelect(previous);
+                    return;
+                }
+                this.activeEmbeddingModel = el.value;
+                new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
+                new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
+                void this.plugin.triggerSync();
             });
         });
     }
@@ -411,7 +404,9 @@ export class ChatView extends ItemView {
             for await (const event of this.plugin.api.pullModel(model.name, "native", this.pullController.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
-                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    const pct =
+                        d.percent ??
+                        (d.total && d.current !== undefined ? Math.round((d.current / d.total) * 100) : undefined);
                     if (pct !== undefined) {
                         this.plugin.taskQueue.update(taskId, pct, model.name, {
                             current: d.current,
@@ -445,12 +440,12 @@ export class ChatView extends ItemView {
 
         this.plugin.taskQueue.complete(taskId);
 
-        try {
-            await this.plugin.api.setChatModel(model.name);
+        const result = await this.plugin.api.setChatModel(model.name);
+        if (result.isErr()) {
+            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name));
+        } else {
             this.plugin.activeModel = model.name;
             new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
-        } catch {
-            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name));
         }
         this.plugin.fetchActiveModel();
         this.refreshModelSelector();

@@ -202,6 +202,22 @@ describe("TaskQueue", () => {
             vi.useRealTimers();
         });
 
+        it("dispose cancels pending flash-clear timers so they don't zombie-notify after unload", () => {
+            vi.useFakeTimers();
+            const listener = vi.fn();
+            queue.onChange(listener);
+
+            const id = queue.enqueue("Task", TASK_TYPE.SYNC);
+            queue.complete(id);
+            listener.mockClear();
+
+            queue.dispose();
+            vi.advanceTimersByTime(FLASH_WINDOW_MS * 2);
+
+            expect(listener).not.toHaveBeenCalled();
+            vi.useRealTimers();
+        });
+
         it("activates next queued task", () => {
             queue.enqueue("Task 1", TASK_TYPE.SYNC);
             const id2 = queue.enqueue("Task 2", TASK_TYPE.SYNC);

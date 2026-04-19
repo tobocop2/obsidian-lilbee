@@ -355,7 +355,9 @@ export class SetupWizard extends Modal {
             )) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
-                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    const pct =
+                        d.percent ??
+                        (d.total && d.current !== undefined ? Math.round((d.current / d.total) * 100) : undefined);
                     if (pct !== undefined) {
                         progressFill.style.width = `${pct}%`;
                         progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL_PCT.replace(
@@ -507,7 +509,9 @@ export class SetupWizard extends Modal {
             )) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
-                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    const pct =
+                        d.percent ??
+                        (d.total && d.current !== undefined ? Math.round((d.current / d.total) * 100) : undefined);
                     if (pct !== undefined) {
                         progressFill.style.width = `${pct}%`;
                         progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL_PCT.replace(
