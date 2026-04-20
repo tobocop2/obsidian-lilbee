@@ -4,7 +4,7 @@ export default defineConfig({
     test: {
         globals: true,
         environment: "node",
-        exclude: ["**/node_modules/**", "**/.worktrees/**", "**/.claude/**"],
+        exclude: ["**/node_modules/**", "**/.worktrees/**", "**/.claude/**", "**/*.bak/**", "**/tests.bak/**"],
         coverage: {
             provider: "v8",
             include: ["src/**/*.ts"],
