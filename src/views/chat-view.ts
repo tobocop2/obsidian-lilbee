@@ -9,7 +9,7 @@ import {
     WorkspaceLeaf,
 } from "obsidian";
 import type LilbeePlugin from "../main";
-import { SSE_EVENT, TASK_TYPE, ERROR_NAME, MODEL_SOURCE } from "../types";
+import { MODEL_SOURCE, MODEL_TASK, SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
 import type {
     CatalogEntry,
     GenerationOptions,
@@ -27,7 +27,13 @@ import { ConfirmModal } from "./confirm-modal";
 import { CatalogModal } from "./catalog-modal";
 import { CrawlModal } from "./crawl-modal";
 import { MESSAGES } from "../locales/en";
-import { RETRY_INTERVAL_MS, SPINNER_MIN_DISPLAY_MS } from "../utils";
+import {
+    RETRY_INTERVAL_MS,
+    SPINNER_MIN_DISPLAY_MS,
+    percentFromSse,
+    errorMessage,
+    extractSseErrorMessage,
+} from "../utils";
 
 interface OpenDialogResult {
     canceled: boolean;
@@ -214,6 +220,7 @@ export class ChatView extends ItemView {
         }) as HTMLButtonElement;
 
         const handleSend = (): void => {
+            if (this.sending) return;
             const text = textarea.value.trim();
             if (!text) return;
             textarea.value = "";
@@ -239,7 +246,7 @@ export class ChatView extends ItemView {
         Promise.all([
             this.plugin.api.listModels(),
             this.plugin.api.installedModels().catch(() => ({ models: [] })),
-            this.plugin.api.catalog({ task: "embedding" }).catch(() => null),
+            this.plugin.api.catalog({ task: MODEL_TASK.EMBEDDING }).catch(() => null),
             this.plugin.api.config().catch(() => null),
         ])
             .then(([models, installed, embeddingResult, serverConfig]) => {
@@ -366,28 +373,21 @@ export class ChatView extends ItemView {
             const previous = this.activeEmbeddingModel;
             const modal = new ConfirmModal(this.plugin.app, MESSAGES.DESC_EMBEDDING_REINDEX_WARNING);
             modal.open();
-            void modal.result.then((confirmed) => {
-                if (confirmed) {
-                    this.plugin.api
-                        .setEmbeddingModel(el.value)
-                        .then((result) => {
-                            if (result.isOk()) {
-                                this.activeEmbeddingModel = el.value;
-                                new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
-                                new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-                                void this.plugin.triggerSync();
-                            } else {
-                                new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
-                                this.revertEmbeddingSelect(previous);
-                            }
-                        })
-                        .catch(() => {
-                            new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
-                            this.revertEmbeddingSelect(previous);
-                        });
-                } else {
+            void modal.result.then(async (confirmed) => {
+                if (!confirmed) {
                     this.revertEmbeddingSelect(previous);
+                    return;
                 }
+                const result = await this.plugin.api.setEmbeddingModel(el.value);
+                if (result.isErr()) {
+                    new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
+                    this.revertEmbeddingSelect(previous);
+                    return;
+                }
+                this.activeEmbeddingModel = el.value;
+                new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
+                new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
+                void this.plugin.triggerSync();
             });
         });
     }
@@ -399,41 +399,64 @@ export class ChatView extends ItemView {
 
     private async autoPullAndSet(model: { name: string }): Promise<void> {
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         this.pullController = new AbortController();
+        this.plugin.taskQueue.registerAbort(taskId, this.pullController);
+        let pullFailed = false;
         try {
-            for await (const event of this.plugin.api.pullModel(model.name, "native", this.pullController.signal)) {
+            for await (const event of this.plugin.api.pullModel(
+                model.name,
+                MODEL_SOURCE.NATIVE,
+                this.pullController.signal,
+            )) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
-                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    const pct = percentFromSse(d);
                     if (pct !== undefined) {
-                        this.plugin.taskQueue.update(taskId, pct, model.name);
+                        this.plugin.taskQueue.update(taskId, pct, model.name, {
+                            current: d.current,
+                            total: d.total,
+                        });
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
-                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     new Notice(MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name));
                     this.plugin.taskQueue.fail(taskId, msg);
+                    pullFailed = true;
                     break;
                 }
             }
-            await this.plugin.api.setChatModel(model.name);
-            this.plugin.activeModel = model.name;
-            this.plugin.fetchActiveModel();
-            this.plugin.taskQueue.complete(taskId);
-            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
-            this.refreshModelSelector();
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
-                const reason = err instanceof Error ? err.message : "unknown error";
+                const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
                 new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${reason}`);
                 this.plugin.taskQueue.fail(taskId, reason);
             }
-        } finally {
             this.pullController = null;
+            return;
         }
+        this.pullController = null;
+
+        if (pullFailed) return;
+
+        this.plugin.taskQueue.complete(taskId);
+
+        const result = await this.plugin.api.setChatModel(model.name);
+        if (result.isErr()) {
+            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name));
+        } else {
+            this.plugin.activeModel = model.name;
+            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
+        }
+        this.plugin.fetchActiveModel();
+        this.refreshModelSelector();
     }
 
     private cycleOcr(): void {
@@ -540,10 +563,10 @@ export class ChatView extends ItemView {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 revealContent();
                 if (state.fullContent) {
-                    void this.renderMarkdown(textEl, state.fullContent + "\n\n*(stopped)*");
+                    void this.renderMarkdown(textEl, `${state.fullContent}\n\n${MESSAGES.LABEL_STOPPED_MD}`);
                     this.history.push({ role: "assistant", content: state.fullContent });
                 } else {
-                    textEl.textContent = "(stopped)";
+                    textEl.textContent = MESSAGES.LABEL_STOPPED;
                 }
             } else {
                 assistantBubble.remove();

@@ -71,6 +71,7 @@ describe("DocumentsModal", () => {
 
     afterEach(() => {
         vi.useRealTimers();
+        vi.unstubAllGlobals();
     });
 
     it("renders title and search on open", async () => {
@@ -250,7 +251,7 @@ describe("DocumentsModal", () => {
         expect(plugin.api.removeDocuments).not.toHaveBeenCalled();
     });
 
-    it("shows Load more when total > loaded", async () => {
+    it("attaches a scroll listener to the results element", async () => {
         const docs = Array.from({ length: 20 }, (_, i) => makeDoc({ filename: `f${i}.md` }));
         const plugin = makePlugin();
         plugin.api.listDocuments.mockResolvedValue(makeDocsResponse(docs, 40));
@@ -259,25 +260,12 @@ describe("DocumentsModal", () => {
         modal.open();
         await vi.runAllTimersAsync();
 
-        const el = modal.contentEl as unknown as MockElement;
-        const loadMore = el.find("lilbee-documents-load-more")!;
-        expect(loadMore.style.display).toBe("");
+        const resultsEl = (modal as any).resultsEl as MockElement;
+        expect(resultsEl).not.toBeNull();
+        expect(typeof (modal as any).onScroll).toBe("function");
     });
 
-    it("hides Load more when all loaded", async () => {
-        const plugin = makePlugin();
-        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc()], 1));
-        const app = new App();
-        const modal = new DocumentsModal(app as any, plugin as any);
-        modal.open();
-        await vi.runAllTimersAsync();
-
-        const el = modal.contentEl as unknown as MockElement;
-        const loadMore = el.find("lilbee-documents-load-more")!;
-        expect(loadMore.style.display).toBe("none");
-    });
-
-    it("Load more fetches next page", async () => {
+    it("fetches next page when user scrolls near the bottom and more remain", async () => {
         const page1 = Array.from({ length: 20 }, (_, i) => makeDoc({ filename: `f${i}.md` }));
         const page2 = [makeDoc({ filename: "f20.md" })];
         const plugin = makePlugin();
@@ -289,13 +277,97 @@ describe("DocumentsModal", () => {
         modal.open();
         await vi.runAllTimersAsync();
 
-        const el = modal.contentEl as unknown as MockElement;
-        const loadMore = el.find("lilbee-documents-load-more")!;
-        loadMore.trigger("click");
+        const el = (modal as any).resultsEl as MockElement;
+        Object.assign(el, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+        (modal as any).onScroll();
         await vi.runAllTimersAsync();
 
         expect(plugin.api.listDocuments).toHaveBeenCalledTimes(2);
         expect(plugin.api.listDocuments).toHaveBeenLastCalledWith(undefined, 20, 20);
+    });
+
+    it("does not fetch when no more documents remain", async () => {
+        const plugin = makePlugin();
+        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc()], 1));
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+        plugin.api.listDocuments.mockClear();
+
+        const el = (modal as any).resultsEl as MockElement;
+        Object.assign(el, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+        (modal as any).onScroll();
+        await vi.runAllTimersAsync();
+
+        expect(plugin.api.listDocuments).not.toHaveBeenCalled();
+    });
+
+    it("does not fetch when not near the bottom", async () => {
+        const plugin = makePlugin();
+        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc()], 40));
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+        plugin.api.listDocuments.mockClear();
+
+        const el = (modal as any).resultsEl as MockElement;
+        Object.assign(el, { scrollTop: 10, clientHeight: 400, scrollHeight: 2000 });
+        (modal as any).onScroll();
+        await vi.runAllTimersAsync();
+
+        expect(plugin.api.listDocuments).not.toHaveBeenCalled();
+    });
+
+    it("removes scroll listener on close", async () => {
+        const plugin = makePlugin();
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+        const el = (modal as any).resultsEl as MockElement;
+        const removeSpy = vi.spyOn(el as any, "removeEventListener");
+        modal.close();
+        expect(removeSpy).toHaveBeenCalledWith("scroll", expect.any(Function));
+    });
+
+    it("onScroll bails when resultsEl is null (defensive)", async () => {
+        const plugin = makePlugin();
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+        (modal as any).resultsEl = null;
+        expect(() => (modal as any).onScroll()).not.toThrow();
+    });
+
+    it("onScroll bails while a fetch is already in flight", async () => {
+        const plugin = makePlugin();
+        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc()], 40));
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+        plugin.api.listDocuments.mockClear();
+        (modal as any).isFetching = true;
+        const el = (modal as any).resultsEl as MockElement;
+        Object.assign(el, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+        (modal as any).onScroll();
+        await vi.runAllTimersAsync();
+        expect(plugin.api.listDocuments).not.toHaveBeenCalled();
+    });
+
+    it("fetchPage is a no-op when already fetching", async () => {
+        const plugin = makePlugin();
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+        plugin.api.listDocuments.mockClear();
+        (modal as any).isFetching = true;
+        await (modal as any).fetchPage();
+        expect(plugin.api.listDocuments).not.toHaveBeenCalled();
     });
 
     it("search input triggers debounced fetch", async () => {
@@ -387,15 +459,6 @@ describe("DocumentsModal", () => {
         searchInput.trigger("input");
         expect((modal as any).debouncedSearch).toBeDefined();
         modal.onClose();
-    });
-
-    it("updateLoadMore returns early when loadMoreBtn is null", () => {
-        const plugin = makePlugin();
-        const app = new App();
-        const modal = new DocumentsModal(app as any, plugin as any);
-        (modal as any).loadMoreBtn = null;
-        (modal as any).updateLoadMore();
-        // Should not throw
     });
 
     it("updateRemoveBtn returns early when removeBtn is null", () => {

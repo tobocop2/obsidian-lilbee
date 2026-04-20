@@ -91,12 +91,3 @@ function renderCardActions(card: HTMLElement, entry: CatalogEntry, options: Mode
         }
     }
 }
-
-export function renderBrowseMoreCard(container: HTMLElement, onClick: () => void): HTMLElement {
-    const card = container.createDiv({
-        cls: "lilbee-browse-more-card",
-        text: MESSAGES.LABEL_BROWSE_MORE,
-    });
-    card.addEventListener("click", onClick);
-    return card;
-}

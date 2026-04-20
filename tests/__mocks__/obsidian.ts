@@ -10,8 +10,21 @@ import { vi } from "vitest";
 
 export class MockElement {
     tagName: string;
-    textContent: string = "";
+    private _textContent: string = "";
+    private _textContentExplicit = false;
     children: MockElement[] = [];
+
+    get textContent(): string {
+        if (this._textContentExplicit || this.children.length === 0) {
+            return this._textContent;
+        }
+        return this.children.map((c) => c.textContent).join("");
+    }
+
+    set textContent(value: string) {
+        this._textContent = value;
+        this._textContentExplicit = true;
+    }
     classList: {
         list: string[];
         add: (...classes: string[]) => void;
@@ -80,11 +93,14 @@ export class MockElement {
 
     empty(): void {
         this.children = [];
-        this.textContent = "";
+        this._textContent = "";
+        this._textContentExplicit = false;
     }
 
     setText(text: string): void {
-        this.textContent = text;
+        this.children = [];
+        this._textContent = text;
+        this._textContentExplicit = true;
     }
 
     setAttribute(name: string, value: string): void {
@@ -108,6 +124,13 @@ export class MockElement {
     addEventListener(event: string, handler: Function, _options?: unknown): void {
         if (!this._listeners[event]) this._listeners[event] = [];
         this._listeners[event].push(handler);
+    }
+
+    removeEventListener(event: string, handler: Function, _options?: unknown): void {
+        const handlers = this._listeners[event];
+        if (!handlers) return;
+        const i = handlers.indexOf(handler);
+        if (i >= 0) handlers.splice(i, 1);
     }
 
     // Test helper: trigger an event
@@ -350,6 +373,11 @@ export class Plugin {
     addStatusBarItem = vi.fn(() => {
         const el = new MockElement("div");
         this._statusBarItems.push(el);
+        return el;
+    });
+
+    addRibbonIcon = vi.fn((_icon: string, _title: string, _callback: () => void) => {
+        const el = new MockElement("div");
         return el;
     });
 

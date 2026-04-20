@@ -5,6 +5,7 @@ import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TA
 import { CatalogModal } from "./catalog-modal";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
+import { percentFromSse, extractSseErrorMessage } from "../utils";
 
 type FeaturedModel = CatalogEntry;
 type EmbeddingModel = CatalogEntry;
@@ -355,7 +356,7 @@ export class SetupWizard extends Modal {
             )) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
-                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    const pct = percentFromSse(d);
                     if (pct !== undefined) {
                         progressFill.style.width = `${pct}%`;
                         progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL_PCT.replace(
@@ -365,14 +366,21 @@ export class SetupWizard extends Modal {
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
-                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     new Notice(MESSAGES.ERROR_DOWNLOAD_FAILED);
                     statusEl.textContent = msg;
                     break;
                 }
             }
 
-            await this.plugin.api.setChatModel(model.hf_repo);
+            const setResult = await this.plugin.api.setChatModel(model.hf_repo);
+            if (setResult.isErr()) {
+                new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.hf_repo));
+                statusEl.textContent = setResult.error.message;
+                progressEl.style.display = "none";
+                (downloadBtn as HTMLButtonElement).disabled = false;
+                return;
+            }
             this.plugin.activeModel = model.hf_repo;
             this.plugin.fetchActiveModel();
             this.pulledModelName = model.hf_repo;
@@ -427,9 +435,16 @@ export class SetupWizard extends Modal {
                 return;
             }
             if (this.selectedEmbedding.installed) {
-                void this.plugin.api.setEmbeddingModel(this.selectedEmbedding.name);
-                this.step = WIZARD_STEP.SYNC;
-                this.renderStep();
+                const name = this.selectedEmbedding.name;
+                void (async () => {
+                    const result = await this.plugin.api.setEmbeddingModel(name);
+                    if (result.isErr()) {
+                        new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", name));
+                        return;
+                    }
+                    this.step = WIZARD_STEP.SYNC;
+                    this.renderStep();
+                })();
                 return;
             }
             downloadBtn.disabled = true;
@@ -507,7 +522,7 @@ export class SetupWizard extends Modal {
             )) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
-                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    const pct = percentFromSse(d);
                     if (pct !== undefined) {
                         progressFill.style.width = `${pct}%`;
                         progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL_PCT.replace(
@@ -517,14 +532,21 @@ export class SetupWizard extends Modal {
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
-                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     new Notice(MESSAGES.ERROR_DOWNLOAD_FAILED);
                     statusEl.textContent = msg;
                     break;
                 }
             }
 
-            await this.plugin.api.setEmbeddingModel(model.hf_repo);
+            const setResult = await this.plugin.api.setEmbeddingModel(model.hf_repo);
+            if (setResult.isErr()) {
+                new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.hf_repo));
+                statusEl.textContent = setResult.error.message;
+                progressEl.style.display = "none";
+                (downloadBtn as HTMLButtonElement).disabled = false;
+                return;
+            }
             this.step = WIZARD_STEP.SYNC;
             this.renderStep();
         } catch (err) {
@@ -598,7 +620,7 @@ export class SetupWizard extends Modal {
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
-                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     progressLabel.textContent = msg;
                     throw new Error(msg);
                 }

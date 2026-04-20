@@ -2,6 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Notice } from "obsidian";
 import { App, WorkspaceLeaf } from "./__mocks__/obsidian";
 import { SSE_EVENT } from "../src/types";
+import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
 import { ConfirmModal } from "../src/views/confirm-modal";
 vi.mock("../src/api", () => ({
@@ -15,6 +16,7 @@ vi.mock("../src/api", () => ({
         pullModel: vi.fn(),
         setChatModel: vi.fn(),
         setToken: vi.fn(),
+        setTokenProvider: vi.fn(),
         health: vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} }),
         addFiles: vi.fn(),
         crawl: vi.fn(),
@@ -71,13 +73,6 @@ vi.mock("../src/views/confirm-modal", () => ({
         get result() {
             return Promise.resolve(mockConfirmModalResult);
         },
-    })),
-}));
-
-vi.mock("../src/views/download-panel", () => ({
-    DownloadPanel: vi.fn().mockImplementation(() => ({
-        attach: vi.fn(),
-        detach: vi.fn(),
     })),
 }));
 
@@ -166,6 +161,7 @@ describe("LilbeePlugin", () => {
     beforeEach(() => {
         Notice.clear();
         vi.clearAllMocks();
+        vi.useRealTimers();
         mockLastStderr = "";
     });
 
@@ -345,14 +341,6 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             expect(() => plugin.onunload()).not.toThrow();
         });
-
-        it("calls downloadPanel.detach()", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            const detachSpy = plugin.downloadPanel!.detach;
-            plugin.onunload();
-            expect(detachSpy).toHaveBeenCalled();
-        });
     });
 
     describe("loadSettings()", () => {
@@ -384,7 +372,7 @@ describe("LilbeePlugin", () => {
             plugin.settings.serverUrl = "http://newserver:8080";
             await plugin.saveSettings();
 
-            expect(plugin.saveData).toHaveBeenCalledWith(plugin.settings);
+            expect(plugin.saveData).toHaveBeenCalledWith(expect.objectContaining({ ...plugin.settings }));
             const callsAfter = (LilbeeClient as ReturnType<typeof vi.fn>).mock.calls.length;
             expect(callsAfter).toBeGreaterThan(callsBefore);
         });
@@ -573,7 +561,7 @@ describe("LilbeePlugin", () => {
     });
 
     describe("triggerSync()", () => {
-        it("updates status bar during sync and resets to ready", async () => {
+        it("updates status bar during sync and flashes done on completion", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
@@ -582,7 +570,7 @@ describe("LilbeePlugin", () => {
 
             await plugin.triggerSync();
 
-            expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
+            expect((plugin as any).statusBarEl?.textContent).toContain("Done");
         });
 
         it("shows Notice with all stats when done event has populated arrays", async () => {
@@ -665,6 +653,22 @@ describe("LilbeePlugin", () => {
             await plugin.triggerSync();
 
             expect(syncStreamSpy).not.toHaveBeenCalled();
+        });
+
+        it("fails the task and shows idle-stream notice when server stops sending events", async () => {
+            const { StreamIdleError } = await import("../src/utils");
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* throwIdle(): AsyncGenerator<never> {
+                throw new StreamIdleError(1);
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(throwIdle());
+
+            await plugin.triggerSync();
+
+            expect(Notice.instances.some((n) => n.message.includes("stopped sending events"))).toBe(true);
+            expect(plugin.taskQueue.completed[0]?.status).toBe("failed");
         });
     });
 
@@ -1208,7 +1212,7 @@ describe("LilbeePlugin", () => {
 
             await plugin.addExternalFiles(["/home/user/doc.pdf"]);
 
-            expect((plugin as any).statusBarEl?.textContent).toContain("ready");
+            expect((plugin as any).statusBarEl?.textContent).toContain("Done");
         });
 
         it("addExternalFiles shows confirmation when single file is already indexed", async () => {
@@ -1276,6 +1280,23 @@ describe("LilbeePlugin", () => {
             await plugin.addExternalFiles(["/some/file.pdf"]);
 
             expect(Notice.instances.some((n) => n.message.includes("add failed"))).toBe(true);
+        });
+
+        it("fails the task and shows idle-stream notice when add stream hangs", async () => {
+            const { StreamIdleError } = await import("../src/utils");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* throwIdle(): AsyncGenerator<never> {
+                throw new StreamIdleError(1);
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(throwIdle());
+
+            await plugin.addExternalFiles(["/some/file.pdf"]);
+
+            expect(Notice.instances.some((n) => n.message.includes("stopped sending events"))).toBe(true);
+            expect(plugin.taskQueue.completed[0]?.status).toBe("failed");
         });
 
         it("shows failed count in Notice", async () => {
@@ -1472,6 +1493,23 @@ describe("LilbeePlugin", () => {
 
             expect(Notice.instances.some((n) => n.message.includes("crawl failed"))).toBe(true);
             expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+
+        it("fails the task and shows idle-stream notice when crawl stream hangs", async () => {
+            const { StreamIdleError } = await import("../src/utils");
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* (): AsyncGenerator<never> {
+                    throw new StreamIdleError(1);
+                })(),
+            );
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            expect(Notice.instances.some((n) => n.message.includes("stopped sending events"))).toBe(true);
+            expect(plugin.taskQueue.completed[0]?.status).toBe("failed");
         });
 
         it("handles non-Error throw", async () => {
@@ -1715,6 +1753,55 @@ describe("LilbeePlugin", () => {
             await (plugin as any).probeServerHealth();
             expect((plugin.statusBarEl as any)?.textContent).toContain("error");
         });
+
+        it("fires external-mode no-token notice when health fails and token is null", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).readCurrentToken = vi.fn(() => null);
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            Notice.clear();
+            await (plugin as any).probeServerHealth();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_TOKEN_EXTERNAL);
+        });
+
+        it("fires managed-mode no-token notice when health fails and token is null", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            (plugin as any).startingServer = false;
+            (plugin as any).serverUnreachable = false;
+            (plugin as any).readCurrentToken = vi.fn(() => null);
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            Notice.clear();
+            await (plugin as any).probeServerHealth();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_TOKEN_MANAGED);
+        });
+
+        it("fires the no-token notice at most once per plugin load", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).readCurrentToken = vi.fn(() => null);
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            Notice.clear();
+            await (plugin as any).probeServerHealth();
+            (plugin as any).serverUnreachable = false;
+            await (plugin as any).probeServerHealth();
+            const count = Notice.instances.filter((n) => n.message === MESSAGES.NOTICE_NO_TOKEN_EXTERNAL).length;
+            expect(count).toBe(1);
+        });
+
+        it("skips the no-token notice when a token exists", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).readCurrentToken = vi.fn(() => "token");
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            Notice.clear();
+            await (plugin as any).probeServerHealth();
+            const fired = Notice.instances.some(
+                (n) =>
+                    n.message === MESSAGES.NOTICE_NO_TOKEN_MANAGED || n.message === MESSAGES.NOTICE_NO_TOKEN_EXTERNAL,
+            );
+            expect(fired).toBe(false);
+        });
     });
 
     describe("taskQueue integration", () => {
@@ -1783,7 +1870,7 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
         });
 
-        it("status bar shows task name during sync", async () => {
+        it("status bar shows task name during sync and flashes done after", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -1795,11 +1882,10 @@ describe("LilbeePlugin", () => {
 
             await plugin.triggerSync();
 
-            // After sync completes, status bar should be ready
-            expect((plugin as any).statusBarEl?.textContent).toContain("ready");
+            expect((plugin as any).statusBarEl?.textContent).toContain("Done");
         });
 
-        it("taskQueue updates status bar when task is active", async () => {
+        it("taskQueue updates status bar when task is active and flashes on completion", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "";
@@ -1808,7 +1894,22 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).statusBarEl?.textContent).toContain("Sync vault");
 
             plugin.taskQueue.complete(id);
-            expect((plugin as any).statusBarEl?.textContent).toContain("ready");
+            expect((plugin as any).statusBarEl?.textContent).toContain("Done");
+            expect((plugin as any).statusBarEl?.textContent).toContain("Sync vault");
+        });
+
+        it("status bar flash uses plural copy when multiple tasks done in window", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            const id1 = plugin.taskQueue.enqueue("Pull A", "pull");
+            plugin.taskQueue.complete(id1);
+            const id2 = plugin.taskQueue.enqueue("Sync B", "sync");
+            plugin.taskQueue.complete(id2);
+
+            const text = (plugin as any).statusBarEl?.textContent;
+            expect(text).toContain("2 tasks done");
         });
 
         it("taskQueue status bar shows queued count suffix on update", async () => {
@@ -1816,19 +1917,115 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             plugin.activeModel = "";
 
-            const statusTexts: string[] = [];
-            const origSetText = (plugin as any).statusBarEl!.setText.bind((plugin as any).statusBarEl);
-            (plugin as any).statusBarEl!.setText = (text: string) => {
-                statusTexts.push(text);
-                origSetText(text);
-            };
-
             const id1 = plugin.taskQueue.enqueue("Sync vault", "sync");
             plugin.taskQueue.enqueue("Sync again", "sync");
-            // Update the active task to trigger a re-render with queued count
             plugin.taskQueue.update(id1, 50);
 
-            expect(statusTexts.some((t) => t.includes("+1"))).toBe(true);
+            expect((plugin as any).statusBarEl?.textContent).toContain("+1");
+        });
+
+        it("status bar shows plural-aware copy with N tasks running", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            plugin.taskQueue.enqueue("Sync vault", "sync");
+            plugin.taskQueue.enqueue("Pull demo", "pull");
+
+            const text = (plugin as any).statusBarEl?.textContent;
+            expect(text).toContain("2 tasks running");
+            expect(text).toContain("Sync vault");
+        });
+
+        it("status bar shows queued-only count when no active tasks remain", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            // Seed three queued tasks of same type; only one activates
+            plugin.taskQueue.enqueue("Task A", "sync");
+            plugin.taskQueue.enqueue("Task B", "sync");
+            plugin.taskQueue.enqueue("Task C", "sync");
+
+            // Manually null out activeIds so only queued remain (simulates mid-transition state)
+            (plugin.taskQueue as any).tasks.clear();
+            (plugin.taskQueue as any).activeIds.clear();
+            const ids = ["q1", "q2"];
+            for (const id of ids) {
+                (plugin.taskQueue as any).tasks.set(id, {
+                    id,
+                    name: id,
+                    type: "sync",
+                    status: "queued",
+                    progress: 0,
+                    detail: "",
+                    startedAt: Date.now(),
+                    completedAt: null,
+                    error: null,
+                    canCancel: true,
+                });
+            }
+            (plugin.taskQueue as any).queues.set("sync", ids);
+            (plugin as any).updateStatusBarFromQueue();
+
+            const text = (plugin as any).statusBarEl?.textContent;
+            expect(text).toContain("2 queued");
+        });
+
+        it("status bar shows failure flash after a pull fails", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            const id = plugin.taskQueue.enqueue("Pull demo", "pull");
+            plugin.taskQueue.fail(id, "boom");
+
+            const text = (plugin as any).statusBarEl?.textContent;
+            expect(text).toContain("failed");
+            expect(text).toContain("Pull demo");
+        });
+
+        it("status bar flash uses plural copy when multiple tasks failed in window", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            const id1 = plugin.taskQueue.enqueue("Pull A", "pull");
+            plugin.taskQueue.fail(id1, "boom");
+            const id2 = plugin.taskQueue.enqueue("Sync B", "sync");
+            plugin.taskQueue.fail(id2, "crash");
+
+            const text = (plugin as any).statusBarEl?.textContent;
+            expect(text).toContain("2 tasks failed");
+        });
+
+        it("status bar goes to ready after cancelled task (no flash)", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            const id = plugin.taskQueue.enqueue("Sync", "sync");
+            plugin.taskQueue.cancel(id);
+
+            const text = (plugin as any).statusBarEl?.textContent;
+            expect(text).toContain("ready");
+        });
+
+        it("status bar returns to ready after flash window expires", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            const id = plugin.taskQueue.enqueue("Sync", "sync");
+            plugin.taskQueue.complete(id);
+
+            // Simulate flash window having expired
+            const completed = plugin.taskQueue.completed[0]!;
+            (completed as any).completedAt = Date.now() - 10_000;
+            (plugin as any).updateStatusBarFromQueue();
+
+            const text = (plugin as any).statusBarEl?.textContent;
+            expect(text).toContain("ready");
         });
 
         it("taskQueue status bar shows progress percentage", async () => {
@@ -1860,6 +2057,105 @@ describe("LilbeePlugin", () => {
             expect(() => {
                 (plugin as any).setStatusClass("lilbee-status-ready");
             }).not.toThrow();
+        });
+
+        it("ribbon icon click invokes activateTaskView", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const spy = vi.spyOn(plugin, "activateTaskView").mockResolvedValue(undefined);
+            const calls = (plugin.addRibbonIcon as ReturnType<typeof vi.fn>).mock.calls;
+            const callback = calls[0]?.[2] as () => void;
+            callback();
+            expect(spy).toHaveBeenCalledTimes(1);
+        });
+
+        it("ribbon icon toggles lilbee-ribbon-active while any task is active", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const ribbon = (plugin as any).ribbonIconEl as any;
+            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
+
+            plugin.taskQueue.enqueue("Sync vault", "sync");
+            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(true);
+        });
+
+        it("ribbon icon shows success dot during flash window after done", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const ribbon = (plugin as any).ribbonIconEl as any;
+
+            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
+            plugin.taskQueue.complete(id);
+
+            expect(ribbon.classList.contains("lilbee-ribbon-success")).toBe(true);
+            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
+        });
+
+        it("ribbon icon shows error dot during flash window after fail", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const ribbon = (plugin as any).ribbonIconEl as any;
+
+            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
+            plugin.taskQueue.fail(id, "boom");
+
+            expect(ribbon.classList.contains("lilbee-ribbon-error")).toBe(true);
+        });
+
+        it("ribbon icon clears after flash window expires", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const ribbon = (plugin as any).ribbonIconEl as any;
+
+            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
+            plugin.taskQueue.complete(id);
+            const completed = plugin.taskQueue.completed[0]!;
+            (completed as any).completedAt = Date.now() - 10_000;
+            (plugin as any).updateRibbonFromQueue();
+
+            expect(ribbon.classList.contains("lilbee-ribbon-success")).toBe(false);
+            expect(ribbon.classList.contains("lilbee-ribbon-error")).toBe(false);
+            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
+        });
+
+        it("updateRibbonFromQueue no-ops when ribbonIconEl is null", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).ribbonIconEl = null;
+            expect(() => {
+                (plugin as any).updateRibbonFromQueue();
+            }).not.toThrow();
+        });
+
+        it("updateRibbonFromQueue no-ops when last completed has null completedAt", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const ribbon = (plugin as any).ribbonIconEl as any;
+            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
+            plugin.taskQueue.complete(id);
+            (plugin.taskQueue.completed[0] as any).completedAt = null;
+            (plugin as any).updateRibbonFromQueue();
+            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
+            expect(ribbon.classList.contains("lilbee-ribbon-success")).toBe(false);
+        });
+
+        it("updateRibbonFromQueue leaves classes cleared when no tasks at all", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const ribbon = (plugin as any).ribbonIconEl as any;
+            (plugin as any).updateRibbonFromQueue();
+            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
+        });
+
+        it("ribbon icon does not highlight for cancelled tasks", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const ribbon = (plugin as any).ribbonIconEl as any;
+            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
+            plugin.taskQueue.cancel(id);
+            expect(ribbon.classList.contains("lilbee-ribbon-success")).toBe(false);
+            expect(ribbon.classList.contains("lilbee-ribbon-error")).toBe(false);
+            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
         });
     });
 
@@ -2238,10 +2534,10 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
 
             const statusTexts: string[] = [];
-            const origSetText = (plugin as any).statusBarEl!.setText.bind((plugin as any).statusBarEl);
-            (plugin as any).statusBarEl!.setText = (text: string) => {
+            const origUpdate = (plugin as any).updateStatusBar.bind(plugin);
+            (plugin as any).updateStatusBar = (text: string, dot?: string | null) => {
                 statusTexts.push(text);
-                origSetText(text);
+                origUpdate(text, dot);
             };
 
             mockBinaryExists.mockReturnValueOnce(false);
@@ -2255,10 +2551,10 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
 
             const statusTexts: string[] = [];
-            const origSetText = (plugin as any).statusBarEl!.setText.bind((plugin as any).statusBarEl);
-            (plugin as any).statusBarEl!.setText = (text: string) => {
+            const origUpdate = (plugin as any).updateStatusBar.bind(plugin);
+            (plugin as any).updateStatusBar = (text: string, dot?: string | null) => {
                 statusTexts.push(text);
-                origSetText(text);
+                origUpdate(text, dot);
             };
 
             await (plugin as any).startManagedServer();
@@ -3285,5 +3581,121 @@ describe("LilbeePlugin", () => {
             expect(mockServerStart).not.toHaveBeenCalled();
             expect(plugin.settings.lilbeeVersion).toBe("v0.3.0");
         });
+    });
+
+    describe("queue-full notices", () => {
+        async function setupQueueFull() {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+            plugin.api.syncStream = vi.fn();
+            plugin.api.addFiles = vi.fn();
+            plugin.api.crawl = vi.fn();
+            plugin.api.wikiLint = vi.fn();
+            plugin.api.wikiGenerate = vi.fn();
+            plugin.api.wikiPrune = vi.fn();
+            Notice.clear();
+            return plugin;
+        }
+
+        it("triggerSync surfaces NOTICE_QUEUE_FULL and skips API call", async () => {
+            const plugin = await setupQueueFull();
+            await plugin.triggerSync();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.syncStream).not.toHaveBeenCalled();
+        });
+
+        it("runAdd surfaces NOTICE_QUEUE_FULL and skips API call", async () => {
+            const plugin = await setupQueueFull();
+            await (plugin as any).runAdd(["x.md"]);
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.addFiles).not.toHaveBeenCalled();
+        });
+
+        it("runCrawl surfaces NOTICE_QUEUE_FULL and skips API call", async () => {
+            const plugin = await setupQueueFull();
+            await plugin.runCrawl("https://x", 1, 1);
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.crawl).not.toHaveBeenCalled();
+        });
+
+        it("runWikiLint surfaces NOTICE_QUEUE_FULL and skips API call", async () => {
+            const plugin = await setupQueueFull();
+            await plugin.runWikiLint();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.wikiLint).not.toHaveBeenCalled();
+        });
+
+        it("runWikiGenerate surfaces NOTICE_QUEUE_FULL and skips API call", async () => {
+            const plugin = await setupQueueFull();
+            await plugin.runWikiGenerate("foo");
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.wikiGenerate).not.toHaveBeenCalled();
+        });
+
+        it("runWikiPrune surfaces NOTICE_QUEUE_FULL and skips API call", async () => {
+            const plugin = await setupQueueFull();
+            mockConfirmModalResult = true;
+            await plugin.runWikiPrune();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.wikiPrune).not.toHaveBeenCalled();
+        });
+    });
+});
+
+describe("FileProgressTracker", () => {
+    it("returns 0 before any file starts", () => {
+        const t = new FileProgressTracker();
+        expect(t.percent()).toBe(0);
+    });
+
+    it("advances on FILE_START proportionally to files remaining", () => {
+        const t = new FileProgressTracker();
+        t.startFile(1, 4);
+        expect(t.percent()).toBe(0);
+        t.startFile(2, 4);
+        expect(t.percent()).toBe(25);
+        t.startFile(4, 4);
+        expect(t.percent()).toBe(75);
+    });
+
+    it("blends extract fraction into the current file's share", () => {
+        const t = new FileProgressTracker();
+        t.startFile(1, 2);
+        t.setExtractFraction(1, 2);
+        // intra = 0.5 * 0.5 = 0.25 ; filesDone = 0 ; pct = 0.25 / 2 * 100 = 12.5 → 13
+        expect(t.percent()).toBe(13);
+    });
+
+    it("blends embed fraction as the second half of a file's work", () => {
+        const t = new FileProgressTracker();
+        t.startFile(1, 2);
+        t.setEmbedFraction(1, 1);
+        // intra = 0 * 0.5 + 1 * 0.5 = 0.5 ; filesDone = 0 ; pct = 0.5 / 2 * 100 = 25
+        expect(t.percent()).toBe(25);
+    });
+
+    it("resets intra-file fractions when a new file starts", () => {
+        const t = new FileProgressTracker();
+        t.startFile(1, 2);
+        t.setEmbedFraction(1, 1);
+        expect(t.percent()).toBe(25);
+        t.startFile(2, 2);
+        expect(t.percent()).toBe(50);
+    });
+
+    it("is clamped to 100", () => {
+        const t = new FileProgressTracker();
+        t.startFile(2, 2);
+        t.setEmbedFraction(10, 1);
+        expect(t.percent()).toBeLessThanOrEqual(100);
+    });
+
+    it("ignores zero/negative totals to avoid NaN", () => {
+        const t = new FileProgressTracker();
+        t.startFile(1, 0);
+        t.setExtractFraction(1, 0);
+        t.setEmbedFraction(1, 0);
+        expect(t.percent()).toBe(0);
     });
 });

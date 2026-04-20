@@ -1,16 +1,35 @@
 import type { TaskEntry, TaskType } from "./types";
-import { TASK_STATUS } from "./types";
+import { BACKGROUND_TASK_TYPES, TASK_QUEUE, TASK_STATUS } from "./types";
 
 export type TaskChangeListener = () => void;
+
+const RATE_SAMPLE_FLOOR_MS = 500;
+export const FLASH_WINDOW_MS = 2000;
 
 export class TaskQueue {
     private tasks: Map<string, TaskEntry> = new Map();
     private queues: Map<TaskType, string[]> = new Map();
     private activeIds: Map<TaskType, string | null> = new Map();
+    private aborts: Map<string, AbortController> = new Map();
     private history: TaskEntry[] = [];
     private listeners: TaskChangeListener[] = [];
+    private flashTimers: Set<ReturnType<typeof setTimeout>> = new Set();
 
     static readonly MAX_HISTORY = 50;
+
+    /** Clear pending flash-clear timers — call from plugin unload to avoid zombie notifies. */
+    dispose(): void {
+        for (const handle of this.flashTimers) clearTimeout(handle);
+        this.flashTimers.clear();
+    }
+
+    registerAbort(id: string, controller: AbortController): void {
+        const task = this.tasks.get(id);
+        if (!task) return;
+        this.aborts.set(id, controller);
+        task.canCancel = true;
+        this.notify();
+    }
 
     onChange(listener: TaskChangeListener): () => void {
         this.listeners.push(listener);
@@ -35,7 +54,10 @@ export class TaskQueue {
         return q;
     }
 
-    enqueue(name: string, type: TaskType): string {
+    enqueue(name: string, type: TaskType): string | null {
+        if (this.typeQueue(type).length >= TASK_QUEUE.MAX_QUEUED_PER_TYPE) {
+            return null;
+        }
         const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
         const task: TaskEntry = {
             id,
@@ -55,13 +77,30 @@ export class TaskQueue {
         return id;
     }
 
+    private backgroundActiveCount(): number {
+        let count = 0;
+        for (const [type, id] of this.activeIds) {
+            if (id && BACKGROUND_TASK_TYPES.has(type)) count++;
+        }
+        return count;
+    }
+
     private processType(type: TaskType): void {
         if (this.activeIds.get(type)) return;
         const q = this.queues.get(type);
         if (!q || q.length === 0) return;
+        if (BACKGROUND_TASK_TYPES.has(type) && this.backgroundActiveCount() >= TASK_QUEUE.MAX_CONCURRENT_BACKGROUND) {
+            return;
+        }
 
         const nextId = q.shift()!;
         this.activate(nextId);
+    }
+
+    private processAll(): void {
+        for (const type of this.queues.keys()) {
+            this.processType(type);
+        }
     }
 
     activate(id: string): void {
@@ -70,16 +109,36 @@ export class TaskQueue {
         if (task.status !== TASK_STATUS.QUEUED) return;
 
         task.status = TASK_STATUS.ACTIVE;
-        task.canCancel = false;
+        task.canCancel = this.aborts.has(id);
         this.activeIds.set(task.type, id);
         this.notify();
     }
 
-    update(id: string, progress: number, detail?: string): void {
+    update(id: string, progress: number, detail?: string, bytes?: { current?: number; total?: number }): void {
         const task = this.tasks.get(id);
         if (!task) return;
-        if (progress >= 0) task.progress = progress;
+        task.progress = progress;
         if (detail !== undefined) task.detail = detail;
+        if (bytes) {
+            if (bytes.total !== undefined) task.bytesTotal = bytes.total;
+            if (bytes.current !== undefined) {
+                const now = Date.now();
+                const prevBytes = task.bytesCurrent;
+                const prevAt = task.lastRateAt;
+                task.bytesCurrent = bytes.current;
+                if (prevBytes !== undefined && prevAt !== undefined) {
+                    const elapsedMs = now - prevAt;
+                    if (elapsedMs >= RATE_SAMPLE_FLOOR_MS) {
+                        const deltaBytes = bytes.current - prevBytes;
+                        const rate = (deltaBytes / elapsedMs) * 1000;
+                        task.rateBps = rate > 0 ? rate : 0;
+                        task.lastRateAt = now;
+                    }
+                } else {
+                    task.lastRateAt = now;
+                }
+            }
+        }
         this.notify();
     }
 
@@ -114,11 +173,13 @@ export class TaskQueue {
                 if (idx >= 0) q.splice(idx, 1);
             }
             this.tasks.delete(id);
+            this.aborts.delete(id);
             this.notify();
             return;
         }
 
         if (task.status === TASK_STATUS.ACTIVE) {
+            this.aborts.get(id)?.abort();
             task.status = TASK_STATUS.CANCELLED;
             task.completedAt = Date.now();
             this.moveToHistory(id);
@@ -132,6 +193,7 @@ export class TaskQueue {
             this.activeIds.set(task.type, null);
         }
 
+        this.aborts.delete(id);
         this.history.unshift(task);
         if (this.history.length > TaskQueue.MAX_HISTORY) {
             this.history.pop();
@@ -139,7 +201,16 @@ export class TaskQueue {
 
         this.tasks.delete(id);
         this.notify();
-        this.processType(task.type);
+        this.scheduleFlashClear();
+        this.processAll();
+    }
+
+    private scheduleFlashClear(): void {
+        const handle = setTimeout(() => {
+            this.flashTimers.delete(handle);
+            this.notify();
+        }, FLASH_WINDOW_MS);
+        this.flashTimers.add(handle);
     }
 
     /** Returns the first active task found (backward compat). */
@@ -182,6 +253,16 @@ export class TaskQueue {
 
     clearHistory(): void {
         this.history = [];
+        this.notify();
+    }
+
+    toJSON(): { history: TaskEntry[] } {
+        return { history: [...this.history] };
+    }
+
+    loadFromJSON(data: { history?: TaskEntry[] } | undefined): void {
+        if (!data || !Array.isArray(data.history)) return;
+        this.history = data.history.slice(0, TaskQueue.MAX_HISTORY);
         this.notify();
     }
 }

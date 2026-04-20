@@ -316,7 +316,15 @@ export const TASK_STATUS = {
     CANCELLED: "cancelled",
 } as const satisfies Record<string, TaskStatus>;
 
-export type TaskType = "sync" | "add" | "pull" | "crawl" | "download" | "wiki";
+export type DotState = "primary" | "success" | "error";
+
+export const DOT_STATE = {
+    PRIMARY: "primary",
+    SUCCESS: "success",
+    ERROR: "error",
+} as const satisfies Record<string, DotState>;
+
+export type TaskType = "sync" | "add" | "pull" | "crawl" | "download" | "wiki" | "delete";
 
 export const TASK_TYPE = {
     SYNC: "sync",
@@ -325,6 +333,7 @@ export const TASK_TYPE = {
     CRAWL: "crawl",
     DOWNLOAD: "download",
     WIKI: "wiki",
+    DELETE: "delete",
 } as const satisfies Record<string, TaskType>;
 
 export type SyncMode = "manual" | "auto";
@@ -365,6 +374,21 @@ export const DOWNLOAD_PANEL = {
     DISMISS_DELAY_MS: 1500,
 } as const;
 
+export const TASK_QUEUE = {
+    MAX_CONCURRENT_BACKGROUND: 2,
+    MAX_QUEUED_PER_TYPE: 5,
+} as const;
+
+export const BACKGROUND_TASK_TYPES: ReadonlySet<TaskType> = new Set<TaskType>([
+    TASK_TYPE.SYNC,
+    TASK_TYPE.ADD,
+    TASK_TYPE.PULL,
+    TASK_TYPE.CRAWL,
+    TASK_TYPE.DOWNLOAD,
+    TASK_TYPE.WIKI,
+    TASK_TYPE.DELETE,
+]);
+
 export const PLATFORM = {
     DARWIN: "darwin",
     LINUX: "linux",
@@ -387,6 +411,10 @@ export interface TaskEntry {
     completedAt: number | null;
     error: string | null;
     canCancel: boolean;
+    bytesCurrent?: number;
+    bytesTotal?: number;
+    rateBps?: number;
+    lastRateAt?: number;
 }
 
 export type ModelSize = "small" | "medium" | "large";

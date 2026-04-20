@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { CatalogModal } from "../../src/views/catalog-modal";
@@ -111,6 +111,10 @@ describe("CatalogModal", () => {
         mockConfirmRemoveResult = true;
     });
 
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
     describe("opening and layout", () => {
         it("renders title and filter bar on open", async () => {
             const plugin = makePlugin();
@@ -214,27 +218,6 @@ describe("CatalogModal", () => {
             const content = contentEl(modal);
             const headings = content.findAll("lilbee-catalog-section-heading").map((el) => el.textContent);
             expect(headings).toContain("custom");
-        });
-
-        it("renders a Browse more models card until the full catalog is loaded", async () => {
-            const plugin = makePlugin();
-            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ featured: true })])));
-            const modal = await openModal(plugin);
-            const content = contentEl(modal);
-            expect(content.find("lilbee-browse-more-card")).not.toBeNull();
-        });
-
-        it("clicking the Browse more card loads the full catalog and drops the card", async () => {
-            const plugin = makePlugin();
-            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ featured: true })])));
-            const modal = await openModal(plugin);
-            const content = contentEl(modal);
-            content.find("lilbee-browse-more-card")!.trigger("click");
-            await tick();
-            await tick();
-            expect(content.find("lilbee-browse-more-card")).toBeNull();
-            // The sort filter should now be downloads (loadFullCatalog side effect)
-            expect(plugin.api.catalog).toHaveBeenLastCalledWith(expect.objectContaining({ sort: "downloads" }));
         });
 
         it("renders the view-toggle CTA banner", async () => {
@@ -524,30 +507,26 @@ describe("CatalogModal", () => {
         });
     });
 
-    describe("load more", () => {
-        it("shows load-more button when has_more is true", async () => {
+    describe("infinite scroll", () => {
+        function setScroll(
+            modal: CatalogModal,
+            geometry: { scrollTop: number; clientHeight: number; scrollHeight: number },
+        ): MockElement {
+            const el = (modal as any).resultsEl as MockElement;
+            Object.assign(el, geometry);
+            return el;
+        }
+
+        it("attaches a scroll listener to the results element", async () => {
             const plugin = makePlugin();
-            plugin.api.catalog.mockResolvedValue(
-                ok({ total: 40, limit: 20, offset: 0, models: [makeEntry()], has_more: true }),
-            );
             const modal = await openModal(plugin);
-            const content = contentEl(modal);
-            const btn = content.find("lilbee-catalog-load-more")! as unknown as MockElement;
-            expect(btn.style.display).toBe("");
+            const resultsEl = (modal as any).resultsEl as MockElement;
+            expect(resultsEl).not.toBeNull();
+            expect(typeof (modal as any).onScroll).toBe("function");
+            modal.close();
         });
 
-        it("hides load-more button when has_more is false", async () => {
-            const plugin = makePlugin();
-            plugin.api.catalog.mockResolvedValue(
-                ok({ total: 1, limit: 20, offset: 0, models: [makeEntry()], has_more: false }),
-            );
-            const modal = await openModal(plugin);
-            const content = contentEl(modal);
-            const btn = content.find("lilbee-catalog-load-more")! as unknown as MockElement;
-            expect(btn.style.display).toBe("none");
-        });
-
-        it("fetching more appends entries and bumps offset", async () => {
+        it("fetches the next page when the user scrolls near the bottom and hasMore is true", async () => {
             const plugin = makePlugin();
             const first = makeEntry({ name: "a", display_name: "A" });
             const second = makeEntry({ name: "b", display_name: "B" });
@@ -555,11 +534,82 @@ describe("CatalogModal", () => {
                 .mockResolvedValueOnce(ok({ total: 2, limit: 1, offset: 0, models: [first], has_more: true }))
                 .mockResolvedValueOnce(ok({ total: 2, limit: 1, offset: 1, models: [second], has_more: false }));
             const modal = await openModal(plugin);
-            const content = contentEl(modal);
-            content.find("lilbee-catalog-load-more")!.trigger("click");
+            setScroll(modal, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+            (modal as any).onScroll();
             await tick();
             await tick();
             expect(plugin.api.catalog).toHaveBeenCalledTimes(2);
+            modal.close();
+        });
+
+        it("does not fetch when scrolling is not near the bottom", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok({ total: 40, limit: 20, offset: 0, models: [makeEntry()], has_more: true }),
+            );
+            const modal = await openModal(plugin);
+            plugin.api.catalog.mockClear();
+            setScroll(modal, { scrollTop: 10, clientHeight: 400, scrollHeight: 2000 });
+            (modal as any).onScroll();
+            await tick();
+            expect(plugin.api.catalog).not.toHaveBeenCalled();
+            modal.close();
+        });
+
+        it("does not fetch when hasMore is false", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok({ total: 1, limit: 20, offset: 0, models: [makeEntry()], has_more: false }),
+            );
+            const modal = await openModal(plugin);
+            plugin.api.catalog.mockClear();
+            setScroll(modal, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+            (modal as any).onScroll();
+            await tick();
+            expect(plugin.api.catalog).not.toHaveBeenCalled();
+            modal.close();
+        });
+
+        it("fetchPage bails when isFetching is already true", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin);
+            plugin.api.catalog.mockClear();
+            (modal as any).isFetching = true;
+            await (modal as any).fetchPage();
+            expect(plugin.api.catalog).not.toHaveBeenCalled();
+            modal.close();
+        });
+
+        it("onScroll bails while a fetch is already in flight", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok({ total: 40, limit: 20, offset: 0, models: [makeEntry()], has_more: true }),
+            );
+            const modal = await openModal(plugin);
+            plugin.api.catalog.mockClear();
+            (modal as any).isFetching = true;
+            setScroll(modal, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+            (modal as any).onScroll();
+            await tick();
+            expect(plugin.api.catalog).not.toHaveBeenCalled();
+            modal.close();
+        });
+
+        it("onScroll bails when resultsEl is null (defensive)", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin);
+            (modal as any).resultsEl = null;
+            expect(() => (modal as any).onScroll()).not.toThrow();
+            modal.close();
+        });
+
+        it("removes the scroll listener on close", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin);
+            const el = (modal as any).resultsEl as MockElement;
+            const removeSpy = vi.spyOn(el as any, "removeEventListener");
+            modal.close();
+            expect(removeSpy).toHaveBeenCalledWith("scroll", expect.any(Function));
         });
     });
 
@@ -579,7 +629,7 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            expect(plugin.api.pullModel).toHaveBeenCalledWith("qwen/qwen3-8b", "native");
+            expect(plugin.api.pullModel).toHaveBeenCalledWith("qwen/qwen3-8b", "native", expect.any(AbortSignal));
         });
 
         it("does not run pull when user cancels the confirm modal", async () => {
@@ -758,11 +808,11 @@ describe("CatalogModal", () => {
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_CANCELLED);
         });
 
-        it("fails the task and surfaces a Notice when pull fails with generic error", async () => {
+        it("fails the task and surfaces a Notice with the real error when pull throws", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
-                throw new Error("network");
+                throw new Error("Server responded 403: forbidden");
             });
             const modal = await openModal(plugin);
             const content = contentEl(modal);
@@ -770,10 +820,27 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_FAILED);
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: Server responded 403: forbidden`);
         });
 
-        it("SSE_EVENT.ERROR shows notice, fails task, and resets button", async () => {
+        it("reports 'unknown' when pull throws a non-Error value", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
+                throw "string-error";
+            });
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
+            pullBtn.trigger("click");
+            await tick();
+            await tick();
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: unknown error`);
+        });
+
+        it("SSE_EVENT.ERROR shows notice with real message, fails task, and resets button", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
@@ -785,11 +852,12 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_FAILED);
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: pull exploded`);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
 
-        it("SSE_EVENT.ERROR with string data fails the task", async () => {
+        it("SSE_EVENT.ERROR with string data fails the task with raw payload", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
@@ -801,7 +869,8 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_FAILED);
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: raw error string`);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
 
@@ -817,15 +886,16 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_FAILED);
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: unknown error`);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
 
-        it("fails the task when setChatModel after a successful pull returns err", async () => {
+        it("completes the pull task even when setChatModel fails and shows a set-failed notice", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
-                // stream ends with no progress / no error — happy path
+                // stream ends with no progress / no error — pull succeeded
             });
             plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("activate-failed")));
             const modal = await openModal(plugin);
@@ -834,7 +904,103 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_PULL_FAILED);
+            const setFailedNotice = MESSAGES.ERROR_SET_MODEL.replace("{model}", "qwen/qwen3-8b");
+            expect(Notice.instances.map((n) => n.message)).toContain(setFailedNotice);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "done")).toBe(true);
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(false);
+        });
+
+        it("shows NOTICE_QUEUE_FULL when enqueue returns null (per-type cap)", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+            plugin.api.pullModel = vi.fn();
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
+            pullBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.pullModel).not.toHaveBeenCalled();
+        });
+
+        it("executeRemove shows NOTICE_QUEUE_FULL when enqueue returns null", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+            plugin.api.deleteModel = vi.fn();
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const removeBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_REMOVE)!;
+            removeBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+            expect(plugin.api.deleteModel).not.toHaveBeenCalled();
+        });
+
+        it("executeRemove enqueues a DELETE task and completes on success", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            plugin.api.deleteModel = vi
+                .fn()
+                .mockResolvedValue(ok({ deleted: true, model: "qwen/qwen3-8b", freed_gb: 5 }));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const removeBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_REMOVE)!;
+            removeBtn.trigger("click");
+            await tick();
+            await tick();
+            const done = plugin.taskQueue.completed.find((t: any) => t.type === "delete");
+            expect(done).toBeDefined();
+            expect(done!.status).toBe("done");
+        });
+
+        it("executeRemove fails the task when deleteModel errors", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            plugin.api.deleteModel = vi.fn().mockResolvedValue(err(new Error("disk i/o")));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const removeBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_REMOVE)!;
+            removeBtn.trigger("click");
+            await tick();
+            await tick();
+            const failed = plugin.taskQueue.completed.find((t: any) => t.type === "delete");
+            expect(failed!.status).toBe("failed");
+            expect(failed!.error).toBe("disk i/o");
+        });
+
+        it("taskQueue.cancel aborts the registered controller for an active pull", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            let receivedSignal: AbortSignal | undefined;
+            plugin.api.pullModel = vi.fn().mockImplementation(async function* (
+                _name: string,
+                _source: string,
+                signal: AbortSignal,
+            ) {
+                receivedSignal = signal;
+                while (!signal.aborted) {
+                    await new Promise((r) => setTimeout(r, 10));
+                }
+                const abort = new Error("aborted");
+                (abort as Error).name = "AbortError";
+                throw abort;
+            });
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
+            pullBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(receivedSignal).toBeDefined();
+            const active = plugin.taskQueue.active;
+            expect(active).toBeTruthy();
+            plugin.taskQueue.cancel(active!.id);
+            await new Promise((r) => setTimeout(r, 50));
+            expect(receivedSignal?.aborted).toBe(true);
         });
     });
 
@@ -887,13 +1053,6 @@ describe("CatalogModal", () => {
             expect(() => (modal as any).renderListView([makeEntry()])).not.toThrow();
         });
 
-        it("updateLoadMore bails when loadMoreBtn is null", async () => {
-            const plugin = makePlugin();
-            const modal = await openModal(plugin);
-            (modal as any).loadMoreBtn = null;
-            expect(() => (modal as any).updateLoadMore()).not.toThrow();
-        });
-
         it("updateToggleLabel bails when viewToggleBtn is null", async () => {
             const plugin = makePlugin();
             const modal = await openModal(plugin);
@@ -929,7 +1088,7 @@ describe("CatalogModal", () => {
             await tick();
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
             const last = plugin.taskQueue.completed[plugin.taskQueue.completed.length - 1];
-            expect(last.error).toBe("unknown");
+            expect(last.error).toBe("unknown error");
         });
     });
 

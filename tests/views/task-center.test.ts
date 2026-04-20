@@ -85,6 +85,12 @@ describe("TaskCenterView.onOpen", () => {
         expect(clearBtn!.textContent).toBe("Clear");
     });
 
+    it("renders counters in header", () => {
+        const counters = contentEl.find("lilbee-tasks-counters");
+        expect(counters).not.toBeNull();
+        expect(counters!.textContent).toBe("0 running · 0 queued · 0 done");
+    });
+
     it("renders three sections: ACTIVE, QUEUED, COMPLETED", () => {
         const sections = findByClass(contentEl, "lilbee-tasks-section");
         expect(sections.length).toBe(3);
@@ -118,127 +124,143 @@ describe("TaskCenterView rendering", () => {
         await view.onClose();
     });
 
-    it("renders active task with progress bar", () => {
+    it("renders active task row with rail, body, progress bar", () => {
         plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
-
-        // Trigger render via onChange
         (view as any).render();
 
         const rows = findByClass(contentEl, "lilbee-task-row");
         expect(rows.length).toBeGreaterThan(0);
+        expect(rows[0]!.dataset.state).toBe("active");
+        expect(rows[0]!.dataset.type).toBe("sync");
 
-        const progressBar = findByClass(contentEl, "lilbee-task-progress-bar");
-        expect(progressBar.length).toBe(1);
+        const rails = findByClass(contentEl, "lilbee-task-rail");
+        expect(rails.length).toBe(1);
 
-        const name = findByClass(contentEl, "lilbee-task-name");
-        expect(name[0]!.textContent).toBe("Sync vault");
+        const names = findByClass(contentEl, "lilbee-task-name");
+        expect(names[0]!.textContent).toBe("Sync vault");
+
+        const bars = findByClass(contentEl, "lilbee-task-progress-bar");
+        expect(bars.length).toBe(1);
     });
 
-    it("renders active task with detail text", () => {
+    it("renders stats label from task detail when no bytes", () => {
         const id = plugin.taskQueue.enqueue("Adding files", TASK_TYPE.ADD);
         plugin.taskQueue.update(id, 50, "file 2/4");
-
         (view as any).render();
 
-        const details = findByClass(contentEl, "lilbee-task-detail");
-        expect(details.length).toBe(1);
-        expect(details[0]!.textContent).toBe("file 2/4");
+        const stats = findByClass(contentEl, "lilbee-task-stats-label");
+        expect(stats.length).toBe(1);
+        expect(stats[0]!.textContent).toBe("file 2/4");
     });
 
-    it("renders active task progress percentage text", () => {
-        const id = plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
-        plugin.taskQueue.update(id, 75);
-
+    it("renders bytes and rate when provided on a pull task", () => {
+        const id = plugin.taskQueue.enqueue("Pull demo", TASK_TYPE.PULL);
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-04-19T00:00:00Z"));
+        plugin.taskQueue.update(id, 10, "", { current: 1_000_000, total: 10_000_000 });
+        vi.setSystemTime(new Date("2026-04-19T00:00:01Z"));
+        plugin.taskQueue.update(id, 30, "", { current: 3_000_000, total: 10_000_000 });
         (view as any).render();
 
-        const pctTexts = findByClass(contentEl, "lilbee-task-progress-text");
+        const stats = findByClass(contentEl, "lilbee-task-stats-label");
+        expect(stats[0]!.textContent).toContain("MB");
+        expect(stats[0]!.textContent).toContain("MB/s");
+        expect(stats[0]!.textContent).toContain("/");
+
+        vi.useRealTimers();
+    });
+
+    it("renders percentage in pct label", () => {
+        const id = plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
+        plugin.taskQueue.update(id, 75);
+        (view as any).render();
+
+        const pctTexts = findByClass(contentEl, "lilbee-task-pct");
         expect(pctTexts.length).toBe(1);
         expect(pctTexts[0]!.textContent).toBe("75%");
     });
 
-    it("renders queued tasks", () => {
+    it("renders elapsed timer in mm:ss format for active row meta", () => {
+        const id = plugin.taskQueue.enqueue("Sync", TASK_TYPE.SYNC);
+        const task = plugin.taskQueue.active!;
+        (task as any).startedAt = Date.now() - 65_000;
+        void id;
+        (view as any).render();
+
+        const meta = findByClass(contentEl, "lilbee-task-meta");
+        expect(meta[0]!.textContent).toMatch(/^01:0\d$/);
+    });
+
+    it("renders queued tasks with data-state=queued", () => {
         plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
         plugin.taskQueue.enqueue("Sync again", TASK_TYPE.SYNC);
-
         (view as any).render();
 
-        const names = findByClass(contentEl, "lilbee-task-name");
-        expect(names.map((n) => n.textContent)).toContain("Sync again");
+        const rows = findByClass(contentEl, "lilbee-task-row");
+        const queuedRow = rows.find((r) => r.dataset.state === "queued");
+        expect(queuedRow).toBeDefined();
+        const meta = queuedRow!.find("lilbee-task-meta");
+        expect(meta!.textContent).toBe("queued");
     });
 
-    it("renders completed tasks with status icons and time", () => {
+    it("renders completed/done rows with state and relative time", () => {
         const id = plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
         plugin.taskQueue.complete(id);
-
         (view as any).render();
 
-        const doneIcons = findByClass(contentEl, "lilbee-task-status-done");
-        expect(doneIcons.length).toBe(1);
-        expect(doneIcons[0]!.textContent).toBe("\u2713");
+        const rows = findByClass(contentEl, "lilbee-task-row");
+        expect(rows.length).toBe(1);
+        expect(rows[0]!.dataset.state).toBe("done");
 
-        const times = findByClass(contentEl, "lilbee-task-time");
-        expect(times.length).toBe(1);
-        expect(times[0]!.textContent).toBe("just now");
+        const meta = rows[0]!.find("lilbee-task-meta");
+        expect(meta!.textContent).toBe("just now");
     });
 
-    it("renders failed tasks with error icon and tooltip", () => {
+    it("renders failed rows with error tooltip", () => {
         const id = plugin.taskQueue.enqueue("Crawl example.com", TASK_TYPE.CRAWL);
         plugin.taskQueue.fail(id, "connection refused");
-
         (view as any).render();
 
-        const failedIcons = findByClass(contentEl, "lilbee-task-status-failed");
-        expect(failedIcons.length).toBe(1);
-        expect(failedIcons[0]!.textContent).toBe("\u2717");
-
-        // Error tooltip on the row
         const rows = findByClass(contentEl, "lilbee-task-row");
-        const completedRow = rows.find((r) => r.title !== "");
-        expect(completedRow?.title).toBe("connection refused");
+        expect(rows[0]!.dataset.state).toBe("failed");
+        expect(rows[0]!.title).toBe("connection refused");
     });
 
-    it("renders cancelled tasks with cancelled icon", () => {
+    it("renders cancelled rows with data-state=cancelled", () => {
         const id = plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
         plugin.taskQueue.cancel(id);
-
         (view as any).render();
 
-        const cancelledIcons = findByClass(contentEl, "lilbee-task-status-cancelled");
-        expect(cancelledIcons.length).toBe(1);
-        expect(cancelledIcons[0]!.textContent).toBe("\u25CB");
+        const rows = findByClass(contentEl, "lilbee-task-row");
+        expect(rows[0]!.dataset.state).toBe("cancelled");
     });
 
-    it("renders type badge with correct text", () => {
-        plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
-
+    it("renders type badge with correct text and class", () => {
+        plugin.taskQueue.enqueue("Pull model", TASK_TYPE.PULL);
         (view as any).render();
 
         const badges = findByClass(contentEl, "lilbee-task-type-badge");
-        expect(badges.length).toBeGreaterThan(0);
-        expect(badges[0]!.textContent).toBe("SYNC");
+        expect(badges[0]!.textContent).toBe("PULL");
+        expect(badges[0]!.classList.contains("lilbee-task-badge-pull")).toBe(true);
     });
 
     it("renders cancel button on active task with canCancel = true", () => {
         const _id = plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
         const task = plugin.taskQueue.active!;
-        // Force canCancel to true for testing
         (task as any).canCancel = true;
-
         (view as any).render();
 
         const cancelBtns = findByClass(contentEl, "lilbee-task-cancel");
         expect(cancelBtns.length).toBe(1);
         expect(cancelBtns[0]!.textContent).toBe("\u00D7");
 
-        // Clicking it should call handleCancel
         const handleCancelSpy = vi.spyOn(view as any, "handleCancel");
         cancelBtns[0]!.trigger("click", { stopPropagation: vi.fn() });
         expect(handleCancelSpy).toHaveBeenCalledWith(task);
     });
 
-    it("does not render cancel button on active task (canCancel = false)", () => {
+    it("does not render cancel button on active task when canCancel = false", () => {
         plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
-
         (view as any).render();
 
         const cancelBtns = findByClass(contentEl, "lilbee-task-cancel");
@@ -247,10 +269,8 @@ describe("TaskCenterView rendering", () => {
 
     it("clears empty state when tasks are present", () => {
         plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
-
         (view as any).render();
 
-        // Active section should not have empty state
         const activeSection = (view as any).activeSection as MockElement;
         const emptyInActive = activeSection.find("lilbee-tasks-empty");
         expect(emptyInActive).toBeNull();
@@ -260,14 +280,109 @@ describe("TaskCenterView rendering", () => {
         const id1 = plugin.taskQueue.enqueue("Task 1", TASK_TYPE.SYNC);
         (view as any).render();
 
-        // Complete the task and re-render
         plugin.taskQueue.complete(id1);
         (view as any).render();
 
-        // Active section should show empty state, not stale task row
         const activeSection = (view as any).activeSection as MockElement;
         const empty = activeSection.find("lilbee-tasks-empty");
         expect(empty).not.toBeNull();
+    });
+
+    it("updates counters as tasks progress", () => {
+        plugin.taskQueue.enqueue("a", TASK_TYPE.SYNC);
+        const pullId = plugin.taskQueue.enqueue("b", TASK_TYPE.PULL);
+        plugin.taskQueue.enqueue("c", TASK_TYPE.SYNC);
+        plugin.taskQueue.complete(pullId);
+        (view as any).render();
+
+        const counters = contentEl.find("lilbee-tasks-counters");
+        expect(counters!.textContent).toBe("1 running · 1 queued · 1 done");
+    });
+
+    it("applies lilbee-task-flash class to rows still within flash window", () => {
+        const id = plugin.taskQueue.enqueue("Pull demo", TASK_TYPE.PULL);
+        plugin.taskQueue.complete(id);
+        (view as any).render();
+
+        const row = contentEl.find("lilbee-task-row")!;
+        expect(row.classList.contains("lilbee-task-flash")).toBe(true);
+    });
+});
+
+describe("TaskCenterView — cap pill", () => {
+    it("hides cap pill when below MAX_CONCURRENT_BACKGROUND", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+        const contentEl = (view as any).contentEl as MockElement;
+        plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
+        (view as any).render();
+        const pill = contentEl.find("lilbee-tasks-cap-pill")!;
+        expect(pill.style.display).toBe("none");
+        await view.onClose();
+    });
+
+    it("shows cap pill with 2/2 running when saturated", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+        const contentEl = (view as any).contentEl as MockElement;
+        plugin.taskQueue.enqueue("Sync", TASK_TYPE.SYNC);
+        plugin.taskQueue.enqueue("Pull", TASK_TYPE.PULL);
+        (view as any).render();
+        const pill = contentEl.find("lilbee-tasks-cap-pill")!;
+        expect(pill.style.display).toBe("");
+        expect(pill.textContent).toBe("2/2 running");
+        await view.onClose();
+    });
+});
+
+describe("TaskCenterView — defensive guards", () => {
+    it("renderCapPill bails when capPill is null", () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        (view as any).capPill = null;
+        expect(() => (view as any).renderCapPill()).not.toThrow();
+    });
+
+    it("renderCounters bails when countersEl is null", () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        (view as any).countersEl = null;
+        expect(() => (view as any).renderCounters()).not.toThrow();
+    });
+});
+
+describe("TaskCenterView — indeterminate progress", () => {
+    it("renders indeterminate bar when progress is -1", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+        const contentEl = (view as any).contentEl as MockElement;
+        const id = plugin.taskQueue.enqueue("Adding", TASK_TYPE.ADD);
+        plugin.taskQueue.update(id, -1, "preparing…");
+        (view as any).render();
+        const fills = contentEl.findAll("lilbee-task-progress-fill");
+        expect(fills.length).toBe(1);
+        expect(fills[0]!.classList.contains("lilbee-task-progress-indeterminate")).toBe(true);
+        const pctTexts = contentEl.findAll("lilbee-task-pct");
+        expect(pctTexts[0]!.textContent).toBe("");
+        await view.onClose();
+    });
+
+    it("renders percentage text when progress >= 0", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+        const contentEl = (view as any).contentEl as MockElement;
+        const id = plugin.taskQueue.enqueue("Pull", TASK_TYPE.PULL);
+        plugin.taskQueue.update(id, 40);
+        (view as any).render();
+        const fills = contentEl.findAll("lilbee-task-progress-fill");
+        expect(fills[0]!.classList.contains("lilbee-task-progress-indeterminate")).toBe(false);
+        const pctTexts = contentEl.findAll("lilbee-task-pct");
+        expect(pctTexts[0]!.textContent).toBe("40%");
+        await view.onClose();
     });
 });
 
@@ -299,11 +414,9 @@ describe("TaskCenterView — cancel handling", () => {
         const view = new TaskCenterView(makeLeaf(), plugin);
         await view.onOpen();
 
-        // Queue two same-type tasks so second stays queued
         plugin.taskQueue.enqueue("Task 1", TASK_TYPE.SYNC);
         const id2 = plugin.taskQueue.enqueue("Task 2", TASK_TYPE.SYNC);
 
-        // Call handleCancel on the queued task
         const task2 = plugin.taskQueue.queued.find((t) => t.id === id2);
         expect(task2).toBeDefined();
         (view as any).handleCancel(task2!);
@@ -322,7 +435,6 @@ describe("TaskCenterView — cancel handling", () => {
         const task = plugin.taskQueue.active!;
         expect(task.canCancel).toBe(false);
 
-        // Mock confirm to return true
         const origConfirm = globalThis.confirm;
         globalThis.confirm = vi.fn().mockReturnValue(true);
 
@@ -378,24 +490,40 @@ describe("TaskCenterView — subscribe/unsubscribe", () => {
         const unsubscribe = (view as any).unsubscribe;
         expect(unsubscribe).not.toBeNull();
 
-        // After close, enqueuing a task should not trigger a re-render
         await view.onClose();
         const renderSpy = vi.spyOn(view as any, "render");
         plugin.taskQueue.enqueue("Test", TASK_TYPE.SYNC);
         expect(renderSpy).not.toHaveBeenCalled();
     });
 
-    it("clears time refresh interval on close", async () => {
+    it("clears refresh interval on close", async () => {
         const plugin = makePlugin();
         const view = new TaskCenterView(makeLeaf(), plugin);
         await view.onOpen();
 
-        expect((view as any).timeRefreshInterval).not.toBeNull();
+        expect((view as any).refreshInterval).not.toBeNull();
 
         const clearSpy = vi.spyOn(globalThis, "clearInterval");
         await view.onClose();
 
         expect(clearSpy).toHaveBeenCalled();
+    });
+
+    it("retunes refresh interval to 1s while active tasks exist", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+
+        expect((view as any).refreshIntervalMs).toBe(30_000);
+
+        plugin.taskQueue.enqueue("Sync", TASK_TYPE.SYNC);
+        expect((view as any).refreshIntervalMs).toBe(1000);
+
+        const id = plugin.taskQueue.active!.id;
+        plugin.taskQueue.complete(id);
+        expect((view as any).refreshIntervalMs).toBe(30_000);
+
+        await view.onClose();
     });
 
     it("auto-updates when taskQueue changes", async () => {
@@ -404,11 +532,9 @@ describe("TaskCenterView — subscribe/unsubscribe", () => {
         await view.onOpen();
         const contentEl = (view as any).contentEl as MockElement;
 
-        // Initially empty
         const emptyEls = findByClass(contentEl, "lilbee-tasks-empty");
         expect(emptyEls.some((e) => e.textContent === "No active tasks")).toBe(true);
 
-        // Enqueue a task -- onChange fires render
         plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
 
         const names = findByClass(contentEl, "lilbee-task-name");
@@ -422,7 +548,6 @@ describe("TaskCenterView — render edge cases", () => {
     it("render no-ops when sections are null", () => {
         const plugin = makePlugin();
         const view = new TaskCenterView(makeLeaf(), plugin);
-        // Don't call onOpen -- sections are null
         expect(() => (view as any).render()).not.toThrow();
     });
 
@@ -464,35 +589,25 @@ describe("TaskCenterView — render edge cases", () => {
         await view.onClose();
     });
 
-    it("type badge color is applied via CSS class", async () => {
-        const plugin = makePlugin();
-        const view = new TaskCenterView(makeLeaf(), plugin);
-        await view.onOpen();
-        const contentEl = (view as any).contentEl as MockElement;
-
-        plugin.taskQueue.enqueue("Pull model", TASK_TYPE.PULL);
-        (view as any).render();
-
-        const badges = findByClass(contentEl, "lilbee-task-type-badge");
-        expect(badges[0]!.classList.contains("lilbee-task-badge-pull")).toBe(true);
-
-        await view.onClose();
-    });
-
-    it("renders progress background div for active tasks", async () => {
+    it("caps active progress at 99% so active rows never show 100%", async () => {
         const plugin = makePlugin();
         const view = new TaskCenterView(makeLeaf(), plugin);
         await view.onOpen();
         const contentEl = (view as any).contentEl as MockElement;
 
         const id = plugin.taskQueue.enqueue("Sync", TASK_TYPE.SYNC);
-        plugin.taskQueue.update(id, 60);
+        plugin.taskQueue.update(id, 100);
         (view as any).render();
 
-        const progressBg = findByClass(contentEl, "lilbee-task-progress-bg");
-        expect(progressBg.length).toBe(1);
-        expect(progressBg[0]!.classList.contains("lilbee-task-progress-bg-sync")).toBe(true);
-        expect(progressBg[0]!.style.width).toBe("60%");
+        const fill = findByClass(contentEl, "lilbee-task-progress-fill");
+        expect(fill[0]!.style.width).toBe("99%");
+        const pctLabels = findByClass(contentEl, "lilbee-task-pct");
+        expect(pctLabels[0]!.textContent).toBe("99%");
+
+        plugin.taskQueue.complete(id);
+        (view as any).render();
+        const doneFill = findByClass(contentEl, "lilbee-task-progress-fill");
+        expect(doneFill[0]!.style.width).toBe("100%");
 
         await view.onClose();
     });
@@ -505,14 +620,101 @@ describe("TaskCenterView — render edge cases", () => {
 
         const id = plugin.taskQueue.enqueue("Sync", TASK_TYPE.SYNC);
         plugin.taskQueue.complete(id);
-        // Manually set completedAt to null for edge case
         const task = plugin.taskQueue.completed[0]!;
         (task as any).completedAt = null;
 
         (view as any).render();
 
-        const times = findByClass(contentEl, "lilbee-task-time");
-        expect(times[0]!.textContent).toBe("");
+        const meta = findByClass(contentEl, "lilbee-task-meta");
+        expect(meta[0]!.textContent).toBe("done");
+
+        await view.onClose();
+    });
+
+    it("failed task without completedAt shows 'failed' label", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+        const contentEl = (view as any).contentEl as MockElement;
+
+        const id = plugin.taskQueue.enqueue("Crawl", TASK_TYPE.CRAWL);
+        plugin.taskQueue.fail(id, "boom");
+        const task = plugin.taskQueue.completed[0]!;
+        (task as any).completedAt = null;
+
+        (view as any).render();
+
+        const meta = findByClass(contentEl, "lilbee-task-meta");
+        expect(meta[0]!.textContent).toBe("failed");
+
+        await view.onClose();
+    });
+
+    it("cancelled task without completedAt shows 'cancelled' label", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+        const contentEl = (view as any).contentEl as MockElement;
+
+        const id = plugin.taskQueue.enqueue("Sync", TASK_TYPE.SYNC);
+        plugin.taskQueue.cancel(id);
+        const task = plugin.taskQueue.completed[0]!;
+        (task as any).completedAt = null;
+
+        (view as any).render();
+
+        const meta = findByClass(contentEl, "lilbee-task-meta");
+        expect(meta[0]!.textContent).toBe("cancelled");
+
+        await view.onClose();
+    });
+
+    it("stats line shows detail text when no bytes tracked for completed row", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+        const contentEl = (view as any).contentEl as MockElement;
+
+        const id = plugin.taskQueue.enqueue("Sync", TASK_TYPE.SYNC);
+        plugin.taskQueue.update(id, 100, "all files embedded");
+        plugin.taskQueue.complete(id);
+        (view as any).render();
+
+        const statsLabel = findByClass(contentEl, "lilbee-task-stats-label");
+        expect(statsLabel[0]!.textContent).toBe("all files embedded");
+
+        await view.onClose();
+    });
+
+    it("stats line falls back to error on failed row without detail", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+        const contentEl = (view as any).contentEl as MockElement;
+
+        const id = plugin.taskQueue.enqueue("Crawl", TASK_TYPE.CRAWL);
+        plugin.taskQueue.fail(id, "connection refused");
+        (view as any).render();
+
+        const statsLabel = findByClass(contentEl, "lilbee-task-stats-label");
+        expect(statsLabel[0]!.textContent).toBe("connection refused");
+
+        await view.onClose();
+    });
+
+    it("renders only bytesCurrent when no total provided", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        await view.onOpen();
+        const contentEl = (view as any).contentEl as MockElement;
+
+        const id = plugin.taskQueue.enqueue("Pull", TASK_TYPE.PULL);
+        plugin.taskQueue.update(id, 10, "", { current: 500_000 });
+        (view as any).render();
+
+        const stats = findByClass(contentEl, "lilbee-task-stats-label");
+        expect(stats[0]!.textContent).toContain("KB");
+        expect(stats[0]!.textContent).not.toContain("/");
 
         await view.onClose();
     });
@@ -529,8 +731,8 @@ describe("relativeTime helper", () => {
         plugin.taskQueue.complete(id);
         (view as any).render();
 
-        const times = findByClass(contentEl, "lilbee-task-time");
-        expect(times[0]!.textContent).toBe("just now");
+        const meta = findByClass(contentEl, "lilbee-task-meta");
+        expect(meta[0]!.textContent).toBe("just now");
 
         await view.onClose();
     });
@@ -547,8 +749,8 @@ describe("relativeTime helper", () => {
         (task as any).completedAt = Date.now() - 5 * 60 * 1000;
         (view as any).render();
 
-        const times = findByClass(contentEl, "lilbee-task-time");
-        expect(times[0]!.textContent).toBe("5m ago");
+        const meta = findByClass(contentEl, "lilbee-task-meta");
+        expect(meta[0]!.textContent).toBe("5m ago");
 
         await view.onClose();
     });
@@ -565,8 +767,8 @@ describe("relativeTime helper", () => {
         (task as any).completedAt = Date.now() - 3 * 60 * 60 * 1000;
         (view as any).render();
 
-        const times = findByClass(contentEl, "lilbee-task-time");
-        expect(times[0]!.textContent).toBe("3h ago");
+        const meta = findByClass(contentEl, "lilbee-task-meta");
+        expect(meta[0]!.textContent).toBe("3h ago");
 
         await view.onClose();
     });
@@ -583,8 +785,8 @@ describe("relativeTime helper", () => {
         (task as any).completedAt = Date.now() - 2 * 24 * 60 * 60 * 1000;
         (view as any).render();
 
-        const times = findByClass(contentEl, "lilbee-task-time");
-        expect(times[0]!.textContent).toBe("2d ago");
+        const meta = findByClass(contentEl, "lilbee-task-meta");
+        expect(meta[0]!.textContent).toBe("2d ago");
 
         await view.onClose();
     });

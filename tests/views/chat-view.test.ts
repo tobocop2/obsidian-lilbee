@@ -103,7 +103,7 @@ function makePlugin(): LilbeePlugin {
                     { name: "phi3", source: "native" },
                 ],
             }),
-            setChatModel: vi.fn().mockResolvedValue(ok({ model: "phi3" })),
+            setChatModel: vi.fn().mockResolvedValue(ok(undefined)),
             setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
             pullModel: vi.fn(),
             catalog: vi.fn().mockResolvedValue(
@@ -731,8 +731,6 @@ describe("ChatView.sendMessage — messagesEl null guard", () => {
         const view = new ChatView(makeLeaf(), plugin);
         // Do NOT call onOpen — messagesEl stays null
 
-        // Access the private method directly for coverage
-
         await (view as any).sendMessage("test");
 
         expect(plugin.api.chatStream).not.toHaveBeenCalled();
@@ -978,7 +976,7 @@ describe("ChatView.onOpen — model selector", () => {
             yield { event: "progress", data: { percent: 50 } };
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -1015,7 +1013,7 @@ describe("ChatView.onOpen — model selector", () => {
             yield { event: "progress", data: {} };
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -1049,7 +1047,7 @@ describe("ChatView.onOpen — model selector", () => {
             yield { event: "progress", data: { current: 50, total: 100 } };
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -1288,7 +1286,7 @@ describe("ChatView.onOpen — model selector", () => {
             yield { event: "progress", data: { percent: 0 } };
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(fakePull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -2093,7 +2091,7 @@ describe("ChatView.onClose — aborts both controllers", () => {
             await waitPromise;
         }
         plugin.api.pullModel = vi.fn().mockReturnValue(slowPull());
-        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok({ model: "phi3" }));
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -2737,7 +2735,7 @@ describe("ChatView — embedding model selector", () => {
 
     it("reverts dropdown and shows notice on setEmbeddingModel network error", async () => {
         const plugin = makePlugin();
-        plugin.api.setEmbeddingModel = vi.fn().mockRejectedValue(new Error("network"));
+        plugin.api.setEmbeddingModel = vi.fn().mockResolvedValue(err(new Error("network")));
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         await tick();
@@ -2916,5 +2914,69 @@ describe("ChatView — embedding model selector", () => {
         (view as any).embeddingSelectEl = null;
         // Should not throw
         (view as any).fillEmbeddingSelector(null, null);
+    });
+});
+
+describe("ChatView — queue-full notice on auto-pull", () => {
+    it("shows NOTICE_QUEUE_FULL when enqueue returns null", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+        plugin.api.pullModel = vi.fn();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await (view as any).autoPullAndSet({ name: "phi3" });
+        expect(Notice.instances.map((n: any) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
+        expect(plugin.api.pullModel).not.toHaveBeenCalled();
+    });
+});
+
+describe("ChatView — autoPullAndSet post-pull set failure", () => {
+    it("completes pull task and shows ERROR_SET_MODEL notice when setChatModel returns err", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
+            // happy pull, no events
+        });
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("activate-failed")));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await (view as any).autoPullAndSet({ name: "phi3" });
+        const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "phi3");
+        expect(Notice.instances.map((n: any) => n.message)).toContain(setFailed);
+        expect(plugin.taskQueue.completed.some((t: any) => t.status === "done")).toBe(true);
+        expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(false);
+    });
+});
+
+describe("ChatView — Send is a no-op while a stream is in flight", () => {
+    it("second Enter while sending does not wipe textarea or fire a second request", async () => {
+        const plugin = makePlugin();
+        let resolveStream!: () => void;
+        plugin.api.chatStream = vi.fn().mockImplementation(async function* () {
+            await new Promise<void>((r) => {
+                resolveStream = r;
+            });
+            yield { event: SSE_EVENT.DONE, data: null };
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const textarea = container.find("lilbee-chat-textarea")!;
+        (textarea as any).value = "first";
+        textarea.trigger("keydown", { key: "Enter", shiftKey: false, preventDefault: vi.fn() });
+        await tick();
+
+        expect(plugin.api.chatStream).toHaveBeenCalledTimes(1);
+
+        // Second Enter while sending — typed text stays, no extra call
+        (textarea as any).value = "second";
+        textarea.trigger("keydown", { key: "Enter", shiftKey: false, preventDefault: vi.fn() });
+        await tick();
+        expect(plugin.api.chatStream).toHaveBeenCalledTimes(1);
+        expect((textarea as any).value).toBe("second");
+
+        resolveStream();
     });
 });

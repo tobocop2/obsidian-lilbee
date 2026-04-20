@@ -27,6 +27,7 @@ const RETRY_BACKOFF_MS = 500;
 
 export class LilbeeClient {
     private token: string | null = null;
+    private tokenProvider: (() => string | null) | null = null;
 
     constructor(
         private baseUrl: string,
@@ -39,9 +40,30 @@ export class LilbeeClient {
         this.token = token;
     }
 
+    setTokenProvider(provider: (() => string | null) | null): void {
+        this.tokenProvider = provider;
+    }
+
     private authHeaders(): Record<string, string> {
         if (!this.token) return {};
         return { Authorization: `Bearer ${this.token}` };
+    }
+
+    private refreshTokenFromProvider(): boolean {
+        if (!this.tokenProvider) return false;
+        const next = this.tokenProvider();
+        if (next === null || next === this.token) return false;
+        this.token = next;
+        return true;
+    }
+
+    private applyRefreshedToken(init: RequestInit | undefined): RequestInit {
+        const base = { ...init };
+        const existing = (base.headers ?? {}) as Record<string, string>;
+        if (existing.Authorization) {
+            base.headers = { ...existing, Authorization: `Bearer ${this.token}` };
+        }
+        return base;
     }
 
     private async assertOk(res: Response): Promise<Response> {
@@ -79,6 +101,7 @@ export class LilbeeClient {
     ): Promise<Response> {
         const maxAttempts = RETRY_COUNT + 1;
         let lastError: unknown;
+        let authRetried = false;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             if (attempt > 0) {
                 await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS * attempt));
@@ -94,7 +117,13 @@ export class LilbeeClient {
                     timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
                 }
                 try {
-                    return await this.assertOk(await globalThis.fetch(url, fetchInit));
+                    const res = await globalThis.fetch(url, fetchInit);
+                    if ((res.status === 401 || res.status === 403) && !authRetried && this.refreshTokenFromProvider()) {
+                        authRetried = true;
+                        init = this.applyRefreshedToken(init);
+                        continue;
+                    }
+                    return await this.assertOk(res);
                 } finally {
                     if (timer !== undefined) clearTimeout(timer);
                 }

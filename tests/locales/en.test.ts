@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MESSAGES, FILTERS, TASK_LABELS, RELATIVE_TIME } from "../../src/locales/en";
+import { MESSAGES, FILTERS, TASK_LABELS } from "../../src/locales/en";
 import { MODEL_TASK } from "../../src/types";
 
 describe("MESSAGES", () => {
@@ -20,7 +20,6 @@ describe("MESSAGES", () => {
             expect(MESSAGES.BUTTON_BROWSE_FULL_CATALOG).toBe("Browse full catalog");
             expect(MESSAGES.BUTTON_DOWNLOAD_CONTINUE).toBe("Download & continue");
             expect(MESSAGES.BUTTON_DELETE_SELECTED).toBe("Delete selected");
-            expect(MESSAGES.BUTTON_LOAD_MORE).toBe("Load more");
             expect(MESSAGES.BUTTON_CRAWL).toBe("Crawl");
             expect(MESSAGES.BUTTON_START).toBe("Start");
             expect(MESSAGES.BUTTON_STOP).toBe("Stop");
@@ -68,7 +67,6 @@ describe("MESSAGES", () => {
             expect(MESSAGES.LABEL_PICK).toBe("pick");
             expect(MESSAGES.LABEL_SWITCH_TO_LIST).toBe("Switch to list view");
             expect(MESSAGES.LABEL_SWITCH_TO_GRID).toBe("Switch to grid view");
-            expect(MESSAGES.LABEL_BROWSE_MORE).toBe("Browse more models");
             expect(MESSAGES.LABEL_VIEW_TOGGLE_CTA).toBe("Switch to list view for the full catalog");
             expect(MESSAGES.LABEL_NO_MODELS_FOUND).toBe("No models match your filters.");
             expect(MESSAGES.LABEL_TASK).toBe("Task");
@@ -416,15 +414,6 @@ describe("TASK_LABELS", () => {
         expect(TASK_LABELS[MODEL_TASK.CHAT]).toBe("Chat");
         expect(TASK_LABELS[MODEL_TASK.VISION]).toBe("Vision");
         expect(TASK_LABELS[MODEL_TASK.EMBEDDING]).toBe("Embedding");
-    });
-});
-
-describe("RELATIVE_TIME", () => {
-    it("produces correct relative time strings", () => {
-        expect(RELATIVE_TIME.JUST_NOW).toBe("just now");
-        expect(RELATIVE_TIME.MINUTES_AGO(5)).toBe("5m ago");
-        expect(RELATIVE_TIME.HOURS_AGO(2)).toBe("2h ago");
-        expect(RELATIVE_TIME.DAYS_AGO(1)).toBe("1d ago");
     });
 });
 

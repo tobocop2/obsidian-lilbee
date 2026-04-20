@@ -867,6 +867,172 @@ describe("fetchWithRetry()", () => {
     });
 });
 
+describe("fetchWithRetry() — token provider + 401/403 retry", () => {
+    it("refreshes token and retries once on 401", async () => {
+        const c = new LilbeeClient(BASE_URL);
+        c.setToken("old-token");
+        let currentToken = "old-token";
+        c.setTokenProvider(() => currentToken);
+        fetchMock
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 401,
+                text: () => Promise.resolve("stale token"),
+            } as unknown as Response)
+            .mockImplementationOnce(() => {
+                currentToken = "new-token";
+                return Promise.resolve(jsonResponse({ status: "ok" }));
+            });
+        currentToken = "new-token";
+        const result = await c.health();
+        expect(result.isOk()).toBe(true);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("refreshes token and retries once on 403", async () => {
+        const c = new LilbeeClient(BASE_URL);
+        c.setToken("old");
+        c.setTokenProvider(() => "new");
+        fetchMock
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 403,
+                text: () => Promise.resolve("forbidden"),
+            } as unknown as Response)
+            .mockResolvedValueOnce(jsonResponse({ status: "ok" }));
+        const result = await c.health();
+        expect(result.isOk()).toBe(true);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not retry twice — second 401 surfaces the error", async () => {
+        const c = new LilbeeClient(BASE_URL);
+        c.setToken("old");
+        c.setTokenProvider(() => "new");
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 401,
+            text: () => Promise.resolve("still bad"),
+        } as unknown as Response);
+        const result = await c.health();
+        expect(result.isErr()).toBe(true);
+        expect(result._unsafeUnwrapErr().message).toBe("Server responded 401: still bad");
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("skips auth retry when no provider is registered", async () => {
+        const c = new LilbeeClient(BASE_URL);
+        c.setToken("old");
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 401,
+            text: () => Promise.resolve("no provider"),
+        } as unknown as Response);
+        const result = await c.health();
+        expect(result.isErr()).toBe(true);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("skips auth retry when provider returns null", async () => {
+        const c = new LilbeeClient(BASE_URL);
+        c.setToken("old");
+        c.setTokenProvider(() => null);
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 401,
+            text: () => Promise.resolve("null token"),
+        } as unknown as Response);
+        const result = await c.health();
+        expect(result.isErr()).toBe(true);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("skips auth retry when provider returns the same token", async () => {
+        const c = new LilbeeClient(BASE_URL);
+        c.setToken("same");
+        c.setTokenProvider(() => "same");
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 401,
+            text: () => Promise.resolve("same token"),
+        } as unknown as Response);
+        const result = await c.health();
+        expect(result.isErr()).toBe(true);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not auth-retry on non-auth error statuses (500)", async () => {
+        const c = new LilbeeClient(BASE_URL);
+        c.setToken("t");
+        c.setTokenProvider(() => "new");
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 500,
+            text: () => Promise.resolve("boom"),
+        } as unknown as Response);
+        const result = await c.health();
+        expect(result.isErr()).toBe(true);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("retry applies the refreshed token to the next request's Authorization header", async () => {
+        const c = new LilbeeClient(BASE_URL);
+        c.setToken("old");
+        c.setTokenProvider(() => "fresh");
+        fetchMock
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 401,
+                text: () => Promise.resolve("stale"),
+            } as unknown as Response)
+            .mockResolvedValueOnce(jsonResponse({ ok: true }));
+        // Use chat() since it sends Authorization header
+        await c.chat("hi", []);
+        const headers = (fetchMock.mock.calls[1][1] as RequestInit).headers as Record<string, string>;
+        expect(headers.Authorization).toBe("Bearer fresh");
+    });
+
+    it("retry without prior Authorization header leaves headers untouched", async () => {
+        const c = new LilbeeClient(BASE_URL);
+        c.setToken("old");
+        c.setTokenProvider(() => "new");
+        // search() does not set Authorization, so the retry path exercises the
+        // branch where existing.Authorization is undefined.
+        fetchMock
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 401,
+                text: () => Promise.resolve("stale"),
+            } as unknown as Response)
+            .mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve([]),
+                text: () => Promise.resolve("[]"),
+                body: null,
+            } as unknown as Response);
+        await c.search("q");
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        const retryInit = fetchMock.mock.calls[1][1] as RequestInit;
+        const headers = (retryInit.headers ?? {}) as Record<string, string>;
+        expect(headers.Authorization).toBeUndefined();
+    });
+
+    it("setTokenProvider(null) clears the provider", async () => {
+        const c = new LilbeeClient(BASE_URL);
+        c.setToken("t");
+        c.setTokenProvider(() => "new");
+        c.setTokenProvider(null);
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 401,
+            text: () => Promise.resolve("x"),
+        } as unknown as Response);
+        const result = await c.health();
+        expect(result.isErr()).toBe(true);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe("assertOk", () => {
     it("throws with response body text on non-ok response", async () => {
         fetchMock.mockResolvedValue({

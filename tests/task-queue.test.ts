@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { TaskQueue } from "../src/task-queue";
+import { TaskQueue, FLASH_WINDOW_MS } from "../src/task-queue";
 import { TASK_TYPE, TASK_STATUS } from "../src/types";
 
 describe("TaskQueue", () => {
@@ -89,15 +89,80 @@ describe("TaskQueue", () => {
             expect(active.detail).toBe("processing file 1");
         });
 
-        it("preserves progress when update called with -1", () => {
+        it("sets progress to -1 to mark indeterminate state", () => {
             queue.enqueue("Task", TASK_TYPE.SYNC);
             const active = queue.active!;
 
-            queue.update(active.id, 50);
-            queue.update(active.id, -1, "new detail");
+            queue.update(active.id, -1, "preparing");
 
-            expect(active.progress).toBe(50);
-            expect(active.detail).toBe("new detail");
+            expect(active.progress).toBe(-1);
+            expect(active.detail).toBe("preparing");
+        });
+
+        it("stores bytes and leaves rate undefined on first sample", () => {
+            queue.enqueue("Pull", TASK_TYPE.PULL);
+            const active = queue.active!;
+
+            queue.update(active.id, 10, "", { current: 1024, total: 10_240 });
+
+            expect(active.bytesCurrent).toBe(1024);
+            expect(active.bytesTotal).toBe(10_240);
+            expect(active.rateBps).toBeUndefined();
+            expect(active.lastRateAt).toBeTypeOf("number");
+        });
+
+        it("computes rate on second sample when >= 500ms has passed", () => {
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date("2026-04-19T00:00:00Z"));
+            queue.enqueue("Pull", TASK_TYPE.PULL);
+            const active = queue.active!;
+
+            queue.update(active.id, 5, "", { current: 1000, total: 10_000 });
+            vi.setSystemTime(new Date("2026-04-19T00:00:01Z"));
+            queue.update(active.id, 15, "", { current: 3000, total: 10_000 });
+
+            expect(active.rateBps).toBe(2000);
+            vi.useRealTimers();
+        });
+
+        it("skips rate recompute when delta < 500ms floor", () => {
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date("2026-04-19T00:00:00.000Z"));
+            queue.enqueue("Pull", TASK_TYPE.PULL);
+            const active = queue.active!;
+
+            queue.update(active.id, 5, "", { current: 1000, total: 10_000 });
+            vi.setSystemTime(new Date("2026-04-19T00:00:00.100Z"));
+            queue.update(active.id, 10, "", { current: 2000, total: 10_000 });
+
+            expect(active.bytesCurrent).toBe(2000);
+            expect(active.rateBps).toBeUndefined();
+            vi.useRealTimers();
+        });
+
+        it("clamps negative rate to 0", () => {
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date("2026-04-19T00:00:00Z"));
+            queue.enqueue("Pull", TASK_TYPE.PULL);
+            const active = queue.active!;
+
+            queue.update(active.id, 10, "", { current: 5000 });
+            vi.setSystemTime(new Date("2026-04-19T00:00:01Z"));
+            queue.update(active.id, 5, "", { current: 2000 });
+
+            expect(active.rateBps).toBe(0);
+            vi.useRealTimers();
+        });
+
+        it("accepts bytes object with only total (no current)", () => {
+            queue.enqueue("Pull", TASK_TYPE.PULL);
+            const active = queue.active!;
+
+            queue.update(active.id, 0, "", { total: 5_000 });
+
+            expect(active.bytesTotal).toBe(5_000);
+            expect(active.bytesCurrent).toBeUndefined();
+            expect(active.lastRateAt).toBeUndefined();
         });
     });
 
@@ -114,6 +179,43 @@ describe("TaskQueue", () => {
             expect(completed[0]!.status).toBe(TASK_STATUS.DONE);
             expect(completed[0]!.progress).toBe(100);
             expect(completed[0]!.completedAt).not.toBeNull();
+        });
+
+        it("schedules a flash-clear notify after FLASH_WINDOW_MS", () => {
+            vi.useFakeTimers();
+            const listener = vi.fn();
+            queue.onChange(listener);
+
+            const id = queue.enqueue("Task", TASK_TYPE.SYNC);
+            listener.mockClear();
+            queue.complete(id);
+
+            const immediateCalls = listener.mock.calls.length;
+            expect(immediateCalls).toBeGreaterThan(0);
+
+            vi.advanceTimersByTime(FLASH_WINDOW_MS - 1);
+            expect(listener.mock.calls.length).toBe(immediateCalls);
+
+            vi.advanceTimersByTime(2);
+            expect(listener.mock.calls.length).toBe(immediateCalls + 1);
+
+            vi.useRealTimers();
+        });
+
+        it("dispose cancels pending flash-clear timers so they don't zombie-notify after unload", () => {
+            vi.useFakeTimers();
+            const listener = vi.fn();
+            queue.onChange(listener);
+
+            const id = queue.enqueue("Task", TASK_TYPE.SYNC);
+            queue.complete(id);
+            listener.mockClear();
+
+            queue.dispose();
+            vi.advanceTimersByTime(FLASH_WINDOW_MS * 2);
+
+            expect(listener).not.toHaveBeenCalled();
+            vi.useRealTimers();
         });
 
         it("activates next queued task", () => {
@@ -243,13 +345,13 @@ describe("TaskQueue", () => {
     });
 
     describe("concurrent per-type queues", () => {
-        it("runs one task per type at a time", () => {
+        it("runs MAX_CONCURRENT_BACKGROUND tasks across types before queuing the rest", () => {
             queue.enqueue("Sync 1", TASK_TYPE.SYNC);
             queue.enqueue("Add 1", TASK_TYPE.ADD);
             queue.enqueue("Download 1", TASK_TYPE.DOWNLOAD);
 
-            expect(queue.activeAll).toHaveLength(3);
-            expect(queue.queued).toHaveLength(0);
+            expect(queue.activeAll).toHaveLength(2);
+            expect(queue.queued).toHaveLength(1);
         });
 
         it("queues second task of same type", () => {
@@ -290,16 +392,16 @@ describe("TaskQueue", () => {
             expect(queue.activeAll).toHaveLength(0);
         });
 
-        it("returns all concurrently active tasks", () => {
+        it("returns all concurrently active tasks up to the global cap", () => {
             queue.enqueue("Sync", TASK_TYPE.SYNC);
             queue.enqueue("Add", TASK_TYPE.ADD);
             queue.enqueue("Download", TASK_TYPE.DOWNLOAD);
 
             const active = queue.activeAll;
-            expect(active).toHaveLength(3);
+            expect(active).toHaveLength(2);
             expect(active.map((t) => t.type)).toContain("sync");
             expect(active.map((t) => t.type)).toContain("add");
-            expect(active.map((t) => t.type)).toContain("download");
+            expect(queue.queued.map((t) => t.type)).toContain("download");
         });
     });
 
@@ -342,6 +444,162 @@ describe("TaskQueue", () => {
         it("returns null from active when no tasks enqueued", () => {
             expect(queue.active).toBeNull();
             expect(queue.activeAll).toHaveLength(0);
+        });
+    });
+
+    describe("global background cap", () => {
+        it("queues a third background task when two are already active", () => {
+            queue.enqueue("Sync", TASK_TYPE.SYNC);
+            queue.enqueue("Add", TASK_TYPE.ADD);
+            const id3 = queue.enqueue("Crawl", TASK_TYPE.CRAWL);
+
+            expect(queue.activeAll).toHaveLength(2);
+            const queued = queue.queued.map((t) => t.id);
+            expect(queued).toContain(id3);
+        });
+
+        it("auto-activates the next queued background task when one completes", () => {
+            const id1 = queue.enqueue("Sync", TASK_TYPE.SYNC);
+            queue.enqueue("Add", TASK_TYPE.ADD);
+            const id3 = queue.enqueue("Crawl", TASK_TYPE.CRAWL);
+
+            queue.complete(id1);
+
+            const active = queue.activeAll;
+            expect(active.map((t) => t.id)).toContain(id3);
+        });
+    });
+
+    describe("per-type queue cap", () => {
+        it("returns null when the per-type queue limit is exceeded", () => {
+            queue.enqueue("Sync 1", TASK_TYPE.SYNC); // active
+            const queuedIds: (string | null)[] = [];
+            for (let i = 0; i < 10; i++) {
+                queuedIds.push(queue.enqueue(`Sync ${i + 2}`, TASK_TYPE.SYNC));
+            }
+            const rejected = queuedIds.filter((id) => id === null).length;
+            expect(rejected).toBeGreaterThan(0);
+        });
+
+        it("allows enqueuing again after queued tasks drain", () => {
+            queue.enqueue("Active", TASK_TYPE.SYNC); // active
+            const ids: (string | null)[] = [];
+            for (let i = 0; i < 5; i++) {
+                ids.push(queue.enqueue(`Queued ${i}`, TASK_TYPE.SYNC));
+            }
+            // Now at the per-type cap.
+            expect(queue.enqueue("Over cap", TASK_TYPE.SYNC)).toBeNull();
+            // Drain one queued task (still queued — needs activation).
+            const first = ids[0]!;
+            queue.cancel(first);
+            // Space in the per-type queue again.
+            expect(queue.enqueue("Now ok", TASK_TYPE.SYNC)).not.toBeNull();
+        });
+    });
+
+    describe("toJSON / loadFromJSON", () => {
+        it("serializes history", () => {
+            const id1 = queue.enqueue("Task 1", TASK_TYPE.SYNC);
+            queue.complete(id1);
+            const data = queue.toJSON();
+            expect(data.history).toHaveLength(1);
+            expect(data.history[0]!.name).toBe("Task 1");
+        });
+
+        it("loadFromJSON restores history into a fresh queue", () => {
+            const src = new TaskQueue();
+            const id = src.enqueue("Old task", TASK_TYPE.CRAWL);
+            src.complete(id);
+            const data = src.toJSON();
+
+            const dest = new TaskQueue();
+            dest.loadFromJSON(data);
+            expect(dest.completed).toHaveLength(1);
+            expect(dest.completed[0]!.name).toBe("Old task");
+        });
+
+        it("loadFromJSON is a no-op when given undefined", () => {
+            queue.loadFromJSON(undefined);
+            expect(queue.completed).toHaveLength(0);
+        });
+
+        it("loadFromJSON ignores malformed payload (non-array history)", () => {
+            queue.loadFromJSON({ history: undefined });
+            expect(queue.completed).toHaveLength(0);
+        });
+
+        it("loadFromJSON caps restored history at MAX_HISTORY", () => {
+            const many = Array.from({ length: TaskQueue.MAX_HISTORY + 10 }, (_, i) => ({
+                id: `old-${i}`,
+                name: `Old ${i}`,
+                type: TASK_TYPE.SYNC,
+                status: TASK_STATUS.DONE,
+                progress: 100,
+                detail: "",
+                startedAt: i,
+                completedAt: i,
+                error: null,
+                canCancel: false,
+            }));
+            queue.loadFromJSON({ history: many });
+            expect(queue.completed).toHaveLength(TaskQueue.MAX_HISTORY);
+        });
+    });
+
+    describe("registerAbort + cancel wiring", () => {
+        it("cancel aborts the registered controller for an active task", () => {
+            const id = queue.enqueue("Task", TASK_TYPE.SYNC);
+            const controller = new AbortController();
+            queue.registerAbort(id, controller);
+            expect(controller.signal.aborted).toBe(false);
+            queue.cancel(id);
+            expect(controller.signal.aborted).toBe(true);
+        });
+
+        it("registerAbort sets canCancel to true", () => {
+            const id = queue.enqueue("Task", TASK_TYPE.SYNC);
+            const task = queue.active!;
+            expect(task.canCancel).toBe(false);
+            queue.registerAbort(id, new AbortController());
+            expect(task.canCancel).toBe(true);
+        });
+
+        it("registerAbort is a no-op for non-existent task", () => {
+            const controller = new AbortController();
+            expect(() => queue.registerAbort("nope", controller)).not.toThrow();
+            expect(controller.signal.aborted).toBe(false);
+        });
+
+        it("cancelling a queued task removes the registered abort without firing", () => {
+            const active = queue.enqueue("Active sync", TASK_TYPE.SYNC);
+            const queued = queue.enqueue("Queued sync", TASK_TYPE.SYNC);
+            const controller = new AbortController();
+            queue.registerAbort(queued, controller);
+            queue.cancel(queued);
+            expect(controller.signal.aborted).toBe(false);
+            // active task still runs
+            expect(queue.tasks ?? true).toBeTruthy();
+            queue.cancel(active);
+        });
+
+        it("completing a task clears the registered abort so future calls are no-ops", () => {
+            const id = queue.enqueue("Task", TASK_TYPE.SYNC);
+            const controller = new AbortController();
+            queue.registerAbort(id, controller);
+            queue.complete(id);
+            // Cancelling the moved-to-history task is a no-op.
+            queue.cancel(id);
+            expect(controller.signal.aborted).toBe(false);
+        });
+
+        it("auto-promoted task keeps canCancel=true when abort was registered while queued", () => {
+            const active = queue.enqueue("Active sync", TASK_TYPE.SYNC);
+            const queued = queue.enqueue("Queued sync", TASK_TYPE.SYNC);
+            queue.registerAbort(queued, new AbortController());
+            queue.cancel(active);
+            const promoted = queue.tasks.get(queued)!;
+            expect(promoted.status).toBe(TASK_STATUS.ACTIVE);
+            expect(promoted.canCancel).toBe(true);
         });
     });
 });

@@ -1,13 +1,24 @@
 import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
 import type { ReleaseInfo } from "./binary-manager";
-import { DEFAULT_SETTINGS, SERVER_MODE, SERVER_STATE, SSE_EVENT, SYNC_MODE, TASK_TYPE, ERROR_NAME } from "./types";
+import {
+    DEFAULT_SETTINGS,
+    MODEL_SOURCE,
+    MODEL_TASK,
+    SERVER_MODE,
+    SERVER_STATE,
+    SSE_EVENT,
+    SYNC_MODE,
+    TASK_TYPE,
+    ERROR_NAME,
+} from "./types";
 import type { GenerationOptions, ModelCatalog, ModelInfo, ModelsResponse, ServerMode } from "./types";
 import { MESSAGES } from "./locales/en";
 import { CatalogModal } from "./views/catalog-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { ConfirmPullModal } from "./views/confirm-pull-modal";
 import { SetupWizard } from "./views/setup-wizard";
+import { percentFromSse, errorMessage, extractSseErrorMessage } from "./utils";
 
 const CHECK_TIMEOUT_MS = 5000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
@@ -62,7 +73,6 @@ const GEN_DEFAULTS_MAP: Record<GenKey, keyof GenerationOptions> = {
 
 export class LilbeeSettingTab extends PluginSettingTab {
     plugin: LilbeePlugin;
-    private pullAbortController: AbortController | null = null;
     private genInputs: Map<GenKey, HTMLInputElement> = new Map();
     private serverConfigInputs: Map<string, HTMLInputElement> = new Map();
 
@@ -425,7 +435,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const modelLabel = this.plugin.activeModel || MESSAGES.LABEL_NO_MODEL_SELECTED;
         details.createEl("summary", { text: `${MESSAGES.LABEL_GENERATION} (${modelLabel})` });
         details.createEl("p", {
-            text: "Fine-tune AI responses. Defaults work well for most users.",
+            text: MESSAGES.LABEL_GENERATION_HELP,
             cls: "setting-item-description",
         });
 
@@ -529,7 +539,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private loadEmbeddingDropdown(container: HTMLElement): void {
         this.plugin.api
-            .catalog({ task: "embedding" })
+            .catalog({ task: MODEL_TASK.EMBEDDING })
             .then((result) => {
                 if (result.isErr()) {
                     this.renderEmbeddingFallback(container);
@@ -550,14 +560,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
                             confirmModal.open();
                             const confirmed = await confirmModal.result;
                             if (!confirmed) return;
-                            try {
-                                await this.plugin.api.setEmbeddingModel(value);
-                                new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
-                                new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-                                void this.plugin.triggerSync();
-                            } catch {
+                            const result = await this.plugin.api.setEmbeddingModel(value);
+                            if (result.isErr()) {
                                 new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
+                                return;
                             }
+                            new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
+                            new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
+                            void this.plugin.triggerSync();
                         });
                     });
             })
@@ -580,14 +590,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         confirmModal.open();
                         const confirmed = await confirmModal.result;
                         if (!confirmed) return;
-                        try {
-                            await this.plugin.api.setEmbeddingModel(trimmed);
-                            new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
-                            new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-                            void this.plugin.triggerSync();
-                        } catch {
+                        const result = await this.plugin.api.setEmbeddingModel(trimmed);
+                        if (result.isErr()) {
                             new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
+                            return;
                         }
+                        new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
+                        new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
+                        void this.plugin.triggerSync();
                     });
                 this.serverConfigInputs.set("embedding_model", text.inputEl as unknown as HTMLInputElement);
             });
@@ -821,7 +831,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const details = containerEl.createEl("details", { cls: "lilbee-advanced-details lilbee-settings-section" });
         details.createEl("summary", { text: MESSAGES.LABEL_ADVANCED });
         details.createEl("p", {
-            text: "These settings affect how your documents are processed. Only change if you know what you're doing.",
+            text: MESSAGES.LABEL_ADVANCED_HELP,
             cls: "setting-item-description",
         });
 
@@ -1036,8 +1046,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    private async setModel(model: { name: string }): Promise<void> {
-        await this.plugin.api.setChatModel(model.name);
+    private async setModel(model: { name: string }): ReturnType<typeof this.plugin.api.setChatModel> {
+        return this.plugin.api.setChatModel(model.name);
     }
 
     private async handleModelChange(
@@ -1055,62 +1065,69 @@ export class LilbeeSettingTab extends PluginSettingTab {
             await this.autoPullAndSet(uninstalledCatalogModel, container);
             return;
         }
-        try {
-            await this.setModel({ name: value });
-            new Notice(MESSAGES.NOTICE_SET_MODEL(label, value || MESSAGES.LABEL_NOT_SET.toLowerCase()));
-            this.plugin.fetchActiveModel();
-            this.display();
-        } catch {
-            new Notice(MESSAGES.NOTICE_FAILED_SET_MODEL("chat"));
+        const result = await this.setModel({ name: value });
+        if (result.isErr()) {
+            new Notice(MESSAGES.NOTICE_FAILED_SET_MODEL(MODEL_TASK.CHAT));
+            return;
         }
+        new Notice(MESSAGES.NOTICE_SET_MODEL(label, value || MESSAGES.LABEL_NOT_SET.toLowerCase()));
+        this.plugin.fetchActiveModel();
+        this.display();
     }
 
-    private async autoPullAndSet(model: ModelInfo, container: HTMLElement): Promise<void> {
+    private async autoPullAndSet(model: ModelInfo, _container: HTMLElement): Promise<void> {
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         const controller = new AbortController();
-        this.pullAbortController = controller;
-        const banner = container.createDiv("lilbee-pull-banner");
-        const label = banner.createEl("span", { text: MESSAGES.STATUS_PULLING.replace("{model}", model.name) });
-        const cancelBtn = banner.createEl("button", { text: MESSAGES.BUTTON_CANCEL, cls: "lilbee-pull-banner-cancel" });
-        cancelBtn.addEventListener("click", () => controller.abort(), { once: true });
+        this.plugin.taskQueue.registerAbort(taskId, controller);
+        let pullFailed = false;
         try {
-            for await (const event of this.plugin.api.pullModel(model.name, "native", controller.signal)) {
+            for await (const event of this.plugin.api.pullModel(model.name, MODEL_SOURCE.NATIVE, controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
-                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    const pct = percentFromSse(d);
                     if (pct !== undefined) {
-                        label.textContent = MESSAGES.STATUS_PULLING_PCT.replace("{model}", model.name).replace(
-                            "{pct}",
-                            String(pct),
-                        );
-                        this.plugin.taskQueue.update(taskId, pct, model.name);
+                        this.plugin.taskQueue.update(taskId, pct, model.name, {
+                            current: d.current,
+                            total: d.total,
+                        });
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
-                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${msg}`);
                     this.plugin.taskQueue.fail(taskId, msg);
+                    pullFailed = true;
                     break;
                 }
             }
-            await this.setModel(model);
-            this.plugin.taskQueue.complete(taskId);
-            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
-            this.plugin.fetchActiveModel();
-            this.display();
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
-                const reason = err instanceof Error ? err.message : "unknown error";
+                const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
                 new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${reason}`);
                 this.plugin.taskQueue.fail(taskId, reason);
             }
-        } finally {
-            banner.remove();
-            this.pullAbortController = null;
+            return;
         }
+
+        if (pullFailed) return;
+
+        this.plugin.taskQueue.complete(taskId);
+
+        const setResult = await this.setModel(model);
+        if (setResult.isErr()) {
+            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name));
+        } else {
+            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
+        }
+        this.plugin.fetchActiveModel();
+        this.display();
     }
 
     private renderCatalogRow(table: HTMLTableElement, model: ModelInfo): void {
@@ -1124,81 +1141,95 @@ export class LilbeeSettingTab extends PluginSettingTab {
             actionCell.createEl("span", { text: MESSAGES.LABEL_INSTALLED, cls: "lilbee-installed" });
             const deleteBtn = actionCell.createEl("button", { cls: "lilbee-model-delete" }) as HTMLButtonElement;
             setIcon(deleteBtn, "trash-2");
-            deleteBtn.setAttribute("aria-label", "Delete model");
+            deleteBtn.setAttribute("aria-label", MESSAGES.LABEL_DELETE_MODEL);
             deleteBtn.addEventListener("click", () => this.deleteModel(deleteBtn, model));
         } else {
             const btn = actionCell.createEl("button", { text: MESSAGES.BUTTON_PULL }) as HTMLButtonElement;
-            btn.addEventListener("click", () => {
-                if (this.plugin.taskQueue.active) {
-                    this.pullAbortController?.abort();
-                    return;
-                }
-                return this.pullModel(btn, actionCell, model);
-            });
+            btn.addEventListener("click", () => this.pullModel(model));
         }
     }
 
-    private async pullModel(btn: HTMLButtonElement, actionCell: HTMLElement, model: ModelInfo): Promise<void> {
-        await this.executePull(btn, actionCell, model);
+    private async pullModel(model: ModelInfo): Promise<void> {
+        await this.executePull(model);
     }
 
-    private async executePull(btn: HTMLButtonElement, actionCell: HTMLElement, model: ModelInfo): Promise<void> {
+    private async executePull(model: ModelInfo): Promise<void> {
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         const controller = new AbortController();
-        this.pullAbortController = controller;
-        btn.textContent = MESSAGES.BUTTON_CANCEL;
-        const progress = actionCell.createDiv("lilbee-pull-progress");
+        this.plugin.taskQueue.registerAbort(taskId, controller);
+        let pullFailed = false;
         try {
-            for await (const event of this.plugin.api.pullModel(model.name, "native", controller.signal)) {
+            for await (const event of this.plugin.api.pullModel(model.name, MODEL_SOURCE.NATIVE, controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
-                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    const pct = percentFromSse(d);
                     if (pct !== undefined) {
-                        progress.textContent = `${pct}%`;
-                        this.plugin.taskQueue.update(taskId, pct, model.name);
+                        this.plugin.taskQueue.update(taskId, pct, model.name, {
+                            current: d.current,
+                            total: d.total,
+                        });
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
-                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${msg}`);
                     this.plugin.taskQueue.fail(taskId, msg);
+                    pullFailed = true;
                     break;
                 }
             }
-            this.plugin.taskQueue.complete(taskId);
-            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
-            await this.setModel(model);
-            this.plugin.fetchActiveModel();
-            this.display();
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
-                const reason = err instanceof Error ? err.message : "unknown error";
+                const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
                 new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${reason}`);
                 this.plugin.taskQueue.fail(taskId, reason);
             }
-            btn.disabled = false;
-            btn.textContent = MESSAGES.BUTTON_PULL;
-        } finally {
-            progress.remove();
-            this.pullAbortController = null;
+            return;
         }
+
+        if (pullFailed) return;
+
+        this.plugin.taskQueue.complete(taskId);
+
+        const setResult = await this.setModel(model);
+        if (setResult.isErr()) {
+            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name));
+        } else {
+            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
+        }
+        this.plugin.fetchActiveModel();
+        this.display();
     }
 
     private async deleteModel(btn: HTMLButtonElement, model: ModelInfo): Promise<void> {
+        const taskId = this.plugin.taskQueue.enqueue(`Remove ${model.name}`, TASK_TYPE.DELETE);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         btn.disabled = true;
+        this.plugin.taskQueue.update(taskId, -1, model.name);
         const result = await this.plugin.api.deleteModel(model.name);
         if (result.isErr()) {
             new Notice(MESSAGES.ERROR_DELETE_MODEL.replace("{model}", model.name));
+            this.plugin.taskQueue.fail(taskId, result.error.message);
             btn.disabled = false;
             return;
         }
+        this.plugin.taskQueue.complete(taskId);
         new Notice(MESSAGES.NOTICE_REMOVED(model.name));
         if (model.name === this.plugin.activeModel) {
-            await this.plugin.api.setChatModel("");
-            this.plugin.activeModel = "";
+            const clearResult = await this.plugin.api.setChatModel("");
+            if (clearResult.isOk()) {
+                this.plugin.activeModel = "";
+            }
         }
         this.plugin.fetchActiveModel();
         const modelsContainer = this.containerEl.querySelector(`.${CLS_MODELS_CONTAINER}`);

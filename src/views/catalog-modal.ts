@@ -5,10 +5,18 @@ import { MODEL_TASK, SSE_EVENT, TASK_TYPE, CATALOG_VIEW_MODE, ERROR_NAME } from 
 import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
-import { debounce, DEBOUNCE_MS, formatAbbreviatedCount } from "../utils";
-import { renderModelCard, renderBrowseMoreCard } from "../components/model-card";
+import {
+    debounce,
+    DEBOUNCE_MS,
+    formatAbbreviatedCount,
+    percentFromSse,
+    errorMessage,
+    extractSseErrorMessage,
+} from "../utils";
+import { renderModelCard } from "../components/model-card";
 
 const PAGE_SIZE = 20;
+const SCROLL_BOTTOM_THRESHOLD_PX = 200;
 
 type TaskFilter = (typeof FILTERS.TASK)[keyof typeof FILTERS.TASK];
 type SizeFilter = "" | typeof FILTERS.SIZE.SMALL | typeof FILTERS.SIZE.MEDIUM | typeof FILTERS.SIZE.LARGE;
@@ -28,11 +36,10 @@ export class CatalogModal extends Modal {
     private filterSearch = "";
     private offset = 0;
     private hasMore = false;
+    private isFetching = false;
     private entries: CatalogEntry[] = [];
     private resultsEl: HTMLElement | null = null;
-    private loadMoreBtn: HTMLElement | null = null;
     private viewMode: CatalogViewMode = CATALOG_VIEW_MODE.GRID;
-    private fullCatalogLoaded = false;
     private sortColumn = "";
     private sortAscending = true;
     private viewToggleBtn: HTMLElement | null = null;
@@ -56,20 +63,23 @@ export class CatalogModal extends Modal {
         this.renderFilterBar(contentEl);
 
         this.resultsEl = contentEl.createDiv({ cls: "lilbee-catalog-results" });
-
-        this.loadMoreBtn = contentEl.createEl("button", {
-            text: MESSAGES.BUTTON_LOAD_MORE,
-            cls: "lilbee-catalog-load-more",
-        });
-        this.loadMoreBtn.style.display = "none";
-        this.loadMoreBtn.addEventListener("click", () => this.fetchMore());
+        this.resultsEl.addEventListener("scroll", this.onScroll);
 
         this.resetAndFetch();
     }
 
     onClose(): void {
         this.cancelDebouncedSearch();
+        this.resultsEl?.removeEventListener("scroll", this.onScroll);
     }
+
+    private onScroll = (): void => {
+        if (!this.resultsEl || this.isFetching || !this.hasMore) return;
+        const { scrollTop, clientHeight, scrollHeight } = this.resultsEl;
+        if (scrollTop + clientHeight >= scrollHeight - SCROLL_BOTTOM_THRESHOLD_PX) {
+            void this.fetchPage();
+        }
+    };
 
     private renderFilterBar(parent: HTMLElement): void {
         const filters = parent.createDiv({ cls: "lilbee-catalog-filters" });
@@ -139,19 +149,9 @@ export class CatalogModal extends Modal {
         void this.fetchPage();
     }
 
-    private fetchMore(): void {
-        void this.fetchPage();
-    }
-
-    private loadFullCatalog(): void {
-        // "Browse more" semantics: show the long tail ranked by popularity.
-        // This deliberately overrides any sort the user picked.
-        this.fullCatalogLoaded = true;
-        this.filterSort = FILTERS.SORT.DOWNLOADS;
-        this.resetAndFetch();
-    }
-
     private async fetchPage(): Promise<void> {
+        if (this.isFetching) return;
+        this.isFetching = true;
         const params: Parameters<typeof this.plugin.api.catalog>[0] = {
             limit: PAGE_SIZE,
             offset: this.offset,
@@ -161,19 +161,22 @@ export class CatalogModal extends Modal {
         if (this.filterSize) params.size = this.filterSize as ModelSize;
         if (this.filterSearch) params.search = this.filterSearch;
 
-        const result = await this.plugin.api.catalog(params);
-        if (result.isErr()) {
-            new Notice(MESSAGES.ERROR_LOAD_CATALOG);
-            return;
+        try {
+            const result = await this.plugin.api.catalog(params);
+            if (result.isErr()) {
+                new Notice(MESSAGES.ERROR_LOAD_CATALOG);
+                return;
+            }
+
+            const response = result.value;
+            this.hasMore = response.has_more;
+            this.entries.push(...response.models);
+            this.offset += response.models.length;
+
+            this.renderResults();
+        } finally {
+            this.isFetching = false;
         }
-
-        const response = result.value;
-        this.hasMore = response.has_more;
-        this.entries.push(...response.models);
-        this.offset += response.models.length;
-
-        this.renderResults();
-        this.updateLoadMore();
     }
 
     private renderResults(): void {
@@ -207,11 +210,6 @@ export class CatalogModal extends Modal {
 
         for (const [task, group] of this.groupByTask(rest)) {
             this.renderSection(TASK_SECTION_LABEL[task] ?? task, group);
-        }
-
-        if (!this.fullCatalogLoaded) {
-            const grid = this.resultsEl.createDiv({ cls: "lilbee-catalog-grid" });
-            renderBrowseMoreCard(grid, () => this.loadFullCatalog());
         }
 
         this.renderViewToggleCta();
@@ -248,7 +246,7 @@ export class CatalogModal extends Modal {
         renderModelCard(container, entry, {
             showActions: true,
             isActive,
-            onPull: (e, btn) => this.handlePull(e, btn),
+            onPull: (e) => this.handlePull(e),
             onUse: (e, btn) => this.handleUse(e, btn),
             onRemove: (e, btn) => this.handleRemove(e, btn),
         });
@@ -321,7 +319,7 @@ export class CatalogModal extends Modal {
             removeBtn.addEventListener("click", () => this.handleRemove(entry, removeBtn));
         } else {
             const pullBtn = actionEl.createEl("button", { text: MESSAGES.BUTTON_PULL, cls: "lilbee-catalog-pull" });
-            pullBtn.addEventListener("click", () => this.handlePull(entry, pullBtn));
+            pullBtn.addEventListener("click", () => this.handlePull(entry));
         }
     }
 
@@ -363,11 +361,6 @@ export class CatalogModal extends Modal {
         }
     }
 
-    private updateLoadMore(): void {
-        if (!this.loadMoreBtn) return;
-        this.loadMoreBtn.style.display = this.hasMore ? "" : "none";
-    }
-
     private handleRemove(entry: CatalogEntry, btn: HTMLElement): void {
         const confirmModal = new ConfirmModal(this.app, MESSAGES.NOTICE_CONFIRM_REMOVE(entry.hf_repo));
         confirmModal.open();
@@ -378,17 +371,25 @@ export class CatalogModal extends Modal {
     }
 
     private async executeRemove(entry: CatalogEntry, btn: HTMLElement): Promise<void> {
+        const taskId = this.plugin.taskQueue.enqueue(`Remove ${entry.hf_repo}`, TASK_TYPE.DELETE);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         btn.textContent = MESSAGES.STATUS_REMOVING;
         (btn as HTMLButtonElement).disabled = true;
+        this.plugin.taskQueue.update(taskId, -1, entry.hf_repo);
 
         const result = await this.plugin.api.deleteModel(entry.hf_repo, entry.source);
         if (result.isErr()) {
             new Notice(MESSAGES.ERROR_REMOVE_MODEL.replace("{model}", entry.hf_repo));
+            this.plugin.taskQueue.fail(taskId, result.error.message);
             btn.textContent = MESSAGES.BUTTON_REMOVE;
             (btn as HTMLButtonElement).disabled = false;
             return;
         }
 
+        this.plugin.taskQueue.complete(taskId);
         new Notice(MESSAGES.NOTICE_REMOVED(entry.hf_repo));
         this.plugin.fetchActiveModel();
         this.resetAndFetch();
@@ -421,7 +422,7 @@ export class CatalogModal extends Modal {
         return result;
     }
 
-    private handlePull(entry: CatalogEntry, btn: HTMLElement): void {
+    private handlePull(entry: CatalogEntry): void {
         const info = {
             name: entry.hf_repo,
             size_gb: entry.size_gb,
@@ -433,31 +434,36 @@ export class CatalogModal extends Modal {
         confirmModal.open();
         void confirmModal.result.then((confirmed) => {
             if (!confirmed) return;
-            void this.executePull(entry, btn);
+            void this.executePull(entry);
         });
     }
 
-    private async executePull(entry: CatalogEntry, btn: HTMLElement): Promise<void> {
-        btn.textContent = MESSAGES.STATUS_PULLING.replace("{model}", entry.hf_repo);
-        (btn as HTMLButtonElement).disabled = true;
+    private async executePull(entry: CatalogEntry): Promise<void> {
         const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.hf_repo}`, TASK_TYPE.PULL);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
+        const controller = new AbortController();
+        this.plugin.taskQueue.registerAbort(taskId, controller);
+        const pullErrorPrefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.hf_repo);
 
         try {
-            for await (const event of this.plugin.api.pullModel(entry.hf_repo, entry.source)) {
+            for await (const event of this.plugin.api.pullModel(entry.hf_repo, entry.source, controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
-                    const pct = d.percent ?? (d.total ? Math.round((d.current! / d.total) * 100) : undefined);
+                    const pct = percentFromSse(d);
                     if (pct !== undefined) {
-                        btn.textContent = `${pct}%`;
-                        this.plugin.taskQueue.update(taskId, pct, entry.hf_repo);
+                        this.plugin.taskQueue.update(taskId, pct, entry.hf_repo, {
+                            current: d.current,
+                            total: d.total,
+                        });
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
-                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
-                    new Notice(MESSAGES.NOTICE_PULL_FAILED);
+                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
+                    new Notice(`${pullErrorPrefix}: ${msg}`);
                     this.plugin.taskQueue.fail(taskId, msg);
-                    btn.textContent = MESSAGES.BUTTON_PULL;
-                    (btn as HTMLButtonElement).disabled = false;
                     return;
                 }
             }
@@ -466,28 +472,25 @@ export class CatalogModal extends Modal {
                 new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
                 this.plugin.taskQueue.cancel(taskId);
             } else {
-                new Notice(MESSAGES.NOTICE_PULL_FAILED);
-                this.plugin.taskQueue.fail(taskId, err instanceof Error ? err.message : "unknown");
+                const msg = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
+                new Notice(`${pullErrorPrefix}: ${msg}`);
+                this.plugin.taskQueue.fail(taskId, msg);
             }
-            btn.textContent = MESSAGES.BUTTON_PULL;
-            (btn as HTMLButtonElement).disabled = false;
             return;
         }
 
+        this.plugin.taskQueue.complete(taskId);
+
         const result = await this.setActiveFor(entry);
         if (result.isErr()) {
-            new Notice(MESSAGES.NOTICE_PULL_FAILED);
-            const e = result.error;
-            this.plugin.taskQueue.fail(taskId, e.message);
-            btn.textContent = MESSAGES.BUTTON_PULL;
-            (btn as HTMLButtonElement).disabled = false;
+            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", entry.hf_repo));
+            this.plugin.fetchActiveModel();
+            this.resetAndFetch();
             return;
         }
 
         this.plugin.fetchActiveModel();
-        this.plugin.taskQueue.complete(taskId);
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.hf_repo));
-        btn.textContent = MESSAGES.LABEL_ACTIVE;
-        (btn as HTMLButtonElement).disabled = true;
+        this.resetAndFetch();
     }
 }

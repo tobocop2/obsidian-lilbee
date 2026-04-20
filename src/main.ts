@@ -7,20 +7,34 @@ import { readSessionToken, resolveExternalDataRoot } from "./session-token";
 import { LilbeeSettingTab } from "./settings";
 import {
     DEFAULT_SETTINGS,
+    DOT_STATE,
     ERROR_NAME,
     SERVER_MODE,
     SERVER_STATE,
     SSE_EVENT,
     SYNC_MODE,
+    TASK_STATUS,
     TASK_TYPE,
+    type DotState,
     type LilbeeSettings,
     type ServerMode,
     type ServerState,
     type SyncDone,
+    type TaskEntry,
     type VaultAdapter,
 } from "./types";
 import { MESSAGES } from "./locales/en";
-import { HEALTH_PROBE_INTERVAL_MS, NOTICE_DURATION_MS, NOTICE_ERROR_DURATION_MS, NOTICE_PERMANENT } from "./utils";
+import {
+    errorMessage,
+    extractSseErrorMessage,
+    HEALTH_PROBE_INTERVAL_MS,
+    NOTICE_DURATION_MS,
+    NOTICE_ERROR_DURATION_MS,
+    NOTICE_PERMANENT,
+    STREAM_IDLE_TIMEOUT_MS,
+    StreamIdleError,
+    withIdleTimeout,
+} from "./utils";
 import { CatalogModal } from "./views/catalog-modal";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
 import { CrawlModal } from "./views/crawl-modal";
@@ -32,8 +46,7 @@ import { WikiView, VIEW_TYPE_WIKI } from "./views/wiki-view";
 import { LintModal } from "./views/lint-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { StatusModal } from "./views/status-modal";
-import { DownloadPanel } from "./views/download-panel";
-import { TaskQueue } from "./task-queue";
+import { TaskQueue, FLASH_WINDOW_MS as TASK_FLASH_WINDOW_MS } from "./task-queue";
 import { WikiSync } from "./wiki-sync";
 
 interface GenerateErrorData {
@@ -50,6 +63,52 @@ function summarizeSyncResult(done: SyncDone): string {
     if (done.removed.length > 0) parts.push(`${done.removed.length} removed`);
     if (done.failed.length > 0) parts.push(`${done.failed.length} failed`);
     return parts.join(", ");
+}
+
+function countRecentByStatus(completed: readonly TaskEntry[], status: TaskEntry["status"]): number {
+    const now = Date.now();
+    return completed.filter(
+        (t) => t.status === status && t.completedAt !== null && now - t.completedAt < TASK_FLASH_WINDOW_MS,
+    ).length;
+}
+
+/**
+ * Tracks combined file-level + intra-file progress for sync/add streams.
+ *
+ * Server emits FILE_START per file with `current_file/total_files`, plus
+ * EXTRACT (pages within a file) and EMBED (chunks within a file). We split
+ * each file's work budget 50/50 between extract and embed so the bar advances
+ * smoothly instead of snapping to file boundaries.
+ */
+export class FileProgressTracker {
+    private totalFiles = 1;
+    private currentFile = 0;
+    private extractFraction = 0;
+    private embedFraction = 0;
+
+    startFile(current: number, total: number): void {
+        this.currentFile = current;
+        this.totalFiles = Math.max(1, total);
+        this.extractFraction = 0;
+        this.embedFraction = 0;
+    }
+
+    setExtractFraction(page: number, totalPages: number): void {
+        if (totalPages <= 0) return;
+        this.extractFraction = Math.max(0, Math.min(1, page / totalPages));
+    }
+
+    setEmbedFraction(chunk: number, totalChunks: number): void {
+        if (totalChunks <= 0) return;
+        this.embedFraction = Math.max(0, Math.min(1, chunk / totalChunks));
+    }
+
+    percent(): number {
+        const intra = this.extractFraction * 0.5 + this.embedFraction * 0.5;
+        const filesDone = Math.max(0, this.currentFile - 1);
+        const pct = ((filesDone + intra) / this.totalFiles) * 100;
+        return Math.max(0, Math.min(100, Math.round(pct)));
+    }
 }
 
 /**
@@ -83,6 +142,7 @@ export default class LilbeePlugin extends Plugin {
     api: LilbeeClient = new LilbeeClient(DEFAULT_SETTINGS.serverUrl);
     activeModel = "";
     statusBarEl: HTMLElement | null = null;
+    ribbonIconEl: HTMLElement | null = null;
     binaryManager: BinaryManager | null = null;
     serverManager: ServerManager | null = null;
     syncController: AbortController | null = null;
@@ -92,7 +152,6 @@ export default class LilbeePlugin extends Plugin {
     private startingServer = false;
     private serverStartFailed = false;
     taskQueue: TaskQueue = new TaskQueue();
-    downloadPanel: DownloadPanel | null = null;
     wikiEnabled = false;
     wikiPageCount = 0;
     wikiDraftCount = 0;
@@ -107,13 +166,17 @@ export default class LilbeePlugin extends Plugin {
         this.statusBarEl = this.addStatusBarItem();
         this.statusBarEl.style.cursor = "pointer";
         this.statusBarEl.addEventListener("click", () => this.activateTaskView());
+        this.ribbonIconEl = this.addRibbonIcon("list-checks", MESSAGES.LABEL_RIBBON_OPEN_TASK_CENTER, () =>
+            this.activateTaskView(),
+        );
+        this.ribbonIconEl.addClass("lilbee-ribbon-icon");
         this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
         this.registerView(VIEW_TYPE_TASKS, (leaf) => new TaskCenterView(leaf, this));
         this.registerView(VIEW_TYPE_WIKI, (leaf) => new WikiView(leaf, this));
         this.addSettingTab(new LilbeeSettingTab(this.app, this));
         this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
-        this.downloadPanel = new DownloadPanel(this);
-        this.downloadPanel.attach();
+        this.taskQueue.onChange(() => this.updateRibbonFromQueue());
+        this.taskQueue.onChange(() => this.schedulePersistHistory());
         this.registerCommands();
 
         this.registerEvent(
@@ -130,6 +193,7 @@ export default class LilbeePlugin extends Plugin {
             void this.startManagedServer();
         } else {
             this.api = new LilbeeClient(this.settings.serverUrl);
+            this.api.setTokenProvider(() => this.readCurrentToken());
             this.api.setToken(this.readCurrentToken());
             this.setStatusReady();
             this.fetchActiveModel();
@@ -157,7 +221,7 @@ export default class LilbeePlugin extends Plugin {
 
             const needsDownload = !this.binaryManager.binaryExists();
             if (needsDownload) {
-                this.updateStatusBar(MESSAGES.STATUS_DOWNLOADING);
+                this.updateStatusBar(MESSAGES.STATUS_DOWNLOADING, DOT_STATE.PRIMARY);
                 this.setStatusClass("lilbee-status-downloading");
             }
 
@@ -165,7 +229,7 @@ export default class LilbeePlugin extends Plugin {
             let downloadNotice: Notice | undefined;
             try {
                 binaryPath = await this.binaryManager.ensureBinary((msg, url) => {
-                    this.updateStatusBar(`lilbee: ${msg}`);
+                    this.updateStatusBar(`lilbee: ${msg}`, DOT_STATE.PRIMARY);
                     if (!downloadNotice && needsDownload) {
                         const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
                         downloadNotice = new Notice(text, NOTICE_PERMANENT);
@@ -187,7 +251,7 @@ export default class LilbeePlugin extends Plugin {
                 try {
                     const release = await getLatestRelease();
                     this.settings.lilbeeVersion = release.tag;
-                    await this.saveData(this.settings);
+                    await this.persistAll();
                 } catch {
                     /* version tracking is best-effort */
                 }
@@ -207,10 +271,11 @@ export default class LilbeePlugin extends Plugin {
                     },
                 });
 
-                this.updateStatusBar(MESSAGES.STATUS_STARTING);
+                this.updateStatusBar(MESSAGES.STATUS_STARTING, DOT_STATE.PRIMARY);
                 this.setStatusClass("lilbee-status-starting");
                 await this.serverManager.start();
                 this.api = new LilbeeClient(this.serverManager.serverUrl);
+                this.api.setTokenProvider(() => this.readCurrentToken());
                 this.api.setToken(this.readCurrentToken());
                 this.fetchActiveModel();
             } catch (err) {
@@ -248,7 +313,7 @@ export default class LilbeePlugin extends Plugin {
 
         // Save the new version
         this.settings.lilbeeVersion = release.tag;
-        await this.saveData(this.settings);
+        await this.persistAll();
 
         // Restart if in managed mode
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
@@ -263,10 +328,10 @@ export default class LilbeePlugin extends Plugin {
         console.error(`[lilbee] ${label}:`, err);
         const stderr = this.serverManager?.lastStderr;
         if (stderr) console.error(`[lilbee] server stderr:\n${stderr}`);
-        const detail = err instanceof Error ? err.message : String(err);
+        const detail = errorMessage(err, String(err));
         const stderrTail = stderr ? `\n${stderr.split("\n").slice(-5).join("\n")}` : "";
         new Notice(`lilbee: ${label} — ${detail}${stderrTail}`, NOTICE_ERROR_DURATION_MS);
-        this.updateStatusBar(MESSAGES.STATUS_ERROR);
+        this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
         this.setStatusClass(null);
         this.serverStartFailed = true;
     }
@@ -276,7 +341,7 @@ export default class LilbeePlugin extends Plugin {
             case SERVER_STATE.READY:
                 if (this.serverManager) {
                     this.api = new LilbeeClient(this.serverManager.serverUrl);
-                    // Re-apply the token — each server start writes a fresh server.json.
+                    this.api.setTokenProvider(() => this.readCurrentToken());
                     this.api.setToken(this.readCurrentToken());
                 }
                 this.serverUnreachable = false;
@@ -284,11 +349,11 @@ export default class LilbeePlugin extends Plugin {
                 new Notice(MESSAGES.STATUS_READY, NOTICE_DURATION_MS);
                 break;
             case SERVER_STATE.STARTING:
-                this.updateStatusBar(MESSAGES.STATUS_STARTING);
+                this.updateStatusBar(MESSAGES.STATUS_STARTING, DOT_STATE.PRIMARY);
                 this.setStatusClass("lilbee-status-starting");
                 break;
             case SERVER_STATE.ERROR:
-                this.updateStatusBar(MESSAGES.STATUS_ERROR);
+                this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
                 this.setStatusClass("lilbee-status-error");
                 break;
             case SERVER_STATE.STOPPED:
@@ -437,22 +502,32 @@ export default class LilbeePlugin extends Plugin {
     }
 
     onunload(): void {
-        this.downloadPanel?.detach();
         if (this.syncTimeout) {
             clearTimeout(this.syncTimeout);
         }
+        this.taskQueue.dispose();
         void this.serverManager?.stop();
     }
 
     async loadSettings(): Promise<void> {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        const blob = (await this.loadData()) as (LilbeeSettings & { taskHistory?: { history?: unknown[] } }) | null;
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, blob ?? {});
         this.previousServerMode = this.settings.serverMode;
+        this.taskQueue.loadFromJSON(blob?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
+    }
+
+    private async persistAll(): Promise<void> {
+        await this.saveData({ ...this.settings, taskHistory: this.taskQueue.toJSON() });
+    }
+
+    private schedulePersistHistory(): void {
+        void this.persistAll();
     }
 
     async saveSettings(): Promise<void> {
         const previousMode = this.previousServerMode;
         this.previousServerMode = this.settings.serverMode;
-        await this.saveData(this.settings);
+        await this.persistAll();
 
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
             if (previousMode !== SERVER_MODE.MANAGED) {
@@ -460,6 +535,7 @@ export default class LilbeePlugin extends Plugin {
             } else if (this.serverManager) {
                 this.serverManager.updatePort(this.settings.serverPort);
                 this.api = new LilbeeClient(this.serverManager.serverUrl);
+                this.api.setTokenProvider(() => this.readCurrentToken());
                 this.api.setToken(this.readCurrentToken());
             }
         } else {
@@ -469,16 +545,22 @@ export default class LilbeePlugin extends Plugin {
                 this.binaryManager = null;
             }
             this.api = new LilbeeClient(this.settings.serverUrl);
+            this.api.setTokenProvider(() => this.readCurrentToken());
             this.api.setToken(this.readCurrentToken());
         }
 
         this.updateAutoSync();
     }
 
-    private updateStatusBar(text: string): void {
+    private updateStatusBar(text: string, dotState: DotState | null = null): void {
         if (!this.statusBarEl) return;
         const model = this.activeModel ? ` (${this.activeModel})` : "";
-        this.statusBarEl.setText(`${text}${model}`);
+        this.statusBarEl.empty();
+        if (dotState) {
+            const dot = this.statusBarEl.createSpan({ cls: `lilbee-statusbar-dot is-${dotState}` });
+            dot.setAttribute("aria-hidden", "true");
+        }
+        this.statusBarEl.createSpan({ text: `${text}${model}` });
     }
 
     private setStatusClass(cls: string | null): void {
@@ -494,8 +576,9 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private setStatusReady(): void {
-        const suffix = this.settings.serverMode === SERVER_MODE.EXTERNAL ? " [external]" : "";
-        this.updateStatusBar(`lilbee: ready${suffix}`);
+        const text =
+            this.settings.serverMode === SERVER_MODE.EXTERNAL ? MESSAGES.STATUS_READY_EXTERNAL : MESSAGES.STATUS_READY;
+        this.updateStatusBar(text);
         this.setStatusClass("lilbee-status-ready");
     }
 
@@ -520,27 +603,109 @@ export default class LilbeePlugin extends Plugin {
             }
         } else if (!this.serverUnreachable) {
             this.serverUnreachable = true;
-            this.updateStatusBar(MESSAGES.STATUS_ERROR);
+            this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
             this.setStatusClass("lilbee-status-error");
+            this.maybeWarnMissingToken();
         }
+    }
+
+    private missingTokenNoticeFired = false;
+
+    private maybeWarnMissingToken(): void {
+        if (this.missingTokenNoticeFired) return;
+        if (this.readCurrentToken() !== null) return;
+        this.missingTokenNoticeFired = true;
+        const msg =
+            this.settings.serverMode === SERVER_MODE.MANAGED
+                ? MESSAGES.NOTICE_NO_TOKEN_MANAGED
+                : MESSAGES.NOTICE_NO_TOKEN_EXTERNAL;
+        new Notice(msg, NOTICE_DURATION_MS);
     }
 
     private updateStatusBarFromQueue(): void {
         const allActive = this.taskQueue.activeAll;
         const queued = this.taskQueue.queued;
+        const completed = this.taskQueue.completed;
 
         if (allActive.length === 0 && queued.length === 0) {
+            const recent = completed[0];
+            if (recent && recent.completedAt !== null && Date.now() - recent.completedAt < TASK_FLASH_WINDOW_MS) {
+                this.renderStatusFlash(recent, completed);
+                return;
+            }
             this.setStatusReady();
             return;
         }
 
-        const parts = allActive.map((t) => {
-            const pct = t.progress > 0 ? ` ${t.progress}%` : "";
-            return `${t.name}${pct}`;
-        });
+        if (allActive.length === 0 && queued.length > 0) {
+            this.updateStatusBar(
+                `lilbee: ${MESSAGES.STATUS_TASKS_QUEUED_ONLY.replace("{count}", String(queued.length))}`,
+                DOT_STATE.PRIMARY,
+            );
+            this.setStatusClass("lilbee-status-adding");
+            return;
+        }
+
+        const first = allActive[0]!;
+        const pct = first.progress > 0 ? first.progress : 0;
         const suffix = queued.length > 0 ? ` +${queued.length}` : "";
-        this.updateStatusBar(`lilbee: ${parts.join(" | ")}${suffix}`);
+
+        if (allActive.length === 1) {
+            const text = MESSAGES.STATUS_TASK_RUNNING_SINGLE.replace("{name}", first.name).replace(
+                "{pct}",
+                String(pct),
+            );
+            this.updateStatusBar(`lilbee: ${text}${suffix}`, DOT_STATE.PRIMARY);
+        } else {
+            const text = MESSAGES.STATUS_TASKS_RUNNING_PLURAL.replace("{count}", String(allActive.length))
+                .replace("{name}", first.name)
+                .replace("{pct}", String(pct));
+            this.updateStatusBar(`lilbee: ${text}${suffix}`, DOT_STATE.PRIMARY);
+        }
         this.setStatusClass("lilbee-status-adding");
+    }
+
+    private updateRibbonFromQueue(): void {
+        if (!this.ribbonIconEl) return;
+        const el = this.ribbonIconEl;
+        el.removeClass("lilbee-ribbon-active", "lilbee-ribbon-success", "lilbee-ribbon-error");
+        const allActive = this.taskQueue.activeAll;
+        const queued = this.taskQueue.queued;
+        const completed = this.taskQueue.completed;
+        if (allActive.length > 0 || queued.length > 0) {
+            el.addClass("lilbee-ribbon-active");
+            return;
+        }
+        const recent = completed[0];
+        if (!recent || recent.completedAt === null) return;
+        if (Date.now() - recent.completedAt >= TASK_FLASH_WINDOW_MS) return;
+        if (recent.status === TASK_STATUS.DONE) el.addClass("lilbee-ribbon-success");
+        else if (recent.status === TASK_STATUS.FAILED) el.addClass("lilbee-ribbon-error");
+    }
+
+    private renderStatusFlash(recent: TaskEntry, completed: readonly TaskEntry[]): void {
+        if (recent.status === TASK_STATUS.DONE) {
+            const recentDone = countRecentByStatus(completed, TASK_STATUS.DONE);
+            const text =
+                recentDone > 1
+                    ? MESSAGES.STATUS_TASKS_DONE_FLASH.replace("{count}", String(recentDone)).replace(
+                          "{name}",
+                          recent.name,
+                      )
+                    : MESSAGES.STATUS_TASK_DONE_FLASH.replace("{name}", recent.name);
+            this.updateStatusBar(`lilbee: ${text}`, DOT_STATE.SUCCESS);
+            this.setStatusClass("lilbee-status-ready");
+            return;
+        }
+        if (recent.status === TASK_STATUS.FAILED) {
+            const recentFailed = countRecentByStatus(completed, TASK_STATUS.FAILED);
+            const template = recentFailed > 1 ? MESSAGES.STATUS_TASKS_FAILED_FLASH : MESSAGES.STATUS_TASK_FAILED_FLASH;
+            const text = template.replace("{count}", String(recentFailed)).replace("{name}", recent.name);
+            this.updateStatusBar(`lilbee: ${text}`, DOT_STATE.ERROR);
+            this.setStatusClass("lilbee-status-error");
+            return;
+        }
+        this.setStatusReady();
     }
 
     async fetchActiveModel(): Promise<void> {
@@ -637,32 +802,57 @@ export default class LilbeePlugin extends Plugin {
 
     private async runAdd(paths: string[]): Promise<void> {
         const taskId = this.taskQueue.enqueue("Adding files", TASK_TYPE.ADD);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         this.syncController = new AbortController();
+        this.taskQueue.registerAbort(taskId, this.syncController);
 
         try {
+            const progress = new FileProgressTracker();
             let syncResult: SyncDone | null = null;
-            for await (const event of this.api.addFiles(
-                paths,
-                true,
-                this.settings.enableOcr,
-                this.syncController.signal,
-            )) {
+            const controller = this.syncController;
+            const rawStream = this.api.addFiles(paths, true, this.settings.enableOcr, controller.signal);
+            for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };
-                    const pct = Math.round((d.current_file / d.total_files) * 100);
-                    this.taskQueue.update(taskId, pct, `file ${d.current_file}/${d.total_files}`);
+                    progress.startFile(d.current_file, d.total_files);
+                    this.taskQueue.update(
+                        taskId,
+                        progress.percent(),
+                        MESSAGES.STATUS_TASK_FILE.replace("{current}", String(d.current_file)).replace(
+                            "{total}",
+                            String(d.total_files),
+                        ),
+                    );
                 } else if (event.event === SSE_EVENT.EXTRACT) {
                     const d = event.data as { page: number; total_pages: number; file: string };
-                    this.taskQueue.update(taskId, -1, `extracting ${d.file} p${d.page}/${d.total_pages}`);
+                    progress.setExtractFraction(d.page, d.total_pages);
+                    this.taskQueue.update(
+                        taskId,
+                        progress.percent(),
+                        MESSAGES.STATUS_TASK_EXTRACTING.replace("{file}", d.file)
+                            .replace("{page}", String(d.page))
+                            .replace("{total}", String(d.total_pages)),
+                    );
                 } else if (event.event === SSE_EVENT.EMBED) {
                     const d = event.data as { chunk: number; total_chunks: number };
-                    this.taskQueue.update(taskId, -1, `embedding chunk ${d.chunk}/${d.total_chunks}`);
+                    progress.setEmbedFraction(d.chunk, d.total_chunks);
+                    this.taskQueue.update(
+                        taskId,
+                        progress.percent(),
+                        MESSAGES.STATUS_TASK_EMBEDDING.replace("{chunk}", String(d.chunk)).replace(
+                            "{total}",
+                            String(d.total_chunks),
+                        ),
+                    );
                 } else if (event.event === SSE_EVENT.DONE) {
                     const parsed = parseAddDoneEvent(event.data);
                     if (parsed) syncResult = parsed;
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
-                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     new Notice(MESSAGES.ERROR_ADD_FAILED_DETAIL(msg));
                     this.taskQueue.fail(taskId, msg);
                     return;
@@ -675,12 +865,15 @@ export default class LilbeePlugin extends Plugin {
             }
             this.taskQueue.complete(taskId);
         } catch (err) {
-            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
+            if (err instanceof StreamIdleError) {
+                new Notice(MESSAGES.ERROR_STREAM_IDLE);
+                this.taskQueue.fail(taskId, MESSAGES.ERROR_STREAM_IDLE);
+            } else if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.STATUS_ADD_CANCELLED);
                 this.taskQueue.cancel(taskId);
             } else {
                 console.error("[lilbee] add failed:", err);
-                const msg = err instanceof Error ? err.message : "cannot connect to server";
+                const msg = errorMessage(err, MESSAGES.ERROR_CANNOT_CONNECT);
                 new Notice(MESSAGES.ERROR_ADD_FAILED_DETAIL(msg));
                 this.taskQueue.fail(taskId, msg);
             }
@@ -772,21 +965,31 @@ export default class LilbeePlugin extends Plugin {
 
     async runWikiLint(): Promise<void> {
         const taskId = this.taskQueue.enqueue("Wiki lint", TASK_TYPE.WIKI);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         try {
             const result = await this.api.wikiLint();
             this.taskQueue.complete(taskId);
             new Notice(MESSAGES.NOTICE_WIKI_LINT_DONE(result.issues.length), NOTICE_DURATION_MS);
             new LintModal(this.app, result.issues).open();
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "unknown error";
+            const msg = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
             this.taskQueue.fail(taskId, msg);
         }
     }
 
     async runWikiGenerate(source: string): Promise<void> {
         const taskId = this.taskQueue.enqueue(`Generate wiki: ${source}`, TASK_TYPE.WIKI);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
+        const controller = new AbortController();
+        this.taskQueue.registerAbort(taskId, controller);
         try {
-            for await (const event of this.api.wikiGenerate(source)) {
+            for await (const event of this.api.wikiGenerate(source, controller.signal)) {
                 if (event.event === SSE_EVENT.WIKI_GENERATE_DONE) {
                     break;
                 } else if (event.event === SSE_EVENT.WIKI_GENERATE_ERROR) {
@@ -794,7 +997,7 @@ export default class LilbeePlugin extends Plugin {
                     throw new Error(d.message ?? "generation failed");
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
-                    throw new Error(typeof d === "string" ? d : (d.message ?? "unknown error"));
+                    throw new Error(extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN));
                 }
             }
             this.taskQueue.complete(taskId);
@@ -808,7 +1011,7 @@ export default class LilbeePlugin extends Plugin {
                 void this.reconcileWiki();
             }
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "unknown error";
+            const msg = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
             this.taskQueue.fail(taskId, msg);
         }
     }
@@ -820,15 +1023,21 @@ export default class LilbeePlugin extends Plugin {
         if (!confirmed) return;
 
         const taskId = this.taskQueue.enqueue("Wiki prune", TASK_TYPE.WIKI);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
+        const controller = new AbortController();
+        this.taskQueue.registerAbort(taskId, controller);
         try {
             let archived = 0;
-            for await (const event of this.api.wikiPrune()) {
+            for await (const event of this.api.wikiPrune(controller.signal)) {
                 if (event.event === SSE_EVENT.WIKI_PRUNE_DONE) {
                     const d = event.data as PruneData;
                     archived = d.archived ?? 0;
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
-                    throw new Error(typeof d === "string" ? d : (d.message ?? "unknown error"));
+                    throw new Error(extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN));
                 }
             }
             this.taskQueue.complete(taskId);
@@ -841,17 +1050,23 @@ export default class LilbeePlugin extends Plugin {
                 void this.reconcileWiki();
             }
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "unknown error";
+            const msg = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
             this.taskQueue.fail(taskId, msg);
         }
     }
 
     async runCrawl(url: string, depth: number, maxPages: number): Promise<void> {
         const taskId = this.taskQueue.enqueue(`Crawl ${url}`, TASK_TYPE.CRAWL);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         const controller = new AbortController();
+        this.taskQueue.registerAbort(taskId, controller);
         try {
             let pageCount = 0;
-            for await (const event of this.api.crawl(url, depth, maxPages, controller.signal)) {
+            const rawStream = this.api.crawl(url, depth, maxPages, controller.signal);
+            for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 switch (event.event) {
                     case SSE_EVENT.CRAWL_START:
                         break;
@@ -878,7 +1093,12 @@ export default class LilbeePlugin extends Plugin {
             }
             this.taskQueue.complete(taskId);
         } catch (err) {
-            const msg = err instanceof Error ? err.message : "unknown error";
+            if (err instanceof StreamIdleError) {
+                new Notice(MESSAGES.ERROR_STREAM_IDLE);
+                this.taskQueue.fail(taskId, MESSAGES.ERROR_STREAM_IDLE);
+                return;
+            }
+            const msg = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
             this.taskQueue.fail(taskId, msg);
             new Notice(MESSAGES.ERROR_CRAWL_FAILED.replace("{msg}", msg));
         }
@@ -887,27 +1107,57 @@ export default class LilbeePlugin extends Plugin {
     async triggerSync(): Promise<void> {
         if (!this.statusBarEl) return;
         const taskId = this.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
         this.syncController = new AbortController();
+        this.taskQueue.registerAbort(taskId, this.syncController);
 
         try {
+            const progress = new FileProgressTracker();
             let syncResult: SyncDone | null = null;
-            for await (const event of this.api.syncStream(this.settings.enableOcr, this.syncController.signal)) {
+            const controller = this.syncController;
+            const rawStream = this.api.syncStream(this.settings.enableOcr, controller.signal);
+            for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };
-                    const pct = Math.round((d.current_file / d.total_files) * 100);
-                    this.taskQueue.update(taskId, pct, `syncing ${d.current_file}/${d.total_files}`);
+                    progress.startFile(d.current_file, d.total_files);
+                    this.taskQueue.update(
+                        taskId,
+                        progress.percent(),
+                        MESSAGES.STATUS_TASK_SYNCING_FILE.replace("{current}", String(d.current_file)).replace(
+                            "{total}",
+                            String(d.total_files),
+                        ),
+                    );
                 } else if (event.event === SSE_EVENT.EXTRACT) {
                     const d = event.data as { page: number; total_pages: number; file: string };
-                    this.taskQueue.update(taskId, -1, `extracting ${d.file} p${d.page}/${d.total_pages}`);
+                    progress.setExtractFraction(d.page, d.total_pages);
+                    this.taskQueue.update(
+                        taskId,
+                        progress.percent(),
+                        MESSAGES.STATUS_TASK_EXTRACTING.replace("{file}", d.file)
+                            .replace("{page}", String(d.page))
+                            .replace("{total}", String(d.total_pages)),
+                    );
                 } else if (event.event === SSE_EVENT.EMBED) {
                     const d = event.data as { chunk: number; total_chunks: number };
-                    this.taskQueue.update(taskId, -1, `embedding chunk ${d.chunk}/${d.total_chunks}`);
+                    progress.setEmbedFraction(d.chunk, d.total_chunks);
+                    this.taskQueue.update(
+                        taskId,
+                        progress.percent(),
+                        MESSAGES.STATUS_TASK_EMBEDDING.replace("{chunk}", String(d.chunk)).replace(
+                            "{total}",
+                            String(d.total_chunks),
+                        ),
+                    );
                 } else if (event.event === SSE_EVENT.DONE) {
                     const parsed = parseAddDoneEvent(event.data);
                     if (parsed) syncResult = parsed;
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
-                    const msg = typeof d === "string" ? d : (d.message ?? "unknown error");
+                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     new Notice(MESSAGES.STATUS_SYNC_FAILED);
                     this.taskQueue.fail(taskId, msg);
                     return;
@@ -920,13 +1170,16 @@ export default class LilbeePlugin extends Plugin {
             }
             this.taskQueue.complete(taskId);
         } catch (err) {
-            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
+            if (err instanceof StreamIdleError) {
+                new Notice(MESSAGES.ERROR_STREAM_IDLE);
+                this.taskQueue.fail(taskId, MESSAGES.ERROR_STREAM_IDLE);
+            } else if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.STATUS_SYNC_CANCELLED);
                 this.taskQueue.cancel(taskId);
             } else {
                 console.error("[lilbee] sync failed:", err);
                 new Notice(MESSAGES.STATUS_SYNC_FAILED);
-                this.taskQueue.fail(taskId, "cannot connect to server");
+                this.taskQueue.fail(taskId, MESSAGES.ERROR_CANNOT_CONNECT);
             }
         } finally {
             this.syncController = null;

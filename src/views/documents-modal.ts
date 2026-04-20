@@ -6,15 +6,16 @@ import { MESSAGES } from "../locales/en";
 import { debounce, DEBOUNCE_MS } from "../utils";
 
 const PAGE_SIZE = 20;
+const SCROLL_BOTTOM_THRESHOLD_PX = 200;
 
 export class DocumentsModal extends Modal {
     private plugin: LilbeePlugin;
     private offset = 0;
     private total = 0;
+    private isFetching = false;
     private documents: DocumentEntry[] = [];
     private selected = new Set<string>();
     private resultsEl: HTMLElement | null = null;
-    private loadMoreBtn: HTMLElement | null = null;
     private removeBtn: HTMLElement | null = null;
     private searchQuery = "";
     private debouncedSearch: () => void;
@@ -53,20 +54,23 @@ export class DocumentsModal extends Modal {
         this.removeBtn.addEventListener("click", () => void this.removeSelected());
 
         this.resultsEl = contentEl.createDiv({ cls: "lilbee-documents-results" });
-
-        this.loadMoreBtn = contentEl.createEl("button", {
-            text: MESSAGES.BUTTON_LOAD_MORE,
-            cls: "lilbee-documents-load-more",
-        });
-        this.loadMoreBtn.style.display = "none";
-        this.loadMoreBtn.addEventListener("click", () => void this.fetchPage());
+        this.resultsEl.addEventListener("scroll", this.onScroll);
 
         this.resetAndFetch();
     }
 
     onClose(): void {
         this.cancelDebouncedSearch();
+        this.resultsEl?.removeEventListener("scroll", this.onScroll);
     }
+
+    private onScroll = (): void => {
+        if (!this.resultsEl || this.isFetching || this.offset >= this.total) return;
+        const { scrollTop, clientHeight, scrollHeight } = this.resultsEl;
+        if (scrollTop + clientHeight >= scrollHeight - SCROLL_BOTTOM_THRESHOLD_PX) {
+            void this.fetchPage();
+        }
+    };
 
     private resetAndFetch(): void {
         this.offset = 0;
@@ -78,6 +82,8 @@ export class DocumentsModal extends Modal {
     }
 
     private async fetchPage(): Promise<void> {
+        if (this.isFetching) return;
+        this.isFetching = true;
         try {
             const response: DocumentsResponse = await this.plugin.api.listDocuments(
                 this.searchQuery || undefined,
@@ -91,16 +97,11 @@ export class DocumentsModal extends Modal {
             for (const doc of response.documents) {
                 this.renderRow(doc);
             }
-
-            this.updateLoadMore();
         } catch {
             new Notice(MESSAGES.ERROR_LOAD_DOCUMENTS);
+        } finally {
+            this.isFetching = false;
         }
-    }
-
-    private updateLoadMore(): void {
-        if (!this.loadMoreBtn) return;
-        this.loadMoreBtn.style.display = this.offset < this.total ? "" : "none";
     }
 
     private updateRemoveBtn(): void {
