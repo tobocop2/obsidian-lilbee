@@ -42,13 +42,42 @@ export class CrawlModal extends Modal {
             attr: { type: "text" },
         });
 
-        const recursiveLabel = contentEl.createEl("label", { cls: "lilbee-crawl-recursive" });
+        const recursiveRow = contentEl.createDiv({ cls: "lilbee-crawl-recursive-row" });
+        const recursiveLabel = recursiveRow.createEl("label", { cls: "lilbee-crawl-recursive" });
         const recursiveInput = recursiveLabel.createEl("input", {
             cls: "lilbee-crawl-recursive-input",
             attr: { type: "checkbox" },
         });
         asInput(recursiveInput).checked = true;
         recursiveLabel.createSpan({ text: MESSAGES.LABEL_CRAWL_RECURSIVE });
+
+        const infoBtn = recursiveRow.createEl("button", {
+            cls: "lilbee-crawl-info-btn",
+            text: "i",
+            attr: {
+                type: "button",
+                "aria-label": MESSAGES.LABEL_CRAWL_RECURSIVE_INFO,
+                "aria-expanded": "false",
+                title: MESSAGES.LABEL_CRAWL_RECURSIVE_INFO,
+            },
+        });
+
+        const notice = contentEl.createDiv({ cls: "lilbee-crawl-notice" });
+        notice.setAttribute("hidden", "hidden");
+        notice.textContent = MESSAGES.NOTICE_CRAWL_RECURSIVE;
+
+        let noticeOpen = false;
+        const setNoticeOpen = (open: boolean): void => {
+            noticeOpen = open;
+            if (open) {
+                notice.removeAttribute("hidden");
+                infoBtn.setAttribute("aria-expanded", "true");
+            } else {
+                notice.setAttribute("hidden", "hidden");
+                infoBtn.setAttribute("aria-expanded", "false");
+            }
+        };
+        infoBtn.addEventListener("click", () => setNoticeOpen(!noticeOpen));
 
         const advanced = contentEl.createEl("details", { cls: "lilbee-crawl-advanced" });
         advanced.createEl("summary", { text: MESSAGES.LABEL_CRAWL_ADVANCED });
@@ -80,8 +109,10 @@ export class CrawlModal extends Modal {
             asInput(depthInput).disabled = !recursive;
             asInput(maxInput).disabled = !recursive;
             advanced.style.display = recursive ? "" : "none";
+            infoBtn.style.display = recursive ? "" : "none";
             if (!recursive) {
                 errorEl.textContent = "";
+                setNoticeOpen(false);
             }
         };
         recursiveInput.addEventListener("change", syncRecursiveState);

@@ -51,7 +51,7 @@ describe("CrawlModal", () => {
         Notice.clear();
     });
 
-    it("renders title, URL input, Recursive checkbox, and buttons on open", () => {
+    it("renders title, URL input, Recursive checkbox, info button, and buttons on open", () => {
         const { el } = openModal();
         const texts = collectTexts(el);
         expect(texts.some((t) => t.includes("Crawl web page"))).toBe(true);
@@ -59,9 +59,55 @@ describe("CrawlModal", () => {
         const recursive = el.find("lilbee-crawl-recursive-input") as any;
         expect(recursive).not.toBeNull();
         expect(recursive.checked).toBe(true);
+        const row = el.find("lilbee-crawl-recursive-row");
+        expect(row).not.toBeNull();
+        const info = el.find("lilbee-crawl-info-btn")!;
+        expect(info).not.toBeNull();
+        expect(info.attributes["aria-label"]).toBe("About whole-site crawl");
+        expect(info.attributes["aria-expanded"]).toBe("false");
         const buttons = findButtons(el);
         expect(buttons.some((b) => b.textContent === "Crawl")).toBe(true);
         expect(buttons.some((b) => b.textContent === "Cancel")).toBe(true);
+    });
+
+    it("whole-site disclaimer notice is hidden by default", () => {
+        const { el } = openModal();
+        const notice = el.find("lilbee-crawl-notice")!;
+        expect(notice).not.toBeNull();
+        expect(notice.attributes["hidden"]).toBe("hidden");
+        expect(notice.textContent).toContain("Whole-site crawl");
+    });
+
+    it("clicking the info button reveals the disclaimer and toggles aria-expanded", () => {
+        const { el } = openModal();
+        const info = el.find("lilbee-crawl-info-btn")!;
+        const notice = el.find("lilbee-crawl-notice")!;
+        expect(notice.attributes["hidden"]).toBe("hidden");
+        info.trigger("click");
+        expect(notice.attributes["hidden"]).toBeUndefined();
+        expect(info.attributes["aria-expanded"]).toBe("true");
+        info.trigger("click");
+        expect(notice.attributes["hidden"]).toBe("hidden");
+        expect(info.attributes["aria-expanded"]).toBe("false");
+    });
+
+    it("hides the info button and disclaimer when Recursive is off", () => {
+        const { el } = openModal();
+        const recursive = el.find("lilbee-crawl-recursive-input") as any;
+        const info = el.find("lilbee-crawl-info-btn")!;
+        const notice = el.find("lilbee-crawl-notice")!;
+
+        info.trigger("click");
+        expect(notice.attributes["hidden"]).toBeUndefined();
+
+        recursive.checked = false;
+        recursive.trigger("change");
+        expect(info.style.display).toBe("none");
+        expect(notice.attributes["hidden"]).toBe("hidden");
+
+        recursive.checked = true;
+        recursive.trigger("change");
+        expect(info.style.display).toBe("");
     });
 
     it("defaults depth and max-pages inputs to blank", () => {

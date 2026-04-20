@@ -57,7 +57,10 @@ export const MESSAGES = {
     LABEL_DEPTH: "Depth cap",
     LABEL_MAX_PAGES: "Max pages",
     LABEL_CRAWL_ADVANCED: "Advanced",
-    LABEL_CRAWL_RECURSIVE: "Recursive (crawl whole site)",
+    LABEL_CRAWL_RECURSIVE: "Crawl whole site",
+    LABEL_CRAWL_RECURSIVE_INFO: "About whole-site crawl",
+    NOTICE_CRAWL_RECURSIVE:
+        "Whole-site crawl follows every internal link it finds on the same origin. Large sites can fetch hundreds of pages and take a while. Use Advanced to cap depth or page count. Request delay, concurrency and retry behavior live in Settings → Crawling.",
     HINT_CRAWL_BLANK_NO_LIMIT: "blank = no limit",
     ERROR_CRAWL_MAX_PAGES_POSITIVE: "Max pages must be a positive integer or blank",
     ERROR_CRAWL_DEPTH_INVALID: "Depth cap must be a non-negative integer or blank",
