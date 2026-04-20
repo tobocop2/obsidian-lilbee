@@ -113,8 +113,8 @@ describe("MESSAGES", () => {
             expect(MESSAGES.DESC_ADAPTIVE_THRESHOLD).toBe(
                 "Automatically broaden the search if too few results are found",
             );
-            expect(MESSAGES.DESC_CRAWL_MAX_DEPTH).toBe("How many links deep to follow (0 = just the page itself)");
-            expect(MESSAGES.DESC_CRAWL_MAX_PAGES).toBe("Maximum number of pages to crawl from a website");
+            expect(MESSAGES.DESC_CRAWL_MAX_DEPTH).toBe("Optional ceiling on crawl depth. Leave blank for no cap.");
+            expect(MESSAGES.DESC_CRAWL_MAX_PAGES).toBe("Optional ceiling on pages per crawl. Leave blank for no cap.");
             expect(MESSAGES.DESC_CRAWL_TIMEOUT).toBe("How long to wait for each page to load before giving up");
             expect(MESSAGES.DESC_CHUNK_SIZE).toBe(
                 "How many tokens per text segment. Most users should not change this.",

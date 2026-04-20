@@ -1039,6 +1039,15 @@
     border-color: var(--interactive-accent);
 }
 
+.lilbee-crawl-recursive {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    margin: var(--size-4-2, 8px) 0;
+    font-size: var(--font-small, 13px);
+    cursor: pointer;
+}
+
 .lilbee-crawl-advanced {
     margin: var(--size-4-2, 8px) 0 var(--size-4-3, 12px);
 }
@@ -1055,12 +1064,6 @@
     color: var(--text-normal);
 }
 
-.lilbee-crawl-hint {
-    font-size: var(--font-smaller, 12px);
-    color: var(--text-muted);
-    margin-top: var(--size-4-1, 4px);
-}
-
 .lilbee-crawl-options {
     display: flex;
     gap: var(--size-4-4, 16px);
@@ -1069,20 +1072,32 @@
 
 .lilbee-crawl-options label {
     display: flex;
-    align-items: center;
+    flex-direction: column;
     gap: var(--size-4-1, 4px);
     font-size: var(--font-small, 13px);
     color: var(--text-muted);
 }
 
 .lilbee-crawl-options input {
-    width: 60px;
+    width: 80px;
     padding: var(--size-4-1, 4px);
     border: 1px solid var(--background-modifier-border);
     border-radius: var(--radius-s, 4px);
     background-color: var(--background-secondary);
     color: var(--text-normal);
     font-size: var(--font-small, 13px);
+}
+
+.lilbee-crawl-options input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.lilbee-crawl-error {
+    font-size: var(--font-smaller, 12px);
+    color: var(--text-error);
+    margin-top: var(--size-4-1, 4px);
+    min-height: 1em;
 }
 
 .lilbee-crawl-progress {

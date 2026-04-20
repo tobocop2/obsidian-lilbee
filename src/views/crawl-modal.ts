@@ -3,6 +3,24 @@ import type LilbeePlugin from "../main";
 import { MESSAGES } from "../locales/en";
 import { ensureUrlScheme } from "../utils";
 
+type ParseResult = { value: number | null; error: string | null };
+
+function parseOptionalCount(raw: string, opts: { allowZero: boolean }): ParseResult {
+    const errMsg = opts.allowZero ? MESSAGES.ERROR_CRAWL_DEPTH_INVALID : MESSAGES.ERROR_CRAWL_MAX_PAGES_POSITIVE;
+    const trimmed = raw.trim();
+    if (trimmed === "") return { value: null, error: null };
+    const n = Number(trimmed);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+        return { value: null, error: errMsg };
+    }
+    if (n === 0 && !opts.allowZero) {
+        return { value: null, error: errMsg };
+    }
+    return { value: n, error: null };
+}
+
+const asInput = (el: HTMLElement): HTMLInputElement => el as unknown as HTMLInputElement;
+
 export class CrawlModal extends Modal {
     private plugin: LilbeePlugin;
 
@@ -24,6 +42,14 @@ export class CrawlModal extends Modal {
             attr: { type: "text" },
         });
 
+        const recursiveLabel = contentEl.createEl("label", { cls: "lilbee-crawl-recursive" });
+        const recursiveInput = recursiveLabel.createEl("input", {
+            cls: "lilbee-crawl-recursive-input",
+            attr: { type: "checkbox" },
+        });
+        asInput(recursiveInput).checked = true;
+        recursiveLabel.createSpan({ text: MESSAGES.LABEL_CRAWL_RECURSIVE });
+
         const advanced = contentEl.createEl("details", { cls: "lilbee-crawl-advanced" });
         advanced.createEl("summary", { text: MESSAGES.LABEL_CRAWL_ADVANCED });
 
@@ -32,35 +58,67 @@ export class CrawlModal extends Modal {
         const depthLabel = options.createEl("label", { text: MESSAGES.LABEL_DEPTH });
         const depthInput = depthLabel.createEl("input", {
             cls: "lilbee-crawl-depth",
+            placeholder: MESSAGES.HINT_CRAWL_BLANK_NO_LIMIT,
             attr: { type: "number", min: "0" },
         });
-        (depthInput as unknown as HTMLInputElement).value = "0";
+        asInput(depthInput).value = "";
 
         const maxLabel = options.createEl("label", { text: MESSAGES.LABEL_MAX_PAGES });
         const maxInput = maxLabel.createEl("input", {
             cls: "lilbee-crawl-max-pages",
-            attr: { type: "number", min: "0" },
+            placeholder: MESSAGES.HINT_CRAWL_BLANK_NO_LIMIT,
+            attr: { type: "number", min: "1" },
         });
-        (maxInput as unknown as HTMLInputElement).value = "0";
+        asInput(maxInput).value = "";
 
-        advanced.createEl("div", {
-            cls: "lilbee-crawl-hint",
-            text: MESSAGES.HINT_CRAWL_UNBOUNDED,
-        });
+        // Error element lives OUTSIDE the Advanced disclosure so it's visible
+        // even when the user collapses Advanced after typing bad input.
+        const errorEl = contentEl.createEl("div", { cls: "lilbee-crawl-error" });
+
+        const syncRecursiveState = (): void => {
+            const recursive = asInput(recursiveInput).checked;
+            asInput(depthInput).disabled = !recursive;
+            asInput(maxInput).disabled = !recursive;
+            advanced.style.display = recursive ? "" : "none";
+            if (!recursive) {
+                errorEl.textContent = "";
+            }
+        };
+        recursiveInput.addEventListener("change", syncRecursiveState);
+        syncRecursiveState();
 
         const actions = contentEl.createDiv({ cls: "lilbee-crawl-actions" });
         const crawlBtn = actions.createEl("button", { text: MESSAGES.BUTTON_CRAWL, cls: "mod-cta" });
         crawlBtn.addEventListener("click", () => {
-            const raw = (urlInput as unknown as HTMLInputElement).value.trim();
+            const raw = asInput(urlInput).value.trim();
             if (!raw) {
                 new Notice(MESSAGES.NOTICE_ENTER_URL);
                 return;
             }
             const url = ensureUrlScheme(raw);
-            const depthRaw = parseInt((depthInput as unknown as HTMLInputElement).value, 10);
-            const depth = Number.isNaN(depthRaw) ? 0 : depthRaw;
-            const maxRaw = parseInt((maxInput as unknown as HTMLInputElement).value, 10);
-            const maxPages = Number.isNaN(maxRaw) ? 0 : maxRaw;
+
+            const recursive = asInput(recursiveInput).checked;
+            let depth: number | null;
+            let maxPages: number | null;
+
+            if (!recursive) {
+                depth = 0;
+                maxPages = null;
+                errorEl.textContent = "";
+            } else {
+                const depthRes = parseOptionalCount(asInput(depthInput).value, { allowZero: true });
+                const maxRes = parseOptionalCount(asInput(maxInput).value, { allowZero: false });
+                const err = maxRes.error ?? depthRes.error;
+                if (err) {
+                    errorEl.textContent = err;
+                    advanced.open = true;
+                    return;
+                }
+                errorEl.textContent = "";
+                depth = depthRes.value;
+                maxPages = maxRes.value;
+            }
+
             this.plugin.runCrawl(url, depth, maxPages);
             this.close();
         });

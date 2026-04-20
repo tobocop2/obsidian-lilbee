@@ -565,6 +565,34 @@ describe("pullModel()", () => {
             });
             expect(events[0].event).toBe("crawl_done");
         });
+
+        it("sends null explicitly for unbounded depth and max_pages", async () => {
+            fetchMock.mockResolvedValue(
+                sseResponse(['event: crawl_done\ndata: {"pages_crawled":42,"files_written":40}\n\n']),
+            );
+
+            await collect(client.crawl("https://example.com", null, null));
+
+            expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/crawl`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: "https://example.com", depth: null, max_pages: null }),
+            });
+        });
+
+        it("mixes explicit number with null", async () => {
+            fetchMock.mockResolvedValue(
+                sseResponse(['event: crawl_done\ndata: {"pages_crawled":3,"files_written":3}\n\n']),
+            );
+
+            await collect(client.crawl("https://example.com", 0, null));
+
+            expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/crawl`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: "https://example.com", depth: 0, max_pages: null }),
+            });
+        });
     });
 
     describe("config()", () => {

@@ -1069,7 +1069,7 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    async runCrawl(url: string, depth: number, maxPages: number): Promise<void> {
+    async runCrawl(url: string, depth: number | null, maxPages: number | null): Promise<void> {
         const taskId = this.taskQueue.enqueue(`Crawl ${url}`, TASK_TYPE.CRAWL);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);

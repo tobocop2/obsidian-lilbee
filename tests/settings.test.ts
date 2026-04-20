@@ -338,8 +338,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + 6 generation + syncDebounce + 3 crawling + wikiVaultFolder + 2 chunks + hfToken + litellm = 16
-            expect(textOnChanges.length).toBe(16);
+            // serverPort + 6 generation + syncDebounce + 10 crawling (3 existing + 7 new text) + wikiVaultFolder + 2 chunks + hfToken + litellm = 23
+            expect(textOnChanges.length).toBe(23);
         });
 
         it("does NOT show sync-debounce when syncMode is 'manual'", () => {
@@ -347,8 +347,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + 6 generation + 3 crawling + wikiVaultFolder + 2 chunks + hfToken + litellm = 15
-            expect(textOnChanges.length).toBe(15);
+            // serverPort + 6 generation + 10 crawling + wikiVaultFolder + 2 chunks + hfToken + litellm = 22
+            expect(textOnChanges.length).toBe(22);
         });
     });
 
@@ -2427,8 +2427,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 11: chunk_size (0=port, 1-6=gen, 7-9=crawl, 10=wikiVaultFolder, 11=chunk_size)
-            await textOnChanges[11]("512");
+            // Index 18: chunk_size (0=port, 1-6=gen, 7-16=crawl (10 text), 17=wikiVaultFolder, 18=chunk_size)
+            await textOnChanges[18]("512");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512 });
         });
 
@@ -2438,8 +2438,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 12: chunk_overlap
-            await textOnChanges[12]("64");
+            // Index 19: chunk_overlap
+            await textOnChanges[19]("64");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_overlap: 64 });
         });
 
@@ -2449,7 +2449,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("");
+            await textOnChanges[18]("");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2459,7 +2459,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("abc");
+            await textOnChanges[18]("abc");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2469,7 +2469,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("-1");
+            await textOnChanges[18]("-1");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2480,7 +2480,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("512");
+            await textOnChanges[18]("512");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
             mockGenericConfirmResult = true;
         });
@@ -2495,7 +2495,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("512");
+            await textOnChanges[18]("512");
             expect(plugin.triggerSync).toHaveBeenCalled();
         });
 
@@ -2506,7 +2506,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[11]("512");
+            await textOnChanges[18]("512");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
     });
@@ -2857,14 +2857,14 @@ describe("managed mode settings", () => {
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_pages: 100 });
         });
 
-        it("skips empty value", async () => {
+        it("sends null when nullable crawl_max_depth is cleared", async () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
             await textOnChanges[7]("");
-            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_depth: null });
         });
 
         it("skips invalid number", async () => {
@@ -2885,6 +2885,89 @@ describe("managed mode settings", () => {
 
             await textOnChanges[7]("-5");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("skips blank on non-nullable crawl_timeout (index 9)", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[9]("");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("accepts float for crawl_mean_delay (index 10)", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[10]("0.75");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_mean_delay: 0.75 });
+        });
+
+        it("accepts int for crawl_concurrent_requests (index 12)", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[12]("5");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_concurrent_requests: 5 });
+        });
+
+        it("rejects non-integer for crawl_concurrent_requests (index 12)", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[12]("5.5");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("accepts float for crawl_retry_max_backoff (index 15)", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[15]("45.0");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_max_backoff: 45 });
+        });
+
+        it("crawl_retry_on_rate_limit toggle updates config", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // toggleOnChanges[0] = adaptiveThreshold (search/retrieval), [1] = crawl_retry_on_rate_limit (crawling), [2+] = wiki toggles
+            await toggleOnChanges[1](false);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: false });
+        });
+
+        it("toggle shows error notice when updateConfig rejects", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await toggleOnChanges[1](false);
+            expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
+        });
+
+        it("nullable-clear shows error notice when updateConfig rejects", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[7](""); // clear crawl_max_depth (nullable)
+            expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
 
         it("shows error notice on updateConfig failure", async () => {
@@ -2930,6 +3013,36 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             expect(plugin.api.config).toHaveBeenCalled();
+        });
+
+        it("renders blank when cfg value is null and populates the toggle from a bool cfg", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                crawl_max_depth: null,
+                crawl_max_pages: 200,
+                crawl_retry_on_rate_limit: true,
+            });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+
+            await new Promise((r) => setTimeout(r, 0));
+
+            const maxDepthInput = (tab as any).serverConfigInputs.get("crawl_max_depth");
+            const maxPagesInput = (tab as any).serverConfigInputs.get("crawl_max_pages");
+            const retryToggle = (tab as any).serverConfigToggles.get("crawl_retry_on_rate_limit");
+            expect(maxDepthInput.value).toBe("");
+            expect(maxPagesInput.value).toBe("200");
+            expect(retryToggle).toBeDefined();
+            // toggle.setValue was replayed with the boolean cfg value after config() resolved
+            const setValueSpy = vi.spyOn(retryToggle, "setValue");
+            // Force another config round to verify the loop calls setValue with the bool
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                crawl_retry_on_rate_limit: false,
+            });
+            await (tab as any).loadServerDefaults();
+            await new Promise((r) => setTimeout(r, 0));
+            expect(setValueSpy).toHaveBeenCalledWith(false);
         });
 
         it("populates generation field placeholders from server config", async () => {
@@ -3057,7 +3170,7 @@ describe("managed mode settings", () => {
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
             // Index 13: HF token (0=port, 1-6=gen, 7-9=crawl, 10=wikiVaultFolder, 11-12=chunks, 13=hfToken)
-            await textOnChanges[13]("hf_test123");
+            await textOnChanges[20]("hf_test123");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ hf_token: "hf_test123" });
             expect(plugin.settings.hfToken).toBe("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("HuggingFace token saved"))).toBe(true);
@@ -3069,7 +3182,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[13]("");
+            await textOnChanges[20]("");
             expect(plugin.settings.hfToken).toBe("");
         });
 
@@ -3080,7 +3193,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[13]("hf_test123");
+            await textOnChanges[20]("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to save HuggingFace token"))).toBe(
                 true,
             );
@@ -3212,7 +3325,7 @@ describe("managed mode settings", () => {
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
             // Index 14: LiteLLM base URL (after hfToken at 13)
-            await textOnChanges[14]("http://localhost:4000");
+            await textOnChanges[21]("http://localhost:4000");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ litellm_base_url: "http://localhost:4000" });
         });
 
@@ -3222,7 +3335,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[14]("  ");
+            await textOnChanges[21]("  ");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -3233,7 +3346,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[14]("http://localhost:4000");
+            await textOnChanges[21]("http://localhost:4000");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update LiteLLM URL"))).toBe(true);
         });
     });
@@ -3600,10 +3713,10 @@ describe("managed mode settings", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // 3 API keys at indices 13-15 (0=port, 1-6=gen, 7-9=crawl, 10=wikiVaultFolder, 11-12=chunks, 13-15=apiKeys)
-            expect(inputs[13].type).toBe("password");
-            expect(inputs[14].type).toBe("password");
-            expect(inputs[15].type).toBe("password");
+            // 3 API keys at indices 20-22 (0=port, 1-6=gen, 7-16=crawl, 17=wikiVaultFolder, 18-19=chunks, 20-22=apiKeys)
+            expect(inputs[20].type).toBe("password");
+            expect(inputs[21].type).toBe("password");
+            expect(inputs[22].type).toBe("password");
         });
 
         it("sets HF token input type to password", () => {
@@ -3626,8 +3739,8 @@ describe("managed mode settings", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // HF token is index 16 (after 3 API keys at 13-15)
-            expect(inputs[16].type).toBe("password");
+            // HF token is index 23 (after 3 API keys at 20-22)
+            expect(inputs[23].type).toBe("password");
         });
     });
 });
