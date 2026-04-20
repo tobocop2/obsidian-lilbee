@@ -1541,6 +1541,229 @@ describe("LilbeePlugin", () => {
 
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
+
+        it("renders a SETUP row on first crawl that finishes before crawl events", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.SETUP_START,
+                        data: { component: "chromium", size_estimate_bytes: 180_000_000 },
+                    };
+                    yield {
+                        event: SSE_EVENT.SETUP_PROGRESS,
+                        data: {
+                            component: "chromium",
+                            downloaded_bytes: 60_000_000,
+                            total_bytes: 180_000_000,
+                            detail: "Downloading…",
+                        },
+                    };
+                    yield {
+                        event: SSE_EVENT.SETUP_PROGRESS,
+                        data: {
+                            component: "chromium",
+                            downloaded_bytes: 180_000_000,
+                            total_bytes: 180_000_000,
+                            detail: "Downloading…",
+                        },
+                    };
+                    yield { event: SSE_EVENT.SETUP_DONE, data: { component: "chromium", success: true, error: null } };
+                    yield { event: SSE_EVENT.CRAWL_START, data: {} };
+                    yield { event: SSE_EVENT.CRAWL_PAGE, data: { url: "https://example.com" } };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 1 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            const setupTasks = plugin.taskQueue.completed.filter((t) => t.type === "setup");
+            const crawlTasks = plugin.taskQueue.completed.filter((t) => t.type === "crawl");
+            expect(setupTasks.length).toBe(1);
+            expect(setupTasks[0]!.status).toBe("done");
+            expect(crawlTasks.length).toBe(1);
+            expect(crawlTasks[0]!.status).toBe("done");
+        });
+
+        it("ignores setup_progress when no setup_start was seen", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.SETUP_PROGRESS,
+                        data: {
+                            component: "chromium",
+                            downloaded_bytes: 10_000_000,
+                            total_bytes: 180_000_000,
+                            detail: "Downloading…",
+                        },
+                    };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 0 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            expect(plugin.taskQueue.completed.filter((t) => t.type === "setup").length).toBe(0);
+        });
+
+        it("ignores a duplicate setup_start", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.SETUP_START, data: { component: "chromium", size_estimate_bytes: null } };
+                    yield {
+                        event: SSE_EVENT.SETUP_START,
+                        data: { component: "chromium", size_estimate_bytes: 180_000_000 },
+                    };
+                    yield { event: SSE_EVENT.SETUP_DONE, data: { component: "chromium", success: true, error: null } };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 0 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            expect(plugin.taskQueue.completed.filter((t) => t.type === "setup").length).toBe(1);
+        });
+
+        it("handles setup_progress with null total (indeterminate)", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.SETUP_START, data: { component: "chromium", size_estimate_bytes: null } };
+                    yield {
+                        event: SSE_EVENT.SETUP_PROGRESS,
+                        data: {
+                            component: "chromium",
+                            downloaded_bytes: 5_000_000,
+                            total_bytes: null,
+                            detail: "Downloading…",
+                        },
+                    };
+                    yield { event: SSE_EVENT.SETUP_DONE, data: { component: "chromium", success: true, error: null } };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 0 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            const setupTask = plugin.taskQueue.completed.find((t) => t.type === "setup");
+            expect(setupTask?.status).toBe("done");
+        });
+
+        it("fails both setup and crawl rows on setup_done with success=false", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.SETUP_START,
+                        data: { component: "chromium", size_estimate_bytes: 180_000_000 },
+                    };
+                    yield {
+                        event: SSE_EVENT.SETUP_PROGRESS,
+                        data: {
+                            component: "chromium",
+                            downloaded_bytes: 1_000_000,
+                            total_bytes: 180_000_000,
+                            detail: "Downloading…",
+                        },
+                    };
+                    yield {
+                        event: SSE_EVENT.SETUP_DONE,
+                        data: { component: "chromium", success: false, error: "network unreachable" },
+                    };
+                })(),
+            );
+            const syncSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            const setup = plugin.taskQueue.completed.find((t) => t.type === "setup");
+            const crawl = plugin.taskQueue.completed.find((t) => t.type === "crawl");
+            expect(setup?.status).toBe("failed");
+            expect(setup?.error).toBe("network unreachable");
+            expect(crawl?.status).toBe("failed");
+            expect(crawl?.error).toContain("Chromium setup failed");
+            expect(Notice.instances.some((n) => n.message.includes("Crawler setup failed"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message.includes("lilbee setup crawler"))).toBe(true);
+            expect(syncSpy).not.toHaveBeenCalled();
+        });
+
+        it("uses ERROR_UNKNOWN when setup_done failure omits the error field", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.SETUP_START,
+                        data: { component: "chromium", size_estimate_bytes: 180_000_000 },
+                    };
+                    yield { event: SSE_EVENT.SETUP_DONE, data: { component: "chromium", success: false, error: null } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            const setup = plugin.taskQueue.completed.find((t) => t.type === "setup");
+            expect(setup?.error).toBe("unknown error");
+        });
+
+        it("ignores unknown SSE events without erroring", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_START, data: {} };
+                    yield { event: "some_future_event", data: { foo: "bar" } };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 0 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            const crawl = plugin.taskQueue.completed.find((t) => t.type === "crawl");
+            expect(crawl?.status).toBe("done");
+        });
+
+        it("fails any in-flight setup row when the crawl stream errors mid-setup", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.SETUP_START,
+                        data: { component: "chromium", size_estimate_bytes: 180_000_000 },
+                    };
+                    throw new Error("connection reset");
+                })(),
+            );
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            const setup = plugin.taskQueue.completed.find((t) => t.type === "setup");
+            const crawl = plugin.taskQueue.completed.find((t) => t.type === "crawl");
+            expect(setup?.status).toBe("failed");
+            expect(crawl?.status).toBe("failed");
+        });
     });
 
     describe("runAdd event handling", () => {

@@ -19,6 +19,9 @@ import {
     type LilbeeSettings,
     type ServerMode,
     type ServerState,
+    type SetupDonePayload,
+    type SetupProgressPayload,
+    type SetupStartPayload,
     type SyncDone,
     type TaskEntry,
     type VaultAdapter,
@@ -54,6 +57,17 @@ interface GenerateErrorData {
 }
 interface PruneData {
     archived?: number;
+}
+
+const BYTES_PER_MB = 1_000_000;
+
+function formatSetupDetail(downloaded: number, total: number | null): string {
+    const dlMB = (downloaded / BYTES_PER_MB).toFixed(1);
+    if (total === null) {
+        return MESSAGES.STATUS_TASK_SETUP_PROGRESS_INDETERMINATE.replace("{downloaded}", dlMB);
+    }
+    const totalMB = (total / BYTES_PER_MB).toFixed(1);
+    return MESSAGES.STATUS_TASK_SETUP_PROGRESS.replace("{downloaded}", dlMB).replace("{total}", totalMB);
 }
 
 function summarizeSyncResult(done: SyncDone): string {
@@ -1063,11 +1077,45 @@ export default class LilbeePlugin extends Plugin {
         }
         const controller = new AbortController();
         this.taskQueue.registerAbort(taskId, controller);
+        let setupTaskId: string | null = null;
+        let setupResolved = false;
         try {
             let pageCount = 0;
             const rawStream = this.api.crawl(url, depth, maxPages, controller.signal);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 switch (event.event) {
+                    case SSE_EVENT.SETUP_START: {
+                        if (setupTaskId !== null) break;
+                        setupTaskId = this.taskQueue.enqueue("Chromium setup", TASK_TYPE.SETUP);
+                        this.taskQueue.update(taskId, -1, MESSAGES.STATUS_TASK_CRAWLER_PREPARING);
+                        if (setupTaskId !== null) {
+                            const d = event.data as SetupStartPayload;
+                            this.taskQueue.update(setupTaskId, 0, formatSetupDetail(0, d.size_estimate_bytes));
+                        }
+                        break;
+                    }
+                    case SSE_EVENT.SETUP_PROGRESS: {
+                        if (setupTaskId === null) break;
+                        const d = event.data as SetupProgressPayload;
+                        const pct = d.total_bytes ? (d.downloaded_bytes / d.total_bytes) * 100 : -1;
+                        this.taskQueue.update(setupTaskId, pct, formatSetupDetail(d.downloaded_bytes, d.total_bytes));
+                        break;
+                    }
+                    case SSE_EVENT.SETUP_DONE: {
+                        const d = event.data as SetupDonePayload;
+                        setupResolved = true;
+                        if (d.success) {
+                            if (setupTaskId !== null) this.taskQueue.complete(setupTaskId);
+                            this.taskQueue.update(taskId, -1, "");
+                        } else {
+                            const err = d.error ?? MESSAGES.ERROR_UNKNOWN;
+                            if (setupTaskId !== null) this.taskQueue.fail(setupTaskId, err);
+                            this.taskQueue.fail(taskId, MESSAGES.ERROR_CRAWLER_SETUP_FAILED_SHORT);
+                            new Notice(MESSAGES.ERROR_CRAWLER_SETUP_FAILED.replace("{error}", err));
+                            return;
+                        }
+                        break;
+                    }
                     case SSE_EVENT.CRAWL_START:
                         break;
                     case SSE_EVENT.CRAWL_PAGE: {
@@ -1093,6 +1141,9 @@ export default class LilbeePlugin extends Plugin {
             }
             this.taskQueue.complete(taskId);
         } catch (err) {
+            if (setupTaskId !== null && !setupResolved) {
+                this.taskQueue.fail(setupTaskId, MESSAGES.ERROR_CRAWLER_SETUP_FAILED_SHORT);
+            }
             if (err instanceof StreamIdleError) {
                 new Notice(MESSAGES.ERROR_STREAM_IDLE);
                 this.taskQueue.fail(taskId, MESSAGES.ERROR_STREAM_IDLE);

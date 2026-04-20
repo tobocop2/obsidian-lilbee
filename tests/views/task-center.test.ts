@@ -244,6 +244,15 @@ describe("TaskCenterView rendering", () => {
         expect(badges[0]!.classList.contains("lilbee-task-badge-pull")).toBe(true);
     });
 
+    it("renders SETUP badge with correct text and class", () => {
+        plugin.taskQueue.enqueue("Chromium setup", TASK_TYPE.SETUP);
+        (view as any).render();
+
+        const badges = findByClass(contentEl, "lilbee-task-type-badge");
+        expect(badges[0]!.textContent).toBe("SETUP");
+        expect(badges[0]!.classList.contains("lilbee-task-badge-setup")).toBe(true);
+    });
+
     it("renders cancel button on active task with canCancel = true", () => {
         const _id = plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
         const task = plugin.taskQueue.active!;

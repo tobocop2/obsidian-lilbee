@@ -10,6 +10,7 @@
     --lilbee-color-download: #06b6d4;
     --lilbee-color-wiki: #10b981;
     --lilbee-color-delete: #ef4444;
+    --lilbee-color-setup: #8b5cf6;
 }
 
 .lilbee-document-card {
@@ -1689,6 +1690,7 @@
 .lilbee-task-badge-download { background-color: color-mix(in srgb, var(--lilbee-color-download) 12%, transparent); color: var(--lilbee-color-download); }
 .lilbee-task-badge-wiki { background-color: color-mix(in srgb, var(--lilbee-color-wiki) 12%, transparent); color: var(--lilbee-color-wiki); }
 .lilbee-task-badge-delete { background-color: color-mix(in srgb, var(--lilbee-color-delete) 12%, transparent); color: var(--lilbee-color-delete); }
+.lilbee-task-badge-setup { background-color: color-mix(in srgb, var(--lilbee-color-setup) 12%, transparent); color: var(--lilbee-color-setup); }
 
 .lilbee-task-name {
     font-size: var(--font-small, 13px);
