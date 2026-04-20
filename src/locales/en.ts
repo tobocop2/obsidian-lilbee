@@ -56,6 +56,8 @@ export const MESSAGES = {
     LABEL_SOURCES: "Sources",
     LABEL_DEPTH: "Depth:",
     LABEL_MAX_PAGES: "Max pages:",
+    LABEL_CRAWL_ADVANCED: "Advanced",
+    HINT_CRAWL_UNBOUNDED: "Leave as 0 to crawl as much as the server allows.",
     LABEL_SERVER_MODE: "Server mode",
     LABEL_SERVER_STATUS: "Server status",
     LABEL_SERVER_CONTROLS: "Server controls",

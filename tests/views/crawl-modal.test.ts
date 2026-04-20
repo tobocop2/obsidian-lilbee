@@ -59,7 +59,21 @@ describe("CrawlModal", () => {
         expect(depth).not.toBeNull();
         expect(maxPages).not.toBeNull();
         expect((depth as any).value).toBe("0");
-        expect((maxPages as any).value).toBe("50");
+        expect((maxPages as any).value).toBe("0");
+    });
+
+    it("hides advanced controls inside a <details> disclosure", () => {
+        const app = new App();
+        const plugin = makePlugin();
+        const modal = new CrawlModal(app as any, plugin as any);
+        modal.onOpen();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const advanced = el.find("lilbee-crawl-advanced");
+        expect(advanced).not.toBeNull();
+        expect((advanced as any).tagName).toBe("DETAILS");
+        expect(advanced!.findAll("lilbee-crawl-depth")).toHaveLength(1);
+        expect(advanced!.findAll("lilbee-crawl-max-pages")).toHaveLength(1);
     });
 
     it("Cancel closes the modal", () => {
@@ -92,7 +106,7 @@ describe("CrawlModal", () => {
         expect(plugin.runCrawl).not.toHaveBeenCalled();
     });
 
-    it("calls plugin.runCrawl and closes modal on submit", () => {
+    it("calls plugin.runCrawl with unbounded defaults and closes modal on submit", () => {
         const app = new App();
         const plugin = makePlugin();
         const modal = new CrawlModal(app as any, plugin as any);
@@ -105,11 +119,11 @@ describe("CrawlModal", () => {
         const crawlBtn = findButtons(el).find((b) => b.textContent === "Crawl")!;
         crawlBtn.trigger("click");
 
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, 50);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, 0);
         expect(closeSpy).toHaveBeenCalled();
     });
 
-    it("uses default maxPages when input is invalid", () => {
+    it("falls back to unbounded (0) when inputs are non-numeric", () => {
         const app = new App();
         const plugin = makePlugin();
         const modal = new CrawlModal(app as any, plugin as any);
@@ -126,7 +140,7 @@ describe("CrawlModal", () => {
         const crawlBtn = findButtons(el).find((b) => b.textContent === "Crawl")!;
         crawlBtn.trigger("click");
 
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, 50);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, 0);
     });
 
     it("prepends https:// when URL has no scheme", () => {
@@ -141,7 +155,7 @@ describe("CrawlModal", () => {
         const crawlBtn = findButtons(el).find((b) => b.textContent === "Crawl")!;
         crawlBtn.trigger("click");
 
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, 50);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, 0);
     });
 
     it("preserves http:// when already present", () => {
@@ -156,7 +170,7 @@ describe("CrawlModal", () => {
         const crawlBtn = findButtons(el).find((b) => b.textContent === "Crawl")!;
         crawlBtn.trigger("click");
 
-        expect(plugin.runCrawl).toHaveBeenCalledWith("http://example.com", 0, 50);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("http://example.com", 0, 0);
     });
 
     it("passes custom depth and maxPages", () => {

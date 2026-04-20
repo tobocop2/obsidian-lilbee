@@ -24,21 +24,29 @@ export class CrawlModal extends Modal {
             attr: { type: "text" },
         });
 
-        const options = contentEl.createDiv({ cls: "lilbee-crawl-options" });
+        const advanced = contentEl.createEl("details", { cls: "lilbee-crawl-advanced" });
+        advanced.createEl("summary", { text: MESSAGES.LABEL_CRAWL_ADVANCED });
+
+        const options = advanced.createDiv({ cls: "lilbee-crawl-options" });
 
         const depthLabel = options.createEl("label", { text: MESSAGES.LABEL_DEPTH });
         const depthInput = depthLabel.createEl("input", {
             cls: "lilbee-crawl-depth",
-            attr: { type: "number" },
+            attr: { type: "number", min: "0" },
         });
         (depthInput as unknown as HTMLInputElement).value = "0";
 
         const maxLabel = options.createEl("label", { text: MESSAGES.LABEL_MAX_PAGES });
         const maxInput = maxLabel.createEl("input", {
             cls: "lilbee-crawl-max-pages",
-            attr: { type: "number" },
+            attr: { type: "number", min: "0" },
         });
-        (maxInput as unknown as HTMLInputElement).value = "50";
+        (maxInput as unknown as HTMLInputElement).value = "0";
+
+        advanced.createEl("div", {
+            cls: "lilbee-crawl-hint",
+            text: MESSAGES.HINT_CRAWL_UNBOUNDED,
+        });
 
         const actions = contentEl.createDiv({ cls: "lilbee-crawl-actions" });
         const crawlBtn = actions.createEl("button", { text: MESSAGES.BUTTON_CRAWL, cls: "mod-cta" });
@@ -52,7 +60,7 @@ export class CrawlModal extends Modal {
             const depthRaw = parseInt((depthInput as unknown as HTMLInputElement).value, 10);
             const depth = Number.isNaN(depthRaw) ? 0 : depthRaw;
             const maxRaw = parseInt((maxInput as unknown as HTMLInputElement).value, 10);
-            const maxPages = Number.isNaN(maxRaw) ? 50 : maxRaw;
+            const maxPages = Number.isNaN(maxRaw) ? 0 : maxRaw;
             this.plugin.runCrawl(url, depth, maxPages);
             this.close();
         });

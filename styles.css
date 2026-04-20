@@ -1039,10 +1039,32 @@
     border-color: var(--interactive-accent);
 }
 
+.lilbee-crawl-advanced {
+    margin: var(--size-4-2, 8px) 0 var(--size-4-3, 12px);
+}
+
+.lilbee-crawl-advanced > summary {
+    cursor: pointer;
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    padding: var(--size-4-1, 4px) 0;
+    user-select: none;
+}
+
+.lilbee-crawl-advanced > summary:hover {
+    color: var(--text-normal);
+}
+
+.lilbee-crawl-hint {
+    font-size: var(--font-smaller, 12px);
+    color: var(--text-muted);
+    margin-top: var(--size-4-1, 4px);
+}
+
 .lilbee-crawl-options {
     display: flex;
     gap: var(--size-4-4, 16px);
-    margin-bottom: var(--size-4-3, 12px);
+    margin-top: var(--size-4-2, 8px);
 }
 
 .lilbee-crawl-options label {
