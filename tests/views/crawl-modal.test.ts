@@ -178,4 +178,24 @@ describe("CrawlModal", () => {
 
         expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 2, 10);
     });
+
+    it("preserves explicit 0 for depth and maxPages", () => {
+        const app = new App();
+        const plugin = makePlugin();
+        const modal = new CrawlModal(app as any, plugin as any);
+        modal.onOpen();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const urlInput = el.find("lilbee-crawl-url")!;
+        (urlInput as any).value = "https://example.com";
+        const depthInput = el.find("lilbee-crawl-depth")!;
+        (depthInput as any).value = "0";
+        const maxPagesInput = el.find("lilbee-crawl-max-pages")!;
+        (maxPagesInput as any).value = "0";
+
+        const crawlBtn = findButtons(el).find((b) => b.textContent === "Crawl")!;
+        crawlBtn.trigger("click");
+
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, 0);
+    });
 });

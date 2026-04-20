@@ -49,8 +49,10 @@ export class CrawlModal extends Modal {
                 return;
             }
             const url = ensureUrlScheme(raw);
-            const depth = parseInt((depthInput as unknown as HTMLInputElement).value, 10) || 0;
-            const maxPages = parseInt((maxInput as unknown as HTMLInputElement).value, 10) || 50;
+            const depthRaw = parseInt((depthInput as unknown as HTMLInputElement).value, 10);
+            const depth = Number.isNaN(depthRaw) ? 0 : depthRaw;
+            const maxRaw = parseInt((maxInput as unknown as HTMLInputElement).value, 10);
+            const maxPages = Number.isNaN(maxRaw) ? 50 : maxRaw;
             this.plugin.runCrawl(url, depth, maxPages);
             this.close();
         });
