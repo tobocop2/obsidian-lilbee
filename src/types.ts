@@ -189,7 +189,28 @@ export const SSE_EVENT = {
     WIKI_GENERATE_DONE: "wiki_generate_done",
     WIKI_GENERATE_ERROR: "wiki_generate_error",
     WIKI_PRUNE_DONE: "wiki_prune_done",
+    SETUP_START: "setup_start",
+    SETUP_PROGRESS: "setup_progress",
+    SETUP_DONE: "setup_done",
 } as const;
+
+export interface SetupStartPayload {
+    component: string;
+    size_estimate_bytes: number | null;
+}
+
+export interface SetupProgressPayload {
+    component: string;
+    downloaded_bytes: number;
+    total_bytes: number | null;
+    detail: string;
+}
+
+export interface SetupDonePayload {
+    component: string;
+    success: boolean;
+    error: string | null;
+}
 
 export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
@@ -324,7 +345,7 @@ export const DOT_STATE = {
     ERROR: "error",
 } as const satisfies Record<string, DotState>;
 
-export type TaskType = "sync" | "add" | "pull" | "crawl" | "download" | "wiki" | "delete";
+export type TaskType = "sync" | "add" | "pull" | "crawl" | "download" | "wiki" | "delete" | "setup";
 
 export const TASK_TYPE = {
     SYNC: "sync",
@@ -334,6 +355,7 @@ export const TASK_TYPE = {
     DOWNLOAD: "download",
     WIKI: "wiki",
     DELETE: "delete",
+    SETUP: "setup",
 } as const satisfies Record<string, TaskType>;
 
 export type SyncMode = "manual" | "auto";
