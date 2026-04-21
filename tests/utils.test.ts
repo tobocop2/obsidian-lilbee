@@ -5,11 +5,14 @@ import {
     formatBytes,
     formatRate,
     formatElapsed,
+    noticeForResultError,
     percentFromSse,
     StreamIdleError,
     withIdleTimeout,
 } from "../src/utils";
 import { SessionTokenError } from "../src/api";
+import { MESSAGES } from "../src/locales/en";
+import { ERROR_NAME } from "../src/types";
 
 describe("ensureUrlScheme", () => {
     it("returns URL unchanged when it starts with https://", () => {
@@ -178,7 +181,32 @@ describe("errorMessage", () => {
 
     it("returns an actionable, user-facing message for SessionTokenError", () => {
         const out = errorMessage(new SessionTokenError(401, "stale"), "fallback");
-        expect(out).toContain("session token invalid");
-        expect(out).toContain("Settings → Session token");
+        expect(out).toBe(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+    });
+
+    it("falls back for undefined", () => {
+        expect(errorMessage(undefined, "fallback")).toBe("fallback");
+    });
+
+    it("uses ERROR_NAME.SESSION_TOKEN constant for the thrown error name", () => {
+        const e = new SessionTokenError(403, "bad");
+        expect(e.name).toBe(ERROR_NAME.SESSION_TOKEN);
+    });
+});
+
+describe("noticeForResultError", () => {
+    it("returns the dedicated session-token notice for SessionTokenError", () => {
+        const err = new SessionTokenError(401, "stale");
+        expect(noticeForResultError(err, "generic fallback")).toBe(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+    });
+
+    it("returns the operation-specific fallback for other errors", () => {
+        expect(noticeForResultError(new Error("boom"), "generic fallback")).toBe("generic fallback");
+    });
+
+    it("returns the fallback for non-Error values", () => {
+        expect(noticeForResultError("raw", "generic fallback")).toBe("generic fallback");
+        expect(noticeForResultError(null, "generic fallback")).toBe("generic fallback");
+        expect(noticeForResultError(undefined, "generic fallback")).toBe("generic fallback");
     });
 });

@@ -35,7 +35,7 @@ export class SessionTokenError extends Error {
     readonly status: number;
     constructor(status: number, body: string) {
         super(`Session token invalid (HTTP ${status}): ${body}`);
-        this.name = "SessionTokenError";
+        this.name = ERROR_NAME.SESSION_TOKEN;
         this.status = status;
     }
 }

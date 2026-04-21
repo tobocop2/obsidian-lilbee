@@ -33,6 +33,7 @@ import {
     percentFromSse,
     errorMessage,
     extractSseErrorMessage,
+    noticeForResultError,
 } from "../utils";
 
 interface OpenDialogResult {
@@ -380,7 +381,7 @@ export class ChatView extends ItemView {
                 }
                 const result = await this.plugin.api.setEmbeddingModel(el.value);
                 if (result.isErr()) {
-                    new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
+                    new Notice(noticeForResultError(result.error, MESSAGES.NOTICE_FAILED_EMBEDDING));
                     this.revertEmbeddingSelect(previous);
                     return;
                 }
@@ -450,7 +451,7 @@ export class ChatView extends ItemView {
 
         const result = await this.plugin.api.setChatModel(model.name);
         if (result.isErr()) {
-            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name));
+            new Notice(noticeForResultError(result.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name)));
         } else {
             this.plugin.activeModel = model.name;
             new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));

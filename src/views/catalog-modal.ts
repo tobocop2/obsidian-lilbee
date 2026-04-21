@@ -12,6 +12,7 @@ import {
     percentFromSse,
     errorMessage,
     extractSseErrorMessage,
+    noticeForResultError,
 } from "../utils";
 import { renderModelCard } from "../components/model-card";
 
@@ -164,7 +165,7 @@ export class CatalogModal extends Modal {
         try {
             const result = await this.plugin.api.catalog(params);
             if (result.isErr()) {
-                new Notice(MESSAGES.ERROR_LOAD_CATALOG);
+                new Notice(noticeForResultError(result.error, MESSAGES.ERROR_LOAD_CATALOG));
                 return;
             }
 
@@ -382,8 +383,10 @@ export class CatalogModal extends Modal {
 
         const result = await this.plugin.api.deleteModel(entry.hf_repo, entry.source);
         if (result.isErr()) {
-            new Notice(MESSAGES.ERROR_REMOVE_MODEL.replace("{model}", entry.hf_repo));
-            this.plugin.taskQueue.fail(taskId, result.error.message);
+            new Notice(
+                noticeForResultError(result.error, MESSAGES.ERROR_REMOVE_MODEL.replace("{model}", entry.hf_repo)),
+            );
+            this.plugin.taskQueue.fail(taskId, errorMessage(result.error, result.error.message));
             btn.textContent = MESSAGES.BUTTON_REMOVE;
             (btn as HTMLButtonElement).disabled = false;
             return;
@@ -402,7 +405,7 @@ export class CatalogModal extends Modal {
         const result = await this.setActiveFor(entry);
 
         if (result.isErr()) {
-            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", entry.hf_repo));
+            new Notice(noticeForResultError(result.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", entry.hf_repo)));
             btn.textContent = MESSAGES.BUTTON_USE;
             (btn as HTMLButtonElement).disabled = false;
             return;
@@ -483,7 +486,7 @@ export class CatalogModal extends Modal {
 
         const result = await this.setActiveFor(entry);
         if (result.isErr()) {
-            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", entry.hf_repo));
+            new Notice(noticeForResultError(result.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", entry.hf_repo)));
             this.plugin.fetchActiveModel();
             this.resetAndFetch();
             return;

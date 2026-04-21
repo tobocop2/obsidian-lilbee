@@ -327,6 +327,7 @@ export const MESSAGES = {
     NOTICE_NO_TOKEN_MANAGED: "lilbee: managed server didn't produce a session token — try restarting the plugin",
     NOTICE_NO_TOKEN_EXTERNAL:
         "lilbee: no session token — run 'lilbee token' and paste it in Settings → Session token, or set LILBEE_DATA",
+    NOTICE_SESSION_TOKEN_INVALID: "lilbee: session token invalid — paste a new one in Settings → Session token",
     NOTICE_QUEUE_FULL: "lilbee: too many tasks queued — wait for some to finish",
     NOTICE_MODEL_ACTIVATED_FULL: (model: string) => `lilbee: ${model} pulled and activated`,
     NOTICE_SET_MODEL: (type: string, model: string) => `${type} set to ${model}`,

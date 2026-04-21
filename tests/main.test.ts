@@ -6,6 +6,14 @@ import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
 import { ConfirmModal } from "../src/views/confirm-modal";
 vi.mock("../src/api", () => ({
+    SessionTokenError: class SessionTokenError extends Error {
+        readonly status: number;
+        constructor(status: number, body: string) {
+            super(`Session token invalid (HTTP ${status}): ${body}`);
+            this.name = "SessionTokenError";
+            this.status = status;
+        }
+    },
     LilbeeClient: vi.fn().mockImplementation(() => ({
         status: vi.fn(),
         syncStream: vi.fn(),
