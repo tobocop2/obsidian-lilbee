@@ -81,6 +81,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private serverConfigToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private serverConfigTextAreas: Map<string, HTMLTextAreaElement> = new Map();
     private configDefaults: Record<string, unknown> = {};
+    // Set to true while loadServerDefaults is programmatically syncing toggles to the server
+    // value so their onChange doesn't round-trip the same value back to the server.
+    private suppressToggleChanges = false;
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app, plugin);
@@ -417,7 +420,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 }
                 for (const [key, toggle] of this.serverConfigToggles) {
                     const v = cfg[key];
-                    if (typeof v === "boolean") toggle.setValue(v);
+                    if (typeof v === "boolean") {
+                        this.suppressToggleChanges = true;
+                        try {
+                            toggle.setValue(v);
+                        } finally {
+                            this.suppressToggleChanges = false;
+                        }
+                    }
                 }
                 for (const [key, textArea] of this.serverConfigTextAreas) {
                     const v = cfg[key];
@@ -807,6 +817,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     .setDesc(field.desc)
                     .addToggle((toggle) => {
                         toggle.onChange(async (value) => {
+                            if (this.suppressToggleChanges) return;
                             try {
                                 await this.plugin.api.updateConfig({ [field.key]: value });
                                 new Notice(MESSAGES.NOTICE_FIELD_UPDATED(field.name));

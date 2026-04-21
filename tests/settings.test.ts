@@ -3047,6 +3047,29 @@ describe("managed mode settings", () => {
             expect(setValueSpy).toHaveBeenCalledWith(false);
         });
 
+        it("does not echo-patch the server when populating a toggle from cfg (bb-t6yg)", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                crawl_retry_on_rate_limit: true,
+            });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+            await vi.waitFor(() => {
+                expect(plugin.api.config).toHaveBeenCalled();
+            });
+
+            // Clear any PATCHes from the initial render, then replay the setValue path and
+            // assert we didn't round-trip the same value back to the server.
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            await (tab as any).loadServerDefaults();
+            await vi.waitFor(() => {
+                const retryToggle = (tab as any).serverConfigToggles.get("crawl_retry_on_rate_limit");
+                expect(retryToggle).toBeDefined();
+            });
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
         it("populates generation field values from server config", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
