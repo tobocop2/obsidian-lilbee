@@ -3139,8 +3139,9 @@ describe("managed mode settings", () => {
             (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ chunk_size: 512 });
             const tab = makeTab(plugin);
             tab.display();
-            await new Promise((r) => setTimeout(r, 0));
-            expect((tab as any).configDefaults).toEqual({ chunk_size: 512 });
+            await vi.waitFor(() => {
+                expect((tab as any).configDefaults).toEqual({ chunk_size: 512 });
+            });
         });
 
         it("falls back to an empty map when the endpoint is missing", async () => {
@@ -3149,8 +3150,9 @@ describe("managed mode settings", () => {
             (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("404"));
             const tab = makeTab(plugin);
             tab.display();
-            await new Promise((r) => setTimeout(r, 0));
-            expect((tab as any).configDefaults).toEqual({});
+            await vi.waitFor(() => {
+                expect((tab as any).configDefaults).toEqual({});
+            });
         });
     });
 
@@ -3180,44 +3182,58 @@ describe("managed mode settings", () => {
     });
 
     describe("per-row reset-to-default affordance", () => {
-        it("PATCHes the cached default when the reset button is clicked", async () => {
+        // Reset button order (managed + manual-sync defaults):
+        // 0=serverMode(local) 1=serverPort(local) 2=topK 3=maxDistance 4=adaptiveThreshold
+        // 5=temperature 6=top_p 7=top_k_sampling 8=repeat_penalty 9=num_ctx 10=seed
+        // 11=syncMode(local) 12=crawl_max_depth ...
+        const TEMPERATURE_RESET = 5;
+
+        it("server-backed reset PATCHes the cached default", async () => {
             Notice.clear();
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ temperature: 0.7 });
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
-            await new Promise((r) => setTimeout(r, 0));
-            // First reset button is the Generation section's temperature field.
-            await extraButtonOnClicks[0]();
+            // Seed the cache directly so we don't race the async configDefaults fetch.
+            (tab as any).configDefaults = { temperature: 0.7 };
+            await extraButtonOnClicks[TEMPERATURE_RESET]();
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ temperature: 0.7 });
         });
 
-        it("is a no-op when the key isn't in the defaults map", async () => {
+        it("server-backed reset silently no-ops when defaults haven't loaded yet", async () => {
             Notice.clear();
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({});
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
-            await new Promise((r) => setTimeout(r, 0));
+            (tab as any).configDefaults = {};
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
-            await extraButtonOnClicks[0]();
+            await extraButtonOnClicks[TEMPERATURE_RESET]();
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
-            expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+            expect(Notice.instances.length).toBe(0);
         });
 
-        it("surfaces a failure notice when updateConfig rejects", async () => {
+        it("server-backed reset surfaces a reset-failure notice when updateConfig rejects", async () => {
             Notice.clear();
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ temperature: 0.7 });
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
-            await new Promise((r) => setTimeout(r, 0));
+            (tab as any).configDefaults = { temperature: 0.7 };
+            await extraButtonOnClicks[TEMPERATURE_RESET]();
+            expect(Notice.instances.some((n) => n.message.includes("failed to reset"))).toBe(true);
+        });
+
+        it("local reset writes DEFAULT_SETTINGS[key] to plugin state", async () => {
+            const plugin = makePlugin({ serverMode: "external" });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            // Index 0 is the serverMode reset (local).
             await extraButtonOnClicks[0]();
-            expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+            expect(plugin.settings.serverMode).toBe(DEFAULT_SETTINGS.serverMode);
+            expect(plugin.saveSettings).toHaveBeenCalled();
         });
     });
 
@@ -3227,10 +3243,9 @@ describe("managed mode settings", () => {
             mockGenericConfirmResult = false;
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ chunk_size: 512 });
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
-            await new Promise((r) => setTimeout(r, 0));
+            (tab as any).configDefaults = { chunk_size: 512 };
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             await buttonOnClicks[buttonOnClicks.length - 1]();
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
@@ -3242,15 +3257,14 @@ describe("managed mode settings", () => {
             mockGenericConfirmResult = true;
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({
+            const tab = makeTab(plugin);
+            const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+            (tab as any).configDefaults = {
                 chunk_size: 512,
                 crawl_max_depth: 2,
                 openai_api_key: "",
                 hf_token: "",
-            });
-            const tab = makeTab(plugin);
-            const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
-            await new Promise((r) => setTimeout(r, 0));
+            };
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             await buttonOnClicks[buttonOnClicks.length - 1]();
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512, crawl_max_depth: 2 });
@@ -3261,13 +3275,9 @@ describe("managed mode settings", () => {
             mockGenericConfirmResult = true;
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({
-                openai_api_key: "",
-                hf_token: "",
-            });
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
-            await new Promise((r) => setTimeout(r, 0));
+            (tab as any).configDefaults = { openai_api_key: "", hf_token: "" };
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             await buttonOnClicks[buttonOnClicks.length - 1]();
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
@@ -3278,11 +3288,10 @@ describe("managed mode settings", () => {
             mockGenericConfirmResult = true;
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ chunk_size: 512 });
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
-            await new Promise((r) => setTimeout(r, 0));
+            (tab as any).configDefaults = { chunk_size: 512 };
             await buttonOnClicks[buttonOnClicks.length - 1]();
             expect(Notice.instances.some((n) => n.message.includes("failed to reset"))).toBe(true);
         });
