@@ -342,6 +342,8 @@ export const MESSAGES = {
     NOTICE_UPDATED: (field: string) => `lilbee: ${field} updated`,
     NOTICE_FAILED_UPDATE: (field: string) => `lilbee: failed to update ${field}`,
     NOTICE_FIELD_UPDATED: (field: string) => `lilbee: ${field} updated`,
+    NOTICE_FIELD_RESET: (field: string) => `lilbee: ${field} reset to default`,
+    NOTICE_FAILED_RESET: (field: string) => `lilbee: failed to reset ${field}`,
     NOTICE_SETTINGS_RESET: "lilbee: settings reset to defaults",
     NOTICE_FAILED_RESET_ALL: "lilbee: failed to reset settings",
     NOTICE_REINDEX_REQUIRED: "lilbee: re-indexing required — starting sync...",
