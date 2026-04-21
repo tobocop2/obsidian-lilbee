@@ -12,7 +12,7 @@ import {
     TASK_TYPE,
     ERROR_NAME,
 } from "./types";
-import type { GenerationOptions, ModelCatalog, ModelInfo, ModelsResponse, ServerMode } from "./types";
+import type { ModelCatalog, ModelInfo, ModelsResponse, ServerMode } from "./types";
 import { MESSAGES } from "./locales/en";
 import { CatalogModal } from "./views/catalog-modal";
 import { ConfirmModal } from "./views/confirm-modal";
@@ -24,6 +24,17 @@ const CHECK_TIMEOUT_MS = 5000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
 const SEPARATOR_KEY = "__separator__";
 const SEPARATOR_LABEL = "\u2500\u2500 Other... \u2500\u2500";
+
+// Credential-like fields that must never be clobbered by the global "Reset all" button,
+// even if the server endpoint returns a default for them. Resetting a user's API key to the
+// empty default would silently break external-provider access with no undo path.
+const CREDENTIAL_FIELDS = new Set([
+    "openai_api_key",
+    "anthropic_api_key",
+    "gemini_api_key",
+    "hf_token",
+    "manual_session_token",
+]);
 
 /**
  * Remove `:latest` entries when a more specific tag of the same model exists.
@@ -62,20 +73,13 @@ export function buildModelOptions(catalog: ModelCatalog): Record<string, string>
 export { SEPARATOR_KEY, SEPARATOR_LABEL };
 
 type GenKey = "temperature" | "top_p" | "top_k_sampling" | "repeat_penalty" | "num_ctx" | "seed";
-const GEN_DEFAULTS_MAP: Record<GenKey, keyof GenerationOptions> = {
-    temperature: "temperature",
-    top_p: "top_p",
-    top_k_sampling: "top_k",
-    repeat_penalty: "repeat_penalty",
-    num_ctx: "num_ctx",
-    seed: "seed",
-};
 
 export class LilbeeSettingTab extends PluginSettingTab {
     plugin: LilbeePlugin;
-    private genInputs: Map<GenKey, HTMLInputElement> = new Map();
     private serverConfigInputs: Map<string, HTMLInputElement> = new Map();
     private serverConfigToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
+    private serverConfigTextAreas: Map<string, HTMLTextAreaElement> = new Map();
+    private configDefaults: Record<string, unknown> = {};
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app, plugin);
@@ -87,6 +91,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         containerEl.empty();
         this.serverConfigInputs.clear();
         this.serverConfigToggles.clear();
+        this.serverConfigTextAreas.clear();
 
         const filterInput = containerEl.createEl("input", {
             cls: "lilbee-settings-filter",
@@ -105,8 +110,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderCrawlingSettings(containerEl);
         this.renderWikiSettings(containerEl);
         this.renderAdvancedSettings(containerEl);
-        this.loadModelDefaults();
         this.loadServerDefaults();
+        this.loadConfigDefaults();
     }
 
     private filterSettings(containerEl: HTMLElement, query: string): void {
@@ -396,7 +401,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.plugin.api
             .config()
             .then((cfg: Record<string, unknown>) => {
-                // Populate editable crawl and advanced inputs with current server values
+                // Populate editable server-config inputs with the current server values.
                 for (const [key, inputEl] of this.serverConfigInputs) {
                     const v = cfg[key];
                     if (v === undefined) continue;
@@ -406,24 +411,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     const v = cfg[key];
                     if (typeof v === "boolean") toggle.setValue(v);
                 }
-                // Populate generation field placeholders from server config
-                const genConfigMap: Record<string, GenKey> = {
-                    temperature: "temperature",
-                    top_p: "top_p",
-                    top_k: "top_k_sampling",
-                    repeat_penalty: "repeat_penalty",
-                    num_ctx: "num_ctx",
-                    seed: "seed",
-                };
-                for (const [cfgKey, genKey] of Object.entries(genConfigMap)) {
-                    if (cfg[cfgKey] !== undefined) {
-                        const inputEl = this.genInputs.get(genKey);
-                        if (inputEl) {
-                            inputEl.placeholder = String(cfg[cfgKey]);
-                        }
+                for (const [key, textArea] of this.serverConfigTextAreas) {
+                    const v = cfg[key];
+                    if (Array.isArray(v)) {
+                        textArea.value = v.join("\n");
                     }
                 }
-                // Populate system prompt placeholder from server config
+                // Populate system prompt placeholder from server config.
                 if (cfg.system_prompt !== undefined) {
                     const sysPromptInput = this.serverConfigInputs.get("system_prompt");
                     if (sysPromptInput) {
@@ -434,6 +428,40 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .catch(() => {
                 // Connection status is shown via the Test button — no duplicate warning needed
             });
+    }
+
+    private loadConfigDefaults(): void {
+        this.plugin.api
+            .configDefaults()
+            .then((defaults: Record<string, unknown>) => {
+                this.configDefaults = defaults;
+            })
+            .catch(() => {
+                // Older servers without /api/config/defaults — reset affordances simply hide.
+                this.configDefaults = {};
+            });
+    }
+
+    private appendResetAffordance(setting: Setting, key: string): Setting {
+        return setting.addExtraButton((btn) =>
+            btn
+                .setIcon("rotate-ccw")
+                .setTooltip(MESSAGES.LABEL_RESET_TO_DEFAULT)
+                .onClick(async () => {
+                    if (!(key in this.configDefaults)) {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(key));
+                        return;
+                    }
+                    const def = this.configDefaults[key];
+                    try {
+                        await this.plugin.api.updateConfig({ [key]: def });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(key));
+                        this.display();
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(key));
+                    }
+                }),
+        );
     }
 
     private renderGenerationSettings(containerEl: HTMLElement): void {
@@ -458,7 +486,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 this.serverConfigInputs.set("system_prompt", text.inputEl as unknown as HTMLInputElement);
             });
 
-        this.genInputs.clear();
         const fields: { key: GenKey; name: string; desc: string; integer: boolean }[] = [
             {
                 key: "temperature",
@@ -499,48 +526,36 @@ export class LilbeeSettingTab extends PluginSettingTab {
         ];
 
         for (const field of fields) {
-            new Setting(details)
+            const genSetting = new Setting(details)
                 .setName(field.name)
                 .setDesc(field.desc)
                 .addText((text) => {
                     text.setPlaceholder(MESSAGES.PLACEHOLDER_NOT_SET)
-                        .setValue(
-                            this.plugin.settings[field.key] !== null ? String(this.plugin.settings[field.key]) : "",
-                        )
+                        .setValue("")
                         .onChange(async (value) => {
                             const trimmed = value.trim();
                             if (trimmed === "") {
-                                this.plugin.settings[field.key] = null;
-                            } else {
-                                const num = field.integer ? parseInt(trimmed, 10) : parseFloat(trimmed);
-                                if (!isNaN(num)) {
-                                    this.plugin.settings[field.key] = num;
+                                try {
+                                    await this.plugin.api.updateConfig({ [field.key]: null });
+                                    new Notice(MESSAGES.NOTICE_FIELD_UPDATED(field.name));
+                                } catch {
+                                    new Notice(MESSAGES.NOTICE_FAILED_UPDATE(field.name));
                                 }
+                                return;
                             }
-                            await this.plugin.saveSettings();
+                            const num = field.integer ? parseInt(trimmed, 10) : parseFloat(trimmed);
+                            if (isNaN(num)) return;
+                            try {
+                                await this.plugin.api.updateConfig({ [field.key]: num });
+                                new Notice(MESSAGES.NOTICE_FIELD_UPDATED(field.name));
+                            } catch {
+                                new Notice(MESSAGES.NOTICE_FAILED_UPDATE(field.name));
+                            }
                         });
-                    this.genInputs.set(field.key, text.inputEl);
+                    this.serverConfigInputs.set(field.key, text.inputEl);
                 });
+            this.appendResetAffordance(genSetting, field.key);
         }
-    }
-
-    private loadModelDefaults(): void {
-        const model = this.plugin.activeModel;
-        if (!model) return;
-        this.plugin.api
-            .showModel(model)
-            .then((defaults: Record<string, unknown>) => {
-                for (const [key, inputEl] of this.genInputs) {
-                    const genKey = GEN_DEFAULTS_MAP[key];
-                    const val = defaults[genKey];
-                    if (val !== undefined) {
-                        inputEl.placeholder = String(val);
-                    }
-                }
-            })
-            .catch(() => {
-                // Server unreachable — leave "Not set" placeholders
-            });
     }
 
     private loadEmbeddingDropdown(container: HTMLElement): void {
@@ -761,7 +776,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         for (const field of fields) {
             if (field.kind === "bool") {
-                new Setting(containerEl)
+                const boolSetting = new Setting(containerEl)
                     .setName(field.name)
                     .setDesc(field.desc)
                     .addToggle((toggle) => {
@@ -775,11 +790,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         });
                         this.serverConfigToggles.set(field.key, toggle);
                     });
+                this.appendResetAffordance(boolSetting, field.key);
                 continue;
             }
 
             const numField = field;
-            new Setting(containerEl)
+            const numSetting = new Setting(containerEl)
                 .setName(numField.name)
                 .setDesc(numField.desc)
                 .addText((text) => {
@@ -810,7 +826,32 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         });
                     this.serverConfigInputs.set(numField.key, text.inputEl as unknown as HTMLInputElement);
                 });
+            this.appendResetAffordance(numSetting, numField.key);
         }
+
+        const patternsSetting = new Setting(containerEl)
+            .setName(MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS)
+            .setDesc(MESSAGES.DESC_CRAWL_EXCLUDE_PATTERNS)
+            .addTextArea((text) => {
+                text.setValue("").onChange(async (value) => {
+                    const patterns = value
+                        .split("\n")
+                        .map((p) => p.trim())
+                        .filter((p) => p.length > 0);
+                    try {
+                        await this.plugin.api.updateConfig({ crawl_exclude_patterns: patterns });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS));
+                    }
+                });
+                text.inputEl.addClass("lilbee-crawl-exclude-patterns");
+                this.serverConfigTextAreas.set(
+                    "crawl_exclude_patterns",
+                    text.inputEl as unknown as HTMLTextAreaElement,
+                );
+            });
+        this.appendResetAffordance(patternsSetting, "crawl_exclude_patterns");
     }
 
     private renderWikiSettings(containerEl: HTMLElement): void {
@@ -1108,6 +1149,32 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     });
                 this.serverConfigInputs.set("litellm_base_url", text.inputEl as unknown as HTMLInputElement);
             });
+
+        new Setting(details)
+            .setName(MESSAGES.LABEL_RESET_ALL_SETTINGS)
+            .setDesc(MESSAGES.DESC_RESET_ALL_SETTINGS)
+            .addButton((btn) =>
+                btn
+                    .setButtonText(MESSAGES.BUTTON_RESET_ALL)
+                    .setWarning()
+                    .onClick(async () => {
+                        const confirm = new ConfirmModal(this.app, MESSAGES.CONFIRM_RESET_ALL_SETTINGS);
+                        confirm.open();
+                        const confirmed = await confirm.result;
+                        if (!confirmed) return;
+                        const payload = { ...this.configDefaults };
+                        // Never wipe credential fields — resetting them would surprise the user.
+                        for (const k of CREDENTIAL_FIELDS) delete payload[k];
+                        if (Object.keys(payload).length === 0) return;
+                        try {
+                            await this.plugin.api.updateConfig(payload);
+                            new Notice(MESSAGES.NOTICE_SETTINGS_RESET);
+                            this.display();
+                        } catch {
+                            new Notice(MESSAGES.NOTICE_FAILED_RESET_ALL);
+                        }
+                    }),
+            );
     }
 
     async checkEndpoint(url: string, statusEl: HTMLSpanElement): Promise<void> {

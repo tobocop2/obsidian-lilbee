@@ -10,15 +10,7 @@ import {
 } from "obsidian";
 import type LilbeePlugin from "../main";
 import { MODEL_SOURCE, MODEL_TASK, SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
-import type {
-    CatalogEntry,
-    GenerationOptions,
-    Message,
-    ModelCatalog,
-    SearchChunkType,
-    Source,
-    SSEEvent,
-} from "../types";
+import type { CatalogEntry, Message, ModelCatalog, SearchChunkType, Source, SSEEvent } from "../types";
 
 import { renderSourceChip } from "./results";
 import { buildModelOptions, SEPARATOR_KEY } from "../settings";
@@ -53,24 +45,6 @@ export const electronDialog = {
 };
 
 export const VIEW_TYPE_CHAT = "lilbee-chat";
-
-export function buildGenerationOptions(settings: {
-    temperature: number | null;
-    top_p: number | null;
-    top_k_sampling: number | null;
-    repeat_penalty: number | null;
-    num_ctx: number | null;
-    seed: number | null;
-}): GenerationOptions {
-    const opts: GenerationOptions = {};
-    if (settings.temperature != null) opts.temperature = settings.temperature;
-    if (settings.top_p != null) opts.top_p = settings.top_p;
-    if (settings.top_k_sampling != null) opts.top_k = settings.top_k_sampling;
-    if (settings.repeat_penalty != null) opts.repeat_penalty = settings.repeat_penalty;
-    if (settings.num_ctx != null) opts.num_ctx = settings.num_ctx;
-    if (settings.seed != null) opts.seed = settings.seed;
-    return opts;
-}
 
 function extractString(data: unknown, field: string): string {
     if (typeof data === "object" && data !== null && field in data) {
@@ -547,15 +521,12 @@ export class ChatView extends ItemView {
             });
         };
 
-        const genOpts = buildGenerationOptions(this.plugin.settings);
-
         try {
             for await (const event of this.plugin.api.chatStream(
                 text,
                 this.history.slice(0, -1),
                 this.plugin.settings.topK,
                 this.streamController.signal,
-                genOpts,
             )) {
                 this.handleStreamEvent(event, textEl, assistantBubble, state, revealContent, scheduleRender);
             }

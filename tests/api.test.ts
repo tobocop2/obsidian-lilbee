@@ -607,6 +607,18 @@ describe("pullModel()", () => {
         });
     });
 
+    describe("configDefaults()", () => {
+        it("calls GET /api/config/defaults", async () => {
+            const data = { chunk_size: 512, crawl_max_depth: null, crawl_exclude_patterns: ["/page/"] };
+            fetchMock.mockResolvedValue(jsonResponse(data));
+
+            const result = await client.configDefaults();
+
+            expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/config/defaults`, expect.objectContaining({}));
+            expect(result).toEqual(data);
+        });
+    });
+
     describe("updateConfig()", () => {
         it("PATCHes /api/config", async () => {
             fetchMock.mockResolvedValue(jsonResponse({ updated: ["temperature"], reindex_required: false }));

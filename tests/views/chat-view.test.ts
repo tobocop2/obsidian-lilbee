@@ -10,13 +10,7 @@ if (typeof globalThis.requestAnimationFrame === "undefined") {
 
 import { Notice, WorkspaceLeaf } from "../__mocks__/obsidian";
 import { MockElement } from "../__mocks__/obsidian";
-import {
-    ChatView,
-    VIEW_TYPE_CHAT,
-    VaultFilePickerModal,
-    electronDialog,
-    buildGenerationOptions,
-} from "../../src/views/chat-view";
+import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal, electronDialog } from "../../src/views/chat-view";
 import { ok, err } from "neverthrow";
 import type LilbeePlugin from "../../src/main";
 import { SSE_EVENT } from "../../src/types";
@@ -301,7 +295,7 @@ describe("ChatView.onOpen — send button triggers send", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
 
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("hello", [], 5, expect.any(AbortSignal), {});
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("hello", [], 5, expect.any(AbortSignal));
     });
 
     it("clears textarea value after send", async () => {
@@ -2117,73 +2111,10 @@ describe("ChatView.onClose — aborts both controllers", () => {
     });
 });
 
-describe("buildGenerationOptions", () => {
-    it("returns empty object when all fields are null", () => {
-        expect(
-            buildGenerationOptions({
-                temperature: null,
-                top_p: null,
-                top_k_sampling: null,
-                repeat_penalty: null,
-                num_ctx: null,
-                seed: null,
-            }),
-        ).toEqual({});
-    });
-
-    it("includes only non-null fields", () => {
-        expect(
-            buildGenerationOptions({
-                temperature: 0.7,
-                top_p: null,
-                top_k_sampling: 40,
-                repeat_penalty: null,
-                num_ctx: null,
-                seed: null,
-            }),
-        ).toEqual({ temperature: 0.7, top_k: 40 });
-    });
-
-    it("maps top_k_sampling to top_k", () => {
-        const opts = buildGenerationOptions({
-            temperature: null,
-            top_p: null,
-            top_k_sampling: 50,
-            repeat_penalty: null,
-            num_ctx: null,
-            seed: null,
-        });
-        expect(opts.top_k).toBe(50);
-        expect((opts as any).top_k_sampling).toBeUndefined();
-    });
-
-    it("includes all fields when all are set", () => {
-        expect(
-            buildGenerationOptions({
-                temperature: 0.8,
-                top_p: 0.9,
-                top_k_sampling: 40,
-                repeat_penalty: 1.1,
-                num_ctx: 4096,
-                seed: 42,
-            }),
-        ).toEqual({
-            temperature: 0.8,
-            top_p: 0.9,
-            top_k: 40,
-            repeat_penalty: 1.1,
-            num_ctx: 4096,
-            seed: 42,
-        });
-    });
-});
-
-describe("ChatView.sendMessage — passes generation options", () => {
-    it("passes non-null generation options to chatStream", async () => {
+describe("ChatView.sendMessage — does not send generation overrides", () => {
+    it("omits the options argument so the server uses its own cfg", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.settings.temperature = 0.5;
-        plugin.settings.seed = 42;
         const { mockFn, done } = makeStream([{ event: SSE_EVENT.DONE, data: {} }]);
         plugin.api.chatStream = mockFn;
         const view = new ChatView(makeLeaf(), plugin);
@@ -2195,10 +2126,7 @@ describe("ChatView.sendMessage — passes generation options", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
 
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("hi", [], 5, expect.any(AbortSignal), {
-            temperature: 0.5,
-            seed: 42,
-        });
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("hi", [], 5, expect.any(AbortSignal));
     });
 });
 

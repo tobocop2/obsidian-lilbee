@@ -1100,6 +1100,15 @@
     display: none;
 }
 
+.lilbee-crawl-exclude-patterns {
+    font-family: var(--font-monospace);
+    font-size: var(--font-smaller, 12px);
+    min-height: 10em;
+    resize: vertical;
+    width: 100%;
+    box-sizing: border-box;
+}
+
 .lilbee-crawl-advanced {
     margin: var(--size-4-2, 8px) 0 var(--size-4-3, 12px);
 }
