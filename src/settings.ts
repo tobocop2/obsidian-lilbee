@@ -498,6 +498,37 @@ export class LilbeeSettingTab extends PluginSettingTab {
         );
     }
 
+    /**
+     * Reset affordance for fields that dual-write: PATCH the server default AND mirror it back
+     * into `plugin.settings[localKey]`. Prevents the re-render from picking up a stale local value
+     * via `toggle.setValue(this.plugin.settings[localKey])`.
+     */
+    private appendDualResetAffordance<K extends keyof LilbeeSettings>(
+        setting: Setting,
+        serverKey: string,
+        localKey: K,
+        label: string,
+    ): Setting {
+        return setting.addExtraButton((btn) =>
+            btn
+                .setIcon(ICON_RESET)
+                .setTooltip(MESSAGES.LABEL_RESET_TO_DEFAULT)
+                .onClick(async () => {
+                    if (!(serverKey in this.configDefaults)) return;
+                    const def = this.configDefaults[serverKey];
+                    try {
+                        await this.plugin.api.updateConfig({ [serverKey]: def });
+                        this.plugin.settings[localKey] = def as LilbeeSettings[K];
+                        await this.plugin.saveSettings();
+                        new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
+                        this.display();
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_RESET(label));
+                    }
+                }),
+        );
+    }
+
     private renderGenerationSettings(containerEl: HTMLElement): void {
         const details = containerEl.createEl("details", { cls: "lilbee-generation-details lilbee-settings-section" });
         const modelLabel = this.plugin.activeModel || MESSAGES.LABEL_NO_MODEL_SELECTED;
@@ -507,7 +538,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             cls: "setting-item-description",
         });
 
-        new Setting(details)
+        const promptSetting = new Setting(details)
             .setName(MESSAGES.LABEL_SYSTEM_PROMPT)
             .setDesc(MESSAGES.DESC_SYSTEM_PROMPT)
             .addTextArea((text) => {
@@ -519,42 +550,43 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     });
                 this.serverConfigInputs.set("system_prompt", text.inputEl as unknown as HTMLInputElement);
             });
+        this.appendLocalResetAffordance(promptSetting, "systemPrompt", MESSAGES.LABEL_SYSTEM_PROMPT);
 
         const fields: { key: GenKey; name: string; desc: string; integer: boolean }[] = [
             {
                 key: "temperature",
-                name: "Creativity",
-                desc: "Higher = more creative and varied responses, lower = more focused and predictable",
+                name: MESSAGES.LABEL_GEN_TEMPERATURE,
+                desc: MESSAGES.DESC_GEN_TEMPERATURE,
                 integer: false,
             },
             {
                 key: "top_p",
-                name: "Top P",
-                desc: "Controls response diversity. Most users should leave this at the default.",
+                name: MESSAGES.LABEL_GEN_TOP_P,
+                desc: MESSAGES.DESC_GEN_TOP_P,
                 integer: false,
             },
             {
                 key: "top_k_sampling",
-                name: "Top K (sampling)",
-                desc: "Limits which words the AI considers. Most users should leave this at the default.",
+                name: MESSAGES.LABEL_GEN_TOP_K,
+                desc: MESSAGES.DESC_GEN_TOP_K,
                 integer: true,
             },
             {
                 key: "repeat_penalty",
-                name: "Repetition penalty",
-                desc: "How strongly to avoid repeating the same phrases",
+                name: MESSAGES.LABEL_GEN_REPEAT_PENALTY,
+                desc: MESSAGES.DESC_GEN_REPEAT_PENALTY,
                 integer: false,
             },
             {
                 key: "num_ctx",
-                name: "Context window",
-                desc: "Maximum amount of text the AI can consider at once",
+                name: MESSAGES.LABEL_GEN_NUM_CTX,
+                desc: MESSAGES.DESC_GEN_NUM_CTX,
                 integer: true,
             },
             {
                 key: "seed",
-                name: "Seed",
-                desc: "Set a number for reproducible responses. Leave blank for varied answers.",
+                name: MESSAGES.LABEL_GEN_SEED,
+                desc: MESSAGES.DESC_GEN_SEED,
                 integer: true,
             },
         ];
@@ -929,13 +961,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                     try {
                         await this.plugin.api.updateConfig({ wiki_prune_raw: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED("prune raw"));
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WIKI_PRUNE_RAW));
                     } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE("prune raw"));
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_WIKI_PRUNE_RAW));
                     }
                 });
             });
-        this.appendResetAffordance(pruneSetting, "wiki_prune_raw", MESSAGES.LABEL_WIKI_PRUNE_RAW);
+        this.appendDualResetAffordance(pruneSetting, "wiki_prune_raw", "wikiPruneRaw", MESSAGES.LABEL_WIKI_PRUNE_RAW);
 
         // Faithfulness threshold
         const faithSetting = new Setting(subSettingsContainer)
@@ -951,13 +983,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                         try {
                             await this.plugin.api.updateConfig({ wiki_faithfulness_threshold: value });
-                            new Notice(MESSAGES.NOTICE_FIELD_UPDATED("faithfulness threshold"));
+                            new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WIKI_FAITHFULNESS));
                         } catch {
-                            new Notice(MESSAGES.NOTICE_FAILED_UPDATE("faithfulness threshold"));
+                            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_WIKI_FAITHFULNESS));
                         }
                     });
             });
-        this.appendResetAffordance(faithSetting, "wiki_faithfulness_threshold", MESSAGES.LABEL_WIKI_FAITHFULNESS);
+        this.appendDualResetAffordance(
+            faithSetting,
+            "wiki_faithfulness_threshold",
+            "wikiFaithfulnessThreshold",
+            MESSAGES.LABEL_WIKI_FAITHFULNESS,
+        );
 
         // Default search mode
         const searchModeSetting = new Setting(subSettingsContainer)

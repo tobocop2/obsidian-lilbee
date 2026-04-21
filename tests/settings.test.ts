@@ -231,9 +231,17 @@ function captureSettingCallbacks(fn: () => void): Captured {
     };
 
     (Setting.prototype as any).addToggle = function (cb: (toggle: any) => void) {
+        // Mirrors real Obsidian ToggleComponent: setValue(v) programmatically flips the underlying
+        // checkbox which triggers onChange. Required so tests exercise the echo-patch path the
+        // suppressToggleChanges flag guards against (bb-t6yg).
+        let ownOnChange: ToggleOnChange | null = null;
         const fakeToggle = {
-            setValue: () => fakeToggle,
+            setValue: (v: boolean) => {
+                if (ownOnChange) void ownOnChange(v);
+                return fakeToggle;
+            },
             onChange: (handler: ToggleOnChange) => {
+                ownOnChange = handler;
                 toggleOnChanges.push(handler);
                 return fakeToggle;
             },
@@ -3051,8 +3059,40 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+
+            // Real path: plug the retry toggle into serverConfigToggles, clear previous PATCHes,
+            // then call loadServerDefaults. The mock's setValue fires onChange (mirroring
+            // Obsidian), and the suppress flag must prevent a PATCH round-trip.
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                crawl_retry_on_rate_limit: true,
+            });
+            await (tab as any).loadServerDefaults();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("without the suppress flag, a toggle setValue onChange WOULD echo-patch", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
-            // toggleOnChanges[1] is crawl_retry_on_rate_limit (index 0 = adaptiveThreshold).
+            await new Promise((r) => setTimeout(r, 0));
+            // Invoke the crawl_retry_on_rate_limit onChange without the flag — proves the guard is
+            // load-bearing (if the flag failed to set, updateConfig WOULD be called).
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            (tab as any).suppressToggleChanges = false;
+            await toggleOnChanges[1](true);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: true });
+        });
+
+        it("suppressToggleChanges === true short-circuits the crawl-retry toggle onChange", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = true;
             await toggleOnChanges[1](true);
@@ -3197,9 +3237,9 @@ describe("managed mode settings", () => {
     describe("per-row reset-to-default affordance", () => {
         // Reset button order (managed + manual-sync defaults):
         // 0=serverMode(local) 1=serverPort(local) 2=topK 3=maxDistance 4=adaptiveThreshold
-        // 5=temperature 6=top_p 7=top_k_sampling 8=repeat_penalty 9=num_ctx 10=seed
-        // 11=syncMode(local) 12=crawl_max_depth ...
-        const TEMPERATURE_RESET = 5;
+        // 5=systemPrompt(local) 6=temperature 7=top_p 8=top_k_sampling 9=repeat_penalty
+        // 10=num_ctx 11=seed 12=syncMode(local) 13=crawl_max_depth ...
+        const TEMPERATURE_RESET = 6;
 
         it("server-backed reset PATCHes the cached default", async () => {
             Notice.clear();
@@ -3247,6 +3287,71 @@ describe("managed mode settings", () => {
             await extraButtonOnClicks[0]();
             expect(plugin.settings.serverMode).toBe(DEFAULT_SETTINGS.serverMode);
             expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+    });
+
+    describe("appendDualResetAffordance (server PATCH + plugin.settings mirror)", () => {
+        it("resets wiki_prune_raw by PATCHing the default AND mirroring back to wikiPruneRaw", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ wikiEnabled: true, wikiPruneRaw: true });
+            (plugin as any).wikiEnabled = true;
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            // configDefaults is re-fetched on each display(); keep it resolving to our seed.
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ wiki_prune_raw: false });
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            // Search for the reset button whose click PATCHes wiki_prune_raw.
+            for (let i = 0; i < extraButtonOnClicks.length; i++) {
+                (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+                await extraButtonOnClicks[i]();
+                const call = (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mock.calls[0];
+                if (call && JSON.stringify(call[0]) === JSON.stringify({ wiki_prune_raw: false })) {
+                    expect(plugin.settings.wikiPruneRaw).toBe(false);
+                    expect(plugin.saveSettings).toHaveBeenCalled();
+                    return;
+                }
+            }
+            throw new Error("wiki_prune_raw dual-reset button not found");
+        });
+
+        it("no-ops silently when the key is absent from configDefaults", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ wikiEnabled: true });
+            (plugin as any).wikiEnabled = true;
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            // configDefaults resolves to empty so the early-return branch is exercised.
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            for (let i = 0; i < extraButtonOnClicks.length; i++) {
+                await extraButtonOnClicks[i]();
+            }
+            const wikiCalls = (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mock.calls.filter(
+                (c) => "wiki_prune_raw" in (c[0] as object) || "wiki_faithfulness_threshold" in (c[0] as object),
+            );
+            expect(wikiCalls).toEqual([]);
+        });
+
+        it("surfaces a reset-failure notice when updateConfig rejects", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ wikiEnabled: true });
+            (plugin as any).wikiEnabled = true;
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ wiki_prune_raw: false });
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+            for (let i = 0; i < extraButtonOnClicks.length; i++) {
+                await extraButtonOnClicks[i]();
+            }
+            expect(
+                Notice.instances.some((n: any) => n.message.includes("failed to reset Remove source duplicates")),
+            ).toBe(true);
         });
     });
 
@@ -3759,7 +3864,9 @@ describe("managed mode settings", () => {
 
             const wikiPruneToggleIdx = toggleOnChanges.length - 2;
             await toggleOnChanges[wikiPruneToggleIdx](true);
-            expect(Notice.instances.some((n: any) => n.message.includes("failed to update prune raw"))).toBe(true);
+            expect(
+                Notice.instances.some((n: any) => n.message.includes("failed to update Remove source duplicates")),
+            ).toBe(true);
         });
 
         it("sync-to-vault toggle enables wiki sync", async () => {
@@ -3856,9 +3963,9 @@ describe("managed mode settings", () => {
 
             const faithfulnessIdx = sliderOnChanges.length - 1;
             await sliderOnChanges[faithfulnessIdx](0.5);
-            expect(
-                Notice.instances.some((n: any) => n.message.includes("failed to update faithfulness threshold")),
-            ).toBe(true);
+            expect(Notice.instances.some((n: any) => n.message.includes("failed to update Summary accuracy"))).toBe(
+                true,
+            );
         });
     });
 
