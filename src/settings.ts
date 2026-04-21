@@ -75,6 +75,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     plugin: LilbeePlugin;
     private genInputs: Map<GenKey, HTMLInputElement> = new Map();
     private serverConfigInputs: Map<string, HTMLInputElement> = new Map();
+    private serverConfigToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app, plugin);
@@ -85,6 +86,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
         this.serverConfigInputs.clear();
+        this.serverConfigToggles.clear();
 
         const filterInput = containerEl.createEl("input", {
             cls: "lilbee-settings-filter",
@@ -396,9 +398,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .then((cfg: Record<string, unknown>) => {
                 // Populate editable crawl and advanced inputs with current server values
                 for (const [key, inputEl] of this.serverConfigInputs) {
-                    if (cfg[key] !== undefined) {
-                        inputEl.value = String(cfg[key]);
-                    }
+                    const v = cfg[key];
+                    if (v === undefined) continue;
+                    inputEl.value = v === null ? "" : String(v);
+                }
+                for (const [key, toggle] of this.serverConfigToggles) {
+                    const v = cfg[key];
+                    if (typeof v === "boolean") toggle.setValue(v);
                 }
                 // Populate generation field placeholders from server config
                 const genConfigMap: Record<string, GenKey> = {
@@ -641,47 +647,168 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private renderCrawlingSettings(containerEl: HTMLElement): void {
         containerEl.createEl("h3", { text: MESSAGES.LABEL_CRAWLING });
 
-        const crawlFields: { key: string; name: string; desc: string; placeholder: string }[] = [
+        type NumericKind = "int" | "float";
+        type NumericField = {
+            key: string;
+            name: string;
+            desc: string;
+            placeholder: string;
+            kind: NumericKind;
+            nullable: boolean;
+            min?: number;
+        };
+        type BoolField = { key: string; name: string; desc: string; kind: "bool" };
+        type Field = NumericField | BoolField;
+
+        const fields: Field[] = [
             {
                 key: "crawl_max_depth",
-                name: "Crawl depth",
+                name: MESSAGES.LABEL_CRAWL_MAX_DEPTH,
                 desc: MESSAGES.DESC_CRAWL_MAX_DEPTH,
-                placeholder: MESSAGES.PLACEHOLDER_0,
+                placeholder: MESSAGES.HINT_CRAWL_BLANK_NO_LIMIT,
+                kind: "int",
+                nullable: true,
+                min: 0,
             },
             {
                 key: "crawl_max_pages",
-                name: "Page limit",
+                name: MESSAGES.LABEL_CRAWL_MAX_PAGES,
                 desc: MESSAGES.DESC_CRAWL_MAX_PAGES,
-                placeholder: MESSAGES.PLACEHOLDER_50,
+                placeholder: MESSAGES.HINT_CRAWL_BLANK_NO_LIMIT,
+                kind: "int",
+                nullable: true,
+                min: 1,
             },
             {
                 key: "crawl_timeout",
-                name: "Page timeout",
+                name: MESSAGES.LABEL_CRAWL_TIMEOUT,
                 desc: MESSAGES.DESC_CRAWL_TIMEOUT,
                 placeholder: MESSAGES.PLACEHOLDER_30,
+                kind: "int",
+                nullable: false,
+                min: 1,
+            },
+            {
+                key: "crawl_mean_delay",
+                name: MESSAGES.LABEL_CRAWL_MEAN_DELAY,
+                desc: MESSAGES.DESC_CRAWL_MEAN_DELAY,
+                placeholder: "0.5",
+                kind: "float",
+                nullable: false,
+                min: 0,
+            },
+            {
+                key: "crawl_max_delay_range",
+                name: MESSAGES.LABEL_CRAWL_MAX_DELAY_RANGE,
+                desc: MESSAGES.DESC_CRAWL_MAX_DELAY_RANGE,
+                placeholder: "0.5",
+                kind: "float",
+                nullable: false,
+                min: 0,
+            },
+            {
+                key: "crawl_concurrent_requests",
+                name: MESSAGES.LABEL_CRAWL_CONCURRENT_REQUESTS,
+                desc: MESSAGES.DESC_CRAWL_CONCURRENT_REQUESTS,
+                placeholder: "3",
+                kind: "int",
+                nullable: false,
+                min: 1,
+            },
+            {
+                key: "crawl_retry_on_rate_limit",
+                name: MESSAGES.LABEL_CRAWL_RETRY_ON_RATE_LIMIT,
+                desc: MESSAGES.DESC_CRAWL_RETRY_ON_RATE_LIMIT,
+                kind: "bool",
+            },
+            {
+                key: "crawl_retry_base_delay_min",
+                name: MESSAGES.LABEL_CRAWL_RETRY_BASE_DELAY_MIN,
+                desc: MESSAGES.DESC_CRAWL_RETRY_BASE_DELAY_MIN,
+                placeholder: "1.0",
+                kind: "float",
+                nullable: false,
+                min: 0,
+            },
+            {
+                key: "crawl_retry_base_delay_max",
+                name: MESSAGES.LABEL_CRAWL_RETRY_BASE_DELAY_MAX,
+                desc: MESSAGES.DESC_CRAWL_RETRY_BASE_DELAY_MAX,
+                placeholder: "3.0",
+                kind: "float",
+                nullable: false,
+                min: 0,
+            },
+            {
+                key: "crawl_retry_max_backoff",
+                name: MESSAGES.LABEL_CRAWL_RETRY_MAX_BACKOFF,
+                desc: MESSAGES.DESC_CRAWL_RETRY_MAX_BACKOFF,
+                placeholder: "30.0",
+                kind: "float",
+                nullable: false,
+                min: 0,
+            },
+            {
+                key: "crawl_retry_max_attempts",
+                name: MESSAGES.LABEL_CRAWL_RETRY_MAX_ATTEMPTS,
+                desc: MESSAGES.DESC_CRAWL_RETRY_MAX_ATTEMPTS,
+                placeholder: "3",
+                kind: "int",
+                nullable: false,
+                min: 0,
             },
         ];
 
-        for (const field of crawlFields) {
-            new Setting(containerEl)
-                .setName(field.name)
-                .setDesc(field.desc)
-                .addText((text) => {
-                    text.setPlaceholder(field.placeholder)
-                        .setValue("")
-                        .onChange(async (value) => {
-                            const trimmed = value.trim();
-                            if (trimmed === "") return;
-                            const num = parseInt(trimmed, 10);
-                            if (isNaN(num) || num < 0) return;
+        for (const field of fields) {
+            if (field.kind === "bool") {
+                new Setting(containerEl)
+                    .setName(field.name)
+                    .setDesc(field.desc)
+                    .addToggle((toggle) => {
+                        toggle.onChange(async (value) => {
                             try {
-                                await this.plugin.api.updateConfig({ [field.key]: num });
+                                await this.plugin.api.updateConfig({ [field.key]: value });
                                 new Notice(MESSAGES.NOTICE_FIELD_UPDATED(field.name));
                             } catch {
                                 new Notice(MESSAGES.NOTICE_FAILED_UPDATE(field.name));
                             }
                         });
-                    this.serverConfigInputs.set(field.key, text.inputEl as unknown as HTMLInputElement);
+                        this.serverConfigToggles.set(field.key, toggle);
+                    });
+                continue;
+            }
+
+            const numField = field;
+            new Setting(containerEl)
+                .setName(numField.name)
+                .setDesc(numField.desc)
+                .addText((text) => {
+                    text.setPlaceholder(numField.placeholder)
+                        .setValue("")
+                        .onChange(async (value) => {
+                            const trimmed = value.trim();
+                            if (trimmed === "") {
+                                if (!numField.nullable) return;
+                                try {
+                                    await this.plugin.api.updateConfig({ [numField.key]: null });
+                                    new Notice(MESSAGES.NOTICE_FIELD_UPDATED(numField.name));
+                                } catch {
+                                    new Notice(MESSAGES.NOTICE_FAILED_UPDATE(numField.name));
+                                }
+                                return;
+                            }
+                            const num = Number(trimmed);
+                            if (!Number.isFinite(num)) return;
+                            if (numField.kind === "int" && !Number.isInteger(num)) return;
+                            if (numField.min !== undefined && num < numField.min) return;
+                            try {
+                                await this.plugin.api.updateConfig({ [numField.key]: num });
+                                new Notice(MESSAGES.NOTICE_FIELD_UPDATED(numField.name));
+                            } catch {
+                                new Notice(MESSAGES.NOTICE_FAILED_UPDATE(numField.name));
+                            }
+                        });
+                    this.serverConfigInputs.set(numField.key, text.inputEl as unknown as HTMLInputElement);
                 });
         }
     }

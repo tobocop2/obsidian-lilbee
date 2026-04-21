@@ -1415,6 +1415,22 @@ describe("LilbeePlugin", () => {
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
+        it("forwards null depth/max_pages to api.crawl for unbounded crawls", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 42 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", null, null);
+
+            expect(plugin.api.crawl).toHaveBeenCalledWith("https://example.com", null, null, expect.any(AbortSignal));
+        });
+
         it("CRAWL_DONE without pages_crawled uses local pageCount", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
