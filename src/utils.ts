@@ -114,8 +114,13 @@ export function formatRate(bytesPerSecond: number): string {
 /**
  * Pull a human-readable message out of an unknown thrown value.
  * Centralizes the `err instanceof Error ? err.message : <fallback>` pattern.
+ * Stale-session-token errors get a dedicated, actionable message so the user
+ * knows exactly where to fix it (see SessionTokenError in api.ts).
  */
 export function errorMessage(err: unknown, fallback: string): string {
+    if (err instanceof Error && err.name === "SessionTokenError") {
+        return "lilbee: session token invalid — paste a new one in Settings → Session token";
+    }
     return err instanceof Error ? err.message : fallback;
 }
 

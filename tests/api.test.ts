@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { LilbeeClient } from "../src/api";
+import { LilbeeClient, SessionTokenError } from "../src/api";
 import type { Message } from "../src/types";
 
 const BASE_URL = "http://localhost:7433";
@@ -933,7 +933,7 @@ describe("fetchWithRetry() — token provider + 401/403 retry", () => {
         expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
-    it("does not retry twice — second 401 surfaces the error", async () => {
+    it("does not retry twice — second 401 surfaces SessionTokenError", async () => {
         const c = new LilbeeClient(BASE_URL);
         c.setToken("old");
         c.setTokenProvider(() => "new");
@@ -944,7 +944,9 @@ describe("fetchWithRetry() — token provider + 401/403 retry", () => {
         } as unknown as Response);
         const result = await c.health();
         expect(result.isErr()).toBe(true);
-        expect(result._unsafeUnwrapErr().message).toBe("Server responded 401: still bad");
+        const e = result._unsafeUnwrapErr();
+        expect(e.name).toBe("SessionTokenError");
+        expect((e as SessionTokenError).status).toBe(401);
         expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 

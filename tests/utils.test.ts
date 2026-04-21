@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
     ensureUrlScheme,
+    errorMessage,
     formatBytes,
     formatRate,
     formatElapsed,
@@ -8,6 +9,7 @@ import {
     StreamIdleError,
     withIdleTimeout,
 } from "../src/utils";
+import { SessionTokenError } from "../src/api";
 
 describe("ensureUrlScheme", () => {
     it("returns URL unchanged when it starts with https://", () => {
@@ -161,5 +163,22 @@ describe("withIdleTimeout", () => {
         const out: number[] = [];
         for await (const v of withIdleTimeout(gen(), 1000, vi.fn())) out.push(v);
         expect(out).toEqual([1]);
+    });
+});
+
+describe("errorMessage", () => {
+    it("returns the Error.message for generic errors", () => {
+        expect(errorMessage(new Error("boom"), "fallback")).toBe("boom");
+    });
+
+    it("falls back to the provided string for non-Error values", () => {
+        expect(errorMessage("raw-string", "fallback")).toBe("fallback");
+        expect(errorMessage(null, "fallback")).toBe("fallback");
+    });
+
+    it("returns an actionable, user-facing message for SessionTokenError", () => {
+        const out = errorMessage(new SessionTokenError(401, "stale"), "fallback");
+        expect(out).toContain("session token invalid");
+        expect(out).toContain("Settings → Session token");
     });
 });
