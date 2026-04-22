@@ -837,6 +837,7 @@ export class SetupWizard extends Modal {
                         new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", repo));
                         return;
                     }
+                    new Notice(MESSAGES.NOTICE_VISION_SET.replace("{model}", repo));
                     this.step = WIZARD_STEP.SYNC;
                     this.renderStep();
                 })();
@@ -946,6 +947,7 @@ export class SetupWizard extends Modal {
                 (downloadBtn as HTMLButtonElement).disabled = false;
                 return;
             }
+            new Notice(MESSAGES.NOTICE_VISION_SET.replace("{model}", model.hf_repo));
             this.step = WIZARD_STEP.SYNC;
             this.renderStep();
         } catch (err) {

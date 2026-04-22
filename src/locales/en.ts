@@ -585,8 +585,9 @@ export const MESSAGES = {
     // Vision wizard step
     TITLE_PICK_VISION: "Vision model (optional)",
     WIZARD_VISION_HELP:
-        "Vision models let lilbee read scanned PDFs, handwritten notes, diagrams, and image-only pages. If your documents are already text, you can skip this.",
+        "Vision models help lilbee read scanned PDFs, handwritten notes, diagrams, and image-only pages — useful when standard OCR fails or returns garbled text. These models are only used for indexing images in your documents; your chat model is separate and won't change. Skip this step if your documents are already plain text.",
     WIZARD_VISION_RECOMMENDED: "Featured vision models",
+    NOTICE_VISION_SET: "Vision model set: {model}. Used for indexing scanned PDFs — your chat model is unchanged.",
     BUTTON_SKIP_STEP: "Skip",
 
     WIZARD_FILE_PICKER_VAULT: "From vault",

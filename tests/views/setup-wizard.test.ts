@@ -2388,7 +2388,10 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("Vision model (optional)"))).toBe(true);
             // Plain-English context is required.
             expect(texts.some((t) => t.includes("scanned PDFs"))).toBe(true);
-            expect(texts.some((t) => t.includes("can skip this"))).toBe(true);
+            expect(texts.some((t) => t.includes("Skip this step"))).toBe(true);
+            // Role clarity: vision picks must not imply chat model changes.
+            expect(texts.some((t) => t.includes("OCR fails"))).toBe(true);
+            expect(texts.some((t) => t.includes("chat model is separate"))).toBe(true);
         });
 
         it("renders Step 04 · VISION header badge", () => {
@@ -2594,6 +2597,8 @@ describe("SetupWizard", () => {
             await tick();
 
             expect(plugin.api.setVisionModel).toHaveBeenCalledWith("ibm/granite-vision-3.2-2b");
+            const visionSet = MESSAGES.NOTICE_VISION_SET.replace("{model}", "ibm/granite-vision-3.2-2b");
+            expect(Notice.instances.some((n: any) => n.message === visionSet)).toBe(true);
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
         });
@@ -2684,6 +2689,8 @@ describe("SetupWizard", () => {
             const btn = new MockElement("button") as unknown as HTMLElement;
             await (wizard as any).pullVisionModel(btn, el, el, el, el, el);
             expect(plugin.api.setVisionModel).toHaveBeenCalledWith("ibm/granite-vision-3.2-2b");
+            const visionSet = MESSAGES.NOTICE_VISION_SET.replace("{model}", "ibm/granite-vision-3.2-2b");
+            expect(Notice.instances.some((n: any) => n.message === visionSet)).toBe(true);
             expect((wizard as any).step).toBe(WIZARD_STEP.SYNC);
         });
 
