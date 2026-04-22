@@ -49,13 +49,17 @@ export interface ModelCatalog {
 
 export interface ModelsResponse {
     chat: ModelCatalog;
+    // Older servers (pre-role-separation) may only return `chat`. The plugin tolerates
+    // those responses by treating sibling sections as optional; only `chat` is required.
+    embedding?: ModelCatalog;
+    vision?: ModelCatalog;
     reranker?: ModelCatalog;
 }
 
 export interface ConfigResponse {
-    reranker_model: string;
+    reranker_model: string | null;
     rerank_candidates: number;
-    reranker_available: boolean;
+    vision_model: string | null;
     [key: string]: unknown;
 }
 

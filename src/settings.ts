@@ -39,6 +39,7 @@ import {
 const CHECK_TIMEOUT_MS = 5000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
 const RERANKER_DISABLED_KEY = "";
+const VISION_DISABLED_KEY = "";
 const RERANK_CANDIDATES_MIN = 1;
 const RERANK_CANDIDATES_MAX = 100;
 const SEPARATOR_KEY = "__separator__";
@@ -690,27 +691,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
         ])
             .then(([cfg, catalogResult, installedResp]) => {
                 const active = typeof cfg.reranker_model === "string" ? cfg.reranker_model : RERANKER_DISABLED_KEY;
-                const available = cfg.reranker_available === true;
-                if (!available) {
-                    this.renderRerankerUnavailable(container);
-                    return;
-                }
                 const catalogEntries = catalogResult.isOk() ? catalogResult.value.models : [];
                 this.renderRerankerDropdown(container, active, catalogEntries, installedResp.models);
             })
             .catch(() => {
                 new Notice(MESSAGES.NOTICE_RERANKER_LOAD_FAILED);
-            });
-    }
-
-    private renderRerankerUnavailable(container: HTMLElement): void {
-        new Setting(container)
-            .setName(MESSAGES.LABEL_RERANKER_TITLE)
-            .setDesc(MESSAGES.NOTICE_RERANKER_UNAVAILABLE)
-            .setDisabled(true)
-            .addDropdown((dropdown) => {
-                dropdown.addOption(RERANKER_DISABLED_KEY, MESSAGES.LABEL_RERANKER_DISABLED);
-                dropdown.setValue(RERANKER_DISABLED_KEY);
             });
     }
 
@@ -778,11 +763,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private async applyRerankerSelection(value: string): Promise<void> {
         const result = await this.plugin.api.setRerankerModel(value);
         if (result.isErr()) {
-            if (result.error.message.includes("422")) {
-                new Notice(MESSAGES.NOTICE_RERANKER_NEEDS_KEY);
-            } else {
-                new Notice(MESSAGES.NOTICE_FAILED_RERANKER);
-            }
+            const fallback = result.error.message.includes("422")
+                ? MESSAGES.NOTICE_RERANKER_NEEDS_KEY
+                : MESSAGES.NOTICE_FAILED_RERANKER;
+            new Notice(noticeForResultError(result.error, fallback));
             return;
         }
         new Notice(MESSAGES.NOTICE_RERANKER_UPDATED);
@@ -834,6 +818,149 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private handleRerankerPullException(taskId: string, entry: CatalogEntry, err: unknown): void {
+        if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
+            new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
+            this.plugin.taskQueue.cancel(taskId);
+            return;
+        }
+        const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
+        new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.hf_repo)}: ${reason}`);
+        this.plugin.taskQueue.fail(taskId, reason);
+    }
+
+    private renderVisionSection(container: HTMLElement): void {
+        Promise.all([
+            this.plugin.api.config(),
+            this.plugin.api.catalog({ task: MODEL_TASK.VISION }),
+            this.plugin.api.installedModels({ task: MODEL_TASK.VISION }).catch(() => ({ models: [] })),
+        ])
+            .then(([cfg, catalogResult, installedResp]) => {
+                const active = typeof cfg.vision_model === "string" ? cfg.vision_model : VISION_DISABLED_KEY;
+                const catalogEntries = catalogResult.isOk() ? catalogResult.value.models : [];
+                this.renderVisionDropdown(container, active, catalogEntries, installedResp.models);
+            })
+            .catch(() => {
+                new Notice(MESSAGES.NOTICE_VISION_LOAD_FAILED);
+            });
+    }
+
+    private renderVisionDropdown(
+        container: HTMLElement,
+        active: string,
+        catalogEntries: CatalogEntry[],
+        installed: InstalledModel[],
+    ): void {
+        const options = this.buildVisionOptions(catalogEntries, installed);
+        new Setting(container)
+            .setName(MESSAGES.LABEL_VISION_TITLE)
+            .setDesc(MESSAGES.DESC_VISION_MODEL)
+            .addDropdown((dropdown) => {
+                for (const [value, label] of options) {
+                    dropdown.addOption(value, label);
+                }
+                dropdown.setValue(active || VISION_DISABLED_KEY);
+                dropdown.onChange(async (value) => {
+                    await this.handleVisionChange(value, catalogEntries, installed);
+                });
+            });
+    }
+
+    private buildVisionOptions(catalogEntries: CatalogEntry[], installed: InstalledModel[]): Array<[string, string]> {
+        const installedNames = new Set(installed.map((m) => m.name));
+        const opts: Array<[string, string]> = [[VISION_DISABLED_KEY, MESSAGES.LABEL_VISION_DISABLED]];
+        const localInstalled = catalogEntries.filter(
+            (e) => e.source !== MODEL_SOURCE.LITELLM && installedNames.has(e.hf_repo),
+        );
+        const localNotInstalled = catalogEntries.filter(
+            (e) => e.source !== MODEL_SOURCE.LITELLM && !installedNames.has(e.hf_repo),
+        );
+        const hosted = catalogEntries.filter((e) => e.source === MODEL_SOURCE.LITELLM);
+        for (const e of localInstalled) opts.push([e.hf_repo, e.hf_repo]);
+        for (const e of localNotInstalled) opts.push([e.hf_repo, `${e.hf_repo}${MESSAGES.LABEL_NOT_INSTALLED}`]);
+        if (hosted.length > 0) {
+            for (const e of hosted) opts.push([e.hf_repo, `${e.hf_repo} — ${MESSAGES.LABEL_VISION_HOSTED_GROUP}`]);
+        }
+        return opts;
+    }
+
+    private async handleVisionChange(
+        value: string,
+        catalogEntries: CatalogEntry[],
+        installed: InstalledModel[],
+    ): Promise<void> {
+        const installedNames = new Set(installed.map((m) => m.name));
+        const catalogEntry = catalogEntries.find((e) => e.hf_repo === value);
+        if (
+            value === VISION_DISABLED_KEY ||
+            installedNames.has(value) ||
+            catalogEntry?.source === MODEL_SOURCE.LITELLM
+        ) {
+            await this.applyVisionSelection(value);
+            return;
+        }
+        if (catalogEntry) {
+            await this.pullAndSetVision(catalogEntry);
+        }
+    }
+
+    private async applyVisionSelection(value: string): Promise<void> {
+        const result = await this.plugin.api.setVisionModel(value);
+        if (result.isErr()) {
+            const fallback = result.error.message.includes("422")
+                ? MESSAGES.NOTICE_VISION_NEEDS_KEY
+                : MESSAGES.NOTICE_FAILED_VISION;
+            new Notice(noticeForResultError(result.error, fallback));
+            return;
+        }
+        new Notice(MESSAGES.NOTICE_VISION_UPDATED);
+    }
+
+    private async pullAndSetVision(entry: CatalogEntry): Promise<void> {
+        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.hf_repo}`, TASK_TYPE.PULL);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
+        const controller = new AbortController();
+        this.plugin.taskQueue.registerAbort(taskId, controller);
+        const ok = await this.streamVisionPull(taskId, entry, controller.signal);
+        if (!ok) return;
+        this.plugin.taskQueue.complete(taskId);
+        await this.applyVisionSelection(entry.hf_repo);
+    }
+
+    private async streamVisionPull(taskId: string, entry: CatalogEntry, signal: AbortSignal): Promise<boolean> {
+        try {
+            for await (const event of this.plugin.api.pullModel(entry.hf_repo, MODEL_SOURCE.NATIVE, signal)) {
+                if (event.event === SSE_EVENT.PROGRESS) {
+                    this.handleVisionPullProgress(taskId, entry, event.data);
+                } else if (event.event === SSE_EVENT.ERROR) {
+                    this.handleVisionPullSseError(taskId, entry, event.data);
+                    return false;
+                }
+            }
+        } catch (err) {
+            this.handleVisionPullException(taskId, entry, err);
+            return false;
+        }
+        return true;
+    }
+
+    private handleVisionPullProgress(taskId: string, entry: CatalogEntry, data: unknown): void {
+        const d = data as { percent?: number; current?: number; total?: number };
+        const pct = percentFromSse(d);
+        if (pct !== undefined) {
+            this.plugin.taskQueue.update(taskId, pct, entry.hf_repo, { current: d.current, total: d.total });
+        }
+    }
+
+    private handleVisionPullSseError(taskId: string, entry: CatalogEntry, data: unknown): void {
+        const msg = extractSseErrorMessage(data as { message?: string } | string, MESSAGES.ERROR_UNKNOWN);
+        new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.hf_repo)}: ${msg}`);
+        this.plugin.taskQueue.fail(taskId, msg);
+    }
+
+    private handleVisionPullException(taskId: string, entry: CatalogEntry, err: unknown): void {
         if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
             new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
             this.plugin.taskQueue.cancel(taskId);
@@ -1471,6 +1598,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
         const embeddingContainer = container.createDiv({ cls: "lilbee-embedding-container" });
         this.loadEmbeddingDropdown(embeddingContainer);
+        const visionContainer = container.createDiv({ cls: "lilbee-vision-container" });
+        this.renderVisionSection(visionContainer);
         const rerankerContainer = container.createDiv({ cls: "lilbee-reranker-container" });
         this.renderRerankerSection(rerankerContainer);
     }

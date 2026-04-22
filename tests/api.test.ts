@@ -690,6 +690,25 @@ describe("pullModel()", () => {
             expect(result._unsafeUnwrapErr().message).toContain("422");
         });
 
+        // Contract pin: the error message shape produced by fetchResult must exactly match
+        // what `extractServerErrorDetail` in utils.ts parses. If a future refactor changes
+        // the `Server responded <status>: <body>` prefix, this test fails — without it, every
+        // call site would silently revert to the generic fallback and no test would catch it.
+        it("emits a 'Server responded <status>: <body>' error for 422 with a JSON body", async () => {
+            const body =
+                '{"detail": "Model \'x\' is a vision model, not rerank. Set it via PUT /api/models/vision instead."}';
+            fetchMock.mockResolvedValue({
+                ok: false,
+                status: 422,
+                statusText: "Unprocessable",
+                text: () => Promise.resolve(body),
+            } as unknown as Response);
+
+            const result = await client.setRerankerModel("x");
+            expect(result.isErr()).toBe(true);
+            expect(result._unsafeUnwrapErr().message).toBe(`Server responded 422: ${body}`);
+        });
+
         it("propagates AbortError as err()", async () => {
             fetchMock.mockImplementation(() => {
                 const err = new Error("aborted");
@@ -700,6 +719,75 @@ describe("pullModel()", () => {
             const result = await client.setRerankerModel("bge-reranker-v2-m3");
             expect(result.isErr()).toBe(true);
             expect(result._unsafeUnwrapErr().name).toBe("AbortError");
+        });
+    });
+
+    describe("setVisionModel()", () => {
+        it("PUTs to /api/models/vision", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ model: "Qwen/Qwen2-VL-7B-Instruct" }));
+
+            const result = await client.setVisionModel("Qwen/Qwen2-VL-7B-Instruct");
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${BASE_URL}/api/models/vision`,
+                expect.objectContaining({
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model: "Qwen/Qwen2-VL-7B-Instruct" }),
+                }),
+            );
+            expect(result.isOk()).toBe(true);
+        });
+
+        it("accepts empty string to disable the vision model", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ model: "" }));
+
+            const result = await client.setVisionModel("");
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${BASE_URL}/api/models/vision`,
+                expect.objectContaining({
+                    method: "PUT",
+                    body: JSON.stringify({ model: "" }),
+                }),
+            );
+            expect(result.isOk()).toBe(true);
+        });
+
+        it("returns error when server returns 422", async () => {
+            fetchMock.mockResolvedValue({
+                ok: false,
+                status: 422,
+                statusText: "Unprocessable",
+                text: () => Promise.resolve("Unknown vision model"),
+            } as unknown as Response);
+
+            const result = await client.setVisionModel("not-a-model");
+            expect(result.isErr()).toBe(true);
+            expect(result._unsafeUnwrapErr().message).toContain("422");
+        });
+    });
+
+    describe("catalog() with task=vision", () => {
+        it("appends task=vision to the query string", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ total: 0, limit: 20, offset: 0, models: [], has_more: false }));
+
+            await client.catalog({ task: "vision" });
+
+            const url = new URL(fetchMock.mock.calls[0][0]);
+            expect(url.searchParams.get("task")).toBe("vision");
+        });
+    });
+
+    describe("installedModels() with task=vision", () => {
+        it("forwards task=vision when provided", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ models: [] }));
+
+            await client.installedModels({ task: "vision" });
+
+            const url = new URL(fetchMock.mock.calls[0][0]);
+            expect(url.pathname).toBe("/api/models/installed");
+            expect(url.searchParams.get("task")).toBe("vision");
         });
     });
 
@@ -734,12 +822,12 @@ describe("pullModel()", () => {
         });
     });
 
-    describe("config() with reranker fields", () => {
-        it("parses reranker_model, rerank_candidates, and reranker_available", async () => {
+    describe("config() with reranker and vision fields", () => {
+        it("parses reranker_model, rerank_candidates, and vision_model", async () => {
             const data = {
                 reranker_model: "bge-reranker-v2-m3",
                 rerank_candidates: 25,
-                reranker_available: true,
+                vision_model: "Qwen/Qwen2-VL-7B-Instruct",
                 chat_model: "qwen3:8b",
             };
             fetchMock.mockResolvedValue(jsonResponse(data));
@@ -748,7 +836,7 @@ describe("pullModel()", () => {
 
             expect(result.reranker_model).toBe("bge-reranker-v2-m3");
             expect(result.rerank_candidates).toBe(25);
-            expect(result.reranker_available).toBe(true);
+            expect(result.vision_model).toBe("Qwen/Qwen2-VL-7B-Instruct");
         });
     });
 

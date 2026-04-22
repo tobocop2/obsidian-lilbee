@@ -403,6 +403,14 @@ export class LilbeeClient {
         });
     }
 
+    async setVisionModel(model: string): Promise<Result<void, Error>> {
+        return this.fetchResult<void>(`${this.baseUrl}/api/models/vision`, {
+            method: "PUT",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ model }),
+        });
+    }
+
     async wikiList(): Promise<WikiPage[]> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki`, { headers: this.authHeaders() });
         return res.json();

@@ -73,6 +73,7 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
         updateConfig: vi.fn().mockResolvedValue({ updated: [], reindex_required: false }),
         setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
         setRerankerModel: vi.fn().mockResolvedValue(ok(undefined)),
+        setVisionModel: vi.fn().mockResolvedValue(ok(undefined)),
         installedModels: vi.fn().mockResolvedValue({ models: [] }),
         catalog: vi.fn().mockResolvedValue(err(new Error("unreachable"))),
     };
@@ -108,6 +109,7 @@ function makeTab(plugin: ReturnType<typeof makePlugin>) {
 }
 
 function makeModelsResponse(): ModelsResponse {
+    const empty: ModelCatalog = { active: "", installed: [], catalog: [] };
     return {
         chat: {
             active: "llama3",
@@ -117,6 +119,9 @@ function makeModelsResponse(): ModelsResponse {
                 { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "Microsoft Phi-3", installed: false },
             ],
         },
+        embedding: empty,
+        vision: empty,
+        reranker: empty,
     };
 }
 
@@ -4101,12 +4106,11 @@ describe("managed mode settings", () => {
             Setting.prototype.addDropdown = origAddDropdown;
         });
 
-        it("renders unavailable notice and disabled dropdown when reranker_available is false", async () => {
+        it("always renders the reranker dropdown regardless of legacy reranker_available field", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
-                reranker_available: false,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
@@ -4128,7 +4132,6 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
@@ -4175,7 +4178,6 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
@@ -4222,7 +4224,6 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "bge-reranker-v2-m3",
                 rerank_candidates: 20,
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
@@ -4248,7 +4249,6 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
@@ -4297,7 +4297,6 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
@@ -4346,7 +4345,6 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
@@ -4393,7 +4391,6 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
@@ -4431,6 +4428,56 @@ describe("managed mode settings", () => {
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_NEEDS_KEY)).toBe(true);
         });
 
+        it("role-mismatch 422 surfaces the server's detail verbatim (not the API-key notice)", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            const roleMismatchDetail =
+                "Model 'lightonocr:2-1b' is a vision model, not rerank. Set it via PUT /api/models/vision instead.";
+            (plugin.api.setRerankerModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                err(new Error(`Server responded 422: {"detail": "${roleMismatchDetail}"}`)),
+            );
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "lightonocr",
+                            hf_repo: "lightonocr:2-1b",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: true,
+                            source: "native",
+                            task: "rerank",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+                models: [{ name: "lightonocr:2-1b", source: "native" }],
+            });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("lightonocr:2-1b");
+            expect(Notice.instances.some((n) => n.message === roleMismatchDetail)).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_NEEDS_KEY)).toBe(false);
+        });
+
         it("falls back to notice when initial load fails", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("unreachable"));
@@ -4453,7 +4500,6 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
@@ -4476,7 +4522,6 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("fail")));
             (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
@@ -4497,7 +4542,6 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
@@ -4545,7 +4589,6 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
@@ -4595,7 +4638,6 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
@@ -4642,7 +4684,6 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
@@ -4691,7 +4732,6 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
@@ -4734,7 +4774,6 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
                 rerank_candidates: 20,
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
@@ -4863,7 +4902,6 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 // no reranker_model key
-                reranker_available: true,
             });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
@@ -4877,32 +4915,720 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            expect(values[0]).toBe("");
-        });
-
-        it("unavailable branch resets dropdown to disabled regardless of stale active value", async () => {
-            const plugin = makePlugin();
-            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
-                reranker_model: "stale-value",
-                rerank_candidates: 20,
-                reranker_available: false,
-            });
-            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
-                ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
-            );
-            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
-            const container = new MockElement("div") as unknown as HTMLElement;
-            const tab = makeTab(plugin);
-            const { values } = captureRerankerDropdown();
-
-            (tab as any).renderRerankerSection(container);
-            await new Promise((r) => setTimeout(r, 0));
-            await new Promise((r) => setTimeout(r, 0));
-
-            // When unavailable, the stale active value is irrelevant — dropdown is always disabled.
             expect(values[0]).toBe("");
         });
     });
+
+    describe("Vision section", () => {
+        let origAddDropdown: typeof Setting.prototype.addDropdown;
+
+        function captureVisionDropdown(): {
+            dropdowns: DropdownOnChange[];
+            options: Array<Record<string, string>>;
+            values: string[];
+        } {
+            const dropdowns: DropdownOnChange[] = [];
+            const options: Array<Record<string, string>> = [];
+            const values: string[] = [];
+            Setting.prototype.addDropdown = function (cb: (dropdown: any) => void) {
+                const opts: Record<string, string> = {};
+                const fakeDropdown = {
+                    addOption: (v: string, l: string) => {
+                        opts[v] = l;
+                        return fakeDropdown;
+                    },
+                    setValue: (v: string) => {
+                        values.push(v);
+                        return fakeDropdown;
+                    },
+                    onChange: (handler: DropdownOnChange) => {
+                        dropdowns.push(handler);
+                        return fakeDropdown;
+                    },
+                };
+                cb(fakeDropdown);
+                options.push(opts);
+                return this;
+            };
+            return { dropdowns, options, values };
+        }
+
+        beforeEach(() => {
+            origAddDropdown = Setting.prototype.addDropdown;
+        });
+        afterEach(() => {
+            Setting.prototype.addDropdown = origAddDropdown;
+        });
+
+        it("renders dropdown with (disabled) when active vision_model is empty", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                vision_model: "",
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "qwen2-vl",
+                            hf_repo: "Qwen/Qwen2-VL-7B-Instruct",
+                            display_name: "Qwen2-VL",
+                            size_gb: 8,
+                            min_ram_gb: 16,
+                            description: "vision",
+                            quality_tier: "balanced",
+                            installed: true,
+                            source: "native",
+                            task: "vision",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+                models: [{ name: "Qwen/Qwen2-VL-7B-Instruct", source: "native" }],
+            });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { options, values } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(options[0][""]).toBe(MESSAGES.LABEL_VISION_DISABLED);
+            expect(options[0]["Qwen/Qwen2-VL-7B-Instruct"]).toBe("Qwen/Qwen2-VL-7B-Instruct");
+            expect(values[0]).toBe("");
+        });
+
+        it("selecting installed vision model calls setVisionModel and shows success notice", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "qwen2-vl",
+                            hf_repo: "Qwen/Qwen2-VL-7B-Instruct",
+                            display_name: "Qwen2-VL",
+                            size_gb: 8,
+                            min_ram_gb: 16,
+                            description: "",
+                            quality_tier: "balanced",
+                            installed: true,
+                            source: "native",
+                            task: "vision",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+                models: [{ name: "Qwen/Qwen2-VL-7B-Instruct", source: "native" }],
+            });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("Qwen/Qwen2-VL-7B-Instruct");
+            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("Qwen/Qwen2-VL-7B-Instruct");
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_UPDATED)).toBe(true);
+        });
+
+        it("selecting disabled calls setVisionModel('')", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                vision_model: "Qwen/Qwen2-VL-7B-Instruct",
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("");
+            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("");
+        });
+
+        it("shows failure notice when setVisionModel returns non-422 error", async () => {
+            const plugin = makePlugin();
+            (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                err(new Error("Server responded 500: ")),
+            );
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "qwen",
+                            hf_repo: "Qwen/qwen",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: true,
+                            source: "native",
+                            task: "vision",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+                models: [{ name: "Qwen/qwen", source: "native" }],
+            });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("Qwen/qwen");
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_VISION)).toBe(true);
+        });
+
+        it("selecting not-installed local catalog entry triggers pull then set", async () => {
+            const plugin = makePlugin();
+            async function* fakePull() {
+                yield { event: SSE_EVENT.PROGRESS, data: { percent: 50 } };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "qwen-vl-large",
+                            hf_repo: "Qwen/qwen-vl-large",
+                            display_name: "",
+                            size_gb: 2,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "native",
+                            task: "vision",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("Qwen/qwen-vl-large");
+            expect(plugin.api.pullModel).toHaveBeenCalledWith("Qwen/qwen-vl-large", "native", expect.any(AbortSignal));
+            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("Qwen/qwen-vl-large");
+        });
+
+        it("hosted litellm entry skips pull and calls setVisionModel directly", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "gpt-4o",
+                            hf_repo: "openai/gpt-4o",
+                            display_name: "GPT-4o",
+                            size_gb: 0,
+                            min_ram_gb: 0,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "litellm",
+                            task: "vision",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("openai/gpt-4o");
+            expect(plugin.api.pullModel).not.toHaveBeenCalled();
+            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("openai/gpt-4o");
+        });
+
+        it("hosted litellm entry with 422 response surfaces API-key notice", async () => {
+            const plugin = makePlugin();
+            (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                err(new Error("Server responded 422: key missing")),
+            );
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "gpt-4o",
+                            hf_repo: "openai/gpt-4o",
+                            display_name: "",
+                            size_gb: 0,
+                            min_ram_gb: 0,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "litellm",
+                            task: "vision",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("openai/gpt-4o");
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_NEEDS_KEY)).toBe(true);
+        });
+
+        it("role-mismatch 422 surfaces the server's detail verbatim (not the API-key notice)", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            const roleMismatchDetail =
+                "Model 'bge-reranker' is a rerank model, not vision. Set it via PUT /api/models/reranker instead.";
+            (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                err(new Error(`Server responded 422: {"detail": "${roleMismatchDetail}"}`)),
+            );
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "bge-reranker",
+                            hf_repo: "BAAI/bge-reranker-v2-m3",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: true,
+                            source: "native",
+                            task: "vision",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+                models: [{ name: "BAAI/bge-reranker-v2-m3", source: "native" }],
+            });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("BAAI/bge-reranker-v2-m3");
+            expect(Notice.instances.some((n) => n.message === roleMismatchDetail)).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_NEEDS_KEY)).toBe(false);
+        });
+
+        it("falls back to notice when initial load fails", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("unreachable"));
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_LOAD_FAILED)).toBe(true);
+        });
+
+        it("falls back to empty dropdown when installedModels rejects", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { options } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(options[0][""]).toBe(MESSAGES.LABEL_VISION_DISABLED);
+        });
+
+        it("falls back when catalog returns err() — shows empty dropdown with just (disabled)", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("fail")));
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { options } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(Object.keys(options[0])).toEqual([""]);
+        });
+
+        it("pull flow surfaces queue-full notice when enqueue fails", async () => {
+            const plugin = makePlugin();
+            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "qwen-vl",
+                            hf_repo: "Qwen/qwen-vl",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "native",
+                            task: "vision",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("Qwen/qwen-vl");
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_QUEUE_FULL)).toBe(true);
+            expect(plugin.api.pullModel).not.toHaveBeenCalled();
+        });
+
+        it("pull SSE error fails the task and surfaces notice", async () => {
+            const plugin = makePlugin();
+            async function* failingPull() {
+                yield { event: SSE_EVENT.ERROR, data: { message: "boom" } };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(failingPull());
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "qwen-vl",
+                            hf_repo: "Qwen/qwen-vl",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "native",
+                            task: "vision",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("Qwen/qwen-vl");
+            expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
+            expect(plugin.api.setVisionModel).not.toHaveBeenCalled();
+        });
+
+        it("pull AbortError cancels the task and surfaces cancel notice", async () => {
+            const plugin = makePlugin();
+            async function* aborting(): AsyncGenerator<never> {
+                const e = new Error("aborted");
+                e.name = "AbortError";
+                throw e;
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(aborting());
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "qwen-vl",
+                            hf_repo: "Qwen/qwen-vl",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "native",
+                            task: "vision",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("Qwen/qwen-vl");
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_PULL_CANCELLED)).toBe(true);
+        });
+
+        it("pull non-Error throw uses 'unknown' as reason", async () => {
+            const plugin = makePlugin();
+            async function* failing(): AsyncGenerator<never> {
+                throw "string failure";
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(failing());
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "qwen-vl",
+                            hf_repo: "Qwen/qwen-vl",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "native",
+                            task: "vision",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("Qwen/qwen-vl");
+            const failed = plugin.taskQueue.completed.find((t: any) => t.status === "failed");
+            expect(failed).toBeDefined();
+            expect(failed!.error).toBe("unknown error");
+        });
+
+        it("pull progress without percent or total is ignored", async () => {
+            const plugin = makePlugin();
+            async function* fakePull() {
+                yield { event: SSE_EVENT.PROGRESS, data: {} };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "qwen-vl",
+                            hf_repo: "Qwen/qwen-vl",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "native",
+                            task: "vision",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await expect(dropdowns[0]("Qwen/qwen-vl")).resolves.not.toThrow();
+            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("Qwen/qwen-vl");
+        });
+
+        it("buildVisionOptions includes installed-first then not-installed then hosted", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 3,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "qwen-installed",
+                            hf_repo: "Qwen/qwen-installed",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: true,
+                            source: "native",
+                            task: "vision",
+                        },
+                        {
+                            name: "qwen-not-installed",
+                            hf_repo: "Qwen/qwen-not-installed",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "native",
+                            task: "vision",
+                        },
+                        {
+                            name: "gpt-4o",
+                            hf_repo: "openai/gpt-4o",
+                            display_name: "",
+                            size_gb: 0,
+                            min_ram_gb: 0,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "litellm",
+                            task: "vision",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+                models: [{ name: "Qwen/qwen-installed", source: "native" }],
+            });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { options } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            const keys = Object.keys(options[0]);
+            expect(keys).toEqual(["", "Qwen/qwen-installed", "Qwen/qwen-not-installed", "openai/gpt-4o"]);
+            expect(options[0]["Qwen/qwen-not-installed"]).toContain(MESSAGES.LABEL_NOT_INSTALLED);
+            expect(options[0]["openai/gpt-4o"]).toContain(MESSAGES.LABEL_VISION_HOSTED_GROUP);
+        });
+
+        it("parses vision_model as empty when config lacks the field", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                // no vision_model key
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { values } = captureVisionDropdown();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(values[0]).toBe("");
+        });
+    });
+
     describe("rerank_candidates advanced field", () => {
         // In manual mode: [0]=port, [1-6]=gen, [7-9]=crawl, [10]=wikiVaultFolder, [11-12]=chunks, [13]=rerank_candidates
         const RERANK_IDX = 20;

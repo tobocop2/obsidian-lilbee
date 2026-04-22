@@ -424,6 +424,9 @@ export class CatalogModal extends Modal {
         if (entry.task === MODEL_TASK.RERANK) {
             return this.plugin.api.setRerankerModel(entry.hf_repo);
         }
+        if (entry.task === MODEL_TASK.VISION) {
+            return this.plugin.api.setVisionModel(entry.hf_repo);
+        }
         const result = await this.plugin.api.setChatModel(entry.hf_repo);
         if (result.isOk()) this.plugin.activeModel = entry.hf_repo;
         return result;

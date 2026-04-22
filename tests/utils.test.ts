@@ -2,9 +2,11 @@ import { describe, it, expect, vi } from "vitest";
 import {
     ensureUrlScheme,
     errorMessage,
+    extractServerErrorDetail,
     formatBytes,
     formatRate,
     formatElapsed,
+    isRoleMismatchDetail,
     noticeForResultError,
     percentFromSse,
     StreamIdleError,
@@ -208,5 +210,54 @@ describe("noticeForResultError", () => {
         expect(noticeForResultError("raw", "generic fallback")).toBe("generic fallback");
         expect(noticeForResultError(null, "generic fallback")).toBe("generic fallback");
         expect(noticeForResultError(undefined, "generic fallback")).toBe("generic fallback");
+    });
+});
+
+describe("extractServerErrorDetail", () => {
+    it("returns the detail string from a JSON-body server error", () => {
+        const msg =
+            'Server responded 422: {"detail": "Model \'lightonocr:2-1b\' is a vision model, not chat. Set it via PUT /api/models/vision instead."}';
+        expect(extractServerErrorDetail(msg)).toBe(
+            "Model 'lightonocr:2-1b' is a vision model, not chat. Set it via PUT /api/models/vision instead.",
+        );
+    });
+
+    it("returns null when the body is not valid JSON", () => {
+        expect(extractServerErrorDetail("Server responded 422: not-json")).toBeNull();
+    });
+
+    it("returns null when the message has no colon separator", () => {
+        expect(extractServerErrorDetail("bare error without colon")).toBeNull();
+    });
+
+    it("returns null when the body is empty", () => {
+        expect(extractServerErrorDetail("Server responded 422: ")).toBeNull();
+    });
+
+    it("returns null when the JSON body has no detail field", () => {
+        expect(extractServerErrorDetail('Server responded 422: {"other": "value"}')).toBeNull();
+    });
+
+    it("returns null when detail is not a string", () => {
+        expect(extractServerErrorDetail('Server responded 422: {"detail": 42}')).toBeNull();
+    });
+});
+
+describe("isRoleMismatchDetail", () => {
+    it("recognizes the server's role-mismatch remedy phrase", () => {
+        expect(
+            isRoleMismatchDetail("Model 'foo' is a vision model, not chat. Set it via PUT /api/models/vision instead."),
+        ).toBe(true);
+    });
+
+    it("returns false for an auth-shaped detail without the remedy phrase", () => {
+        expect(isRoleMismatchDetail("Missing LiteLLM API key for this provider.")).toBe(false);
+    });
+
+    it("returns false when the endpoint is mentioned outside the role-mismatch remedy phrase", () => {
+        // A future 422 that mentions the endpoint for non-role reasons (e.g. a docs link,
+        // a generic "see PUT /api/models/ for options") must NOT be misclassified as a
+        // role-mismatch. The sentinel is the `Set it via PUT /api/models/` prefix.
+        expect(isRoleMismatchDetail("Auth failed — see PUT /api/models/ docs for the right endpoint.")).toBe(false);
     });
 });

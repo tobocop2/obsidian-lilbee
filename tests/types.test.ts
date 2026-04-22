@@ -198,10 +198,18 @@ describe("ModelCatalog interface", () => {
 });
 
 describe("ModelsResponse interface", () => {
-    it("has chat catalog", () => {
+    it("has per-role catalogs for chat, embedding, vision, reranker", () => {
         const catalog: ModelCatalog = { active: "m", catalog: [], installed: [] };
-        const r: ModelsResponse = { chat: catalog };
+        const r: ModelsResponse = {
+            chat: catalog,
+            embedding: catalog,
+            vision: catalog,
+            reranker: catalog,
+        };
         expect(r.chat).toBe(catalog);
+        expect(r.embedding).toBe(catalog);
+        expect(r.vision).toBe(catalog);
+        expect(r.reranker).toBe(catalog);
     });
 });
 
