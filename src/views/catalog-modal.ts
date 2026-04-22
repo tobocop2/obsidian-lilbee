@@ -1,7 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { CatalogEntry, CatalogViewMode, ModelTask, ModelSize } from "../types";
-import { MODEL_TASK, SSE_EVENT, TASK_TYPE, CATALOG_VIEW_MODE, ERROR_NAME } from "../types";
+import { MODEL_TASK, SSE_EVENT, TASK_TYPE, CATALOG_VIEW_MODE, ERROR_NAME, MODEL_SOURCE } from "../types";
 import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
@@ -466,7 +466,11 @@ export class CatalogModal extends Modal {
         const pullErrorPrefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.hf_repo);
 
         try {
-            for await (const event of this.plugin.api.pullModel(entry.hf_repo, entry.source, controller.signal)) {
+            for await (const event of this.plugin.api.pullModel(
+                entry.hf_repo,
+                MODEL_SOURCE.NATIVE,
+                controller.signal,
+            )) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = percentFromSse(d);

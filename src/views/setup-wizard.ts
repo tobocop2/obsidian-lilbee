@@ -1,7 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { CatalogEntry, SSEEvent, SyncDone } from "../types";
-import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK } from "../types";
+import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK, MODEL_SOURCE } from "../types";
 import { CatalogModal } from "./catalog-modal";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
@@ -579,7 +579,7 @@ export class SetupWizard extends Modal {
         try {
             for await (const event of this.plugin.api.pullModel(
                 model.hf_repo,
-                model.source,
+                MODEL_SOURCE.NATIVE,
                 this.pullController.signal,
             )) {
                 if (event.event === SSE_EVENT.PROGRESS) {
@@ -744,7 +744,7 @@ export class SetupWizard extends Modal {
         try {
             for await (const event of this.plugin.api.pullModel(
                 model.hf_repo,
-                model.source,
+                MODEL_SOURCE.NATIVE,
                 this.pullController.signal,
             )) {
                 if (event.event === SSE_EVENT.PROGRESS) {
@@ -916,7 +916,7 @@ export class SetupWizard extends Modal {
         try {
             for await (const event of this.plugin.api.pullModel(
                 model.hf_repo,
-                model.source,
+                MODEL_SOURCE.NATIVE,
                 this.pullController.signal,
             )) {
                 if (event.event === SSE_EVENT.PROGRESS) {

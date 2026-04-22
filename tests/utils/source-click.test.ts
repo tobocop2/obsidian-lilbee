@@ -38,6 +38,15 @@ function makeVault(fileExists: boolean): App["vault"] {
     return app.vault;
 }
 
+function makeVaultWithPaths(existingPaths: string[]): App["vault"] {
+    const app = new App();
+    const set = new Set(existingPaths);
+    app.vault.getAbstractFileByPath = vi.fn((path: string) =>
+        set.has(path) ? ({ path, name: path.split("/").pop() ?? path } as unknown as null) : null,
+    ) as ReturnType<typeof vi.fn>;
+    return app.vault;
+}
+
 beforeEach(() => {
     previewInstances.length = 0;
 });
@@ -132,24 +141,96 @@ describe("sourceClickAction — vault resolution", () => {
     });
 });
 
+describe("sourceClickAction — source fallback", () => {
+    it("falls back to source.source for PDFs when vault_path is null", () => {
+        const vault = makeVaultWithPaths(["cv-manual.pdf"]);
+        const source = makeSource({
+            source: "cv-manual.pdf",
+            vault_path: null,
+            content_type: CONTENT_TYPE.PDF,
+            page_start: 235,
+        });
+        const action = sourceClickAction(source, vault as never);
+        expect(action).toEqual({ kind: SOURCE_ACTION.VAULT_PDF, path: "cv-manual.pdf", page: 235 });
+    });
+
+    it("falls back to source.source for markdown with line deep-link", () => {
+        const vault = makeVaultWithPaths(["lilbee/crawled/example.com/page.md"]);
+        const source = makeSource({
+            source: "lilbee/crawled/example.com/page.md",
+            vault_path: undefined,
+            content_type: CONTENT_TYPE.MARKDOWN,
+            line_start: 12,
+        });
+        const action = sourceClickAction(source, vault as never);
+        expect(action).toEqual({
+            kind: SOURCE_ACTION.VAULT_MARKDOWN,
+            path: "lilbee/crawled/example.com/page.md",
+            line: 12,
+        });
+    });
+
+    it("falls back to source.source as vault-note for other content types", () => {
+        const vault = makeVaultWithPaths(["lilbee/imported/data.csv"]);
+        const source = makeSource({
+            source: "lilbee/imported/data.csv",
+            vault_path: null,
+            content_type: "text/csv",
+        });
+        const action = sourceClickAction(source, vault as never);
+        expect(action).toEqual({ kind: SOURCE_ACTION.VAULT_NOTE, path: "lilbee/imported/data.csv" });
+    });
+
+    it("uses vault_path in preference to source.source when both resolve", () => {
+        const vault = makeVaultWithPaths(["lilbee/alias/book.pdf", "cv-manual.pdf"]);
+        const source = makeSource({
+            source: "cv-manual.pdf",
+            vault_path: "lilbee/alias/book.pdf",
+            content_type: CONTENT_TYPE.PDF,
+            page_start: 3,
+        });
+        const action = sourceClickAction(source, vault as never);
+        expect(action).toEqual({ kind: SOURCE_ACTION.VAULT_PDF, path: "lilbee/alias/book.pdf", page: 3 });
+    });
+
+    it("falls back to source.source when vault_path is set but file is missing", () => {
+        const vault = makeVaultWithPaths(["cv-manual.pdf"]);
+        const source = makeSource({
+            source: "cv-manual.pdf",
+            vault_path: "lilbee/stale/book.pdf",
+            content_type: CONTENT_TYPE.PDF,
+            page_start: 7,
+        });
+        const action = sourceClickAction(source, vault as never);
+        expect(action).toEqual({ kind: SOURCE_ACTION.VAULT_PDF, path: "cv-manual.pdf", page: 7 });
+    });
+});
+
 describe("sourceClickAction — preview fallback", () => {
-    it("returns preview when vault_path is undefined", () => {
-        const vault = makeVault(true);
-        const source = makeSource({ vault_path: undefined });
-        const action = sourceClickAction(source, vault as never);
-        expect(action).toEqual({ kind: SOURCE_ACTION.PREVIEW, source });
-    });
-
-    it("returns preview when vault_path is null", () => {
-        const vault = makeVault(true);
-        const source = makeSource({ vault_path: null });
-        const action = sourceClickAction(source, vault as never);
-        expect(action).toEqual({ kind: SOURCE_ACTION.PREVIEW, source });
-    });
-
-    it("returns preview when vault_path is set but file missing from vault", () => {
+    it("returns preview when vault_path is undefined and source.source does not match", () => {
         const vault = makeVault(false);
-        const source = makeSource({ vault_path: "lilbee/deleted.md" });
+        const source = makeSource({ source: "external/only.md", vault_path: undefined });
+        const action = sourceClickAction(source, vault as never);
+        expect(action).toEqual({ kind: SOURCE_ACTION.PREVIEW, source });
+    });
+
+    it("returns preview when vault_path is null and source.source does not match", () => {
+        const vault = makeVault(false);
+        const source = makeSource({ source: "external/only.md", vault_path: null });
+        const action = sourceClickAction(source, vault as never);
+        expect(action).toEqual({ kind: SOURCE_ACTION.PREVIEW, source });
+    });
+
+    it("returns preview when both vault_path and source.source miss the vault", () => {
+        const vault = makeVault(false);
+        const source = makeSource({ source: "external/gone.md", vault_path: "lilbee/deleted.md" });
+        const action = sourceClickAction(source, vault as never);
+        expect(action).toEqual({ kind: SOURCE_ACTION.PREVIEW, source });
+    });
+
+    it("returns preview when source.source is an empty string", () => {
+        const vault = makeVaultWithPaths([""]);
+        const source = makeSource({ source: "", vault_path: null });
         const action = sourceClickAction(source, vault as never);
         expect(action).toEqual({ kind: SOURCE_ACTION.PREVIEW, source });
     });

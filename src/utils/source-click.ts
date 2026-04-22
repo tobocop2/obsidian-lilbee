@@ -32,31 +32,39 @@ function isMarkdownish(contentType: string): boolean {
     return contentType === CONTENT_TYPE.MARKDOWN || contentType === CONTENT_TYPE.HTML;
 }
 
+function vaultAction(source: Source, path: string): SourceClickAction {
+    if (source.content_type === CONTENT_TYPE.PDF) {
+        return {
+            kind: SOURCE_ACTION.VAULT_PDF,
+            path,
+            page: source.page_start ?? DEFAULT_PDF_PAGE,
+        };
+    }
+    if (isMarkdownish(source.content_type) && source.line_start !== null) {
+        return {
+            kind: SOURCE_ACTION.VAULT_MARKDOWN,
+            path,
+            line: source.line_start,
+        };
+    }
+    return { kind: SOURCE_ACTION.VAULT_NOTE, path };
+}
+
 /**
  * Resolve what should happen when the user clicks a source reference.
  *
- * A vault-side file takes precedence: if the server returned a `vault_path`
- * and the file exists in the vault, deep-link into Obsidian. Otherwise fall
- * back to a preview modal that fetches the content from the server.
+ * Prefer the server-supplied `vault_path`. If absent (older server builds,
+ * or external-server mode), fall back to `source.source` — sources ingested
+ * via a vault-native flow often match a vault-relative path directly. Only
+ * fall through to the preview modal when no vault file can be resolved.
  */
 export function sourceClickAction(source: Source, vault: Vault): SourceClickAction {
-    const path = source.vault_path;
-    if (path && vault.getAbstractFileByPath(path)) {
-        if (source.content_type === CONTENT_TYPE.PDF) {
-            return {
-                kind: SOURCE_ACTION.VAULT_PDF,
-                path,
-                page: source.page_start ?? DEFAULT_PDF_PAGE,
-            };
-        }
-        if (isMarkdownish(source.content_type) && source.line_start !== null) {
-            return {
-                kind: SOURCE_ACTION.VAULT_MARKDOWN,
-                path,
-                line: source.line_start,
-            };
-        }
-        return { kind: SOURCE_ACTION.VAULT_NOTE, path };
+    const vaultPath = source.vault_path;
+    if (vaultPath && vault.getAbstractFileByPath(vaultPath)) {
+        return vaultAction(source, vaultPath);
+    }
+    if (source.source && vault.getAbstractFileByPath(source.source)) {
+        return vaultAction(source, source.source);
     }
     return { kind: SOURCE_ACTION.PREVIEW, source };
 }
