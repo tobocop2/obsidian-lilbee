@@ -63,6 +63,7 @@ describe("DEFAULT_SETTINGS", () => {
             "serverPort",
             "serverUrl",
             "setupCompleted",
+            "storeContentInVault",
             "syncDebounceMs",
             "syncMode",
             "systemPrompt",

@@ -1,8 +1,25 @@
 import { App } from "obsidian";
+import type { LilbeeClient } from "../api";
 import type { DocumentResult, Source } from "../types";
+import { executeSourceClick, sourceClickAction } from "../utils/source-click";
 
 const MAX_EXCERPT_CHARS = 200;
 const MAX_EXCERPTS = 3;
+
+/** Build a minimal Source from a DocumentResult excerpt so we can dispatch a click action. */
+function documentResultToSource(result: DocumentResult): Source {
+    const excerpt = result.excerpts[0];
+    return {
+        source: result.source,
+        content_type: result.content_type,
+        distance: 0,
+        chunk: excerpt?.content ?? "",
+        page_start: excerpt?.page_start ?? null,
+        page_end: excerpt?.page_end ?? null,
+        line_start: excerpt?.line_start ?? null,
+        line_end: excerpt?.line_end ?? null,
+    };
+}
 
 export function formatLocation(excerpt: {
     page_start: number | null;
@@ -28,7 +45,12 @@ function truncate(text: string, maxLen: number): string {
     return text.slice(0, maxLen) + "...";
 }
 
-export function renderDocumentResult(container: HTMLElement, result: DocumentResult, app: App): void {
+export function renderDocumentResult(
+    container: HTMLElement,
+    result: DocumentResult,
+    app: App,
+    api: LilbeeClient,
+): void {
     const card = container.createDiv({ cls: "lilbee-document-card" });
 
     // Header: filename + content type badge
@@ -39,7 +61,8 @@ export function renderDocumentResult(container: HTMLElement, result: DocumentRes
     });
     link.addEventListener("click", (e) => {
         e.preventDefault();
-        app.workspace.openLinkText(result.source, "");
+        const source = documentResultToSource(result);
+        void executeSourceClick(app, api, sourceClickAction(source, app.vault));
     });
 
     header.createEl("span", {
@@ -65,7 +88,20 @@ export function renderDocumentResult(container: HTMLElement, result: DocumentRes
     }
 }
 
-export function renderSourceChip(container: HTMLElement, source: Source, onWikiClick?: (slug: string) => void): void {
+/**
+ * Render a source chip. Chips are always clickable: the default click dispatches
+ * through `executeSourceClick` (vault deep-link or server preview modal). When
+ * `onWikiClick` is provided, wiki chips use that override instead — preserves
+ * the wiki view's custom flow where a click navigates to the wiki page in the
+ * sidebar rather than opening the source file.
+ */
+export function renderSourceChip(
+    container: HTMLElement,
+    source: Source,
+    app: App,
+    api: LilbeeClient,
+    onWikiClick?: (slug: string) => void,
+): void {
     const isWiki = source.chunk_type === "wiki";
     const cls = isWiki ? "lilbee-source-chip lilbee-source-chip-wiki" : "lilbee-source-chip";
     const chip = container.createEl("span", { cls });
@@ -89,8 +125,12 @@ export function renderSourceChip(container: HTMLElement, source: Source, onWikiC
         chip.setText(label);
     }
 
+    chip.style.cursor = "pointer";
     if (isWiki && onWikiClick) {
-        chip.style.cursor = "pointer";
         chip.addEventListener("click", () => onWikiClick(source.source));
+    } else {
+        chip.addEventListener("click", () => {
+            void executeSourceClick(app, api, sourceClickAction(source, app.vault));
+        });
     }
 }

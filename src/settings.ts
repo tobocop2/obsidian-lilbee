@@ -1391,6 +1391,24 @@ export class LilbeeSettingTab extends PluginSettingTab {
             cls: "setting-item-description",
         });
 
+        const storeSetting = new Setting(details)
+            .setName(MESSAGES.LABEL_STORE_CONTENT_IN_VAULT)
+            .setDesc(MESSAGES.DESC_STORE_CONTENT_IN_VAULT)
+            .addToggle((toggle) => {
+                toggle.setValue(this.plugin.settings.storeContentInVault);
+                toggle.setDisabled(this.plugin.settings.serverMode !== SERVER_MODE.MANAGED);
+                toggle.onChange(async (value) => {
+                    this.plugin.settings.storeContentInVault = value;
+                    await this.plugin.saveSettings();
+                    if (value) {
+                        void this.plugin.configureManagedStorage();
+                    }
+                });
+            });
+        if (this.plugin.settings.serverMode !== SERVER_MODE.MANAGED) {
+            storeSetting.settingEl.addClass("lilbee-setting-disabled");
+        }
+
         const advancedFields: { key: string; name: string; desc: string; reindex: boolean }[] = [
             { key: "chunk_size", name: MESSAGES.DESC_CHUNK_SIZE, desc: MESSAGES.DESC_CHUNK_SIZE, reindex: true },
             {

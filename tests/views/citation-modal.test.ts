@@ -1,6 +1,17 @@
 import { vi, describe, it, expect } from "vitest";
 import { App } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
+import type { Source } from "../../src/types";
+
+const previewOpens: Array<{ source: Source }> = [];
+vi.mock("../../src/views/source-preview-modal", () => ({
+    SourcePreviewModal: vi.fn().mockImplementation((_app: unknown, _api: unknown, source: Source) => ({
+        open: () => {
+            previewOpens.push({ source });
+        },
+    })),
+}));
+
 import { CitationModal } from "../../src/views/citation-modal";
 
 function makePlugin() {
@@ -412,7 +423,8 @@ describe("CitationModal", () => {
         expect(status!.textContent).toBe("current");
     });
 
-    it("source link click calls workspace.openLinkText", async () => {
+    it("source link click dispatches through executeSourceClick — preview for non-vault source", async () => {
+        previewOpens.length = 0;
         const app = new App();
         const plugin = makePlugin();
         plugin.api.wikiCitations.mockResolvedValue({
@@ -445,6 +457,9 @@ describe("CitationModal", () => {
         link!.trigger("click", { preventDefault });
 
         expect(preventDefault).toHaveBeenCalled();
-        expect(app.workspace.openLinkText).toHaveBeenCalledWith("notes/source.md", "");
+        // No vault_path on citations yet → preview modal path.
+        expect(app.workspace.openLinkText).not.toHaveBeenCalled();
+        expect(previewOpens).toHaveLength(1);
+        expect(previewOpens[0].source.source).toBe("notes/source.md");
     });
 });

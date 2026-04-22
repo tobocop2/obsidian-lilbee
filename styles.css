@@ -11,6 +11,7 @@
     --lilbee-color-wiki: #10b981;
     --lilbee-color-delete: #ef4444;
     --lilbee-color-setup: #8b5cf6;
+    --lilbee-color-vision: #ec4899;
 }
 
 .lilbee-document-card {
@@ -1356,18 +1357,182 @@
     color: var(--text-normal);
 }
 
-/* Setup Wizard */
+/* Setup Wizard
+ *
+ * Visual language shared with Task Center + Catalog:
+ *   - Every step carries a semantic color via --wizard-step-color, scoped
+ *     per [data-step]. Badge, rail, progress fill, Task Center CTA all
+ *     reference that one variable so the step tells a coherent color story.
+ *   - Active long-running steps pulse their left rail using the same
+ *     keyframe (lilbee-rail-pulse) as Task Center rows — the wizard
+ *     visually becomes a Task Center entry while work is happening.
+ *   - Numbered step indicator with labels echoes the flight-deck feel:
+ *     uppercase section headers, letter-spaced, tabular numerals.
+ */
 
 .lilbee-wizard {
-    max-width: 540px;
+    max-width: 580px;
 }
 
 .lilbee-wizard-step {
-    padding: var(--size-4-4, 16px) var(--size-4-3, 12px);
+    --wizard-step-color: var(--interactive-accent);
+    position: relative;
+    padding: var(--size-4-4, 16px) var(--size-4-4, 16px) var(--size-4-4, 16px) var(--size-4-6, 24px);
 }
 
-.lilbee-wizard-step h2 {
-    margin: 0 0 var(--size-4-3, 12px);
+.lilbee-wizard-step[data-step="welcome"]   { --wizard-step-color: var(--lilbee-color-setup); }
+.lilbee-wizard-step[data-step="server"]    { --wizard-step-color: var(--interactive-accent); }
+.lilbee-wizard-step[data-step="model"]     { --wizard-step-color: var(--lilbee-color-pull); }
+.lilbee-wizard-step[data-step="embedding"] { --wizard-step-color: var(--lilbee-color-download); }
+.lilbee-wizard-step[data-step="vision"]    { --wizard-step-color: var(--lilbee-color-vision); }
+.lilbee-wizard-step[data-step="sync"]      { --wizard-step-color: var(--lilbee-color-sync); }
+.lilbee-wizard-step[data-step="wiki"]      { --wizard-step-color: var(--lilbee-color-wiki); }
+.lilbee-wizard-step[data-step="done"]      { --wizard-step-color: var(--text-success, #22c55e); }
+
+/* Left-edge rail — mirrors Task Center's .lilbee-task-rail, same radius, same
+ * width, same pulse keyframe. Becomes the direct visual bridge to the Task
+ * Center when the step kicks off a long-running op. */
+.lilbee-wizard-rail {
+    position: absolute;
+    top: var(--size-4-4, 16px);
+    bottom: var(--size-4-4, 16px);
+    left: 0;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+    background-color: color-mix(in srgb, var(--wizard-step-color) 45%, transparent);
+    transition: background-color 200ms ease;
+}
+
+.lilbee-wizard-rail.is-active {
+    background-color: var(--wizard-step-color);
+    animation: lilbee-rail-pulse 1s ease-in-out infinite;
+}
+
+/* Step indicator: numbered circles + labels, connecting lines fill with the
+ * semantic color of the preceding step when complete. */
+.lilbee-wizard-step-indicator {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: var(--size-4-6, 24px);
+    padding: 0 var(--size-4-2, 8px);
+}
+
+.lilbee-wizard-step-slot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.lilbee-wizard-step-circle {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--background-secondary);
+    border: 1.5px solid var(--background-modifier-border);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: var(--font-semibold, 600);
+    font-variant-numeric: tabular-nums;
+    transition: all 250ms ease;
+}
+
+.lilbee-wizard-step-slot[data-step="welcome"]   .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-setup); }
+.lilbee-wizard-step-slot[data-step="server"]    .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--interactive-accent); }
+.lilbee-wizard-step-slot[data-step="model"]     .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-pull); }
+.lilbee-wizard-step-slot[data-step="embedding"] .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-download); }
+.lilbee-wizard-step-slot[data-step="vision"]    .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-vision); }
+.lilbee-wizard-step-slot[data-step="sync"]      .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-sync); }
+.lilbee-wizard-step-slot[data-step="wiki"]      .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-wiki); }
+.lilbee-wizard-step-slot[data-step="done"]      .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--text-success, #22c55e); }
+
+.lilbee-wizard-step-circle.is-active {
+    background-color: var(--wizard-step-color, var(--interactive-accent));
+    border-color: var(--wizard-step-color, var(--interactive-accent));
+    color: var(--text-on-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--wizard-step-color, var(--interactive-accent)) 18%, transparent);
+}
+
+.lilbee-wizard-step-circle.is-done {
+    background-color: color-mix(in srgb, var(--text-success, #22c55e) 20%, transparent);
+    border-color: color-mix(in srgb, var(--text-success, #22c55e) 45%, transparent);
+    color: var(--text-success, #22c55e);
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.lilbee-wizard-step-label {
+    font-size: 10px;
+    font-weight: var(--font-semibold, 600);
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    line-height: 1;
+}
+
+.lilbee-wizard-step-slot:has(.is-active) .lilbee-wizard-step-label,
+.lilbee-wizard-step-slot:has(.is-done) .lilbee-wizard-step-label {
+    color: var(--text-muted);
+}
+
+.lilbee-wizard-step-line {
+    flex: 1;
+    min-width: 10px;
+    max-width: 36px;
+    height: 2px;
+    margin: 12px 2px 0;
+    background-color: var(--background-modifier-border);
+    transition: background-color 250ms ease;
+}
+
+.lilbee-wizard-step-line.is-done {
+    background-color: color-mix(in srgb, var(--text-success, #22c55e) 45%, transparent);
+}
+
+/* Step header: Task-Center-style uppercase badge followed by the title */
+.lilbee-wizard-step-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-3, 12px);
+    flex-wrap: wrap;
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-wizard-step-header h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: var(--font-semibold, 600);
+    letter-spacing: -0.01em;
+}
+
+.lilbee-wizard-step-badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: var(--font-semibold, 600);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
+    background-color: color-mix(in srgb, var(--wizard-step-color) 14%, transparent);
+    color: var(--wizard-step-color);
+    border: 1px solid color-mix(in srgb, var(--wizard-step-color) 28%, transparent);
+    flex-shrink: 0;
+}
+
+.lilbee-wizard-section-heading {
+    font-size: 10px;
+    font-weight: var(--font-semibold, 600);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: var(--size-4-3, 12px) 0 var(--size-4-2, 8px);
 }
 
 .lilbee-wizard-step p {
@@ -1381,35 +1546,45 @@
     padding-left: var(--size-4-6, 24px);
 }
 
+.lilbee-wizard-intro-list {
+    color: var(--text-muted);
+}
+
+/* Choice option cards (Server mode + Wiki Enable/Skip) */
 .lilbee-wizard-model-option {
     border: 1px solid var(--background-modifier-border);
     border-radius: 10px;
     padding: 14px 16px;
     margin-bottom: var(--size-4-2, 8px);
     cursor: pointer;
-    transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+    transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
     background-color: var(--background-secondary);
 }
 
 .lilbee-wizard-model-option:hover {
-    border-color: var(--interactive-accent);
+    border-color: var(--wizard-step-color, var(--interactive-accent));
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 .lilbee-wizard-model-option.selected {
-    border-color: color-mix(in srgb, var(--interactive-accent) 40%, transparent);
-    background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--interactive-accent) 15%, transparent);
+    border-color: var(--wizard-step-color, var(--interactive-accent));
+    background-color: color-mix(in srgb, var(--wizard-step-color, var(--interactive-accent)) 10%, transparent);
+    box-shadow: 0 0 0 1px var(--wizard-step-color, var(--interactive-accent));
 }
 
 .lilbee-wizard-model-option strong {
     display: block;
     margin-bottom: var(--size-4-1, 4px);
+    font-size: 14px;
+    font-weight: var(--font-semibold, 600);
 }
 
 .lilbee-wizard-model-option p {
     margin: 0;
     font-size: var(--font-small, 13px);
     color: var(--text-muted);
+    line-height: 1.45;
 }
 
 .lilbee-wizard-model-header {
@@ -1428,7 +1603,7 @@
     display: inline-block;
     padding: 1px var(--size-4-2, 8px);
     border-radius: 999px;
-    background-color: var(--interactive-accent);
+    background-color: var(--wizard-step-color, var(--interactive-accent));
     color: var(--text-on-accent);
     font-size: var(--font-smallest, 10px);
     font-weight: var(--font-medium, 500);
@@ -1439,14 +1614,89 @@
     color: var(--text-muted) !important;
 }
 
+/* Progress panel: sits inside long-running steps. Indeterminate on start,
+ * handoff to determinate once percentages arrive. Task Center CTA and
+ * background-processing helper live in the footer row. */
 .lilbee-wizard-progress {
     margin: var(--size-4-3, 12px) 0;
+    padding: var(--size-4-3, 12px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    background-color: color-mix(in srgb, var(--wizard-step-color) 4%, var(--background-secondary));
+}
+
+.lilbee-wizard-progress .lilbee-progress-bar-container {
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    background-color: var(--background-modifier-border);
+}
+
+.lilbee-wizard-progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    background-color: var(--wizard-step-color, var(--interactive-accent));
+    transition: width 200ms ease-out;
+}
+
+.lilbee-wizard-progress-indeterminate {
+    background: linear-gradient(
+        90deg,
+        var(--background-modifier-border) 0%,
+        var(--wizard-step-color, var(--interactive-accent)) 50%,
+        var(--background-modifier-border) 100%
+    );
+    background-size: 200% 100%;
+    animation: lilbee-task-indeterminate 1.2s linear infinite;
 }
 
 .lilbee-wizard-progress-label {
     font-size: var(--font-small, 13px);
+    color: var(--text-normal);
+    margin-top: var(--size-4-2, 8px);
+    font-variant-numeric: tabular-nums;
+}
+
+.lilbee-wizard-progress-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--size-4-3, 12px);
+    margin-top: var(--size-4-2, 8px);
+    flex-wrap: wrap;
+}
+
+.lilbee-wizard-progress-hint {
+    font-size: 11px;
     color: var(--text-muted);
-    margin-top: var(--size-4-1, 4px);
+    line-height: 1.4;
+    flex: 1;
+    min-width: 200px;
+}
+
+/* Task Center CTA: styled like a task-type chip, colored by step. Visible
+ * the moment a download starts so the user knows their next move if they
+ * want to step out of the wizard. */
+.lilbee-wizard-task-center-cta {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 10px;
+    background-color: transparent;
+    color: var(--wizard-step-color, var(--interactive-accent));
+    border: 1px solid color-mix(in srgb, var(--wizard-step-color, var(--interactive-accent)) 40%, transparent);
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: var(--font-semibold, 600);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+    flex-shrink: 0;
+}
+
+.lilbee-wizard-task-center-cta:hover {
+    background-color: color-mix(in srgb, var(--wizard-step-color, var(--interactive-accent)) 12%, transparent);
+    border-color: var(--wizard-step-color, var(--interactive-accent));
 }
 
 .lilbee-wizard-actions {
@@ -1466,52 +1716,64 @@
 
 .lilbee-wizard-tips {
     margin-top: var(--size-4-2, 8px);
-}
-
-/* Step indicator */
-
-.lilbee-wizard-step-indicator {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: var(--size-4-6, 24px);
+    flex-direction: column;
+    gap: 2px;
 }
 
-.lilbee-wizard-step-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background-color: var(--background-modifier-border);
-    transition: all 300ms ease;
-}
-
-.lilbee-wizard-step-dot.is-active {
-    background-color: var(--interactive-accent);
-    box-shadow: 0 0 8px color-mix(in srgb, var(--interactive-accent) 50%, transparent);
-}
-
-.lilbee-wizard-step-dot.is-done {
-    background-color: var(--text-success);
-}
-
-.lilbee-wizard-step-line {
-    width: 32px;
-    height: 2px;
-    background-color: var(--background-modifier-border);
-}
-
-.lilbee-wizard-step-line.is-done {
-    background-color: var(--text-success);
-}
-
-/* Wizard summary card */
-
+/* Done-step summary: styled like a completed Task Center row, all-green. */
 .lilbee-wizard-summary-card {
-    background-color: var(--background-secondary);
-    border: 1px solid var(--background-modifier-border);
+    position: relative;
+    background-color: color-mix(in srgb, var(--text-success, #22c55e) 8%, var(--background-secondary));
+    border: 1px solid color-mix(in srgb, var(--text-success, #22c55e) 25%, var(--background-modifier-border));
     border-radius: 10px;
-    padding: 14px;
+    padding: 14px 16px;
     margin: var(--size-4-4, 16px) 0;
+    overflow: hidden;
+}
+
+.lilbee-wizard-summary-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 3px;
+    background-color: var(--text-success, #22c55e);
+}
+
+.lilbee-wizard-summary-body {
+    padding-left: var(--size-4-2, 8px);
+}
+
+.lilbee-wizard-summary-body .lilbee-wizard-section-heading {
+    margin-top: 0;
+    color: var(--text-success, #22c55e);
+}
+
+.lilbee-wizard-summary-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    font-size: var(--font-small, 13px);
+    color: var(--text-normal);
+    font-variant-numeric: tabular-nums;
+}
+
+.lilbee-wizard-summary-stat {
+    display: inline-flex;
+    align-items: center;
+}
+
+.lilbee-wizard-summary-stat::before {
+    content: "";
+    display: inline-block;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background-color: var(--text-success, #22c55e);
+    margin-right: 8px;
+    flex-shrink: 0;
 }
 
 .lilbee-wizard-summary-card p {
@@ -1524,33 +1786,37 @@
     color: var(--text-normal);
 }
 
-/* Wizard done icon */
-
 .lilbee-wizard-done-icon {
     font-size: 36px;
     text-align: center;
     margin-bottom: var(--size-4-2, 8px);
 }
 
-/* Wizard tip */
-
 .lilbee-wizard-tip {
     display: flex;
-    align-items: flex-start;
-    gap: var(--size-4-2, 8px);
-    padding: 6px 0;
+    align-items: center;
+    gap: var(--size-4-3, 12px);
+    padding: 8px 10px;
     font-size: var(--font-small, 13px);
-    color: var(--text-muted);
+    color: var(--text-normal);
+    border-radius: 8px;
+    transition: background-color 150ms ease;
+}
+
+.lilbee-wizard-tip:hover {
+    background-color: var(--background-modifier-hover);
 }
 
 .lilbee-wizard-tip-icon {
     color: var(--interactive-accent);
     flex-shrink: 0;
+    font-size: 15px;
 }
 
 .lilbee-wizard-hint {
-    font-size: var(--font-small, 13px);
+    font-size: 12px;
     color: var(--text-muted) !important;
+    line-height: 1.45;
 }
 
 .lilbee-wizard-status {
@@ -1563,7 +1829,7 @@
 .lilbee-wizard-url-input {
     width: 100%;
     padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
-    margin: var(--size-4-2, 8px) 0;
+    margin: var(--size-4-1, 4px) 0 var(--size-4-2, 8px);
     background-color: var(--background-secondary);
     color: var(--text-normal);
     border: 1px solid var(--background-modifier-border);
@@ -1571,6 +1837,112 @@
     font-size: var(--font-text-size, 15px);
     outline: none;
     box-sizing: border-box;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+    font-variant-numeric: tabular-nums;
+}
+
+.lilbee-wizard-url-input:focus {
+    border-color: var(--wizard-step-color, var(--interactive-accent));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--wizard-step-color, var(--interactive-accent)) 20%, transparent);
+}
+
+.lilbee-wizard-external-fields {
+    margin: var(--size-4-2, 8px) 0 var(--size-4-3, 12px);
+}
+
+.lilbee-wizard-field-label {
+    font-size: 10px;
+    font-weight: var(--font-semibold, 600);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: var(--size-4-2, 8px);
+}
+
+/* Experimental warning note on the Wiki step — calm, yellow-tinted, framed
+ * so users read it before the Enable/Skip cards rather than scanning past it. */
+.lilbee-wizard-experimental-note {
+    border: 1px solid color-mix(in srgb, var(--color-yellow, #eab308) 35%, var(--background-modifier-border));
+    background-color: color-mix(in srgb, var(--color-yellow, #eab308) 8%, var(--background-secondary));
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: var(--size-4-2, 8px) 0 var(--size-4-3, 12px);
+}
+
+.lilbee-wizard-experimental-note .lilbee-wizard-section-heading {
+    margin-top: 0;
+    color: color-mix(in srgb, var(--color-yellow, #eab308) 80%, var(--text-muted));
+}
+
+.lilbee-wizard-experimental-note p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-normal);
+    line-height: 1.5;
+}
+
+.lilbee-wizard-experimental-intro {
+    margin-bottom: 6px !important;
+    font-weight: var(--font-medium, 500);
+}
+
+.lilbee-wizard-experimental-bullets {
+    margin: 0 !important;
+    padding-left: 18px !important;
+}
+
+.lilbee-wizard-experimental-bullets li {
+    font-size: 13px;
+    color: var(--text-normal);
+    line-height: 1.5;
+    margin-bottom: 6px;
+}
+
+.lilbee-wizard-experimental-bullets li:last-child {
+    margin-bottom: 0;
+}
+
+/* Wiki step tradeoff disclosure — wordy pros/cons tucked behind a <details> */
+.lilbee-wizard-wiki-tradeoffs {
+    margin: var(--size-4-2, 8px) 0 var(--size-4-3, 12px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    background-color: var(--background-secondary);
+    overflow: hidden;
+}
+
+.lilbee-wizard-wiki-tradeoffs > summary {
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: var(--font-semibold, 600);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    user-select: none;
+    transition: color 150ms ease, background-color 150ms ease;
+}
+
+.lilbee-wizard-wiki-tradeoffs > summary::marker {
+    color: var(--wizard-step-color, var(--interactive-accent));
+}
+
+.lilbee-wizard-wiki-tradeoffs:hover > summary {
+    color: var(--text-normal);
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-wizard-wiki-tradeoffs[open] > summary {
+    color: var(--text-normal);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-wizard-wiki-tradeoffs .lilbee-wizard-wiki-section {
+    padding: 0 14px;
+}
+
+.lilbee-wizard-wiki-tradeoffs .lilbee-wizard-wiki-section:last-child {
+    padding-bottom: var(--size-4-2, 8px);
 }
 
 .lilbee-wizard-url-input:focus {
@@ -2230,5 +2602,76 @@
     background-color: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
     border-color: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
     color: var(--interactive-accent);
+}
+
+/* Source preview modal (external-server sources that aren't in the vault) */
+.lilbee-preview-modal {
+    min-width: min(720px, 80vw);
+}
+
+.lilbee-preview-header {
+    font-family: var(--font-monospace);
+    font-size: 0.85em;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    word-break: break-all;
+}
+
+.lilbee-preview-path {
+    user-select: text;
+}
+
+.lilbee-preview-meta {
+    display: inline-block;
+    font-size: 0.8em;
+    color: var(--text-faint);
+    margin-bottom: 12px;
+}
+
+.lilbee-preview-host {
+    max-height: 60vh;
+    overflow-y: auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 12px;
+    background-color: var(--background-primary);
+}
+
+.lilbee-preview-loading {
+    width: 18px;
+    height: 18px;
+    margin: 24px auto;
+    border: 2px solid var(--background-modifier-border);
+    border-top-color: var(--interactive-accent);
+    border-radius: 50%;
+    animation: lilbee-spin 0.9s linear infinite;
+}
+
+.lilbee-preview-body {
+    font-size: 0.9em;
+    line-height: 1.45;
+}
+
+.lilbee-preview-pdf-object {
+    width: 100%;
+    height: 55vh;
+    border: none;
+}
+
+.lilbee-preview-error {
+    color: var(--text-error);
+    font-size: 0.9em;
+}
+
+.lilbee-preview-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.lilbee-preview-save[disabled] {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 

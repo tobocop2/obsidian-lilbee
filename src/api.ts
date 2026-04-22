@@ -15,6 +15,7 @@ import type {
     ModelsResponse,
     ModelTask,
     SearchChunkType,
+    SourceContent,
     SSEEvent,
     StatusResponse,
     LintResult,
@@ -59,6 +60,12 @@ export class LilbeeClient {
 
     setTokenProvider(provider: (() => string | null) | null): void {
         this.tokenProvider = provider;
+    }
+
+    /** Repoint the client at a new base URL in place — lets the wizard update
+     * the target server without tearing down the existing client instance. */
+    setBaseUrl(url: string): void {
+        this.baseUrl = url;
     }
 
     private authHeaders(): Record<string, string> {
@@ -444,6 +451,30 @@ export class LilbeeClient {
             headers: this.authHeaders(),
         });
         return res.json();
+    }
+
+    /**
+     * Fetch the rendered text of a source file (markdown / html / plaintext)
+     * as JSON. Used by the preview modal when the file is not in the vault.
+     */
+    async getSource(source: string): Promise<SourceContent> {
+        const params = new URLSearchParams({ source });
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/source?${params}`, {
+            headers: this.authHeaders(),
+        });
+        return res.json();
+    }
+
+    /**
+     * Fetch the raw bytes of a source file with its original Content-Type.
+     * Returns the raw Response so callers can read `arrayBuffer()` or stream
+     * it into an `<object>` tag (e.g. PDFs in the preview modal).
+     */
+    async getSourceRaw(source: string): Promise<Response> {
+        const params = new URLSearchParams({ source, raw: "1" });
+        return this.fetchWithRetry(`${this.baseUrl}/api/source?${params}`, {
+            headers: this.authHeaders(),
+        });
     }
 
     async *wikiGenerate(source: string, signal?: AbortSignal): AsyncGenerator<SSEEvent> {

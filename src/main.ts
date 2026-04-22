@@ -87,6 +87,20 @@ function countRecentByStatus(completed: readonly TaskEntry[], status: TaskEntry[
 }
 
 /**
+ * Progress phases emitted by {@link LilbeePlugin.startManagedServer} to any
+ * observer that passes an ``onProgress`` handler — currently the setup wizard,
+ * which wants to show binary-download and server-startup state inline while
+ * the user waits on the Server step.
+ */
+export type ManagedServerProgressPhase = "downloading" | "starting" | "ready" | "error";
+export type ManagedServerProgress = {
+    phase: ManagedServerProgressPhase;
+    message: string;
+    url?: string;
+};
+export type ManagedServerProgressHandler = (event: ManagedServerProgress) => void;
+
+/**
  * Tracks combined file-level + intra-file progress for sync/add streams.
  *
  * Server emits FILE_START per file with `current_file/total_files`, plus
@@ -203,14 +217,21 @@ export default class LilbeePlugin extends Plugin {
             }),
         );
 
-        if (this.settings.serverMode === SERVER_MODE.MANAGED) {
-            void this.startManagedServer();
-        } else {
-            this.api = new LilbeeClient(this.settings.serverUrl);
-            this.api.setTokenProvider(() => this.readCurrentToken());
-            this.api.setToken(this.readCurrentToken());
-            this.setStatusReady();
-            this.fetchActiveModel();
+        // On first-ever load (setupCompleted === false), defer server start
+        // to the wizard's Server step. Otherwise users see the binary download
+        // fire before they've even picked managed vs. external, and the
+        // wizard arrives at the Model step against a server that isn't
+        // actually ready yet (empty catalog, failed reads).
+        if (this.settings.setupCompleted) {
+            if (this.settings.serverMode === SERVER_MODE.MANAGED) {
+                void this.startManagedServer();
+            } else {
+                this.api = new LilbeeClient(this.settings.serverUrl);
+                this.api.setTokenProvider(() => this.readCurrentToken());
+                this.api.setToken(this.readCurrentToken());
+                this.setStatusReady();
+                this.fetchActiveModel();
+            }
         }
 
         if (!this.settings.setupCompleted) {
@@ -224,7 +245,7 @@ export default class LilbeePlugin extends Plugin {
         this.startHealthProbe();
     }
 
-    async startManagedServer(): Promise<void> {
+    async startManagedServer(onProgress?: ManagedServerProgressHandler): Promise<void> {
         if (this.startingServer) return;
         this.startingServer = true;
         this.serverStartFailed = false;
@@ -237,6 +258,7 @@ export default class LilbeePlugin extends Plugin {
             if (needsDownload) {
                 this.updateStatusBar(MESSAGES.STATUS_DOWNLOADING, DOT_STATE.PRIMARY);
                 this.setStatusClass("lilbee-status-downloading");
+                onProgress?.({ phase: "downloading", message: MESSAGES.STATUS_DOWNLOADING });
             }
 
             let binaryPath: string;
@@ -244,6 +266,7 @@ export default class LilbeePlugin extends Plugin {
             try {
                 binaryPath = await this.binaryManager.ensureBinary((msg, url) => {
                     this.updateStatusBar(`lilbee: ${msg}`, DOT_STATE.PRIMARY);
+                    onProgress?.({ phase: "downloading", message: msg, url });
                     if (!downloadNotice && needsDownload) {
                         const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
                         downloadNotice = new Notice(text, NOTICE_PERMANENT);
@@ -256,6 +279,7 @@ export default class LilbeePlugin extends Plugin {
             } catch (err) {
                 downloadNotice?.hide();
                 this.showError("failed to download server", err);
+                onProgress?.({ phase: "error", message: errorMessage(err, String(err)) });
                 return;
             } finally {
                 this.setStatusClass(null);
@@ -287,16 +311,66 @@ export default class LilbeePlugin extends Plugin {
 
                 this.updateStatusBar(MESSAGES.STATUS_STARTING, DOT_STATE.PRIMARY);
                 this.setStatusClass("lilbee-status-starting");
+                onProgress?.({ phase: "starting", message: MESSAGES.STATUS_STARTING_SERVER });
                 await this.serverManager.start();
                 this.api = new LilbeeClient(this.serverManager.serverUrl);
                 this.api.setTokenProvider(() => this.readCurrentToken());
                 this.api.setToken(this.readCurrentToken());
                 this.fetchActiveModel();
+                void this.configureManagedStorage();
+                onProgress?.({ phase: "ready", message: "" });
             } catch (err) {
                 this.showError("failed to start server", err);
+                onProgress?.({ phase: "error", message: errorMessage(err, String(err)) });
             }
         } finally {
             this.startingServer = false;
+        }
+    }
+
+    /**
+     * Tell the managed server to store content under the vault.
+     *
+     * PATCHes ``documents_dir`` to ``<vault>/lilbee`` and ``vault_base`` to the
+     * vault root. Server performs a locked relocation if paths changed, then
+     * stamps ``vault_path`` on every Source response so chat-chip clicks can
+     * deep-link into the local editor. No-op when the toggle is off, the
+     * server is external, or the current values already match.
+     */
+    async configureManagedStorage(): Promise<void> {
+        if (this.settings.serverMode !== SERVER_MODE.MANAGED) return;
+        if (!this.settings.storeContentInVault) return;
+
+        const vaultBase = this.getVaultBasePath();
+        const desiredDocsDir = `${vaultBase}/lilbee`;
+
+        let current: Record<string, unknown>;
+        try {
+            current = await this.api.config();
+        } catch (err) {
+            console.error("[lilbee] could not read server config for vault setup", err);
+            return;
+        }
+
+        const currentDocs = typeof current.documents_dir === "string" ? current.documents_dir : "";
+        const currentVault = typeof current.vault_base === "string" ? current.vault_base : null;
+        if (currentDocs === desiredDocsDir && currentVault === vaultBase) {
+            return;
+        }
+
+        const notice = new Notice(MESSAGES.NOTICE_STORAGE_REORGANIZING, NOTICE_PERMANENT);
+        try {
+            await this.api.updateConfig({
+                documents_dir: desiredDocsDir,
+                vault_base: vaultBase,
+            });
+            notice.hide();
+            new Notice(MESSAGES.NOTICE_STORAGE_REORGANIZED);
+        } catch (err) {
+            notice.hide();
+            const detail = errorMessage(err, String(err));
+            new Notice(`${MESSAGES.NOTICE_STORAGE_REORGANIZE_FAILED}${detail}`, NOTICE_ERROR_DURATION_MS);
+            console.error("[lilbee] storage reorganisation failed", err);
         }
     }
 
@@ -953,6 +1027,11 @@ export default class LilbeePlugin extends Plugin {
     private registerAutoSync(): void {
         const handler = (file: TAbstractFile) => {
             if (this.wikiSync?.isWikiPath(file.path)) return;
+            // Skip everything the server itself writes into the vault
+            // (crawled/, imported/, documents/, wiki/). Once server PR 3 lands
+            // this prevents the vault watcher from re-triggering sync on
+            // files lilbee just materialized.
+            if (file.path.startsWith("lilbee/")) return;
             this.debouncedSync();
         };
         const vault = this.app.vault;

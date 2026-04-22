@@ -30,6 +30,26 @@ export interface Source {
     line_end: number | null;
     chunk_type?: "raw" | "wiki";
     claim_type?: "fact" | "inference";
+    /**
+     * Relative path within the vault when the server is managed and
+     * `documents_dir` is inside the user's vault. `null` for external servers
+     * where the file is not accessible as a vault-relative path. Optional for
+     * forward compatibility with servers that predate PR 4 of the vault-native
+     * storage work.
+     */
+    vault_path?: string | null;
+}
+
+/**
+ * Returned by `GET /api/source?source=...`. When `raw=1` the server streams
+ * bytes with the original `Content-Type`; this shape is used for the JSON
+ * response only.
+ */
+export interface SourceContent {
+    markdown: string;
+    content_type: string;
+    crawled_at?: string;
+    title?: string;
 }
 
 export interface ModelInfo {
@@ -142,6 +162,12 @@ export interface LilbeeSettings {
     hfToken: string;
     enableOcr: boolean | null;
     manualToken: string;
+    /**
+     * Store lilbee's managed content (crawls, imported files) inside the vault
+     * instead of the server's data directory. Only honoured in managed mode —
+     * external servers keep their own documents_dir.
+     */
+    storeContentInVault: boolean;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -165,6 +191,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     hfToken: "",
     enableOcr: null,
     manualToken: "",
+    storeContentInVault: true,
 };
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */
@@ -213,6 +240,13 @@ export interface SetupDonePayload {
 }
 
 export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+
+/** MIME content types referenced across click dispatch + preview rendering. */
+export const CONTENT_TYPE = {
+    PDF: "application/pdf",
+    MARKDOWN: "text/markdown",
+    HTML: "text/html",
+} as const;
 
 export interface CatalogEntry {
     name: string;

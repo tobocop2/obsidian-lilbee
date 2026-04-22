@@ -715,7 +715,7 @@ export class ChatView extends ItemView {
         details.createEl("summary", { text: MESSAGES.LABEL_SOURCES });
         const chipsEl = details.createDiv({ cls: "lilbee-chat-source-chips" });
         for (const source of sources) {
-            renderSourceChip(chipsEl, source);
+            renderSourceChip(chipsEl, source, this.app, this.plugin.api);
         }
     }
 }
