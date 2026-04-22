@@ -29,6 +29,7 @@ export const MESSAGES = {
     BUTTON_CLEAR_TASKS: "Clear",
     BUTTON_SEND: "Send",
     BUTTON_OPEN_CHAT: "Open chat",
+    BUTTON_OPEN_TASK_CENTER: "→ Open Task Center",
 
     LABEL_DISABLED: "Disabled",
     LABEL_NOT_SET: "Not set",
@@ -528,10 +529,14 @@ export const MESSAGES = {
     WIZARD_SYNC_HELP:
         "lilbee needs to read your notes once to make them searchable. This happens locally on your machine.",
     WIZARD_SYNC_HINT: "After this, new and changed files are indexed automatically (or manually, your choice).",
+    WIZARD_STEP_BADGE: "Step {num} · {label}",
+    WIZARD_PROGRESS_BACKGROUND: "Downloads continue in the background — track any time in the Task Center.",
+    WIZARD_WIKI_TRADEOFFS_LABEL: "See the tradeoffs",
+    WIZARD_SUMMARY_HEADING: "Setup complete",
     WIZARD_SUMMARY_MODEL: "Chat model: {model}",
     WIZARD_SUMMARY_FILES: "{count} files indexed",
     WIZARD_SUMMARY_PROCESSED: "{count} files processed",
-    WIZARD_TIPS: "Try it out:",
+    WIZARD_TIPS: "What to try next",
     WIZARD_TIP_CHAT: "Open the chat panel to ask questions about your notes",
     WIZARD_TIP_SEARCH: "Use the search command to find specific content",
     WIZARD_TIP_DRAG: "Drag files into the chat to add context",
