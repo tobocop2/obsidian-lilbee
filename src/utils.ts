@@ -1,3 +1,6 @@
+import { SessionTokenError } from "./api";
+import { MESSAGES } from "./locales/en";
+
 export function debounce<T extends (...args: unknown[]) => unknown>(
     fn: T,
     ms: number,
@@ -114,9 +117,27 @@ export function formatRate(bytesPerSecond: number): string {
 /**
  * Pull a human-readable message out of an unknown thrown value.
  * Centralizes the `err instanceof Error ? err.message : <fallback>` pattern.
+ * Stale-session-token errors get a dedicated, actionable message so the user
+ * knows exactly where to fix it (see SessionTokenError in api.ts).
  */
 export function errorMessage(err: unknown, fallback: string): string {
+    if (err instanceof SessionTokenError) {
+        return MESSAGES.NOTICE_SESSION_TOKEN_INVALID;
+    }
     return err instanceof Error ? err.message : fallback;
+}
+
+/**
+ * Returns the stale-token notice when the error is a SessionTokenError, otherwise the fallback.
+ * Use at `.isErr()` call sites where the fallback is an operation-specific generic message — this
+ * preserves the generic text for non-auth failures while surfacing the actionable message for
+ * stale tokens.
+ */
+export function noticeForResultError(err: unknown, fallback: string): string {
+    if (err instanceof SessionTokenError) {
+        return MESSAGES.NOTICE_SESSION_TOKEN_INVALID;
+    }
+    return fallback;
 }
 
 /**

@@ -25,6 +25,21 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const RETRY_COUNT = 2;
 const RETRY_BACKOFF_MS = 500;
 
+/**
+ * Thrown when the server rejects a request with 401 / 403 after the plugin's
+ * auto-retry + token-refresh has failed. Signals that the stored session token
+ * (manualToken or auto-discovered) is stale and the user needs to paste a new
+ * one in Settings → Session token. Catchers should surface a targeted notice.
+ */
+export class SessionTokenError extends Error {
+    readonly status: number;
+    constructor(status: number, body: string) {
+        super(`Session token invalid (HTTP ${status}): ${body}`);
+        this.name = ERROR_NAME.SESSION_TOKEN;
+        this.status = status;
+    }
+}
+
 export class LilbeeClient {
     private token: string | null = null;
     private tokenProvider: (() => string | null) | null = null;
@@ -123,12 +138,22 @@ export class LilbeeClient {
                         init = this.applyRefreshedToken(init);
                         continue;
                     }
+                    if (res.status === 401 || res.status === 403) {
+                        // Either no provider, provider returned the same token, or refreshed
+                        // token still failed. The stored session token is stale — surface a
+                        // typed error so the UI can tell the user what to do.
+                        const text = await res.text().catch(() => "");
+                        throw new SessionTokenError(res.status, text);
+                    }
                     return await this.assertOk(res);
                 } finally {
                     if (timer !== undefined) clearTimeout(timer);
                 }
             } catch (err) {
                 lastError = err;
+                if (err instanceof SessionTokenError) {
+                    throw err;
+                }
                 if (err instanceof Error && err.message.startsWith("Server responded")) {
                     throw err;
                 }

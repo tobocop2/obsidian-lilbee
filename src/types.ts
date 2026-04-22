@@ -367,6 +367,7 @@ export const MODEL_SOURCE = {
 
 export const ERROR_NAME = {
     ABORT_ERROR: "AbortError",
+    SESSION_TOKEN: "SessionTokenError",
 } as const;
 
 export const WIZARD_STEP = {

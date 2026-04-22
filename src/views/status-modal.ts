@@ -2,6 +2,7 @@ import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { ModelShowResponse, StatusResponse } from "../types";
 import { MESSAGES } from "../locales/en";
+import { noticeForResultError } from "../utils";
 
 export class StatusModal extends Modal {
     private plugin: LilbeePlugin;
@@ -23,7 +24,7 @@ export class StatusModal extends Modal {
         try {
             const statusResult = await this.plugin.api.status();
             if (statusResult.isErr()) {
-                new Notice(MESSAGES.ERROR_COULD_NOT_CONNECT);
+                new Notice(noticeForResultError(statusResult.error, MESSAGES.ERROR_COULD_NOT_CONNECT));
                 this.close();
                 return;
             }

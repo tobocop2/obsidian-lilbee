@@ -18,7 +18,7 @@ import { CatalogModal } from "./views/catalog-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { ConfirmPullModal } from "./views/confirm-pull-modal";
 import { SetupWizard } from "./views/setup-wizard";
-import { percentFromSse, errorMessage, extractSseErrorMessage } from "./utils";
+import { percentFromSse, errorMessage, extractSseErrorMessage, noticeForResultError } from "./utils";
 
 const CHECK_TIMEOUT_MS = 5000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
@@ -649,7 +649,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                             if (!confirmed) return;
                             const result = await this.plugin.api.setEmbeddingModel(value);
                             if (result.isErr()) {
-                                new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
+                                new Notice(noticeForResultError(result.error, MESSAGES.NOTICE_FAILED_EMBEDDING));
                                 return;
                             }
                             new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
@@ -679,7 +679,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         if (!confirmed) return;
                         const result = await this.plugin.api.setEmbeddingModel(trimmed);
                         if (result.isErr()) {
-                            new Notice(MESSAGES.NOTICE_FAILED_EMBEDDING);
+                            new Notice(noticeForResultError(result.error, MESSAGES.NOTICE_FAILED_EMBEDDING));
                             return;
                         }
                         new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
@@ -1344,7 +1344,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
         const result = await this.setModel({ name: value });
         if (result.isErr()) {
-            new Notice(MESSAGES.NOTICE_FAILED_SET_MODEL(MODEL_TASK.CHAT));
+            new Notice(noticeForResultError(result.error, MESSAGES.NOTICE_FAILED_SET_MODEL(MODEL_TASK.CHAT)));
             return;
         }
         new Notice(MESSAGES.NOTICE_SET_MODEL(label, value || MESSAGES.LABEL_NOT_SET.toLowerCase()));
@@ -1399,7 +1399,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         const setResult = await this.setModel(model);
         if (setResult.isErr()) {
-            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name));
+            new Notice(noticeForResultError(setResult.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name)));
         } else {
             new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
         }
@@ -1477,7 +1477,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         const setResult = await this.setModel(model);
         if (setResult.isErr()) {
-            new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name));
+            new Notice(noticeForResultError(setResult.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name)));
         } else {
             new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
         }
@@ -1495,8 +1495,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.plugin.taskQueue.update(taskId, -1, model.name);
         const result = await this.plugin.api.deleteModel(model.name);
         if (result.isErr()) {
-            new Notice(MESSAGES.ERROR_DELETE_MODEL.replace("{model}", model.name));
-            this.plugin.taskQueue.fail(taskId, result.error.message);
+            new Notice(noticeForResultError(result.error, MESSAGES.ERROR_DELETE_MODEL.replace("{model}", model.name)));
+            this.plugin.taskQueue.fail(taskId, errorMessage(result.error, result.error.message));
             btn.disabled = false;
             return;
         }
