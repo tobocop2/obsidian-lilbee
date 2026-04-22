@@ -1821,7 +1821,7 @@
 .lilbee-wizard-url-input {
     width: 100%;
     padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
-    margin: var(--size-4-2, 8px) 0;
+    margin: var(--size-4-1, 4px) 0 var(--size-4-2, 8px);
     background-color: var(--background-secondary);
     color: var(--text-normal);
     border: 1px solid var(--background-modifier-border);
@@ -1830,11 +1830,68 @@
     outline: none;
     box-sizing: border-box;
     transition: border-color 150ms ease, box-shadow 150ms ease;
+    font-variant-numeric: tabular-nums;
 }
 
 .lilbee-wizard-url-input:focus {
     border-color: var(--wizard-step-color, var(--interactive-accent));
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--wizard-step-color, var(--interactive-accent)) 20%, transparent);
+}
+
+.lilbee-wizard-external-fields {
+    margin: var(--size-4-2, 8px) 0 var(--size-4-3, 12px);
+}
+
+.lilbee-wizard-field-label {
+    font-size: 10px;
+    font-weight: var(--font-semibold, 600);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: var(--size-4-2, 8px);
+}
+
+/* Experimental warning note on the Wiki step — calm, yellow-tinted, framed
+ * so users read it before the Enable/Skip cards rather than scanning past it. */
+.lilbee-wizard-experimental-note {
+    border: 1px solid color-mix(in srgb, var(--color-yellow, #eab308) 35%, var(--background-modifier-border));
+    background-color: color-mix(in srgb, var(--color-yellow, #eab308) 8%, var(--background-secondary));
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: var(--size-4-2, 8px) 0 var(--size-4-3, 12px);
+}
+
+.lilbee-wizard-experimental-note .lilbee-wizard-section-heading {
+    margin-top: 0;
+    color: color-mix(in srgb, var(--color-yellow, #eab308) 80%, var(--text-muted));
+}
+
+.lilbee-wizard-experimental-note p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-normal);
+    line-height: 1.5;
+}
+
+.lilbee-wizard-experimental-intro {
+    margin-bottom: 6px !important;
+    font-weight: var(--font-medium, 500);
+}
+
+.lilbee-wizard-experimental-bullets {
+    margin: 0 !important;
+    padding-left: 18px !important;
+}
+
+.lilbee-wizard-experimental-bullets li {
+    font-size: 13px;
+    color: var(--text-normal);
+    line-height: 1.5;
+    margin-bottom: 6px;
+}
+
+.lilbee-wizard-experimental-bullets li:last-child {
+    margin-bottom: 0;
 }
 
 /* Wiki step tradeoff disclosure — wordy pros/cons tucked behind a <details> */

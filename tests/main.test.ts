@@ -156,11 +156,14 @@ async function createPlugin(overrideData?: Record<string, unknown>) {
             description: "test",
         } as any,
     );
-    // Default to external mode so tests don't attempt to download/spawn a binary
+    // Default to external mode so tests don't attempt to download/spawn a binary.
+    // Also treat setup as complete so the onload server-start path runs —
+    // otherwise the wizard-gated first-run branch silences behaviour tests that
+    // aren't about the wizard.
     if (overrideData) {
-        plugin.loadData = vi.fn().mockResolvedValue(overrideData);
+        plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: true, ...overrideData });
     } else {
-        plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external" });
+        plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: true, serverMode: "external" });
     }
     return plugin;
 }
@@ -299,9 +302,37 @@ describe("LilbeePlugin", () => {
         it("recreates API client with loaded serverUrl", async () => {
             const { LilbeeClient } = await import("../src/api");
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", serverUrl: "http://custom:9999" });
+            plugin.loadData = vi.fn().mockResolvedValue({
+                setupCompleted: true,
+                serverMode: "external",
+                serverUrl: "http://custom:9999",
+            });
             await plugin.onload();
             expect(LilbeeClient).toHaveBeenCalledWith("http://custom:9999");
+        });
+
+        it("skips managed server start when setupCompleted is false", async () => {
+            // First-run gate: the wizard's Server step is the thing that should
+            // kick off the binary download, not the plugin load.
+            const plugin = await createPlugin();
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "managed", setupCompleted: false });
+            mockEnsureBinary.mockClear();
+            await plugin.onload();
+            await flush();
+            expect(mockEnsureBinary).not.toHaveBeenCalled();
+        });
+
+        it("skips external-mode API wiring when setupCompleted is false", async () => {
+            // Same gate on the external branch — api client creation moves
+            // into the wizard's checkExternalAndAdvance flow.
+            const { LilbeeClient } = await import("../src/api");
+            (LilbeeClient as unknown as ReturnType<typeof vi.fn>).mockClear();
+            const plugin = await createPlugin();
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", setupCompleted: false });
+            await plugin.onload();
+            // LilbeeClient is still constructed once by the class field initializer,
+            // but NOT a second time by the onload external branch.
+            expect(LilbeeClient).toHaveBeenCalledTimes(1);
         });
 
         it("auto-opens setup wizard when setupCompleted is false", async () => {
@@ -2703,6 +2734,57 @@ describe("LilbeePlugin", () => {
             const downloadNotice = Notice.instances.find((n) => n.duration === 0);
             expect(downloadNotice).toBeDefined();
             expect(downloadNotice!.hidden).toBe(true);
+        });
+
+        it("startManagedServer onProgress fires downloading/starting/ready during first boot", async () => {
+            mockBinaryExists.mockReturnValueOnce(false);
+            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+                cb?.("Downloading archive...", "https://example.com/bin");
+                return "/fake/bin/lilbee";
+            });
+            mockServerStart.mockResolvedValueOnce(undefined);
+
+            const plugin = await createPlugin({ setupCompleted: true, serverMode: "managed" });
+            // Stop onload from auto-starting so our direct call owns the lifecycle.
+            plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: false, serverMode: "managed" });
+            await plugin.onload();
+
+            const progress: { phase: string; message: string }[] = [];
+            await plugin.startManagedServer((event: any) => progress.push(event));
+            await flush();
+
+            const phases = progress.map((p) => p.phase);
+            expect(phases).toContain("downloading");
+            expect(phases).toContain("starting");
+            expect(phases).toContain("ready");
+        });
+
+        it("startManagedServer onProgress emits 'error' phase when ensureBinary rejects", async () => {
+            mockBinaryExists.mockReturnValueOnce(false);
+            mockEnsureBinary.mockRejectedValueOnce(new Error("boom"));
+
+            const plugin = await createPlugin({ setupCompleted: false, serverMode: "managed" });
+            plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: false, serverMode: "managed" });
+            await plugin.onload();
+
+            const progress: { phase: string }[] = [];
+            await plugin.startManagedServer((event: any) => progress.push(event));
+
+            expect(progress.map((p) => p.phase)).toContain("error");
+        });
+
+        it("startManagedServer onProgress emits 'error' phase when serverManager.start rejects", async () => {
+            mockBinaryExists.mockReturnValueOnce(true);
+            mockServerStart.mockRejectedValueOnce(new Error("port-in-use"));
+
+            const plugin = await createPlugin({ setupCompleted: false, serverMode: "managed" });
+            plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: false, serverMode: "managed" });
+            await plugin.onload();
+
+            const progress: { phase: string }[] = [];
+            await plugin.startManagedServer((event: any) => progress.push(event));
+
+            expect(progress.map((p) => p.phase)).toContain("error");
         });
 
         it("startManagedServer no-ops when already starting", async () => {

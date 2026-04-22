@@ -62,6 +62,44 @@ export function recommendedIndex(models: FeaturedModel[], memGB: number | null):
     return best;
 }
 
+/**
+ * Families the wizard surfaces first as its native picks. Ordered by
+ * recency/recognition — a fresh-install user seeing "Gemma", "Qwen", "Llama"
+ * as the first four tiles gets an immediate sense of what's familiar. Any
+ * native models outside these families backfill after.
+ */
+const PREFERRED_FAMILIES = ["gemma-4", "gemma-3", "gemma-2", "qwen3", "qwen2", "llama-3", "phi-3"];
+const MAX_FEATURED_PICKS = 4;
+
+/**
+ * Rank the catalog's native chat entries into the wizard's "Our picks" row.
+ * Filters out litellm (requires an API key — wrong first-run default), then
+ * prefers entries whose name starts with one of {@link PREFERRED_FAMILIES}
+ * before falling back to remaining natives.
+ */
+export function pickNativeChatModels(models: FeaturedModel[]): FeaturedModel[] {
+    const natives = models.filter((m) => m.source !== "litellm");
+    const seen = new Set<string>();
+    const ordered: FeaturedModel[] = [];
+    for (const prefix of PREFERRED_FAMILIES) {
+        for (const m of natives) {
+            if (m.name.startsWith(prefix) && !seen.has(m.hf_repo)) {
+                ordered.push(m);
+                seen.add(m.hf_repo);
+                if (ordered.length >= MAX_FEATURED_PICKS) return ordered;
+            }
+        }
+    }
+    for (const m of natives) {
+        if (!seen.has(m.hf_repo)) {
+            ordered.push(m);
+            seen.add(m.hf_repo);
+            if (ordered.length >= MAX_FEATURED_PICKS) break;
+        }
+    }
+    return ordered;
+}
+
 export class SetupWizard extends Modal {
     private plugin: LilbeePlugin;
     private step = 0;
@@ -218,21 +256,43 @@ export class SetupWizard extends Modal {
         externalOption.createEl("strong", { text: MESSAGES.TITLE_EXTERNAL });
         externalOption.createEl("p", { text: MESSAGES.WIZARD_EXTERNAL_DESC });
 
-        const urlInput = step.createEl("input", {
+        // External-mode fields: URL + session token (password-masked). Both
+        // hidden in managed mode. The token lines up with readCurrentToken's
+        // `settings.manualToken` lookup, so the API client will pick it up as
+        // soon as the wizard advances.
+        const externalFields = step.createDiv({ cls: "lilbee-wizard-external-fields" });
+        externalFields.style.display = mode === SERVER_MODE.EXTERNAL ? "" : "none";
+
+        const urlLabel = externalFields.createDiv({ cls: "lilbee-wizard-field-label" });
+        urlLabel.textContent = MESSAGES.LABEL_SERVER_URL;
+        const urlInput = externalFields.createEl("input", {
             cls: "lilbee-wizard-url-input",
             placeholder: MESSAGES.PLACEHOLDER_HTTP_LOCALHOST,
             attr: { type: "text" },
         });
         urlInput.value = this.plugin.settings.serverUrl;
-        urlInput.style.display = mode === SERVER_MODE.EXTERNAL ? "" : "none";
+
+        const tokenLabel = externalFields.createDiv({ cls: "lilbee-wizard-field-label" });
+        tokenLabel.textContent = MESSAGES.LABEL_MANUAL_TOKEN;
+        const tokenInput = externalFields.createEl("input", {
+            cls: "lilbee-wizard-url-input",
+            placeholder: MESSAGES.PLACEHOLDER_MANUAL_TOKEN,
+            attr: { type: "password" },
+        });
+        tokenInput.value = this.plugin.settings.manualToken;
+        externalFields.createDiv({
+            cls: "lilbee-wizard-hint",
+            text: MESSAGES.WIZARD_EXTERNAL_TOKEN_HINT,
+        });
 
         const statusEl = step.createDiv({ cls: "lilbee-wizard-status" });
+        const { progressEl, progressFill, progressLabel } = this.renderProgressPanel(step);
 
         managedOption.addEventListener("click", () => {
             mode = SERVER_MODE.MANAGED;
             managedOption.classList.add("selected");
             externalOption.classList.remove("selected");
-            urlInput.style.display = "none";
+            externalFields.style.display = "none";
             statusEl.textContent = "";
         });
 
@@ -240,7 +300,7 @@ export class SetupWizard extends Modal {
             mode = SERVER_MODE.EXTERNAL;
             externalOption.classList.add("selected");
             managedOption.classList.remove("selected");
-            urlInput.style.display = "";
+            externalFields.style.display = "";
         });
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
@@ -253,12 +313,11 @@ export class SetupWizard extends Modal {
         nextBtn.addEventListener("click", () => {
             if (mode === SERVER_MODE.MANAGED) {
                 this.plugin.settings.serverMode = SERVER_MODE.MANAGED;
-                statusEl.textContent = MESSAGES.STATUS_STARTING_SERVER;
-                statusEl.classList.add("lilbee-loading");
                 nextBtn.disabled = true;
-                void this.startManagedAndAdvance(statusEl, nextBtn);
+                void this.startManagedAndAdvance(step, progressEl, progressFill, progressLabel, statusEl, nextBtn);
             } else {
                 this.plugin.settings.serverUrl = String(urlInput.value || "").trim() || "http://127.0.0.1:7433";
+                this.plugin.settings.manualToken = String(tokenInput.value || "").trim();
                 this.plugin.settings.serverMode = SERVER_MODE.EXTERNAL;
                 statusEl.textContent = MESSAGES.STATUS_CHECKING_CONNECTION;
                 nextBtn.disabled = true;
@@ -267,19 +326,44 @@ export class SetupWizard extends Modal {
         });
     }
 
-    private async startManagedAndAdvance(statusEl: HTMLElement, nextBtn: HTMLElement): Promise<void> {
+    private async startManagedAndAdvance(
+        step: HTMLElement,
+        progressEl: HTMLElement,
+        progressFill: HTMLElement,
+        progressLabel: HTMLElement,
+        statusEl: HTMLElement,
+        nextBtn: HTMLElement,
+    ): Promise<void> {
+        progressEl.style.display = "";
+        progressLabel.textContent = MESSAGES.WIZARD_SERVER_PREPARING;
+        this.updateProgress(step, progressFill, undefined);
+        statusEl.textContent = "";
+
         try {
             await this.plugin.saveSettings();
             if (!this.plugin.serverManager) {
-                await this.plugin.startManagedServer();
+                await this.plugin.startManagedServer((event) => {
+                    // Surface binary-download + server-boot phases inline. This
+                    // is the only place the user sees what's happening during
+                    // the initial ~10-60s wait for the server to come online.
+                    if (event.phase === "downloading") {
+                        progressLabel.textContent = MESSAGES.WIZARD_SERVER_DOWNLOADING.replace("{msg}", event.message);
+                    } else if (event.phase === "starting") {
+                        progressLabel.textContent = MESSAGES.WIZARD_SERVER_STARTING;
+                    } else if (event.phase === "ready") {
+                        progressLabel.textContent = MESSAGES.WIZARD_SERVER_READY;
+                    } else if (event.phase === "error") {
+                        progressLabel.textContent = event.message;
+                    }
+                });
             }
-            statusEl.textContent = "";
-            statusEl.classList.remove("lilbee-loading");
+            this.updateProgress(step, progressFill, 100);
+            progressLabel.textContent = MESSAGES.WIZARD_SERVER_READY;
             this.step = WIZARD_STEP.MODEL_PICKER;
             this.renderStep();
         } catch {
+            progressEl.style.display = "none";
             statusEl.textContent = MESSAGES.ERROR_START_SERVER;
-            statusEl.classList.remove("lilbee-loading");
             (nextBtn as HTMLButtonElement).disabled = false;
         }
     }
@@ -287,6 +371,11 @@ export class SetupWizard extends Modal {
     private async checkExternalAndAdvance(statusEl: HTMLElement, nextBtn: HTMLElement): Promise<void> {
         try {
             await this.plugin.saveSettings();
+            // Repoint the existing client at the new URL and hand it the token
+            // the user just pasted. Updating in-place keeps test mocks intact
+            // and avoids churning listeners keyed on the old instance.
+            this.plugin.api.setBaseUrl(this.plugin.settings.serverUrl);
+            this.plugin.api.setToken(this.plugin.settings.manualToken || null);
             const result = await this.plugin.api.health();
             if (result.isErr()) throw result.error;
             statusEl.textContent = "";
@@ -404,17 +493,22 @@ export class SetupWizard extends Modal {
         statusEl: HTMLElement,
     ): Promise<void> {
         try {
+            // Wizard picks = local/native models only, not litellm. The server
+            // marks litellm models as featured=true but those require an API
+            // key; surfacing them as the first-run "picks" was misleading. We
+            // query by downloads and take the top native entries, preferring
+            // well-known open-weight families (Gemma, Qwen, Llama) when
+            // available.
             const result = await this.plugin.api.catalog({
                 task: MODEL_TASK.CHAT,
-                featured: true,
-                sort: FILTERS.SORT.FEATURED,
-                limit: 4,
+                sort: FILTERS.SORT.DOWNLOADS,
+                limit: 40,
             });
             if (result.isErr()) {
                 this.featuredModels = [];
                 return;
             }
-            this.featuredModels = result.value.models;
+            this.featuredModels = pickNativeChatModels(result.value.models);
         } catch {
             this.featuredModels = [];
             statusEl.textContent = MESSAGES.ERROR_LOAD_MODELS;
@@ -567,14 +661,18 @@ export class SetupWizard extends Modal {
         try {
             const result = await this.plugin.api.catalog({
                 task: MODEL_TASK.EMBEDDING,
-                sort: FILTERS.SORT.FEATURED,
-                limit: 4,
+                sort: FILTERS.SORT.DOWNLOADS,
+                limit: 20,
             });
             if (result.isErr()) {
                 this.embeddingModels = [];
                 return;
             }
-            this.embeddingModels = result.value.models;
+            // Same rule as chat picks: skip litellm entries so the wizard never
+            // offers a default that silently needs an API key.
+            this.embeddingModels = result.value.models
+                .filter((m) => m.source !== "litellm")
+                .slice(0, MAX_FEATURED_PICKS);
         } catch {
             this.embeddingModels = [];
             statusEl.textContent = MESSAGES.ERROR_LOAD_MODELS;
@@ -751,9 +849,20 @@ export class SetupWizard extends Modal {
         this.renderStepHeader(step, MESSAGES.WIZARD_WIKI_TITLE);
         step.createEl("p", { text: MESSAGES.WIZARD_WIKI_DESC });
 
-        // Pros and cons are rich context but overwhelming at first glance.
-        // Tuck them into a native <details> disclosure so the main body stays
-        // focused on the Enable/Skip decision.
+        // Put the "experimental — here's why in plain English" explanation
+        // up front so users who care see it immediately. Two-bullet structure
+        // reads faster than one paragraph and signals "there are exactly two
+        // things to know." Rich pros/cons move to a disclosure below.
+        const experimental = step.createDiv({ cls: "lilbee-wizard-experimental-note" });
+        this.renderSectionHeading(experimental, MESSAGES.WIZARD_WIKI_EXPERIMENTAL_HEADING);
+        experimental.createEl("p", {
+            text: MESSAGES.WIZARD_WIKI_EXPERIMENTAL_INTRO,
+            cls: "lilbee-wizard-experimental-intro",
+        });
+        const bullets = experimental.createEl("ul", { cls: "lilbee-wizard-experimental-bullets" });
+        bullets.createEl("li", { text: MESSAGES.WIZARD_WIKI_EXPERIMENTAL_QUALITY });
+        bullets.createEl("li", { text: MESSAGES.WIZARD_WIKI_EXPERIMENTAL_SLOW });
+
         const tradeoffs = step.createEl("details", { cls: "lilbee-wizard-wiki-tradeoffs" });
         tradeoffs.createEl("summary", { text: MESSAGES.WIZARD_WIKI_TRADEOFFS_LABEL });
 
@@ -772,6 +881,8 @@ export class SetupWizard extends Modal {
         consList.createEl("li", { text: MESSAGES.WIZARD_WIKI_CON_SEARCH });
         consList.createEl("li", { text: MESSAGES.WIZARD_WIKI_CON_COMPLEXITY });
 
+        // Default to Skip for first-time users — experimental features
+        // shouldn't be on by default.
         let wikiEnabled = this.plugin.settings.wikiEnabled ?? false;
 
         const enableOption = step.createDiv({

@@ -87,6 +87,20 @@ function countRecentByStatus(completed: readonly TaskEntry[], status: TaskEntry[
 }
 
 /**
+ * Progress phases emitted by {@link LilbeePlugin.startManagedServer} to any
+ * observer that passes an ``onProgress`` handler — currently the setup wizard,
+ * which wants to show binary-download and server-startup state inline while
+ * the user waits on the Server step.
+ */
+export type ManagedServerProgressPhase = "downloading" | "starting" | "ready" | "error";
+export type ManagedServerProgress = {
+    phase: ManagedServerProgressPhase;
+    message: string;
+    url?: string;
+};
+export type ManagedServerProgressHandler = (event: ManagedServerProgress) => void;
+
+/**
  * Tracks combined file-level + intra-file progress for sync/add streams.
  *
  * Server emits FILE_START per file with `current_file/total_files`, plus
@@ -203,14 +217,21 @@ export default class LilbeePlugin extends Plugin {
             }),
         );
 
-        if (this.settings.serverMode === SERVER_MODE.MANAGED) {
-            void this.startManagedServer();
-        } else {
-            this.api = new LilbeeClient(this.settings.serverUrl);
-            this.api.setTokenProvider(() => this.readCurrentToken());
-            this.api.setToken(this.readCurrentToken());
-            this.setStatusReady();
-            this.fetchActiveModel();
+        // On first-ever load (setupCompleted === false), defer server start
+        // to the wizard's Server step. Otherwise users see the binary download
+        // fire before they've even picked managed vs. external, and the
+        // wizard arrives at the Model step against a server that isn't
+        // actually ready yet (empty catalog, failed reads).
+        if (this.settings.setupCompleted) {
+            if (this.settings.serverMode === SERVER_MODE.MANAGED) {
+                void this.startManagedServer();
+            } else {
+                this.api = new LilbeeClient(this.settings.serverUrl);
+                this.api.setTokenProvider(() => this.readCurrentToken());
+                this.api.setToken(this.readCurrentToken());
+                this.setStatusReady();
+                this.fetchActiveModel();
+            }
         }
 
         if (!this.settings.setupCompleted) {
@@ -224,7 +245,7 @@ export default class LilbeePlugin extends Plugin {
         this.startHealthProbe();
     }
 
-    async startManagedServer(): Promise<void> {
+    async startManagedServer(onProgress?: ManagedServerProgressHandler): Promise<void> {
         if (this.startingServer) return;
         this.startingServer = true;
         this.serverStartFailed = false;
@@ -237,6 +258,7 @@ export default class LilbeePlugin extends Plugin {
             if (needsDownload) {
                 this.updateStatusBar(MESSAGES.STATUS_DOWNLOADING, DOT_STATE.PRIMARY);
                 this.setStatusClass("lilbee-status-downloading");
+                onProgress?.({ phase: "downloading", message: MESSAGES.STATUS_DOWNLOADING });
             }
 
             let binaryPath: string;
@@ -244,6 +266,7 @@ export default class LilbeePlugin extends Plugin {
             try {
                 binaryPath = await this.binaryManager.ensureBinary((msg, url) => {
                     this.updateStatusBar(`lilbee: ${msg}`, DOT_STATE.PRIMARY);
+                    onProgress?.({ phase: "downloading", message: msg, url });
                     if (!downloadNotice && needsDownload) {
                         const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
                         downloadNotice = new Notice(text, NOTICE_PERMANENT);
@@ -256,6 +279,7 @@ export default class LilbeePlugin extends Plugin {
             } catch (err) {
                 downloadNotice?.hide();
                 this.showError("failed to download server", err);
+                onProgress?.({ phase: "error", message: errorMessage(err, String(err)) });
                 return;
             } finally {
                 this.setStatusClass(null);
@@ -287,14 +311,17 @@ export default class LilbeePlugin extends Plugin {
 
                 this.updateStatusBar(MESSAGES.STATUS_STARTING, DOT_STATE.PRIMARY);
                 this.setStatusClass("lilbee-status-starting");
+                onProgress?.({ phase: "starting", message: MESSAGES.STATUS_STARTING_SERVER });
                 await this.serverManager.start();
                 this.api = new LilbeeClient(this.serverManager.serverUrl);
                 this.api.setTokenProvider(() => this.readCurrentToken());
                 this.api.setToken(this.readCurrentToken());
                 this.fetchActiveModel();
                 void this.configureManagedStorage();
+                onProgress?.({ phase: "ready", message: "" });
             } catch (err) {
                 this.showError("failed to start server", err);
+                onProgress?.({ phase: "error", message: errorMessage(err, String(err)) });
             }
         } finally {
             this.startingServer = false;

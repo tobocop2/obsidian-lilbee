@@ -384,6 +384,13 @@ describe("pullModel()", () => {
             const headers = fetchMock.mock.calls[0][1].headers;
             expect(headers).not.toHaveProperty("Authorization");
         });
+
+        it("setBaseUrl repoints the client in place", async () => {
+            client.setBaseUrl("http://other:7000");
+            fetchMock.mockResolvedValue(jsonResponse({ model: "qwen3:8b" }));
+            await client.setChatModel("qwen3:8b");
+            expect(fetchMock).toHaveBeenCalledWith("http://other:7000/api/models/chat", expect.anything());
+        });
     });
 
     describe("catalog()", () => {

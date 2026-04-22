@@ -60,6 +60,12 @@ export class LilbeeClient {
         this.tokenProvider = provider;
     }
 
+    /** Repoint the client at a new base URL in place — lets the wizard update
+     * the target server without tearing down the existing client instance. */
+    setBaseUrl(url: string): void {
+        this.baseUrl = url;
+    }
+
     private authHeaders(): Record<string, string> {
         if (!this.token) return {};
         return { Authorization: `Bearer ${this.token}` };
