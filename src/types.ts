@@ -49,6 +49,14 @@ export interface ModelCatalog {
 
 export interface ModelsResponse {
     chat: ModelCatalog;
+    reranker?: ModelCatalog;
+}
+
+export interface ConfigResponse {
+    reranker_model: string;
+    rerank_candidates: number;
+    reranker_available: boolean;
+    [key: string]: unknown;
 }
 
 export interface StatusResponse {
@@ -353,16 +361,18 @@ export const SYNC_MODE = {
     AUTO: "auto",
 } as const satisfies Record<string, SyncMode>;
 
-export type ModelTask = "chat" | "vision" | "embedding";
+export type ModelTask = "chat" | "vision" | "embedding" | "rerank";
 
 export const MODEL_TASK = {
     CHAT: "chat",
     VISION: "vision",
     EMBEDDING: "embedding",
+    RERANK: "rerank",
 } as const satisfies Record<string, ModelTask>;
 
 export const MODEL_SOURCE = {
     NATIVE: "native",
+    LITELLM: "litellm",
 } as const;
 
 export const ERROR_NAME = {

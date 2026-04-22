@@ -645,6 +645,113 @@ describe("pullModel()", () => {
         });
     });
 
+    describe("setRerankerModel()", () => {
+        it("PUTs to /api/models/reranker", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ model: "bge-reranker-v2-m3" }));
+
+            const result = await client.setRerankerModel("bge-reranker-v2-m3");
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${BASE_URL}/api/models/reranker`,
+                expect.objectContaining({
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model: "bge-reranker-v2-m3" }),
+                }),
+            );
+            expect(result.isOk()).toBe(true);
+        });
+
+        it("accepts empty string to disable the reranker", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ model: "" }));
+
+            const result = await client.setRerankerModel("");
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${BASE_URL}/api/models/reranker`,
+                expect.objectContaining({
+                    method: "PUT",
+                    body: JSON.stringify({ model: "" }),
+                }),
+            );
+            expect(result.isOk()).toBe(true);
+        });
+
+        it("returns error when server returns 422", async () => {
+            fetchMock.mockResolvedValue({
+                ok: false,
+                status: 422,
+                statusText: "Unprocessable",
+                text: () => Promise.resolve("Unknown reranker model"),
+            } as unknown as Response);
+
+            const result = await client.setRerankerModel("not-a-model");
+            expect(result.isErr()).toBe(true);
+            expect(result._unsafeUnwrapErr().message).toContain("422");
+        });
+
+        it("propagates AbortError as err()", async () => {
+            fetchMock.mockImplementation(() => {
+                const err = new Error("aborted");
+                err.name = "AbortError";
+                return Promise.reject(err);
+            });
+
+            const result = await client.setRerankerModel("bge-reranker-v2-m3");
+            expect(result.isErr()).toBe(true);
+            expect(result._unsafeUnwrapErr().name).toBe("AbortError");
+        });
+    });
+
+    describe("catalog() with task=rerank", () => {
+        it("appends task=rerank to the query string", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ total: 0, limit: 20, offset: 0, models: [], has_more: false }));
+
+            await client.catalog({ task: "rerank" });
+
+            const url = new URL(fetchMock.mock.calls[0][0]);
+            expect(url.searchParams.get("task")).toBe("rerank");
+        });
+    });
+
+    describe("installedModels() with task filter", () => {
+        it("omits task query param when not provided", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ models: [] }));
+
+            await client.installedModels();
+
+            expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/installed`, expect.objectContaining({}));
+        });
+
+        it("forwards task=rerank when provided", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ models: [] }));
+
+            await client.installedModels({ task: "rerank" });
+
+            const url = new URL(fetchMock.mock.calls[0][0]);
+            expect(url.pathname).toBe("/api/models/installed");
+            expect(url.searchParams.get("task")).toBe("rerank");
+        });
+    });
+
+    describe("config() with reranker fields", () => {
+        it("parses reranker_model, rerank_candidates, and reranker_available", async () => {
+            const data = {
+                reranker_model: "bge-reranker-v2-m3",
+                rerank_candidates: 25,
+                reranker_available: true,
+                chat_model: "qwen3:8b",
+            };
+            fetchMock.mockResolvedValue(jsonResponse(data));
+
+            const result = await client.config();
+
+            expect(result.reranker_model).toBe("bge-reranker-v2-m3");
+            expect(result.rerank_candidates).toBe(25);
+            expect(result.reranker_available).toBe(true);
+        });
+    });
+
     describe("setEmbeddingModel()", () => {
         it("PUTs to /api/models/embedding", async () => {
             fetchMock.mockResolvedValue(jsonResponse({ model: "nomic-embed-text-v1.5" }));

@@ -905,6 +905,11 @@
     color: var(--text-muted);
 }
 
+.lilbee-pill-task-rerank {
+    background: rgba(56, 139, 176, 0.15);
+    color: rgb(56, 139, 176);
+}
+
 .lilbee-pill-installed {
     background: var(--background-modifier-success);
     color: var(--text-on-accent);

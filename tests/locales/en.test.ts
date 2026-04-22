@@ -386,6 +386,7 @@ describe("FILTERS", () => {
             expect(FILTERS.TASK.CHAT).toBe("chat");
             expect(FILTERS.TASK.EMBEDDING).toBe("embedding");
             expect(FILTERS.TASK.VISION).toBe("vision");
+            expect(FILTERS.TASK.RERANK).toBe("rerank");
         });
     });
 
@@ -414,6 +415,7 @@ describe("TASK_LABELS", () => {
         expect(TASK_LABELS[MODEL_TASK.CHAT]).toBe("Chat");
         expect(TASK_LABELS[MODEL_TASK.VISION]).toBe("Vision");
         expect(TASK_LABELS[MODEL_TASK.EMBEDDING]).toBe("Embedding");
+        expect(TASK_LABELS[MODEL_TASK.RERANK]).toBe("Rerank");
     });
 });
 

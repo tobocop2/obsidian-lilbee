@@ -72,6 +72,8 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
         configDefaults: vi.fn().mockRejectedValue(new Error("unreachable")),
         updateConfig: vi.fn().mockResolvedValue({ updated: [], reindex_required: false }),
         setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
+        setRerankerModel: vi.fn().mockResolvedValue(ok(undefined)),
+        installedModels: vi.fn().mockResolvedValue({ models: [] }),
         catalog: vi.fn().mockResolvedValue(err(new Error("unreachable"))),
     };
     const saveSettings = vi.fn().mockResolvedValue(undefined);
@@ -374,8 +376,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + 6 generation + syncDebounce + 10 crawling (3 existing + 7 new text) + wikiVaultFolder + 2 chunks + hfToken + litellm = 23
-            expect(textOnChanges.length).toBe(23);
+            // serverPort + 6 generation + syncDebounce + 10 crawling + wikiVaultFolder + 2 chunks + rerank_candidates + hfToken + litellm = 24
+            expect(textOnChanges.length).toBe(24);
         });
 
         it("does NOT show sync-debounce when syncMode is 'manual'", () => {
@@ -383,8 +385,8 @@ describe("LilbeeSettingTab", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + 6 generation + 10 crawling + wikiVaultFolder + 2 chunks + hfToken + litellm = 22
-            expect(textOnChanges.length).toBe(22);
+            // serverPort + 6 generation + 10 crawling + wikiVaultFolder + 2 chunks + rerank_candidates + hfToken + litellm = 23
+            expect(textOnChanges.length).toBe(23);
         });
     });
 
@@ -3481,8 +3483,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 13: HF token (0=port, 1-6=gen, 7-9=crawl, 10=wikiVaultFolder, 11-12=chunks, 13=hfToken)
-            await textOnChanges[20]("hf_test123");
+            // Index 21: HF token (0=port, 1-6=gen, 7-16=crawl, 17=wikiVaultFolder, 18-19=chunks, 20=rerank_candidates, 21=hfToken)
+            await textOnChanges[21]("hf_test123");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ hf_token: "hf_test123" });
             expect(plugin.settings.hfToken).toBe("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("HuggingFace token saved"))).toBe(true);
@@ -3494,7 +3496,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[20]("");
+            await textOnChanges[21]("");
             expect(plugin.settings.hfToken).toBe("");
         });
 
@@ -3505,7 +3507,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[20]("hf_test123");
+            await textOnChanges[21]("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to save HuggingFace token"))).toBe(
                 true,
             );
@@ -3637,7 +3639,7 @@ describe("managed mode settings", () => {
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
             // Index 14: LiteLLM base URL (after hfToken at 13)
-            await textOnChanges[21]("http://localhost:4000");
+            await textOnChanges[22]("http://localhost:4000");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ litellm_base_url: "http://localhost:4000" });
         });
 
@@ -3647,7 +3649,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[21]("  ");
+            await textOnChanges[22]("  ");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -3658,7 +3660,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[21]("http://localhost:4000");
+            await textOnChanges[22]("http://localhost:4000");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update LiteLLM URL"))).toBe(true);
         });
     });
@@ -4027,10 +4029,10 @@ describe("managed mode settings", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // 3 API keys at indices 20-22 (0=port, 1-6=gen, 7-16=crawl, 17=wikiVaultFolder, 18-19=chunks, 20-22=apiKeys)
-            expect(inputs[20].type).toBe("password");
+            // 3 API keys at indices 21-23 (0=port, 1-6=gen, 7-16=crawl, 17=wikiVaultFolder, 18-19=chunks, 20=rerank_candidates, 21-23=apiKeys)
             expect(inputs[21].type).toBe("password");
             expect(inputs[22].type).toBe("password");
+            expect(inputs[23].type).toBe("password");
         });
 
         it("sets HF token input type to password", () => {
@@ -4053,8 +4055,947 @@ describe("managed mode settings", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // HF token is index 23 (after 3 API keys at 20-22)
-            expect(inputs[23].type).toBe("password");
+            // HF token is index 24 (after rerank_candidates at 20 and 3 API keys at 21-23)
+            expect(inputs[24].type).toBe("password");
+        });
+    });
+
+    describe("Reranker section", () => {
+        let origAddDropdown: typeof Setting.prototype.addDropdown;
+
+        function captureRerankerDropdown(): {
+            dropdowns: DropdownOnChange[];
+            options: Array<Record<string, string>>;
+            values: string[];
+        } {
+            const dropdowns: DropdownOnChange[] = [];
+            const options: Array<Record<string, string>> = [];
+            const values: string[] = [];
+            Setting.prototype.addDropdown = function (cb: (dropdown: any) => void) {
+                const opts: Record<string, string> = {};
+                const fakeDropdown = {
+                    addOption: (v: string, l: string) => {
+                        opts[v] = l;
+                        return fakeDropdown;
+                    },
+                    setValue: (v: string) => {
+                        values.push(v);
+                        return fakeDropdown;
+                    },
+                    onChange: (handler: DropdownOnChange) => {
+                        dropdowns.push(handler);
+                        return fakeDropdown;
+                    },
+                };
+                cb(fakeDropdown);
+                options.push(opts);
+                return this;
+            };
+            return { dropdowns, options, values };
+        }
+
+        beforeEach(() => {
+            origAddDropdown = Setting.prototype.addDropdown;
+        });
+        afterEach(() => {
+            Setting.prototype.addDropdown = origAddDropdown;
+        });
+
+        it("renders unavailable notice and disabled dropdown when reranker_available is false", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+                reranker_available: false,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
+            );
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { options } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(options.length).toBe(1);
+            expect(options[0][""]).toBe(MESSAGES.LABEL_RERANKER_DISABLED);
+        });
+
+        it("renders dropdown with (disabled) selected when active is empty", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "bge-reranker-v2-m3",
+                            tag: "latest",
+                            hf_repo: "BAAI/bge-reranker-v2-m3",
+                            display_name: "BGE v2",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "multilingual",
+                            quality_tier: "balanced",
+                            installed: true,
+                            source: "native",
+                            task: "rerank",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+                models: [{ name: "bge-reranker-v2-m3:latest", source: "native" }],
+            });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { options, values } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(options[0][""]).toBe(MESSAGES.LABEL_RERANKER_DISABLED);
+            // Dropdown option keys use hf_repo (canonical id), not display name
+            expect(options[0]["bge-reranker-v2-m3:latest"]).toBe("BAAI/bge-reranker-v2-m3");
+            expect(values[0]).toBe("");
+        });
+
+        it("selecting installed reranker calls setRerankerModel", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "bge-reranker-v2-m3",
+                            tag: "latest",
+                            hf_repo: "BAAI/bge-reranker-v2-m3",
+                            display_name: "BGE",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "balanced",
+                            installed: true,
+                            source: "native",
+                            task: "rerank",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+                models: [{ name: "bge-reranker-v2-m3:latest", source: "native" }],
+            });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            // The dropdown value is hf_repo (canonical id), not the display name
+            await dropdowns[0]("bge-reranker-v2-m3:latest");
+            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("bge-reranker-v2-m3:latest");
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_UPDATED)).toBe(true);
+        });
+
+        it("selecting disabled calls setRerankerModel('')", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "bge-reranker-v2-m3",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("");
+            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("");
+        });
+
+        it("shows failure notice when setRerankerModel returns non-422 error", async () => {
+            const plugin = makePlugin();
+            (plugin.api.setRerankerModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                err(new Error("Server responded 500: ")),
+            );
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "bge",
+                            tag: "latest",
+                            hf_repo: "BAAI/bge",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: true,
+                            source: "native",
+                            task: "rerank",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+                models: [{ name: "bge:latest", source: "native" }],
+            });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("bge:latest");
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_RERANKER)).toBe(true);
+        });
+
+        it("selecting not-installed local catalog entry triggers pull then set", async () => {
+            const plugin = makePlugin();
+            async function* fakePull() {
+                yield { event: SSE_EVENT.PROGRESS, data: { percent: 50 } };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "bge-reranker-large",
+                            tag: "latest",
+                            hf_repo: "BAAI/bge-reranker-large",
+                            display_name: "",
+                            size_gb: 2,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "native",
+                            task: "rerank",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            // pullModel and setRerankerModel must use hf_repo (canonical id), not display name
+            await dropdowns[0]("bge-reranker-large:latest");
+            expect(plugin.api.pullModel).toHaveBeenCalledWith(
+                "BAAI/bge-reranker-large",
+                "native",
+                expect.any(AbortSignal),
+            );
+            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("bge-reranker-large:latest");
+        });
+
+        it("hosted litellm entry skips pull and calls setRerankerModel directly", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "rerank-english-v3.0",
+                            tag: "latest",
+                            hf_repo: "cohere/rerank-english-v3.0",
+                            display_name: "Cohere",
+                            size_gb: 0,
+                            min_ram_gb: 0,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "litellm",
+                            task: "rerank",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("rerank-english-v3.0:latest");
+            expect(plugin.api.pullModel).not.toHaveBeenCalled();
+            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("rerank-english-v3.0:latest");
+        });
+
+        it("hosted litellm entry with 422 response surfaces API-key notice", async () => {
+            const plugin = makePlugin();
+            (plugin.api.setRerankerModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+                err(new Error("Server responded 422: key missing")),
+            );
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "rerank",
+                            tag: "latest",
+                            hf_repo: "cohere/rerank",
+                            display_name: "",
+                            size_gb: 0,
+                            min_ram_gb: 0,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "litellm",
+                            task: "rerank",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("rerank:latest");
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_NEEDS_KEY)).toBe(true);
+        });
+
+        it("falls back to notice when initial load fails", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("unreachable"));
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_LOAD_FAILED)).toBe(true);
+        });
+
+        it("falls back to notice when installedModels rejects (caught by inner catch)", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { options } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            // installed catch fallback returns empty models — dropdown still renders with just (disabled)
+            expect(options[0][""]).toBe(MESSAGES.LABEL_RERANKER_DISABLED);
+        });
+
+        it("falls back when catalog returns err() — shows empty dropdown with just (disabled)", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("fail")));
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { options } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(Object.keys(options[0])).toEqual([""]);
+        });
+
+        it("pull flow surfaces queue-full notice when enqueue fails", async () => {
+            const plugin = makePlugin();
+            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "bge",
+                            tag: "latest",
+                            hf_repo: "BAAI/bge",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "native",
+                            task: "rerank",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("bge:latest");
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_QUEUE_FULL)).toBe(true);
+            expect(plugin.api.pullModel).not.toHaveBeenCalled();
+        });
+
+        it("pull SSE error fails the task and surfaces notice", async () => {
+            const plugin = makePlugin();
+            async function* failingPull() {
+                yield { event: SSE_EVENT.ERROR, data: { message: "boom" } };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(failingPull());
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "bge",
+                            tag: "latest",
+                            hf_repo: "BAAI/bge",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "native",
+                            task: "rerank",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("bge:latest");
+            expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
+            expect(plugin.api.setRerankerModel).not.toHaveBeenCalled();
+        });
+
+        it("pull AbortError cancels the task and surfaces cancel notice", async () => {
+            const plugin = makePlugin();
+            async function* aborting(): AsyncGenerator<never> {
+                const e = new Error("aborted");
+                e.name = "AbortError";
+                throw e;
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(aborting());
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "bge",
+                            tag: "latest",
+                            hf_repo: "BAAI/bge",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "native",
+                            task: "rerank",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("bge:latest");
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_PULL_CANCELLED)).toBe(true);
+        });
+
+        it("pull non-Error throw uses 'unknown' as reason", async () => {
+            const plugin = makePlugin();
+            async function* failing(): AsyncGenerator<never> {
+                throw "string failure";
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(failing());
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "bge",
+                            tag: "latest",
+                            hf_repo: "BAAI/bge",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "native",
+                            task: "rerank",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await dropdowns[0]("bge:latest");
+            const failed = plugin.taskQueue.completed.find((t: any) => t.status === "failed");
+            expect(failed).toBeDefined();
+            expect(failed!.error).toBe("unknown error");
+        });
+
+        it("pull progress without percent or total is ignored", async () => {
+            const plugin = makePlugin();
+            async function* fakePull() {
+                yield { event: SSE_EVENT.PROGRESS, data: {} };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "bge",
+                            tag: "latest",
+                            hf_repo: "BAAI/bge",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "native",
+                            task: "rerank",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { dropdowns } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            await expect(dropdowns[0]("bge:latest")).resolves.not.toThrow();
+            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("bge:latest");
+        });
+
+        it("buildRerankerOptions includes only installed-first then not-installed then hosted", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 3,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "bge-installed",
+                            tag: "latest",
+                            hf_repo: "BAAI/bge-installed",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: true,
+                            source: "native",
+                            task: "rerank",
+                        },
+                        {
+                            name: "bge-not-installed",
+                            tag: "latest",
+                            hf_repo: "BAAI/bge-not-installed",
+                            display_name: "",
+                            size_gb: 1,
+                            min_ram_gb: 4,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "native",
+                            task: "rerank",
+                        },
+                        {
+                            name: "rerank",
+                            tag: "latest",
+                            hf_repo: "cohere/rerank",
+                            display_name: "",
+                            size_gb: 0,
+                            min_ram_gb: 0,
+                            description: "",
+                            quality_tier: "",
+                            installed: false,
+                            source: "litellm",
+                            task: "rerank",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+                models: [{ name: "bge-installed:latest", source: "native" }],
+            });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { options } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            // Dropdown VALUES use the canonical ``name:tag`` ref so the
+            // server's active-reranker string (returned in name:tag form)
+            // matches an option and setValue resolves. Display labels still
+            // show hf_repo so the UI stays human-readable.
+            const keys = Object.keys(options[0]);
+            expect(keys).toEqual(["", "bge-installed:latest", "bge-not-installed:latest", "rerank:latest"]);
+            expect(options[0]["bge-installed:latest"]).toBe("BAAI/bge-installed");
+            expect(options[0]["bge-not-installed:latest"]).toContain(MESSAGES.LABEL_NOT_INSTALLED);
+            expect(options[0]["rerank:latest"]).toContain(MESSAGES.LABEL_RERANKER_HOSTED_GROUP);
+        });
+
+        it("installed reranker with server's name:tag ref is NOT labelled (not installed)", async () => {
+            // Regression: buildRerankerOptions used to compare against
+            // ``entry.hf_repo`` but the server's ``/api/models/installed``
+            // returns the canonical ``name:tag`` ref. That mismatch made
+            // installed rerankers render as "(not installed)" and the
+            // dropdown fall back to "(disabled)" even when the server had
+            // an active reranker set. Guard the both forms here.
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "bge-reranker-v2-m3:latest",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "bge-reranker-v2-m3",
+                            tag: "latest",
+                            hf_repo: "gpustack/bge-reranker-v2-m3-GGUF",
+                            display_name: "BGE",
+                            size_gb: 0.4,
+                            min_ram_gb: 2,
+                            description: "",
+                            quality_tier: "balanced",
+                            installed: true,
+                            source: "native",
+                            task: "rerank",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+                models: [{ name: "bge-reranker-v2-m3:latest", source: "native" }],
+            });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { options, values } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(options[0]["bge-reranker-v2-m3:latest"]).toBe("gpustack/bge-reranker-v2-m3-GGUF");
+            expect(options[0]["bge-reranker-v2-m3:latest"]).not.toContain(MESSAGES.LABEL_NOT_INSTALLED);
+            expect(values[0]).toBe("bge-reranker-v2-m3:latest");
+        });
+
+        it("parses reranker_model as empty when config lacks the field", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                // no reranker_model key
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { values } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(values[0]).toBe("");
+        });
+
+        it("unavailable branch resets dropdown to disabled regardless of stale active value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "stale-value",
+                rerank_candidates: 20,
+                reranker_available: false,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { values } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            // When unavailable, the stale active value is irrelevant — dropdown is always disabled.
+            expect(values[0]).toBe("");
+        });
+    });
+    describe("rerank_candidates advanced field", () => {
+        // In manual mode: [0]=port, [1-6]=gen, [7-9]=crawl, [10]=wikiVaultFolder, [11-12]=chunks, [13]=rerank_candidates
+        const RERANK_IDX = 20;
+
+        beforeEach(() => {
+            vi.useFakeTimers();
+        });
+        afterEach(() => {
+            vi.useRealTimers();
+        });
+
+        it("calls updateConfig with parsed number after debounce", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[RERANK_IDX]("40");
+            // Debounced: PATCH doesn't fire synchronously
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(400);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ rerank_candidates: 40 });
+            expect(Notice.instances.some((n) => n.message.includes("Rerank candidates"))).toBe(true);
+        });
+
+        it("debounces rapid changes into a single PATCH", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[RERANK_IDX]("30");
+            await textOnChanges[RERANK_IDX]("35");
+            await textOnChanges[RERANK_IDX]("40");
+            await vi.advanceTimersByTimeAsync(400);
+            expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ rerank_candidates: 40 });
+        });
+
+        it("skips empty value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[RERANK_IDX]("");
+            await vi.advanceTimersByTimeAsync(400);
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("rejects NaN input", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[RERANK_IDX]("abc");
+            await vi.advanceTimersByTimeAsync(400);
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("rejects out-of-range low value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[RERANK_IDX]("0");
+            await vi.advanceTimersByTimeAsync(400);
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("rejects out-of-range high value", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[RERANK_IDX]("101");
+            await vi.advanceTimersByTimeAsync(400);
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("shows error notice on updateConfig failure", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[RERANK_IDX]("40");
+            await vi.advanceTimersByTimeAsync(400);
+            expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
         });
     });
 });

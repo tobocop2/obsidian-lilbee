@@ -27,6 +27,7 @@ const TASK_SECTION_LABEL: Record<ModelTask, string> = {
     [MODEL_TASK.CHAT]: MESSAGES.LABEL_SECTION_CHAT,
     [MODEL_TASK.VISION]: MESSAGES.LABEL_SECTION_VISION,
     [MODEL_TASK.EMBEDDING]: MESSAGES.LABEL_SECTION_EMBEDDING,
+    [MODEL_TASK.RERANK]: MESSAGES.LABEL_SECTION_RERANK,
 };
 
 export class CatalogModal extends Modal {
@@ -419,6 +420,9 @@ export class CatalogModal extends Modal {
     private async setActiveFor(entry: CatalogEntry): ReturnType<typeof this.plugin.api.setChatModel> {
         if (entry.task === MODEL_TASK.EMBEDDING) {
             return this.plugin.api.setEmbeddingModel(entry.hf_repo);
+        }
+        if (entry.task === MODEL_TASK.RERANK) {
+            return this.plugin.api.setRerankerModel(entry.hf_repo);
         }
         const result = await this.plugin.api.setChatModel(entry.hf_repo);
         if (result.isOk()) this.plugin.activeModel = entry.hf_repo;

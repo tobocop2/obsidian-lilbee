@@ -6,6 +6,7 @@ export const PILL_CLS = {
     TASK_CHAT: "lilbee-pill-task-chat",
     TASK_EMBEDDING: "lilbee-pill-task-embedding",
     TASK_VISION: "lilbee-pill-task-vision",
+    TASK_RERANK: "lilbee-pill-task-rerank",
     INSTALLED: "lilbee-pill-installed",
     ACTIVE: "lilbee-pill-active",
     PROVIDER: "lilbee-pill-provider",
@@ -15,6 +16,7 @@ const TASK_PILL_MAP: Record<string, string> = {
     [MODEL_TASK.CHAT]: PILL_CLS.TASK_CHAT,
     [MODEL_TASK.EMBEDDING]: PILL_CLS.TASK_EMBEDDING,
     [MODEL_TASK.VISION]: PILL_CLS.TASK_VISION,
+    [MODEL_TASK.RERANK]: PILL_CLS.TASK_RERANK,
 };
 
 export function renderPill(container: HTMLElement, text: string, cls: string): HTMLElement {

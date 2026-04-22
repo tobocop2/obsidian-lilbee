@@ -63,6 +63,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
             pullModel: vi.fn(),
             setChatModel: vi.fn().mockResolvedValue(ok(undefined)),
             setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
+            setRerankerModel: vi.fn().mockResolvedValue(ok(undefined)),
             deleteModel: vi.fn().mockResolvedValue(ok({ deleted: true, model: "", freed_gb: 2.5 })),
         },
         activeModel: "",
@@ -720,6 +721,23 @@ describe("CatalogModal", () => {
             await tick();
             await tick();
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("qwen/qwen3-8b");
+        });
+
+        it("uses setRerankerModel when the entry is a rerank task (and does not mutate activeModel)", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ installed: true, task: "rerank" })])),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("qwen/qwen3-8b");
+            expect(plugin.api.setChatModel).not.toHaveBeenCalled();
+            // activeModel is the chat model and must NOT be mutated by the rerank branch
+            expect(plugin.activeModel).toBe("");
         });
 
         it("uses setChatModel by default", async () => {
