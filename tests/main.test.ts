@@ -787,7 +787,7 @@ describe("LilbeePlugin", () => {
     });
 
     describe("registerAutoSync()", () => {
-        it("vault event callbacks call debouncedSync", async () => {
+        it("vault event callbacks call debouncedSync for ordinary paths", async () => {
             const plugin = await createPlugin();
             plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
 
@@ -796,12 +796,30 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
 
             const vaultOnCalls = (plugin.app.vault.on as ReturnType<typeof vi.fn>).mock.calls as Array<
-                [string, () => void]
+                [string, (file: { path: string }) => void]
             >;
             expect(vaultOnCalls.length).toBe(4);
 
-            vaultOnCalls[0][1]();
+            vaultOnCalls[0][1]({ path: "notes/foo.md" });
             expect(debouncedSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it("skips paths under lilbee/ — these are managed by the server and re-syncing would loop", async () => {
+            const plugin = await createPlugin();
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
+
+            const debouncedSpy = vi.spyOn(plugin as any, "debouncedSync").mockImplementation(() => {});
+
+            await plugin.onload();
+
+            const vaultOnCalls = (plugin.app.vault.on as ReturnType<typeof vi.fn>).mock.calls as Array<
+                [string, (file: { path: string }) => void]
+            >;
+
+            vaultOnCalls[0][1]({ path: "lilbee/crawled/example.com/page.md" });
+            vaultOnCalls[0][1]({ path: "lilbee/imported/book.pdf" });
+            vaultOnCalls[0][1]({ path: "lilbee/wiki/foo.md" });
+            expect(debouncedSpy).not.toHaveBeenCalled();
         });
     });
 

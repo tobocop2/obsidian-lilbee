@@ -176,6 +176,7 @@ export default class LilbeePlugin extends Plugin {
     async onload(): Promise<void> {
         await this.loadSettings();
         this.wikiEnabled = this.settings.wikiEnabled;
+        // TODO(vault-native-storage): on managed-load, PATCH documents_dir + vault_base; skip if already correct.
 
         this.statusBarEl = this.addStatusBarItem();
         this.statusBarEl.style.cursor = "pointer";
@@ -953,6 +954,11 @@ export default class LilbeePlugin extends Plugin {
     private registerAutoSync(): void {
         const handler = (file: TAbstractFile) => {
             if (this.wikiSync?.isWikiPath(file.path)) return;
+            // Skip everything the server itself writes into the vault
+            // (crawled/, imported/, documents/, wiki/). Once server PR 3 lands
+            // this prevents the vault watcher from re-triggering sync on
+            // files lilbee just materialized.
+            if (file.path.startsWith("lilbee/")) return;
             this.debouncedSync();
         };
         const vault = this.app.vault;
