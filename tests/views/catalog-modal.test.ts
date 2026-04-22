@@ -64,6 +64,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
             setChatModel: vi.fn().mockResolvedValue(ok(undefined)),
             setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
             setRerankerModel: vi.fn().mockResolvedValue(ok(undefined)),
+            setVisionModel: vi.fn().mockResolvedValue(ok(undefined)),
             deleteModel: vi.fn().mockResolvedValue(ok({ deleted: true, model: "", freed_gb: 2.5 })),
         },
         activeModel: "",
@@ -144,6 +145,18 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(err(new Error("boom")));
             await openModal(plugin);
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_LOAD_CATALOG);
+        });
+
+        it("honors initialTaskFilter by pre-selecting the dropdown and fetching with task param", async () => {
+            const plugin = makePlugin();
+            const modal = new CatalogModal(new App() as any, plugin as any, "vision");
+            modal.open();
+            await tick();
+            await tick();
+            const content = contentEl(modal);
+            const taskSelect = content.find("lilbee-catalog-filter-task")! as unknown as { value: string };
+            expect(taskSelect.value).toBe("vision");
+            expect(plugin.api.catalog).toHaveBeenCalledWith(expect.objectContaining({ task: "vision" }));
         });
     });
 
@@ -695,20 +708,6 @@ describe("CatalogModal", () => {
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
-        it("uses setChatModel when the entry is a vision task", async () => {
-            const plugin = makePlugin();
-            plugin.api.catalog.mockResolvedValue(
-                ok(makeCatalogResponse([makeEntry({ installed: true, task: "vision" })])),
-            );
-            const modal = await openModal(plugin);
-            const content = contentEl(modal);
-            const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
-            useBtn.trigger("click");
-            await tick();
-            await tick();
-            expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen/qwen3-8b");
-        });
-
         it("uses setEmbeddingModel when the entry is an embedding task", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(
@@ -740,6 +739,22 @@ describe("CatalogModal", () => {
             expect(plugin.activeModel).toBe("");
         });
 
+        it("uses setVisionModel when the entry is a vision task (and does not mutate activeModel)", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ installed: true, task: "vision" })])),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("qwen/qwen3-8b");
+            expect(plugin.api.setChatModel).not.toHaveBeenCalled();
+            expect(plugin.activeModel).toBe("");
+        });
+
         it("uses setChatModel by default", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
@@ -764,6 +779,55 @@ describe("CatalogModal", () => {
             await tick();
             const messages = Notice.instances.map((n) => n.message);
             expect(messages.some((m) => m.includes("qwen/qwen3-8b"))).toBe(true);
+        });
+
+        it("surfaces server role-mismatch detail verbatim when Use hits a vision endpoint with a reranker model", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ installed: true, task: "vision" })])),
+            );
+            const detail =
+                "Model 'qwen/qwen3-8b' is a rerank model, not vision. Set it via PUT /api/models/reranker instead.";
+            plugin.api.setVisionModel = vi
+                .fn()
+                .mockResolvedValue(err(new Error(`Server responded 422: {"detail": "${detail}"}`)));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).toContain(detail);
+            // The generic fallback must NOT also appear — role-mismatch wins.
+            expect(messages.some((m) => m === MESSAGES.ERROR_SET_MODEL.replace("{model}", "qwen/qwen3-8b"))).toBe(
+                false,
+            );
+        });
+
+        it("surfaces server role-mismatch detail verbatim when Use hits a reranker endpoint with a vision model", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ installed: true, task: "rerank" })])),
+            );
+            const detail =
+                "Model 'qwen/qwen3-8b' is a vision model, not rerank. Set it via PUT /api/models/vision instead.";
+            plugin.api.setRerankerModel = vi
+                .fn()
+                .mockResolvedValue(err(new Error(`Server responded 422: {"detail": "${detail}"}`)));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).toContain(detail);
+            expect(messages.some((m) => m === MESSAGES.ERROR_SET_MODEL.replace("{model}", "qwen/qwen3-8b"))).toBe(
+                false,
+            );
         });
 
         it("opens confirm-remove modal and deletes the model on confirm", async () => {

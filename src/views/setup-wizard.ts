@@ -1,7 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { CatalogEntry, SSEEvent, SyncDone } from "../types";
-import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK } from "../types";
+import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK, MODEL_SOURCE } from "../types";
 import { CatalogModal } from "./catalog-modal";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
@@ -9,6 +9,35 @@ import { percentFromSse, extractSseErrorMessage } from "../utils";
 
 type FeaturedModel = CatalogEntry;
 type EmbeddingModel = CatalogEntry;
+
+/**
+ * Ordered, visible-in-indicator steps. The indicator labels these 1..6 so the
+ * user has a clear sense of "Step N of 6" while moving through setup. Welcome
+ * is not in the numbered sequence (it's the intro splash).
+ */
+const INDICATOR_STEPS: { step: number; key: string; label: string }[] = [
+    { step: WIZARD_STEP.SERVER_MODE, key: "server", label: "Server" },
+    { step: WIZARD_STEP.MODEL_PICKER, key: "model", label: "Model" },
+    { step: WIZARD_STEP.EMBEDDING_PICKER, key: "embedding", label: "Embed" },
+    { step: WIZARD_STEP.SYNC, key: "sync", label: "Sync" },
+    { step: WIZARD_STEP.WIKI, key: "wiki", label: "Wiki" },
+    { step: WIZARD_STEP.DONE, key: "done", label: "Done" },
+];
+
+/**
+ * data-step attribute on the step container drives per-step CSS (rail color,
+ * badge color, progress accent). Semantic keys map to existing lilbee color
+ * tokens so the wizard's visual language stays in sync with the Task Center's.
+ */
+const STEP_KEY: Record<number, string> = {
+    [WIZARD_STEP.WELCOME]: "welcome",
+    [WIZARD_STEP.SERVER_MODE]: "server",
+    [WIZARD_STEP.MODEL_PICKER]: "model",
+    [WIZARD_STEP.EMBEDDING_PICKER]: "embedding",
+    [WIZARD_STEP.SYNC]: "sync",
+    [WIZARD_STEP.WIKI]: "wiki",
+    [WIZARD_STEP.DONE]: "done",
+};
 
 export function getSystemMemoryGB(): number | null {
     try {
@@ -31,6 +60,54 @@ export function recommendedIndex(models: FeaturedModel[], memGB: number | null):
         }
     }
     return best;
+}
+
+/**
+ * Families the wizard surfaces first as its native picks. Ordered by
+ * recency/recognition — a fresh-install user seeing "Gemma", "Qwen", "Llama"
+ * as the first four tiles gets an immediate sense of what's familiar. Any
+ * native models outside these families backfill after.
+ */
+const PREFERRED_FAMILIES = ["gemma-4", "gemma-3", "gemma-2", "qwen3", "qwen2", "llama-3", "phi-3"];
+const MAX_FEATURED_PICKS = 8;
+
+/**
+ * Rank the server's featured chat entries into the wizard's "Our picks" row.
+ *
+ * Deliberately does NOT filter by `source`. When a server is mis-configured
+ * and tags every featured model as `source="litellm"` (a known transient bug
+ * in older builds), filtering on source emptied the wizard grid. The featured
+ * list itself is the source of truth — the server has already decided these
+ * are the models a fresh user should see. We just reorder them so recognised
+ * open-weight families (Gemma, Qwen, Llama, Phi) lead.
+ *
+ * Callers that genuinely need to hide a subset (e.g. API-only entries in a
+ * different UI) can pass a custom `filter` predicate.
+ */
+export function pickNativeChatModels(
+    models: FeaturedModel[],
+    filter: (m: FeaturedModel) => boolean = () => true,
+): FeaturedModel[] {
+    const eligible = models.filter(filter);
+    const seen = new Set<string>();
+    const ordered: FeaturedModel[] = [];
+    for (const prefix of PREFERRED_FAMILIES) {
+        for (const m of eligible) {
+            if (m.name.startsWith(prefix) && !seen.has(m.hf_repo)) {
+                ordered.push(m);
+                seen.add(m.hf_repo);
+                if (ordered.length >= MAX_FEATURED_PICKS) return ordered;
+            }
+        }
+    }
+    for (const m of eligible) {
+        if (!seen.has(m.hf_repo)) {
+            ordered.push(m);
+            seen.add(m.hf_repo);
+            if (ordered.length >= MAX_FEATURED_PICKS) break;
+        }
+    }
+    return ordered;
 }
 
 export class SetupWizard extends Modal {
@@ -91,34 +168,76 @@ export class SetupWizard extends Modal {
         }
     }
 
+    /**
+     * Build the step frame: outer `<div data-step="...">` with a left rail and a
+     * numbered breadcrumb at the top. Every `render<Step>` method calls this to
+     * get a consistent scaffold.
+     */
+    private beginStep(): HTMLElement {
+        const { contentEl } = this;
+        const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
+        // STEP_KEY covers every WIZARD_STEP value; `this.step` is only set
+        // via the enum (renderStep switch + next/back guards), so the lookup
+        // is total.
+        step.dataset.step = STEP_KEY[this.step];
+        step.createDiv({ cls: "lilbee-wizard-rail" });
+        this.renderStepIndicator(step);
+        return step;
+    }
+
     private renderStepIndicator(container: HTMLElement): void {
         const indicator = container.createDiv({ cls: "lilbee-wizard-step-indicator" });
-        const STEP_COUNT = 6;
-        for (let i = 0; i < STEP_COUNT; i++) {
+        for (let i = 0; i < INDICATOR_STEPS.length; i++) {
+            const meta = INDICATOR_STEPS[i];
             if (i > 0) {
                 const line = indicator.createDiv({ cls: "lilbee-wizard-step-line" });
-                if (i <= this.step) line.addClass("is-done");
+                if (meta.step <= this.step) line.addClass("is-done");
             }
-            const dot = indicator.createDiv({ cls: "lilbee-wizard-step-dot" });
-            if (i < this.step) dot.addClass("is-done");
-            else if (i === this.step) dot.addClass("is-active");
+            const slot = indicator.createDiv({ cls: "lilbee-wizard-step-slot" });
+            slot.dataset.step = meta.key;
+            const circle = slot.createDiv({ cls: "lilbee-wizard-step-circle" });
+            const isActive = meta.step === this.step;
+            const isDone = meta.step < this.step;
+            if (isActive) circle.addClass("is-active");
+            if (isDone) circle.addClass("is-done");
+            circle.textContent = isDone ? "✓" : String(i + 1);
+            slot.createDiv({ cls: "lilbee-wizard-step-label", text: meta.label });
         }
     }
 
-    private renderWelcome(): void {
-        const { contentEl } = this;
-        const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
-        this.renderStepIndicator(step);
+    /**
+     * Step header: a Task-Center-style uppercase badge (`STEP 03 · MODEL`)
+     * followed by the h2 title. The badge carries the step's semantic color.
+     */
+    private renderStepHeader(container: HTMLElement, title: string): void {
+        const meta = INDICATOR_STEPS.find((m) => m.step === this.step);
+        const header = container.createDiv({ cls: "lilbee-wizard-step-header" });
+        if (meta) {
+            const badge = header.createSpan({ cls: "lilbee-wizard-step-badge" });
+            badge.textContent = MESSAGES.WIZARD_STEP_BADGE.replace(
+                "{num}",
+                String(INDICATOR_STEPS.indexOf(meta) + 1).padStart(2, "0"),
+            ).replace("{label}", meta.label.toUpperCase());
+        }
+        header.createEl("h2", { text: title });
+    }
 
-        step.createEl("h2", { text: MESSAGES.TITLE_WELCOME });
+    /** Task-Center-style section heading: uppercase, letter-spaced, muted. */
+    private renderSectionHeading(container: HTMLElement, text: string): void {
+        container.createDiv({ cls: "lilbee-wizard-section-heading", text });
+    }
+
+    private renderWelcome(): void {
+        const step = this.beginStep();
+        this.renderStepHeader(step, MESSAGES.TITLE_WELCOME);
         step.createEl("p", { text: MESSAGES.WIZARD_INTRO_DESC });
 
-        step.createEl("p", { text: MESSAGES.WIZARD_INTRO_STEPS });
-        const ul = step.createEl("ul");
+        this.renderSectionHeading(step, MESSAGES.WIZARD_INTRO_STEPS);
+        const ul = step.createEl("ul", { cls: "lilbee-wizard-intro-list" });
         ul.createEl("li", { text: MESSAGES.WIZARD_STEP_CHOOSE_MODEL });
         ul.createEl("li", { text: MESSAGES.WIZARD_STEP_INDEX });
 
-        step.createEl("p", { text: MESSAGES.WIZARD_LOCAL_ONLY });
+        step.createEl("p", { text: MESSAGES.WIZARD_LOCAL_ONLY, cls: "lilbee-wizard-hint" });
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
         const skipBtn = actions.createEl("button", { text: MESSAGES.BUTTON_SKIP_SETUP });
@@ -129,11 +248,8 @@ export class SetupWizard extends Modal {
     }
 
     private renderServerMode(): void {
-        const { contentEl } = this;
-        const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
-        this.renderStepIndicator(step);
-
-        step.createEl("h2", { text: MESSAGES.TITLE_SERVER_MODE });
+        const step = this.beginStep();
+        this.renderStepHeader(step, MESSAGES.TITLE_SERVER_MODE);
 
         let mode: "managed" | "external" =
             this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL ? SERVER_MODE.EXTERNAL : SERVER_MODE.MANAGED;
@@ -150,21 +266,43 @@ export class SetupWizard extends Modal {
         externalOption.createEl("strong", { text: MESSAGES.TITLE_EXTERNAL });
         externalOption.createEl("p", { text: MESSAGES.WIZARD_EXTERNAL_DESC });
 
-        const urlInput = step.createEl("input", {
+        // External-mode fields: URL + session token (password-masked). Both
+        // hidden in managed mode. The token lines up with readCurrentToken's
+        // `settings.manualToken` lookup, so the API client will pick it up as
+        // soon as the wizard advances.
+        const externalFields = step.createDiv({ cls: "lilbee-wizard-external-fields" });
+        externalFields.style.display = mode === SERVER_MODE.EXTERNAL ? "" : "none";
+
+        const urlLabel = externalFields.createDiv({ cls: "lilbee-wizard-field-label" });
+        urlLabel.textContent = MESSAGES.LABEL_SERVER_URL;
+        const urlInput = externalFields.createEl("input", {
             cls: "lilbee-wizard-url-input",
             placeholder: MESSAGES.PLACEHOLDER_HTTP_LOCALHOST,
             attr: { type: "text" },
         });
         urlInput.value = this.plugin.settings.serverUrl;
-        urlInput.style.display = mode === SERVER_MODE.EXTERNAL ? "" : "none";
+
+        const tokenLabel = externalFields.createDiv({ cls: "lilbee-wizard-field-label" });
+        tokenLabel.textContent = MESSAGES.LABEL_MANUAL_TOKEN;
+        const tokenInput = externalFields.createEl("input", {
+            cls: "lilbee-wizard-url-input",
+            placeholder: MESSAGES.PLACEHOLDER_MANUAL_TOKEN,
+            attr: { type: "password" },
+        });
+        tokenInput.value = this.plugin.settings.manualToken;
+        externalFields.createDiv({
+            cls: "lilbee-wizard-hint",
+            text: MESSAGES.WIZARD_EXTERNAL_TOKEN_HINT,
+        });
 
         const statusEl = step.createDiv({ cls: "lilbee-wizard-status" });
+        const { progressEl, progressFill, progressLabel } = this.renderProgressPanel(step);
 
         managedOption.addEventListener("click", () => {
             mode = SERVER_MODE.MANAGED;
             managedOption.classList.add("selected");
             externalOption.classList.remove("selected");
-            urlInput.style.display = "none";
+            externalFields.style.display = "none";
             statusEl.textContent = "";
         });
 
@@ -172,7 +310,7 @@ export class SetupWizard extends Modal {
             mode = SERVER_MODE.EXTERNAL;
             externalOption.classList.add("selected");
             managedOption.classList.remove("selected");
-            urlInput.style.display = "";
+            externalFields.style.display = "";
         });
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
@@ -185,12 +323,11 @@ export class SetupWizard extends Modal {
         nextBtn.addEventListener("click", () => {
             if (mode === SERVER_MODE.MANAGED) {
                 this.plugin.settings.serverMode = SERVER_MODE.MANAGED;
-                statusEl.textContent = MESSAGES.STATUS_STARTING_SERVER;
-                statusEl.classList.add("lilbee-loading");
                 nextBtn.disabled = true;
-                void this.startManagedAndAdvance(statusEl, nextBtn);
+                void this.startManagedAndAdvance(step, progressEl, progressFill, progressLabel, statusEl, nextBtn);
             } else {
                 this.plugin.settings.serverUrl = String(urlInput.value || "").trim() || "http://127.0.0.1:7433";
+                this.plugin.settings.manualToken = String(tokenInput.value || "").trim();
                 this.plugin.settings.serverMode = SERVER_MODE.EXTERNAL;
                 statusEl.textContent = MESSAGES.STATUS_CHECKING_CONNECTION;
                 nextBtn.disabled = true;
@@ -199,19 +336,44 @@ export class SetupWizard extends Modal {
         });
     }
 
-    private async startManagedAndAdvance(statusEl: HTMLElement, nextBtn: HTMLElement): Promise<void> {
+    private async startManagedAndAdvance(
+        step: HTMLElement,
+        progressEl: HTMLElement,
+        progressFill: HTMLElement,
+        progressLabel: HTMLElement,
+        statusEl: HTMLElement,
+        nextBtn: HTMLElement,
+    ): Promise<void> {
+        progressEl.style.display = "";
+        progressLabel.textContent = MESSAGES.WIZARD_SERVER_PREPARING;
+        this.updateProgress(step, progressFill, undefined);
+        statusEl.textContent = "";
+
         try {
             await this.plugin.saveSettings();
             if (!this.plugin.serverManager) {
-                await this.plugin.startManagedServer();
+                await this.plugin.startManagedServer((event) => {
+                    // Surface binary-download + server-boot phases inline. This
+                    // is the only place the user sees what's happening during
+                    // the initial ~10-60s wait for the server to come online.
+                    if (event.phase === "downloading") {
+                        progressLabel.textContent = MESSAGES.WIZARD_SERVER_DOWNLOADING.replace("{msg}", event.message);
+                    } else if (event.phase === "starting") {
+                        progressLabel.textContent = MESSAGES.WIZARD_SERVER_STARTING;
+                    } else if (event.phase === "ready") {
+                        progressLabel.textContent = MESSAGES.WIZARD_SERVER_READY;
+                    } else if (event.phase === "error") {
+                        progressLabel.textContent = event.message;
+                    }
+                });
             }
-            statusEl.textContent = "";
-            statusEl.classList.remove("lilbee-loading");
+            this.updateProgress(step, progressFill, 100);
+            progressLabel.textContent = MESSAGES.WIZARD_SERVER_READY;
             this.step = WIZARD_STEP.MODEL_PICKER;
             this.renderStep();
         } catch {
+            progressEl.style.display = "none";
             statusEl.textContent = MESSAGES.ERROR_START_SERVER;
-            statusEl.classList.remove("lilbee-loading");
             (nextBtn as HTMLButtonElement).disabled = false;
         }
     }
@@ -219,6 +381,11 @@ export class SetupWizard extends Modal {
     private async checkExternalAndAdvance(statusEl: HTMLElement, nextBtn: HTMLElement): Promise<void> {
         try {
             await this.plugin.saveSettings();
+            // Repoint the existing client at the new URL and hand it the token
+            // the user just pasted. Updating in-place keeps test mocks intact
+            // and avoids churning listeners keyed on the old instance.
+            this.plugin.api.setBaseUrl(this.plugin.settings.serverUrl);
+            this.plugin.api.setToken(this.plugin.settings.manualToken || null);
             const result = await this.plugin.api.health();
             if (result.isErr()) throw result.error;
             statusEl.textContent = "";
@@ -230,12 +397,61 @@ export class SetupWizard extends Modal {
         }
     }
 
-    private renderModelPicker(): void {
-        const { contentEl } = this;
-        const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
-        this.renderStepIndicator(step);
+    /**
+     * Build the shared download-progress panel used by steps 3–5. The panel
+     * starts hidden; `activateProgressPanel` below flips it on once work
+     * begins. The Task Center CTA is always present but only *visible* while
+     * progress is active — users need the affordance the moment downloads
+     * start, never before.
+     */
+    private renderProgressPanel(step: HTMLElement): {
+        progressEl: HTMLElement;
+        progressFill: HTMLElement;
+        progressLabel: HTMLElement;
+    } {
+        const progressEl = step.createDiv({ cls: "lilbee-wizard-progress" });
+        progressEl.style.display = "none";
 
-        step.createEl("h2", { text: MESSAGES.TITLE_PICK_MODEL });
+        const progressBar = progressEl.createDiv({ cls: "lilbee-progress-bar-container" });
+        const progressFill = progressBar.createDiv({
+            cls: "lilbee-progress-bar lilbee-wizard-progress-fill lilbee-wizard-progress-indeterminate",
+        });
+        const progressLabel = progressEl.createDiv({ cls: "lilbee-wizard-progress-label" });
+
+        const footer = progressEl.createDiv({ cls: "lilbee-wizard-progress-footer" });
+        footer.createDiv({
+            cls: "lilbee-wizard-progress-hint",
+            text: MESSAGES.WIZARD_PROGRESS_BACKGROUND,
+        });
+
+        const taskCenterBtn = footer.createEl("button", {
+            cls: "lilbee-wizard-task-center-cta",
+            text: MESSAGES.BUTTON_OPEN_TASK_CENTER,
+        });
+        taskCenterBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            this.plugin.activateTaskView();
+        });
+
+        return { progressEl, progressFill, progressLabel };
+    }
+
+    /**
+     * Update the progress fill: hands off from indeterminate to determinate
+     * the first time a percentage comes in. Also sets the hero rail to the
+     * "active" state so the step visually pulses like a Task Center row.
+     */
+    private updateProgress(step: HTMLElement, progressFill: HTMLElement, pct: number | undefined): void {
+        const rail = step.querySelector<HTMLElement>(".lilbee-wizard-rail");
+        rail?.classList.add("is-active");
+        if (pct === undefined) return;
+        progressFill.classList.remove("lilbee-wizard-progress-indeterminate");
+        progressFill.style.width = `${pct}%`;
+    }
+
+    private renderModelPicker(): void {
+        const step = this.beginStep();
+        this.renderStepHeader(step, MESSAGES.TITLE_PICK_MODEL);
         step.createEl("p", { text: MESSAGES.WIZARD_MODEL_HELP });
 
         const memGB = getSystemMemoryGB();
@@ -248,11 +464,7 @@ export class SetupWizard extends Modal {
 
         const modelsContainer = step.createDiv({ cls: "lilbee-wizard-models" });
         const statusEl = step.createDiv({ cls: "lilbee-wizard-status" });
-        const progressEl = step.createDiv({ cls: "lilbee-wizard-progress" });
-        progressEl.style.display = "none";
-        const progressBar = progressEl.createDiv({ cls: "lilbee-progress-bar-container" });
-        const progressFill = progressBar.createDiv({ cls: "lilbee-progress-bar" });
-        const progressLabel = progressEl.createDiv({ cls: "lilbee-wizard-progress-label" });
+        const { progressEl, progressFill, progressLabel } = this.renderProgressPanel(step);
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
         const backBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BACK });
@@ -279,7 +491,7 @@ export class SetupWizard extends Modal {
             }
             downloadBtn.disabled = true;
             statusEl.textContent = "";
-            void this.pullSelectedModel(downloadBtn, progressEl, progressFill, progressLabel, statusEl);
+            void this.pullSelectedModel(downloadBtn, progressEl, progressFill, progressLabel, statusEl, step);
         });
 
         void this.loadFeaturedModels(modelsContainer, memGB, statusEl);
@@ -291,17 +503,23 @@ export class SetupWizard extends Modal {
         statusEl: HTMLElement,
     ): Promise<void> {
         try {
+            // The server's featured list is the source of truth for the
+            // wizard's "Our picks" row. Do NOT filter by `source` here — a
+            // mis-configured server can tag every featured model as
+            // `source="litellm"`, which would empty the grid and leave the
+            // user stuck. `pickNativeChatModels` just reorders so recognised
+            // open-weight families (Gemma, Qwen, Llama) lead.
             const result = await this.plugin.api.catalog({
                 task: MODEL_TASK.CHAT,
                 featured: true,
-                sort: FILTERS.SORT.FEATURED,
-                limit: 4,
+                sort: FILTERS.SORT.DOWNLOADS,
+                limit: 40,
             });
             if (result.isErr()) {
                 this.featuredModels = [];
                 return;
             }
-            this.featuredModels = result.value.models;
+            this.featuredModels = pickNativeChatModels(result.value.models);
         } catch {
             this.featuredModels = [];
             statusEl.textContent = MESSAGES.ERROR_LOAD_MODELS;
@@ -311,7 +529,7 @@ export class SetupWizard extends Modal {
         const recommended = recommendedIndex(this.featuredModels, memGB);
         this.selectedModel = this.featuredModels[recommended] ?? null;
 
-        container.createDiv({ cls: "lilbee-catalog-section-heading", text: MESSAGES.LABEL_OUR_PICKS });
+        this.renderSectionHeading(container, MESSAGES.LABEL_OUR_PICKS);
         const grid = container.createDiv({ cls: "lilbee-catalog-grid" });
 
         for (let i = 0; i < this.featuredModels.length; i++) {
@@ -341,24 +559,26 @@ export class SetupWizard extends Modal {
         progressFill: HTMLElement,
         progressLabel: HTMLElement,
         statusEl: HTMLElement,
+        step: HTMLElement,
     ): Promise<void> {
         if (!this.selectedModel) return;
         const model = this.selectedModel;
         progressEl.style.display = "";
         progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL.replace("{model}", model.hf_repo);
         this.pullController = new AbortController();
+        this.updateProgress(step, progressFill, undefined);
 
         try {
             for await (const event of this.plugin.api.pullModel(
                 model.hf_repo,
-                model.source,
+                MODEL_SOURCE.NATIVE,
                 this.pullController.signal,
             )) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = percentFromSse(d);
                     if (pct !== undefined) {
-                        progressFill.style.width = `${pct}%`;
+                        this.updateProgress(step, progressFill, pct);
                         progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL_PCT.replace(
                             "{model}",
                             model.hf_repo,
@@ -400,20 +620,13 @@ export class SetupWizard extends Modal {
     }
 
     private renderEmbeddingPicker(): void {
-        const { contentEl } = this;
-        const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
-        this.renderStepIndicator(step);
-
-        step.createEl("h2", { text: MESSAGES.TITLE_PICK_EMBEDDING });
+        const step = this.beginStep();
+        this.renderStepHeader(step, MESSAGES.TITLE_PICK_EMBEDDING);
         step.createEl("p", { text: MESSAGES.WIZARD_EMBEDDING_HELP });
 
         const modelsContainer = step.createDiv({ cls: "lilbee-wizard-models" });
         const statusEl = step.createDiv({ cls: "lilbee-wizard-status" });
-        const progressEl = step.createDiv({ cls: "lilbee-wizard-progress" });
-        progressEl.style.display = "none";
-        const progressBar = progressEl.createDiv({ cls: "lilbee-progress-bar-container" });
-        const progressFill = progressBar.createDiv({ cls: "lilbee-progress-bar" });
-        const progressLabel = progressEl.createDiv({ cls: "lilbee-wizard-progress-label" });
+        const { progressEl, progressFill, progressLabel } = this.renderProgressPanel(step);
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
         const backBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BACK });
@@ -449,7 +662,7 @@ export class SetupWizard extends Modal {
             }
             downloadBtn.disabled = true;
             statusEl.textContent = "";
-            void this.pullEmbeddingModel(downloadBtn, progressEl, progressFill, progressLabel, statusEl);
+            void this.pullEmbeddingModel(downloadBtn, progressEl, progressFill, progressLabel, statusEl, step);
         });
 
         void this.loadEmbeddingModels(modelsContainer, statusEl);
@@ -459,14 +672,18 @@ export class SetupWizard extends Modal {
         try {
             const result = await this.plugin.api.catalog({
                 task: MODEL_TASK.EMBEDDING,
-                sort: FILTERS.SORT.FEATURED,
-                limit: 4,
+                featured: true,
+                sort: FILTERS.SORT.DOWNLOADS,
+                limit: 20,
             });
             if (result.isErr()) {
                 this.embeddingModels = [];
                 return;
             }
-            this.embeddingModels = result.value.models;
+            // Trust the server's featured list — don't filter by source.
+            // Mis-configured builds can stamp every featured embedding as
+            // source="litellm", which would leave the picker empty.
+            this.embeddingModels = result.value.models.slice(0, MAX_FEATURED_PICKS);
         } catch {
             this.embeddingModels = [];
             statusEl.textContent = MESSAGES.ERROR_LOAD_MODELS;
@@ -477,7 +694,7 @@ export class SetupWizard extends Modal {
         const defaultIdx = recommended >= 0 ? recommended : 0;
         this.selectedEmbedding = this.embeddingModels[defaultIdx] ?? null;
 
-        container.createDiv({ cls: "lilbee-catalog-section-heading", text: MESSAGES.WIZARD_EMBEDDING_RECOMMENDED });
+        this.renderSectionHeading(container, MESSAGES.WIZARD_EMBEDDING_RECOMMENDED);
         const grid = container.createDiv({ cls: "lilbee-catalog-grid" });
 
         for (let i = 0; i < this.embeddingModels.length; i++) {
@@ -507,24 +724,26 @@ export class SetupWizard extends Modal {
         progressFill: HTMLElement,
         progressLabel: HTMLElement,
         statusEl: HTMLElement,
+        step: HTMLElement,
     ): Promise<void> {
         if (!this.selectedEmbedding) return;
         const model = this.selectedEmbedding;
         progressEl.style.display = "";
         progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL.replace("{model}", model.hf_repo);
         this.pullController = new AbortController();
+        this.updateProgress(step, progressFill, undefined);
 
         try {
             for await (const event of this.plugin.api.pullModel(
                 model.hf_repo,
-                model.source,
+                MODEL_SOURCE.NATIVE,
                 this.pullController.signal,
             )) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = percentFromSse(d);
                     if (pct !== undefined) {
-                        progressFill.style.width = `${pct}%`;
+                        this.updateProgress(step, progressFill, pct);
                         progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL_PCT.replace(
                             "{model}",
                             model.hf_repo,
@@ -563,23 +782,14 @@ export class SetupWizard extends Modal {
     }
 
     private renderSync(): void {
-        const { contentEl } = this;
-        const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
-        this.renderStepIndicator(step);
-
-        step.createEl("h2", { text: MESSAGES.TITLE_INDEX_VAULT });
+        const step = this.beginStep();
+        this.renderStepHeader(step, MESSAGES.TITLE_INDEX_VAULT);
         step.createEl("p", { text: MESSAGES.WIZARD_SYNC_HELP });
 
-        const progressEl = step.createDiv({ cls: "lilbee-wizard-progress" });
-        const progressBar = progressEl.createDiv({ cls: "lilbee-progress-bar-container" });
-        const progressFill = progressBar.createDiv({ cls: "lilbee-progress-bar" });
-        const progressLabel = progressEl.createDiv({ cls: "lilbee-wizard-progress-label" });
+        const { progressEl, progressFill, progressLabel } = this.renderProgressPanel(step);
+        progressEl.style.display = "";
         progressLabel.textContent = MESSAGES.WIZARD_STATUS_STARTING;
-
-        step.createEl("p", {
-            text: MESSAGES.WIZARD_SYNC_HINT,
-            cls: "lilbee-wizard-hint",
-        });
+        this.updateProgress(step, progressFill, undefined);
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
         const backBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BACK });
@@ -593,10 +803,10 @@ export class SetupWizard extends Modal {
             this.skip();
         });
 
-        void this.runSync(progressFill, progressLabel);
+        void this.runSync(progressFill, progressLabel, step);
     }
 
-    private async runSync(progressFill: HTMLElement, progressLabel: HTMLElement): Promise<void> {
+    private async runSync(progressFill: HTMLElement, progressLabel: HTMLElement, step: HTMLElement): Promise<void> {
         this.syncController = new AbortController();
         try {
             let lastEvent: SSEEvent | null = null;
@@ -607,7 +817,7 @@ export class SetupWizard extends Modal {
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number; file?: string };
                     const pct = d.total_files > 0 ? Math.round((d.current_file / d.total_files) * 100) : 0;
-                    progressFill.style.width = `${pct}%`;
+                    this.updateProgress(step, progressFill, pct);
                     progressLabel.textContent = MESSAGES.STATUS_PROCESSING_FILES.replace(
                         "{current}",
                         String(d.current_file),
@@ -630,7 +840,7 @@ export class SetupWizard extends Modal {
             if (lastEvent?.event === SSE_EVENT.DONE) {
                 this.syncResult = lastEvent.data as SyncDone;
             }
-            progressFill.style.width = "100%";
+            this.updateProgress(step, progressFill, 100);
             progressLabel.textContent = MESSAGES.STATUS_DONE;
             this.step = WIZARD_STEP.WIKI;
             this.renderStep();
@@ -646,28 +856,44 @@ export class SetupWizard extends Modal {
     }
 
     private renderWiki(): void {
-        const { contentEl } = this;
-        const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
-        this.renderStepIndicator(step);
-
-        step.createEl("h2", { text: MESSAGES.WIZARD_WIKI_TITLE });
+        const step = this.beginStep();
+        this.renderStepHeader(step, MESSAGES.WIZARD_WIKI_TITLE);
         step.createEl("p", { text: MESSAGES.WIZARD_WIKI_DESC });
 
-        const prosSection = step.createDiv({ cls: "lilbee-wizard-wiki-section" });
-        prosSection.createEl("h3", { text: MESSAGES.WIZARD_WIKI_PROS_HEADING });
+        // Put the "experimental — here's why in plain English" explanation
+        // up front so users who care see it immediately. Two-bullet structure
+        // reads faster than one paragraph and signals "there are exactly two
+        // things to know." Rich pros/cons move to a disclosure below.
+        const experimental = step.createDiv({ cls: "lilbee-wizard-experimental-note" });
+        this.renderSectionHeading(experimental, MESSAGES.WIZARD_WIKI_EXPERIMENTAL_HEADING);
+        experimental.createEl("p", {
+            text: MESSAGES.WIZARD_WIKI_EXPERIMENTAL_INTRO,
+            cls: "lilbee-wizard-experimental-intro",
+        });
+        const bullets = experimental.createEl("ul", { cls: "lilbee-wizard-experimental-bullets" });
+        bullets.createEl("li", { text: MESSAGES.WIZARD_WIKI_EXPERIMENTAL_QUALITY });
+        bullets.createEl("li", { text: MESSAGES.WIZARD_WIKI_EXPERIMENTAL_SLOW });
+
+        const tradeoffs = step.createEl("details", { cls: "lilbee-wizard-wiki-tradeoffs" });
+        tradeoffs.createEl("summary", { text: MESSAGES.WIZARD_WIKI_TRADEOFFS_LABEL });
+
+        const prosSection = tradeoffs.createDiv({ cls: "lilbee-wizard-wiki-section" });
+        this.renderSectionHeading(prosSection, MESSAGES.WIZARD_WIKI_PROS_HEADING);
         const prosList = prosSection.createEl("ul");
         prosList.createEl("li", { text: MESSAGES.WIZARD_WIKI_PRO_SUMMARIES });
         prosList.createEl("li", { text: MESSAGES.WIZARD_WIKI_PRO_CROSSREFS });
         prosList.createEl("li", { text: MESSAGES.WIZARD_WIKI_PRO_ANSWERS });
 
-        const consSection = step.createDiv({ cls: "lilbee-wizard-wiki-section" });
-        consSection.createEl("h3", { text: MESSAGES.WIZARD_WIKI_CONS_HEADING });
+        const consSection = tradeoffs.createDiv({ cls: "lilbee-wizard-wiki-section" });
+        this.renderSectionHeading(consSection, MESSAGES.WIZARD_WIKI_CONS_HEADING);
         const consList = consSection.createEl("ul");
         consList.createEl("li", { text: MESSAGES.WIZARD_WIKI_CON_TOKENS });
         consList.createEl("li", { text: MESSAGES.WIZARD_WIKI_CON_ACCURACY });
         consList.createEl("li", { text: MESSAGES.WIZARD_WIKI_CON_SEARCH });
         consList.createEl("li", { text: MESSAGES.WIZARD_WIKI_CON_COMPLEXITY });
 
+        // Default to Skip for first-time users — experimental features
+        // shouldn't be on by default.
         let wikiEnabled = this.plugin.settings.wikiEnabled ?? false;
 
         const enableOption = step.createDiv({
@@ -709,42 +935,52 @@ export class SetupWizard extends Modal {
     }
 
     private renderDone(): void {
-        const { contentEl } = this;
-        const step = contentEl.createDiv({ cls: "lilbee-wizard-step" });
-        this.renderStepIndicator(step);
+        const step = this.beginStep();
+        this.renderStepHeader(step, MESSAGES.TITLE_ALL_SET);
 
-        step.createDiv({ cls: "lilbee-wizard-done-icon", text: "\u{1F389}" });
-        step.createEl("h2", { text: MESSAGES.TITLE_ALL_SET });
-
+        // "Task-row" style summary: a bordered box with a green rail on the
+        // left, echoing the completed Task Center rows the user will see
+        // throughout normal operation.
         const summary = step.createDiv({ cls: "lilbee-wizard-summary-card" });
+        const summaryBody = summary.createDiv({ cls: "lilbee-wizard-summary-body" });
+        this.renderSectionHeading(summaryBody, MESSAGES.WIZARD_SUMMARY_HEADING);
+
+        const stats = summaryBody.createDiv({ cls: "lilbee-wizard-summary-stats" });
         if (this.pulledModelName) {
-            summary.createEl("p", { text: MESSAGES.WIZARD_SUMMARY_MODEL.replace("{model}", this.pulledModelName) });
+            stats.createEl("span", {
+                cls: "lilbee-wizard-summary-stat",
+                text: MESSAGES.WIZARD_SUMMARY_MODEL.replace("{model}", this.pulledModelName),
+            });
         }
         if (this.syncResult) {
             const total = this.syncResult.added.length + this.syncResult.updated.length + this.syncResult.unchanged;
             const chunks = this.syncResult.added.length + this.syncResult.updated.length;
-            summary.createEl("p", { text: MESSAGES.WIZARD_SUMMARY_FILES.replace("{count}", String(total)) });
+            stats.createEl("span", {
+                cls: "lilbee-wizard-summary-stat",
+                text: MESSAGES.WIZARD_SUMMARY_FILES.replace("{count}", String(total)),
+            });
             if (chunks > 0) {
-                summary.createEl("p", { text: MESSAGES.WIZARD_SUMMARY_PROCESSED.replace("{count}", String(chunks)) });
+                stats.createEl("span", {
+                    cls: "lilbee-wizard-summary-stat",
+                    text: MESSAGES.WIZARD_SUMMARY_PROCESSED.replace("{count}", String(chunks)),
+                });
             }
         }
 
+        this.renderSectionHeading(step, MESSAGES.WIZARD_TIPS);
         const tips = step.createDiv({ cls: "lilbee-wizard-tips" });
-        tips.createEl("p", { text: MESSAGES.WIZARD_TIPS });
-        const ul = tips.createEl("ul");
         const tipData: [string, string][] = [
             ["\u{1F4AC}", MESSAGES.WIZARD_TIP_CHAT],
             ["\u{1F50D}", MESSAGES.WIZARD_TIP_SEARCH],
             ["\u{1F4C4}", MESSAGES.WIZARD_TIP_DRAG],
         ];
         for (const [icon, text] of tipData) {
-            const li = ul.createEl("li");
-            const tipDiv = li.createDiv({ cls: "lilbee-wizard-tip" });
-            tipDiv.createEl("span", { cls: "lilbee-wizard-tip-icon", text: icon });
-            tipDiv.createEl("span", { text });
+            const tip = tips.createDiv({ cls: "lilbee-wizard-tip" });
+            tip.createEl("span", { cls: "lilbee-wizard-tip-icon", text: icon });
+            tip.createEl("span", { text });
         }
 
-        step.createEl("p", { text: MESSAGES.WIZARD_CHANGE_SETTINGS });
+        step.createEl("p", { text: MESSAGES.WIZARD_CHANGE_SETTINGS, cls: "lilbee-wizard-hint" });
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
         const openChatBtn = actions.createEl("button", { text: MESSAGES.BUTTON_OPEN_CHAT, cls: "mod-cta" });

@@ -1,7 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { CatalogEntry, CatalogViewMode, ModelTask, ModelSize } from "../types";
-import { MODEL_TASK, SSE_EVENT, TASK_TYPE, CATALOG_VIEW_MODE, ERROR_NAME } from "../types";
+import { MODEL_TASK, SSE_EVENT, TASK_TYPE, CATALOG_VIEW_MODE, ERROR_NAME, MODEL_SOURCE } from "../types";
 import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
@@ -48,9 +48,15 @@ export class CatalogModal extends Modal {
     private debouncedSearch: () => void;
     private cancelDebouncedSearch: () => void;
 
-    constructor(app: App, plugin: LilbeePlugin) {
+    /**
+     * @param initialTaskFilter Pre-select a task tab when opening (e.g.
+     * from the wizard's Vision step so users land on vision-only results).
+     * Defaults to "" which shows all tasks.
+     */
+    constructor(app: App, plugin: LilbeePlugin, initialTaskFilter: TaskFilter = "") {
         super(app);
         this.plugin = plugin;
+        this.filterTask = initialTaskFilter;
         const searchDebounced = debounce(() => this.resetAndFetch(), DEBOUNCE_MS);
         this.debouncedSearch = searchDebounced.run;
         this.cancelDebouncedSearch = searchDebounced.cancel;
@@ -86,10 +92,16 @@ export class CatalogModal extends Modal {
     private renderFilterBar(parent: HTMLElement): void {
         const filters = parent.createDiv({ cls: "lilbee-catalog-filters" });
 
-        this.renderSelect(filters, "lilbee-catalog-filter-task", CATALOG_FILTERS.TASK, (v) => {
-            this.filterTask = v as TaskFilter;
-            this.resetAndFetch();
-        });
+        this.renderSelect(
+            filters,
+            "lilbee-catalog-filter-task",
+            CATALOG_FILTERS.TASK,
+            (v) => {
+                this.filterTask = v as TaskFilter;
+                this.resetAndFetch();
+            },
+            this.filterTask,
+        );
 
         this.renderSelect(filters, "lilbee-catalog-filter-size", CATALOG_FILTERS.SIZE, (v) => {
             this.filterSize = v as SizeFilter;
@@ -123,12 +135,14 @@ export class CatalogModal extends Modal {
         cls: string,
         options: ReadonlyArray<readonly [string, string]>,
         onChange: (value: string) => void,
+        initialValue?: string,
     ): void {
         const select = parent.createEl("select", { cls }) as HTMLSelectElement;
         for (const [value, label] of options) {
             const opt = select.createEl("option", { text: label });
             opt.value = value;
         }
+        if (initialValue !== undefined && initialValue !== "") select.value = initialValue;
         select.addEventListener("change", () => onChange(select.value));
     }
 
@@ -424,6 +438,9 @@ export class CatalogModal extends Modal {
         if (entry.task === MODEL_TASK.RERANK) {
             return this.plugin.api.setRerankerModel(entry.hf_repo);
         }
+        if (entry.task === MODEL_TASK.VISION) {
+            return this.plugin.api.setVisionModel(entry.hf_repo);
+        }
         const result = await this.plugin.api.setChatModel(entry.hf_repo);
         if (result.isOk()) this.plugin.activeModel = entry.hf_repo;
         return result;
@@ -456,7 +473,11 @@ export class CatalogModal extends Modal {
         const pullErrorPrefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.hf_repo);
 
         try {
-            for await (const event of this.plugin.api.pullModel(entry.hf_repo, entry.source, controller.signal)) {
+            for await (const event of this.plugin.api.pullModel(
+                entry.hf_repo,
+                MODEL_SOURCE.NATIVE,
+                controller.signal,
+            )) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = percentFromSse(d);

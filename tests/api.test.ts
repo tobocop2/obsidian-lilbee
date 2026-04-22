@@ -384,6 +384,13 @@ describe("pullModel()", () => {
             const headers = fetchMock.mock.calls[0][1].headers;
             expect(headers).not.toHaveProperty("Authorization");
         });
+
+        it("setBaseUrl repoints the client in place", async () => {
+            client.setBaseUrl("http://other:7000");
+            fetchMock.mockResolvedValue(jsonResponse({ model: "qwen3:8b" }));
+            await client.setChatModel("qwen3:8b");
+            expect(fetchMock).toHaveBeenCalledWith("http://other:7000/api/models/chat", expect.anything());
+        });
     });
 
     describe("catalog()", () => {
@@ -690,6 +697,25 @@ describe("pullModel()", () => {
             expect(result._unsafeUnwrapErr().message).toContain("422");
         });
 
+        // Contract pin: the error message shape produced by fetchResult must exactly match
+        // what `extractServerErrorDetail` in utils.ts parses. If a future refactor changes
+        // the `Server responded <status>: <body>` prefix, this test fails — without it, every
+        // call site would silently revert to the generic fallback and no test would catch it.
+        it("emits a 'Server responded <status>: <body>' error for 422 with a JSON body", async () => {
+            const body =
+                '{"detail": "Model \'x\' is a vision model, not rerank. Set it via PUT /api/models/vision instead."}';
+            fetchMock.mockResolvedValue({
+                ok: false,
+                status: 422,
+                statusText: "Unprocessable",
+                text: () => Promise.resolve(body),
+            } as unknown as Response);
+
+            const result = await client.setRerankerModel("x");
+            expect(result.isErr()).toBe(true);
+            expect(result._unsafeUnwrapErr().message).toBe(`Server responded 422: ${body}`);
+        });
+
         it("propagates AbortError as err()", async () => {
             fetchMock.mockImplementation(() => {
                 const err = new Error("aborted");
@@ -700,6 +726,75 @@ describe("pullModel()", () => {
             const result = await client.setRerankerModel("bge-reranker-v2-m3");
             expect(result.isErr()).toBe(true);
             expect(result._unsafeUnwrapErr().name).toBe("AbortError");
+        });
+    });
+
+    describe("setVisionModel()", () => {
+        it("PUTs to /api/models/vision", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ model: "Qwen/Qwen2-VL-7B-Instruct" }));
+
+            const result = await client.setVisionModel("Qwen/Qwen2-VL-7B-Instruct");
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${BASE_URL}/api/models/vision`,
+                expect.objectContaining({
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model: "Qwen/Qwen2-VL-7B-Instruct" }),
+                }),
+            );
+            expect(result.isOk()).toBe(true);
+        });
+
+        it("accepts empty string to disable the vision model", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ model: "" }));
+
+            const result = await client.setVisionModel("");
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${BASE_URL}/api/models/vision`,
+                expect.objectContaining({
+                    method: "PUT",
+                    body: JSON.stringify({ model: "" }),
+                }),
+            );
+            expect(result.isOk()).toBe(true);
+        });
+
+        it("returns error when server returns 422", async () => {
+            fetchMock.mockResolvedValue({
+                ok: false,
+                status: 422,
+                statusText: "Unprocessable",
+                text: () => Promise.resolve("Unknown vision model"),
+            } as unknown as Response);
+
+            const result = await client.setVisionModel("not-a-model");
+            expect(result.isErr()).toBe(true);
+            expect(result._unsafeUnwrapErr().message).toContain("422");
+        });
+    });
+
+    describe("catalog() with task=vision", () => {
+        it("appends task=vision to the query string", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ total: 0, limit: 20, offset: 0, models: [], has_more: false }));
+
+            await client.catalog({ task: "vision" });
+
+            const url = new URL(fetchMock.mock.calls[0][0]);
+            expect(url.searchParams.get("task")).toBe("vision");
+        });
+    });
+
+    describe("installedModels() with task=vision", () => {
+        it("forwards task=vision when provided", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ models: [] }));
+
+            await client.installedModels({ task: "vision" });
+
+            const url = new URL(fetchMock.mock.calls[0][0]);
+            expect(url.pathname).toBe("/api/models/installed");
+            expect(url.searchParams.get("task")).toBe("vision");
         });
     });
 
@@ -734,12 +829,12 @@ describe("pullModel()", () => {
         });
     });
 
-    describe("config() with reranker fields", () => {
-        it("parses reranker_model, rerank_candidates, and reranker_available", async () => {
+    describe("config() with reranker and vision fields", () => {
+        it("parses reranker_model, rerank_candidates, and vision_model", async () => {
             const data = {
                 reranker_model: "bge-reranker-v2-m3",
                 rerank_candidates: 25,
-                reranker_available: true,
+                vision_model: "Qwen/Qwen2-VL-7B-Instruct",
                 chat_model: "qwen3:8b",
             };
             fetchMock.mockResolvedValue(jsonResponse(data));
@@ -748,7 +843,7 @@ describe("pullModel()", () => {
 
             expect(result.reranker_model).toBe("bge-reranker-v2-m3");
             expect(result.rerank_candidates).toBe(25);
-            expect(result.reranker_available).toBe(true);
+            expect(result.vision_model).toBe("Qwen/Qwen2-VL-7B-Instruct");
         });
     });
 
@@ -1380,6 +1475,83 @@ describe("wikiPrune()", () => {
         );
         expect(events).toHaveLength(1);
         expect(events[0].event).toBe("wiki_prune_done");
+    });
+});
+
+describe("getSource()", () => {
+    it("calls GET /api/source?source=<encoded> and returns parsed body", async () => {
+        const data = { markdown: "# hello", content_type: "text/markdown" };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.getSource("crawled/example.com/index.md");
+
+        const url = new URL(fetchMock.mock.calls[0][0]);
+        expect(url.pathname).toBe("/api/source");
+        expect(url.searchParams.get("source")).toBe("crawled/example.com/index.md");
+        expect(url.searchParams.has("raw")).toBe(false);
+        expect(result).toEqual(data);
+    });
+
+    it("encodes sources with special characters", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ markdown: "", content_type: "text/plain" }));
+
+        await client.getSource("folder with spaces/file#frag.md");
+
+        // URLSearchParams round-trip: parsing the built URL must return the
+        // original source string verbatim.
+        const url = new URL(fetchMock.mock.calls[0][0]);
+        expect(url.searchParams.get("source")).toBe("folder with spaces/file#frag.md");
+    });
+
+    it("sends Authorization header when a token is set", async () => {
+        client.setToken("abc");
+        fetchMock.mockResolvedValue(jsonResponse({ markdown: "", content_type: "text/markdown" }));
+
+        await client.getSource("foo.md");
+
+        const init = fetchMock.mock.calls[0][1] as RequestInit;
+        expect((init.headers as Record<string, string>).Authorization).toBe("Bearer abc");
+    });
+
+    it("throws on 404 via assertOk", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 404,
+            text: () => Promise.resolve("not found"),
+        } as unknown as Response);
+
+        await expect(client.getSource("missing.md")).rejects.toThrow("Server responded 404: not found");
+    });
+});
+
+describe("getSourceRaw()", () => {
+    it("calls GET /api/source?source=<encoded>&raw=1 and returns the raw Response", async () => {
+        const fakeRes = {
+            ok: true,
+            status: 200,
+            text: () => Promise.resolve(""),
+            arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
+            headers: new Headers({ "content-type": "application/pdf" }),
+        } as unknown as Response;
+        fetchMock.mockResolvedValue(fakeRes);
+
+        const result = await client.getSourceRaw("book.pdf");
+
+        const url = new URL(fetchMock.mock.calls[0][0]);
+        expect(url.pathname).toBe("/api/source");
+        expect(url.searchParams.get("source")).toBe("book.pdf");
+        expect(url.searchParams.get("raw")).toBe("1");
+        expect(result).toBe(fakeRes);
+    });
+
+    it("throws on 404 via assertOk", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 404,
+            text: () => Promise.resolve("gone"),
+        } as unknown as Response);
+
+        await expect(client.getSourceRaw("missing.pdf")).rejects.toThrow("Server responded 404: gone");
     });
 });
 

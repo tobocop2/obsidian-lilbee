@@ -156,11 +156,14 @@ async function createPlugin(overrideData?: Record<string, unknown>) {
             description: "test",
         } as any,
     );
-    // Default to external mode so tests don't attempt to download/spawn a binary
+    // Default to external mode so tests don't attempt to download/spawn a binary.
+    // Also treat setup as complete so the onload server-start path runs —
+    // otherwise the wizard-gated first-run branch silences behaviour tests that
+    // aren't about the wizard.
     if (overrideData) {
-        plugin.loadData = vi.fn().mockResolvedValue(overrideData);
+        plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: true, ...overrideData });
     } else {
-        plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external" });
+        plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: true, serverMode: "external" });
     }
     return plugin;
 }
@@ -299,9 +302,37 @@ describe("LilbeePlugin", () => {
         it("recreates API client with loaded serverUrl", async () => {
             const { LilbeeClient } = await import("../src/api");
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", serverUrl: "http://custom:9999" });
+            plugin.loadData = vi.fn().mockResolvedValue({
+                setupCompleted: true,
+                serverMode: "external",
+                serverUrl: "http://custom:9999",
+            });
             await plugin.onload();
             expect(LilbeeClient).toHaveBeenCalledWith("http://custom:9999");
+        });
+
+        it("skips managed server start when setupCompleted is false", async () => {
+            // First-run gate: the wizard's Server step is the thing that should
+            // kick off the binary download, not the plugin load.
+            const plugin = await createPlugin();
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "managed", setupCompleted: false });
+            mockEnsureBinary.mockClear();
+            await plugin.onload();
+            await flush();
+            expect(mockEnsureBinary).not.toHaveBeenCalled();
+        });
+
+        it("skips external-mode API wiring when setupCompleted is false", async () => {
+            // Same gate on the external branch — api client creation moves
+            // into the wizard's checkExternalAndAdvance flow.
+            const { LilbeeClient } = await import("../src/api");
+            (LilbeeClient as unknown as ReturnType<typeof vi.fn>).mockClear();
+            const plugin = await createPlugin();
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", setupCompleted: false });
+            await plugin.onload();
+            // LilbeeClient is still constructed once by the class field initializer,
+            // but NOT a second time by the onload external branch.
+            expect(LilbeeClient).toHaveBeenCalledTimes(1);
         });
 
         it("auto-opens setup wizard when setupCompleted is false", async () => {
@@ -787,7 +818,7 @@ describe("LilbeePlugin", () => {
     });
 
     describe("registerAutoSync()", () => {
-        it("vault event callbacks call debouncedSync", async () => {
+        it("vault event callbacks call debouncedSync for ordinary paths", async () => {
             const plugin = await createPlugin();
             plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
 
@@ -796,12 +827,30 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
 
             const vaultOnCalls = (plugin.app.vault.on as ReturnType<typeof vi.fn>).mock.calls as Array<
-                [string, () => void]
+                [string, (file: { path: string }) => void]
             >;
             expect(vaultOnCalls.length).toBe(4);
 
-            vaultOnCalls[0][1]();
+            vaultOnCalls[0][1]({ path: "notes/foo.md" });
             expect(debouncedSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it("skips paths under lilbee/ — these are managed by the server and re-syncing would loop", async () => {
+            const plugin = await createPlugin();
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
+
+            const debouncedSpy = vi.spyOn(plugin as any, "debouncedSync").mockImplementation(() => {});
+
+            await plugin.onload();
+
+            const vaultOnCalls = (plugin.app.vault.on as ReturnType<typeof vi.fn>).mock.calls as Array<
+                [string, (file: { path: string }) => void]
+            >;
+
+            vaultOnCalls[0][1]({ path: "lilbee/crawled/example.com/page.md" });
+            vaultOnCalls[0][1]({ path: "lilbee/imported/book.pdf" });
+            vaultOnCalls[0][1]({ path: "lilbee/wiki/foo.md" });
+            expect(debouncedSpy).not.toHaveBeenCalled();
         });
     });
 
@@ -2687,6 +2736,57 @@ describe("LilbeePlugin", () => {
             expect(downloadNotice!.hidden).toBe(true);
         });
 
+        it("startManagedServer onProgress fires downloading/starting/ready during first boot", async () => {
+            mockBinaryExists.mockReturnValueOnce(false);
+            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+                cb?.("Downloading archive...", "https://example.com/bin");
+                return "/fake/bin/lilbee";
+            });
+            mockServerStart.mockResolvedValueOnce(undefined);
+
+            const plugin = await createPlugin({ setupCompleted: true, serverMode: "managed" });
+            // Stop onload from auto-starting so our direct call owns the lifecycle.
+            plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: false, serverMode: "managed" });
+            await plugin.onload();
+
+            const progress: { phase: string; message: string }[] = [];
+            await plugin.startManagedServer((event: any) => progress.push(event));
+            await flush();
+
+            const phases = progress.map((p) => p.phase);
+            expect(phases).toContain("downloading");
+            expect(phases).toContain("starting");
+            expect(phases).toContain("ready");
+        });
+
+        it("startManagedServer onProgress emits 'error' phase when ensureBinary rejects", async () => {
+            mockBinaryExists.mockReturnValueOnce(false);
+            mockEnsureBinary.mockRejectedValueOnce(new Error("boom"));
+
+            const plugin = await createPlugin({ setupCompleted: false, serverMode: "managed" });
+            plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: false, serverMode: "managed" });
+            await plugin.onload();
+
+            const progress: { phase: string }[] = [];
+            await plugin.startManagedServer((event: any) => progress.push(event));
+
+            expect(progress.map((p) => p.phase)).toContain("error");
+        });
+
+        it("startManagedServer onProgress emits 'error' phase when serverManager.start rejects", async () => {
+            mockBinaryExists.mockReturnValueOnce(true);
+            mockServerStart.mockRejectedValueOnce(new Error("port-in-use"));
+
+            const plugin = await createPlugin({ setupCompleted: false, serverMode: "managed" });
+            plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: false, serverMode: "managed" });
+            await plugin.onload();
+
+            const progress: { phase: string }[] = [];
+            await plugin.startManagedServer((event: any) => progress.push(event));
+
+            expect(progress.map((p) => p.phase)).toContain("error");
+        });
+
         it("startManagedServer no-ops when already starting", async () => {
             let resolveEnsure!: (v: string) => void;
             mockEnsureBinary.mockImplementationOnce(
@@ -3886,6 +3986,136 @@ describe("LilbeePlugin", () => {
             await plugin.runWikiPrune();
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
             expect(plugin.api.wikiPrune).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("configureManagedStorage()", () => {
+        async function setupConfiguredPlugin(
+            overrides: Record<string, unknown> = {},
+            apiOverrides: { config?: any; updateConfig?: any } = {},
+        ) {
+            const plugin = await createPlugin({
+                serverMode: "managed",
+                storeContentInVault: true,
+                ...overrides,
+            });
+            await plugin.onload();
+            await flush();
+            if (plugin.api) {
+                if (apiOverrides.config) {
+                    (plugin.api as any).config = apiOverrides.config;
+                }
+                if (apiOverrides.updateConfig) {
+                    (plugin.api as any).updateConfig = apiOverrides.updateConfig;
+                }
+            }
+            Notice.clear();
+            return plugin;
+        }
+
+        it("no-ops in external mode", async () => {
+            const updateConfig = vi.fn();
+            const plugin = await setupConfiguredPlugin(
+                { serverMode: "external", storeContentInVault: true },
+                {
+                    config: vi.fn().mockResolvedValue({}),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("no-ops when storeContentInVault is off", async () => {
+            const updateConfig = vi.fn();
+            const plugin = await setupConfiguredPlugin(
+                { storeContentInVault: false },
+                { config: vi.fn().mockResolvedValue({}), updateConfig },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("PATCHes documents_dir and vault_base when they differ", async () => {
+            const updateConfig = vi.fn().mockResolvedValue({ updated: ["documents_dir", "vault_base"] });
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({
+                        documents_dir: "/old/docs",
+                        vault_base: null,
+                    }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalledWith({
+                documents_dir: "/test/vault/lilbee",
+                vault_base: "/test/vault",
+            });
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_STORAGE_REORGANIZED);
+        });
+
+        it("skips PATCH when server already matches desired layout", async () => {
+            const updateConfig = vi.fn();
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({
+                        documents_dir: "/test/vault/lilbee",
+                        vault_base: "/test/vault",
+                    }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).not.toHaveBeenCalled();
+            expect(Notice.instances).toHaveLength(0);
+        });
+
+        it("surfaces a failure Notice when PATCH rejects", async () => {
+            const updateConfig = vi.fn().mockRejectedValue(new Error("disk full"));
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({
+                        documents_dir: "/old/docs",
+                        vault_base: null,
+                    }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages.some((m) => m.startsWith(MESSAGES.NOTICE_STORAGE_REORGANIZE_FAILED))).toBe(true);
+            expect(messages.some((m) => m.includes("disk full"))).toBe(true);
+        });
+
+        it("returns silently when fetching current config fails", async () => {
+            const updateConfig = vi.fn();
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockRejectedValue(new Error("server down")),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("treats non-string documents_dir/vault_base from server as needing update", async () => {
+            // Older server may not return these fields at all (undefined).
+            const updateConfig = vi.fn().mockResolvedValue({ updated: ["documents_dir", "vault_base"] });
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({}),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalled();
         });
     });
 });

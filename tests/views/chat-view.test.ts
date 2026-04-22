@@ -2908,3 +2908,112 @@ describe("ChatView — Send is a no-op while a stream is in flight", () => {
         resolveStream();
     });
 });
+
+describe("ChatView — role separation on main-screen selectors", () => {
+    beforeEach(() => {
+        Notice.clear();
+    });
+
+    // Invariant pinned: the plugin reads only models.chat + catalog({task: EMBEDDING}),
+    // delegating role filtering to the server. Chat/embedding selectors render exactly
+    // what those server sections hand back — no extra plugin-side filter, no leakage
+    // from sibling vision/reranker sections.
+    it("main-screen selectors read only chat + embedding sections, echoing server data verbatim", async () => {
+        const plugin = makePlugin();
+        // Contaminated models.chat.installed: server has (incorrectly) mixed vision/reranker
+        // names into the chat role. The plugin must still render them — this proves the
+        // plugin is NOT filtering client-side; filtering is the server's job.
+        plugin.api.listModels = vi.fn().mockResolvedValue({
+            chat: {
+                active: "llama3",
+                installed: ["llama3", "Qwen/Qwen2-VL-7B-Instruct", "BAAI/bge-reranker-v2-m3"],
+                catalog: [],
+            },
+            embedding: {
+                active: "nomic-embed-text",
+                installed: ["nomic-embed-text"],
+                catalog: [],
+            },
+            vision: {
+                active: "Qwen/Qwen2-VL-7B-Instruct",
+                installed: ["Qwen/Qwen2-VL-7B-Instruct"],
+                catalog: [],
+            },
+            reranker: {
+                active: "BAAI/bge-reranker-v2-m3",
+                installed: ["BAAI/bge-reranker-v2-m3"],
+                catalog: [],
+            },
+        });
+        plugin.api.installedModels = vi.fn().mockResolvedValue({
+            models: [
+                { name: "llama3", source: "native" },
+                { name: "nomic-embed-text", source: "native" },
+                { name: "Qwen/Qwen2-VL-7B-Instruct", source: "native" },
+                { name: "BAAI/bge-reranker-v2-m3", source: "native" },
+            ],
+        });
+        // catalog({task: EMBEDDING}) returns embedding-only. If the plugin ever called
+        // catalog with a different task or with no filter, this mock would not cover
+        // those other tasks and the embedding selector would end up empty / wrong.
+        plugin.api.catalog = vi.fn().mockResolvedValue(
+            ok({
+                total: 1,
+                limit: 50,
+                offset: 0,
+                models: [
+                    {
+                        name: "nomic-embed-text",
+                        display_name: "nomic-embed-text",
+                        size_gb: 0.3,
+                        min_ram_gb: 1,
+                        description: "embedding",
+                        installed: true,
+                        source: "native",
+                        hf_repo: "nomic-embed-text",
+                        tag: "",
+                        task: "embedding",
+                        featured: true,
+                        downloads: 100,
+                        quality_tier: "good",
+                    },
+                ],
+                has_more: false,
+            }),
+        );
+        plugin.api.config = vi.fn().mockResolvedValue({ embedding_model: "nomic-embed-text" });
+
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await tick();
+
+        // The plugin must ask the server for the embedding task specifically.
+        expect(plugin.api.catalog).toHaveBeenCalledWith({ task: "embedding" });
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const chatSelect = container.find("lilbee-chat-model-select")!;
+        const embedSelect = container.find("lilbee-embed-model-select")!;
+
+        const chatOptionValues = chatSelect.children
+            .map((c) => (c as any).value ?? c.textContent)
+            .filter((v: string) => v !== "__separator__");
+        const embedOptionValues = embedSelect.children.map((c) => (c as any).value ?? c.textContent);
+
+        // Chat selector echoes models.chat.installed — including the contaminated names.
+        // This proves the plugin delegates role filtering to the server (no client-side
+        // re-filter that could drift out of sync with the server contract). Using sorted
+        // equality pins BOTH directions: no entries dropped, no entries added. If the
+        // plugin later adds a client-side filter, this fails. Order is normalized because
+        // the dropdown renders entries sorted — the invariant is the set, not the order.
+        expect([...chatOptionValues].sort()).toEqual(
+            ["llama3", "Qwen/Qwen2-VL-7B-Instruct", "BAAI/bge-reranker-v2-m3"].sort(),
+        );
+        expect(chatOptionValues).toHaveLength(3);
+
+        // Embedding selector is populated from catalog({task: EMBEDDING}), which the
+        // server scopes to embedding models. If the plugin were reading from listModels
+        // or a broader catalog call, vision/reranker names could leak here.
+        expect(embedOptionValues).toEqual(["nomic-embed-text"]);
+    });
+});

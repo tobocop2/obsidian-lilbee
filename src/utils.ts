@@ -128,14 +128,26 @@ export function errorMessage(err: unknown, fallback: string): string {
 }
 
 /**
- * Returns the stale-token notice when the error is a SessionTokenError, otherwise the fallback.
- * Use at `.isErr()` call sites where the fallback is an operation-specific generic message — this
- * preserves the generic text for non-auth failures while surfacing the actionable message for
- * stale tokens.
+ * Returns the most actionable message available for a Result error, falling back to the
+ * supplied generic text. Priority:
+ *   1. SessionTokenError → the stale-token notice (recovery action: paste a fresh token).
+ *   2. Role-mismatch 422 → the server's `detail` string verbatim (tells the user which
+ *      endpoint to use instead — see `isRoleMismatchDetail`).
+ *   3. Everything else → the operation-specific fallback.
+ *
+ * Use at `.isErr()` call sites. Centralizing role-mismatch detection here means every
+ * caller (Settings panels, CatalogModal, …) surfaces the same actionable diagnostic
+ * without duplicating the parse logic.
  */
 export function noticeForResultError(err: unknown, fallback: string): string {
     if (err instanceof SessionTokenError) {
         return MESSAGES.NOTICE_SESSION_TOKEN_INVALID;
+    }
+    if (err instanceof Error) {
+        const detail = extractServerErrorDetail(err.message);
+        if (detail !== null && isRoleMismatchDetail(detail)) {
+            return detail;
+        }
     }
     return fallback;
 }
@@ -153,6 +165,41 @@ export function extractSseErrorMessage(data: unknown, unknownFallback: string): 
         if (typeof msg === "string") return msg;
     }
     return unknownFallback;
+}
+
+/**
+ * Extract the server's `detail` string from a `Server responded <status>: <body>`
+ * error message when the body is JSON of shape `{"detail": "..."}`. Returns null
+ * when the error is not in this shape, the body is not JSON, or `detail` is not
+ * a string. Used to surface server-authored role-mismatch diagnostics verbatim.
+ */
+export function extractServerErrorDetail(message: string): string | null {
+    const colonIdx = message.indexOf(":");
+    if (colonIdx === -1) return null;
+    const body = message.slice(colonIdx + 1).trim();
+    if (!body) return null;
+    try {
+        const parsed = JSON.parse(body) as unknown;
+        if (parsed && typeof parsed === "object" && "detail" in parsed) {
+            const detail = (parsed as { detail?: unknown }).detail;
+            if (typeof detail === "string") return detail;
+        }
+    } catch {
+        return null;
+    }
+    return null;
+}
+
+/**
+ * Detect the server's role-mismatch error shape. Server PR #156 returns 422 with
+ * a detail like `"Model 'X' is a vision model, not chat. Set it via PUT /api/models/vision instead."`
+ * when a task-validation check fails. Distinguished from an auth-shaped 422
+ * (missing LiteLLM key) by the `Set it via PUT /api/models/` remedy phrase.
+ * The exact remedy prefix — not a bare `PUT /api/models/` substring — is used so unrelated
+ * 422s that happen to mention the endpoint (e.g. future docs-link errors) aren't misclassified.
+ */
+export function isRoleMismatchDetail(detail: string): boolean {
+    return detail.includes("Set it via PUT /api/models/");
 }
 
 /**
