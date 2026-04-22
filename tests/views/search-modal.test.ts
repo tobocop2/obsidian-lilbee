@@ -202,7 +202,7 @@ describe("SearchModal", () => {
 
             await (modal as any).runSearch("query");
 
-            expect(renderDocumentResult).toHaveBeenCalledWith((modal as any).resultsContainer, result, app);
+            expect(renderDocumentResult).toHaveBeenCalledWith((modal as any).resultsContainer, result, app, plugin.api);
         });
 
         it("shows 'No results found.' when results array is empty", async () => {

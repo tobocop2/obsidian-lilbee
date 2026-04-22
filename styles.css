@@ -2227,3 +2227,74 @@
     color: var(--interactive-accent);
 }
 
+/* Source preview modal (external-server sources that aren't in the vault) */
+.lilbee-preview-modal {
+    min-width: min(720px, 80vw);
+}
+
+.lilbee-preview-header {
+    font-family: var(--font-monospace);
+    font-size: 0.85em;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    word-break: break-all;
+}
+
+.lilbee-preview-path {
+    user-select: text;
+}
+
+.lilbee-preview-meta {
+    display: inline-block;
+    font-size: 0.8em;
+    color: var(--text-faint);
+    margin-bottom: 12px;
+}
+
+.lilbee-preview-host {
+    max-height: 60vh;
+    overflow-y: auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 12px;
+    background-color: var(--background-primary);
+}
+
+.lilbee-preview-loading {
+    width: 18px;
+    height: 18px;
+    margin: 24px auto;
+    border: 2px solid var(--background-modifier-border);
+    border-top-color: var(--interactive-accent);
+    border-radius: 50%;
+    animation: lilbee-spin 0.9s linear infinite;
+}
+
+.lilbee-preview-body {
+    font-size: 0.9em;
+    line-height: 1.45;
+}
+
+.lilbee-preview-pdf-object {
+    width: 100%;
+    height: 55vh;
+    border: none;
+}
+
+.lilbee-preview-error {
+    color: var(--text-error);
+    font-size: 0.9em;
+}
+
+.lilbee-preview-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.lilbee-preview-save[disabled] {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+

@@ -451,6 +451,14 @@ export const MESSAGES = {
     ERROR_LOAD_CONTENT: "Failed to load content.",
     LABEL_NO_CITATIONS: "No citations found.",
 
+    // Source preview modal (external server / non-vault sources)
+    TITLE_SOURCE_PREVIEW: "Source preview",
+    LABEL_PREVIEW_CLOSE: "Close",
+    LABEL_PREVIEW_SAVE_TO_VAULT: "Save to vault",
+    TOOLTIP_PREVIEW_SAVE_SOON: "Coming soon — available once the server supports vault storage.",
+    ERROR_PREVIEW_INVALID_SOURCE: "Cannot preview: source reference is empty.",
+    ERROR_PREVIEW_LOAD: (reason: string) => `Failed to load source: ${reason}`,
+
     // Lint
     TITLE_LINT_RESULTS: "Wiki lint results",
     LABEL_LINT_ISSUES: (n: number, pages: number) => `${n} issues across ${pages} pages`,

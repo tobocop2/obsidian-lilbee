@@ -1276,6 +1276,83 @@ describe("wikiPrune()", () => {
     });
 });
 
+describe("getSource()", () => {
+    it("calls GET /api/source?source=<encoded> and returns parsed body", async () => {
+        const data = { markdown: "# hello", content_type: "text/markdown" };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.getSource("crawled/example.com/index.md");
+
+        const url = new URL(fetchMock.mock.calls[0][0]);
+        expect(url.pathname).toBe("/api/source");
+        expect(url.searchParams.get("source")).toBe("crawled/example.com/index.md");
+        expect(url.searchParams.has("raw")).toBe(false);
+        expect(result).toEqual(data);
+    });
+
+    it("encodes sources with special characters", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ markdown: "", content_type: "text/plain" }));
+
+        await client.getSource("folder with spaces/file#frag.md");
+
+        // URLSearchParams round-trip: parsing the built URL must return the
+        // original source string verbatim.
+        const url = new URL(fetchMock.mock.calls[0][0]);
+        expect(url.searchParams.get("source")).toBe("folder with spaces/file#frag.md");
+    });
+
+    it("sends Authorization header when a token is set", async () => {
+        client.setToken("abc");
+        fetchMock.mockResolvedValue(jsonResponse({ markdown: "", content_type: "text/markdown" }));
+
+        await client.getSource("foo.md");
+
+        const init = fetchMock.mock.calls[0][1] as RequestInit;
+        expect((init.headers as Record<string, string>).Authorization).toBe("Bearer abc");
+    });
+
+    it("throws on 404 via assertOk", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 404,
+            text: () => Promise.resolve("not found"),
+        } as unknown as Response);
+
+        await expect(client.getSource("missing.md")).rejects.toThrow("Server responded 404: not found");
+    });
+});
+
+describe("getSourceRaw()", () => {
+    it("calls GET /api/source?source=<encoded>&raw=1 and returns the raw Response", async () => {
+        const fakeRes = {
+            ok: true,
+            status: 200,
+            text: () => Promise.resolve(""),
+            arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)),
+            headers: new Headers({ "content-type": "application/pdf" }),
+        } as unknown as Response;
+        fetchMock.mockResolvedValue(fakeRes);
+
+        const result = await client.getSourceRaw("book.pdf");
+
+        const url = new URL(fetchMock.mock.calls[0][0]);
+        expect(url.pathname).toBe("/api/source");
+        expect(url.searchParams.get("source")).toBe("book.pdf");
+        expect(url.searchParams.get("raw")).toBe("1");
+        expect(result).toBe(fakeRes);
+    });
+
+    it("throws on 404 via assertOk", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 404,
+            text: () => Promise.resolve("gone"),
+        } as unknown as Response);
+
+        await expect(client.getSourceRaw("missing.pdf")).rejects.toThrow("Server responded 404: gone");
+    });
+});
+
 describe("fetchWithRetry() — signal and AbortError", () => {
     it("sets caller-provided signal on fetch init", async () => {
         fetchMock.mockResolvedValue(jsonResponse({ status: "ok" }));

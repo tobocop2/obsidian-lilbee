@@ -118,7 +118,7 @@ export class SearchModal extends Modal {
                 return;
             }
             for (const result of results) {
-                renderDocumentResult(this.resultsContainer, result, this.app);
+                renderDocumentResult(this.resultsContainer, result, this.app, this.plugin.api);
             }
         } catch {
             new Notice(MESSAGES.ERROR_COULD_NOT_CONNECT);

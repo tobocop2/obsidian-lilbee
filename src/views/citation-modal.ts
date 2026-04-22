@@ -1,8 +1,9 @@
 import { App, Modal } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { WikiCitation, WikiCitationChain } from "../types";
+import type { Source, WikiCitation, WikiCitationChain } from "../types";
 import { MESSAGES } from "../locales/en";
 import { formatLocation } from "./results";
+import { executeSourceClick, sourceClickAction } from "../utils/source-click";
 
 export class CitationModal extends Modal {
     private plugin: LilbeePlugin;
@@ -80,7 +81,17 @@ export class CitationModal extends Modal {
         });
         sourceLink.addEventListener("click", (e) => {
             e.preventDefault();
-            this.app.workspace.openLinkText(citation.source_filename, "");
+            const source: Source = {
+                source: citation.source_filename,
+                content_type: "",
+                distance: 0,
+                chunk: citation.excerpt,
+                page_start: citation.page_start,
+                page_end: citation.page_end,
+                line_start: citation.line_start,
+                line_end: citation.line_end,
+            };
+            void executeSourceClick(this.app, this.plugin.api, sourceClickAction(source, this.app.vault));
         });
 
         // Location info
