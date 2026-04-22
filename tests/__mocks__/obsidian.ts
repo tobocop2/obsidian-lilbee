@@ -596,7 +596,12 @@ class MockDropdownComponent {
 
 class MockToggleComponent {
     private _onChange: ((v: boolean) => void) | null = null;
+    disabled = false;
     setValue(_v: boolean): this {
+        return this;
+    }
+    setDisabled(disabled: boolean): this {
+        this.disabled = disabled;
         return this;
     }
     onChange(cb: (v: boolean) => void): this {

@@ -112,6 +112,12 @@ export const MESSAGES = {
         "Reset every server-backed setting to its default? API keys and local plugin preferences are preserved.",
     BUTTON_RESET_ALL: "Reset all",
     LABEL_ADVANCED: "Advanced",
+    LABEL_STORE_CONTENT_IN_VAULT: "Store lilbee content in vault",
+    DESC_STORE_CONTENT_IN_VAULT:
+        "Materialize crawled pages and imported files inside your vault so you can browse them in Obsidian. Disabled for external servers — their files live on the server machine, not your computer.",
+    NOTICE_STORAGE_REORGANIZING: "Reorganizing lilbee storage into your vault…",
+    NOTICE_STORAGE_REORGANIZED: "Lilbee storage is now inside your vault.",
+    NOTICE_STORAGE_REORGANIZE_FAILED: "Could not move lilbee storage into your vault: ",
     LABEL_EMBEDDING_MODEL: "Embedding model",
     LABEL_LLM_PROVIDER: "AI backend",
     LABEL_API_KEY: "API key",

@@ -176,7 +176,6 @@ export default class LilbeePlugin extends Plugin {
     async onload(): Promise<void> {
         await this.loadSettings();
         this.wikiEnabled = this.settings.wikiEnabled;
-        // TODO(vault-native-storage): on managed-load, PATCH documents_dir + vault_base; skip if already correct.
 
         this.statusBarEl = this.addStatusBarItem();
         this.statusBarEl.style.cursor = "pointer";
@@ -293,11 +292,58 @@ export default class LilbeePlugin extends Plugin {
                 this.api.setTokenProvider(() => this.readCurrentToken());
                 this.api.setToken(this.readCurrentToken());
                 this.fetchActiveModel();
+                void this.configureManagedStorage();
             } catch (err) {
                 this.showError("failed to start server", err);
             }
         } finally {
             this.startingServer = false;
+        }
+    }
+
+    /**
+     * Tell the managed server to store content under the vault.
+     *
+     * PATCHes ``documents_dir`` to ``<vault>/lilbee`` and ``vault_base`` to the
+     * vault root. Server performs a locked relocation if paths changed, then
+     * stamps ``vault_path`` on every Source response so chat-chip clicks can
+     * deep-link into the local editor. No-op when the toggle is off, the
+     * server is external, or the current values already match.
+     */
+    async configureManagedStorage(): Promise<void> {
+        if (this.settings.serverMode !== SERVER_MODE.MANAGED) return;
+        if (!this.settings.storeContentInVault) return;
+
+        const vaultBase = this.getVaultBasePath();
+        const desiredDocsDir = `${vaultBase}/lilbee`;
+
+        let current: Record<string, unknown>;
+        try {
+            current = await this.api.config();
+        } catch (err) {
+            console.error("[lilbee] could not read server config for vault setup", err);
+            return;
+        }
+
+        const currentDocs = typeof current.documents_dir === "string" ? current.documents_dir : "";
+        const currentVault = typeof current.vault_base === "string" ? current.vault_base : null;
+        if (currentDocs === desiredDocsDir && currentVault === vaultBase) {
+            return;
+        }
+
+        const notice = new Notice(MESSAGES.NOTICE_STORAGE_REORGANIZING, NOTICE_PERMANENT);
+        try {
+            await this.api.updateConfig({
+                documents_dir: desiredDocsDir,
+                vault_base: vaultBase,
+            });
+            notice.hide();
+            new Notice(MESSAGES.NOTICE_STORAGE_REORGANIZED);
+        } catch (err) {
+            notice.hide();
+            const detail = errorMessage(err, String(err));
+            new Notice(`${MESSAGES.NOTICE_STORAGE_REORGANIZE_FAILED}${detail}`, NOTICE_ERROR_DURATION_MS);
+            console.error("[lilbee] storage reorganisation failed", err);
         }
     }
 

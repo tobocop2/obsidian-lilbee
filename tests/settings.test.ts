@@ -82,6 +82,7 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
     const runWikiPrune = vi.fn().mockResolvedValue(undefined);
     const initWikiSync = vi.fn();
     const reconcileWiki = vi.fn().mockResolvedValue(undefined);
+    const configureManagedStorage = vi.fn().mockResolvedValue(undefined);
     return {
         settings,
         api,
@@ -93,6 +94,7 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
         runWikiPrune,
         initWikiSync,
         reconcileWiki,
+        configureManagedStorage,
         activeModel: "",
         wikiEnabled: overrides.wikiEnabled !== undefined ? settings.wikiEnabled : true,
         wikiSync: null,
@@ -240,6 +242,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
                 if (ownOnChange) void ownOnChange(v);
                 return fakeToggle;
             },
+            setDisabled: (_d: boolean) => fakeToggle,
             onChange: (handler: ToggleOnChange) => {
                 ownOnChange = handler;
                 toggleOnChanges.push(handler);
@@ -471,6 +474,47 @@ describe("LilbeeSettingTab", () => {
 
             // When adaptiveThreshold is undefined, setValue should use ?? false fallback
             expect(() => tab.display()).not.toThrow();
+        });
+    });
+
+    describe("storeContentInVault toggle", () => {
+        function storeToggleIdx(toggleOnChanges: unknown[]): number {
+            // Store-content toggle is rendered first inside the Advanced section, which runs
+            // after the Wiki section. It lands right after the last wiki toggle.
+            return toggleOnChanges.length - 1;
+        }
+
+        it("onChange true persists and triggers configureManagedStorage", async () => {
+            const plugin = makePlugin({ serverMode: "managed", storeContentInVault: false });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await toggleOnChanges[storeToggleIdx(toggleOnChanges)](true);
+            expect(plugin.settings.storeContentInVault).toBe(true);
+            expect(plugin.saveSettings).toHaveBeenCalled();
+            expect((plugin as any).configureManagedStorage).toHaveBeenCalled();
+        });
+
+        it("onChange false persists and does not trigger configureManagedStorage", async () => {
+            const plugin = makePlugin({ serverMode: "managed", storeContentInVault: true });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await toggleOnChanges[storeToggleIdx(toggleOnChanges)](false);
+            expect(plugin.settings.storeContentInVault).toBe(false);
+            expect((plugin as any).configureManagedStorage).not.toHaveBeenCalled();
+        });
+
+        it("is disabled and marks the row in external mode", async () => {
+            const plugin = makePlugin({ serverMode: "external", storeContentInVault: true });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const rows = tab.containerEl.querySelectorAll(".lilbee-setting-disabled");
+            expect(rows.length).toBeGreaterThan(0);
         });
     });
 
@@ -3789,7 +3833,7 @@ describe("managed mode settings", () => {
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
             // wiki prune toggle is before the sync-to-vault toggle
-            const wikiPruneToggleIdx = toggleOnChanges.length - 2;
+            const wikiPruneToggleIdx = toggleOnChanges.length - 3;
             await toggleOnChanges[wikiPruneToggleIdx](true);
             expect(plugin.settings.wikiPruneRaw).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -3862,7 +3906,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const wikiPruneToggleIdx = toggleOnChanges.length - 2;
+            const wikiPruneToggleIdx = toggleOnChanges.length - 3;
             await toggleOnChanges[wikiPruneToggleIdx](true);
             expect(
                 Notice.instances.some((n: any) => n.message.includes("failed to update Remove source duplicates")),
@@ -3876,7 +3920,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const syncToggleIdx = toggleOnChanges.length - 1;
+            const syncToggleIdx = toggleOnChanges.length - 2;
             await toggleOnChanges[syncToggleIdx](true);
             expect(plugin.settings.wikiSyncToVault).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -3891,7 +3935,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const syncToggleIdx = toggleOnChanges.length - 1;
+            const syncToggleIdx = toggleOnChanges.length - 2;
             await toggleOnChanges[syncToggleIdx](false);
             expect(plugin.settings.wikiSyncToVault).toBe(false);
             expect(plugin.wikiSync).toBeNull();

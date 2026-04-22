@@ -3906,6 +3906,136 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.wikiPrune).not.toHaveBeenCalled();
         });
     });
+
+    describe("configureManagedStorage()", () => {
+        async function setupConfiguredPlugin(
+            overrides: Record<string, unknown> = {},
+            apiOverrides: { config?: any; updateConfig?: any } = {},
+        ) {
+            const plugin = await createPlugin({
+                serverMode: "managed",
+                storeContentInVault: true,
+                ...overrides,
+            });
+            await plugin.onload();
+            await flush();
+            if (plugin.api) {
+                if (apiOverrides.config) {
+                    (plugin.api as any).config = apiOverrides.config;
+                }
+                if (apiOverrides.updateConfig) {
+                    (plugin.api as any).updateConfig = apiOverrides.updateConfig;
+                }
+            }
+            Notice.clear();
+            return plugin;
+        }
+
+        it("no-ops in external mode", async () => {
+            const updateConfig = vi.fn();
+            const plugin = await setupConfiguredPlugin(
+                { serverMode: "external", storeContentInVault: true },
+                {
+                    config: vi.fn().mockResolvedValue({}),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("no-ops when storeContentInVault is off", async () => {
+            const updateConfig = vi.fn();
+            const plugin = await setupConfiguredPlugin(
+                { storeContentInVault: false },
+                { config: vi.fn().mockResolvedValue({}), updateConfig },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("PATCHes documents_dir and vault_base when they differ", async () => {
+            const updateConfig = vi.fn().mockResolvedValue({ updated: ["documents_dir", "vault_base"] });
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({
+                        documents_dir: "/old/docs",
+                        vault_base: null,
+                    }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalledWith({
+                documents_dir: "/test/vault/lilbee",
+                vault_base: "/test/vault",
+            });
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_STORAGE_REORGANIZED);
+        });
+
+        it("skips PATCH when server already matches desired layout", async () => {
+            const updateConfig = vi.fn();
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({
+                        documents_dir: "/test/vault/lilbee",
+                        vault_base: "/test/vault",
+                    }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).not.toHaveBeenCalled();
+            expect(Notice.instances).toHaveLength(0);
+        });
+
+        it("surfaces a failure Notice when PATCH rejects", async () => {
+            const updateConfig = vi.fn().mockRejectedValue(new Error("disk full"));
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({
+                        documents_dir: "/old/docs",
+                        vault_base: null,
+                    }),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages.some((m) => m.startsWith(MESSAGES.NOTICE_STORAGE_REORGANIZE_FAILED))).toBe(true);
+            expect(messages.some((m) => m.includes("disk full"))).toBe(true);
+        });
+
+        it("returns silently when fetching current config fails", async () => {
+            const updateConfig = vi.fn();
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockRejectedValue(new Error("server down")),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("treats non-string documents_dir/vault_base from server as needing update", async () => {
+            // Older server may not return these fields at all (undefined).
+            const updateConfig = vi.fn().mockResolvedValue({ updated: ["documents_dir", "vault_base"] });
+            const plugin = await setupConfiguredPlugin(
+                {},
+                {
+                    config: vi.fn().mockResolvedValue({}),
+                    updateConfig,
+                },
+            );
+            await plugin.configureManagedStorage();
+            expect(updateConfig).toHaveBeenCalled();
+        });
+    });
 });
 
 describe("FileProgressTracker", () => {

@@ -150,6 +150,12 @@ export interface LilbeeSettings {
     hfToken: string;
     enableOcr: boolean | null;
     manualToken: string;
+    /**
+     * Store lilbee's managed content (crawls, imported files) inside the vault
+     * instead of the server's data directory. Only honoured in managed mode —
+     * external servers keep their own documents_dir.
+     */
+    storeContentInVault: boolean;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -173,6 +179,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     hfToken: "",
     enableOcr: null,
     manualToken: "",
+    storeContentInVault: true,
 };
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */
