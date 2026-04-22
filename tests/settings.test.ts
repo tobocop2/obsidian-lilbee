@@ -69,6 +69,7 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
         deleteModel: vi.fn(),
         showModel: vi.fn().mockRejectedValue(new Error("no model")),
         config: vi.fn().mockRejectedValue(new Error("unreachable")),
+        configDefaults: vi.fn().mockRejectedValue(new Error("unreachable")),
         updateConfig: vi.fn().mockResolvedValue({ updated: [], reindex_required: false }),
         setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
         catalog: vi.fn().mockResolvedValue(err(new Error("unreachable"))),
@@ -137,6 +138,7 @@ interface Captured {
     dropdownOnChanges: DropdownOnChange[];
     toggleOnChanges: ToggleOnChange[];
     buttonOnClicks: ButtonOnClick[];
+    extraButtonOnClicks: ButtonOnClick[];
 }
 
 function captureSettingCallbacks(fn: () => void): Captured {
@@ -147,6 +149,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
     const dropdownOnChanges: DropdownOnChange[] = [];
     const toggleOnChanges: ToggleOnChange[] = [];
     const buttonOnClicks: ButtonOnClick[] = [];
+    const extraButtonOnClicks: ButtonOnClick[] = [];
 
     const origAddText = Setting.prototype.addText;
     const origAddTextArea = (Setting.prototype as any).addTextArea;
@@ -154,6 +157,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
     const origAddDropdown = Setting.prototype.addDropdown;
     const origAddToggle = (Setting.prototype as any).addToggle;
     const origAddButton = Setting.prototype.addButton;
+    const origAddExtraButton = (Setting.prototype as any).addExtraButton;
 
     Setting.prototype.addText = function (cb: (text: any) => void) {
         const fakeText = {
@@ -167,6 +171,8 @@ function captureSettingCallbacks(fn: () => void): Captured {
                 placeholder: "",
                 type: "text",
                 value: "",
+                addClass: vi.fn(),
+                classList: { add: vi.fn(), remove: vi.fn() },
                 addEventListener: (event: string, handler: BlurHandler) => {
                     if (event === "blur") blurHandlers.push({ handler, inputEl: fakeText.inputEl });
                 },
@@ -184,7 +190,13 @@ function captureSettingCallbacks(fn: () => void): Captured {
                 textAreaOnChanges.push(handler);
                 return fakeText;
             },
-            inputEl: { placeholder: "", addEventListener: vi.fn() },
+            inputEl: {
+                placeholder: "",
+                value: "",
+                addClass: vi.fn(),
+                classList: { add: vi.fn(), remove: vi.fn() },
+                addEventListener: vi.fn(),
+            },
         };
         cb(fakeText);
         return this;
@@ -219,9 +231,17 @@ function captureSettingCallbacks(fn: () => void): Captured {
     };
 
     (Setting.prototype as any).addToggle = function (cb: (toggle: any) => void) {
+        // Mirrors real Obsidian ToggleComponent: setValue(v) programmatically flips the underlying
+        // checkbox which triggers onChange. Required so tests exercise the echo-patch path the
+        // suppressToggleChanges flag guards against (bb-t6yg).
+        let ownOnChange: ToggleOnChange | null = null;
         const fakeToggle = {
-            setValue: () => fakeToggle,
+            setValue: (v: boolean) => {
+                if (ownOnChange) void ownOnChange(v);
+                return fakeToggle;
+            },
             onChange: (handler: ToggleOnChange) => {
+                ownOnChange = handler;
                 toggleOnChanges.push(handler);
                 return fakeToggle;
             },
@@ -234,8 +254,22 @@ function captureSettingCallbacks(fn: () => void): Captured {
         const fakeBtn = {
             setButtonText: () => fakeBtn,
             setDisabled: () => fakeBtn,
+            setWarning: () => fakeBtn,
             onClick: (handler: ButtonOnClick) => {
                 buttonOnClicks.push(handler);
+                return fakeBtn;
+            },
+        };
+        cb(fakeBtn);
+        return this;
+    };
+
+    (Setting.prototype as any).addExtraButton = function (cb: (btn: any) => void) {
+        const fakeBtn = {
+            setIcon: () => fakeBtn,
+            setTooltip: () => fakeBtn,
+            onClick: (handler: ButtonOnClick) => {
+                extraButtonOnClicks.push(handler);
                 return fakeBtn;
             },
         };
@@ -252,6 +286,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
         Setting.prototype.addDropdown = origAddDropdown;
         (Setting.prototype as any).addToggle = origAddToggle;
         Setting.prototype.addButton = origAddButton;
+        (Setting.prototype as any).addExtraButton = origAddExtraButton;
     }
 
     return {
@@ -262,6 +297,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
         dropdownOnChanges,
         toggleOnChanges,
         buttonOnClicks,
+        extraButtonOnClicks,
     };
 }
 
@@ -533,78 +569,73 @@ describe("LilbeeSettingTab", () => {
         ] as const;
 
         for (const { idx, key, value, expected } of GEN_FIELDS) {
-            it(`sets ${key} to parsed number`, async () => {
+            it(`patches ${key} to parsed number`, async () => {
                 const plugin = makePlugin();
                 (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
                 const tab = makeTab(plugin);
                 const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
                 await textOnChanges[idx](value);
-                expect((plugin.settings as any)[key]).toBe(expected);
-                expect(plugin.saveSettings).toHaveBeenCalled();
+                expect(plugin.api.updateConfig).toHaveBeenCalledWith({ [key]: expected });
             });
 
-            it(`sets ${key} to null when cleared`, async () => {
+            it(`patches ${key} to null when cleared`, async () => {
                 const plugin = makePlugin();
                 (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
                 const tab = makeTab(plugin);
                 const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-                await textOnChanges[idx](value);
-                (plugin.saveSettings as ReturnType<typeof vi.fn>).mockClear();
                 await textOnChanges[idx]("");
-                expect((plugin.settings as any)[key]).toBeNull();
-                expect(plugin.saveSettings).toHaveBeenCalled();
+                expect(plugin.api.updateConfig).toHaveBeenCalledWith({ [key]: null });
             });
         }
 
-        it("ignores NaN input for integer field", async () => {
+        it("does not patch for NaN integer input", async () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
             await textOnChanges[3]("not-a-number");
-            expect(plugin.settings.top_k_sampling).toBeNull();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalledWith(
+                expect.objectContaining({ top_k_sampling: expect.anything() }),
+            );
         });
 
-        it("ignores NaN input for float field", async () => {
+        it("does not patch for NaN float input", async () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
             await textOnChanges[1]("abc");
-            expect(plugin.settings.temperature).toBeNull();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalledWith(
+                expect.objectContaining({ temperature: expect.anything() }),
+            );
         });
 
-        it("displays existing non-null value", () => {
+        it("surfaces a failure notice when the server rejects the patch", async () => {
+            Notice.clear();
             const plugin = makePlugin();
-            plugin.settings.temperature = 0.5;
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("boom"));
             const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const setValues: string[] = [];
-            const origAddText = Setting.prototype.addText;
-            Setting.prototype.addText = function (cb: (text: any) => void) {
-                const fakeText = {
-                    setPlaceholder: () => fakeText,
-                    setValue: (v: string) => {
-                        setValues.push(v);
-                        return fakeText;
-                    },
-                    onChange: () => fakeText,
-                    inputEl: { placeholder: "", addEventListener: vi.fn() },
-                };
-                cb(fakeText);
-                return this;
-            };
+            await textOnChanges[1]("0.7");
+            expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+        });
 
-            tab.display();
-            Setting.prototype.addText = origAddText;
+        it("surfaces a failure notice when the null-clear PATCH is rejected", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("boom"));
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 1 is temperature (0=port, systemPrompt is textarea)
-            expect(setValues[1]).toBe("0.5");
+            await textOnChanges[1]("");
+            expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
         });
 
         it("renders inside a <details> element", () => {
@@ -620,7 +651,7 @@ describe("LilbeeSettingTab", () => {
             expect(summary?.textContent).toBe("Advanced settings (no model selected)");
         });
 
-        it("uses 'Not set' placeholders before model defaults load", () => {
+        it("uses 'Not set' placeholders on fresh mount", () => {
             const plugin = makePlugin();
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
@@ -644,31 +675,10 @@ describe("LilbeeSettingTab", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // Indices 1-6 are generation fields (0=port, systemPrompt is textarea)
+            // Indices 1-6 are the 6 generation fields (0=port, systemPrompt is textarea).
             for (let i = 1; i <= 6; i++) {
                 expect(placeholders[i]).toBe("Not set");
             }
-        });
-
-        it("populates placeholders from active model defaults", async () => {
-            const plugin = makePlugin();
-            (plugin as any).activeModel = "llama3";
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-            (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({
-                temperature: 0.6,
-                top_p: 0.9,
-                top_k: 40,
-                repeat_penalty: 1.1,
-                num_ctx: 8192,
-            });
-
-            const tab = makeTab(plugin);
-            tab.display();
-
-            // Wait for async loadModelDefaults to resolve
-            await new Promise((r) => setTimeout(r, 0));
-
-            expect(plugin.api.showModel).toHaveBeenCalledWith("llama3");
         });
 
         it("shows model name in summary when active model is set", () => {
@@ -692,8 +702,8 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-            // Setup wizard + Start + Check for updates + Refresh + Browse Catalog + Wiki Lint + Wiki Prune = 7
-            expect(buttonOnClicks.length).toBe(7);
+            // Setup wizard + Start + Check for updates + Refresh + Browse Catalog + Wiki Lint + Wiki Prune + Reset all = 8
+            expect(buttonOnClicks.length).toBe(8);
             // Refresh is the fourth button (index 3)
             await expect(buttonOnClicks[3]()).resolves.not.toThrow();
         });
@@ -3045,12 +3055,57 @@ describe("managed mode settings", () => {
             expect(setValueSpy).toHaveBeenCalledWith(false);
         });
 
-        it("populates generation field placeholders from server config", async () => {
+        it("does not echo-patch the server when populating a toggle from cfg (bb-t6yg)", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+
+            // Real path: plug the retry toggle into serverConfigToggles, clear previous PATCHes,
+            // then call loadServerDefaults. The mock's setValue fires onChange (mirroring
+            // Obsidian), and the suppress flag must prevent a PATCH round-trip.
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                crawl_retry_on_rate_limit: true,
+            });
+            await (tab as any).loadServerDefaults();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("without the suppress flag, a toggle setValue onChange WOULD echo-patch", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+            // Invoke the crawl_retry_on_rate_limit onChange without the flag — proves the guard is
+            // load-bearing (if the flag failed to set, updateConfig WOULD be called).
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            (tab as any).suppressToggleChanges = false;
+            await toggleOnChanges[1](true);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: true });
+        });
+
+        it("suppressToggleChanges === true short-circuits the crawl-retry toggle onChange", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            (tab as any).suppressToggleChanges = true;
+            await toggleOnChanges[1](true);
+            (tab as any).suppressToggleChanges = false;
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("populates generation field values from server config", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 temperature: 0.7,
                 top_p: 0.9,
-                top_k: 40,
+                top_k_sampling: 40,
                 repeat_penalty: 1.1,
                 num_ctx: 4096,
                 seed: 42,
@@ -3059,15 +3114,15 @@ describe("managed mode settings", () => {
             (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
             const tab = makeTab(plugin);
 
-            // Track input elements to verify placeholders
-            const inputs: Array<{ placeholder: string }> = [];
+            // Track input elements to verify the value was written.
+            const inputs: Array<{ placeholder: string; value: string }> = [];
             const origAddText = Setting.prototype.addText;
             Setting.prototype.addText = function (cb: (text: any) => void) {
                 const fakeText = {
                     setPlaceholder: () => fakeText,
                     setValue: () => fakeText,
                     onChange: () => fakeText,
-                    inputEl: { placeholder: "", addEventListener: vi.fn() },
+                    inputEl: { placeholder: "", value: "", addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 inputs.push(fakeText.inputEl);
@@ -3080,7 +3135,7 @@ describe("managed mode settings", () => {
                     setPlaceholder: () => fakeText,
                     setValue: () => fakeText,
                     onChange: () => fakeText,
-                    inputEl: { placeholder: "", addEventListener: vi.fn() },
+                    inputEl: { placeholder: "", value: "", addClass: vi.fn(), addEventListener: vi.fn() },
                 };
                 cb(fakeText);
                 textAreas.push(fakeText.inputEl);
@@ -3090,16 +3145,273 @@ describe("managed mode settings", () => {
             Setting.prototype.addText = origAddText;
             (Setting.prototype as any).addTextArea = origAddTextArea;
 
-            // Wait for async loadServerDefaults
+            // Wait for async loadServerDefaults.
             await new Promise((r) => setTimeout(r, 0));
 
-            // Gen field placeholders should be set from server config
-            // inputs[1] = temperature (0=port)
-            expect(inputs[1].placeholder).toBe("0.7");
-            expect(inputs[2].placeholder).toBe("0.9");
+            // Gen field values should be populated from server config.
+            // inputs[1] = temperature (0=port).
+            expect(inputs[1].value).toBe("0.7");
+            expect(inputs[2].value).toBe("0.9");
 
-            // System prompt textarea placeholder should be set
+            // System prompt textarea placeholder is still populated from server defaults.
             expect(textAreas[0].placeholder).toBe("You are helpful.");
+        });
+
+        it("populates crawl_exclude_patterns textarea from server config array", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                crawl_exclude_patterns: ["/page/\\d+/?$", "/tag/"],
+            });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const textAreas: Array<{ value: string; placeholder: string }> = [];
+            const origAddTextArea = (Setting.prototype as any).addTextArea;
+            (Setting.prototype as any).addTextArea = function (cb: (text: any) => void) {
+                const fakeText = {
+                    setPlaceholder: () => fakeText,
+                    setValue: () => fakeText,
+                    onChange: () => fakeText,
+                    inputEl: { placeholder: "", value: "", addClass: vi.fn(), addEventListener: vi.fn() },
+                };
+                cb(fakeText);
+                textAreas.push(fakeText.inputEl);
+                return this;
+            };
+            tab.display();
+            (Setting.prototype as any).addTextArea = origAddTextArea;
+            await new Promise((r) => setTimeout(r, 0));
+            // Last textarea is crawl_exclude_patterns (systemPrompt is first).
+            expect(textAreas[textAreas.length - 1].value).toBe("/page/\\d+/?$\n/tag/");
+        });
+    });
+
+    describe("loadConfigDefaults", () => {
+        it("caches the server response for later reset lookups", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ chunk_size: 512 });
+            const tab = makeTab(plugin);
+            tab.display();
+            await vi.waitFor(() => {
+                expect((tab as any).configDefaults).toEqual({ chunk_size: 512 });
+            });
+        });
+
+        it("falls back to an empty map when the endpoint is missing", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("404"));
+            const tab = makeTab(plugin);
+            tab.display();
+            await vi.waitFor(() => {
+                expect((tab as any).configDefaults).toEqual({});
+            });
+        });
+    });
+
+    describe("crawl_exclude_patterns textarea", () => {
+        it("PATCHes the array split on newlines, trimmed, empties dropped", async () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
+            // textAreaOnChanges[0] = systemPrompt, textAreaOnChanges[1] = crawl_exclude_patterns.
+            await textAreaOnChanges[1]("  /page/\\d+/?$  \n\n/tag/\n  \n/author/");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({
+                crawl_exclude_patterns: ["/page/\\d+/?$", "/tag/", "/author/"],
+            });
+        });
+
+        it("surfaces a failure notice when the server rejects", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            const tab = makeTab(plugin);
+            const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
+            await textAreaOnChanges[1]("/page/");
+            expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+        });
+    });
+
+    describe("per-row reset-to-default affordance", () => {
+        // Reset button order (managed + manual-sync defaults):
+        // 0=serverMode(local) 1=serverPort(local) 2=topK 3=maxDistance 4=adaptiveThreshold
+        // 5=systemPrompt(local) 6=temperature 7=top_p 8=top_k_sampling 9=repeat_penalty
+        // 10=num_ctx 11=seed 12=syncMode(local) 13=crawl_max_depth ...
+        const TEMPERATURE_RESET = 6;
+
+        it("server-backed reset PATCHes the cached default", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            // Seed the cache directly so we don't race the async configDefaults fetch.
+            (tab as any).configDefaults = { temperature: 0.7 };
+            await extraButtonOnClicks[TEMPERATURE_RESET]();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ temperature: 0.7 });
+        });
+
+        it("server-backed reset silently no-ops when defaults haven't loaded yet", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            (tab as any).configDefaults = {};
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            await extraButtonOnClicks[TEMPERATURE_RESET]();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            expect(Notice.instances.length).toBe(0);
+        });
+
+        it("server-backed reset surfaces a reset-failure notice when updateConfig rejects", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            (tab as any).configDefaults = { temperature: 0.7 };
+            await extraButtonOnClicks[TEMPERATURE_RESET]();
+            expect(Notice.instances.some((n) => n.message.includes("failed to reset"))).toBe(true);
+        });
+
+        it("local reset writes DEFAULT_SETTINGS[key] to plugin state", async () => {
+            const plugin = makePlugin({ serverMode: "external" });
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            // Index 0 is the serverMode reset (local).
+            await extraButtonOnClicks[0]();
+            expect(plugin.settings.serverMode).toBe(DEFAULT_SETTINGS.serverMode);
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+    });
+
+    describe("appendDualResetAffordance (server PATCH + plugin.settings mirror)", () => {
+        it("resets wiki_prune_raw by PATCHing the default AND mirroring back to wikiPruneRaw", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ wikiEnabled: true, wikiPruneRaw: true });
+            (plugin as any).wikiEnabled = true;
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            // configDefaults is re-fetched on each display(); keep it resolving to our seed.
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ wiki_prune_raw: false });
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            // Search for the reset button whose click PATCHes wiki_prune_raw.
+            for (let i = 0; i < extraButtonOnClicks.length; i++) {
+                (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+                await extraButtonOnClicks[i]();
+                const call = (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mock.calls[0];
+                if (call && JSON.stringify(call[0]) === JSON.stringify({ wiki_prune_raw: false })) {
+                    expect(plugin.settings.wikiPruneRaw).toBe(false);
+                    expect(plugin.saveSettings).toHaveBeenCalled();
+                    return;
+                }
+            }
+            throw new Error("wiki_prune_raw dual-reset button not found");
+        });
+
+        it("no-ops silently when the key is absent from configDefaults", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ wikiEnabled: true });
+            (plugin as any).wikiEnabled = true;
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            // configDefaults resolves to empty so the early-return branch is exercised.
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            for (let i = 0; i < extraButtonOnClicks.length; i++) {
+                await extraButtonOnClicks[i]();
+            }
+            const wikiCalls = (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mock.calls.filter(
+                (c) => "wiki_prune_raw" in (c[0] as object) || "wiki_faithfulness_threshold" in (c[0] as object),
+            );
+            expect(wikiCalls).toEqual([]);
+        });
+
+        it("surfaces a reset-failure notice when updateConfig rejects", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ wikiEnabled: true });
+            (plugin as any).wikiEnabled = true;
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ wiki_prune_raw: false });
+            const tab = makeTab(plugin);
+            const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+            for (let i = 0; i < extraButtonOnClicks.length; i++) {
+                await extraButtonOnClicks[i]();
+            }
+            expect(
+                Notice.instances.some((n: any) => n.message.includes("failed to reset Remove source duplicates")),
+            ).toBe(true);
+        });
+    });
+
+    describe("global 'Reset all settings' button", () => {
+        it("does not PATCH when the user cancels the confirm modal", async () => {
+            Notice.clear();
+            mockGenericConfirmResult = false;
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+            (tab as any).configDefaults = { chunk_size: 512 };
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            await buttonOnClicks[buttonOnClicks.length - 1]();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            mockGenericConfirmResult = true;
+        });
+
+        it("PATCHes every default (minus credentials) when confirmed", async () => {
+            Notice.clear();
+            mockGenericConfirmResult = true;
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+            (tab as any).configDefaults = {
+                chunk_size: 512,
+                crawl_max_depth: 2,
+                openai_api_key: "",
+                hf_token: "",
+            };
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            await buttonOnClicks[buttonOnClicks.length - 1]();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512, crawl_max_depth: 2 });
+            expect(Notice.instances.some((n) => n.message.includes("reset to defaults"))).toBe(true);
+        });
+
+        it("does not PATCH when every default is filtered out by the credential block", async () => {
+            mockGenericConfirmResult = true;
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+            (tab as any).configDefaults = { openai_api_key: "", hf_token: "" };
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            await buttonOnClicks[buttonOnClicks.length - 1]();
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("shows a failure notice when the batched PATCH rejects", async () => {
+            Notice.clear();
+            mockGenericConfirmResult = true;
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            const tab = makeTab(plugin);
+            const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+            (tab as any).configDefaults = { chunk_size: 512 };
+            await buttonOnClicks[buttonOnClicks.length - 1]();
+            expect(Notice.instances.some((n) => n.message.includes("failed to reset"))).toBe(true);
         });
     });
 
@@ -3523,8 +3835,9 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-            // The lint button is the second-to-last button (prune is last)
-            const lintIdx = buttonOnClicks.length - 2;
+            // Wiki section renders before the Advanced section's Reset-all button, so lint/prune sit
+            // 3rd/2nd from the end: … lint, prune, reset-all.
+            const lintIdx = buttonOnClicks.length - 3;
             await buttonOnClicks[lintIdx]();
             expect(plugin.runWikiLint).toHaveBeenCalled();
         });
@@ -3536,8 +3849,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-            // The prune button is the last button
-            const pruneIdx = buttonOnClicks.length - 1;
+            const pruneIdx = buttonOnClicks.length - 2;
             await buttonOnClicks[pruneIdx]();
             expect(plugin.runWikiPrune).toHaveBeenCalled();
         });
@@ -3552,7 +3864,9 @@ describe("managed mode settings", () => {
 
             const wikiPruneToggleIdx = toggleOnChanges.length - 2;
             await toggleOnChanges[wikiPruneToggleIdx](true);
-            expect(Notice.instances.some((n: any) => n.message.includes("failed to update prune raw"))).toBe(true);
+            expect(
+                Notice.instances.some((n: any) => n.message.includes("failed to update Remove source duplicates")),
+            ).toBe(true);
         });
 
         it("sync-to-vault toggle enables wiki sync", async () => {
@@ -3649,9 +3963,9 @@ describe("managed mode settings", () => {
 
             const faithfulnessIdx = sliderOnChanges.length - 1;
             await sliderOnChanges[faithfulnessIdx](0.5);
-            expect(
-                Notice.instances.some((n: any) => n.message.includes("failed to update faithfulness threshold")),
-            ).toBe(true);
+            expect(Notice.instances.some((n: any) => n.message.includes("failed to update Summary accuracy"))).toBe(
+                true,
+            );
         });
     });
 

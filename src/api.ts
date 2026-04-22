@@ -343,6 +343,11 @@ export class LilbeeClient {
         return res.json();
     }
 
+    async configDefaults(): Promise<Record<string, unknown>> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/config/defaults`);
+        return res.json();
+    }
+
     async updateConfig(updates: Record<string, unknown>): Promise<ConfigUpdateResponse> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/config`, {
             method: "PATCH",

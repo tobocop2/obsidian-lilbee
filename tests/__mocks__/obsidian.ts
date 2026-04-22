@@ -492,6 +492,10 @@ export class Setting {
         cb(new MockToggleComponent());
         return this;
     }
+    addExtraButton(cb: (btn: MockExtraButtonComponent) => void): this {
+        cb(new MockExtraButtonComponent());
+        return this;
+    }
 }
 
 function mockInputEl(): {
@@ -499,8 +503,17 @@ function mockInputEl(): {
     type: string;
     value: string;
     addEventListener: ReturnType<typeof vi.fn>;
+    addClass: ReturnType<typeof vi.fn>;
+    classList: { add: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn> };
 } {
-    return { placeholder: "", type: "text", value: "", addEventListener: vi.fn() };
+    return {
+        placeholder: "",
+        type: "text",
+        value: "",
+        addEventListener: vi.fn(),
+        addClass: vi.fn(),
+        classList: { add: vi.fn(), remove: vi.fn() },
+    };
 }
 
 class MockTextComponent {
@@ -597,10 +610,36 @@ class MockToggleComponent {
 
 class MockButtonComponent {
     private _onClick: (() => void) | null = null;
+    warning = false;
     setButtonText(_text: string): this {
         return this;
     }
     setDisabled(_disabled: boolean): this {
+        return this;
+    }
+    setWarning(): this {
+        this.warning = true;
+        return this;
+    }
+    onClick(cb: () => void): this {
+        this._onClick = cb;
+        return this;
+    }
+    triggerClick(): void {
+        this._onClick?.();
+    }
+}
+
+class MockExtraButtonComponent {
+    private _onClick: (() => void) | null = null;
+    icon = "";
+    tooltip = "";
+    setIcon(icon: string): this {
+        this.icon = icon;
+        return this;
+    }
+    setTooltip(tooltip: string): this {
+        this.tooltip = tooltip;
         return this;
     }
     onClick(cb: () => void): this {

@@ -116,12 +116,6 @@ export interface LilbeeSettings {
     adaptiveThreshold: boolean;
     syncMode: "manual" | "auto";
     syncDebounceMs: number;
-    temperature: number | null;
-    top_p: number | null;
-    top_k_sampling: number | null;
-    repeat_penalty: number | null;
-    num_ctx: number | null;
-    seed: number | null;
     serverMode: ServerMode;
     serverPort: number | null;
     lilbeeVersion: string;
@@ -145,12 +139,6 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     adaptiveThreshold: false,
     syncMode: "manual",
     syncDebounceMs: 5000,
-    temperature: null,
-    top_p: null,
-    top_k_sampling: null,
-    repeat_penalty: null,
-    num_ctx: null,
-    seed: null,
     serverMode: "managed",
     serverPort: null,
     lilbeeVersion: "",

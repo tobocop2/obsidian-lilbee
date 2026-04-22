@@ -12,7 +12,7 @@ import {
     TASK_TYPE,
     ERROR_NAME,
 } from "./types";
-import type { GenerationOptions, ModelCatalog, ModelInfo, ModelsResponse, ServerMode } from "./types";
+import type { LilbeeSettings, ModelCatalog, ModelInfo, ModelsResponse, ServerMode } from "./types";
 import { MESSAGES } from "./locales/en";
 import { CatalogModal } from "./views/catalog-modal";
 import { ConfirmModal } from "./views/confirm-modal";
@@ -24,6 +24,18 @@ const CHECK_TIMEOUT_MS = 5000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
 const SEPARATOR_KEY = "__separator__";
 const SEPARATOR_LABEL = "\u2500\u2500 Other... \u2500\u2500";
+const ICON_RESET = "rotate-ccw";
+
+// Credential-like fields that must never be clobbered by the global "Reset all" button,
+// even if the server endpoint returns a default for them. Resetting a user's API key to the
+// empty default would silently break external-provider access with no undo path.
+const CREDENTIAL_FIELDS = new Set([
+    "openai_api_key",
+    "anthropic_api_key",
+    "gemini_api_key",
+    "hf_token",
+    "manual_session_token",
+]);
 
 /**
  * Remove `:latest` entries when a more specific tag of the same model exists.
@@ -62,20 +74,16 @@ export function buildModelOptions(catalog: ModelCatalog): Record<string, string>
 export { SEPARATOR_KEY, SEPARATOR_LABEL };
 
 type GenKey = "temperature" | "top_p" | "top_k_sampling" | "repeat_penalty" | "num_ctx" | "seed";
-const GEN_DEFAULTS_MAP: Record<GenKey, keyof GenerationOptions> = {
-    temperature: "temperature",
-    top_p: "top_p",
-    top_k_sampling: "top_k",
-    repeat_penalty: "repeat_penalty",
-    num_ctx: "num_ctx",
-    seed: "seed",
-};
 
 export class LilbeeSettingTab extends PluginSettingTab {
     plugin: LilbeePlugin;
-    private genInputs: Map<GenKey, HTMLInputElement> = new Map();
     private serverConfigInputs: Map<string, HTMLInputElement> = new Map();
     private serverConfigToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
+    private serverConfigTextAreas: Map<string, HTMLTextAreaElement> = new Map();
+    private configDefaults: Record<string, unknown> = {};
+    // Set to true while loadServerDefaults is programmatically syncing toggles to the server
+    // value so their onChange doesn't round-trip the same value back to the server.
+    private suppressToggleChanges = false;
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app, plugin);
@@ -87,6 +95,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         containerEl.empty();
         this.serverConfigInputs.clear();
         this.serverConfigToggles.clear();
+        this.serverConfigTextAreas.clear();
 
         const filterInput = containerEl.createEl("input", {
             cls: "lilbee-settings-filter",
@@ -105,8 +114,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderCrawlingSettings(containerEl);
         this.renderWikiSettings(containerEl);
         this.renderAdvancedSettings(containerEl);
-        this.loadModelDefaults();
         this.loadServerDefaults();
+        this.loadConfigDefaults();
     }
 
     private filterSettings(containerEl: HTMLElement, query: string): void {
@@ -130,7 +139,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private renderConnectionSettings(containerEl: HTMLElement): void {
-        new Setting(containerEl)
+        const modeSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_SERVER_MODE)
             .setDesc(MESSAGES.DESC_SERVER_MODE)
             .addDropdown((dropdown) =>
@@ -144,6 +153,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         this.display();
                     }),
             );
+        this.appendLocalResetAffordance(modeSetting, "serverMode", MESSAGES.LABEL_SERVER_MODE);
 
         new Setting(containerEl)
             .setName(MESSAGES.LABEL_SETUP_WIZARD)
@@ -203,7 +213,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
         }
 
-        new Setting(containerEl)
+        const portSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_SERVER_PORT)
             .setDesc(MESSAGES.DESC_SERVER_PORT_HELP)
             .addText((text) =>
@@ -223,6 +233,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     }),
             );
+        this.appendLocalResetAffordance(portSetting, "serverPort", MESSAGES.LABEL_SERVER_PORT);
 
         const updateSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_SERVER_VERSION)
@@ -294,12 +305,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 await this.checkEndpoint(`${this.plugin.settings.serverUrl}/api/health`, serverStatusEl);
             }),
         );
+        this.appendLocalResetAffordance(serverSetting, "serverUrl", MESSAGES.LABEL_SERVER_URL);
 
         void this.checkEndpoint(`${this.plugin.settings.serverUrl}/api/health`, serverStatusEl);
 
         new Setting(containerEl).setName(MESSAGES.LABEL_SESSION_TOKEN).setDesc(MESSAGES.DESC_SESSION_TOKEN_AUTO);
 
-        new Setting(containerEl)
+        const manualTokenSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_MANUAL_TOKEN)
             .setDesc(MESSAGES.DESC_MANUAL_TOKEN)
             .addText((text) => {
@@ -311,6 +323,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     });
                 text.inputEl.type = "password";
             });
+        this.appendLocalResetAffordance(manualTokenSetting, "manualToken", MESSAGES.LABEL_MANUAL_TOKEN);
 
         new Setting(containerEl)
             .setName(MESSAGES.LABEL_SWITCH_MANAGED)
@@ -353,7 +366,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private renderSearchRetrievalSettings(containerEl: HTMLElement): void {
         containerEl.createEl("h3", { text: MESSAGES.LABEL_SEARCH_RETRIEVAL });
 
-        new Setting(containerEl)
+        const topKSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_RESULTS_COUNT)
             .setDesc(MESSAGES.DESC_RESULTS_COUNT)
             .addSlider((slider) =>
@@ -366,8 +379,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     }),
             );
+        this.appendLocalResetAffordance(topKSetting, "topK", MESSAGES.LABEL_RESULTS_COUNT);
 
-        new Setting(containerEl)
+        const maxDistanceSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_MAX_DISTANCE)
             .setDesc(MESSAGES.DESC_MAX_DISTANCE)
             .addSlider((slider) =>
@@ -380,8 +394,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     }),
             );
+        this.appendLocalResetAffordance(maxDistanceSetting, "maxDistance", MESSAGES.LABEL_MAX_DISTANCE);
 
-        new Setting(containerEl)
+        const adaptiveSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_ADAPTIVE_THRESHOLD)
             .setDesc(MESSAGES.DESC_ADAPTIVE_THRESHOLD)
             .addToggle((toggle) =>
@@ -390,13 +405,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }),
             );
+        this.appendLocalResetAffordance(adaptiveSetting, "adaptiveThreshold", MESSAGES.LABEL_ADAPTIVE_THRESHOLD);
     }
 
     private loadServerDefaults(): void {
         this.plugin.api
             .config()
             .then((cfg: Record<string, unknown>) => {
-                // Populate editable crawl and advanced inputs with current server values
+                // Populate editable server-config inputs with the current server values.
                 for (const [key, inputEl] of this.serverConfigInputs) {
                     const v = cfg[key];
                     if (v === undefined) continue;
@@ -404,26 +420,22 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 }
                 for (const [key, toggle] of this.serverConfigToggles) {
                     const v = cfg[key];
-                    if (typeof v === "boolean") toggle.setValue(v);
-                }
-                // Populate generation field placeholders from server config
-                const genConfigMap: Record<string, GenKey> = {
-                    temperature: "temperature",
-                    top_p: "top_p",
-                    top_k: "top_k_sampling",
-                    repeat_penalty: "repeat_penalty",
-                    num_ctx: "num_ctx",
-                    seed: "seed",
-                };
-                for (const [cfgKey, genKey] of Object.entries(genConfigMap)) {
-                    if (cfg[cfgKey] !== undefined) {
-                        const inputEl = this.genInputs.get(genKey);
-                        if (inputEl) {
-                            inputEl.placeholder = String(cfg[cfgKey]);
+                    if (typeof v === "boolean") {
+                        this.suppressToggleChanges = true;
+                        try {
+                            toggle.setValue(v);
+                        } finally {
+                            this.suppressToggleChanges = false;
                         }
                     }
                 }
-                // Populate system prompt placeholder from server config
+                for (const [key, textArea] of this.serverConfigTextAreas) {
+                    const v = cfg[key];
+                    if (Array.isArray(v)) {
+                        textArea.value = v.join("\n");
+                    }
+                }
+                // Populate system prompt placeholder from server config.
                 if (cfg.system_prompt !== undefined) {
                     const sysPromptInput = this.serverConfigInputs.get("system_prompt");
                     if (sysPromptInput) {
@@ -436,6 +448,87 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
     }
 
+    private loadConfigDefaults(): void {
+        this.plugin.api
+            .configDefaults()
+            .then((defaults: Record<string, unknown>) => {
+                this.configDefaults = defaults;
+            })
+            .catch(() => {
+                // Older servers without /api/config/defaults — reset affordances simply hide.
+                this.configDefaults = {};
+            });
+    }
+
+    private appendResetAffordance(setting: Setting, key: string, label: string): Setting {
+        return setting.addExtraButton((btn) =>
+            btn
+                .setIcon(ICON_RESET)
+                .setTooltip(MESSAGES.LABEL_RESET_TO_DEFAULT)
+                .onClick(async () => {
+                    // Silent no-op until defaults have loaded (old servers or racing first click).
+                    if (!(key in this.configDefaults)) return;
+                    const def = this.configDefaults[key];
+                    try {
+                        await this.plugin.api.updateConfig({ [key]: def });
+                        new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
+                        this.display();
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_RESET(label));
+                    }
+                }),
+        );
+    }
+
+    private appendLocalResetAffordance<K extends keyof LilbeeSettings>(
+        setting: Setting,
+        key: K,
+        label: string,
+    ): Setting {
+        return setting.addExtraButton((btn) =>
+            btn
+                .setIcon(ICON_RESET)
+                .setTooltip(MESSAGES.LABEL_RESET_TO_DEFAULT)
+                .onClick(async () => {
+                    this.plugin.settings[key] = DEFAULT_SETTINGS[key];
+                    await this.plugin.saveSettings();
+                    new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
+                    this.display();
+                }),
+        );
+    }
+
+    /**
+     * Reset affordance for fields that dual-write: PATCH the server default AND mirror it back
+     * into `plugin.settings[localKey]`. Prevents the re-render from picking up a stale local value
+     * via `toggle.setValue(this.plugin.settings[localKey])`.
+     */
+    private appendDualResetAffordance<K extends keyof LilbeeSettings>(
+        setting: Setting,
+        serverKey: string,
+        localKey: K,
+        label: string,
+    ): Setting {
+        return setting.addExtraButton((btn) =>
+            btn
+                .setIcon(ICON_RESET)
+                .setTooltip(MESSAGES.LABEL_RESET_TO_DEFAULT)
+                .onClick(async () => {
+                    if (!(serverKey in this.configDefaults)) return;
+                    const def = this.configDefaults[serverKey];
+                    try {
+                        await this.plugin.api.updateConfig({ [serverKey]: def });
+                        this.plugin.settings[localKey] = def as LilbeeSettings[K];
+                        await this.plugin.saveSettings();
+                        new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
+                        this.display();
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_RESET(label));
+                    }
+                }),
+        );
+    }
+
     private renderGenerationSettings(containerEl: HTMLElement): void {
         const details = containerEl.createEl("details", { cls: "lilbee-generation-details lilbee-settings-section" });
         const modelLabel = this.plugin.activeModel || MESSAGES.LABEL_NO_MODEL_SELECTED;
@@ -445,7 +538,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             cls: "setting-item-description",
         });
 
-        new Setting(details)
+        const promptSetting = new Setting(details)
             .setName(MESSAGES.LABEL_SYSTEM_PROMPT)
             .setDesc(MESSAGES.DESC_SYSTEM_PROMPT)
             .addTextArea((text) => {
@@ -457,90 +550,78 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     });
                 this.serverConfigInputs.set("system_prompt", text.inputEl as unknown as HTMLInputElement);
             });
+        this.appendLocalResetAffordance(promptSetting, "systemPrompt", MESSAGES.LABEL_SYSTEM_PROMPT);
 
-        this.genInputs.clear();
         const fields: { key: GenKey; name: string; desc: string; integer: boolean }[] = [
             {
                 key: "temperature",
-                name: "Creativity",
-                desc: "Higher = more creative and varied responses, lower = more focused and predictable",
+                name: MESSAGES.LABEL_GEN_TEMPERATURE,
+                desc: MESSAGES.DESC_GEN_TEMPERATURE,
                 integer: false,
             },
             {
                 key: "top_p",
-                name: "Top P",
-                desc: "Controls response diversity. Most users should leave this at the default.",
+                name: MESSAGES.LABEL_GEN_TOP_P,
+                desc: MESSAGES.DESC_GEN_TOP_P,
                 integer: false,
             },
             {
                 key: "top_k_sampling",
-                name: "Top K (sampling)",
-                desc: "Limits which words the AI considers. Most users should leave this at the default.",
+                name: MESSAGES.LABEL_GEN_TOP_K,
+                desc: MESSAGES.DESC_GEN_TOP_K,
                 integer: true,
             },
             {
                 key: "repeat_penalty",
-                name: "Repetition penalty",
-                desc: "How strongly to avoid repeating the same phrases",
+                name: MESSAGES.LABEL_GEN_REPEAT_PENALTY,
+                desc: MESSAGES.DESC_GEN_REPEAT_PENALTY,
                 integer: false,
             },
             {
                 key: "num_ctx",
-                name: "Context window",
-                desc: "Maximum amount of text the AI can consider at once",
+                name: MESSAGES.LABEL_GEN_NUM_CTX,
+                desc: MESSAGES.DESC_GEN_NUM_CTX,
                 integer: true,
             },
             {
                 key: "seed",
-                name: "Seed",
-                desc: "Set a number for reproducible responses. Leave blank for varied answers.",
+                name: MESSAGES.LABEL_GEN_SEED,
+                desc: MESSAGES.DESC_GEN_SEED,
                 integer: true,
             },
         ];
 
         for (const field of fields) {
-            new Setting(details)
+            const genSetting = new Setting(details)
                 .setName(field.name)
                 .setDesc(field.desc)
                 .addText((text) => {
                     text.setPlaceholder(MESSAGES.PLACEHOLDER_NOT_SET)
-                        .setValue(
-                            this.plugin.settings[field.key] !== null ? String(this.plugin.settings[field.key]) : "",
-                        )
+                        .setValue("")
                         .onChange(async (value) => {
                             const trimmed = value.trim();
                             if (trimmed === "") {
-                                this.plugin.settings[field.key] = null;
-                            } else {
-                                const num = field.integer ? parseInt(trimmed, 10) : parseFloat(trimmed);
-                                if (!isNaN(num)) {
-                                    this.plugin.settings[field.key] = num;
+                                try {
+                                    await this.plugin.api.updateConfig({ [field.key]: null });
+                                    new Notice(MESSAGES.NOTICE_FIELD_UPDATED(field.name));
+                                } catch {
+                                    new Notice(MESSAGES.NOTICE_FAILED_UPDATE(field.name));
                                 }
+                                return;
                             }
-                            await this.plugin.saveSettings();
+                            const num = field.integer ? parseInt(trimmed, 10) : parseFloat(trimmed);
+                            if (isNaN(num)) return;
+                            try {
+                                await this.plugin.api.updateConfig({ [field.key]: num });
+                                new Notice(MESSAGES.NOTICE_FIELD_UPDATED(field.name));
+                            } catch {
+                                new Notice(MESSAGES.NOTICE_FAILED_UPDATE(field.name));
+                            }
                         });
-                    this.genInputs.set(field.key, text.inputEl);
+                    this.serverConfigInputs.set(field.key, text.inputEl);
                 });
+            this.appendResetAffordance(genSetting, field.key, field.name);
         }
-    }
-
-    private loadModelDefaults(): void {
-        const model = this.plugin.activeModel;
-        if (!model) return;
-        this.plugin.api
-            .showModel(model)
-            .then((defaults: Record<string, unknown>) => {
-                for (const [key, inputEl] of this.genInputs) {
-                    const genKey = GEN_DEFAULTS_MAP[key];
-                    const val = defaults[genKey];
-                    if (val !== undefined) {
-                        inputEl.placeholder = String(val);
-                    }
-                }
-            })
-            .catch(() => {
-                // Server unreachable — leave "Not set" placeholders
-            });
     }
 
     private loadEmbeddingDropdown(container: HTMLElement): void {
@@ -610,7 +691,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private renderSyncSettings(containerEl: HTMLElement): void {
-        new Setting(containerEl)
+        const syncModeSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_SYNC_MODE)
             .setDesc(MESSAGES.DESC_SYNC_MODE)
             .addDropdown((dropdown) =>
@@ -624,9 +705,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         this.display();
                     }),
             );
+        this.appendLocalResetAffordance(syncModeSetting, "syncMode", MESSAGES.LABEL_SYNC_MODE);
 
         if (this.plugin.settings.syncMode === SYNC_MODE.AUTO) {
-            new Setting(containerEl)
+            const debounceSetting = new Setting(containerEl)
                 .setName(MESSAGES.LABEL_SYNC_DEBOUNCE)
                 .setDesc(MESSAGES.DESC_SYNC_DEBOUNCE)
                 .addText((text) =>
@@ -641,6 +723,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                             }
                         }),
                 );
+            this.appendLocalResetAffordance(debounceSetting, "syncDebounceMs", MESSAGES.LABEL_SYNC_DEBOUNCE);
         }
     }
 
@@ -761,11 +844,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         for (const field of fields) {
             if (field.kind === "bool") {
-                new Setting(containerEl)
+                const boolSetting = new Setting(containerEl)
                     .setName(field.name)
                     .setDesc(field.desc)
                     .addToggle((toggle) => {
                         toggle.onChange(async (value) => {
+                            if (this.suppressToggleChanges) return;
                             try {
                                 await this.plugin.api.updateConfig({ [field.key]: value });
                                 new Notice(MESSAGES.NOTICE_FIELD_UPDATED(field.name));
@@ -775,11 +859,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         });
                         this.serverConfigToggles.set(field.key, toggle);
                     });
+                this.appendResetAffordance(boolSetting, field.key, field.name);
                 continue;
             }
 
             const numField = field;
-            new Setting(containerEl)
+            const numSetting = new Setting(containerEl)
                 .setName(numField.name)
                 .setDesc(numField.desc)
                 .addText((text) => {
@@ -810,7 +895,32 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         });
                     this.serverConfigInputs.set(numField.key, text.inputEl as unknown as HTMLInputElement);
                 });
+            this.appendResetAffordance(numSetting, numField.key, numField.name);
         }
+
+        const patternsSetting = new Setting(containerEl)
+            .setName(MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS)
+            .setDesc(MESSAGES.DESC_CRAWL_EXCLUDE_PATTERNS)
+            .addTextArea((text) => {
+                text.setValue("").onChange(async (value) => {
+                    const patterns = value
+                        .split("\n")
+                        .map((p) => p.trim())
+                        .filter((p) => p.length > 0);
+                    try {
+                        await this.plugin.api.updateConfig({ crawl_exclude_patterns: patterns });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS));
+                    }
+                });
+                text.inputEl.addClass("lilbee-crawl-exclude-patterns");
+                this.serverConfigTextAreas.set(
+                    "crawl_exclude_patterns",
+                    text.inputEl as unknown as HTMLTextAreaElement,
+                );
+            });
+        this.appendResetAffordance(patternsSetting, "crawl_exclude_patterns", MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS);
     }
 
     private renderWikiSettings(containerEl: HTMLElement): void {
@@ -820,7 +930,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         // Enable wiki toggle (user preference — independent of server)
         const subSettingsContainer = details.createDiv({ cls: "lilbee-wiki-sub-settings" });
 
-        new Setting(details)
+        const enableSetting = new Setting(details)
             .setName(MESSAGES.LABEL_WIKI_ENABLE_TOGGLE)
             .setDesc(MESSAGES.DESC_WIKI_ENABLE_TOGGLE)
             .addToggle((toggle) => {
@@ -832,6 +942,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.setSubSettingsVisible(subSettingsContainer, value);
                 });
             });
+        this.appendLocalResetAffordance(enableSetting, "wikiEnabled", MESSAGES.LABEL_WIKI_ENABLE_TOGGLE);
 
         this.setSubSettingsVisible(subSettingsContainer, this.plugin.settings.wikiEnabled);
 
@@ -840,7 +951,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         new Setting(subSettingsContainer).setName(MESSAGES.LABEL_WIKI_STATUS).setDesc(statusDesc).setDisabled(true);
 
         // Prune raw chunks
-        new Setting(subSettingsContainer)
+        const pruneSetting = new Setting(subSettingsContainer)
             .setName(MESSAGES.LABEL_WIKI_PRUNE_RAW)
             .setDesc(MESSAGES.DESC_WIKI_PRUNE_RAW)
             .addToggle((toggle) => {
@@ -850,15 +961,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                     try {
                         await this.plugin.api.updateConfig({ wiki_prune_raw: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED("prune raw"));
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WIKI_PRUNE_RAW));
                     } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE("prune raw"));
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_WIKI_PRUNE_RAW));
                     }
                 });
             });
+        this.appendDualResetAffordance(pruneSetting, "wiki_prune_raw", "wikiPruneRaw", MESSAGES.LABEL_WIKI_PRUNE_RAW);
 
         // Faithfulness threshold
-        new Setting(subSettingsContainer)
+        const faithSetting = new Setting(subSettingsContainer)
             .setName(MESSAGES.LABEL_WIKI_FAITHFULNESS)
             .setDesc(MESSAGES.DESC_WIKI_FAITHFULNESS)
             .addSlider((slider) => {
@@ -871,15 +983,21 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                         try {
                             await this.plugin.api.updateConfig({ wiki_faithfulness_threshold: value });
-                            new Notice(MESSAGES.NOTICE_FIELD_UPDATED("faithfulness threshold"));
+                            new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WIKI_FAITHFULNESS));
                         } catch {
-                            new Notice(MESSAGES.NOTICE_FAILED_UPDATE("faithfulness threshold"));
+                            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_WIKI_FAITHFULNESS));
                         }
                     });
             });
+        this.appendDualResetAffordance(
+            faithSetting,
+            "wiki_faithfulness_threshold",
+            "wikiFaithfulnessThreshold",
+            MESSAGES.LABEL_WIKI_FAITHFULNESS,
+        );
 
         // Default search mode
-        new Setting(subSettingsContainer)
+        const searchModeSetting = new Setting(subSettingsContainer)
             .setName(MESSAGES.LABEL_WIKI_SEARCH_MODE)
             .setDesc(MESSAGES.DESC_WIKI_SEARCH_MODE)
             .addDropdown((dropdown) => {
@@ -893,9 +1011,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     });
             });
+        this.appendLocalResetAffordance(searchModeSetting, "searchChunkType", MESSAGES.LABEL_WIKI_SEARCH_MODE);
 
         // Sync wiki to vault
-        new Setting(subSettingsContainer)
+        const syncSetting = new Setting(subSettingsContainer)
             .setName(MESSAGES.LABEL_WIKI_SYNC_TO_VAULT)
             .setDesc(MESSAGES.DESC_WIKI_SYNC_TO_VAULT)
             .addToggle((toggle) => {
@@ -911,9 +1030,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }
                 });
             });
+        this.appendLocalResetAffordance(syncSetting, "wikiSyncToVault", MESSAGES.LABEL_WIKI_SYNC_TO_VAULT);
 
         // Wiki vault folder
-        new Setting(subSettingsContainer)
+        const folderSetting = new Setting(subSettingsContainer)
             .setName(MESSAGES.LABEL_WIKI_VAULT_FOLDER)
             .setDesc(MESSAGES.DESC_WIKI_VAULT_FOLDER)
             .addText((text) => {
@@ -926,6 +1046,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }
                 });
             });
+        this.appendLocalResetAffordance(folderSetting, "wikiVaultFolder", MESSAGES.LABEL_WIKI_VAULT_FOLDER);
 
         // Run lint button
         new Setting(subSettingsContainer)
@@ -973,7 +1094,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         ];
 
         for (const field of advancedFields) {
-            new Setting(details)
+            const advancedSetting = new Setting(details)
                 .setName(field.name)
                 .setDesc(field.desc)
                 .addText((text) => {
@@ -1006,11 +1127,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         });
                     this.serverConfigInputs.set(field.key, text.inputEl as unknown as HTMLInputElement);
                 });
+            this.appendResetAffordance(advancedSetting, field.key, field.name);
         }
 
         const litellmContainer = details.createDiv({ cls: "lilbee-litellm-container" });
 
-        new Setting(details)
+        const llmSetting = new Setting(details)
             .setName(MESSAGES.LABEL_LLM_PROVIDER)
             .setDesc(MESSAGES.DESC_LLM_PROVIDER)
             .addDropdown((dropdown) => {
@@ -1030,6 +1152,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     });
                 this.serverConfigInputs.set("llm_provider", dropdown.selectEl as unknown as HTMLInputElement);
             });
+        this.appendResetAffordance(llmSetting, "llm_provider", MESSAGES.LABEL_LLM_PROVIDER);
 
         const apiKeyFields: { label: string; desc: string; configKey: string }[] = [
             {
@@ -1090,7 +1213,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
 
         litellmContainer.style.display = "none";
-        new Setting(litellmContainer)
+        const litellmSetting = new Setting(litellmContainer)
             .setName(MESSAGES.LABEL_LITELLM_BASE_URL)
             .setDesc(MESSAGES.DESC_LITELLM_BASE_URL)
             .addText((text) => {
@@ -1108,6 +1231,33 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     });
                 this.serverConfigInputs.set("litellm_base_url", text.inputEl as unknown as HTMLInputElement);
             });
+        this.appendResetAffordance(litellmSetting, "litellm_base_url", MESSAGES.LABEL_LITELLM_BASE_URL);
+
+        new Setting(details)
+            .setName(MESSAGES.LABEL_RESET_ALL_SETTINGS)
+            .setDesc(MESSAGES.DESC_RESET_ALL_SETTINGS)
+            .addButton((btn) =>
+                btn
+                    .setButtonText(MESSAGES.BUTTON_RESET_ALL)
+                    .setWarning()
+                    .onClick(async () => {
+                        const confirm = new ConfirmModal(this.app, MESSAGES.CONFIRM_RESET_ALL_SETTINGS);
+                        confirm.open();
+                        const confirmed = await confirm.result;
+                        if (!confirmed) return;
+                        const payload = { ...this.configDefaults };
+                        // Never wipe credential fields — resetting them would surprise the user.
+                        for (const k of CREDENTIAL_FIELDS) delete payload[k];
+                        if (Object.keys(payload).length === 0) return;
+                        try {
+                            await this.plugin.api.updateConfig(payload);
+                            new Notice(MESSAGES.NOTICE_SETTINGS_RESET);
+                            this.display();
+                        } catch {
+                            new Notice(MESSAGES.NOTICE_FAILED_RESET_ALL);
+                        }
+                    }),
+            );
     }
 
     async checkEndpoint(url: string, statusEl: HTMLSpanElement): Promise<void> {
