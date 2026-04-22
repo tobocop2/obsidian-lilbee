@@ -4,6 +4,7 @@ import { ok, err, Result } from "neverthrow";
 import type {
     AskResponse,
     CatalogResponse,
+    ConfigResponse,
     ConfigUpdateResponse,
     DocumentResult,
     DocumentsResponse,
@@ -12,6 +13,7 @@ import type {
     Message,
     ModelShowResponse,
     ModelsResponse,
+    ModelTask,
     SearchChunkType,
     SSEEvent,
     StatusResponse,
@@ -276,7 +278,7 @@ export class LilbeeClient {
     }
 
     async catalog(params?: {
-        task?: "chat" | "embedding" | "vision";
+        task?: ModelTask;
         search?: string;
         size?: "small" | "medium" | "large";
         sort?: "featured" | "downloads" | "name" | "size_asc" | "size_desc";
@@ -296,8 +298,11 @@ export class LilbeeClient {
         return this.fetchResult<CatalogResponse>(`${this.baseUrl}/api/models/catalog${suffix}`);
     }
 
-    async installedModels(): Promise<InstalledResponse> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/installed`);
+    async installedModels(params?: { task?: ModelTask }): Promise<InstalledResponse> {
+        const qs = new URLSearchParams();
+        if (params?.task) qs.set("task", params.task);
+        const suffix = qs.toString() ? `?${qs}` : "";
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/installed${suffix}`);
         return res.json();
     }
 
@@ -363,7 +368,7 @@ export class LilbeeClient {
         yield* this.parseSSE(res);
     }
 
-    async config(): Promise<Record<string, unknown>> {
+    async config(): Promise<ConfigResponse> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/config`);
         return res.json();
     }
@@ -384,6 +389,14 @@ export class LilbeeClient {
 
     async setEmbeddingModel(model: string): Promise<Result<void, Error>> {
         return this.fetchResult<void>(`${this.baseUrl}/api/models/embedding`, {
+            method: "PUT",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ model }),
+        });
+    }
+
+    async setRerankerModel(model: string): Promise<Result<void, Error>> {
+        return this.fetchResult<void>(`${this.baseUrl}/api/models/reranker`, {
             method: "PUT",
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ model }),

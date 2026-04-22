@@ -113,6 +113,18 @@ export const MESSAGES = {
     BUTTON_RESET_ALL: "Reset all",
     LABEL_ADVANCED: "Advanced",
     LABEL_EMBEDDING_MODEL: "Embedding model",
+    LABEL_RERANKER_TITLE: "Reranker model",
+    LABEL_RERANKER_DISABLED: "(disabled)",
+    LABEL_RERANKER_HOSTED_GROUP: "Hosted via LiteLLM",
+    LABEL_RERANKER_CANDIDATES: "Rerank candidates",
+    DESC_RERANKER_MODEL: "Reorders search results for better relevance. Disabled by default.",
+    DESC_RERANKER_CANDIDATES: "How many candidate results to rerank (1-100). Higher = slower but more accurate.",
+    NOTICE_RERANKER_UNAVAILABLE: "Rerank is not supported by this server build. Update the server to enable.",
+    NOTICE_FAILED_RERANKER: "lilbee: failed to update reranker model",
+    NOTICE_RERANKER_UPDATED: "lilbee: reranker model updated",
+    NOTICE_RERANKER_NEEDS_KEY: "Configure the LiteLLM API key in the LLM provider settings to use this reranker.",
+    NOTICE_RERANKER_LOAD_FAILED: "lilbee: failed to load reranker options",
+    PLACEHOLDER_RERANK_CANDIDATES: "20",
     LABEL_LLM_PROVIDER: "AI backend",
     LABEL_API_KEY: "API key",
     LABEL_OPENAI_API_KEY: "OpenAI API key",
@@ -169,6 +181,7 @@ export const MESSAGES = {
     LABEL_SECTION_CHAT: "Chat",
     LABEL_SECTION_EMBEDDING: "Embedding",
     LABEL_SECTION_VISION: "Vision",
+    LABEL_SECTION_RERANK: "Rerank",
     LABEL_PICK: "pick",
     LABEL_SWITCH_TO_LIST: "Switch to list view",
     LABEL_SWITCH_TO_GRID: "Switch to grid view",
@@ -562,6 +575,7 @@ export const FILTERS = {
         CHAT: "chat",
         EMBEDDING: "embedding",
         VISION: "vision",
+        RERANK: "rerank",
     } as const,
     SIZE: {
         ALL: "",
@@ -582,6 +596,7 @@ export const TASK_LABELS = {
     [MODEL_TASK.CHAT]: "Chat",
     [MODEL_TASK.VISION]: "Vision",
     [MODEL_TASK.EMBEDDING]: "Embedding",
+    [MODEL_TASK.RERANK]: "Rerank",
 } as const;
 
 export const CATALOG_FILTERS = {
@@ -590,6 +605,7 @@ export const CATALOG_FILTERS = {
         [FILTERS.TASK.CHAT, TASK_LABELS[MODEL_TASK.CHAT]],
         [FILTERS.TASK.EMBEDDING, TASK_LABELS[MODEL_TASK.EMBEDDING]],
         [FILTERS.TASK.VISION, TASK_LABELS[MODEL_TASK.VISION]],
+        [FILTERS.TASK.RERANK, TASK_LABELS[MODEL_TASK.RERANK]],
     ] as const,
     SIZE: [
         [FILTERS.SIZE.ALL, MESSAGES.LABEL_ALL_SIZES],

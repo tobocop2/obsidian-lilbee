@@ -12,16 +12,35 @@ import {
     TASK_TYPE,
     ERROR_NAME,
 } from "./types";
-import type { LilbeeSettings, ModelCatalog, ModelInfo, ModelsResponse, ServerMode } from "./types";
+import type {
+    CatalogEntry,
+    ConfigResponse,
+    InstalledModel,
+    LilbeeSettings,
+    ModelCatalog,
+    ModelInfo,
+    ModelsResponse,
+    ServerMode,
+} from "./types";
 import { MESSAGES } from "./locales/en";
 import { CatalogModal } from "./views/catalog-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { ConfirmPullModal } from "./views/confirm-pull-modal";
 import { SetupWizard } from "./views/setup-wizard";
-import { percentFromSse, errorMessage, extractSseErrorMessage, noticeForResultError } from "./utils";
+import {
+    debounce,
+    DEBOUNCE_MS,
+    percentFromSse,
+    errorMessage,
+    extractSseErrorMessage,
+    noticeForResultError,
+} from "./utils";
 
 const CHECK_TIMEOUT_MS = 5000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
+const RERANKER_DISABLED_KEY = "";
+const RERANK_CANDIDATES_MIN = 1;
+const RERANK_CANDIDATES_MAX = 100;
 const SEPARATOR_KEY = "__separator__";
 const SEPARATOR_LABEL = "\u2500\u2500 Other... \u2500\u2500";
 const ICON_RESET = "rotate-ccw";
@@ -411,7 +430,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private loadServerDefaults(): void {
         this.plugin.api
             .config()
-            .then((cfg: Record<string, unknown>) => {
+            .then((cfg: ConfigResponse) => {
                 // Populate editable server-config inputs with the current server values.
                 for (const [key, inputEl] of this.serverConfigInputs) {
                     const v = cfg[key];
@@ -661,6 +680,166 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .catch(() => {
                 this.renderEmbeddingFallback(container);
             });
+    }
+
+    private renderRerankerSection(container: HTMLElement): void {
+        Promise.all([
+            this.plugin.api.config(),
+            this.plugin.api.catalog({ task: MODEL_TASK.RERANK }),
+            this.plugin.api.installedModels({ task: MODEL_TASK.RERANK }).catch(() => ({ models: [] })),
+        ])
+            .then(([cfg, catalogResult, installedResp]) => {
+                const active = typeof cfg.reranker_model === "string" ? cfg.reranker_model : RERANKER_DISABLED_KEY;
+                const available = cfg.reranker_available === true;
+                if (!available) {
+                    this.renderRerankerUnavailable(container);
+                    return;
+                }
+                const catalogEntries = catalogResult.isOk() ? catalogResult.value.models : [];
+                this.renderRerankerDropdown(container, active, catalogEntries, installedResp.models);
+            })
+            .catch(() => {
+                new Notice(MESSAGES.NOTICE_RERANKER_LOAD_FAILED);
+            });
+    }
+
+    private renderRerankerUnavailable(container: HTMLElement): void {
+        new Setting(container)
+            .setName(MESSAGES.LABEL_RERANKER_TITLE)
+            .setDesc(MESSAGES.NOTICE_RERANKER_UNAVAILABLE)
+            .setDisabled(true)
+            .addDropdown((dropdown) => {
+                dropdown.addOption(RERANKER_DISABLED_KEY, MESSAGES.LABEL_RERANKER_DISABLED);
+                dropdown.setValue(RERANKER_DISABLED_KEY);
+            });
+    }
+
+    private renderRerankerDropdown(
+        container: HTMLElement,
+        active: string,
+        catalogEntries: CatalogEntry[],
+        installed: InstalledModel[],
+    ): void {
+        const options = this.buildRerankerOptions(catalogEntries, installed);
+        new Setting(container)
+            .setName(MESSAGES.LABEL_RERANKER_TITLE)
+            .setDesc(MESSAGES.DESC_RERANKER_MODEL)
+            .addDropdown((dropdown) => {
+                for (const [value, label] of options) {
+                    dropdown.addOption(value, label);
+                }
+                dropdown.setValue(active || RERANKER_DISABLED_KEY);
+                dropdown.onChange(async (value) => {
+                    await this.handleRerankerChange(value, catalogEntries, installed);
+                });
+            });
+    }
+
+    private buildRerankerOptions(catalogEntries: CatalogEntry[], installed: InstalledModel[]): Array<[string, string]> {
+        const installedNames = new Set(installed.map((m) => m.name));
+        const opts: Array<[string, string]> = [[RERANKER_DISABLED_KEY, MESSAGES.LABEL_RERANKER_DISABLED]];
+        const localInstalled = catalogEntries.filter(
+            (e) => e.source !== MODEL_SOURCE.LITELLM && installedNames.has(e.hf_repo),
+        );
+        const localNotInstalled = catalogEntries.filter(
+            (e) => e.source !== MODEL_SOURCE.LITELLM && !installedNames.has(e.hf_repo),
+        );
+        const hosted = catalogEntries.filter((e) => e.source === MODEL_SOURCE.LITELLM);
+        for (const e of localInstalled) opts.push([e.hf_repo, e.hf_repo]);
+        for (const e of localNotInstalled) opts.push([e.hf_repo, `${e.hf_repo}${MESSAGES.LABEL_NOT_INSTALLED}`]);
+        if (hosted.length > 0) {
+            for (const e of hosted) opts.push([e.hf_repo, `${e.hf_repo} — ${MESSAGES.LABEL_RERANKER_HOSTED_GROUP}`]);
+        }
+        return opts;
+    }
+
+    private async handleRerankerChange(
+        value: string,
+        catalogEntries: CatalogEntry[],
+        installed: InstalledModel[],
+    ): Promise<void> {
+        const installedNames = new Set(installed.map((m) => m.name));
+        const catalogEntry = catalogEntries.find((e) => e.hf_repo === value);
+        if (
+            value === RERANKER_DISABLED_KEY ||
+            installedNames.has(value) ||
+            catalogEntry?.source === MODEL_SOURCE.LITELLM
+        ) {
+            await this.applyRerankerSelection(value);
+            return;
+        }
+        if (catalogEntry) {
+            await this.pullAndSetReranker(catalogEntry);
+        }
+    }
+
+    private async applyRerankerSelection(value: string): Promise<void> {
+        const result = await this.plugin.api.setRerankerModel(value);
+        if (result.isErr()) {
+            if (result.error.message.includes("422")) {
+                new Notice(MESSAGES.NOTICE_RERANKER_NEEDS_KEY);
+            } else {
+                new Notice(MESSAGES.NOTICE_FAILED_RERANKER);
+            }
+            return;
+        }
+        new Notice(MESSAGES.NOTICE_RERANKER_UPDATED);
+    }
+
+    private async pullAndSetReranker(entry: CatalogEntry): Promise<void> {
+        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.hf_repo}`, TASK_TYPE.PULL);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
+        const controller = new AbortController();
+        this.plugin.taskQueue.registerAbort(taskId, controller);
+        const ok = await this.streamRerankerPull(taskId, entry, controller.signal);
+        if (!ok) return;
+        this.plugin.taskQueue.complete(taskId);
+        await this.applyRerankerSelection(entry.hf_repo);
+    }
+
+    private async streamRerankerPull(taskId: string, entry: CatalogEntry, signal: AbortSignal): Promise<boolean> {
+        try {
+            for await (const event of this.plugin.api.pullModel(entry.hf_repo, MODEL_SOURCE.NATIVE, signal)) {
+                if (event.event === SSE_EVENT.PROGRESS) {
+                    this.handleRerankerPullProgress(taskId, entry, event.data);
+                } else if (event.event === SSE_EVENT.ERROR) {
+                    this.handleRerankerPullSseError(taskId, entry, event.data);
+                    return false;
+                }
+            }
+        } catch (err) {
+            this.handleRerankerPullException(taskId, entry, err);
+            return false;
+        }
+        return true;
+    }
+
+    private handleRerankerPullProgress(taskId: string, entry: CatalogEntry, data: unknown): void {
+        const d = data as { percent?: number; current?: number; total?: number };
+        const pct = percentFromSse(d);
+        if (pct !== undefined) {
+            this.plugin.taskQueue.update(taskId, pct, entry.hf_repo, { current: d.current, total: d.total });
+        }
+    }
+
+    private handleRerankerPullSseError(taskId: string, entry: CatalogEntry, data: unknown): void {
+        const msg = extractSseErrorMessage(data as { message?: string } | string, MESSAGES.ERROR_UNKNOWN);
+        new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.hf_repo)}: ${msg}`);
+        this.plugin.taskQueue.fail(taskId, msg);
+    }
+
+    private handleRerankerPullException(taskId: string, entry: CatalogEntry, err: unknown): void {
+        if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
+            new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
+            this.plugin.taskQueue.cancel(taskId);
+            return;
+        }
+        const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
+        new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.hf_repo)}: ${reason}`);
+        this.plugin.taskQueue.fail(taskId, reason);
     }
 
     private renderEmbeddingFallback(container: HTMLElement): void {
@@ -1130,6 +1309,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
             this.appendResetAffordance(advancedSetting, field.key, field.name);
         }
 
+        this.renderRerankCandidatesField(details);
+
         const litellmContainer = details.createDiv({ cls: "lilbee-litellm-container" });
 
         const llmSetting = new Setting(details)
@@ -1288,6 +1469,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
         const embeddingContainer = container.createDiv({ cls: "lilbee-embedding-container" });
         this.loadEmbeddingDropdown(embeddingContainer);
+        const rerankerContainer = container.createDiv({ cls: "lilbee-reranker-container" });
+        this.renderRerankerSection(rerankerContainer);
     }
 
     private renderModelSection(container: HTMLElement, label: string, catalog: ModelsResponse["chat"]): void {
@@ -1512,6 +1695,38 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const modelsContainer = this.containerEl.querySelector(`.${CLS_MODELS_CONTAINER}`);
         if (modelsContainer) {
             await this.loadModels(modelsContainer as HTMLElement);
+        }
+    }
+
+    private renderRerankCandidatesField(container: HTMLElement): void {
+        const patch = debounce((...args: unknown[]) => {
+            const num = args[0] as number;
+            void this.patchRerankCandidates(num);
+        }, DEBOUNCE_MS);
+
+        new Setting(container)
+            .setName(MESSAGES.LABEL_RERANKER_CANDIDATES)
+            .setDesc(MESSAGES.DESC_RERANKER_CANDIDATES)
+            .addText((text) => {
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_RERANK_CANDIDATES)
+                    .setValue("")
+                    .onChange((value) => {
+                        const trimmed = value.trim();
+                        if (trimmed === "") return;
+                        const num = parseInt(trimmed, 10);
+                        if (isNaN(num) || num < RERANK_CANDIDATES_MIN || num > RERANK_CANDIDATES_MAX) return;
+                        patch.run(num);
+                    });
+                this.serverConfigInputs.set("rerank_candidates", text.inputEl as unknown as HTMLInputElement);
+            });
+    }
+
+    private async patchRerankCandidates(num: number): Promise<void> {
+        try {
+            await this.plugin.api.updateConfig({ rerank_candidates: num });
+            new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_RERANKER_CANDIDATES));
+        } catch {
+            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_RERANKER_CANDIDATES));
         }
     }
 }
