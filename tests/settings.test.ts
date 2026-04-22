@@ -4138,6 +4138,7 @@ describe("managed mode settings", () => {
                     models: [
                         {
                             name: "bge-reranker-v2-m3",
+                            tag: "latest",
                             hf_repo: "BAAI/bge-reranker-v2-m3",
                             display_name: "BGE v2",
                             size_gb: 1,
@@ -4153,7 +4154,7 @@ describe("managed mode settings", () => {
                 }),
             );
             (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
-                models: [{ name: "BAAI/bge-reranker-v2-m3", source: "native" }],
+                models: [{ name: "bge-reranker-v2-m3:latest", source: "native" }],
             });
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
@@ -4165,7 +4166,7 @@ describe("managed mode settings", () => {
 
             expect(options[0][""]).toBe(MESSAGES.LABEL_RERANKER_DISABLED);
             // Dropdown option keys use hf_repo (canonical id), not display name
-            expect(options[0]["BAAI/bge-reranker-v2-m3"]).toBe("BAAI/bge-reranker-v2-m3");
+            expect(options[0]["bge-reranker-v2-m3:latest"]).toBe("BAAI/bge-reranker-v2-m3");
             expect(values[0]).toBe("");
         });
 
@@ -4184,6 +4185,7 @@ describe("managed mode settings", () => {
                     models: [
                         {
                             name: "bge-reranker-v2-m3",
+                            tag: "latest",
                             hf_repo: "BAAI/bge-reranker-v2-m3",
                             display_name: "BGE",
                             size_gb: 1,
@@ -4199,7 +4201,7 @@ describe("managed mode settings", () => {
                 }),
             );
             (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
-                models: [{ name: "BAAI/bge-reranker-v2-m3", source: "native" }],
+                models: [{ name: "bge-reranker-v2-m3:latest", source: "native" }],
             });
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
@@ -4210,8 +4212,8 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             // The dropdown value is hf_repo (canonical id), not the display name
-            await dropdowns[0]("BAAI/bge-reranker-v2-m3");
-            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("BAAI/bge-reranker-v2-m3");
+            await dropdowns[0]("bge-reranker-v2-m3:latest");
+            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("bge-reranker-v2-m3:latest");
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_UPDATED)).toBe(true);
         });
 
@@ -4256,6 +4258,7 @@ describe("managed mode settings", () => {
                     models: [
                         {
                             name: "bge",
+                            tag: "latest",
                             hf_repo: "BAAI/bge",
                             display_name: "",
                             size_gb: 1,
@@ -4271,7 +4274,7 @@ describe("managed mode settings", () => {
                 }),
             );
             (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
-                models: [{ name: "BAAI/bge", source: "native" }],
+                models: [{ name: "bge:latest", source: "native" }],
             });
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
@@ -4281,7 +4284,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await dropdowns[0]("BAAI/bge");
+            await dropdowns[0]("bge:latest");
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_RERANKER)).toBe(true);
         });
 
@@ -4304,6 +4307,7 @@ describe("managed mode settings", () => {
                     models: [
                         {
                             name: "bge-reranker-large",
+                            tag: "latest",
                             hf_repo: "BAAI/bge-reranker-large",
                             display_name: "",
                             size_gb: 2,
@@ -4328,13 +4332,13 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             // pullModel and setRerankerModel must use hf_repo (canonical id), not display name
-            await dropdowns[0]("BAAI/bge-reranker-large");
+            await dropdowns[0]("bge-reranker-large:latest");
             expect(plugin.api.pullModel).toHaveBeenCalledWith(
                 "BAAI/bge-reranker-large",
                 "native",
                 expect.any(AbortSignal),
             );
-            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("BAAI/bge-reranker-large");
+            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("bge-reranker-large:latest");
         });
 
         it("hosted litellm entry skips pull and calls setRerankerModel directly", async () => {
@@ -4352,6 +4356,7 @@ describe("managed mode settings", () => {
                     models: [
                         {
                             name: "rerank-english-v3.0",
+                            tag: "latest",
                             hf_repo: "cohere/rerank-english-v3.0",
                             display_name: "Cohere",
                             size_gb: 0,
@@ -4375,9 +4380,9 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await dropdowns[0]("cohere/rerank-english-v3.0");
+            await dropdowns[0]("rerank-english-v3.0:latest");
             expect(plugin.api.pullModel).not.toHaveBeenCalled();
-            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("cohere/rerank-english-v3.0");
+            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("rerank-english-v3.0:latest");
         });
 
         it("hosted litellm entry with 422 response surfaces API-key notice", async () => {
@@ -4398,6 +4403,7 @@ describe("managed mode settings", () => {
                     models: [
                         {
                             name: "rerank",
+                            tag: "latest",
                             hf_repo: "cohere/rerank",
                             display_name: "",
                             size_gb: 0,
@@ -4421,7 +4427,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await dropdowns[0]("cohere/rerank");
+            await dropdowns[0]("rerank:latest");
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_NEEDS_KEY)).toBe(true);
         });
 
@@ -4501,6 +4507,7 @@ describe("managed mode settings", () => {
                     models: [
                         {
                             name: "bge",
+                            tag: "latest",
                             hf_repo: "BAAI/bge",
                             display_name: "",
                             size_gb: 1,
@@ -4524,7 +4531,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await dropdowns[0]("BAAI/bge");
+            await dropdowns[0]("bge:latest");
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_QUEUE_FULL)).toBe(true);
             expect(plugin.api.pullModel).not.toHaveBeenCalled();
         });
@@ -4548,6 +4555,7 @@ describe("managed mode settings", () => {
                     models: [
                         {
                             name: "bge",
+                            tag: "latest",
                             hf_repo: "BAAI/bge",
                             display_name: "",
                             size_gb: 1,
@@ -4571,7 +4579,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await dropdowns[0]("BAAI/bge");
+            await dropdowns[0]("bge:latest");
             expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
             expect(plugin.api.setRerankerModel).not.toHaveBeenCalled();
         });
@@ -4597,6 +4605,7 @@ describe("managed mode settings", () => {
                     models: [
                         {
                             name: "bge",
+                            tag: "latest",
                             hf_repo: "BAAI/bge",
                             display_name: "",
                             size_gb: 1,
@@ -4620,7 +4629,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await dropdowns[0]("BAAI/bge");
+            await dropdowns[0]("bge:latest");
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_PULL_CANCELLED)).toBe(true);
         });
 
@@ -4643,6 +4652,7 @@ describe("managed mode settings", () => {
                     models: [
                         {
                             name: "bge",
+                            tag: "latest",
                             hf_repo: "BAAI/bge",
                             display_name: "",
                             size_gb: 1,
@@ -4666,7 +4676,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await dropdowns[0]("BAAI/bge");
+            await dropdowns[0]("bge:latest");
             const failed = plugin.taskQueue.completed.find((t: any) => t.status === "failed");
             expect(failed).toBeDefined();
             expect(failed!.error).toBe("unknown error");
@@ -4691,6 +4701,7 @@ describe("managed mode settings", () => {
                     models: [
                         {
                             name: "bge",
+                            tag: "latest",
                             hf_repo: "BAAI/bge",
                             display_name: "",
                             size_gb: 1,
@@ -4714,8 +4725,8 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await expect(dropdowns[0]("BAAI/bge")).resolves.not.toThrow();
-            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("BAAI/bge");
+            await expect(dropdowns[0]("bge:latest")).resolves.not.toThrow();
+            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("bge:latest");
         });
 
         it("buildRerankerOptions includes only installed-first then not-installed then hosted", async () => {
@@ -4733,6 +4744,7 @@ describe("managed mode settings", () => {
                     models: [
                         {
                             name: "bge-installed",
+                            tag: "latest",
                             hf_repo: "BAAI/bge-installed",
                             display_name: "",
                             size_gb: 1,
@@ -4745,6 +4757,7 @@ describe("managed mode settings", () => {
                         },
                         {
                             name: "bge-not-installed",
+                            tag: "latest",
                             hf_repo: "BAAI/bge-not-installed",
                             display_name: "",
                             size_gb: 1,
@@ -4757,6 +4770,7 @@ describe("managed mode settings", () => {
                         },
                         {
                             name: "rerank",
+                            tag: "latest",
                             hf_repo: "cohere/rerank",
                             display_name: "",
                             size_gb: 0,
@@ -4772,7 +4786,7 @@ describe("managed mode settings", () => {
                 }),
             );
             (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
-                models: [{ name: "BAAI/bge-installed", source: "native" }],
+                models: [{ name: "bge-installed:latest", source: "native" }],
             });
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
@@ -4782,11 +4796,67 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            // Dropdown values must be hf_repo (canonical id), not display name
+            // Dropdown VALUES use the canonical ``name:tag`` ref so the
+            // server's active-reranker string (returned in name:tag form)
+            // matches an option and setValue resolves. Display labels still
+            // show hf_repo so the UI stays human-readable.
             const keys = Object.keys(options[0]);
-            expect(keys).toEqual(["", "BAAI/bge-installed", "BAAI/bge-not-installed", "cohere/rerank"]);
-            expect(options[0]["BAAI/bge-not-installed"]).toContain(MESSAGES.LABEL_NOT_INSTALLED);
-            expect(options[0]["cohere/rerank"]).toContain(MESSAGES.LABEL_RERANKER_HOSTED_GROUP);
+            expect(keys).toEqual(["", "bge-installed:latest", "bge-not-installed:latest", "rerank:latest"]);
+            expect(options[0]["bge-installed:latest"]).toBe("BAAI/bge-installed");
+            expect(options[0]["bge-not-installed:latest"]).toContain(MESSAGES.LABEL_NOT_INSTALLED);
+            expect(options[0]["rerank:latest"]).toContain(MESSAGES.LABEL_RERANKER_HOSTED_GROUP);
+        });
+
+        it("installed reranker with server's name:tag ref is NOT labelled (not installed)", async () => {
+            // Regression: buildRerankerOptions used to compare against
+            // ``entry.hf_repo`` but the server's ``/api/models/installed``
+            // returns the canonical ``name:tag`` ref. That mismatch made
+            // installed rerankers render as "(not installed)" and the
+            // dropdown fall back to "(disabled)" even when the server had
+            // an active reranker set. Guard the both forms here.
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "bge-reranker-v2-m3:latest",
+                rerank_candidates: 20,
+                reranker_available: true,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [
+                        {
+                            name: "bge-reranker-v2-m3",
+                            tag: "latest",
+                            hf_repo: "gpustack/bge-reranker-v2-m3-GGUF",
+                            display_name: "BGE",
+                            size_gb: 0.4,
+                            min_ram_gb: 2,
+                            description: "",
+                            quality_tier: "balanced",
+                            installed: true,
+                            source: "native",
+                            task: "rerank",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+                models: [{ name: "bge-reranker-v2-m3:latest", source: "native" }],
+            });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { options, values } = captureRerankerDropdown();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(options[0]["bge-reranker-v2-m3:latest"]).toBe("gpustack/bge-reranker-v2-m3-GGUF");
+            expect(options[0]["bge-reranker-v2-m3:latest"]).not.toContain(MESSAGES.LABEL_NOT_INSTALLED);
+            expect(values[0]).toBe("bge-reranker-v2-m3:latest");
         });
 
         it("parses reranker_model as empty when config lacks the field", async () => {

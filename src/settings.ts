@@ -736,19 +736,21 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private buildRerankerOptions(catalogEntries: CatalogEntry[], installed: InstalledModel[]): Array<[string, string]> {
-        const installedNames = new Set(installed.map((m) => m.name));
+        // ``installed`` carries the server's canonical ``name:tag`` ref, while
+        // catalog entries expose ``name`` and ``tag`` separately. Compare via the
+        // same ``name:tag`` form so an installed reranker isn't mislabelled
+        // ``(not installed)`` just because the catalog exposes the hf_repo.
+        const installedRefs = new Set(installed.map((m) => m.name));
+        const ref = (e: CatalogEntry): string => `${e.name}:${e.tag}`;
+        const isInstalled = (e: CatalogEntry): boolean => installedRefs.has(ref(e));
         const opts: Array<[string, string]> = [[RERANKER_DISABLED_KEY, MESSAGES.LABEL_RERANKER_DISABLED]];
-        const localInstalled = catalogEntries.filter(
-            (e) => e.source !== MODEL_SOURCE.LITELLM && installedNames.has(e.hf_repo),
-        );
-        const localNotInstalled = catalogEntries.filter(
-            (e) => e.source !== MODEL_SOURCE.LITELLM && !installedNames.has(e.hf_repo),
-        );
+        const localInstalled = catalogEntries.filter((e) => e.source !== MODEL_SOURCE.LITELLM && isInstalled(e));
+        const localNotInstalled = catalogEntries.filter((e) => e.source !== MODEL_SOURCE.LITELLM && !isInstalled(e));
         const hosted = catalogEntries.filter((e) => e.source === MODEL_SOURCE.LITELLM);
-        for (const e of localInstalled) opts.push([e.hf_repo, e.hf_repo]);
-        for (const e of localNotInstalled) opts.push([e.hf_repo, `${e.hf_repo}${MESSAGES.LABEL_NOT_INSTALLED}`]);
+        for (const e of localInstalled) opts.push([ref(e), e.hf_repo]);
+        for (const e of localNotInstalled) opts.push([ref(e), `${e.hf_repo}${MESSAGES.LABEL_NOT_INSTALLED}`]);
         if (hosted.length > 0) {
-            for (const e of hosted) opts.push([e.hf_repo, `${e.hf_repo} — ${MESSAGES.LABEL_RERANKER_HOSTED_GROUP}`]);
+            for (const e of hosted) opts.push([ref(e), `${e.hf_repo} — ${MESSAGES.LABEL_RERANKER_HOSTED_GROUP}`]);
         }
         return opts;
     }
@@ -758,11 +760,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
         catalogEntries: CatalogEntry[],
         installed: InstalledModel[],
     ): Promise<void> {
-        const installedNames = new Set(installed.map((m) => m.name));
-        const catalogEntry = catalogEntries.find((e) => e.hf_repo === value);
+        const installedRefs = new Set(installed.map((m) => m.name));
+        const catalogEntry = catalogEntries.find((e) => `${e.name}:${e.tag}` === value);
         if (
             value === RERANKER_DISABLED_KEY ||
-            installedNames.has(value) ||
+            installedRefs.has(value) ||
             catalogEntry?.source === MODEL_SOURCE.LITELLM
         ) {
             await this.applyRerankerSelection(value);
@@ -797,7 +799,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const ok = await this.streamRerankerPull(taskId, entry, controller.signal);
         if (!ok) return;
         this.plugin.taskQueue.complete(taskId);
-        await this.applyRerankerSelection(entry.hf_repo);
+        await this.applyRerankerSelection(`${entry.name}:${entry.tag}`);
     }
 
     private async streamRerankerPull(taskId: string, entry: CatalogEntry, signal: AbortSignal): Promise<boolean> {
