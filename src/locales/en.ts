@@ -595,9 +595,11 @@ export const MESSAGES = {
     WIZARD_WIKI_CON_SEARCH: "Search may prioritise wiki chunks over raw ones if you include both",
     WIZARD_WIKI_CON_COMPLEXITY: "Adds a second index shape to maintain alongside raw embeddings",
     WIZARD_WIKI_ENABLE: "Enable wiki (on-demand generation)",
-    WIZARD_WIKI_DISABLE: "Skip for now",
-    WIZARD_WIKI_ENABLE_DESC: "Unlocks wiki commands + Settings. Nothing generates automatically.",
-    WIZARD_WIKI_DISABLE_DESC: "Use raw document search only. Enable later from Settings → Wiki.",
+    WIZARD_WIKI_DISABLE: "Skip for now (recommended)",
+    WIZARD_WIKI_ENABLE_DESC:
+        "Unlocks wiki commands + Settings. Nothing generates automatically. Proceed with caution — this is experimental.",
+    WIZARD_WIKI_DISABLE_DESC:
+        "Use raw document search only. You can enable the wiki later from Settings → Wiki, or re-open this wizard from Settings → Setup wizard.",
     TITLE_PICK_EMBEDDING: "Pick an embedding model",
     WIZARD_EMBEDDING_HELP:
         "The embedding model converts your documents into searchable vectors. The default works well for most users.",
