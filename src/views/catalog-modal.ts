@@ -47,9 +47,15 @@ export class CatalogModal extends Modal {
     private debouncedSearch: () => void;
     private cancelDebouncedSearch: () => void;
 
-    constructor(app: App, plugin: LilbeePlugin) {
+    /**
+     * @param initialTaskFilter Pre-select a task tab when opening (e.g.
+     * from the wizard's Vision step so users land on vision-only results).
+     * Defaults to "" which shows all tasks.
+     */
+    constructor(app: App, plugin: LilbeePlugin, initialTaskFilter: TaskFilter = "") {
         super(app);
         this.plugin = plugin;
+        this.filterTask = initialTaskFilter;
         const searchDebounced = debounce(() => this.resetAndFetch(), DEBOUNCE_MS);
         this.debouncedSearch = searchDebounced.run;
         this.cancelDebouncedSearch = searchDebounced.cancel;
@@ -85,10 +91,16 @@ export class CatalogModal extends Modal {
     private renderFilterBar(parent: HTMLElement): void {
         const filters = parent.createDiv({ cls: "lilbee-catalog-filters" });
 
-        this.renderSelect(filters, "lilbee-catalog-filter-task", CATALOG_FILTERS.TASK, (v) => {
-            this.filterTask = v as TaskFilter;
-            this.resetAndFetch();
-        });
+        this.renderSelect(
+            filters,
+            "lilbee-catalog-filter-task",
+            CATALOG_FILTERS.TASK,
+            (v) => {
+                this.filterTask = v as TaskFilter;
+                this.resetAndFetch();
+            },
+            this.filterTask,
+        );
 
         this.renderSelect(filters, "lilbee-catalog-filter-size", CATALOG_FILTERS.SIZE, (v) => {
             this.filterSize = v as SizeFilter;
@@ -122,12 +134,14 @@ export class CatalogModal extends Modal {
         cls: string,
         options: ReadonlyArray<readonly [string, string]>,
         onChange: (value: string) => void,
+        initialValue?: string,
     ): void {
         const select = parent.createEl("select", { cls }) as HTMLSelectElement;
         for (const [value, label] of options) {
             const opt = select.createEl("option", { text: label });
             opt.value = value;
         }
+        if (initialValue !== undefined && initialValue !== "") select.value = initialValue;
         select.addEventListener("change", () => onChange(select.value));
     }
 

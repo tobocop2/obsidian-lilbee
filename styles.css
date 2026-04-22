@@ -11,6 +11,7 @@
     --lilbee-color-wiki: #10b981;
     --lilbee-color-delete: #ef4444;
     --lilbee-color-setup: #8b5cf6;
+    --lilbee-color-vision: #ec4899;
 }
 
 .lilbee-document-card {
@@ -1378,6 +1379,7 @@
 .lilbee-wizard-step[data-step="server"]    { --wizard-step-color: var(--interactive-accent); }
 .lilbee-wizard-step[data-step="model"]     { --wizard-step-color: var(--lilbee-color-pull); }
 .lilbee-wizard-step[data-step="embedding"] { --wizard-step-color: var(--lilbee-color-download); }
+.lilbee-wizard-step[data-step="vision"]    { --wizard-step-color: var(--lilbee-color-vision); }
 .lilbee-wizard-step[data-step="sync"]      { --wizard-step-color: var(--lilbee-color-sync); }
 .lilbee-wizard-step[data-step="wiki"]      { --wizard-step-color: var(--lilbee-color-wiki); }
 .lilbee-wizard-step[data-step="done"]      { --wizard-step-color: var(--text-success, #22c55e); }
@@ -1440,6 +1442,7 @@
 .lilbee-wizard-step-slot[data-step="server"]    .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--interactive-accent); }
 .lilbee-wizard-step-slot[data-step="model"]     .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-pull); }
 .lilbee-wizard-step-slot[data-step="embedding"] .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-download); }
+.lilbee-wizard-step-slot[data-step="vision"]    .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-vision); }
 .lilbee-wizard-step-slot[data-step="sync"]      .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-sync); }
 .lilbee-wizard-step-slot[data-step="wiki"]      .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-wiki); }
 .lilbee-wizard-step-slot[data-step="done"]      .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--text-success, #22c55e); }

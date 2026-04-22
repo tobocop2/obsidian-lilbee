@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
-import { SetupWizard, getSystemMemoryGB, recommendedIndex } from "../../src/views/setup-wizard";
+import { SetupWizard, getSystemMemoryGB, pickNativeChatModels, recommendedIndex } from "../../src/views/setup-wizard";
 import { SSE_EVENT, WIZARD_STEP } from "../../src/types";
 import { ok, err } from "neverthrow";
 import { MESSAGES } from "../../src/locales/en";
@@ -65,6 +65,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
                 chat: { active: "", catalog: [], installed: [] },
             }),
             setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
+            setVisionModel: vi.fn().mockResolvedValue(ok(undefined)),
             setBaseUrl: vi.fn(),
             setToken: vi.fn(),
             setTokenProvider: vi.fn(),
@@ -123,8 +124,8 @@ describe("SetupWizard", () => {
             expect(indicator).not.toBeNull();
             const dots = indicator!.findAll("lilbee-wizard-step-circle");
             const lines = indicator!.findAll("lilbee-wizard-step-line");
-            expect(dots.length).toBe(6);
-            expect(lines.length).toBe(5);
+            expect(dots.length).toBe(7);
+            expect(lines.length).toBe(6);
         });
 
         it("marks no slot as active on welcome (step 0)", () => {
@@ -158,29 +159,30 @@ describe("SetupWizard", () => {
             expect(dots[1].classList.contains("is-active")).toBe(true);
             expect(dots[2].classList.contains("is-active")).toBe(false);
             expect(dots[2].classList.contains("is-done")).toBe(false);
-            expect(dots[5].classList.contains("is-active")).toBe(false);
-            expect(dots[5].classList.contains("is-done")).toBe(false);
+            // slot[6] = Done (step=7) — untouched while we're on Model.
+            expect(dots[6].classList.contains("is-active")).toBe(false);
+            expect(dots[6].classList.contains("is-done")).toBe(false);
             // line[0] is between slot[0] (step=1) and slot[1] (step=2) — done.
             expect(lines[0].classList.contains("is-done")).toBe(true);
             expect(lines[1].classList.contains("is-done")).toBe(false);
-            expect(lines[4].classList.contains("is-done")).toBe(false);
+            expect(lines[5].classList.contains("is-done")).toBe(false);
         });
 
-        it("marks prior slots done and last slot active on done step (step 6)", () => {
+        it("marks prior slots done and last slot active on done step (step 7)", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
             const dots = el.find("lilbee-wizard-step-indicator")!.findAll("lilbee-wizard-step-circle");
             const lines = el.find("lilbee-wizard-step-indicator")!.findAll("lilbee-wizard-step-line");
-            // slots[0..4] correspond to steps 1..5 — all done. slot[5] = step 6 = active.
-            for (let i = 0; i < 5; i++) {
+            // slots[0..5] correspond to steps 1..6 — all done. slot[6] = step 7 = active.
+            for (let i = 0; i < 6; i++) {
                 expect(dots[i].classList.contains("is-done")).toBe(true);
             }
-            expect(dots[5].classList.contains("is-active")).toBe(true);
+            expect(dots[6].classList.contains("is-active")).toBe(true);
             for (const line of lines) {
                 expect(line.classList.contains("is-done")).toBe(true);
             }
@@ -559,12 +561,14 @@ describe("SetupWizard", () => {
             const entries = [
                 makeEntry({
                     name: "qwen/qwen3-0.6B",
+                    hf_repo: "qwen/qwen3-0.6B",
                     size_gb: 0.5,
                     min_ram_gb: 4,
                     display_name: "Qwen3 0.6B",
                 }),
                 makeEntry({
                     name: "qwen/qwen3-4B",
+                    hf_repo: "qwen/qwen3-4B",
                     size_gb: 2.5,
                     min_ram_gb: 8,
                     display_name: "Qwen3 4B",
@@ -1062,7 +1066,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1083,7 +1087,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1100,7 +1104,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1118,7 +1122,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1136,7 +1140,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1154,7 +1158,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1175,7 +1179,7 @@ describe("SetupWizard", () => {
             });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
 
@@ -1199,7 +1203,7 @@ describe("SetupWizard", () => {
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             const closeSpy = vi.spyOn(wizard, "close");
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
 
@@ -1215,7 +1219,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1234,7 +1238,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1249,7 +1253,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", wikiEnabled: false } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1263,7 +1267,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", wikiEnabled: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1277,7 +1281,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1291,7 +1295,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external", wikiEnabled: true } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1305,7 +1309,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1328,7 +1332,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1349,7 +1353,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1365,7 +1369,7 @@ describe("SetupWizard", () => {
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             const closeSpy = vi.spyOn(wizard, "close");
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1378,21 +1382,21 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
             const indicator = el.find("lilbee-wizard-step-indicator");
             expect(indicator).not.toBeNull();
             const dots = indicator!.findAll("lilbee-wizard-step-circle");
-            expect(dots.length).toBe(6);
+            expect(dots.length).toBe(7);
         });
 
         it("renders pros list items", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1404,7 +1408,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1427,7 +1431,7 @@ describe("SetupWizard", () => {
                 unchanged: 8,
                 failed: [],
             };
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1442,7 +1446,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1455,7 +1459,7 @@ describe("SetupWizard", () => {
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             const closeSpy = vi.spyOn(wizard, "close");
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1473,7 +1477,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1486,7 +1490,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1502,7 +1506,7 @@ describe("SetupWizard", () => {
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).pulledModelName = "test-model";
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1514,7 +1518,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -1557,29 +1561,35 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("Welcome to lilbee"))).toBe(true);
         });
 
-        it("back() at step 3 goes to step 2", () => {
+        it("back() at step 4 (vision) goes to step 3 (embedding picker)", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse([]));
-            plugin.api.syncStream = vi.fn().mockReturnValue(
-                (async function* () {
-                    await new Promise(() => {});
-                })(),
-            );
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 4;
             wizard.back();
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            // From step 4 (sync), back() goes to step 3 (embedding picker)
             expect(texts.some((t) => t.includes("Pick an embedding model"))).toBe(true);
         });
 
-        it("back() at step 5 goes to step 4 (wiki)", () => {
+        it("back() at step 5 (sync) goes to step 4 (vision)", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 5;
+            wizard.back();
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Vision model (optional)"))).toBe(true);
+        });
+
+        it("back() at step 7 (done) goes to step 6 (wiki)", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             wizard.back();
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
@@ -1628,7 +1638,7 @@ describe("SetupWizard", () => {
             });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
 
@@ -1658,7 +1668,7 @@ describe("SetupWizard", () => {
     });
 
     describe("Full flow integration", () => {
-        it("complete flow: welcome -> model -> sync -> wiki -> done", async () => {
+        it("complete flow: welcome -> model -> embed -> vision -> sync -> wiki -> done", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
@@ -1696,7 +1706,7 @@ describe("SetupWizard", () => {
             await tick();
             await tick();
 
-            // Step 3: Embedding picker -> Download & continue (skips to sync when no selection)
+            // Step 3: Embedding picker -> Download & continue (skips to vision when no selection)
             el = wizard.contentEl as unknown as MockElement;
             findButtons(el)
                 .find((b) => b.textContent === "Download & continue")!
@@ -1704,11 +1714,19 @@ describe("SetupWizard", () => {
             await tick();
             await tick();
 
-            // Step 4: Sync (auto-starts, should auto-advance to wiki)
+            // Step 4: Vision picker -> Skip
+            el = wizard.contentEl as unknown as MockElement;
+            expect(collectTexts(el).some((t) => t.includes("Vision model (optional)"))).toBe(true);
+            findButtons(el)
+                .find((b) => b.textContent === "Skip")!
+                .trigger("click");
+            await tick();
+
+            // Step 5: Sync (auto-starts, should auto-advance to wiki)
             await tick();
             await tick();
 
-            // Step 5: Wiki -> Next (keep disabled)
+            // Step 6: Wiki -> Next (keep disabled)
             el = wizard.contentEl as unknown as MockElement;
             expect(collectTexts(el).some((t) => t.includes("Wiki (optional, experimental)"))).toBe(true);
             findButtons(el)
@@ -1716,7 +1734,7 @@ describe("SetupWizard", () => {
                 .trigger("click");
             await tick();
 
-            // Step 6: Done -> Open chat
+            // Step 7: Done -> Open chat
             el = wizard.contentEl as unknown as MockElement;
             expect(collectTexts(el).some((t) => t.includes("You're all set!"))).toBe(true);
 
@@ -1727,6 +1745,65 @@ describe("SetupWizard", () => {
 
             expect(plugin.settings.setupCompleted).toBe(true);
             expect(plugin.activateChatView).toHaveBeenCalled();
+        });
+    });
+
+    describe("pickNativeChatModels", () => {
+        // Regression test for the "buggy server" path: all featured models
+        // come back labeled source="litellm". Previous behavior filtered
+        // those out and emptied the wizard grid; new behavior keeps them.
+        it("does not drop entries even when every model is labeled litellm", () => {
+            const models = [
+                makeEntry({ name: "qwen3-0.6b", hf_repo: "q/a", source: "litellm" }),
+                makeEntry({ name: "gemma-3-4b", hf_repo: "g/b", source: "litellm" }),
+                makeEntry({ name: "mistral-7b", hf_repo: "m/c", source: "litellm" }),
+            ];
+            const picks = pickNativeChatModels(models);
+            expect(picks.length).toBe(3);
+        });
+
+        it("orders recognised families before others", () => {
+            const models = [
+                makeEntry({ name: "smollm2", hf_repo: "a/a" }),
+                makeEntry({ name: "qwen3-0.6b", hf_repo: "b/b" }),
+                makeEntry({ name: "gemma-3-1b", hf_repo: "c/c" }),
+            ];
+            const picks = pickNativeChatModels(models);
+            // Gemma family comes first in PREFERRED_FAMILIES order.
+            expect(picks[0].name).toBe("gemma-3-1b");
+            expect(picks[1].name).toBe("qwen3-0.6b");
+            expect(picks[2].name).toBe("smollm2");
+        });
+
+        it("dedupes entries sharing the same hf_repo", () => {
+            const dup = makeEntry({ name: "qwen3-0.6b", hf_repo: "q/a" });
+            const picks = pickNativeChatModels([dup, dup]);
+            expect(picks.length).toBe(1);
+        });
+
+        it("caps at MAX_FEATURED_PICKS even after preferred-family and backfill rounds", () => {
+            const models = Array.from({ length: 20 }, (_, i) => makeEntry({ name: `other-${i}`, hf_repo: `x/${i}` }));
+            const picks = pickNativeChatModels(models);
+            expect(picks.length).toBe(8);
+        });
+
+        it("caps MID-preferred-family iteration when max is reached", () => {
+            // Exercise the early-return inside the preferred-families loop.
+            const models = Array.from({ length: 10 }, (_, i) =>
+                makeEntry({ name: `gemma-3-${i}b`, hf_repo: `g/${i}` }),
+            );
+            const picks = pickNativeChatModels(models);
+            expect(picks.length).toBe(8);
+        });
+
+        it("applies a custom filter predicate when provided", () => {
+            const models = [
+                makeEntry({ name: "qwen3-0.6b", hf_repo: "q/a", source: "litellm" }),
+                makeEntry({ name: "gemma-3-1b", hf_repo: "g/b", source: "native" }),
+            ];
+            const picks = pickNativeChatModels(models, (m) => m.source !== "litellm");
+            expect(picks.length).toBe(1);
+            expect(picks[0].source).toBe("native");
         });
     });
 
@@ -1778,7 +1855,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -1883,14 +1960,9 @@ describe("SetupWizard", () => {
             expect(mockAbort).toHaveBeenCalled();
         });
 
-        it("download & continue with no selection skips to sync", async () => {
+        it("download & continue with no selection skips to vision picker", async () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
-            plugin.api.syncStream = vi.fn().mockReturnValue(
-                (async function* () {
-                    await new Promise(() => {});
-                })(),
-            );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 3;
@@ -1904,10 +1976,10 @@ describe("SetupWizard", () => {
             await tick();
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
+            expect(texts.some((t) => t.includes("Vision model (optional)"))).toBe(true);
         });
 
-        it("download & continue with installed model sets embedding and skips to sync", async () => {
+        it("download & continue with installed model sets embedding and advances to vision picker", async () => {
             const entries = [
                 makeEntry({
                     name: "nomic-embed-text",
@@ -1918,11 +1990,6 @@ describe("SetupWizard", () => {
             ];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
-            plugin.api.syncStream = vi.fn().mockReturnValue(
-                (async function* () {
-                    await new Promise(() => {});
-                })(),
-            );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
             (wizard as any).step = 3;
@@ -1937,7 +2004,7 @@ describe("SetupWizard", () => {
 
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
+            expect(texts.some((t) => t.includes("Vision model (optional)"))).toBe(true);
         });
 
         it("installed-embedding click surfaces notice when setEmbeddingModel returns err", async () => {
@@ -2077,7 +2144,7 @@ describe("SetupWizard", () => {
             await (wizard as any).pullEmbeddingModel(btn, el, el, el, el, el);
             const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "nomic/nomic-embed-text");
             expect(Notice.instances.some((n: any) => n.message === setFailed)).toBe(true);
-            expect((wizard as any).step).not.toBe(WIZARD_STEP.SYNC);
+            expect((wizard as any).step).not.toBe(WIZARD_STEP.VISION_PICKER);
         });
 
         it("pullEmbeddingModel handles progress with current/total", async () => {
@@ -2296,6 +2363,537 @@ describe("SetupWizard", () => {
         });
     });
 
+    describe("Step 4: Vision Picker", () => {
+        function visionEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
+            return makeEntry({
+                name: "granite-vision",
+                hf_repo: "ibm/granite-vision-3.2-2b",
+                task: "vision",
+                display_name: "Granite Vision 3.2B",
+                ...overrides,
+            });
+        }
+
+        it("renders vision picker step with optional framing", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([visionEntry()])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+            await tick();
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            // Optional framing must be explicit in the step header.
+            expect(texts.some((t) => t.includes("Vision model (optional)"))).toBe(true);
+            // Plain-English context is required.
+            expect(texts.some((t) => t.includes("scanned PDFs"))).toBe(true);
+            expect(texts.some((t) => t.includes("can skip this"))).toBe(true);
+        });
+
+        it("renders Step 04 · VISION header badge", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const badge = el.find("lilbee-wizard-step-badge");
+            expect(badge).not.toBeNull();
+            expect(badge!.textContent).toBe("Step 04 · VISION");
+        });
+
+        it("renders model cards and a prominent Skip button", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([visionEntry()])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            // Grid + one card for the single featured vision entry.
+            expect(el.find("lilbee-catalog-grid")).not.toBeNull();
+            expect(el.findAll("lilbee-model-card").length).toBe(1);
+            // Skip button lives in the actions footer.
+            const buttons = findButtons(el);
+            expect(buttons.some((b) => b.textContent === "Skip")).toBe(true);
+            expect(buttons.some((b) => b.textContent === "Download & continue")).toBe(true);
+        });
+
+        it("exposes a Browse full catalog button that opens CatalogModal pre-filtered to vision", async () => {
+            const { CatalogModal } = await import("../../src/views/catalog-modal");
+            const mockCatalog = CatalogModal as unknown as ReturnType<typeof vi.fn>;
+            mockCatalog.mockClear();
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const catalogBtn = findButtons(el).find((b) => b.textContent === "Browse full catalog");
+            expect(catalogBtn).toBeDefined();
+            catalogBtn!.trigger("click");
+            expect(mockCatalog).toHaveBeenCalled();
+            // Third arg is the initial task filter — should be "vision".
+            const callArgs = mockCatalog.mock.calls.at(-1);
+            expect(callArgs?.[2]).toBe("vision");
+        });
+
+        it("Skip advances to sync without selecting or pulling a vision model", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([visionEntry()])));
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const skipBtn = findButtons(el).find((b) => b.textContent === "Skip")!;
+            skipBtn.trigger("click");
+            await tick();
+
+            expect(plugin.api.pullModel).not.toHaveBeenCalled();
+            expect(plugin.api.setVisionModel).not.toHaveBeenCalled();
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
+        });
+
+        it("Skip also aborts any ongoing pull before advancing", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const mockAbort = vi.fn();
+            (wizard as any).pullController = { abort: mockAbort };
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const skipBtn = findButtons(el).find((b) => b.textContent === "Skip")!;
+            skipBtn.trigger("click");
+            expect(mockAbort).toHaveBeenCalled();
+        });
+
+        it("Back returns to embedding picker and aborts ongoing pull", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+
+            const mockAbort = vi.fn();
+            (wizard as any).pullController = { abort: mockAbort };
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const backBtn = findButtons(el).find((b) => b.textContent === "Back")!;
+            backBtn.trigger("click");
+            expect(mockAbort).toHaveBeenCalled();
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Pick an embedding model"))).toBe(true);
+        });
+
+        it("Download & continue with no selection skips to sync", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Download & continue")!
+                .trigger("click");
+            await tick();
+
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
+        });
+
+        it("Download & continue with a non-installed selected vision model triggers pullVisionModel", async () => {
+            const entries = [visionEntry({ installed: false })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: { percent: 100 } };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Download & continue")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            expect(plugin.api.pullModel).toHaveBeenCalledWith(
+                "ibm/granite-vision-3.2-2b",
+                "native",
+                expect.any(AbortSignal),
+            );
+            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("ibm/granite-vision-3.2-2b");
+        });
+
+        it("Download & continue with installed model sets vision and advances to sync", async () => {
+            const entries = [visionEntry({ installed: true })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Download & continue")!
+                .trigger("click");
+            await tick();
+
+            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("ibm/granite-vision-3.2-2b");
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
+        });
+
+        it("installed-vision click surfaces notice when setVisionModel returns err", async () => {
+            Notice.clear();
+            const entries = [visionEntry({ installed: true })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.setVisionModel = vi.fn().mockResolvedValue(err(new Error("activate fail")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Download & continue")!
+                .trigger("click");
+            await tick();
+            await tick();
+
+            const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "ibm/granite-vision-3.2-2b");
+            expect(Notice.instances.some((n: any) => n.message === setFailed)).toBe(true);
+        });
+
+        it("pullVisionModel early return when selectedVision is null", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedVision = null;
+            const el = new MockElement("div");
+            await (wizard as any).pullVisionModel(el, el, el, el, el, el);
+            expect(plugin.api.pullModel).not.toHaveBeenCalled();
+        });
+
+        it("pullVisionModel handles pull failure and re-enables button", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    throw new Error("network error");
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedVision = visionEntry();
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullVisionModel(btn, el, el, el, el, el);
+            expect((btn as unknown as MockElement).disabled).toBe(false);
+        });
+
+        it("pullVisionModel handles AbortError with cancelled notice", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    const e = new Error("abort");
+                    e.name = "AbortError";
+                    throw e;
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedVision = visionEntry();
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullVisionModel(btn, el, el, el, el, el);
+            expect(Notice.instances.some((n) => n.message.includes("download cancelled"))).toBe(true);
+        });
+
+        it("pullVisionModel succeeds, sets vision model, and advances to sync", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: { percent: 50 } };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedVision = visionEntry();
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullVisionModel(btn, el, el, el, el, el);
+            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("ibm/granite-vision-3.2-2b");
+            expect((wizard as any).step).toBe(WIZARD_STEP.SYNC);
+        });
+
+        it("pullVisionModel surfaces notice and keeps step when setVisionModel returns err", async () => {
+            Notice.clear();
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: { percent: 100 } };
+                })(),
+            );
+            plugin.api.setVisionModel = vi.fn().mockResolvedValue(err(new Error("activate fail")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedVision = visionEntry();
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullVisionModel(btn, el, el, el, el, el);
+            const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "ibm/granite-vision-3.2-2b");
+            expect(Notice.instances.some((n: any) => n.message === setFailed)).toBe(true);
+            expect((wizard as any).step).not.toBe(WIZARD_STEP.SYNC);
+        });
+
+        it("pullVisionModel handles progress with current/total", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: { current: 25, total: 100 } };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedVision = visionEntry();
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullVisionModel(btn, el, el, el, el, el);
+            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("ibm/granite-vision-3.2-2b");
+        });
+
+        it("pullVisionModel handles progress with no percent and no total", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: {} };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedVision = visionEntry();
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullVisionModel(btn, el, el, el, el, el);
+            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("ibm/granite-vision-3.2-2b");
+        });
+
+        it("pullVisionModel handles SSE error with string data", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.ERROR, data: "raw string error" };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedVision = visionEntry();
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullVisionModel(btn, el, el, el, el, el);
+            expect(Notice.instances.some((n) => n.message.includes("Download failed"))).toBe(true);
+        });
+
+        it("pullVisionModel handles SSE error event with message", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.ERROR, data: { message: "pull failed" } };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedVision = visionEntry();
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullVisionModel(btn, el, el, el, el, el);
+            expect(Notice.instances.some((n) => n.message.includes("Download failed"))).toBe(true);
+        });
+
+        it("pullVisionModel handles SSE error with empty object", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.ERROR, data: {} };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedVision = visionEntry();
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullVisionModel(btn, el, el, el, el, el);
+            expect(Notice.instances.some((n) => n.message.includes("Download failed"))).toBe(true);
+        });
+
+        it("selectVision updates selection on grid", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            const grid = new MockElement("div") as unknown as HTMLElement;
+            const child = (grid as unknown as MockElement).createDiv();
+            child.dataset.repo = "ibm/granite-vision-3.2-2b";
+            const other = (grid as unknown as MockElement).createDiv();
+            other.dataset.repo = "other/vision";
+            other.classList.add("is-selected");
+            const model = visionEntry();
+            (wizard as any).selectVision(grid, model);
+            expect((wizard as any).selectedVision).toBe(model);
+            expect(child.classList.contains("is-selected")).toBe(true);
+            expect(other.classList.contains("is-selected")).toBe(false);
+        });
+
+        it("loadVisionModels handles catalog error (thrown)", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockRejectedValue(new Error("fail"));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const statusEl = new MockElement("div") as unknown as HTMLElement;
+            await (wizard as any).loadVisionModels(container, statusEl);
+            expect((wizard as any).visionModels).toEqual([]);
+            expect((statusEl as unknown as MockElement).textContent).toContain("Could not load models");
+        });
+
+        it("loadVisionModels handles catalog isErr result", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("fail")));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const statusEl = new MockElement("div") as unknown as HTMLElement;
+            await (wizard as any).loadVisionModels(container, statusEl);
+            expect((wizard as any).visionModels).toEqual([]);
+        });
+
+        it("loadVisionModels queries catalog with featured=true and task=vision", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([visionEntry()])));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const statusEl = new MockElement("div") as unknown as HTMLElement;
+            await (wizard as any).loadVisionModels(container, statusEl);
+            expect(plugin.api.catalog).toHaveBeenCalledWith(
+                expect.objectContaining({ task: "vision", featured: true }),
+            );
+            expect((wizard as any).selectedVision?.name).toBe("granite-vision");
+        });
+
+        it("loadVisionModels renders model cards with onClick that calls selectVision", async () => {
+            const entries = [
+                visionEntry({ name: "granite-vision", hf_repo: "ibm/granite-vision-3.2-2b" }),
+                visionEntry({ name: "moondream", hf_repo: "vikhyatk/moondream2" }),
+            ];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const statusEl = new MockElement("div") as unknown as HTMLElement;
+
+            const onClicks: Array<() => void> = [];
+            const origRender = (await import("../../src/components/model-card")).renderModelCard;
+            vi.spyOn(await import("../../src/components/model-card"), "renderModelCard").mockImplementation(
+                (c, e, opts) => {
+                    if (opts?.onClick) onClicks.push(() => opts.onClick!(e));
+                    return origRender(c, e, opts);
+                },
+            );
+            await (wizard as any).loadVisionModels(container, statusEl);
+
+            expect(onClicks.length).toBe(2);
+            onClicks[1]();
+            expect((wizard as any).selectedVision?.name).toBe("moondream");
+        });
+    });
+
     describe("back from step 2 with ready server manager", () => {
         it("goes to step 0 when serverManager is ready", () => {
             const plugin = makePlugin({
@@ -2328,7 +2926,7 @@ describe("SetupWizard", () => {
             );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
             await tick();
             await tick();
@@ -2352,7 +2950,7 @@ describe("SetupWizard", () => {
                 unchanged: 6,
                 failed: [],
             };
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2372,7 +2970,7 @@ describe("SetupWizard", () => {
                 unchanged: 10,
                 failed: [],
             };
-            (wizard as any).step = 6;
+            (wizard as any).step = 7;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2388,6 +2986,11 @@ describe("SetupWizard", () => {
         it("tags the step container with its semantic data-step key", async () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
 
@@ -2396,8 +2999,10 @@ describe("SetupWizard", () => {
                 [1, "server"],
                 [2, "model"],
                 [3, "embedding"],
-                [5, "wiki"],
-                [6, "done"],
+                [4, "vision"],
+                [5, "sync"],
+                [6, "wiki"],
+                [7, "done"],
             ];
             for (const [step, key] of cases) {
                 (wizard as any).step = step;
@@ -2438,10 +3043,15 @@ describe("SetupWizard", () => {
         it("adds the hero rail to every rendered step", async () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([])));
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
 
-            for (const step of [0, 1, 2, 5, 6]) {
+            for (const step of [0, 1, 2, 4, 6, 7]) {
                 (wizard as any).step = step;
                 (wizard as any).renderStep();
                 await tick();
@@ -2562,7 +3172,7 @@ describe("SetupWizard", () => {
             });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 4;
+            (wizard as any).step = 5;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2577,7 +3187,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
@@ -2592,7 +3202,7 @@ describe("SetupWizard", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
-            (wizard as any).step = 5;
+            (wizard as any).step = 6;
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;

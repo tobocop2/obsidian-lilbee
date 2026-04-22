@@ -582,6 +582,13 @@ export const MESSAGES = {
         "The embedding model converts your documents into searchable vectors. The default works well for most users.",
     WIZARD_EMBEDDING_RECOMMENDED: "Recommended",
 
+    // Vision wizard step
+    TITLE_PICK_VISION: "Vision model (optional)",
+    WIZARD_VISION_HELP:
+        "Vision models let lilbee read scanned PDFs, handwritten notes, diagrams, and image-only pages. If your documents are already text, you can skip this.",
+    WIZARD_VISION_RECOMMENDED: "Featured vision models",
+    BUTTON_SKIP_STEP: "Skip",
+
     WIZARD_FILE_PICKER_VAULT: "From vault",
     WIZARD_FILE_PICKER_DISK: "Files from disk",
     WIZARD_FOLDER_PICKER_DISK: "Folder from disk",

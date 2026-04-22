@@ -9,16 +9,18 @@ import { percentFromSse, extractSseErrorMessage } from "../utils";
 
 type FeaturedModel = CatalogEntry;
 type EmbeddingModel = CatalogEntry;
+type VisionModel = CatalogEntry;
 
 /**
- * Ordered, visible-in-indicator steps. The indicator labels these 1..6 so the
- * user has a clear sense of "Step N of 6" while moving through setup. Welcome
+ * Ordered, visible-in-indicator steps. The indicator labels these 1..7 so the
+ * user has a clear sense of "Step N of 7" while moving through setup. Welcome
  * is not in the numbered sequence (it's the intro splash).
  */
 const INDICATOR_STEPS: { step: number; key: string; label: string }[] = [
     { step: WIZARD_STEP.SERVER_MODE, key: "server", label: "Server" },
     { step: WIZARD_STEP.MODEL_PICKER, key: "model", label: "Model" },
     { step: WIZARD_STEP.EMBEDDING_PICKER, key: "embedding", label: "Embed" },
+    { step: WIZARD_STEP.VISION_PICKER, key: "vision", label: "Vision" },
     { step: WIZARD_STEP.SYNC, key: "sync", label: "Sync" },
     { step: WIZARD_STEP.WIKI, key: "wiki", label: "Wiki" },
     { step: WIZARD_STEP.DONE, key: "done", label: "Done" },
@@ -34,6 +36,7 @@ const STEP_KEY: Record<number, string> = {
     [WIZARD_STEP.SERVER_MODE]: "server",
     [WIZARD_STEP.MODEL_PICKER]: "model",
     [WIZARD_STEP.EMBEDDING_PICKER]: "embedding",
+    [WIZARD_STEP.VISION_PICKER]: "vision",
     [WIZARD_STEP.SYNC]: "sync",
     [WIZARD_STEP.WIKI]: "wiki",
     [WIZARD_STEP.DONE]: "done",
@@ -69,20 +72,30 @@ export function recommendedIndex(models: FeaturedModel[], memGB: number | null):
  * native models outside these families backfill after.
  */
 const PREFERRED_FAMILIES = ["gemma-4", "gemma-3", "gemma-2", "qwen3", "qwen2", "llama-3", "phi-3"];
-const MAX_FEATURED_PICKS = 4;
+const MAX_FEATURED_PICKS = 8;
 
 /**
- * Rank the catalog's native chat entries into the wizard's "Our picks" row.
- * Filters out litellm (requires an API key — wrong first-run default), then
- * prefers entries whose name starts with one of {@link PREFERRED_FAMILIES}
- * before falling back to remaining natives.
+ * Rank the server's featured chat entries into the wizard's "Our picks" row.
+ *
+ * Deliberately does NOT filter by `source`. When a server is mis-configured
+ * and tags every featured model as `source="litellm"` (a known transient bug
+ * in older builds), filtering on source emptied the wizard grid. The featured
+ * list itself is the source of truth — the server has already decided these
+ * are the models a fresh user should see. We just reorder them so recognised
+ * open-weight families (Gemma, Qwen, Llama, Phi) lead.
+ *
+ * Callers that genuinely need to hide a subset (e.g. API-only entries in a
+ * different UI) can pass a custom `filter` predicate.
  */
-export function pickNativeChatModels(models: FeaturedModel[]): FeaturedModel[] {
-    const natives = models.filter((m) => m.source !== "litellm");
+export function pickNativeChatModels(
+    models: FeaturedModel[],
+    filter: (m: FeaturedModel) => boolean = () => true,
+): FeaturedModel[] {
+    const eligible = models.filter(filter);
     const seen = new Set<string>();
     const ordered: FeaturedModel[] = [];
     for (const prefix of PREFERRED_FAMILIES) {
-        for (const m of natives) {
+        for (const m of eligible) {
             if (m.name.startsWith(prefix) && !seen.has(m.hf_repo)) {
                 ordered.push(m);
                 seen.add(m.hf_repo);
@@ -90,7 +103,7 @@ export function pickNativeChatModels(models: FeaturedModel[]): FeaturedModel[] {
             }
         }
     }
-    for (const m of natives) {
+    for (const m of eligible) {
         if (!seen.has(m.hf_repo)) {
             ordered.push(m);
             seen.add(m.hf_repo);
@@ -111,6 +124,8 @@ export class SetupWizard extends Modal {
     private pulledModelName = "";
     private selectedEmbedding: EmbeddingModel | null = null;
     private embeddingModels: EmbeddingModel[] = [];
+    private selectedVision: VisionModel | null = null;
+    private visionModels: VisionModel[] = [];
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app);
@@ -145,6 +160,9 @@ export class SetupWizard extends Modal {
                 break;
             case WIZARD_STEP.EMBEDDING_PICKER:
                 this.renderEmbeddingPicker();
+                break;
+            case WIZARD_STEP.VISION_PICKER:
+                this.renderVisionPicker();
                 break;
             case WIZARD_STEP.SYNC:
                 this.renderSync();
@@ -493,14 +511,15 @@ export class SetupWizard extends Modal {
         statusEl: HTMLElement,
     ): Promise<void> {
         try {
-            // Wizard picks = local/native models only, not litellm. The server
-            // marks litellm models as featured=true but those require an API
-            // key; surfacing them as the first-run "picks" was misleading. We
-            // query by downloads and take the top native entries, preferring
-            // well-known open-weight families (Gemma, Qwen, Llama) when
-            // available.
+            // The server's featured list is the source of truth for the
+            // wizard's "Our picks" row. Do NOT filter by `source` here — a
+            // mis-configured server can tag every featured model as
+            // `source="litellm"`, which would empty the grid and leave the
+            // user stuck. `pickNativeChatModels` just reorders so recognised
+            // open-weight families (Gemma, Qwen, Llama) lead.
             const result = await this.plugin.api.catalog({
                 task: MODEL_TASK.CHAT,
+                featured: true,
                 sort: FILTERS.SORT.DOWNLOADS,
                 limit: 40,
             });
@@ -632,7 +651,7 @@ export class SetupWizard extends Modal {
         const downloadBtn = actions.createEl("button", { text: MESSAGES.BUTTON_DOWNLOAD_CONTINUE, cls: "mod-cta" });
         downloadBtn.addEventListener("click", () => {
             if (!this.selectedEmbedding) {
-                this.step = WIZARD_STEP.SYNC;
+                this.step = WIZARD_STEP.VISION_PICKER;
                 this.renderStep();
                 return;
             }
@@ -644,7 +663,7 @@ export class SetupWizard extends Modal {
                         new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", name));
                         return;
                     }
-                    this.step = WIZARD_STEP.SYNC;
+                    this.step = WIZARD_STEP.VISION_PICKER;
                     this.renderStep();
                 })();
                 return;
@@ -661,6 +680,7 @@ export class SetupWizard extends Modal {
         try {
             const result = await this.plugin.api.catalog({
                 task: MODEL_TASK.EMBEDDING,
+                featured: true,
                 sort: FILTERS.SORT.DOWNLOADS,
                 limit: 20,
             });
@@ -668,11 +688,10 @@ export class SetupWizard extends Modal {
                 this.embeddingModels = [];
                 return;
             }
-            // Same rule as chat picks: skip litellm entries so the wizard never
-            // offers a default that silently needs an API key.
-            this.embeddingModels = result.value.models
-                .filter((m) => m.source !== "litellm")
-                .slice(0, MAX_FEATURED_PICKS);
+            // Trust the server's featured list — don't filter by source.
+            // Mis-configured builds can stamp every featured embedding as
+            // source="litellm", which would leave the picker empty.
+            this.embeddingModels = result.value.models.slice(0, MAX_FEATURED_PICKS);
         } catch {
             this.embeddingModels = [];
             statusEl.textContent = MESSAGES.ERROR_LOAD_MODELS;
@@ -748,6 +767,178 @@ export class SetupWizard extends Modal {
             }
 
             const setResult = await this.plugin.api.setEmbeddingModel(model.hf_repo);
+            if (setResult.isErr()) {
+                new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.hf_repo));
+                statusEl.textContent = setResult.error.message;
+                progressEl.style.display = "none";
+                (downloadBtn as HTMLButtonElement).disabled = false;
+                return;
+            }
+            this.step = WIZARD_STEP.VISION_PICKER;
+            this.renderStep();
+        } catch (err) {
+            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
+                new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELLED);
+            } else {
+                statusEl.textContent = MESSAGES.ERROR_DOWNLOAD_FAILED;
+            }
+            progressEl.style.display = "none";
+            (downloadBtn as HTMLButtonElement).disabled = false;
+        } finally {
+            this.pullController = null;
+        }
+    }
+
+    private renderVisionPicker(): void {
+        const step = this.beginStep();
+        this.renderStepHeader(step, MESSAGES.TITLE_PICK_VISION);
+        step.createEl("p", { text: MESSAGES.WIZARD_VISION_HELP });
+
+        const modelsContainer = step.createDiv({ cls: "lilbee-wizard-models" });
+        const statusEl = step.createDiv({ cls: "lilbee-wizard-status" });
+        const { progressEl, progressFill, progressLabel } = this.renderProgressPanel(step);
+
+        const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
+        const backBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BACK });
+        backBtn.addEventListener("click", () => {
+            this.pullController?.abort();
+            this.back();
+        });
+        // Skip-step advances past Vision without configuring a vision model.
+        // Prominent next to "Download & continue" — vision is genuinely
+        // optional; most text-only vaults never need it.
+        const skipStepBtn = actions.createEl("button", { text: MESSAGES.BUTTON_SKIP_STEP });
+        skipStepBtn.addEventListener("click", () => {
+            this.pullController?.abort();
+            this.step = WIZARD_STEP.SYNC;
+            this.renderStep();
+        });
+
+        const catalogBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BROWSE_FULL_CATALOG });
+        catalogBtn.addEventListener("click", () => {
+            // Open the catalog pre-filtered to vision-capable models so the
+            // user lands on the right tab instead of scrolling past chat/
+            // embedding entries.
+            new CatalogModal(this.app, this.plugin, FILTERS.TASK.VISION).open();
+        });
+
+        const downloadBtn = actions.createEl("button", { text: MESSAGES.BUTTON_DOWNLOAD_CONTINUE, cls: "mod-cta" });
+        downloadBtn.addEventListener("click", () => {
+            if (!this.selectedVision) {
+                this.step = WIZARD_STEP.SYNC;
+                this.renderStep();
+                return;
+            }
+            if (this.selectedVision.installed) {
+                const repo = this.selectedVision.hf_repo;
+                void (async () => {
+                    const result = await this.plugin.api.setVisionModel(repo);
+                    if (result.isErr()) {
+                        new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", repo));
+                        return;
+                    }
+                    this.step = WIZARD_STEP.SYNC;
+                    this.renderStep();
+                })();
+                return;
+            }
+            downloadBtn.disabled = true;
+            statusEl.textContent = "";
+            void this.pullVisionModel(downloadBtn, progressEl, progressFill, progressLabel, statusEl, step);
+        });
+
+        void this.loadVisionModels(modelsContainer, statusEl);
+    }
+
+    private async loadVisionModels(container: HTMLElement, statusEl: HTMLElement): Promise<void> {
+        try {
+            const result = await this.plugin.api.catalog({
+                task: MODEL_TASK.VISION,
+                featured: true,
+                sort: FILTERS.SORT.DOWNLOADS,
+                limit: 20,
+            });
+            if (result.isErr()) {
+                this.visionModels = [];
+                return;
+            }
+            // Trust the server's featured list. No source filtering — same
+            // reasoning as chat/embedding: a mis-tagged server would empty
+            // the grid and strand the user.
+            this.visionModels = result.value.models.slice(0, MAX_FEATURED_PICKS);
+        } catch {
+            this.visionModels = [];
+            statusEl.textContent = MESSAGES.ERROR_LOAD_MODELS;
+            return;
+        }
+
+        this.selectedVision = this.visionModels[0] ?? null;
+
+        this.renderSectionHeading(container, MESSAGES.WIZARD_VISION_RECOMMENDED);
+        const grid = container.createDiv({ cls: "lilbee-catalog-grid" });
+
+        for (let i = 0; i < this.visionModels.length; i++) {
+            const entry = this.visionModels[i];
+            renderModelCard(grid, entry, {
+                isActive: i === 0,
+                onClick: () => this.selectVision(grid, entry),
+            });
+        }
+    }
+
+    private selectVision(grid: HTMLElement, model: VisionModel): void {
+        this.selectedVision = model;
+        for (const child of Array.from(grid.children)) {
+            const el = child as HTMLElement;
+            if (el.dataset.repo === model.hf_repo) {
+                el.classList.add("is-selected");
+            } else {
+                el.classList.remove("is-selected");
+            }
+        }
+    }
+
+    private async pullVisionModel(
+        downloadBtn: HTMLElement,
+        progressEl: HTMLElement,
+        progressFill: HTMLElement,
+        progressLabel: HTMLElement,
+        statusEl: HTMLElement,
+        step: HTMLElement,
+    ): Promise<void> {
+        if (!this.selectedVision) return;
+        const model = this.selectedVision;
+        progressEl.style.display = "";
+        progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL.replace("{model}", model.hf_repo);
+        this.pullController = new AbortController();
+        this.updateProgress(step, progressFill, undefined);
+
+        try {
+            for await (const event of this.plugin.api.pullModel(
+                model.hf_repo,
+                model.source,
+                this.pullController.signal,
+            )) {
+                if (event.event === SSE_EVENT.PROGRESS) {
+                    const d = event.data as { percent?: number; current?: number; total?: number };
+                    const pct = percentFromSse(d);
+                    if (pct !== undefined) {
+                        this.updateProgress(step, progressFill, pct);
+                        progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL_PCT.replace(
+                            "{model}",
+                            model.hf_repo,
+                        ).replace("{pct}", String(pct));
+                    }
+                } else if (event.event === SSE_EVENT.ERROR) {
+                    const d = event.data as { message?: string } | string;
+                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
+                    new Notice(MESSAGES.ERROR_DOWNLOAD_FAILED);
+                    statusEl.textContent = msg;
+                    break;
+                }
+            }
+
+            const setResult = await this.plugin.api.setVisionModel(model.hf_repo);
             if (setResult.isErr()) {
                 new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.hf_repo));
                 statusEl.textContent = setResult.error.message;

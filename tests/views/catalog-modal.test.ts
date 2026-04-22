@@ -144,6 +144,18 @@ describe("CatalogModal", () => {
             await openModal(plugin);
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_LOAD_CATALOG);
         });
+
+        it("honors initialTaskFilter by pre-selecting the dropdown and fetching with task param", async () => {
+            const plugin = makePlugin();
+            const modal = new CatalogModal(new App() as any, plugin as any, "vision");
+            modal.open();
+            await tick();
+            await tick();
+            const content = contentEl(modal);
+            const taskSelect = content.find("lilbee-catalog-filter-task")! as unknown as { value: string };
+            expect(taskSelect.value).toBe("vision");
+            expect(plugin.api.catalog).toHaveBeenCalledWith(expect.objectContaining({ task: "vision" }));
+        });
     });
 
     describe("grid view", () => {

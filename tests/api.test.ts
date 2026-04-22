@@ -682,6 +682,37 @@ describe("pullModel()", () => {
             expect(result._unsafeUnwrapErr().message).toBe("Server responded 400: ");
         });
     });
+
+    describe("setVisionModel()", () => {
+        it("PUTs to /api/models/vision", async () => {
+            fetchMock.mockResolvedValue(jsonResponse({ model: "ibm/granite-vision-3.2-2b" }));
+
+            const result = await client.setVisionModel("ibm/granite-vision-3.2-2b");
+
+            expect(fetchMock).toHaveBeenCalledWith(
+                `${BASE_URL}/api/models/vision`,
+                expect.objectContaining({
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model: "ibm/granite-vision-3.2-2b" }),
+                }),
+            );
+            expect(result.isOk()).toBe(true);
+        });
+
+        it("returns error when response is not ok", async () => {
+            fetchMock.mockResolvedValue({
+                ok: false,
+                status: 400,
+                statusText: "Bad Request",
+                text: () => Promise.resolve(""),
+            } as unknown as Response);
+
+            const result = await client.setVisionModel("ibm/granite-vision-3.2-2b");
+            expect(result.isErr()).toBe(true);
+            expect(result._unsafeUnwrapErr().message).toBe("Server responded 400: ");
+        });
+    });
 });
 
 describe("setChatModel()", () => {

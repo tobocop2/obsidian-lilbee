@@ -409,9 +409,10 @@ export const WIZARD_STEP = {
     SERVER_MODE: 1,
     MODEL_PICKER: 2,
     EMBEDDING_PICKER: 3,
-    SYNC: 4,
-    WIKI: 5,
-    DONE: 6,
+    VISION_PICKER: 4,
+    SYNC: 5,
+    WIKI: 6,
+    DONE: 7,
 } as const satisfies Record<string, number>;
 
 export const DOWNLOAD_PANEL = {
