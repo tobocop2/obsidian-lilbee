@@ -3067,6 +3067,21 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("sync cancelled"))).toBe(true);
         });
 
+        it("triggerSync surfaces session-token-invalid notice when the sync stream hits a stale token", async () => {
+            const { SessionTokenError } = await import("../src/api");
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.syncStream = vi.fn().mockImplementation(async function* () {
+                throw new SessionTokenError(401, "Missing or invalid bearer token");
+            });
+
+            await plugin.triggerSync();
+
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SESSION_TOKEN_INVALID)).toBe(true);
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+
         it("runAdd cancels task in queue on AbortError", async () => {
             const plugin = await createPlugin();
             await plugin.onload();

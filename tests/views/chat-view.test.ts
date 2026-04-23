@@ -2820,6 +2820,21 @@ describe("ChatView — embedding model selector", () => {
         (view as any).revertEmbeddingSelect("test");
     });
 
+    it("revertEmbeddingSelect falls back to a server refresh when the previous value is not in options", async () => {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const fetchSpy = vi
+            .spyOn(view as unknown as { fetchAndFillSelectors: () => Promise<void> }, "fetchAndFillSelectors")
+            .mockResolvedValue();
+
+        (view as any).revertEmbeddingSelect("totally-unknown-model");
+
+        expect(fetchSpy).toHaveBeenCalled();
+    });
+
     it("handles null catalog result in fillEmbeddingSelector", async () => {
         const plugin = makePlugin();
         plugin.api.catalog = vi.fn().mockRejectedValue(new Error("fail"));
