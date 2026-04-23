@@ -2727,6 +2727,23 @@ describe("ChatView — embedding model selector", () => {
         expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
     });
 
+    it("Browse more button opens CatalogModal pre-filtered to embedding", async () => {
+        const { CatalogModal } = await import("../../src/views/catalog-modal");
+        (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const browseBtn = container.find("lilbee-embed-browse")!;
+        expect(browseBtn).not.toBeNull();
+        expect(browseBtn.textContent).toBe(MESSAGES.BUTTON_BROWSE_MORE);
+
+        browseBtn.trigger("click");
+        expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "embedding");
+    });
+
     it("shows connecting label on embedding select when offline", async () => {
         vi.useFakeTimers();
         const plugin = makePlugin();
