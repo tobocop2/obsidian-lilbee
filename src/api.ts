@@ -205,9 +205,12 @@ export class LilbeeClient {
         topK?: number,
         signal?: AbortSignal,
         options?: GenerationOptions,
+        chunkType?: SearchChunkType,
     ): AsyncGenerator<SSEEvent> {
         const body: Record<string, unknown> = { question, history, top_k: topK ?? 0 };
         if (options && Object.keys(options).length > 0) body.options = options;
+        // "all" is the UI-side label for no filter; the server expects null/omit.
+        if (chunkType && chunkType !== "all") body.chunk_type = chunkType;
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/chat/stream`,
             {

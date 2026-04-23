@@ -528,6 +528,8 @@ export class ChatView extends ItemView {
                 this.history.slice(0, -1),
                 this.plugin.settings.topK,
                 this.streamController.signal,
+                undefined,
+                this.plugin.settings.searchChunkType,
             )) {
                 this.handleStreamEvent(event, textEl, assistantBubble, state, revealContent, scheduleRender);
             }
