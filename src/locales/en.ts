@@ -582,9 +582,9 @@ export const MESSAGES = {
     WIZARD_WIKI_EXPERIMENTAL_HEADING: "Read this first",
     WIZARD_WIKI_EXPERIMENTAL_INTRO: "Two caveats before you flip this on:",
     WIZARD_WIKI_EXPERIMENTAL_QUALITY:
-        "Quality depends on the chat model. Frontier models produce summaries that mostly match the source. Small local models sometimes invent details, miss nuance, or contradict the original — always spot-check.",
+        "Everything lands as a draft first. Every page is gated by a title/body coherence check and a cosine-similarity score against the source chunks, and ships as a reviewable draft — accept, edit, or reject from the drafts panel before anything becomes a published wiki page.",
     WIZARD_WIKI_EXPERIMENTAL_SLOW:
-        "Generation is slow and blocking. Each page is a separate call to the model, so a 200-page vault means 200 calls. While it runs, lilbee keeps the LLM busy and chat/search queues behind it. Plan to run wiki generation during a break, not in the middle of research.",
+        "Generation takes time and ties up the chat LLM. Pages that share a primary source are batched into one model call, so a 200-page vault over ~30 sources is closer to ~30 batched calls than 200 sequential ones — but it's still blocking. Plan to run it during a break, not in the middle of research.",
     WIZARD_WIKI_PROS_HEADING: "What it adds",
     WIZARD_WIKI_PRO_SUMMARIES: "Summarized, structured overviews of your documents",
     WIZARD_WIKI_PRO_CROSSREFS: "Related concepts become discoverable through cross-references",
