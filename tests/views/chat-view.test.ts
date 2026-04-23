@@ -295,14 +295,7 @@ describe("ChatView.onOpen — send button triggers send", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
 
-        expect(plugin.api.chatStream).toHaveBeenCalledWith(
-            "hello",
-            [],
-            5,
-            expect.any(AbortSignal),
-            undefined,
-            "all",
-        );
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("hello", [], 5, expect.any(AbortSignal), undefined, "all");
     });
 
     it("clears textarea value after send", async () => {
@@ -2133,17 +2126,9 @@ describe("ChatView.sendMessage — does not send generation overrides", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
 
-        expect(plugin.api.chatStream).toHaveBeenCalledWith(
-            "hi",
-            [],
-            5,
-            expect.any(AbortSignal),
-            undefined,
-            "all",
-        );
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("hi", [], 5, expect.any(AbortSignal), undefined, "all");
     });
 });
-
 
 describe("ChatView.sendMessage — forwards searchChunkType", () => {
     it("passes 'wiki' when the setting is 'wiki'", async () => {
@@ -2159,14 +2144,7 @@ describe("ChatView.sendMessage — forwards searchChunkType", () => {
         textarea.value = "q";
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
-        expect(plugin.api.chatStream).toHaveBeenCalledWith(
-            "q",
-            [],
-            5,
-            expect.any(AbortSignal),
-            undefined,
-            "wiki",
-        );
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "wiki");
     });
 
     it("passes 'raw' when the setting is 'raw'", async () => {
@@ -2182,14 +2160,7 @@ describe("ChatView.sendMessage — forwards searchChunkType", () => {
         textarea.value = "q";
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
-        expect(plugin.api.chatStream).toHaveBeenCalledWith(
-            "q",
-            [],
-            5,
-            expect.any(AbortSignal),
-            undefined,
-            "raw",
-        );
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "raw");
     });
 });
 

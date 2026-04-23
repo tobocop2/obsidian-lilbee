@@ -1,4 +1,4 @@
-import { JSON_HEADERS, SSE_EVENT, ERROR_NAME } from "./types";
+import { JSON_HEADERS, SEARCH_CHUNK_TYPE, SSE_EVENT, ERROR_NAME } from "./types";
 import { ok, err, Result } from "neverthrow";
 
 import type {
@@ -185,7 +185,7 @@ export class LilbeeClient {
     async search(query: string, topK?: number, chunkType?: SearchChunkType): Promise<DocumentResult[]> {
         const params = new URLSearchParams({ q: query });
         if (topK !== undefined) params.set("top_k", String(topK));
-        if (chunkType && chunkType !== "all") params.set("chunk_type", chunkType);
+        if (chunkType && chunkType !== SEARCH_CHUNK_TYPE.ALL) params.set("chunk_type", chunkType);
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/search?${params}`);
         return res.json();
     }
@@ -209,8 +209,8 @@ export class LilbeeClient {
     ): AsyncGenerator<SSEEvent> {
         const body: Record<string, unknown> = { question, history, top_k: topK ?? 0 };
         if (options && Object.keys(options).length > 0) body.options = options;
-        // "all" is the UI-side label for no filter; the server expects null/omit.
-        if (chunkType && chunkType !== "all") body.chunk_type = chunkType;
+        // "all" is the UI-side label for no filter; the field is omitted on the wire.
+        if (chunkType && chunkType !== SEARCH_CHUNK_TYPE.ALL) body.chunk_type = chunkType;
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/chat/stream`,
             {
