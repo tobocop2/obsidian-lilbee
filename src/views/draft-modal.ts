@@ -1,6 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import { DRAFT_PENDING_KIND, type DraftInfoResponse, type DraftPendingKind } from "../types";
+import { DRAFT_PENDING_KIND, type DraftInfoResponse } from "../types";
 import { MESSAGES } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 
@@ -52,10 +52,10 @@ export class DraftModal extends Modal {
         this.acceptBtn = actions.createEl("button", {
             text: MESSAGES.LABEL_DRAFT_ACCEPT,
             cls: "mod-cta",
-        }) as unknown as HTMLButtonElement;
+        }) as HTMLButtonElement;
         this.rejectBtn = actions.createEl("button", {
             text: MESSAGES.LABEL_DRAFT_REJECT,
-        }) as unknown as HTMLButtonElement;
+        }) as HTMLButtonElement;
         this.acceptBtn.disabled = true;
         this.rejectBtn.disabled = true;
         this.acceptBtn.addEventListener("click", () => void this.accept());
@@ -139,10 +139,12 @@ export class DraftModal extends Modal {
         try {
             diffText = await this.plugin.api.wikiDraftDiff(slug);
         } catch {
+            if (this.selectedSlug !== slug) return;
             loading.remove();
             this.diffEl.setText(MESSAGES.ERROR_LOAD_DIFF);
             return;
         }
+        if (this.selectedSlug !== slug) return;
         loading.remove();
         this.renderDiff(diffText);
         this.setActionsEnabled(true);
@@ -228,11 +230,13 @@ export class DraftModal extends Modal {
 }
 
 function kindChipLabel(draft: DraftInfoResponse): string | null {
-    const kind: DraftPendingKind | null = draft.pending_kind ?? (draft.bad_title ? DRAFT_PENDING_KIND.BAD_TITLE : null);
-    return kind === null ? null : kindLabel(kind);
+    const kind: string | null = draft.pending_kind ?? (draft.bad_title ? DRAFT_PENDING_KIND.BAD_TITLE : null);
+    if (kind === null) return null;
+    const label = kindLabel(kind);
+    return label === "" ? null : label;
 }
 
-function kindLabel(kind: DraftPendingKind): string {
+function kindLabel(kind: string): string {
     switch (kind) {
         case DRAFT_PENDING_KIND.DRIFT:
             return MESSAGES.LABEL_DRAFT_KIND_DRIFT;
@@ -244,6 +248,8 @@ function kindLabel(kind: DraftPendingKind): string {
             return MESSAGES.LABEL_DRAFT_KIND_LOW_FAITH;
         case DRAFT_PENDING_KIND.BAD_TITLE:
             return MESSAGES.LABEL_DRAFT_KIND_BAD_TITLE;
+        default:
+            return "";
     }
 }
 

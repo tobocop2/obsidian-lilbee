@@ -169,6 +169,17 @@ describe("DraftModal", () => {
         expect(el.find("lilbee-draft-kind")).toBeNull();
     });
 
+    it("omits the kind chip when the server emits an unknown pending_kind value", async () => {
+        plugin.api.wikiDrafts.mockResolvedValue([
+            makeDraft({ pending_kind: "future_variant" as unknown as DraftPendingKind }),
+        ]);
+        const modal = new DraftModal(app as any, plugin as any);
+        modal.onOpen();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        expect(el.find("lilbee-draft-kind")).toBeNull();
+    });
+
     it("clicking a row fetches the diff, renders +/- spans, and arms the action buttons", async () => {
         plugin.api.wikiDrafts.mockResolvedValue([makeDraft()]);
         plugin.api.wikiDraftDiff.mockResolvedValue("--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n ctx\n");
@@ -340,7 +351,7 @@ describe("DraftModal", () => {
         expect(Notice.instances.map((n) => n.message)).toContain("Draft action failed. Check the server log.");
     });
 
-    it("does nothing when the user cancels the accept confirmation", async () => {
+    it("does nothing and re-arms the action buttons when the user cancels accept", async () => {
         mockConfirmResult = false;
         plugin.api.wikiDrafts.mockResolvedValue([makeDraft()]);
         plugin.api.wikiDraftDiff.mockResolvedValue("--- a\n+++ b\n");
@@ -351,16 +362,18 @@ describe("DraftModal", () => {
         el.find("lilbee-draft-row")!.trigger("click");
         await tick();
         await tick();
-        findButtons(el)
-            .find((b) => b.textContent === "Accept")!
-            .trigger("click");
+        const accept = findButtons(el).find((b) => b.textContent === "Accept")!;
+        const reject = findButtons(el).find((b) => b.textContent === "Reject")!;
+        accept.trigger("click");
         await tick();
         await tick();
         expect(plugin.api.wikiDraftAccept).not.toHaveBeenCalled();
         expect(el.find("lilbee-draft-row")).not.toBeNull();
+        expect((accept as any).disabled).toBe(false);
+        expect((reject as any).disabled).toBe(false);
     });
 
-    it("does nothing when the user cancels the reject confirmation", async () => {
+    it("does nothing and re-arms the action buttons when the user cancels reject", async () => {
         mockConfirmResult = false;
         plugin.api.wikiDrafts.mockResolvedValue([makeDraft()]);
         plugin.api.wikiDraftDiff.mockResolvedValue("--- a\n+++ b\n");
@@ -371,12 +384,89 @@ describe("DraftModal", () => {
         el.find("lilbee-draft-row")!.trigger("click");
         await tick();
         await tick();
-        findButtons(el)
-            .find((b) => b.textContent === "Reject")!
-            .trigger("click");
+        const accept = findButtons(el).find((b) => b.textContent === "Accept")!;
+        const reject = findButtons(el).find((b) => b.textContent === "Reject")!;
+        reject.trigger("click");
         await tick();
         await tick();
         expect(plugin.api.wikiDraftReject).not.toHaveBeenCalled();
+        expect((accept as any).disabled).toBe(false);
+        expect((reject as any).disabled).toBe(false);
+    });
+
+    it("discards a late diff response when the user has already selected a different row", async () => {
+        plugin.api.wikiDrafts.mockResolvedValue([makeDraft({ slug: "row-a" }), makeDraft({ slug: "row-b" })]);
+        let resolveA!: (diff: string) => void;
+        let resolveB!: (diff: string) => void;
+        plugin.api.wikiDraftDiff
+            .mockImplementationOnce(
+                () =>
+                    new Promise<string>((resolve) => {
+                        resolveA = resolve;
+                    }),
+            )
+            .mockImplementationOnce(
+                () =>
+                    new Promise<string>((resolve) => {
+                        resolveB = resolve;
+                    }),
+            );
+        const modal = new DraftModal(app as any, plugin as any);
+        modal.onOpen();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        const rows = el.findAll("lilbee-draft-row");
+        rows[0].trigger("click");
+        await tick();
+        rows[1].trigger("click");
+        await tick();
+        resolveB("--- b\n+++ b\n+B content\n");
+        await tick();
+        await tick();
+        expect(el.findAll("lilbee-draft-diff-add").some((s) => s.textContent?.includes("+B content"))).toBe(true);
+        resolveA("--- a\n+++ a\n+A content\n");
+        await tick();
+        await tick();
+        const addSpans = el.findAll("lilbee-draft-diff-add");
+        expect(addSpans.some((s) => s.textContent?.includes("+A content"))).toBe(false);
+        expect(addSpans.some((s) => s.textContent?.includes("+B content"))).toBe(true);
+    });
+
+    it("drops a late diff error when the user has already selected a different row", async () => {
+        plugin.api.wikiDrafts.mockResolvedValue([makeDraft({ slug: "row-a" }), makeDraft({ slug: "row-b" })]);
+        let rejectA!: (err: Error) => void;
+        let resolveB!: (diff: string) => void;
+        plugin.api.wikiDraftDiff
+            .mockImplementationOnce(
+                () =>
+                    new Promise<string>((_resolve, reject) => {
+                        rejectA = reject;
+                    }),
+            )
+            .mockImplementationOnce(
+                () =>
+                    new Promise<string>((resolve) => {
+                        resolveB = resolve;
+                    }),
+            );
+        const modal = new DraftModal(app as any, plugin as any);
+        modal.onOpen();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        const rows = el.findAll("lilbee-draft-row");
+        rows[0].trigger("click");
+        await tick();
+        rows[1].trigger("click");
+        await tick();
+        resolveB("--- b\n+++ b\n+B content\n");
+        await tick();
+        await tick();
+        rejectA(new Error("late error"));
+        await tick();
+        await tick();
+        expect(el.findAll("lilbee-draft-diff-add").some((s) => s.textContent?.includes("+B content"))).toBe(true);
+        const texts = collectTexts(el);
+        expect(texts.some((t) => t.includes("Failed to load diff"))).toBe(false);
     });
 
     it("refresh button re-fetches the draft list", async () => {
