@@ -109,6 +109,8 @@ vi.mock("../src/binary-manager", () => ({
         chmodSync: vi.fn(),
         writeFileSync: vi.fn(),
         readFileSync: vi.fn(),
+        unlinkSync: vi.fn(),
+        copyFileSync: vi.fn(),
         requestUrl: vi.fn(),
     },
 }));
@@ -1165,7 +1167,7 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).not.toHaveBeenCalled();
         });
 
-        it("calls api.addFiles with the given absolute paths", async () => {
+        it("copies external files into the vault imports dir before indexing", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -1175,8 +1177,11 @@ describe("LilbeePlugin", () => {
 
             await plugin.addExternalFiles(["/home/user/doc.pdf", "/tmp/notes.md"]);
 
+            // Each external path is copied into <vault>/lilbee/imports/<name>
+            // and the NEW vault-local absolute path is what gets indexed —
+            // keeping the source discoverable in Obsidian's file tree.
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
-                ["/home/user/doc.pdf", "/tmp/notes.md"],
+                ["/test/vault/lilbee/imports/doc.pdf", "/test/vault/lilbee/imports/notes.md"],
                 true,
                 null,
                 expect.any(AbortSignal),
@@ -1195,7 +1200,7 @@ describe("LilbeePlugin", () => {
             await plugin.addExternalFiles(["/home/user/scan.pdf"]);
 
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
-                ["/home/user/scan.pdf"],
+                ["/test/vault/lilbee/imports/scan.pdf"],
                 true,
                 true,
                 expect.any(AbortSignal),

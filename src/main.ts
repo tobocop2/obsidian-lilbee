@@ -1,6 +1,6 @@
 import { type EventRef, type Menu, type MenuItem, Notice, Plugin, type TAbstractFile } from "obsidian";
 import { LilbeeClient, SessionTokenError } from "./api";
-import { BinaryManager, getLatestRelease, checkForUpdate } from "./binary-manager";
+import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
@@ -873,8 +873,61 @@ export default class LilbeePlugin extends Plugin {
 
         if (paths.length === 1 && !(await this.confirmReindexIfNeeded(label))) return;
 
+        // Copy disk-picked files into the vault before indexing so the
+        // resulting source lives where the user expects — visible in the
+        // file tree, reachable as a native Obsidian file, and eligible for
+        // the vault_path deep-link on chat source chips. Skips files whose
+        // paths are already inside the vault (right-click "Add to lilbee"
+        // routes through here too for single-path external paths).
+        const copiedPaths = this.copyExternalFilesToVault(paths);
+        if (copiedPaths.length === 0) return;
+
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", label));
-        await this.runAdd(paths);
+        await this.runAdd(copiedPaths);
+    }
+
+    /**
+     * Copy each external path into ``<vault>/lilbee/imports/`` and return the
+     * new absolute paths for indexing. Paths already under the vault root
+     * are returned unchanged. On copy failure the offending file is dropped
+     * with a user-visible Notice so the rest of the batch still proceeds.
+     */
+    private copyExternalFilesToVault(paths: string[]): string[] {
+        const vaultBase = this.getVaultBasePath();
+        const importsDir = `${vaultBase}/lilbee/imports`;
+        if (!node.existsSync(importsDir)) {
+            node.mkdirSync(importsDir, { recursive: true });
+        }
+        const results: string[] = [];
+        for (const source of paths) {
+            if (source.startsWith(`${vaultBase}/`)) {
+                results.push(source);
+                continue;
+            }
+            const name = source.split("/").pop() || "imported";
+            const dest = this.uniqueImportPath(importsDir, name);
+            try {
+                node.copyFileSync(source, dest);
+                results.push(dest);
+            } catch (err) {
+                console.error("[lilbee] import copy failed:", source, err);
+                new Notice(MESSAGES.ERROR_FILE_PICKER);
+            }
+        }
+        return results;
+    }
+
+    /** Append a ``-N`` suffix until ``<dir>/<name>`` doesn't exist on disk. */
+    private uniqueImportPath(dir: string, name: string): string {
+        const candidate = `${dir}/${name}`;
+        if (!node.existsSync(candidate)) return candidate;
+        const dot = name.lastIndexOf(".");
+        const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+        for (let n = 1; n < 1000; n++) {
+            const next = `${dir}/${stem}-${n}${ext}`;
+            if (!node.existsSync(next)) return next;
+        }
+        return `${dir}/${stem}-${Date.now()}${ext}`;
     }
 
     async addToLilbee(file: TAbstractFile): Promise<void> {
