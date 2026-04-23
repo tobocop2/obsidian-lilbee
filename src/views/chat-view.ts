@@ -369,7 +369,16 @@ export class ChatView extends ItemView {
 
     private revertEmbeddingSelect(previousValue: string): void {
         if (!this.embeddingSelectEl) return;
-        this.embeddingSelectEl.value = previousValue;
+        // HTMLSelectElement.value is a no-op if no option matches — which
+        // silently blanks the picker. Guard so the previous value only wins
+        // when it actually exists in the current option set; otherwise fall
+        // back to a server refresh so the picker can't get stuck empty.
+        const hasOption = Array.from(this.embeddingSelectEl.options).some((opt) => opt.value === previousValue);
+        if (hasOption) {
+            this.embeddingSelectEl.value = previousValue;
+            return;
+        }
+        void this.fetchAndFillSelectors();
     }
 
     private async autoPullAndSet(model: { name: string }): Promise<void> {
