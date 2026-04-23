@@ -5673,6 +5673,122 @@ describe("managed mode settings", () => {
         });
     });
 
+    describe("Browse more buttons on picker dropdowns", () => {
+        let origAddDropdown: typeof Setting.prototype.addDropdown;
+        let origAddButton: typeof Setting.prototype.addButton;
+
+        function captureDropdownAndButtons(): {
+            buttonOnClicks: ButtonOnClick[];
+        } {
+            const buttonOnClicks: ButtonOnClick[] = [];
+            Setting.prototype.addDropdown = function (cb: (dropdown: any) => void) {
+                const fakeDropdown = {
+                    addOption: () => fakeDropdown,
+                    setValue: () => fakeDropdown,
+                    onChange: () => fakeDropdown,
+                };
+                cb(fakeDropdown);
+                return this;
+            };
+            Setting.prototype.addButton = function (cb: (btn: any) => void) {
+                const fakeBtn = {
+                    setButtonText: () => fakeBtn,
+                    setDisabled: () => fakeBtn,
+                    setWarning: () => fakeBtn,
+                    onClick: (handler: ButtonOnClick) => {
+                        buttonOnClicks.push(handler);
+                        return fakeBtn;
+                    },
+                };
+                cb(fakeBtn);
+                return this;
+            };
+            return { buttonOnClicks };
+        }
+
+        beforeEach(() => {
+            origAddDropdown = Setting.prototype.addDropdown;
+            origAddButton = Setting.prototype.addButton;
+        });
+        afterEach(() => {
+            Setting.prototype.addDropdown = origAddDropdown;
+            Setting.prototype.addButton = origAddButton;
+        });
+
+        it("embedding picker exposes Browse more button that opens CatalogModal with task=embedding", async () => {
+            const { CatalogModal } = await import("../src/views/catalog-modal");
+            (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+
+            const plugin = makePlugin();
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [{ name: "nomic-embed-text", installed: true, task: "embedding" }],
+                    has_more: false,
+                }),
+            );
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { buttonOnClicks } = captureDropdownAndButtons();
+
+            await (tab as any).loadEmbeddingDropdown(container);
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(buttonOnClicks.length).toBe(1);
+            buttonOnClicks[0]();
+            expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "embedding");
+        });
+
+        it("reranker picker exposes Browse more button that opens CatalogModal with task=rerank", async () => {
+            const { CatalogModal } = await import("../src/views/catalog-modal");
+            (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                reranker_model: "",
+                rerank_candidates: 20,
+            });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
+            );
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { buttonOnClicks } = captureDropdownAndButtons();
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(buttonOnClicks.length).toBe(1);
+            buttonOnClicks[0]();
+            expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "rerank");
+        });
+
+        it("vision picker exposes Browse more button that opens CatalogModal with task=vision", async () => {
+            const { CatalogModal } = await import("../src/views/catalog-modal");
+            (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
+            );
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+            const { buttonOnClicks } = captureDropdownAndButtons();
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(buttonOnClicks.length).toBe(1);
+            buttonOnClicks[0]();
+            expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "vision");
+        });
+    });
+
     describe("rerank_candidates advanced field", () => {
         // In manual mode: [0]=port, [1-6]=gen, [7-9]=crawl, [10]=wikiVaultFolder, [11-12]=chunks, [13]=rerank_candidates
         const RERANK_IDX = 20;

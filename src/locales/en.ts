@@ -15,6 +15,7 @@ export const MESSAGES = {
     BUTTON_REFRESH: "Refresh",
     BUTTON_BROWSE_CATALOG: "Browse Catalog",
     BUTTON_BROWSE_FULL_CATALOG: "Browse full catalog",
+    BUTTON_BROWSE_MORE: "Browse more…",
     BUTTON_DOWNLOAD_CONTINUE: "Download & continue",
     BUTTON_DELETE_SELECTED: "Delete selected",
     BUTTON_CRAWL: "Crawl",

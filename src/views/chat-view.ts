@@ -133,6 +133,15 @@ export class ChatView extends ItemView {
         }) as HTMLSelectElement;
         this.attachEmbeddingListener(this.embeddingSelectEl);
 
+        const embedBrowseBtn = embedGroup.createEl("button", {
+            text: MESSAGES.BUTTON_BROWSE_MORE,
+            cls: "lilbee-embed-browse",
+        });
+        embedBrowseBtn.setAttribute("aria-label", MESSAGES.BUTTON_BROWSE_MORE);
+        embedBrowseBtn.addEventListener("click", () => {
+            new CatalogModal(this.app, this.plugin, MODEL_TASK.EMBEDDING).open();
+        });
+
         this.ocrToggleEl = toolbar.createDiv({ cls: "lilbee-ocr-toggle" });
         this.updateOcrToggle();
         this.ocrToggleEl.addEventListener("click", () => this.cycleOcr());

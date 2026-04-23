@@ -145,6 +145,21 @@
     gap: 2px;
 }
 
+.lilbee-embed-browse {
+    font-size: var(--font-smallest, 10px);
+    padding: 2px 6px;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    cursor: pointer;
+}
+
+.lilbee-embed-browse:hover {
+    color: var(--text-normal);
+    background-color: var(--background-modifier-hover);
+}
+
 .lilbee-toolbar-spacer {
     flex: 1;
 }
