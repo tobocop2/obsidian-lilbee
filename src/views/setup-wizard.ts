@@ -595,15 +595,15 @@ export class SetupWizard extends Modal {
 
             const setResult = await this.plugin.api.setChatModel(model.hf_repo);
             if (setResult.isErr()) {
-                new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.hf_repo));
+                new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.display_name));
                 statusEl.textContent = setResult.error.message;
                 progressEl.style.display = "none";
                 (downloadBtn as HTMLButtonElement).disabled = false;
                 return;
             }
-            this.plugin.activeModel = model.hf_repo;
+            this.plugin.activeModel = model.display_name;
             this.plugin.fetchActiveModel();
-            this.pulledModelName = model.hf_repo;
+            this.pulledModelName = model.display_name;
             this.step = WIZARD_STEP.EMBEDDING_PICKER;
             this.renderStep();
         } catch (err) {
@@ -760,7 +760,7 @@ export class SetupWizard extends Modal {
 
             const setResult = await this.plugin.api.setEmbeddingModel(model.hf_repo);
             if (setResult.isErr()) {
-                new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.hf_repo));
+                new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.display_name));
                 statusEl.textContent = setResult.error.message;
                 progressEl.style.display = "none";
                 (downloadBtn as HTMLButtonElement).disabled = false;

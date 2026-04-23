@@ -1872,13 +1872,14 @@ describe("SetupWizard", () => {
             (wizard as any).selectedModel = makeEntry({
                 name: "qwen3-0.6b",
                 hf_repo: "qwen/qwen3-0.6B",
+                display_name: "Qwen3 0.6B",
                 task: "chat",
                 installed: false,
             });
             const el = new MockElement("div") as unknown as HTMLElement;
             const btn = new MockElement("button") as unknown as HTMLElement;
             await (wizard as any).pullSelectedModel(btn, el, el, el, el, el);
-            const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "qwen/qwen3-0.6B");
+            const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "Qwen3 0.6B");
             expect(Notice.instances.some((n: any) => n.message === setFailed)).toBe(true);
             expect((wizard as any).step).not.toBe(WIZARD_STEP.EMBEDDING_PICKER);
         });
@@ -2126,13 +2127,14 @@ describe("SetupWizard", () => {
             (wizard as any).selectedEmbedding = makeEntry({
                 name: "nomic-embed-text",
                 hf_repo: "nomic/nomic-embed-text",
+                display_name: "Nomic Embed Text v1.5",
                 task: "embedding",
                 installed: false,
             });
             const el = new MockElement("div") as unknown as HTMLElement;
             const btn = new MockElement("button") as unknown as HTMLElement;
             await (wizard as any).pullEmbeddingModel(btn, el, el, el, el, el);
-            const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "nomic/nomic-embed-text");
+            const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "Nomic Embed Text v1.5");
             expect(Notice.instances.some((n: any) => n.message === setFailed)).toBe(true);
             expect((wizard as any).step).not.toBe(WIZARD_STEP.SYNC);
         });

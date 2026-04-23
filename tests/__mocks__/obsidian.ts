@@ -133,6 +133,14 @@ export class MockElement {
         if (i >= 0) handlers.splice(i, 1);
     }
 
+    // HTMLSelectElement.options — return children whose tagName is OPTION.
+    // Real-DOM HTMLSelectElement exposes the live HTMLOptionsCollection via
+    // this property; views that iterate it (e.g. chat-view.revertEmbeddingSelect)
+    // need the same surface in tests.
+    get options(): MockElement[] {
+        return this.children.filter((c) => c.tagName === "OPTION");
+    }
+
     // Test helper: trigger an event
     trigger(event: string, ...args: unknown[]): void {
         for (const handler of this._listeners[event] ?? []) {

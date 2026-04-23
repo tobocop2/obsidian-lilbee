@@ -1,5 +1,5 @@
 import { type EventRef, type Menu, type MenuItem, Notice, Plugin, type TAbstractFile } from "obsidian";
-import { LilbeeClient } from "./api";
+import { LilbeeClient, SessionTokenError } from "./api";
 import { BinaryManager, getLatestRelease, checkForUpdate } from "./binary-manager";
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
@@ -635,6 +635,12 @@ export default class LilbeePlugin extends Plugin {
             this.api = new LilbeeClient(this.settings.serverUrl);
             this.api.setTokenProvider(() => this.readCurrentToken());
             this.api.setToken(this.readCurrentToken());
+            // Stopping the managed child fires STATE.STOPPED on the way out
+            // which leaves the status bar reading "lilbee: stopped" even
+            // though we're about to talk to an external server. Refresh so
+            // the bar reflects external reachability instead of the stale
+            // managed-stopped label.
+            void this.fetchActiveModel();
         }
 
         this.updateAutoSync();
@@ -1306,6 +1312,14 @@ export default class LilbeePlugin extends Plugin {
             } else if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.STATUS_SYNC_CANCELLED);
                 this.taskQueue.cancel(taskId);
+            } else if (err instanceof SessionTokenError) {
+                // Auto-sync gets 401 when the stored token is stale — e.g. the
+                // server restarted with a new data-dir. Surface the same
+                // actionable notice the manual-sync paths do so the user
+                // knows to paste a fresh token in Settings instead of
+                // wondering why sync silently stopped working.
+                new Notice(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+                this.taskQueue.fail(taskId, MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
             } else {
                 console.error("[lilbee] sync failed:", err);
                 new Notice(MESSAGES.STATUS_SYNC_FAILED);
