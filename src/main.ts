@@ -193,7 +193,8 @@ export default class LilbeePlugin extends Plugin {
 
         this.statusBarEl = this.addStatusBarItem();
         this.statusBarEl.style.cursor = "pointer";
-        this.statusBarEl.addEventListener("click", () => this.activateTaskView());
+        this.statusBarEl.setAttribute("aria-label", MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);
+        this.statusBarEl.addEventListener("click", () => this.openPluginSettings());
         this.ribbonIconEl = this.addRibbonIcon("list-checks", MESSAGES.LABEL_RIBBON_OPEN_TASK_CENTER, () =>
             this.activateTaskView(),
         );
@@ -1085,6 +1086,16 @@ export default class LilbeePlugin extends Plugin {
             await leaf.setViewState({ type: VIEW_TYPE_TASKS, active: true });
             this.app.workspace.revealLeaf(leaf);
         }
+    }
+
+    openPluginSettings(): void {
+        // `app.setting` is an undocumented-but-stable Obsidian API used
+        // widely by community plugins to jump straight to their own tab.
+        const setting = (this.app as unknown as { setting?: { open: () => void; openTabById: (id: string) => void } })
+            .setting;
+        if (!setting) return;
+        setting.open();
+        setting.openTabById(this.manifest.id);
     }
 
     async activateWikiView(): Promise<void> {
