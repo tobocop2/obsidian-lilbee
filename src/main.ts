@@ -1,6 +1,6 @@
 import { type EventRef, type Menu, type MenuItem, Notice, Plugin, type TAbstractFile } from "obsidian";
 import { LilbeeClient, SessionTokenError } from "./api";
-import { BinaryManager, getLatestRelease, checkForUpdate } from "./binary-manager";
+import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
@@ -873,8 +873,80 @@ export default class LilbeePlugin extends Plugin {
 
         if (paths.length === 1 && !(await this.confirmReindexIfNeeded(label))) return;
 
+        // Copy disk-picked files into the vault before indexing so the
+        // resulting source lives where the user expects — visible in the
+        // file tree, reachable as a native Obsidian file, and eligible for
+        // the vault_path deep-link on chat source chips. Skips files whose
+        // paths are already inside the vault (right-click "Add to lilbee"
+        // routes through here too for single-path external paths).
+        const copiedPaths = this.copyExternalFilesToVault(paths);
+        if (copiedPaths.length === 0) return;
+
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", label));
-        await this.runAdd(paths);
+        await this.runAdd(copiedPaths);
+    }
+
+    /**
+     * Copy each external path into ``<vault>/lilbee/imports/`` and return the
+     * new absolute paths for indexing. Paths already under the vault root
+     * are returned unchanged. On copy failure the offending file is dropped
+     * with a user-visible Notice so the rest of the batch still proceeds.
+     *
+     * All path joins go through ``node.path`` so Windows ``\\`` separators
+     * round-trip correctly — a naïve string ``startsWith(vaultBase + "/")``
+     * check would miss every file on Windows and mis-copy them into imports.
+     */
+    private copyExternalFilesToVault(paths: string[]): string[] {
+        const vaultBase = this.getVaultBasePath();
+        const importsDir = node.join(vaultBase, "lilbee", "imports");
+        try {
+            node.mkdirSync(importsDir, { recursive: true });
+        } catch (err) {
+            console.error("[lilbee] import dir create failed:", importsDir, err);
+            new Notice(MESSAGES.ERROR_FILE_PICKER);
+            return [];
+        }
+        const results: string[] = [];
+        for (const source of paths) {
+            if (this.isUnderVault(source, vaultBase)) {
+                results.push(source);
+                continue;
+            }
+            const name = node.basename(source) || "imported";
+            const dest = this.uniqueImportPath(importsDir, name);
+            try {
+                node.copyFileSync(source, dest);
+                results.push(dest);
+            } catch (err) {
+                console.error("[lilbee] import copy failed:", source, err);
+                new Notice(MESSAGES.ERROR_FILE_PICKER);
+            }
+        }
+        return results;
+    }
+
+    /**
+     * True if ``source`` sits under ``vaultBase``. Normalises separators so
+     * ``C:\\vault\\foo.pdf`` correctly matches a vault base of ``C:\\vault``
+     * regardless of which slash flavour either side uses.
+     */
+    private isUnderVault(source: string, vaultBase: string): boolean {
+        const norm = (p: string) => p.replace(/\\/g, "/");
+        const prefix = norm(vaultBase).replace(/\/+$/, "");
+        return norm(source).startsWith(`${prefix}/`);
+    }
+
+    /** Append a ``-N`` suffix until ``<dir>/<name>`` doesn't exist on disk. */
+    private uniqueImportPath(dir: string, name: string): string {
+        const candidate = node.join(dir, name);
+        if (!node.existsSync(candidate)) return candidate;
+        const dot = name.lastIndexOf(".");
+        const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+        for (let n = 1; n < 1000; n++) {
+            const next = node.join(dir, `${stem}-${n}${ext}`);
+            if (!node.existsSync(next)) return next;
+        }
+        return node.join(dir, `${stem}-${Date.now()}${ext}`);
     }
 
     async addToLilbee(file: TAbstractFile): Promise<void> {

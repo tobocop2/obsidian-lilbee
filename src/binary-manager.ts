@@ -1,7 +1,7 @@
 import { requestUrl } from "obsidian";
 import { execFile, spawn } from "child_process";
-import { existsSync, mkdirSync, chmodSync, writeFileSync, readFileSync, unlinkSync } from "fs";
-import { join } from "path";
+import { existsSync, mkdirSync, chmodSync, writeFileSync, readFileSync, unlinkSync, copyFileSync } from "fs";
+import { basename, join } from "path";
 import { promisify } from "util";
 import { ARCH, PLATFORM } from "./types";
 
@@ -17,6 +17,9 @@ export const node = {
     writeFileSync,
     readFileSync,
     unlinkSync,
+    copyFileSync,
+    join,
+    basename,
     requestUrl,
     fetch: globalThis.fetch.bind(globalThis) as typeof globalThis.fetch,
 };

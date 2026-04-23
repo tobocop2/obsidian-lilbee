@@ -232,6 +232,11 @@ export class App {
         offref: vi.fn(),
         adapter: {
             getBasePath: vi.fn().mockReturnValue("/test/vault"),
+            // Obsidian's real DataAdapter surfaces these; tests that copy
+            // external files into the vault use them.
+            exists: vi.fn().mockResolvedValue(false),
+            mkdir: vi.fn().mockResolvedValue(undefined),
+            writeBinary: vi.fn().mockResolvedValue(undefined),
         },
         getFiles: vi.fn().mockReturnValue([]),
         getAbstractFileByPath: vi.fn().mockReturnValue(null),
