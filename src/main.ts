@@ -892,6 +892,12 @@ export default class LilbeePlugin extends Plugin {
      * are returned unchanged. On copy failure the offending file is dropped
      * with a user-visible Notice so the rest of the batch still proceeds.
      *
+     * Directory sources are copied recursively with ``node.cpSync`` — the
+     * native file picker's "openDirectory" mode returns folder paths, and
+     * ``copyFileSync`` on a directory throws EISDIR. Without the stat-first
+     * branch every picked folder would fall into the catch and get silently
+     * dropped, regressing folder ingestion.
+     *
      * All path joins go through ``node.path`` so Windows ``\\`` separators
      * round-trip correctly — a naïve string ``startsWith(vaultBase + "/")``
      * check would miss every file on Windows and mis-copy them into imports.
@@ -915,7 +921,12 @@ export default class LilbeePlugin extends Plugin {
             const name = node.basename(source) || "imported";
             const dest = this.uniqueImportPath(importsDir, name);
             try {
-                node.copyFileSync(source, dest);
+                const isDirectory = node.statSync(source).isDirectory();
+                if (isDirectory) {
+                    node.cpSync(source, dest, { recursive: true });
+                } else {
+                    node.copyFileSync(source, dest);
+                }
                 results.push(dest);
             } catch (err) {
                 console.error("[lilbee] import copy failed:", source, err);
