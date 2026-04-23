@@ -335,12 +335,35 @@ export interface WikiCitationChain {
     citations: WikiCitation[];
 }
 
-export interface WikiDraft {
+export type DraftPendingKind = "drift" | "parse" | "collision" | "low_faithfulness" | "bad_title";
+export const DRAFT_PENDING_KIND = {
+    DRIFT: "drift",
+    PARSE: "parse",
+    COLLISION: "collision",
+    LOW_FAITHFULNESS: "low_faithfulness",
+    BAD_TITLE: "bad_title",
+} as const satisfies Record<string, DraftPendingKind>;
+
+export interface DraftInfoResponse {
     slug: string;
-    title: string;
-    faithfulness_score: number;
-    generated_at: string;
-    failure_reason: string;
+    path: string;
+    drift_ratio: number | null;
+    faithfulness_score: number | null;
+    bad_title: boolean;
+    published_path: string | null;
+    published_exists: boolean;
+    pending_kind: DraftPendingKind | null;
+    mtime: number;
+}
+
+export interface DraftAcceptResponse {
+    slug: string;
+    moved_to: string;
+    reindexed_chunks: number;
+}
+
+export interface DraftRejectResponse {
+    slug: string;
 }
 
 export interface LintIssue {

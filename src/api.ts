@@ -19,8 +19,10 @@ import type {
     SSEEvent,
     StatusResponse,
     LintResult,
+    DraftAcceptResponse,
+    DraftInfoResponse,
+    DraftRejectResponse,
     WikiCitationChain,
-    WikiDraft,
     WikiPage,
     WikiPageDetail,
 } from "./types";
@@ -490,8 +492,31 @@ export class LilbeeClient {
         yield* this.parseSSE(res);
     }
 
-    async wikiDrafts(): Promise<WikiDraft[]> {
+    async wikiDrafts(): Promise<DraftInfoResponse[]> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/drafts`, { headers: this.authHeaders() });
+        return res.json();
+    }
+
+    async wikiDraftDiff(slug: string): Promise<string> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/drafts/${encodeURIComponent(slug)}/diff`, {
+            headers: this.authHeaders(),
+        });
+        return res.text();
+    }
+
+    async wikiDraftAccept(slug: string): Promise<DraftAcceptResponse> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/drafts/${encodeURIComponent(slug)}/accept`, {
+            method: "POST",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+        });
+        return res.json();
+    }
+
+    async wikiDraftReject(slug: string): Promise<DraftRejectResponse> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/drafts/${encodeURIComponent(slug)}`, {
+            method: "DELETE",
+            headers: this.authHeaders(),
+        });
         return res.json();
     }
 

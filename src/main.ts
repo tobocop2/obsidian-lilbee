@@ -47,6 +47,7 @@ import { SetupWizard } from "./views/setup-wizard";
 import { TaskCenterView, VIEW_TYPE_TASKS } from "./views/task-center";
 import { WikiView, VIEW_TYPE_WIKI } from "./views/wiki-view";
 import { LintModal } from "./views/lint-modal";
+import { DraftModal } from "./views/draft-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { StatusModal } from "./views/status-modal";
 import { TaskQueue, FLASH_WINDOW_MS as TASK_FLASH_WINDOW_MS } from "./task-queue";
@@ -571,6 +572,16 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "lilbee:wiki-drafts",
+            name: MESSAGES.COMMAND_REVIEW_DRAFTS,
+            checkCallback: (checking) => {
+                if (!this.wikiEnabled) return false;
+                if (!checking) new DraftModal(this.app, this).open();
+                return true;
+            },
+        });
+
+        this.addCommand({
             id: "lilbee:wiki-generate",
             name: MESSAGES.COMMAND_WIKI_GENERATE,
             checkCallback: (checking) => {
@@ -998,6 +1009,12 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    refreshOpenWikiViews(): void {
+        for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_WIKI)) {
+            (leaf.view as WikiView).refresh();
+        }
+    }
+
     async activateWikiView(): Promise<void> {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_WIKI);
         if (existing.length > 0) {
@@ -1095,10 +1112,7 @@ export default class LilbeePlugin extends Plugin {
             }
             this.taskQueue.complete(taskId);
             new Notice(MESSAGES.NOTICE_WIKI_GENERATE_DONE(source), NOTICE_DURATION_MS);
-            // Refresh wiki view if open
-            for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_WIKI)) {
-                (leaf.view as WikiView).refresh();
-            }
+            this.refreshOpenWikiViews();
             // Sync generated page to vault
             if (this.wikiSync) {
                 void this.reconcileWiki();
@@ -1135,9 +1149,7 @@ export default class LilbeePlugin extends Plugin {
             }
             this.taskQueue.complete(taskId);
             new Notice(MESSAGES.NOTICE_WIKI_PRUNE_DONE(archived), NOTICE_DURATION_MS);
-            for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_WIKI)) {
-                (leaf.view as WikiView).refresh();
-            }
+            this.refreshOpenWikiViews();
             // Reconcile vault after pruning
             if (this.wikiSync) {
                 void this.reconcileWiki();
