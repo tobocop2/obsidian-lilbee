@@ -195,7 +195,7 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerView).toHaveBeenCalled();
         });
 
-        it("adds all sixteen commands", async () => {
+        it("adds all fifteen commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 

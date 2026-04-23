@@ -245,7 +245,7 @@ const KIND_LABELS: Record<DraftPendingKind, string> = {
 
 function kindChipLabel(draft: DraftInfoResponse): string | null {
     if (draft.pending_kind !== null) {
-        const label = KIND_LABELS[draft.pending_kind as DraftPendingKind];
+        const label = KIND_LABELS[draft.pending_kind];
         if (label !== undefined) return label;
     }
     if (draft.bad_title) return MESSAGES.LABEL_DRAFT_KIND_BAD_TITLE;
