@@ -1580,6 +1580,8 @@ describe("wikiDraftReject()", () => {
                 headers: expect.objectContaining({ Authorization: "Bearer tok" }),
             }),
         );
+        const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>;
+        expect(headers["Content-Type"]).toBeUndefined();
         expect(result).toEqual(data);
     });
 });

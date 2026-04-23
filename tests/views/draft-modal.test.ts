@@ -180,6 +180,20 @@ describe("DraftModal", () => {
         expect(el.find("lilbee-draft-kind")).toBeNull();
     });
 
+    it("falls back to BAD TITLE when pending_kind is unknown but bad_title is true", async () => {
+        plugin.api.wikiDrafts.mockResolvedValue([
+            makeDraft({
+                pending_kind: "future_variant" as unknown as DraftPendingKind,
+                bad_title: true,
+            }),
+        ]);
+        const modal = new DraftModal(app as any, plugin as any);
+        modal.onOpen();
+        await tick();
+        const texts = collectTexts(modal.contentEl as unknown as MockElement);
+        expect(texts.some((t) => t === "BAD TITLE")).toBe(true);
+    });
+
     it("clicking a row fetches the diff, renders +/- spans, and arms the action buttons", async () => {
         plugin.api.wikiDrafts.mockResolvedValue([makeDraft()]);
         plugin.api.wikiDraftDiff.mockResolvedValue("--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n ctx\n");
@@ -200,6 +214,30 @@ describe("DraftModal", () => {
         expect(row.classList.contains("is-selected")).toBe(true);
         const accept = findButtons(el).find((b) => b.textContent === "Accept")!;
         expect((accept as any).disabled).toBe(false);
+    });
+
+    // Regression note: this test is a gate for the desired behavior (previous row loses the selected class),
+    // but it would also pass under the old `findAll("lilbee-draft-row")` bug because the MockElement.findAll in
+    // tests/__mocks__/obsidian.ts matches bare class names (real Obsidian findAll is a CSS-selector API). The
+    // production fix tracks `selectedRow` directly so it works under the real API regardless of the mock.
+    it("moves the is-selected class off the previous row when a different row is clicked", async () => {
+        plugin.api.wikiDrafts.mockResolvedValue([makeDraft({ slug: "row-a" }), makeDraft({ slug: "row-b" })]);
+        plugin.api.wikiDraftDiff.mockResolvedValue("--- a\n+++ b\n+content\n");
+        const modal = new DraftModal(app as any, plugin as any);
+        modal.onOpen();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        const [rowA, rowB] = el.findAll("lilbee-draft-row");
+        rowA.trigger("click");
+        await tick();
+        await tick();
+        expect(rowA.classList.contains("is-selected")).toBe(true);
+        expect(rowB.classList.contains("is-selected")).toBe(false);
+        rowB.trigger("click");
+        await tick();
+        await tick();
+        expect(rowA.classList.contains("is-selected")).toBe(false);
+        expect(rowB.classList.contains("is-selected")).toBe(true);
     });
 
     it("renders the no-diff placeholder when the diff body is empty", async () => {
@@ -469,6 +507,37 @@ describe("DraftModal", () => {
         expect(texts.some((t) => t.includes("Failed to load diff"))).toBe(false);
     });
 
+    it("refresh button is ignored while an action is in flight", async () => {
+        plugin.api.wikiDrafts.mockResolvedValue([makeDraft()]);
+        plugin.api.wikiDraftDiff.mockResolvedValue("--- a\n+++ b\n");
+        let resolveAccept!: (v: { slug: string; moved_to: string; reindexed_chunks: number }) => void;
+        plugin.api.wikiDraftAccept.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    resolveAccept = resolve;
+                }),
+        );
+        const modal = new DraftModal(app as any, plugin as any);
+        modal.onOpen();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        el.find("lilbee-draft-row")!.trigger("click");
+        await tick();
+        await tick();
+        findButtons(el)
+            .find((b) => b.textContent === "Accept")!
+            .trigger("click");
+        await tick();
+        plugin.api.wikiDrafts.mockClear();
+        findButtons(el)
+            .find((b) => b.textContent === "Refresh")!
+            .trigger("click");
+        await tick();
+        expect(plugin.api.wikiDrafts).not.toHaveBeenCalled();
+        resolveAccept({ slug: "summaries/caprice-1951", moved_to: "x", reindexed_chunks: 0 });
+        await tick();
+    });
+
     it("refresh button re-fetches the draft list", async () => {
         plugin.api.wikiDrafts.mockResolvedValue([makeDraft()]);
         const modal = new DraftModal(app as any, plugin as any);
@@ -483,6 +552,8 @@ describe("DraftModal", () => {
     });
 
     it("ignores accept and reject clicks while no draft is selected", async () => {
+        const { ConfirmModal } = await import("../../src/views/confirm-modal");
+        (ConfirmModal as unknown as ReturnType<typeof vi.fn>).mockClear();
         plugin.api.wikiDrafts.mockResolvedValue([makeDraft()]);
         const modal = new DraftModal(app as any, plugin as any);
         modal.onOpen();
@@ -492,6 +563,8 @@ describe("DraftModal", () => {
         await (modal as any).reject();
         expect(plugin.api.wikiDraftAccept).not.toHaveBeenCalled();
         expect(plugin.api.wikiDraftReject).not.toHaveBeenCalled();
+        expect(ConfirmModal).not.toHaveBeenCalled();
+        expect(Notice.instances).toHaveLength(0);
     });
 
     it("does not start a second action while one is in flight", async () => {

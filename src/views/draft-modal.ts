@@ -1,6 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import { DRAFT_PENDING_KIND, type DraftInfoResponse } from "../types";
+import { DRAFT_PENDING_KIND, type DraftInfoResponse, type DraftPendingKind } from "../types";
 import { MESSAGES } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 
@@ -10,6 +10,7 @@ export class DraftModal extends Modal {
     private plugin: LilbeePlugin;
     private drafts: DraftInfoResponse[] = [];
     private selectedSlug: string | null = null;
+    private selectedRow: HTMLElement | null = null;
     private titleEl!: HTMLElement;
     private listEl!: HTMLElement;
     private diffEl!: HTMLElement;
@@ -63,7 +64,9 @@ export class DraftModal extends Modal {
     }
 
     private async loadList(): Promise<void> {
+        if (this.actionInFlight) return;
         this.selectedSlug = null;
+        this.selectedRow = null;
         this.setActionsEnabled(false);
         this.diffEl.setText(MESSAGES.LABEL_DRAFT_NO_SELECTION);
         this.listEl.empty();
@@ -129,9 +132,10 @@ export class DraftModal extends Modal {
     private async selectDraft(slug: string, row: HTMLElement): Promise<void> {
         if (this.actionInFlight) return;
         this.selectedSlug = slug;
-        for (const other of this.listEl.findAll("lilbee-draft-row")) {
-            other.removeClass("is-selected");
+        if (this.selectedRow !== null && this.selectedRow !== row) {
+            this.selectedRow.removeClass("is-selected");
         }
+        this.selectedRow = row;
         row.addClass("is-selected");
         this.diffEl.empty();
         const loading = this.diffEl.createEl("span", { text: "…", cls: "lilbee-loading" });
@@ -211,6 +215,7 @@ export class DraftModal extends Modal {
         const removed = this.drafts.find((d) => d.slug === slug);
         this.drafts = this.drafts.filter((d) => d.slug !== slug);
         this.selectedSlug = null;
+        this.selectedRow = null;
         this.diffEl.setText(MESSAGES.LABEL_DRAFT_NO_SELECTION);
         this.renderRows();
         if (this.plugin.wikiDraftCount > 0) this.plugin.wikiDraftCount -= 1;
@@ -229,28 +234,22 @@ export class DraftModal extends Modal {
     }
 }
 
-function kindChipLabel(draft: DraftInfoResponse): string | null {
-    const kind: string | null = draft.pending_kind ?? (draft.bad_title ? DRAFT_PENDING_KIND.BAD_TITLE : null);
-    if (kind === null) return null;
-    const label = kindLabel(kind);
-    return label === "" ? null : label;
-}
+// Exhaustive map: adding a new DraftPendingKind variant forces TS to demand a label here.
+const KIND_LABELS: Record<DraftPendingKind, string> = {
+    [DRAFT_PENDING_KIND.DRIFT]: MESSAGES.LABEL_DRAFT_KIND_DRIFT,
+    [DRAFT_PENDING_KIND.PARSE]: MESSAGES.LABEL_DRAFT_KIND_PARSE,
+    [DRAFT_PENDING_KIND.COLLISION]: MESSAGES.LABEL_DRAFT_KIND_COLLISION,
+    [DRAFT_PENDING_KIND.LOW_FAITHFULNESS]: MESSAGES.LABEL_DRAFT_KIND_LOW_FAITH,
+    [DRAFT_PENDING_KIND.BAD_TITLE]: MESSAGES.LABEL_DRAFT_KIND_BAD_TITLE,
+};
 
-function kindLabel(kind: string): string {
-    switch (kind) {
-        case DRAFT_PENDING_KIND.DRIFT:
-            return MESSAGES.LABEL_DRAFT_KIND_DRIFT;
-        case DRAFT_PENDING_KIND.PARSE:
-            return MESSAGES.LABEL_DRAFT_KIND_PARSE;
-        case DRAFT_PENDING_KIND.COLLISION:
-            return MESSAGES.LABEL_DRAFT_KIND_COLLISION;
-        case DRAFT_PENDING_KIND.LOW_FAITHFULNESS:
-            return MESSAGES.LABEL_DRAFT_KIND_LOW_FAITH;
-        case DRAFT_PENDING_KIND.BAD_TITLE:
-            return MESSAGES.LABEL_DRAFT_KIND_BAD_TITLE;
-        default:
-            return "";
+function kindChipLabel(draft: DraftInfoResponse): string | null {
+    if (draft.pending_kind !== null) {
+        const label = KIND_LABELS[draft.pending_kind as DraftPendingKind];
+        if (label !== undefined) return label;
     }
+    if (draft.bad_title) return MESSAGES.LABEL_DRAFT_KIND_BAD_TITLE;
+    return null;
 }
 
 function diffLineClass(line: string): string {
