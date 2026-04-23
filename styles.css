@@ -2604,9 +2604,43 @@
     color: var(--interactive-accent);
 }
 
-/* Source preview modal (external-server sources that aren't in the vault) */
+/* Source preview modal (external-server sources that aren't in the vault).
+   The outer modal frame (``.lilbee-preview-modal-frame``) carries the CSS
+   ``resize: both`` handle so users can drag the bottom-right corner to make
+   the preview as large as they need. Applying resize to the inner contentEl
+   gets clipped by Obsidian's default ``overflow: hidden`` on the frame. */
+.lilbee-preview-modal-frame {
+    position: relative;
+    width: min(880px, 92vw);
+    height: min(640px, 85vh);
+    min-width: 360px;
+    min-height: 320px;
+    max-width: 98vw;
+    max-height: 95vh;
+    resize: both;
+    overflow: hidden;
+}
+
 .lilbee-preview-modal {
-    min-width: min(720px, 80vw);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/* Make the resize handle visible — Obsidian's modal-container has overflow
+   hidden that would normally clip it. The diagonal grip doubles as a visual
+   cue so users notice the modal is resizable. */
+.lilbee-preview-modal-frame::after {
+    content: "";
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    width: 14px;
+    height: 14px;
+    background:
+        linear-gradient(135deg, transparent 0 50%, var(--text-faint) 50% 58%, transparent 58% 66%, var(--text-faint) 66% 74%, transparent 74% 82%, var(--text-faint) 82% 90%, transparent 90%);
+    pointer-events: none;
+    opacity: 0.6;
 }
 
 .lilbee-preview-header {
@@ -2629,7 +2663,8 @@
 }
 
 .lilbee-preview-host {
-    max-height: 60vh;
+    flex: 1 1 auto;
+    min-height: 200px;
     overflow-y: auto;
     border: 1px solid var(--background-modifier-border);
     border-radius: 6px;
@@ -2654,7 +2689,8 @@
 
 .lilbee-preview-pdf-object {
     width: 100%;
-    height: 55vh;
+    height: 100%;
+    min-height: 420px;
     border: none;
 }
 
