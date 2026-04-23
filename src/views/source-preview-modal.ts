@@ -27,10 +27,21 @@ export class SourcePreviewModal extends Modal {
     }
 
     onOpen(): void {
-        const { contentEl } = this;
+        const { contentEl, modalEl } = this;
         contentEl.empty();
         contentEl.addClass("lilbee-modal");
         contentEl.addClass("lilbee-preview-modal");
+        // Apply resize handling to the outer modal frame that Obsidian creates;
+        // CSS ``resize: both`` on the inner content element is clipped by the
+        // frame's default ``overflow: hidden``. Setting dimensions inline
+        // beats Obsidian's default ``width: fit-content`` without relying on
+        // CSS specificity escalations.
+        modalEl.addClass("lilbee-preview-modal-frame");
+        modalEl.style.width = "min(880px, 92vw)";
+        modalEl.style.height = "min(640px, 85vh)";
+        modalEl.style.resize = "both";
+        modalEl.style.overflow = "hidden";
+        modalEl.style.position = "relative";
 
         contentEl.createEl("h2", { text: MESSAGES.TITLE_SOURCE_PREVIEW });
 

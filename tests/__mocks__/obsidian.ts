@@ -241,10 +241,15 @@ export interface TFile {
 export class Modal {
     app: App;
     contentEl: MockElement;
+    // Obsidian's runtime Modal exposes the outer .modal wrapper as ``modalEl``.
+    // Tests that assert on modal-level styles or classes rely on this being
+    // a mockable element with addClass + style.
+    modalEl: MockElement;
 
     constructor(app: App) {
         this.app = app;
         this.contentEl = new MockElement("div");
+        this.modalEl = new MockElement("div");
     }
 
     open(): void {
