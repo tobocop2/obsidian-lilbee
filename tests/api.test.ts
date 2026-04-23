@@ -537,6 +537,31 @@ describe("pullModel()", () => {
             expect(url.searchParams.get("limit")).toBe("10");
             expect(url.searchParams.get("offset")).toBe("5");
         });
+
+        describe("contract", () => {
+            it("round-trips has_more: true", async () => {
+                const data = { documents: [], total: 50, limit: 20, offset: 0, has_more: true };
+                fetchMock.mockResolvedValue(jsonResponse(data));
+                const result = await client.listDocuments();
+                expect(result.has_more).toBe(true);
+                expect(result).toEqual(data);
+            });
+
+            it("round-trips has_more: false", async () => {
+                const data = { documents: [], total: 50, limit: 20, offset: 40, has_more: false };
+                fetchMock.mockResolvedValue(jsonResponse(data));
+                const result = await client.listDocuments(undefined, 20, 40);
+                expect(result.has_more).toBe(false);
+                expect(result).toEqual(data);
+            });
+
+            it("legacy response without has_more leaves the field undefined", async () => {
+                const data = { documents: [], total: 0, limit: 20, offset: 0 };
+                fetchMock.mockResolvedValue(jsonResponse(data));
+                const result = await client.listDocuments();
+                expect(result.has_more).toBeUndefined();
+            });
+        });
     });
 
     describe("removeDocuments()", () => {

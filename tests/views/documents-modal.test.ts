@@ -479,6 +479,129 @@ describe("DocumentsModal", () => {
         // Should not throw
     });
 
+    it("stops paginating when has_more is false, even with offset < total", async () => {
+        const page1 = Array.from({ length: 20 }, (_, i) => makeDoc({ filename: `f${i}.md` }));
+        const plugin = makePlugin();
+        plugin.api.listDocuments.mockResolvedValue({
+            documents: page1,
+            total: 999,
+            limit: 20,
+            offset: 0,
+            has_more: false,
+        });
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+        plugin.api.listDocuments.mockClear();
+
+        const el = (modal as any).resultsEl as MockElement;
+        Object.assign(el, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+        (modal as any).onScroll();
+        await vi.runAllTimersAsync();
+
+        expect(plugin.api.listDocuments).not.toHaveBeenCalled();
+    });
+
+    it("keeps paginating when has_more is true, even if offset equals total", async () => {
+        const page1 = Array.from({ length: 20 }, (_, i) => makeDoc({ filename: `f${i}.md` }));
+        const page2 = [makeDoc({ filename: "f20.md" })];
+        const plugin = makePlugin();
+        plugin.api.listDocuments
+            .mockResolvedValueOnce({
+                documents: page1,
+                total: 20,
+                limit: 20,
+                offset: 0,
+                has_more: true,
+            })
+            .mockResolvedValueOnce({
+                documents: page2,
+                total: 20,
+                limit: 20,
+                offset: 20,
+                has_more: false,
+            });
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = (modal as any).resultsEl as MockElement;
+        Object.assign(el, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+        (modal as any).onScroll();
+        await vi.runAllTimersAsync();
+
+        expect(plugin.api.listDocuments).toHaveBeenCalledTimes(2);
+        expect(plugin.api.listDocuments).toHaveBeenLastCalledWith(undefined, 20, 20);
+    });
+
+    it("falls back to offset>=total when has_more is absent (legacy server)", async () => {
+        const docs = [makeDoc({ filename: "only.md" })];
+        const plugin = makePlugin();
+        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse(docs, 1));
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+        plugin.api.listDocuments.mockClear();
+
+        const el = (modal as any).resultsEl as MockElement;
+        Object.assign(el, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+        (modal as any).onScroll();
+        await vi.runAllTimersAsync();
+
+        expect(plugin.api.listDocuments).not.toHaveBeenCalled();
+    });
+
+    it("legacy server: stops when response returns zero rows", async () => {
+        const page1 = Array.from({ length: 20 }, (_, i) => makeDoc({ filename: `f${i}.md` }));
+        const plugin = makePlugin();
+        plugin.api.listDocuments
+            .mockResolvedValueOnce(makeDocsResponse(page1, 999))
+            .mockResolvedValueOnce(makeDocsResponse([], 999));
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = (modal as any).resultsEl as MockElement;
+        Object.assign(el, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
+        (modal as any).onScroll();
+        await vi.runAllTimersAsync();
+        plugin.api.listDocuments.mockClear();
+        (modal as any).onScroll();
+        await vi.runAllTimersAsync();
+
+        expect(plugin.api.listDocuments).not.toHaveBeenCalled();
+    });
+
+    it("resetAndFetch re-enables pagination after a terminal page", async () => {
+        const plugin = makePlugin();
+        plugin.api.listDocuments.mockResolvedValue({
+            documents: [makeDoc()],
+            total: 1,
+            limit: 20,
+            offset: 0,
+            has_more: false,
+        });
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+        expect((modal as any).hasMore).toBe(false);
+
+        const el = modal.contentEl as unknown as MockElement;
+        const searchInput = el.find("lilbee-documents-search")!;
+        (searchInput as any).value = "query";
+        searchInput.trigger("input");
+        await vi.advanceTimersByTimeAsync(300);
+        await vi.runAllTimersAsync();
+
+        // hasMore resets to the new response's has_more, but was true between reset and fetch
+        expect(plugin.api.listDocuments).toHaveBeenLastCalledWith("query", 20, 0);
+    });
+
     it("does not call removeDocuments when nothing selected", async () => {
         vi.useRealTimers();
         const plugin = makePlugin();

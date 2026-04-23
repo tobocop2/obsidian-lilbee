@@ -293,6 +293,7 @@ export interface DocumentsResponse {
     total: number;
     limit: number;
     offset: number;
+    has_more?: boolean;
 }
 
 export interface ConfigUpdateResponse {
