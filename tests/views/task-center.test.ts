@@ -276,6 +276,37 @@ describe("TaskCenterView rendering", () => {
         expect(cancelBtns.length).toBe(0);
     });
 
+    it("renders retry button on failed task with a retry callback and invokes it on click", () => {
+        const retry = vi.fn();
+        const id = plugin.taskQueue.enqueue("Adding files", TASK_TYPE.ADD, retry)!;
+        plugin.taskQueue.fail(id, "stream idle");
+        (view as any).render();
+
+        const retryBtns = findByClass(contentEl, "lilbee-task-retry");
+        expect(retryBtns.length).toBe(1);
+        expect(retryBtns[0]!.textContent).toBe("Retry");
+
+        retryBtns[0]!.trigger("click", { stopPropagation: vi.fn() });
+        expect(retry).toHaveBeenCalledTimes(1);
+    });
+
+    it("renders retry button on cancelled task with a retry callback", () => {
+        const retry = vi.fn();
+        const id = plugin.taskQueue.enqueue("Adding files", TASK_TYPE.ADD, retry)!;
+        plugin.taskQueue.cancel(id);
+        (view as any).render();
+
+        expect(findByClass(contentEl, "lilbee-task-retry").length).toBe(1);
+    });
+
+    it("does not render retry button when the failed task has no retry callback", () => {
+        const id = plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC)!;
+        plugin.taskQueue.fail(id, "boom");
+        (view as any).render();
+
+        expect(findByClass(contentEl, "lilbee-task-retry").length).toBe(0);
+    });
+
     it("clears empty state when tasks are present", () => {
         plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
         (view as any).render();

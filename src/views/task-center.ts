@@ -238,6 +238,16 @@ export class TaskCenterView extends ItemView {
             });
         }
 
+        if ((state === TASK_STATUS.FAILED || state === TASK_STATUS.CANCELLED) && task.retry) {
+            const retryBtn = row.createEl("button", { cls: "lilbee-task-retry" });
+            retryBtn.textContent = MESSAGES.LABEL_RETRY_TASK;
+            retryBtn.title = MESSAGES.LABEL_RETRY_TASK;
+            retryBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                void task.retry?.();
+            });
+        }
+
         if (task.error && state === TASK_STATUS.FAILED) {
             row.title = task.error;
         }

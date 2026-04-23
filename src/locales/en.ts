@@ -166,6 +166,7 @@ export const MESSAGES = {
     LABEL_NO_QUEUED_TASKS: "No queued tasks",
     LABEL_NO_COMPLETED_TASKS: "No completed tasks",
     LABEL_CANCEL_TASK: "Cancel task",
+    LABEL_RETRY_TASK: "Retry",
     LABEL_DOWNLOAD_QUEUED: "+{count} queued",
     LABEL_TASK_STATE_QUEUED: "queued",
     LABEL_TASK_STATE_DONE: "done",

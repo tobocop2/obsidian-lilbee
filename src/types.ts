@@ -481,6 +481,7 @@ export interface TaskEntry {
     bytesTotal?: number;
     rateBps?: number;
     lastRateAt?: number;
+    retry?: () => void | Promise<void>;
 }
 
 export type ModelSize = "small" | "medium" | "large";

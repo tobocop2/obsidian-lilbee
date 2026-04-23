@@ -2326,6 +2326,25 @@
     background-color: color-mix(in srgb, var(--text-error) 10%, transparent);
 }
 
+.lilbee-task-retry {
+    background: none;
+    border: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1;
+    padding: 3px 8px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    align-self: center;
+}
+
+.lilbee-task-retry:hover {
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+}
+
 .lilbee-tasks-empty {
     font-size: var(--font-small, 13px);
     color: var(--text-muted);

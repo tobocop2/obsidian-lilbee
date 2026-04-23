@@ -54,7 +54,7 @@ export class TaskQueue {
         return q;
     }
 
-    enqueue(name: string, type: TaskType): string | null {
+    enqueue(name: string, type: TaskType, retry?: () => void | Promise<void>): string | null {
         if (this.typeQueue(type).length >= TASK_QUEUE.MAX_QUEUED_PER_TYPE) {
             return null;
         }
@@ -70,6 +70,7 @@ export class TaskQueue {
             completedAt: null,
             error: null,
             canCancel: true,
+            retry,
         };
         this.tasks.set(id, task);
         this.typeQueue(type).push(id);
