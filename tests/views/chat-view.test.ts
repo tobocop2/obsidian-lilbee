@@ -295,7 +295,7 @@ describe("ChatView.onOpen — send button triggers send", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
 
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("hello", [], 5, expect.any(AbortSignal));
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("hello", [], 5, expect.any(AbortSignal), undefined, "all");
     });
 
     it("clears textarea value after send", async () => {
@@ -2126,7 +2126,41 @@ describe("ChatView.sendMessage — does not send generation overrides", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
 
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("hi", [], 5, expect.any(AbortSignal));
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("hi", [], 5, expect.any(AbortSignal), undefined, "all");
+    });
+});
+
+describe("ChatView.sendMessage — forwards searchChunkType", () => {
+    it("passes 'wiki' when the setting is 'wiki'", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.settings.searchChunkType = "wiki";
+        const { mockFn, done } = makeStream([{ event: SSE_EVENT.DONE, data: {} }]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "q";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "wiki");
+    });
+
+    it("passes 'raw' when the setting is 'raw'", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.settings.searchChunkType = "raw";
+        const { mockFn, done } = makeStream([{ event: SSE_EVENT.DONE, data: {} }]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "q";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "raw");
     });
 });
 

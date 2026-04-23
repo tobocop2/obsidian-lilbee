@@ -208,6 +208,42 @@ describe("chatStream()", () => {
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
         expect(body.options).toBeUndefined();
     });
+
+    it("includes chunk_type when chunkType is 'wiki'", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.chatStream("q", [], 0, undefined, undefined, "wiki"));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.chunk_type).toBe("wiki");
+    });
+
+    it("includes chunk_type when chunkType is 'raw'", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.chatStream("q", [], 0, undefined, undefined, "raw"));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.chunk_type).toBe("raw");
+    });
+
+    it("omits chunk_type when chunkType is 'all'", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.chatStream("q", [], 0, undefined, undefined, "all"));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.chunk_type).toBeUndefined();
+    });
+
+    it("omits chunk_type when chunkType is undefined", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.chatStream("q", []));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.chunk_type).toBeUndefined();
+    });
 });
 
 describe("addFiles()", () => {
