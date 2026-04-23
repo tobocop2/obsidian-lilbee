@@ -111,6 +111,11 @@ vi.mock("../src/binary-manager", () => ({
         readFileSync: vi.fn(),
         unlinkSync: vi.fn(),
         copyFileSync: vi.fn(),
+        cpSync: vi.fn(),
+        // Default every stat-ed source to a regular file so pre-existing
+        // tests (which only exercise the file path) keep hitting copyFileSync
+        // rather than cpSync. Directory tests override this per-test.
+        statSync: vi.fn(() => ({ isDirectory: () => false })),
         // Real node:path join/basename — tests exercise cross-platform path
         // normalisation and need the actual behaviour, not a stub.
         join: (...parts: string[]) => parts.join("/").replace(/\/+/g, "/"),
@@ -1558,6 +1563,100 @@ describe("LilbeePlugin", () => {
             expect(node.copyFileSync).not.toHaveBeenCalled();
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["C:\\Users\\me\\vault\\notes\\already-here.md"],
+                true,
+                null,
+                expect.any(AbortSignal),
+            );
+        });
+
+        it("recursively copies picked directories into imports/", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            (node.mkdirSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockClear();
+            (node.cpSync as ReturnType<typeof vi.fn>).mockClear();
+            (node.statSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.statSync as ReturnType<typeof vi.fn>).mockReturnValue({
+                isDirectory: () => true,
+            });
+
+            await plugin.addExternalFiles(["/home/user/notes-folder"]);
+
+            expect(node.cpSync).toHaveBeenCalledWith(
+                "/home/user/notes-folder",
+                "/test/vault/lilbee/imports/notes-folder",
+                {
+                    recursive: true,
+                },
+            );
+            expect(node.copyFileSync).not.toHaveBeenCalled();
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(
+                ["/test/vault/lilbee/imports/notes-folder"],
+                true,
+                null,
+                expect.any(AbortSignal),
+            );
+        });
+
+        it("handles a mixed batch of file and directory sources", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            (node.mkdirSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockClear();
+            (node.cpSync as ReturnType<typeof vi.fn>).mockClear();
+            (node.statSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.statSync as ReturnType<typeof vi.fn>).mockImplementation((p: unknown) => ({
+                isDirectory: () => p === "/home/user/folder",
+            }));
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf", "/home/user/folder"]);
+
+            expect(node.copyFileSync).toHaveBeenCalledWith("/home/user/doc.pdf", "/test/vault/lilbee/imports/doc.pdf");
+            expect(node.cpSync).toHaveBeenCalledWith("/home/user/folder", "/test/vault/lilbee/imports/folder", {
+                recursive: true,
+            });
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(
+                ["/test/vault/lilbee/imports/doc.pdf", "/test/vault/lilbee/imports/folder"],
+                true,
+                null,
+                expect.any(AbortSignal),
+            );
+        });
+
+        it("surfaces a Notice when a directory copy fails and keeps the rest of the batch", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            (node.mkdirSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockClear();
+            (node.statSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.statSync as ReturnType<typeof vi.fn>).mockImplementation((p: unknown) => ({
+                isDirectory: () => p === "/home/user/bad-folder",
+            }));
+            (node.cpSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.cpSync as ReturnType<typeof vi.fn>).mockImplementation(() => {
+                throw new Error("EACCES: nested permission denied");
+            });
+
+            await plugin.addExternalFiles(["/home/user/bad-folder", "/home/user/good.pdf"]);
+
+            expect(Notice.instances.some((n) => n.message === MESSAGES.ERROR_FILE_PICKER)).toBe(true);
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(
+                ["/test/vault/lilbee/imports/good.pdf"],
                 true,
                 null,
                 expect.any(AbortSignal),

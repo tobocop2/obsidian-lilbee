@@ -1,6 +1,16 @@
 import { requestUrl } from "obsidian";
 import { execFile, spawn } from "child_process";
-import { existsSync, mkdirSync, chmodSync, writeFileSync, readFileSync, unlinkSync, copyFileSync } from "fs";
+import {
+    existsSync,
+    mkdirSync,
+    chmodSync,
+    writeFileSync,
+    readFileSync,
+    unlinkSync,
+    copyFileSync,
+    cpSync,
+    statSync,
+} from "fs";
 import { basename, join } from "path";
 import { promisify } from "util";
 import { ARCH, PLATFORM } from "./types";
@@ -18,6 +28,8 @@ export const node = {
     readFileSync,
     unlinkSync,
     copyFileSync,
+    cpSync,
+    statSync,
     join,
     basename,
     requestUrl,
