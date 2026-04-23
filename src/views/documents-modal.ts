@@ -12,6 +12,7 @@ export class DocumentsModal extends Modal {
     private plugin: LilbeePlugin;
     private offset = 0;
     private total = 0;
+    private hasMore = true;
     private isFetching = false;
     private documents: DocumentEntry[] = [];
     private selected = new Set<string>();
@@ -65,7 +66,7 @@ export class DocumentsModal extends Modal {
     }
 
     private onScroll = (): void => {
-        if (!this.resultsEl || this.isFetching || this.offset >= this.total) return;
+        if (!this.resultsEl || this.isFetching || !this.hasMore) return;
         const { scrollTop, clientHeight, scrollHeight } = this.resultsEl;
         if (scrollTop + clientHeight >= scrollHeight - SCROLL_BOTTOM_THRESHOLD_PX) {
             void this.fetchPage();
@@ -74,6 +75,7 @@ export class DocumentsModal extends Modal {
 
     private resetAndFetch(): void {
         this.offset = 0;
+        this.hasMore = true;
         this.documents = [];
         this.selected.clear();
         if (this.resultsEl) this.resultsEl.empty();
@@ -93,6 +95,10 @@ export class DocumentsModal extends Modal {
             this.total = response.total;
             this.documents.push(...response.documents);
             this.offset += response.documents.length;
+            this.hasMore =
+                response.has_more !== undefined
+                    ? response.has_more
+                    : response.documents.length > 0 && this.offset < response.total;
 
             for (const doc of response.documents) {
                 this.renderRow(doc);
