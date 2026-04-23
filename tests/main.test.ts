@@ -111,6 +111,10 @@ vi.mock("../src/binary-manager", () => ({
         readFileSync: vi.fn(),
         unlinkSync: vi.fn(),
         copyFileSync: vi.fn(),
+        // Real node:path join/basename — tests exercise cross-platform path
+        // normalisation and need the actual behaviour, not a stub.
+        join: (...parts: string[]) => parts.join("/").replace(/\/+/g, "/"),
+        basename: (p: string) => p.replace(/\\/g, "/").split("/").pop() ?? "",
         requestUrl: vi.fn(),
     },
 }));
@@ -1507,6 +1511,53 @@ describe("LilbeePlugin", () => {
 
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/lilbee/imports/Makefile-1"],
+                true,
+                null,
+                expect.any(AbortSignal),
+            );
+        });
+
+        it("surfaces a Notice and returns early when the imports dir can't be created", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            plugin.api.addFiles = vi.fn();
+
+            (node.mkdirSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.mkdirSync as ReturnType<typeof vi.fn>).mockImplementation(() => {
+                throw new Error("EACCES");
+            });
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+
+            expect(plugin.api.addFiles).not.toHaveBeenCalled();
+            expect(Notice.instances.some((n) => n.message === MESSAGES.ERROR_FILE_PICKER)).toBe(true);
+        });
+
+        it("detects Windows-style vault-local paths so disk picks on the same drive don't double-copy", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            // Obsidian's getBasePath() returns backslash-separated paths on
+            // Windows. A file already inside that vault must be recognised
+            // via isUnderVault regardless of which separator it uses.
+            (plugin.app.vault.adapter.getBasePath as ReturnType<typeof vi.fn>).mockReturnValue("C:\\Users\\me\\vault");
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            // Prior tests may have left mkdirSync throwing — reset so the
+            // imports-dir bootstrap doesn't short-circuit out of copyExternalFilesToVault.
+            (node.mkdirSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockClear();
+
+            await plugin.addExternalFiles(["C:\\Users\\me\\vault\\notes\\already-here.md"]);
+
+            expect(node.copyFileSync).not.toHaveBeenCalled();
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(
+                ["C:\\Users\\me\\vault\\notes\\already-here.md"],
                 true,
                 null,
                 expect.any(AbortSignal),

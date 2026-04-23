@@ -891,20 +891,28 @@ export default class LilbeePlugin extends Plugin {
      * new absolute paths for indexing. Paths already under the vault root
      * are returned unchanged. On copy failure the offending file is dropped
      * with a user-visible Notice so the rest of the batch still proceeds.
+     *
+     * All path joins go through ``node.path`` so Windows ``\\`` separators
+     * round-trip correctly — a naïve string ``startsWith(vaultBase + "/")``
+     * check would miss every file on Windows and mis-copy them into imports.
      */
     private copyExternalFilesToVault(paths: string[]): string[] {
         const vaultBase = this.getVaultBasePath();
-        const importsDir = `${vaultBase}/lilbee/imports`;
-        if (!node.existsSync(importsDir)) {
+        const importsDir = node.join(vaultBase, "lilbee", "imports");
+        try {
             node.mkdirSync(importsDir, { recursive: true });
+        } catch (err) {
+            console.error("[lilbee] import dir create failed:", importsDir, err);
+            new Notice(MESSAGES.ERROR_FILE_PICKER);
+            return [];
         }
         const results: string[] = [];
         for (const source of paths) {
-            if (source.startsWith(`${vaultBase}/`)) {
+            if (this.isUnderVault(source, vaultBase)) {
                 results.push(source);
                 continue;
             }
-            const name = source.split("/").pop() || "imported";
+            const name = node.basename(source) || "imported";
             const dest = this.uniqueImportPath(importsDir, name);
             try {
                 node.copyFileSync(source, dest);
@@ -917,17 +925,28 @@ export default class LilbeePlugin extends Plugin {
         return results;
     }
 
+    /**
+     * True if ``source`` sits under ``vaultBase``. Normalises separators so
+     * ``C:\\vault\\foo.pdf`` correctly matches a vault base of ``C:\\vault``
+     * regardless of which slash flavour either side uses.
+     */
+    private isUnderVault(source: string, vaultBase: string): boolean {
+        const norm = (p: string) => p.replace(/\\/g, "/");
+        const prefix = norm(vaultBase).replace(/\/+$/, "");
+        return norm(source).startsWith(`${prefix}/`);
+    }
+
     /** Append a ``-N`` suffix until ``<dir>/<name>`` doesn't exist on disk. */
     private uniqueImportPath(dir: string, name: string): string {
-        const candidate = `${dir}/${name}`;
+        const candidate = node.join(dir, name);
         if (!node.existsSync(candidate)) return candidate;
         const dot = name.lastIndexOf(".");
         const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
         for (let n = 1; n < 1000; n++) {
-            const next = `${dir}/${stem}-${n}${ext}`;
+            const next = node.join(dir, `${stem}-${n}${ext}`);
             if (!node.existsSync(next)) return next;
         }
-        return `${dir}/${stem}-${Date.now()}${ext}`;
+        return node.join(dir, `${stem}-${Date.now()}${ext}`);
     }
 
     async addToLilbee(file: TAbstractFile): Promise<void> {
