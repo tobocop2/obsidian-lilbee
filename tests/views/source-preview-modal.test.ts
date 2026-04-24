@@ -188,7 +188,7 @@ describe("SourcePreviewModal — loading + success (markdown)", () => {
 });
 
 describe("SourcePreviewModal — success (PDF)", () => {
-    it("renders an <object> pointing to the raw URL for PDF content-type", async () => {
+    it("renders an <iframe> pointing to the raw URL for PDF content-type", async () => {
         const app = new App();
         const api = makeApi({
             getSource: vi.fn().mockResolvedValue({
@@ -204,14 +204,13 @@ describe("SourcePreviewModal — success (PDF)", () => {
         modal.open();
         await tick();
         const el = modal.contentEl as unknown as MockElement;
-        const obj = el.find("lilbee-preview-pdf-object");
-        expect(obj).not.toBeNull();
-        expect(obj!.tagName).toBe("OBJECT");
-        expect(obj!.attributes["type"]).toBe(CONTENT_TYPE.PDF);
-        expect(obj!.attributes["data"]).toContain("book.pdf");
+        const frame = el.find("lilbee-preview-pdf-frame");
+        expect(frame).not.toBeNull();
+        expect(frame!.tagName).toBe("IFRAME");
+        expect(frame!.attributes["src"]).toContain("book.pdf");
     });
 
-    it("renders a PDF object when source.content_type is PDF even if body content_type differs", async () => {
+    it("renders a PDF iframe when source.content_type is PDF even if body content_type differs", async () => {
         const app = new App();
         const api = makeApi({
             getSource: vi.fn().mockResolvedValue({
@@ -223,7 +222,51 @@ describe("SourcePreviewModal — success (PDF)", () => {
         modal.open();
         await tick();
         const el = modal.contentEl as unknown as MockElement;
-        expect(el.find("lilbee-preview-pdf-object")).not.toBeNull();
+        expect(el.find("lilbee-preview-pdf-frame")).not.toBeNull();
+    });
+
+    it("appends #page=N to the iframe src when page_start is set", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({
+                markdown: "",
+                content_type: CONTENT_TYPE.PDF,
+            }),
+        });
+        const modal = new SourcePreviewModal(
+            app as never,
+            api,
+            makeSource({
+                source: "crawled/example.com/book.pdf",
+                content_type: CONTENT_TYPE.PDF,
+                page_start: 42,
+            }),
+        );
+        modal.open();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        const frame = el.find("lilbee-preview-pdf-frame")!;
+        expect(frame.attributes["src"]).toContain("#page=42");
+    });
+
+    it("omits the #page= fragment when page_start is null", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({
+                markdown: "",
+                content_type: CONTENT_TYPE.PDF,
+            }),
+        });
+        const modal = new SourcePreviewModal(
+            app as never,
+            api,
+            makeSource({ content_type: CONTENT_TYPE.PDF, page_start: null }),
+        );
+        modal.open();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        const frame = el.find("lilbee-preview-pdf-frame")!;
+        expect(frame.attributes["src"]).not.toContain("#page=");
     });
 });
 
