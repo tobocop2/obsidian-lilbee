@@ -295,7 +295,7 @@ describe("ChatView.onOpen — send button triggers send", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
 
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("hello", [], 5, expect.any(AbortSignal));
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("hello", [], 5, expect.any(AbortSignal), undefined, "all");
     });
 
     it("clears textarea value after send", async () => {
@@ -2126,7 +2126,41 @@ describe("ChatView.sendMessage — does not send generation overrides", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
 
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("hi", [], 5, expect.any(AbortSignal));
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("hi", [], 5, expect.any(AbortSignal), undefined, "all");
+    });
+});
+
+describe("ChatView.sendMessage — forwards searchChunkType", () => {
+    it("passes 'wiki' when the setting is 'wiki'", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.settings.searchChunkType = "wiki";
+        const { mockFn, done } = makeStream([{ event: SSE_EVENT.DONE, data: {} }]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "q";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "wiki");
+    });
+
+    it("passes 'raw' when the setting is 'raw'", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.settings.searchChunkType = "raw";
+        const { mockFn, done } = makeStream([{ event: SSE_EVENT.DONE, data: {} }]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "q";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "raw");
     });
 });
 
@@ -2164,18 +2198,14 @@ describe("ChatView.createToolbar — search mode buttons", () => {
         await view.onClose();
     });
 
-    it("hides wiki button when wikiEnabled is false", async () => {
+    it("does not render the scope picker when wikiEnabled is false", async () => {
         Notice.clear();
         const plugin = makePlugin();
         plugin.settings.wikiEnabled = false;
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const modeGroup = container.find("lilbee-search-mode")!;
-        const buttons = modeGroup.children.filter((c: any) => c.tagName === "BUTTON");
-        expect(buttons).toHaveLength(2);
-        expect(buttons[0].textContent).toBe("All");
-        expect(buttons[1].textContent).toBe("Raw");
+        expect(container.find("lilbee-search-mode")).toBeNull();
         await view.onClose();
     });
 
@@ -2693,6 +2723,23 @@ describe("ChatView — embedding model selector", () => {
         expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
     });
 
+    it("Browse more button opens CatalogModal pre-filtered to embedding", async () => {
+        const { CatalogModal } = await import("../../src/views/catalog-modal");
+        (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const browseBtn = container.find("lilbee-embed-browse")!;
+        expect(browseBtn).not.toBeNull();
+        expect(browseBtn.textContent).toBe(MESSAGES.BUTTON_BROWSE_MORE);
+
+        browseBtn.trigger("click");
+        expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "embedding");
+    });
+
     it("shows connecting label on embedding select when offline", async () => {
         vi.useFakeTimers();
         const plugin = makePlugin();
@@ -2818,6 +2865,21 @@ describe("ChatView — embedding model selector", () => {
         (view as any).embeddingSelectEl = null;
         // Should not throw
         (view as any).revertEmbeddingSelect("test");
+    });
+
+    it("revertEmbeddingSelect falls back to a server refresh when the previous value is not in options", async () => {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const fetchSpy = vi
+            .spyOn(view as unknown as { fetchAndFillSelectors: () => Promise<void> }, "fetchAndFillSelectors")
+            .mockResolvedValue();
+
+        (view as any).revertEmbeddingSelect("totally-unknown-model");
+
+        expect(fetchSpy).toHaveBeenCalled();
     });
 
     it("handles null catalog result in fillEmbeddingSelector", async () => {

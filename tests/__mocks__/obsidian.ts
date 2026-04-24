@@ -133,6 +133,14 @@ export class MockElement {
         if (i >= 0) handlers.splice(i, 1);
     }
 
+    // HTMLSelectElement.options — return children whose tagName is OPTION.
+    // Real-DOM HTMLSelectElement exposes the live HTMLOptionsCollection via
+    // this property; views that iterate it (e.g. chat-view.revertEmbeddingSelect)
+    // need the same surface in tests.
+    get options(): MockElement[] {
+        return this.children.filter((c) => c.tagName === "OPTION");
+    }
+
     // Test helper: trigger an event
     trigger(event: string, ...args: unknown[]): void {
         for (const handler of this._listeners[event] ?? []) {
@@ -219,11 +227,23 @@ export class App {
         on: vi.fn().mockReturnValue({ id: "mock-event" }),
         getActiveFile: vi.fn().mockReturnValue(null),
     };
+    // Undocumented-but-stable Obsidian API used by plugins to open their
+    // own Settings tab. Tests may replace this with `undefined` to exercise
+    // the defensive guard.
+    setting: { open: ReturnType<typeof vi.fn>; openTabById: ReturnType<typeof vi.fn> } | undefined = {
+        open: vi.fn(),
+        openTabById: vi.fn(),
+    };
     vault = {
         on: vi.fn().mockReturnValue({ id: "mock-vault-event" }),
         offref: vi.fn(),
         adapter: {
             getBasePath: vi.fn().mockReturnValue("/test/vault"),
+            // Obsidian's real DataAdapter surfaces these; tests that copy
+            // external files into the vault use them.
+            exists: vi.fn().mockResolvedValue(false),
+            mkdir: vi.fn().mockResolvedValue(undefined),
+            writeBinary: vi.fn().mockResolvedValue(undefined),
         },
         getFiles: vi.fn().mockReturnValue([]),
         getAbstractFileByPath: vi.fn().mockReturnValue(null),
@@ -241,10 +261,15 @@ export interface TFile {
 export class Modal {
     app: App;
     contentEl: MockElement;
+    // Obsidian's runtime Modal exposes the outer .modal wrapper as ``modalEl``.
+    // Tests that assert on modal-level styles or classes rely on this being
+    // a mockable element with addClass + style.
+    modalEl: MockElement;
 
     constructor(app: App) {
         this.app = app;
         this.contentEl = new MockElement("div");
+        this.modalEl = new MockElement("div");
     }
 
     open(): void {

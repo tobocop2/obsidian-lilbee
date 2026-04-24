@@ -114,6 +114,17 @@ vi.mock("../src/binary-manager", () => ({
         chmodSync: vi.fn(),
         writeFileSync: vi.fn(),
         readFileSync: vi.fn(),
+        unlinkSync: vi.fn(),
+        copyFileSync: vi.fn(),
+        cpSync: vi.fn(),
+        // Default every stat-ed source to a regular file so pre-existing
+        // tests (which only exercise the file path) keep hitting copyFileSync
+        // rather than cpSync. Directory tests override this per-test.
+        statSync: vi.fn(() => ({ isDirectory: () => false })),
+        // Real node:path join/basename — tests exercise cross-platform path
+        // normalisation and need the actual behaviour, not a stub.
+        join: (...parts: string[]) => parts.join("/").replace(/\/+/g, "/"),
+        basename: (p: string) => p.replace(/\\/g, "/").split("/").pop() ?? "",
         requestUrl: vi.fn(),
     },
 }));
@@ -1019,6 +1030,74 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("add failed"))).toBe(true);
         });
 
+        it("runAdd parks the task in WAITING state on already_ingesting and leaves failedAddPaths clean", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            (plugin as any).getVaultBasePath = () => "/vault";
+
+            async function* alreadyIngesting() {
+                yield {
+                    event: SSE_EVENT.ALREADY_INGESTING,
+                    data: { source: "test.md" },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(alreadyIngesting());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            const waiting = plugin.taskQueue.completed.find((t) => t.status === "waiting");
+            expect(waiting).toBeDefined();
+            // Retry callback must be dropped so the Task Center does not
+            // surface a button that would just collide with the server again.
+            expect(waiting?.retry).toBeUndefined();
+
+            // Must NOT mark the path as failed — the server is still
+            // ingesting it; a subsequent user-driven add should behave
+            // like a normal add, not a retry.
+            expect((plugin as any).failedAddPaths.has("/vault/test.md")).toBe(false);
+
+            expect(
+                Notice.instances.some((n) => n.message.includes("already ingesting") && n.message.includes("test.md")),
+            ).toBe(true);
+        });
+
+        it("runAdd falls back to the first request path when the server omits a source name", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            (plugin as any).getVaultBasePath = () => "/vault";
+
+            async function* alreadyIngestingNoSource() {
+                yield { event: SSE_EVENT.ALREADY_INGESTING, data: {} };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(alreadyIngestingNoSource());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(
+                Notice.instances.some(
+                    (n) => n.message.includes("already ingesting") && n.message.includes("/vault/test.md"),
+                ),
+            ).toBe(true);
+        });
+
+        it("runAdd tolerates a null data payload on already_ingesting", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            (plugin as any).getVaultBasePath = () => "/vault";
+
+            async function* alreadyIngestingNullData() {
+                yield { event: SSE_EVENT.ALREADY_INGESTING, data: null as unknown as { source?: string } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(alreadyIngestingNullData());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(plugin.taskQueue.completed.some((t) => t.status === "waiting")).toBe(true);
+        });
+
         it("addToLilbee returns early when statusBarEl is null", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -1171,7 +1250,7 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).not.toHaveBeenCalled();
         });
 
-        it("calls api.addFiles with the given absolute paths", async () => {
+        it("copies external files into the vault imports dir before indexing", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "llama3";
@@ -1181,8 +1260,11 @@ describe("LilbeePlugin", () => {
 
             await plugin.addExternalFiles(["/home/user/doc.pdf", "/tmp/notes.md"]);
 
+            // Each external path is copied into <vault>/lilbee/imports/<name>
+            // and the NEW vault-local absolute path is what gets indexed —
+            // keeping the source discoverable in Obsidian's file tree.
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
-                ["/home/user/doc.pdf", "/tmp/notes.md"],
+                ["/test/vault/lilbee/imports/doc.pdf", "/test/vault/lilbee/imports/notes.md"],
                 true,
                 null,
                 expect.any(AbortSignal),
@@ -1201,7 +1283,7 @@ describe("LilbeePlugin", () => {
             await plugin.addExternalFiles(["/home/user/scan.pdf"]);
 
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
-                ["/home/user/scan.pdf"],
+                ["/test/vault/lilbee/imports/scan.pdf"],
                 true,
                 true,
                 expect.any(AbortSignal),
@@ -1378,6 +1460,281 @@ describe("LilbeePlugin", () => {
             await plugin.addExternalFiles(["/home/user/bad.pdf"]);
 
             expect(Notice.instances.some((n) => n.message.includes("1 failed"))).toBe(true);
+        });
+
+        it("passes through sources already under the vault root without copying", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockClear();
+
+            await plugin.addExternalFiles(["/test/vault/existing.pdf"]);
+
+            expect(node.copyFileSync).not.toHaveBeenCalled();
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(
+                ["/test/vault/existing.pdf"],
+                true,
+                null,
+                expect.any(AbortSignal),
+            );
+        });
+
+        it("drops files that fail to copy and proceeds with the rest", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+                throw new Error("perm denied");
+            });
+
+            await plugin.addExternalFiles(["/home/user/bad.pdf", "/home/user/good.pdf"]);
+
+            expect(Notice.instances.some((n) => n.message === MESSAGES.ERROR_FILE_PICKER)).toBe(true);
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(
+                ["/test/vault/lilbee/imports/good.pdf"],
+                true,
+                null,
+                expect.any(AbortSignal),
+            );
+        });
+
+        it("returns without indexing when every external file fails to copy", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            plugin.api.addFiles = vi.fn();
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockImplementation(() => {
+                throw new Error("perm denied");
+            });
+
+            await plugin.addExternalFiles(["/home/user/a.pdf", "/home/user/b.pdf"]);
+
+            expect(plugin.api.addFiles).not.toHaveBeenCalled();
+        });
+
+        it("appends a -N suffix when the target import filename already exists", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.existsSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+                (p: unknown) => p === "/test/vault/lilbee/imports/doc.pdf",
+            );
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(
+                ["/test/vault/lilbee/imports/doc-1.pdf"],
+                true,
+                null,
+                expect.any(AbortSignal),
+            );
+        });
+
+        it("falls back to a timestamp suffix when 999 sequential collisions are exhausted", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.existsSync as ReturnType<typeof vi.fn>).mockReset();
+            // Every candidate collides → the loop runs out and the helper
+            // has to mint a timestamped fallback name.
+            (node.existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+
+            expect(plugin.api.addFiles).toHaveBeenCalled();
+            const call = (plugin.api.addFiles as ReturnType<typeof vi.fn>).mock.calls[0];
+            const indexedPaths = call[0] as string[];
+            expect(indexedPaths).toHaveLength(1);
+            expect(indexedPaths[0]).toMatch(/^\/test\/vault\/lilbee\/imports\/doc-\d+\.pdf$/);
+            // Must NOT be the collision-loop form doc-1..doc-999
+            expect(indexedPaths[0]).not.toMatch(/\/doc-\d{1,3}\.pdf$/);
+        });
+
+        it("appends -N to extensionless filenames without adding a spurious dot", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.existsSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+                (p: unknown) => p === "/test/vault/lilbee/imports/Makefile",
+            );
+
+            await plugin.addExternalFiles(["/tmp/Makefile"]);
+
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(
+                ["/test/vault/lilbee/imports/Makefile-1"],
+                true,
+                null,
+                expect.any(AbortSignal),
+            );
+        });
+
+        it("surfaces a Notice and returns early when the imports dir can't be created", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            plugin.api.addFiles = vi.fn();
+
+            (node.mkdirSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.mkdirSync as ReturnType<typeof vi.fn>).mockImplementation(() => {
+                throw new Error("EACCES");
+            });
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+
+            expect(plugin.api.addFiles).not.toHaveBeenCalled();
+            expect(Notice.instances.some((n) => n.message === MESSAGES.ERROR_FILE_PICKER)).toBe(true);
+        });
+
+        it("detects Windows-style vault-local paths so disk picks on the same drive don't double-copy", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            // Obsidian's getBasePath() returns backslash-separated paths on
+            // Windows. A file already inside that vault must be recognised
+            // via isUnderVault regardless of which separator it uses.
+            (plugin.app.vault.adapter.getBasePath as ReturnType<typeof vi.fn>).mockReturnValue("C:\\Users\\me\\vault");
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            // Prior tests may have left mkdirSync throwing — reset so the
+            // imports-dir bootstrap doesn't short-circuit out of copyExternalFilesToVault.
+            (node.mkdirSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockClear();
+
+            await plugin.addExternalFiles(["C:\\Users\\me\\vault\\notes\\already-here.md"]);
+
+            expect(node.copyFileSync).not.toHaveBeenCalled();
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(
+                ["C:\\Users\\me\\vault\\notes\\already-here.md"],
+                true,
+                null,
+                expect.any(AbortSignal),
+            );
+        });
+
+        it("recursively copies picked directories into imports/", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            (node.mkdirSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockClear();
+            (node.cpSync as ReturnType<typeof vi.fn>).mockClear();
+            (node.statSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.statSync as ReturnType<typeof vi.fn>).mockReturnValue({
+                isDirectory: () => true,
+            });
+
+            await plugin.addExternalFiles(["/home/user/notes-folder"]);
+
+            expect(node.cpSync).toHaveBeenCalledWith(
+                "/home/user/notes-folder",
+                "/test/vault/lilbee/imports/notes-folder",
+                {
+                    recursive: true,
+                },
+            );
+            expect(node.copyFileSync).not.toHaveBeenCalled();
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(
+                ["/test/vault/lilbee/imports/notes-folder"],
+                true,
+                null,
+                expect.any(AbortSignal),
+            );
+        });
+
+        it("handles a mixed batch of file and directory sources", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            (node.mkdirSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockClear();
+            (node.cpSync as ReturnType<typeof vi.fn>).mockClear();
+            (node.statSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.statSync as ReturnType<typeof vi.fn>).mockImplementation((p: unknown) => ({
+                isDirectory: () => p === "/home/user/folder",
+            }));
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf", "/home/user/folder"]);
+
+            expect(node.copyFileSync).toHaveBeenCalledWith("/home/user/doc.pdf", "/test/vault/lilbee/imports/doc.pdf");
+            expect(node.cpSync).toHaveBeenCalledWith("/home/user/folder", "/test/vault/lilbee/imports/folder", {
+                recursive: true,
+            });
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(
+                ["/test/vault/lilbee/imports/doc.pdf", "/test/vault/lilbee/imports/folder"],
+                true,
+                null,
+                expect.any(AbortSignal),
+            );
+        });
+
+        it("surfaces a Notice when a directory copy fails and keeps the rest of the batch", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            (node.mkdirSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.copyFileSync as ReturnType<typeof vi.fn>).mockClear();
+            (node.statSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.statSync as ReturnType<typeof vi.fn>).mockImplementation((p: unknown) => ({
+                isDirectory: () => p === "/home/user/bad-folder",
+            }));
+            (node.cpSync as ReturnType<typeof vi.fn>).mockReset();
+            (node.cpSync as ReturnType<typeof vi.fn>).mockImplementation(() => {
+                throw new Error("EACCES: nested permission denied");
+            });
+
+            await plugin.addExternalFiles(["/home/user/bad-folder", "/home/user/good.pdf"]);
+
+            expect(Notice.instances.some((n) => n.message === MESSAGES.ERROR_FILE_PICKER)).toBe(true);
+            expect(plugin.api.addFiles).toHaveBeenCalledWith(
+                ["/test/vault/lilbee/imports/good.pdf"],
+                true,
+                null,
+                expect.any(AbortSignal),
+            );
         });
     });
 
@@ -2371,6 +2728,38 @@ describe("LilbeePlugin", () => {
             expect(spy).toHaveBeenCalledTimes(1);
         });
 
+        it("status bar click opens the lilbee plugin settings tab", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const settingApi = (plugin.app as any).setting as {
+                open: ReturnType<typeof vi.fn>;
+                openTabById: ReturnType<typeof vi.fn>;
+            };
+            settingApi.open.mockClear();
+            settingApi.openTabById.mockClear();
+
+            const statusBar = (plugin as any).statusBarEl as any;
+            statusBar.trigger("click");
+
+            expect(settingApi.open).toHaveBeenCalledTimes(1);
+            expect(settingApi.openTabById).toHaveBeenCalledWith(plugin.manifest.id);
+        });
+
+        it("status bar carries an aria-label pointing users at settings", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const statusBar = (plugin as any).statusBarEl as any;
+            expect(statusBar.attributes["aria-label"]).toBe("Open lilbee settings");
+        });
+
+        it("openPluginSettings no-ops when app.setting is unavailable", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.app as any).setting = undefined;
+
+            expect(() => plugin.openPluginSettings()).not.toThrow();
+        });
+
         it("ribbon icon toggles lilbee-ribbon-active while any task is active", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -3073,6 +3462,21 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("sync cancelled"))).toBe(true);
         });
 
+        it("triggerSync surfaces session-token-invalid notice when the sync stream hits a stale token", async () => {
+            const { SessionTokenError } = await import("../src/api");
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.syncStream = vi.fn().mockImplementation(async function* () {
+                throw new SessionTokenError(401, "Missing or invalid bearer token");
+            });
+
+            await plugin.triggerSync();
+
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SESSION_TOKEN_INVALID)).toBe(true);
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+
         it("runAdd cancels task in queue on AbortError", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -3104,6 +3508,132 @@ describe("LilbeePlugin", () => {
 
             const cancelled = plugin.taskQueue.completed.find((t) => t.status === "cancelled");
             expect(cancelled).toBeDefined();
+        });
+    });
+
+    describe("recovery from failed adds", () => {
+        it("runAdd surfaces the session-token-invalid notice and fails the task on SessionTokenError", async () => {
+            const { SessionTokenError } = await import("../src/api");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            plugin.api.addFiles = vi.fn().mockImplementation(async function* () {
+                throw new SessionTokenError(401, "stale");
+            });
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SESSION_TOKEN_INVALID)).toBe(true);
+            const failed = plugin.taskQueue.completed.find((t) => t.status === "failed");
+            expect(failed).toBeDefined();
+            expect(failed?.error).toBe(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+        });
+
+        it("skips the reindex-confirm prompt when retrying a file whose previous add just failed", async () => {
+            const { StreamIdleError } = await import("../src/utils");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            // First attempt: stream goes idle mid-ingest. Server has partial
+            // chunks, so listDocuments would normally match and prompt the
+            // user with a reindex-confirm on retry.
+            plugin.api.listDocuments = vi.fn().mockResolvedValue({
+                documents: [{ filename: "doc.pdf", chunk_count: 42, ingested_at: "2026-01-01" }],
+                total: 1,
+                limit: 1,
+                offset: 0,
+            });
+            plugin.api.addFiles = vi.fn().mockImplementation(async function* () {
+                throw new StreamIdleError(1);
+            });
+            const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+
+            // Second attempt for the SAME path: ConfirmModal must NOT open —
+            // the retry path skips it so the user can just try again.
+            mockConfirm.mockClear();
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+
+            expect(mockConfirm).not.toHaveBeenCalled();
+            expect(plugin.api.addFiles).toHaveBeenCalled();
+            mockConfirm.mockRestore();
+        });
+
+        it("addToLilbee retry after a failed add also skips the reindex-confirm prompt", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            (plugin as any).getVaultBasePath = () => "/vault";
+
+            plugin.api.listDocuments = vi.fn().mockResolvedValue({
+                documents: [{ filename: "test.md", chunk_count: 3, ingested_at: "2026-01-01" }],
+                total: 1,
+                limit: 1,
+                offset: 0,
+            });
+            plugin.api.addFiles = vi.fn().mockImplementation(async function* () {
+                throw new Error("boom");
+            });
+            const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+
+            mockConfirm.mockClear();
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(mockConfirm).not.toHaveBeenCalled();
+            expect(plugin.api.addFiles).toHaveBeenCalled();
+            mockConfirm.mockRestore();
+        });
+
+        it("clears the retry marker after a successful add so future adds prompt normally again", async () => {
+            const { StreamIdleError } = await import("../src/utils");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            plugin.api.listDocuments = vi.fn().mockResolvedValue({
+                documents: [{ filename: "doc.pdf", chunk_count: 5, ingested_at: "2026-01-01" }],
+                total: 1,
+                limit: 1,
+                offset: 0,
+            });
+
+            // Fail, then succeed, then a third add with the same partial
+            // state on server — the third add should show the confirm again
+            // because the retry marker was consumed by the successful add.
+            plugin.api.addFiles = vi.fn().mockImplementation(async function* () {
+                throw new StreamIdleError(1);
+            });
+            const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+
+            mockConfirm.mockClear();
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+            expect(mockConfirm).not.toHaveBeenCalled();
+
+            // Third add — successful completion cleared the retry marker, so
+            // the reindex-confirm prompt is back in play.
+            mockConfirm.mockClear();
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+            expect(mockConfirm).toHaveBeenCalled();
+
+            mockConfirm.mockRestore();
         });
     });
 

@@ -63,9 +63,10 @@ export class SearchModal extends Modal {
         if (!wikiEnabled && this.plugin.settings.searchChunkType === "wiki") {
             this.plugin.settings.searchChunkType = "all";
         }
+        if (!wikiEnabled) return;
         const modes: { value: SearchChunkType; label: string }[] = [
             { value: "all", label: MESSAGES.LABEL_SEARCH_ALL },
-            ...(wikiEnabled ? [{ value: "wiki" as SearchChunkType, label: MESSAGES.LABEL_SEARCH_WIKI }] : []),
+            { value: "wiki", label: MESSAGES.LABEL_SEARCH_WIKI },
             { value: "raw", label: MESSAGES.LABEL_SEARCH_RAW },
         ];
         const group = container.createDiv({ cls: "lilbee-search-mode" });

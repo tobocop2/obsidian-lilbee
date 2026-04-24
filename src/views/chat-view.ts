@@ -133,34 +133,45 @@ export class ChatView extends ItemView {
         }) as HTMLSelectElement;
         this.attachEmbeddingListener(this.embeddingSelectEl);
 
+        const embedBrowseBtn = embedGroup.createEl("button", {
+            text: MESSAGES.BUTTON_BROWSE_MORE,
+            cls: "lilbee-embed-browse",
+        });
+        embedBrowseBtn.setAttribute("aria-label", MESSAGES.BUTTON_BROWSE_MORE);
+        embedBrowseBtn.addEventListener("click", () => {
+            new CatalogModal(this.app, this.plugin, MODEL_TASK.EMBEDDING).open();
+        });
+
         this.ocrToggleEl = toolbar.createDiv({ cls: "lilbee-ocr-toggle" });
         this.updateOcrToggle();
         this.ocrToggleEl.addEventListener("click", () => this.cycleOcr());
 
         this.fetchAndFillSelectors();
 
-        // Search mode toggle
+        // Search mode toggle (only shown when wiki feature is enabled)
         const wikiEnabled = this.plugin.settings.wikiEnabled;
         if (!wikiEnabled && this.plugin.settings.searchChunkType === "wiki") {
             this.plugin.settings.searchChunkType = "all";
         }
-        const modeGroup = toolbar.createDiv({ cls: "lilbee-search-mode" });
-        const modes: { value: SearchChunkType; label: string }[] = [
-            { value: "all", label: MESSAGES.LABEL_SEARCH_ALL },
-            ...(wikiEnabled ? [{ value: "wiki" as SearchChunkType, label: MESSAGES.LABEL_SEARCH_WIKI }] : []),
-            { value: "raw", label: MESSAGES.LABEL_SEARCH_RAW },
-        ];
-        for (const mode of modes) {
-            const btn = modeGroup.createEl("button", {
-                text: mode.label,
-                cls: `lilbee-search-mode-btn${this.plugin.settings.searchChunkType === mode.value ? " active" : ""}`,
-            });
-            btn.addEventListener("click", () => {
-                this.plugin.settings.searchChunkType = mode.value;
-                void this.plugin.saveSettings();
-                modeGroup.querySelectorAll(".lilbee-search-mode-btn").forEach((b) => b.removeClass("active"));
-                btn.addClass("active");
-            });
+        if (wikiEnabled) {
+            const modeGroup = toolbar.createDiv({ cls: "lilbee-search-mode" });
+            const modes: { value: SearchChunkType; label: string }[] = [
+                { value: "all", label: MESSAGES.LABEL_SEARCH_ALL },
+                { value: "wiki", label: MESSAGES.LABEL_SEARCH_WIKI },
+                { value: "raw", label: MESSAGES.LABEL_SEARCH_RAW },
+            ];
+            for (const mode of modes) {
+                const btn = modeGroup.createEl("button", {
+                    text: mode.label,
+                    cls: `lilbee-search-mode-btn${this.plugin.settings.searchChunkType === mode.value ? " active" : ""}`,
+                });
+                btn.addEventListener("click", () => {
+                    this.plugin.settings.searchChunkType = mode.value;
+                    void this.plugin.saveSettings();
+                    modeGroup.querySelectorAll(".lilbee-search-mode-btn").forEach((b) => b.removeClass("active"));
+                    btn.addClass("active");
+                });
+            }
         }
 
         toolbar.createDiv({ cls: "lilbee-toolbar-spacer" });
@@ -369,7 +380,16 @@ export class ChatView extends ItemView {
 
     private revertEmbeddingSelect(previousValue: string): void {
         if (!this.embeddingSelectEl) return;
-        this.embeddingSelectEl.value = previousValue;
+        // HTMLSelectElement.value is a no-op if no option matches — which
+        // silently blanks the picker. Guard so the previous value only wins
+        // when it actually exists in the current option set; otherwise fall
+        // back to a server refresh so the picker can't get stuck empty.
+        const hasOption = Array.from(this.embeddingSelectEl.options).some((opt) => opt.value === previousValue);
+        if (hasOption) {
+            this.embeddingSelectEl.value = previousValue;
+            return;
+        }
+        void this.fetchAndFillSelectors();
     }
 
     private async autoPullAndSet(model: { name: string }): Promise<void> {
@@ -528,6 +548,8 @@ export class ChatView extends ItemView {
                 this.history.slice(0, -1),
                 this.plugin.settings.topK,
                 this.streamController.signal,
+                undefined,
+                this.plugin.settings.searchChunkType,
             )) {
                 this.handleStreamEvent(event, textEl, assistantBubble, state, revealContent, scheduleRender);
             }

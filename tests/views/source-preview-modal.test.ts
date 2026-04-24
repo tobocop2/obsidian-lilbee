@@ -46,6 +46,27 @@ describe("SourcePreviewModal — malformed source", () => {
     });
 });
 
+describe("SourcePreviewModal — resizable frame", () => {
+    it("applies the resize class and sizing styles to the outer modal frame", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({
+                markdown: "body",
+                content_type: CONTENT_TYPE.MARKDOWN,
+            }),
+        });
+        const modal = new SourcePreviewModal(app as never, api, makeSource());
+        modal.open();
+        await tick();
+        const frame = modal.modalEl as unknown as MockElement;
+        expect(frame.classList.contains("lilbee-preview-modal-frame")).toBe(true);
+        expect(frame.style.resize).toBe("both");
+        expect(frame.style.overflow).toBe("hidden");
+        expect(frame.style.width).toContain("92vw");
+        expect(frame.style.height).toContain("85vh");
+    });
+});
+
 describe("SourcePreviewModal — loading + success (markdown)", () => {
     it("shows loading spinner immediately", () => {
         const app = new App();

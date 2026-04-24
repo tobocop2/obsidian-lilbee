@@ -18,6 +18,7 @@ describe("MESSAGES", () => {
             expect(MESSAGES.BUTTON_REFRESH).toBe("Refresh");
             expect(MESSAGES.BUTTON_BROWSE_CATALOG).toBe("Browse Catalog");
             expect(MESSAGES.BUTTON_BROWSE_FULL_CATALOG).toBe("Browse full catalog");
+            expect(MESSAGES.BUTTON_BROWSE_MORE).toBe("Browse more…");
             expect(MESSAGES.BUTTON_DOWNLOAD_CONTINUE).toBe("Download & continue");
             expect(MESSAGES.BUTTON_DELETE_SELECTED).toBe("Delete selected");
             expect(MESSAGES.BUTTON_CRAWL).toBe("Crawl");
@@ -262,6 +263,12 @@ describe("MESSAGES", () => {
 
         it("NOTICE_CRAWL_DONE produces correct output", () => {
             expect(MESSAGES.NOTICE_CRAWL_DONE(10)).toBe("lilbee: crawl done — 10 pages");
+        });
+
+        it("NOTICE_ALREADY_INGESTING produces correct output", () => {
+            expect(MESSAGES.NOTICE_ALREADY_INGESTING("doc.pdf")).toBe(
+                "lilbee: server is already ingesting doc.pdf — waiting for it to finish",
+            );
         });
 
         it("NOTICE_UPDATED_TO produces correct output", () => {

@@ -197,7 +197,10 @@ export class TaskCenterView extends ItemView {
 
         const isActive = state === TASK_STATUS.ACTIVE;
         const isTerminal =
-            state === TASK_STATUS.DONE || state === TASK_STATUS.FAILED || state === TASK_STATUS.CANCELLED;
+            state === TASK_STATUS.DONE ||
+            state === TASK_STATUS.FAILED ||
+            state === TASK_STATUS.CANCELLED ||
+            state === TASK_STATUS.WAITING;
         const isIndeterminate = isActive && task.progress < 0;
         const rawPct = Math.max(0, Math.min(100, task.progress));
         const pct = isIndeterminate ? 100 : isActive ? Math.min(rawPct, ACTIVE_PCT_CAP) : rawPct;
@@ -238,6 +241,16 @@ export class TaskCenterView extends ItemView {
             });
         }
 
+        if ((state === TASK_STATUS.FAILED || state === TASK_STATUS.CANCELLED) && task.retry) {
+            const retryBtn = row.createEl("button", { cls: "lilbee-task-retry" });
+            retryBtn.textContent = MESSAGES.LABEL_RETRY_TASK;
+            retryBtn.title = MESSAGES.LABEL_RETRY_TASK;
+            retryBtn.addEventListener("click", (e) => {
+                e.stopPropagation();
+                void task.retry?.();
+            });
+        }
+
         if (task.error && state === TASK_STATUS.FAILED) {
             row.title = task.error;
         }
@@ -269,6 +282,9 @@ function metaForRow(task: TaskEntry, state: TaskStatus): string {
     }
     if (state === TASK_STATUS.FAILED) {
         return task.completedAt !== null ? relativeTime(task.completedAt) : MESSAGES.LABEL_TASK_STATE_FAILED;
+    }
+    if (state === TASK_STATUS.WAITING) {
+        return task.completedAt !== null ? relativeTime(task.completedAt) : MESSAGES.LABEL_TASK_STATE_WAITING;
     }
     return task.completedAt !== null ? relativeTime(task.completedAt) : MESSAGES.LABEL_TASK_STATE_CANCELLED;
 }

@@ -676,7 +676,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
                             new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
                             void this.plugin.triggerSync();
                         });
-                    });
+                    })
+                    .addButton((btn) =>
+                        btn.setButtonText(MESSAGES.BUTTON_BROWSE_MORE).onClick(() => {
+                            new CatalogModal(this.app, this.plugin, MODEL_TASK.EMBEDDING).open();
+                        }),
+                    );
             })
             .catch(() => {
                 this.renderEmbeddingFallback(container);
@@ -717,7 +722,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 dropdown.onChange(async (value) => {
                     await this.handleRerankerChange(value, catalogEntries, installed);
                 });
-            });
+            })
+            .addButton((btn) =>
+                btn.setButtonText(MESSAGES.BUTTON_BROWSE_MORE).onClick(() => {
+                    new CatalogModal(this.app, this.plugin, MODEL_TASK.RERANK).open();
+                }),
+            );
     }
 
     private buildRerankerOptions(catalogEntries: CatalogEntry[], installed: InstalledModel[]): Array<[string, string]> {
@@ -862,7 +872,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 dropdown.onChange(async (value) => {
                     await this.handleVisionChange(value, catalogEntries, installed);
                 });
-            });
+            })
+            .addButton((btn) =>
+                btn.setButtonText(MESSAGES.BUTTON_BROWSE_MORE).onClick(() => {
+                    new CatalogModal(this.app, this.plugin, MODEL_TASK.VISION).open();
+                }),
+            );
     }
 
     private buildVisionOptions(catalogEntries: CatalogEntry[], installed: InstalledModel[]): Array<[string, string]> {

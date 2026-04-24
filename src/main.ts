@@ -1,6 +1,6 @@
 import { type EventRef, type Menu, type MenuItem, Notice, Plugin, type TAbstractFile } from "obsidian";
-import { LilbeeClient } from "./api";
-import { BinaryManager, getLatestRelease, checkForUpdate } from "./binary-manager";
+import { LilbeeClient, SessionTokenError } from "./api";
+import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
@@ -181,6 +181,8 @@ export default class LilbeePlugin extends Plugin {
     private startingServer = false;
     private serverStartFailed = false;
     taskQueue: TaskQueue = new TaskQueue();
+    /** Paths whose most-recent add failed — retry skips the reindex confirm. */
+    private failedAddPaths = new Set<string>();
     wikiEnabled = false;
     wikiPageCount = 0;
     wikiDraftCount = 0;
@@ -194,7 +196,8 @@ export default class LilbeePlugin extends Plugin {
 
         this.statusBarEl = this.addStatusBarItem();
         this.statusBarEl.style.cursor = "pointer";
-        this.statusBarEl.addEventListener("click", () => this.activateTaskView());
+        this.statusBarEl.setAttribute("aria-label", MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);
+        this.statusBarEl.addEventListener("click", () => this.openPluginSettings());
         this.ribbonIconEl = this.addRibbonIcon("list-checks", MESSAGES.LABEL_RIBBON_OPEN_TASK_CENTER, () =>
             this.activateTaskView(),
         );
@@ -646,6 +649,12 @@ export default class LilbeePlugin extends Plugin {
             this.api = new LilbeeClient(this.settings.serverUrl);
             this.api.setTokenProvider(() => this.readCurrentToken());
             this.api.setToken(this.readCurrentToken());
+            // Stopping the managed child fires STATE.STOPPED on the way out
+            // which leaves the status bar reading "lilbee: stopped" even
+            // though we're about to talk to an external server. Refresh so
+            // the bar reflects external reachability instead of the stale
+            // managed-stopped label.
+            void this.fetchActiveModel();
         }
 
         this.updateAutoSync();
@@ -876,10 +885,94 @@ export default class LilbeePlugin extends Plugin {
         if (!this.assertActiveModel()) return;
         const label = paths.length === 1 ? paths[0].split("/").pop() || paths[0] : `${paths.length} files`;
 
-        if (paths.length === 1 && !(await this.confirmReindexIfNeeded(label))) return;
+        const isRetry = paths.length === 1 && this.failedAddPaths.has(paths[0]);
+        if (paths.length === 1 && !isRetry && !(await this.confirmReindexIfNeeded(label))) return;
+
+        // Copy disk-picked files into the vault before indexing so the
+        // resulting source lives where the user expects — visible in the
+        // file tree, reachable as a native Obsidian file, and eligible for
+        // the vault_path deep-link on chat source chips. Skips files whose
+        // paths are already inside the vault (right-click "Add to lilbee"
+        // routes through here too for single-path external paths).
+        const copiedPaths = this.copyExternalFilesToVault(paths);
+        if (copiedPaths.length === 0) return;
 
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", label));
-        await this.runAdd(paths);
+        await this.runAdd(copiedPaths, paths, () => this.addExternalFiles(paths));
+    }
+
+    /**
+     * Copy each external path into ``<vault>/lilbee/imports/`` and return the
+     * new absolute paths for indexing. Paths already under the vault root
+     * are returned unchanged. On copy failure the offending file is dropped
+     * with a user-visible Notice so the rest of the batch still proceeds.
+     *
+     * Directory sources are copied recursively with ``node.cpSync`` — the
+     * native file picker's "openDirectory" mode returns folder paths, and
+     * ``copyFileSync`` on a directory throws EISDIR. Without the stat-first
+     * branch every picked folder would fall into the catch and get silently
+     * dropped, regressing folder ingestion.
+     *
+     * All path joins go through ``node.path`` so Windows ``\\`` separators
+     * round-trip correctly — a naïve string ``startsWith(vaultBase + "/")``
+     * check would miss every file on Windows and mis-copy them into imports.
+     */
+    private copyExternalFilesToVault(paths: string[]): string[] {
+        const vaultBase = this.getVaultBasePath();
+        const importsDir = node.join(vaultBase, "lilbee", "imports");
+        try {
+            node.mkdirSync(importsDir, { recursive: true });
+        } catch (err) {
+            console.error("[lilbee] import dir create failed:", importsDir, err);
+            new Notice(MESSAGES.ERROR_FILE_PICKER);
+            return [];
+        }
+        const results: string[] = [];
+        for (const source of paths) {
+            if (this.isUnderVault(source, vaultBase)) {
+                results.push(source);
+                continue;
+            }
+            const name = node.basename(source) || "imported";
+            const dest = this.uniqueImportPath(importsDir, name);
+            try {
+                const isDirectory = node.statSync(source).isDirectory();
+                if (isDirectory) {
+                    node.cpSync(source, dest, { recursive: true });
+                } else {
+                    node.copyFileSync(source, dest);
+                }
+                results.push(dest);
+            } catch (err) {
+                console.error("[lilbee] import copy failed:", source, err);
+                new Notice(MESSAGES.ERROR_FILE_PICKER);
+            }
+        }
+        return results;
+    }
+
+    /**
+     * True if ``source`` sits under ``vaultBase``. Normalises separators so
+     * ``C:\\vault\\foo.pdf`` correctly matches a vault base of ``C:\\vault``
+     * regardless of which slash flavour either side uses.
+     */
+    private isUnderVault(source: string, vaultBase: string): boolean {
+        const norm = (p: string) => p.replace(/\\/g, "/");
+        const prefix = norm(vaultBase).replace(/\/+$/, "");
+        return norm(source).startsWith(`${prefix}/`);
+    }
+
+    /** Append a ``-N`` suffix until ``<dir>/<name>`` doesn't exist on disk. */
+    private uniqueImportPath(dir: string, name: string): string {
+        const candidate = node.join(dir, name);
+        if (!node.existsSync(candidate)) return candidate;
+        const dot = name.lastIndexOf(".");
+        const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+        for (let n = 1; n < 1000; n++) {
+            const next = node.join(dir, `${stem}-${n}${ext}`);
+            if (!node.existsSync(next)) return next;
+        }
+        return node.join(dir, `${stem}-${Date.now()}${ext}`);
     }
 
     async addToLilbee(file: TAbstractFile): Promise<void> {
@@ -888,10 +981,11 @@ export default class LilbeePlugin extends Plugin {
         const absolutePath = `${this.getVaultBasePath()}/${file.path}`;
         const name = file.name ?? file.path;
 
-        if (!(await this.confirmReindexIfNeeded(name))) return;
+        const isRetry = this.failedAddPaths.has(absolutePath);
+        if (!isRetry && !(await this.confirmReindexIfNeeded(name))) return;
 
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", name));
-        await this.runAdd([absolutePath]);
+        await this.runAdd([absolutePath], [absolutePath], () => this.addToLilbee(file));
     }
 
     cancelSync(): void {
@@ -899,12 +993,17 @@ export default class LilbeePlugin extends Plugin {
         this.syncController = null;
     }
 
-    private async runAdd(paths: string[]): Promise<void> {
-        const taskId = this.taskQueue.enqueue("Adding files", TASK_TYPE.ADD);
+    private async runAdd(
+        paths: string[],
+        retryKeys: string[] = paths,
+        retry?: () => void | Promise<void>,
+    ): Promise<void> {
+        const taskId = this.taskQueue.enqueue("Adding files", TASK_TYPE.ADD, retry);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
         }
+        for (const p of retryKeys) this.failedAddPaths.delete(p);
         this.syncController = new AbortController();
         this.taskQueue.registerAbort(taskId, this.syncController);
 
@@ -949,11 +1048,18 @@ export default class LilbeePlugin extends Plugin {
                 } else if (event.event === SSE_EVENT.DONE) {
                     const parsed = parseAddDoneEvent(event.data);
                     if (parsed) syncResult = parsed;
+                } else if (event.event === SSE_EVENT.ALREADY_INGESTING) {
+                    const d = (event.data ?? {}) as { source?: string };
+                    const source = typeof d.source === "string" && d.source ? d.source : paths[0];
+                    new Notice(MESSAGES.NOTICE_ALREADY_INGESTING(source));
+                    this.taskQueue.markWaiting(taskId, MESSAGES.STATUS_WAITING_ON_SERVER);
+                    return;
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
                     const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     new Notice(MESSAGES.ERROR_ADD_FAILED_DETAIL(msg));
                     this.taskQueue.fail(taskId, msg);
+                    this.markAddFailed(retryKeys);
                     return;
                 }
             }
@@ -967,18 +1073,29 @@ export default class LilbeePlugin extends Plugin {
             if (err instanceof StreamIdleError) {
                 new Notice(MESSAGES.ERROR_STREAM_IDLE);
                 this.taskQueue.fail(taskId, MESSAGES.ERROR_STREAM_IDLE);
+                this.markAddFailed(retryKeys);
             } else if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.STATUS_ADD_CANCELLED);
                 this.taskQueue.cancel(taskId);
+                this.markAddFailed(retryKeys);
+            } else if (err instanceof SessionTokenError) {
+                new Notice(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+                this.taskQueue.fail(taskId, MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+                this.markAddFailed(retryKeys);
             } else {
                 console.error("[lilbee] add failed:", err);
                 const msg = errorMessage(err, MESSAGES.ERROR_CANNOT_CONNECT);
                 new Notice(MESSAGES.ERROR_ADD_FAILED_DETAIL(msg));
                 this.taskQueue.fail(taskId, msg);
+                this.markAddFailed(retryKeys);
             }
         } finally {
             this.syncController = null;
         }
+    }
+
+    private markAddFailed(paths: string[]): void {
+        for (const p of paths) this.failedAddPaths.add(p);
     }
 
     private updateAutoSync(): void {
@@ -1013,6 +1130,16 @@ export default class LilbeePlugin extends Plugin {
         for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_WIKI)) {
             (leaf.view as WikiView).refresh();
         }
+    }
+
+    openPluginSettings(): void {
+        // `app.setting` is an undocumented-but-stable Obsidian API used
+        // widely by community plugins to jump straight to their own tab.
+        const setting = (this.app as unknown as { setting?: { open: () => void; openTabById: (id: string) => void } })
+            .setting;
+        if (!setting) return;
+        setting.open();
+        setting.openTabById(this.manifest.id);
     }
 
     async activateWikiView(): Promise<void> {
@@ -1318,6 +1445,14 @@ export default class LilbeePlugin extends Plugin {
             } else if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.STATUS_SYNC_CANCELLED);
                 this.taskQueue.cancel(taskId);
+            } else if (err instanceof SessionTokenError) {
+                // Auto-sync gets 401 when the stored token is stale — e.g. the
+                // server restarted with a new data-dir. Surface the same
+                // actionable notice the manual-sync paths do so the user
+                // knows to paste a fresh token in Settings instead of
+                // wondering why sync silently stopped working.
+                new Notice(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+                this.taskQueue.fail(taskId, MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
             } else {
                 console.error("[lilbee] sync failed:", err);
                 new Notice(MESSAGES.STATUS_SYNC_FAILED);
