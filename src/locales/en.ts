@@ -166,11 +166,14 @@ export const MESSAGES = {
     LABEL_NO_QUEUED_TASKS: "No queued tasks",
     LABEL_NO_COMPLETED_TASKS: "No completed tasks",
     LABEL_CANCEL_TASK: "Cancel task",
+    LABEL_RETRY_TASK: "Retry",
     LABEL_DOWNLOAD_QUEUED: "+{count} queued",
     LABEL_TASK_STATE_QUEUED: "queued",
     LABEL_TASK_STATE_DONE: "done",
     LABEL_TASK_STATE_FAILED: "failed",
     LABEL_TASK_STATE_CANCELLED: "cancelled",
+    LABEL_TASK_STATE_WAITING: "waiting on server",
+    STATUS_WAITING_ON_SERVER: "Already ingesting on the server — waiting for it to finish",
     STATUS_TASKS_RUNNING_PLURAL: "{count} tasks running · {name} {pct}%",
     STATUS_TASK_RUNNING_SINGLE: "{name} {pct}%",
     STATUS_TASKS_QUEUED_ONLY: "{count} queued",
@@ -378,6 +381,8 @@ export const MESSAGES = {
     ERROR_SERVER_UNREACHABLE: "Could not connect to lilbee server. Is it running?",
     ERROR_STREAM: (msg: string) => `lilbee: ${msg}`,
     ERROR_ADD_FAILED_DETAIL: (msg: string) => `lilbee: add failed — ${msg}`,
+    NOTICE_ALREADY_INGESTING: (source: string) =>
+        `lilbee: server is already ingesting ${source} — waiting for it to finish`,
 
     NOTICE_NO_CHAT_MODEL: "lilbee: no chat model set — select one in settings",
     NOTICE_MODEL_ACTIVATED: (model: string) => `Now using ${model}`,

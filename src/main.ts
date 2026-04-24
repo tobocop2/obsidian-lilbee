@@ -180,6 +180,8 @@ export default class LilbeePlugin extends Plugin {
     private startingServer = false;
     private serverStartFailed = false;
     taskQueue: TaskQueue = new TaskQueue();
+    /** Paths whose most-recent add failed — retry skips the reindex confirm. */
+    private failedAddPaths = new Set<string>();
     wikiEnabled = false;
     wikiPageCount = 0;
     wikiDraftCount = 0;
@@ -872,7 +874,8 @@ export default class LilbeePlugin extends Plugin {
         if (!this.assertActiveModel()) return;
         const label = paths.length === 1 ? paths[0].split("/").pop() || paths[0] : `${paths.length} files`;
 
-        if (paths.length === 1 && !(await this.confirmReindexIfNeeded(label))) return;
+        const isRetry = paths.length === 1 && this.failedAddPaths.has(paths[0]);
+        if (paths.length === 1 && !isRetry && !(await this.confirmReindexIfNeeded(label))) return;
 
         // Copy disk-picked files into the vault before indexing so the
         // resulting source lives where the user expects — visible in the
@@ -884,7 +887,7 @@ export default class LilbeePlugin extends Plugin {
         if (copiedPaths.length === 0) return;
 
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", label));
-        await this.runAdd(copiedPaths);
+        await this.runAdd(copiedPaths, paths, () => this.addExternalFiles(paths));
     }
 
     /**
@@ -967,10 +970,11 @@ export default class LilbeePlugin extends Plugin {
         const absolutePath = `${this.getVaultBasePath()}/${file.path}`;
         const name = file.name ?? file.path;
 
-        if (!(await this.confirmReindexIfNeeded(name))) return;
+        const isRetry = this.failedAddPaths.has(absolutePath);
+        if (!isRetry && !(await this.confirmReindexIfNeeded(name))) return;
 
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", name));
-        await this.runAdd([absolutePath]);
+        await this.runAdd([absolutePath], [absolutePath], () => this.addToLilbee(file));
     }
 
     cancelSync(): void {
@@ -978,12 +982,17 @@ export default class LilbeePlugin extends Plugin {
         this.syncController = null;
     }
 
-    private async runAdd(paths: string[]): Promise<void> {
-        const taskId = this.taskQueue.enqueue("Adding files", TASK_TYPE.ADD);
+    private async runAdd(
+        paths: string[],
+        retryKeys: string[] = paths,
+        retry?: () => void | Promise<void>,
+    ): Promise<void> {
+        const taskId = this.taskQueue.enqueue("Adding files", TASK_TYPE.ADD, retry);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
         }
+        for (const p of retryKeys) this.failedAddPaths.delete(p);
         this.syncController = new AbortController();
         this.taskQueue.registerAbort(taskId, this.syncController);
 
@@ -1028,11 +1037,18 @@ export default class LilbeePlugin extends Plugin {
                 } else if (event.event === SSE_EVENT.DONE) {
                     const parsed = parseAddDoneEvent(event.data);
                     if (parsed) syncResult = parsed;
+                } else if (event.event === SSE_EVENT.ALREADY_INGESTING) {
+                    const d = (event.data ?? {}) as { source?: string };
+                    const source = typeof d.source === "string" && d.source ? d.source : paths[0];
+                    new Notice(MESSAGES.NOTICE_ALREADY_INGESTING(source));
+                    this.taskQueue.markWaiting(taskId, MESSAGES.STATUS_WAITING_ON_SERVER);
+                    return;
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
                     const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     new Notice(MESSAGES.ERROR_ADD_FAILED_DETAIL(msg));
                     this.taskQueue.fail(taskId, msg);
+                    this.markAddFailed(retryKeys);
                     return;
                 }
             }
@@ -1046,18 +1062,29 @@ export default class LilbeePlugin extends Plugin {
             if (err instanceof StreamIdleError) {
                 new Notice(MESSAGES.ERROR_STREAM_IDLE);
                 this.taskQueue.fail(taskId, MESSAGES.ERROR_STREAM_IDLE);
+                this.markAddFailed(retryKeys);
             } else if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.STATUS_ADD_CANCELLED);
                 this.taskQueue.cancel(taskId);
+                this.markAddFailed(retryKeys);
+            } else if (err instanceof SessionTokenError) {
+                new Notice(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+                this.taskQueue.fail(taskId, MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+                this.markAddFailed(retryKeys);
             } else {
                 console.error("[lilbee] add failed:", err);
                 const msg = errorMessage(err, MESSAGES.ERROR_CANNOT_CONNECT);
                 new Notice(MESSAGES.ERROR_ADD_FAILED_DETAIL(msg));
                 this.taskQueue.fail(taskId, msg);
+                this.markAddFailed(retryKeys);
             }
         } finally {
             this.syncController = null;
         }
+    }
+
+    private markAddFailed(paths: string[]): void {
+        for (const p of paths) this.failedAddPaths.add(p);
     }
 
     private updateAutoSync(): void {

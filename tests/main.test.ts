@@ -1024,6 +1024,74 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("add failed"))).toBe(true);
         });
 
+        it("runAdd parks the task in WAITING state on already_ingesting and leaves failedAddPaths clean", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            (plugin as any).getVaultBasePath = () => "/vault";
+
+            async function* alreadyIngesting() {
+                yield {
+                    event: SSE_EVENT.ALREADY_INGESTING,
+                    data: { source: "test.md" },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(alreadyIngesting());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            const waiting = plugin.taskQueue.completed.find((t) => t.status === "waiting");
+            expect(waiting).toBeDefined();
+            // Retry callback must be dropped so the Task Center does not
+            // surface a button that would just collide with the server again.
+            expect(waiting?.retry).toBeUndefined();
+
+            // Must NOT mark the path as failed — the server is still
+            // ingesting it; a subsequent user-driven add should behave
+            // like a normal add, not a retry.
+            expect((plugin as any).failedAddPaths.has("/vault/test.md")).toBe(false);
+
+            expect(
+                Notice.instances.some((n) => n.message.includes("already ingesting") && n.message.includes("test.md")),
+            ).toBe(true);
+        });
+
+        it("runAdd falls back to the first request path when the server omits a source name", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            (plugin as any).getVaultBasePath = () => "/vault";
+
+            async function* alreadyIngestingNoSource() {
+                yield { event: SSE_EVENT.ALREADY_INGESTING, data: {} };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(alreadyIngestingNoSource());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(
+                Notice.instances.some(
+                    (n) => n.message.includes("already ingesting") && n.message.includes("/vault/test.md"),
+                ),
+            ).toBe(true);
+        });
+
+        it("runAdd tolerates a null data payload on already_ingesting", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            (plugin as any).getVaultBasePath = () => "/vault";
+
+            async function* alreadyIngestingNullData() {
+                yield { event: SSE_EVENT.ALREADY_INGESTING, data: null as unknown as { source?: string } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(alreadyIngestingNullData());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(plugin.taskQueue.completed.some((t) => t.status === "waiting")).toBe(true);
+        });
+
         it("addToLilbee returns early when statusBarEl is null", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -3434,6 +3502,132 @@ describe("LilbeePlugin", () => {
 
             const cancelled = plugin.taskQueue.completed.find((t) => t.status === "cancelled");
             expect(cancelled).toBeDefined();
+        });
+    });
+
+    describe("recovery from failed adds", () => {
+        it("runAdd surfaces the session-token-invalid notice and fails the task on SessionTokenError", async () => {
+            const { SessionTokenError } = await import("../src/api");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            plugin.api.addFiles = vi.fn().mockImplementation(async function* () {
+                throw new SessionTokenError(401, "stale");
+            });
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SESSION_TOKEN_INVALID)).toBe(true);
+            const failed = plugin.taskQueue.completed.find((t) => t.status === "failed");
+            expect(failed).toBeDefined();
+            expect(failed?.error).toBe(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+        });
+
+        it("skips the reindex-confirm prompt when retrying a file whose previous add just failed", async () => {
+            const { StreamIdleError } = await import("../src/utils");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            // First attempt: stream goes idle mid-ingest. Server has partial
+            // chunks, so listDocuments would normally match and prompt the
+            // user with a reindex-confirm on retry.
+            plugin.api.listDocuments = vi.fn().mockResolvedValue({
+                documents: [{ filename: "doc.pdf", chunk_count: 42, ingested_at: "2026-01-01" }],
+                total: 1,
+                limit: 1,
+                offset: 0,
+            });
+            plugin.api.addFiles = vi.fn().mockImplementation(async function* () {
+                throw new StreamIdleError(1);
+            });
+            const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+
+            // Second attempt for the SAME path: ConfirmModal must NOT open —
+            // the retry path skips it so the user can just try again.
+            mockConfirm.mockClear();
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+
+            expect(mockConfirm).not.toHaveBeenCalled();
+            expect(plugin.api.addFiles).toHaveBeenCalled();
+            mockConfirm.mockRestore();
+        });
+
+        it("addToLilbee retry after a failed add also skips the reindex-confirm prompt", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            (plugin as any).getVaultBasePath = () => "/vault";
+
+            plugin.api.listDocuments = vi.fn().mockResolvedValue({
+                documents: [{ filename: "test.md", chunk_count: 3, ingested_at: "2026-01-01" }],
+                total: 1,
+                limit: 1,
+                offset: 0,
+            });
+            plugin.api.addFiles = vi.fn().mockImplementation(async function* () {
+                throw new Error("boom");
+            });
+            const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+
+            mockConfirm.mockClear();
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(mockConfirm).not.toHaveBeenCalled();
+            expect(plugin.api.addFiles).toHaveBeenCalled();
+            mockConfirm.mockRestore();
+        });
+
+        it("clears the retry marker after a successful add so future adds prompt normally again", async () => {
+            const { StreamIdleError } = await import("../src/utils");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            plugin.api.listDocuments = vi.fn().mockResolvedValue({
+                documents: [{ filename: "doc.pdf", chunk_count: 5, ingested_at: "2026-01-01" }],
+                total: 1,
+                limit: 1,
+                offset: 0,
+            });
+
+            // Fail, then succeed, then a third add with the same partial
+            // state on server — the third add should show the confirm again
+            // because the retry marker was consumed by the successful add.
+            plugin.api.addFiles = vi.fn().mockImplementation(async function* () {
+                throw new StreamIdleError(1);
+            });
+            const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
+
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+
+            mockConfirm.mockClear();
+            async function* noEvents() {}
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+            expect(mockConfirm).not.toHaveBeenCalled();
+
+            // Third add — successful completion cleared the retry marker, so
+            // the reindex-confirm prompt is back in play.
+            mockConfirm.mockClear();
+            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+            expect(mockConfirm).toHaveBeenCalled();
+
+            mockConfirm.mockRestore();
         });
     });
 

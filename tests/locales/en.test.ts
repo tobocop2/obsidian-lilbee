@@ -265,6 +265,12 @@ describe("MESSAGES", () => {
             expect(MESSAGES.NOTICE_CRAWL_DONE(10)).toBe("lilbee: crawl done — 10 pages");
         });
 
+        it("NOTICE_ALREADY_INGESTING produces correct output", () => {
+            expect(MESSAGES.NOTICE_ALREADY_INGESTING("doc.pdf")).toBe(
+                "lilbee: server is already ingesting doc.pdf — waiting for it to finish",
+            );
+        });
+
         it("NOTICE_UPDATED_TO produces correct output", () => {
             expect(MESSAGES.NOTICE_UPDATED_TO("v0.1.0")).toBe("lilbee: updated to v0.1.0");
         });

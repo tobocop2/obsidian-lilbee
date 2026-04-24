@@ -244,6 +244,38 @@ describe("TaskQueue", () => {
         });
     });
 
+    describe("markWaiting()", () => {
+        it("parks task in history with waiting status, no retry, detail applied", () => {
+            const retry = vi.fn();
+            const id = queue.enqueue("Adding files", TASK_TYPE.ADD, retry)!;
+
+            queue.markWaiting(id, "Waiting on server");
+
+            const completed = queue.completed;
+            expect(completed).toHaveLength(1);
+            expect(completed[0]!.status).toBe(TASK_STATUS.WAITING);
+            expect(completed[0]!.detail).toBe("Waiting on server");
+            expect(completed[0]!.retry).toBeUndefined();
+            expect(completed[0]!.completedAt).not.toBeNull();
+        });
+
+        it("preserves existing detail when called without a detail argument", () => {
+            const id = queue.enqueue("Adding files", TASK_TYPE.ADD)!;
+            queue.update(id, 10, "extracting page 1/3");
+
+            queue.markWaiting(id);
+
+            const completed = queue.completed;
+            expect(completed[0]!.status).toBe(TASK_STATUS.WAITING);
+            expect(completed[0]!.detail).toBe("extracting page 1/3");
+        });
+
+        it("is a no-op for an unknown id", () => {
+            queue.markWaiting("no-such-id", "whatever");
+            expect(queue.completed).toHaveLength(0);
+        });
+    });
+
     describe("cancel()", () => {
         it("removes queued task entirely", () => {
             queue.enqueue("Task 1", TASK_TYPE.SYNC);

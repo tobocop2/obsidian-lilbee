@@ -2128,6 +2128,10 @@
     background-color: var(--text-faint);
 }
 
+.lilbee-task-row[data-state="waiting"] .lilbee-task-rail {
+    background-color: var(--text-accent, var(--interactive-accent));
+}
+
 .lilbee-task-row[data-state="cancelled"] .lilbee-task-name,
 .lilbee-task-row[data-state="cancelled"] .lilbee-task-progress-fill {
     text-decoration: line-through;
@@ -2249,6 +2253,11 @@
     background-color: var(--text-faint);
 }
 
+.lilbee-task-row[data-state="waiting"] .lilbee-task-progress-fill {
+    background-color: var(--text-accent, var(--interactive-accent));
+    opacity: 0.6;
+}
+
 .lilbee-task-progress-fill.lilbee-task-progress-indeterminate {
     background: linear-gradient(
         90deg,
@@ -2324,6 +2333,25 @@
     color: var(--text-error);
     border-color: var(--text-error);
     background-color: color-mix(in srgb, var(--text-error) 10%, transparent);
+}
+
+.lilbee-task-retry {
+    background: none;
+    border: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1;
+    padding: 3px 8px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    align-self: center;
+}
+
+.lilbee-task-retry:hover {
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
 }
 
 .lilbee-tasks-empty {

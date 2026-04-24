@@ -225,6 +225,7 @@ export const SSE_EVENT = {
     SETUP_START: "setup_start",
     SETUP_PROGRESS: "setup_progress",
     SETUP_DONE: "setup_done",
+    ALREADY_INGESTING: "already_ingesting",
 } as const;
 
 export interface SetupStartPayload {
@@ -368,7 +369,7 @@ export interface VaultAdapter {
     getBasePath(): string;
 }
 
-export type TaskStatus = "queued" | "active" | "done" | "failed" | "cancelled";
+export type TaskStatus = "queued" | "active" | "done" | "failed" | "cancelled" | "waiting";
 
 export const TASK_STATUS = {
     QUEUED: "queued",
@@ -376,6 +377,7 @@ export const TASK_STATUS = {
     DONE: "done",
     FAILED: "failed",
     CANCELLED: "cancelled",
+    WAITING: "waiting",
 } as const satisfies Record<string, TaskStatus>;
 
 export type DotState = "primary" | "success" | "error";
@@ -481,6 +483,7 @@ export interface TaskEntry {
     bytesTotal?: number;
     rateBps?: number;
     lastRateAt?: number;
+    retry?: () => void | Promise<void>;
 }
 
 export type ModelSize = "small" | "medium" | "large";
