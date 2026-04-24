@@ -74,6 +74,11 @@ vi.mock("../src/views/lint-modal", () => ({
     LintModal: vi.fn().mockImplementation(() => ({ open: mockLintModalOpen })),
 }));
 
+const mockDraftModalOpen = vi.fn();
+vi.mock("../src/views/draft-modal", () => ({
+    DraftModal: vi.fn().mockImplementation(() => ({ open: mockDraftModalOpen })),
+}));
+
 let mockConfirmModalResult = true;
 vi.mock("../src/views/confirm-modal", () => ({
     ConfirmModal: vi.fn().mockImplementation(() => ({
@@ -205,7 +210,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(14);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(15);
             const ids = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(ids).toContain("lilbee:search");
             expect(ids).toContain("lilbee:chat");
@@ -220,6 +225,7 @@ describe("LilbeePlugin", () => {
             expect(ids).toContain("lilbee:tasks");
             expect(ids).toContain("lilbee:wiki");
             expect(ids).toContain("lilbee:wiki-lint");
+            expect(ids).toContain("lilbee:wiki-drafts");
             expect(ids).toContain("lilbee:wiki-generate");
         });
 
@@ -4102,6 +4108,41 @@ describe("LilbeePlugin", () => {
             )![0];
             cmd.checkCallback(false);
             expect(spy).toHaveBeenCalled();
+        });
+
+        it("wiki-drafts command returns false when wikiEnabled is false", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).wikiEnabled = false;
+
+            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "lilbee:wiki-drafts",
+            )![0];
+            expect(cmd.checkCallback(true)).toBe(false);
+        });
+
+        it("wiki-drafts command returns true when wikiEnabled is true", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).wikiEnabled = true;
+
+            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "lilbee:wiki-drafts",
+            )![0];
+            expect(cmd.checkCallback(true)).toBe(true);
+        });
+
+        it("wiki-drafts command opens DraftModal when not checking", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).wikiEnabled = true;
+            mockDraftModalOpen.mockClear();
+
+            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "lilbee:wiki-drafts",
+            )![0];
+            cmd.checkCallback(false);
+            expect(mockDraftModalOpen).toHaveBeenCalled();
         });
 
         it("wiki-generate command calls runWikiGenerate when not checking", async () => {

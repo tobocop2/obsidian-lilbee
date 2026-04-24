@@ -1513,13 +1513,111 @@ describe("wikiGenerate()", () => {
 });
 
 describe("wikiDrafts()", () => {
-    it("calls GET /api/wiki/drafts and returns parsed response", async () => {
-        const data = [{ slug: "draft-1", score: 0.8 }];
+    it("calls GET /api/wiki/drafts and returns parsed DraftInfoResponse list", async () => {
+        const data = [
+            {
+                slug: "summaries/caprice-1951",
+                path: "/data/wiki/drafts/summaries/caprice-1951.md",
+                drift_ratio: 0.34,
+                faithfulness_score: 0.42,
+                bad_title: false,
+                published_path: "/data/wiki/summaries/caprice-1951.md",
+                published_exists: true,
+                pending_kind: "drift",
+                mtime: 1745452800,
+            },
+            {
+                slug: "concepts/brake-systems",
+                path: "/data/wiki/drafts/concepts/brake-systems.md",
+                drift_ratio: null,
+                faithfulness_score: null,
+                bad_title: false,
+                published_path: null,
+                published_exists: false,
+                pending_kind: "parse",
+                mtime: 1745452900,
+            },
+        ];
         fetchMock.mockResolvedValue(jsonResponse(data));
 
+        client.setToken("tok");
         const result = await client.wikiDrafts();
 
-        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/wiki/drafts`, expect.objectContaining({}));
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/drafts`,
+            expect.objectContaining({
+                headers: expect.objectContaining({ Authorization: "Bearer tok" }),
+            }),
+        );
+        expect(result).toEqual(data);
+        expect(result[0].pending_kind).toBe("drift");
+        expect(result[1].drift_ratio).toBeNull();
+    });
+});
+
+describe("wikiDraftDiff()", () => {
+    it("GETs /api/wiki/drafts/<encoded>/diff and returns the raw body text", async () => {
+        const diff = "--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n";
+        fetchMock.mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve(null),
+            text: () => Promise.resolve(diff),
+            body: null,
+        } as unknown as Response);
+
+        client.setToken("tok");
+        const result = await client.wikiDraftDiff("summaries/caprice 1951");
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/drafts/summaries%2Fcaprice%201951/diff`,
+            expect.objectContaining({
+                headers: expect.objectContaining({ Authorization: "Bearer tok" }),
+            }),
+        );
+        expect(result).toBe(diff);
+    });
+});
+
+describe("wikiDraftAccept()", () => {
+    it("POSTs to /api/wiki/drafts/<encoded>/accept and returns parsed body", async () => {
+        const data = {
+            slug: "summaries/caprice-1951",
+            moved_to: "/data/wiki/summaries/caprice-1951.md",
+            reindexed_chunks: 12,
+        };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        client.setToken("tok");
+        const result = await client.wikiDraftAccept("summaries/caprice 1951");
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/drafts/summaries%2Fcaprice%201951/accept`,
+            expect.objectContaining({
+                method: "POST",
+                headers: expect.objectContaining({ Authorization: "Bearer tok" }),
+            }),
+        );
+        expect(result).toEqual(data);
+    });
+});
+
+describe("wikiDraftReject()", () => {
+    it("DELETEs /api/wiki/drafts/<encoded> and returns parsed body", async () => {
+        const data = { slug: "concepts/brake-systems" };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        client.setToken("tok");
+        const result = await client.wikiDraftReject("concepts/brake systems");
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/drafts/concepts%2Fbrake%20systems`,
+            expect.objectContaining({
+                method: "DELETE",
+                headers: expect.objectContaining({ Authorization: "Bearer tok" }),
+            }),
+        );
+        const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>;
+        expect(headers["Content-Type"]).toBeUndefined();
         expect(result).toEqual(data);
     });
 });
