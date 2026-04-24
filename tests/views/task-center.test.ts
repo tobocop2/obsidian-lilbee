@@ -307,6 +307,40 @@ describe("TaskCenterView rendering", () => {
         expect(findByClass(contentEl, "lilbee-task-retry").length).toBe(0);
     });
 
+    it("renders a waiting-on-server row with waiting state and no retry button", () => {
+        const retry = vi.fn();
+        const id = plugin.taskQueue.enqueue("Adding files", TASK_TYPE.ADD, retry)!;
+        plugin.taskQueue.markWaiting(id, "Already ingesting — waiting");
+        (view as any).render();
+
+        const row = contentEl.find("lilbee-task-row")!;
+        expect(row).not.toBeNull();
+        expect(row.dataset.state).toBe(TASK_STATUS.WAITING);
+
+        // The neutral state must not surface a Retry button (the server is
+        // still handling the original request; retrying would collide).
+        expect(findByClass(contentEl, "lilbee-task-retry").length).toBe(0);
+
+        // The detail line we passed through markWaiting is rendered in the row.
+        const statsLabel = row.find("lilbee-task-stats-label");
+        expect(statsLabel!.textContent).toBe("Already ingesting — waiting");
+    });
+
+    it("metaForRow falls back to the waiting label when completedAt is null", () => {
+        const id = plugin.taskQueue.enqueue("Adding files", TASK_TYPE.ADD)!;
+        plugin.taskQueue.markWaiting(id, "Waiting on server");
+        // Simulate a persisted/legacy row with no completedAt — metaForRow
+        // must fall back to the label instead of rendering "null ago".
+        const completed = plugin.taskQueue.completed;
+        (completed[0] as any).completedAt = null;
+
+        (view as any).render();
+
+        const row = contentEl.find("lilbee-task-row")!;
+        const texts = collectTexts(row);
+        expect(texts.some((t) => t === "waiting on server")).toBe(true);
+    });
+
     it("clears empty state when tasks are present", () => {
         plugin.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
         (view as any).render();

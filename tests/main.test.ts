@@ -1024,6 +1024,74 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("add failed"))).toBe(true);
         });
 
+        it("runAdd parks the task in WAITING state on already_ingesting and leaves failedAddPaths clean", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            (plugin as any).getVaultBasePath = () => "/vault";
+
+            async function* alreadyIngesting() {
+                yield {
+                    event: SSE_EVENT.ALREADY_INGESTING,
+                    data: { source: "test.md" },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(alreadyIngesting());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            const waiting = plugin.taskQueue.completed.find((t) => t.status === "waiting");
+            expect(waiting).toBeDefined();
+            // Retry callback must be dropped so the Task Center does not
+            // surface a button that would just collide with the server again.
+            expect(waiting?.retry).toBeUndefined();
+
+            // Must NOT mark the path as failed — the server is still
+            // ingesting it; a subsequent user-driven add should behave
+            // like a normal add, not a retry.
+            expect((plugin as any).failedAddPaths.has("/vault/test.md")).toBe(false);
+
+            expect(
+                Notice.instances.some((n) => n.message.includes("already ingesting") && n.message.includes("test.md")),
+            ).toBe(true);
+        });
+
+        it("runAdd falls back to the first request path when the server omits a source name", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            (plugin as any).getVaultBasePath = () => "/vault";
+
+            async function* alreadyIngestingNoSource() {
+                yield { event: SSE_EVENT.ALREADY_INGESTING, data: {} };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(alreadyIngestingNoSource());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(
+                Notice.instances.some(
+                    (n) => n.message.includes("already ingesting") && n.message.includes("/vault/test.md"),
+                ),
+            ).toBe(true);
+        });
+
+        it("runAdd tolerates a null data payload on already_ingesting", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            (plugin as any).getVaultBasePath = () => "/vault";
+
+            async function* alreadyIngestingNullData() {
+                yield { event: SSE_EVENT.ALREADY_INGESTING, data: null as unknown as { source?: string } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(alreadyIngestingNullData());
+
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+
+            expect(plugin.taskQueue.completed.some((t) => t.status === "waiting")).toBe(true);
+        });
+
         it("addToLilbee returns early when statusBarEl is null", async () => {
             const plugin = await createPlugin();
             await plugin.onload();

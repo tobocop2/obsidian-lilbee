@@ -329,6 +329,7 @@ describe("SSE_EVENT constants", () => {
         expect(SSE_EVENT.CRAWL_PAGE).toBe("crawl_page");
         expect(SSE_EVENT.CRAWL_DONE).toBe("crawl_done");
         expect(SSE_EVENT.CRAWL_ERROR).toBe("crawl_error");
+        expect(SSE_EVENT.ALREADY_INGESTING).toBe("already_ingesting");
     });
 });
 

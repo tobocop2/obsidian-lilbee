@@ -1036,6 +1036,12 @@ export default class LilbeePlugin extends Plugin {
                 } else if (event.event === SSE_EVENT.DONE) {
                     const parsed = parseAddDoneEvent(event.data);
                     if (parsed) syncResult = parsed;
+                } else if (event.event === SSE_EVENT.ALREADY_INGESTING) {
+                    const d = (event.data ?? {}) as { source?: string };
+                    const source = typeof d.source === "string" && d.source ? d.source : paths[0];
+                    new Notice(MESSAGES.NOTICE_ALREADY_INGESTING(source));
+                    this.taskQueue.markWaiting(taskId, MESSAGES.STATUS_WAITING_ON_SERVER);
+                    return;
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
                     const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);

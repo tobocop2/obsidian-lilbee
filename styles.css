@@ -2128,6 +2128,10 @@
     background-color: var(--text-faint);
 }
 
+.lilbee-task-row[data-state="waiting"] .lilbee-task-rail {
+    background-color: var(--text-accent, var(--interactive-accent));
+}
+
 .lilbee-task-row[data-state="cancelled"] .lilbee-task-name,
 .lilbee-task-row[data-state="cancelled"] .lilbee-task-progress-fill {
     text-decoration: line-through;
@@ -2247,6 +2251,11 @@
 
 .lilbee-task-row[data-state="cancelled"] .lilbee-task-progress-fill {
     background-color: var(--text-faint);
+}
+
+.lilbee-task-row[data-state="waiting"] .lilbee-task-progress-fill {
+    background-color: var(--text-accent, var(--interactive-accent));
+    opacity: 0.6;
 }
 
 .lilbee-task-progress-fill.lilbee-task-progress-indeterminate {

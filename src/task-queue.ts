@@ -163,6 +163,24 @@ export class TaskQueue {
         this.moveToHistory(id);
     }
 
+    /**
+     * Neutral terminal state: the server told us it is already handling this work
+     * (e.g. a concurrent /api/add for the same source). The task isn't done — the
+     * original request is still running — and it isn't failed either, so Retry
+     * would just collide again. Park it in history with a `waiting` status and
+     * no retry affordance.
+     */
+    markWaiting(id: string, detail?: string): void {
+        const task = this.tasks.get(id);
+        if (!task) return;
+
+        task.status = TASK_STATUS.WAITING;
+        if (detail !== undefined) task.detail = detail;
+        task.completedAt = Date.now();
+        task.retry = undefined;
+        this.moveToHistory(id);
+    }
+
     cancel(id: string): void {
         const task = this.tasks.get(id);
         if (!task) return;
