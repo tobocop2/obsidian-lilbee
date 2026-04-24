@@ -2198,18 +2198,14 @@ describe("ChatView.createToolbar — search mode buttons", () => {
         await view.onClose();
     });
 
-    it("hides wiki button when wikiEnabled is false", async () => {
+    it("does not render the scope picker when wikiEnabled is false", async () => {
         Notice.clear();
         const plugin = makePlugin();
         plugin.settings.wikiEnabled = false;
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const modeGroup = container.find("lilbee-search-mode")!;
-        const buttons = modeGroup.children.filter((c: any) => c.tagName === "BUTTON");
-        expect(buttons).toHaveLength(2);
-        expect(buttons[0].textContent).toBe("All");
-        expect(buttons[1].textContent).toBe("Raw");
+        expect(container.find("lilbee-search-mode")).toBeNull();
         await view.onClose();
     });
 

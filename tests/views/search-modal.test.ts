@@ -323,15 +323,11 @@ describe("SearchModal", () => {
             expect(plugin.saveSettings).toHaveBeenCalled();
         });
 
-        it("hides wiki button when wikiEnabled is false", () => {
+        it("does not render the scope picker when wikiEnabled is false", () => {
             plugin.settings.wikiEnabled = false;
             const modal = new SearchModal(app, plugin);
             modal.open();
-            const modeGroup = modal.contentEl.find("lilbee-search-mode")!;
-            const buttons = modeGroup.children.filter((c: any) => c.tagName === "BUTTON");
-            expect(buttons).toHaveLength(2);
-            expect(buttons[0].textContent).toBe("All");
-            expect(buttons[1].textContent).toBe("Raw");
+            expect(modal.contentEl.find("lilbee-search-mode")).toBeNull();
         });
 
         it("shows wiki button when wikiEnabled is true", () => {

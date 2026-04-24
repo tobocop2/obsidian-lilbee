@@ -148,28 +148,30 @@ export class ChatView extends ItemView {
 
         this.fetchAndFillSelectors();
 
-        // Search mode toggle
+        // Search mode toggle (only shown when wiki feature is enabled)
         const wikiEnabled = this.plugin.settings.wikiEnabled;
         if (!wikiEnabled && this.plugin.settings.searchChunkType === "wiki") {
             this.plugin.settings.searchChunkType = "all";
         }
-        const modeGroup = toolbar.createDiv({ cls: "lilbee-search-mode" });
-        const modes: { value: SearchChunkType; label: string }[] = [
-            { value: "all", label: MESSAGES.LABEL_SEARCH_ALL },
-            ...(wikiEnabled ? [{ value: "wiki" as SearchChunkType, label: MESSAGES.LABEL_SEARCH_WIKI }] : []),
-            { value: "raw", label: MESSAGES.LABEL_SEARCH_RAW },
-        ];
-        for (const mode of modes) {
-            const btn = modeGroup.createEl("button", {
-                text: mode.label,
-                cls: `lilbee-search-mode-btn${this.plugin.settings.searchChunkType === mode.value ? " active" : ""}`,
-            });
-            btn.addEventListener("click", () => {
-                this.plugin.settings.searchChunkType = mode.value;
-                void this.plugin.saveSettings();
-                modeGroup.querySelectorAll(".lilbee-search-mode-btn").forEach((b) => b.removeClass("active"));
-                btn.addClass("active");
-            });
+        if (wikiEnabled) {
+            const modeGroup = toolbar.createDiv({ cls: "lilbee-search-mode" });
+            const modes: { value: SearchChunkType; label: string }[] = [
+                { value: "all", label: MESSAGES.LABEL_SEARCH_ALL },
+                { value: "wiki", label: MESSAGES.LABEL_SEARCH_WIKI },
+                { value: "raw", label: MESSAGES.LABEL_SEARCH_RAW },
+            ];
+            for (const mode of modes) {
+                const btn = modeGroup.createEl("button", {
+                    text: mode.label,
+                    cls: `lilbee-search-mode-btn${this.plugin.settings.searchChunkType === mode.value ? " active" : ""}`,
+                });
+                btn.addEventListener("click", () => {
+                    this.plugin.settings.searchChunkType = mode.value;
+                    void this.plugin.saveSettings();
+                    modeGroup.querySelectorAll(".lilbee-search-mode-btn").forEach((b) => b.removeClass("active"));
+                    btn.addClass("active");
+                });
+            }
         }
 
         toolbar.createDiv({ cls: "lilbee-toolbar-spacer" });
