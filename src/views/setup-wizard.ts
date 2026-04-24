@@ -601,7 +601,7 @@ export class SetupWizard extends Modal {
                 (downloadBtn as HTMLButtonElement).disabled = false;
                 return;
             }
-            this.plugin.activeModel = model.display_name;
+            this.plugin.activeModel = model.hf_repo;
             this.plugin.fetchActiveModel();
             this.pulledModelName = model.display_name;
             this.step = WIZARD_STEP.EMBEDDING_PICKER;
