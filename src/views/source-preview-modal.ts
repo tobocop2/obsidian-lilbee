@@ -10,8 +10,9 @@ import { formatLocation } from "./results";
  * Read-only preview for sources that aren't in the local vault (external
  * server mode, or a vault-bound source whose file was removed). Fetches
  * content via `/api/source` and renders markdown inline. For PDFs the modal
- * embeds an `<object>` pointing at the `raw=1` endpoint so Chromium's built-in
- * PDF viewer handles the bytes.
+ * embeds an `<iframe>` pointing at the `raw=1` endpoint with a `#page=N`
+ * fragment — Chromium's built-in PDF viewer (PDFium) honours that fragment in
+ * iframe src, which lets the preview jump directly to the chunk's page.
  *
  * A future "Save to vault" button will push the content into `<vault>/lilbee/`
  * once the server exposes the write path — disabled for now with a tooltip.
@@ -117,21 +118,16 @@ export class SourcePreviewModal extends Modal {
 
     private renderPdf(host: HTMLElement): void {
         const body = host.createDiv({ cls: "lilbee-preview-body" });
-        const rawUrl = this.rawSourceUrl();
-        const obj = body.createEl("object", { cls: "lilbee-preview-pdf-object" });
-        obj.setAttribute("type", CONTENT_TYPE.PDF);
-        obj.setAttribute("data", rawUrl);
+        const frame = body.createEl("iframe", { cls: "lilbee-preview-pdf-frame" });
+        frame.setAttribute("src", this.rawSourceUrl(this.source.page_start));
     }
 
-    private rawSourceUrl(): string {
-        // Build a direct URL to the raw bytes; the modal hands this off to the
-        // embedded PDF viewer. The api client is used by this class for the
-        // JSON path, but for the <object data=...> attribute we need a raw URL
-        // that the embedded viewer can fetch itself.
+    private rawSourceUrl(page: number | null): string {
+        // Direct URL to the raw PDF bytes for the embedded viewer to fetch.
+        // Appending `#page=N` makes Chromium's PDFium viewer open at that page.
         const params = new URLSearchParams({ source: this.source.source, raw: "1" });
-        // Access the base URL via the client; the client exposes it only as a
-        // private. Fall back to a data URL if unavailable.
         const base = (this.api as unknown as { baseUrl?: string }).baseUrl ?? "";
-        return `${base}/api/source?${params.toString()}`;
+        const fragment = page && page > 0 ? `#page=${page}` : "";
+        return `${base}/api/source?${params.toString()}${fragment}`;
     }
 }
