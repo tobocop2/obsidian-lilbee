@@ -227,6 +227,13 @@ export class App {
         on: vi.fn().mockReturnValue({ id: "mock-event" }),
         getActiveFile: vi.fn().mockReturnValue(null),
     };
+    // Undocumented-but-stable Obsidian API used by plugins to open their
+    // own Settings tab. Tests may replace this with `undefined` to exercise
+    // the defensive guard.
+    setting: { open: ReturnType<typeof vi.fn>; openTabById: ReturnType<typeof vi.fn> } | undefined = {
+        open: vi.fn(),
+        openTabById: vi.fn(),
+    };
     vault = {
         on: vi.fn().mockReturnValue({ id: "mock-vault-event" }),
         offref: vi.fn(),

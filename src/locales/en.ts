@@ -190,6 +190,7 @@ export const MESSAGES = {
     LABEL_CHAT_VIEW: "lilbee Chat",
     LABEL_TASKS_VIEW: "lilbee Tasks",
     LABEL_RIBBON_OPEN_TASK_CENTER: "Open lilbee Task Center",
+    LABEL_STATUSBAR_OPEN_SETTINGS: "Open lilbee settings",
     ERROR_STREAM_IDLE: "server stopped sending events — check that lilbee is running",
     LABEL_SKIP_SETUP: "Skip setup",
     LABEL_OUR_PICKS: "Our picks",

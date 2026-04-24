@@ -2654,6 +2654,38 @@ describe("LilbeePlugin", () => {
             expect(spy).toHaveBeenCalledTimes(1);
         });
 
+        it("status bar click opens the lilbee plugin settings tab", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const settingApi = (plugin.app as any).setting as {
+                open: ReturnType<typeof vi.fn>;
+                openTabById: ReturnType<typeof vi.fn>;
+            };
+            settingApi.open.mockClear();
+            settingApi.openTabById.mockClear();
+
+            const statusBar = (plugin as any).statusBarEl as any;
+            statusBar.trigger("click");
+
+            expect(settingApi.open).toHaveBeenCalledTimes(1);
+            expect(settingApi.openTabById).toHaveBeenCalledWith(plugin.manifest.id);
+        });
+
+        it("status bar carries an aria-label pointing users at settings", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const statusBar = (plugin as any).statusBarEl as any;
+            expect(statusBar.attributes["aria-label"]).toBe("Open lilbee settings");
+        });
+
+        it("openPluginSettings no-ops when app.setting is unavailable", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.app as any).setting = undefined;
+
+            expect(() => plugin.openPluginSettings()).not.toThrow();
+        });
+
         it("ribbon icon toggles lilbee-ribbon-active while any task is active", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
