@@ -1494,6 +1494,78 @@ describe("wikiLint()", () => {
     });
 });
 
+describe("wikiBuild()", () => {
+    it("POSTs to /api/wiki/build and returns the build summary", async () => {
+        const data = { paths: ["wiki/concepts/brake-systems.md"], entities: 7, count: 1 };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.wikiBuild();
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/build`,
+            expect.objectContaining({ method: "POST" }),
+        );
+        expect(result).toEqual(data);
+    });
+
+    it("propagates server errors via fetchWithRetry", async () => {
+        fetchMock.mockResolvedValue(new Response("boom", { status: 500 }));
+        await expect(client.wikiBuild()).rejects.toThrow();
+    });
+});
+
+describe("wikiUpdate()", () => {
+    it("PATCHes /api/wiki/update and returns the build summary", async () => {
+        const data = { paths: [], entities: 0, count: 0 };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.wikiUpdate();
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/update`,
+            expect.objectContaining({ method: "PATCH" }),
+        );
+        expect(result).toEqual(data);
+    });
+});
+
+describe("wikiStatus()", () => {
+    it("GETs /api/wiki/status and returns the status snapshot", async () => {
+        const data = {
+            wiki_enabled: true,
+            summaries: 4,
+            drafts: 2,
+            pages: 6,
+            lint_errors: 0,
+            lint_warnings: 1,
+        };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.wikiStatus();
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/status`,
+            expect.not.objectContaining({ method: "POST" }),
+        );
+        expect(result).toEqual(data);
+    });
+
+    it("returns the disabled-wiki shape when wiki is off on the server", async () => {
+        const data = {
+            wiki_enabled: false,
+            summaries: 0,
+            drafts: 0,
+            pages: 0,
+            lint_errors: 0,
+            lint_warnings: 0,
+        };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+        const result = await client.wikiStatus();
+        expect(result.wiki_enabled).toBe(false);
+        expect(result.pages).toBe(0);
+    });
+});
+
 describe("wikiGenerate()", () => {
     it("POSTs to /api/wiki/generate with source and yields SSE events", async () => {
         fetchMock.mockResolvedValue(sseResponse(['event: wiki_generate_done\ndata: {"slug":"test"}\n\n']));

@@ -22,9 +22,11 @@ import type {
     DraftAcceptResponse,
     DraftInfoResponse,
     DraftRejectResponse,
+    WikiBuildResult,
     WikiCitationChain,
     WikiPage,
     WikiPageDetail,
+    WikiStatusResult,
 } from "./types";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const RETRY_COUNT = 2;
@@ -453,6 +455,29 @@ export class LilbeeClient {
     async wikiLint(): Promise<LintResult> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/lint`, {
             method: "POST",
+            headers: this.authHeaders(),
+        });
+        return res.json();
+    }
+
+    async wikiBuild(): Promise<WikiBuildResult> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/build`, {
+            method: "POST",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+        });
+        return res.json();
+    }
+
+    async wikiUpdate(): Promise<WikiBuildResult> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/update`, {
+            method: "PATCH",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+        });
+        return res.json();
+    }
+
+    async wikiStatus(): Promise<WikiStatusResult> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/status`, {
             headers: this.authHeaders(),
         });
         return res.json();
