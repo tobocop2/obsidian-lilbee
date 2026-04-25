@@ -519,6 +519,8 @@ export const MESSAGES = {
     TOOLTIP_PREVIEW_SAVE_SOON: "Coming soon — available once the server supports vault storage.",
     ERROR_PREVIEW_INVALID_SOURCE: "Cannot preview: source reference is empty.",
     ERROR_PREVIEW_LOAD: (reason: string) => `Failed to load source: ${reason}`,
+    ERROR_PREVIEW_UNSUPPORTED: (mime: string) =>
+        `Cannot preview content of type "${mime}". Open the original file in your vault to view it.`,
 
     // Lint
     TITLE_LINT_RESULTS: "Wiki lint results",
