@@ -22,9 +22,12 @@ import type {
     DraftAcceptResponse,
     DraftInfoResponse,
     DraftRejectResponse,
+    WikiBuildResult,
     WikiCitationChain,
     WikiPage,
     WikiPageDetail,
+    WikiStatusResult,
+    WikiSynthesizeResult,
 } from "./types";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const RETRY_COUNT = 2;
@@ -458,6 +461,37 @@ export class LilbeeClient {
         return res.json();
     }
 
+    async wikiBuild(): Promise<WikiBuildResult> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/build`, {
+            method: "POST",
+            headers: this.authHeaders(),
+        });
+        return res.json();
+    }
+
+    async wikiUpdate(): Promise<WikiBuildResult> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/update`, {
+            method: "PATCH",
+            headers: this.authHeaders(),
+        });
+        return res.json();
+    }
+
+    async wikiStatus(): Promise<WikiStatusResult> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/status`, {
+            headers: this.authHeaders(),
+        });
+        return res.json();
+    }
+
+    async wikiSynthesize(): Promise<WikiSynthesizeResult> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/synthesize`, {
+            method: "POST",
+            headers: this.authHeaders(),
+        });
+        return res.json();
+    }
+
     /**
      * Fetch the rendered text of a source file (markdown / html / plaintext)
      * as JSON. Used by the preview modal when the file is not in the vault.
@@ -510,7 +544,7 @@ export class LilbeeClient {
     async wikiDraftAccept(slug: string): Promise<DraftAcceptResponse> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/drafts/${encodeURIComponent(slug)}/accept`, {
             method: "POST",
-            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            headers: this.authHeaders(),
         });
         return res.json();
     }

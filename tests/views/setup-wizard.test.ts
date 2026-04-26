@@ -2,6 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { SetupWizard, getSystemMemoryGB, pickNativeChatModels, recommendedIndex } from "../../src/views/setup-wizard";
+import { SessionTokenError } from "../../src/api";
 import { SSE_EVENT, WIZARD_STEP } from "../../src/types";
 import { ok, err } from "neverthrow";
 import { MESSAGES } from "../../src/locales/en";
@@ -850,6 +851,31 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("Download failed"))).toBe(true);
         });
 
+        it("pull surfaces token-stale message when stream throws SessionTokenError", async () => {
+            const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    throw new SessionTokenError(401, "stale");
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const downloadBtn = findButtons(el).find((b) => b.textContent === "Download & continue")!;
+            downloadBtn.trigger("click");
+            await tick();
+            await tick();
+
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SESSION_TOKEN_INVALID)).toBe(true);
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes(MESSAGES.NOTICE_SESSION_TOKEN_INVALID))).toBe(true);
+        });
+
         it("SSE_EVENT.ERROR during pull shows notice and updates status", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
@@ -1093,6 +1119,25 @@ describe("SetupWizard", () => {
             await tick();
 
             expect(Notice.instances.some((n) => n.message.includes("indexing cancelled"))).toBe(true);
+        });
+
+        it("sync surfaces token-stale message when stream throws SessionTokenError", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    throw new SessionTokenError(401, "stale");
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SESSION_TOKEN_INVALID)).toBe(true);
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes(MESSAGES.NOTICE_SESSION_TOKEN_INVALID))).toBe(true);
         });
 
         it("sync failure shows error message", async () => {
@@ -2062,6 +2107,29 @@ describe("SetupWizard", () => {
             const btn = new MockElement("button") as unknown as HTMLElement;
             await (wizard as any).pullEmbeddingModel(btn, el, el, el, el, el);
             expect((btn as unknown as MockElement).disabled).toBe(false);
+        });
+
+        it("pullEmbeddingModel surfaces token-stale message on SessionTokenError", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    throw new SessionTokenError(401, "stale");
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedEmbedding = makeEntry({
+                name: "nomic-embed-text",
+                hf_repo: "nomic/nomic-embed-text",
+                task: "embedding",
+                installed: false,
+            });
+            const statusEl = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            const otherEl = new MockElement("div") as unknown as HTMLElement;
+            await (wizard as any).pullEmbeddingModel(btn, otherEl, otherEl, otherEl, statusEl, otherEl);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SESSION_TOKEN_INVALID)).toBe(true);
+            expect((statusEl as unknown as MockElement).textContent).toBe(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
         });
 
         it("pullEmbeddingModel handles AbortError", async () => {

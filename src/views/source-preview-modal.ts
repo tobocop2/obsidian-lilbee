@@ -6,13 +6,26 @@ import { MESSAGES } from "../locales/en";
 import { errorMessage } from "../utils";
 import { formatLocation } from "./results";
 
+// Text/* mime types that should NOT render inline through MarkdownRenderer
+// even though they pass the broad text/* category. Keep narrow and explicit;
+// broadening this set requires a security review.
+const TEXT_INLINE_RENDER_DENY = new Set([
+    "text/html",
+    "text/javascript",
+    "application/javascript",
+    "application/xhtml+xml",
+    "text/css",
+]);
+
 /**
  * Read-only preview for sources that aren't in the local vault (external
  * server mode, or a vault-bound source whose file was removed). Fetches
  * content via `/api/source` and renders markdown inline. For PDFs the modal
- * embeds an `<iframe>` pointing at the `raw=1` endpoint with a `#page=N`
- * fragment — Chromium's built-in PDF viewer (PDFium) honours that fragment in
- * iframe src, which lets the preview jump directly to the chunk's page.
+ * embeds an `<object type="application/pdf">` pointing at the `raw=1`
+ * endpoint with a `#page=N` fragment — Chromium's built-in PDFium viewer
+ * honours that fragment, which lets the preview jump directly to the
+ * chunk's page. The type-locked `<object>` tag narrows the rendering
+ * surface for any non-PDF bytes the server might return.
  *
  * A future "Save to vault" button will push the content into `<vault>/lilbee/`
  * once the server exposes the write path — disabled for now with a tooltip.
@@ -108,18 +121,33 @@ export class SourcePreviewModal extends Modal {
     }
 
     private renderBody(host: HTMLElement, content: SourceContent): void {
-        if (this.source.content_type === CONTENT_TYPE.PDF || content.content_type === CONTENT_TYPE.PDF) {
+        const ct = content.content_type;
+        const isPdf = this.source.content_type === CONTENT_TYPE.PDF || ct === CONTENT_TYPE.PDF;
+        if (isPdf) {
             this.renderPdf(host);
             return;
         }
-        const body = host.createDiv({ cls: "lilbee-preview-body" });
-        void MarkdownRenderer.render(this.app, content.markdown, body, "", this);
+        // Mirror the server's raw-content allowlist: any text/* may render through
+        // MarkdownRenderer, except formats that can carry script (text/html,
+        // text/javascript, application/xhtml+xml) or styling (text/css). The
+        // <object> tag protects the PDF path; this gate protects the JSON path.
+        const textBlocked = TEXT_INLINE_RENDER_DENY.has(ct);
+        if (!textBlocked && ct.startsWith("text/")) {
+            const body = host.createDiv({ cls: "lilbee-preview-body" });
+            void MarkdownRenderer.render(this.app, content.markdown, body, "", this);
+            return;
+        }
+        host.createEl("p", {
+            text: MESSAGES.ERROR_PREVIEW_UNSUPPORTED(ct),
+            cls: "lilbee-preview-error",
+        });
     }
 
     private renderPdf(host: HTMLElement): void {
         const body = host.createDiv({ cls: "lilbee-preview-body" });
-        const frame = body.createEl("iframe", { cls: "lilbee-preview-pdf-frame" });
-        frame.setAttribute("src", this.rawSourceUrl(this.source.page_start));
+        const frame = body.createEl("object", { cls: "lilbee-preview-pdf-frame" });
+        frame.setAttribute("type", "application/pdf");
+        frame.setAttribute("data", this.rawSourceUrl(this.source.page_start));
     }
 
     private rawSourceUrl(page: number | null): string {

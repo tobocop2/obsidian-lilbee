@@ -188,7 +188,7 @@ describe("SourcePreviewModal — loading + success (markdown)", () => {
 });
 
 describe("SourcePreviewModal — success (PDF)", () => {
-    it("renders an <iframe> pointing to the raw URL for PDF content-type", async () => {
+    it('renders an <object type="application/pdf"> pointing to the raw URL', async () => {
         const app = new App();
         const api = makeApi({
             getSource: vi.fn().mockResolvedValue({
@@ -206,11 +206,15 @@ describe("SourcePreviewModal — success (PDF)", () => {
         const el = modal.contentEl as unknown as MockElement;
         const frame = el.find("lilbee-preview-pdf-frame");
         expect(frame).not.toBeNull();
-        expect(frame!.tagName).toBe("IFRAME");
-        expect(frame!.attributes["src"]).toContain("book.pdf");
+        // Type-locked <object> tag prevents server-controlled mime from rendering
+        // a malicious .html source as text/html inside the plugin origin.
+        expect(frame!.tagName).toBe("OBJECT");
+        expect(frame!.attributes["type"]).toBe("application/pdf");
+        expect(frame!.attributes["data"]).toContain("book.pdf");
+        expect(el.find("lilbee-preview-iframe")).toBeNull();
     });
 
-    it("renders a PDF iframe when source.content_type is PDF even if body content_type differs", async () => {
+    it("renders a PDF object when source.content_type is PDF even if body content_type differs", async () => {
         const app = new App();
         const api = makeApi({
             getSource: vi.fn().mockResolvedValue({
@@ -222,10 +226,11 @@ describe("SourcePreviewModal — success (PDF)", () => {
         modal.open();
         await tick();
         const el = modal.contentEl as unknown as MockElement;
-        expect(el.find("lilbee-preview-pdf-frame")).not.toBeNull();
+        const frame = el.find("lilbee-preview-pdf-frame")!;
+        expect(frame.tagName).toBe("OBJECT");
     });
 
-    it("appends #page=N to the iframe src when page_start is set", async () => {
+    it("appends #page=N to the object data URL when page_start is set", async () => {
         const app = new App();
         const api = makeApi({
             getSource: vi.fn().mockResolvedValue({
@@ -246,7 +251,7 @@ describe("SourcePreviewModal — success (PDF)", () => {
         await tick();
         const el = modal.contentEl as unknown as MockElement;
         const frame = el.find("lilbee-preview-pdf-frame")!;
-        expect(frame.attributes["src"]).toContain("#page=42");
+        expect(frame.attributes["data"]).toContain("#page=42");
     });
 
     it("omits the #page= fragment when page_start is null", async () => {
@@ -266,7 +271,77 @@ describe("SourcePreviewModal — success (PDF)", () => {
         await tick();
         const el = modal.contentEl as unknown as MockElement;
         const frame = el.find("lilbee-preview-pdf-frame")!;
-        expect(frame.attributes["src"]).not.toContain("#page=");
+        expect(frame.attributes["data"]).not.toContain("#page=");
+    });
+});
+
+describe("SourcePreviewModal — unsupported mime", () => {
+    it("renders an error message instead of treating unknown content as markdown", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({
+                markdown: "<script>alert(1)</script>",
+                content_type: "application/octet-stream",
+            }),
+        });
+        const modal = new SourcePreviewModal(
+            app as never,
+            api,
+            makeSource({
+                source: "evil.html",
+                content_type: "application/octet-stream",
+            }),
+        );
+        modal.open();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        // No body rendered with attacker-controlled markup.
+        expect(el.find("lilbee-preview-body")).toBeNull();
+        const errorEl = el.find("lilbee-preview-error");
+        expect(errorEl).not.toBeNull();
+        expect(errorEl!.textContent).toContain("application/octet-stream");
+    });
+
+    it.each(["text/html", "text/javascript", "application/javascript", "application/xhtml+xml", "text/css"])(
+        "denies inline render for script- or style-carrying mime %s",
+        async (mime) => {
+            const app = new App();
+            const api = makeApi({
+                getSource: vi.fn().mockResolvedValue({
+                    markdown: "<script>alert(1)</script>",
+                    content_type: mime,
+                }),
+            });
+            const modal = new SourcePreviewModal(app as never, api, makeSource({ source: "evil", content_type: mime }));
+            modal.open();
+            await tick();
+            const el = modal.contentEl as unknown as MockElement;
+            expect(el.find("lilbee-preview-body")).toBeNull();
+            const errorEl = el.find("lilbee-preview-error");
+            expect(errorEl).not.toBeNull();
+            expect(errorEl!.textContent).toContain(mime);
+        },
+    );
+
+    it("still renders text/plain inline (regression guard for the deny-list)", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({
+                markdown: "plain text body",
+                content_type: "text/plain",
+            }),
+        });
+        const modal = new SourcePreviewModal(
+            app as never,
+            api,
+            makeSource({ source: "notes.txt", content_type: "text/plain" }),
+        );
+        modal.open();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        const body = el.find("lilbee-preview-body");
+        expect(body).not.toBeNull();
+        expect(body!.textContent).toContain("plain text body");
     });
 });
 

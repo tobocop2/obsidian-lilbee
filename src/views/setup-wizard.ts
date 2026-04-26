@@ -1,5 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
+import { SessionTokenError } from "../api";
 import type { CatalogEntry, SSEEvent, SyncDone } from "../types";
 import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK, MODEL_SOURCE } from "../types";
 import { CatalogModal } from "./catalog-modal";
@@ -609,6 +610,9 @@ export class SetupWizard extends Modal {
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELLED);
+            } else if (err instanceof SessionTokenError) {
+                new Notice(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+                statusEl.textContent = MESSAGES.NOTICE_SESSION_TOKEN_INVALID;
             } else {
                 statusEl.textContent = MESSAGES.ERROR_DOWNLOAD_FAILED;
             }
@@ -771,6 +775,9 @@ export class SetupWizard extends Modal {
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELLED);
+            } else if (err instanceof SessionTokenError) {
+                new Notice(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+                statusEl.textContent = MESSAGES.NOTICE_SESSION_TOKEN_INVALID;
             } else {
                 statusEl.textContent = MESSAGES.ERROR_DOWNLOAD_FAILED;
             }
@@ -847,6 +854,9 @@ export class SetupWizard extends Modal {
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_INDEXING_CANCELLED);
+            } else if (err instanceof SessionTokenError) {
+                new Notice(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+                progressLabel.textContent = MESSAGES.NOTICE_SESSION_TOKEN_INVALID;
             } else {
                 progressLabel.textContent = MESSAGES.ERROR_INDEXING_FAILED;
             }
