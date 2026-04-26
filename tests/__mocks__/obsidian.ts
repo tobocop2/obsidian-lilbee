@@ -328,6 +328,7 @@ class MockMenuItem {
 
 export class Menu {
     private _items: MockMenuItem[] = [];
+    private _hideCallbacks: Array<() => void> = [];
 
     addItem(cb: (item: MockMenuItem) => void): this {
         const item = new MockMenuItem();
@@ -338,6 +339,16 @@ export class Menu {
 
     showAtMouseEvent(_event: unknown): void {
         /* noop */
+    }
+
+    hide(): this {
+        for (const cb of this._hideCallbacks) cb();
+        this._hideCallbacks = [];
+        return this;
+    }
+
+    onHide(cb: () => void): void {
+        this._hideCallbacks.push(cb);
     }
 }
 

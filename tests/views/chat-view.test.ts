@@ -8,6 +8,15 @@ if (typeof globalThis.requestAnimationFrame === "undefined") {
     };
 }
 
+// Polyfill document.{add,remove}EventListener for Node — chat-view's paperclip
+// menu registers a document-level ESC listener for dismissal (uog).
+if (typeof globalThis.document === "undefined") {
+    (globalThis as any).document = {
+        addEventListener: () => {},
+        removeEventListener: () => {},
+    };
+}
+
 import { Notice, WorkspaceLeaf } from "../__mocks__/obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal, electronDialog } from "../../src/views/chat-view";
@@ -1683,6 +1692,86 @@ describe("ChatView.onOpen — add file button opens menu", () => {
         await tick();
 
         expect(Notice.instances.some((n) => n.message.includes("could not open file picker"))).toBe(true);
+    });
+
+    it("uog: ESC keydown dismisses the paperclip menu", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+
+        const addEvents: Array<
+            [string, EventListenerOrEventListenerObject, boolean | AddEventListenerOptions | undefined]
+        > = [];
+        const removeEvents: Array<
+            [string, EventListenerOrEventListenerObject, boolean | EventListenerOptions | undefined]
+        > = [];
+        const origAdd = document.addEventListener.bind(document);
+        const origRemove = document.removeEventListener.bind(document);
+        document.addEventListener = vi.fn((type: string, listener: any, opts: any) => {
+            addEvents.push([type, listener, opts]);
+            return origAdd(type, listener, opts);
+        }) as typeof document.addEventListener;
+        document.removeEventListener = vi.fn((type: string, listener: any, opts: any) => {
+            removeEvents.push([type, listener, opts]);
+            return origRemove(type, listener, opts);
+        }) as typeof document.removeEventListener;
+
+        try {
+            const container = view.containerEl.children[1] as unknown as MockElement;
+            const addBtn = container.find("lilbee-chat-add-file")!;
+            addBtn.trigger("click", { clientX: 0, clientY: 0 } as MouseEvent);
+
+            const escHandler = addEvents.find(([type]) => type === "keydown");
+            expect(escHandler).toBeDefined();
+            // Simulate ESC: invoke the handler — it should call menu.hide(),
+            // which fires onHide → document.removeEventListener("keydown", …).
+            const handler = escHandler![1] as (e: KeyboardEvent) => void;
+            handler({ key: "Escape", preventDefault: vi.fn() } as unknown as KeyboardEvent);
+
+            const escRemoval = removeEvents.find(([type]) => type === "keydown");
+            expect(escRemoval).toBeDefined();
+        } finally {
+            document.addEventListener = origAdd as typeof document.addEventListener;
+            document.removeEventListener = origRemove as typeof document.removeEventListener;
+        }
+    });
+
+    it("uog: non-ESC keys are ignored and do not dismiss the menu", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+
+        const addEvents: Array<[string, EventListenerOrEventListenerObject]> = [];
+        const removeEvents: Array<[string, EventListenerOrEventListenerObject]> = [];
+        const origAdd = document.addEventListener.bind(document);
+        const origRemove = document.removeEventListener.bind(document);
+        document.addEventListener = vi.fn((type: string, listener: any, opts: any) => {
+            addEvents.push([type, listener]);
+            return origAdd(type, listener, opts);
+        }) as typeof document.addEventListener;
+        document.removeEventListener = vi.fn((type: string, listener: any, opts: any) => {
+            removeEvents.push([type, listener]);
+            return origRemove(type, listener, opts);
+        }) as typeof document.removeEventListener;
+
+        try {
+            const container = view.containerEl.children[1] as unknown as MockElement;
+            const addBtn = container.find("lilbee-chat-add-file")!;
+            addBtn.trigger("click", { clientX: 0, clientY: 0 } as MouseEvent);
+
+            const handler = addEvents.find(([type]) => type === "keydown")![1] as (e: KeyboardEvent) => void;
+            const preventDefault = vi.fn();
+            handler({ key: "a", preventDefault } as unknown as KeyboardEvent);
+
+            // 'a' is not ESC — handler is a no-op, menu stays open, listener still registered.
+            expect(preventDefault).not.toHaveBeenCalled();
+            expect(removeEvents.some(([type]) => type === "keydown")).toBe(false);
+        } finally {
+            document.addEventListener = origAdd as typeof document.addEventListener;
+            document.removeEventListener = origRemove as typeof document.removeEventListener;
+        }
     });
 });
 

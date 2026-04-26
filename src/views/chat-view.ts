@@ -685,6 +685,19 @@ export class ChatView extends ItemView {
                     new CrawlModal(this.app, this.plugin).open();
                 });
         });
+        // Belt-and-braces ESC dismissal. Obsidian's Menu is supposed to close
+        // on ESC, but in QA the popover stayed open — the textarea kept
+        // focus, so the keypress never reached the menu. Routing the ESC
+        // listener through the document with capture=true catches it before
+        // any input handler can swallow it.
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") {
+                e.preventDefault();
+                menu.hide();
+            }
+        };
+        document.addEventListener("keydown", onKey, true);
+        menu.onHide(() => document.removeEventListener("keydown", onKey, true));
         menu.showAtMouseEvent(event);
     }
 
