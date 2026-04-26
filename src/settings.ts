@@ -1696,7 +1696,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
             await this.pullAndSetChat(featuredEntry);
             return;
         }
-        await this.applyChatSelection(value, displayLabelForRef(value));
+        const label = featuredEntry?.display_name ?? displayLabelForRef(value);
+        await this.applyChatSelection(value, label);
     }
 
     private async applyChatSelection(ref: string, label: string): Promise<void> {
