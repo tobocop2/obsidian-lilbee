@@ -1,0 +1,10 @@
+# osv-scanner suppressions. Keep this list short and each entry justified.
+# OSV scans against the OSV.dev database, which covers more ecosystems than
+# `npm audit` (GHSA, OSV, and others). When a finding maps to something
+# already triaged in .github/workflows/security-scan.yml, mirror the
+# suppression here so osv-scanner and npm audit stay in sync.
+#
+# Format:
+#   [[IgnoredVulns]]
+#   id = "GHSA-xxxx-xxxx-xxxx"
+#   reason = "..."
