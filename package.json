@@ -28,7 +28,7 @@
     "neverthrow": "^8.2.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^2.1.9",
     "builtin-modules": "^4.0.0",
