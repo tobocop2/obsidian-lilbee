@@ -12,8 +12,6 @@ An Obsidian plugin that pairs your vault with a local search engine. Click any c
 > ## ⚠️ Beta software
 >
 > The plugin is in **active beta**. Installation goes through [BRAT](https://github.com/TfTHacker/obsidian42-brat) so you always get the latest pre-release. Interfaces, settings layout, and on-disk formats may shift between betas. Feedback, bug reports, and issues are very welcome — that's the whole point of the beta.
->
-> Track the current release: [PR #7 →](https://github.com/tobocop2/obsidian-lilbee/pull/7)
 
 ---
 
