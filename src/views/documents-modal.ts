@@ -28,6 +28,14 @@ export class DocumentsModal extends Modal {
         const searchDebounced = debounce(() => this.resetAndFetch(), DEBOUNCE_MS);
         this.debouncedSearch = searchDebounced.run;
         this.cancelDebouncedSearch = searchDebounced.cancel;
+        // Modal's default scope handles ESC, but in QA the search input held
+        // focus and the keypress never reached the close path. Register an
+        // explicit ESC binding on the modal's scope so dismissal works
+        // regardless of which inner element has focus.
+        this.scope.register([], "Escape", () => {
+            this.close();
+            return false;
+        });
     }
 
     onOpen(): void {

@@ -87,6 +87,20 @@ describe("DocumentsModal", () => {
         expect(el.find("lilbee-documents-search")).not.toBeNull();
     });
 
+    it("tg7: ESC key on the modal scope closes the modal", async () => {
+        const plugin = makePlugin();
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        const closeSpy = vi.spyOn(modal, "close");
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        // The modal registers an explicit ESC handler on its scope. Trigger
+        // the scope's ESC binding the way Obsidian's keymap would.
+        (modal as any).scope.trigger("Escape");
+        expect(closeSpy).toHaveBeenCalled();
+    });
+
     it("fetches documents on open", async () => {
         const docs = [makeDoc({ filename: "a.md" }), makeDoc({ filename: "b.md" })];
         const plugin = makePlugin();
