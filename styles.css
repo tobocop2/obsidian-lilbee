@@ -1,11 +1,30 @@
 /* lilbee Obsidian plugin styles */
 
+/* ── Design tokens ── */
+
+:root {
+    --lilbee-color-sync: #3b82f6;
+    --lilbee-color-add: #f97316;
+    --lilbee-color-pull: #a855f7;
+    --lilbee-color-crawl: #22c55e;
+    --lilbee-color-download: #06b6d4;
+    --lilbee-color-wiki: #10b981;
+    --lilbee-color-delete: #ef4444;
+    --lilbee-color-setup: #8b5cf6;
+    --lilbee-color-vision: #ec4899;
+}
+
 .lilbee-document-card {
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-m, 6px);
+    border-radius: 10px;
     padding: var(--size-4-3, 12px);
     margin-bottom: var(--size-4-2, 8px);
     background-color: var(--background-primary);
+    transition: border-color 150ms ease;
+}
+
+.lilbee-document-card:hover {
+    border-color: var(--interactive-accent);
 }
 
 .lilbee-document-card-header {
@@ -33,7 +52,7 @@
 .lilbee-relevance-bar-container {
     height: 3px;
     background-color: var(--background-modifier-border);
-    border-radius: 2px;
+    border-radius: 3px;
     margin-bottom: var(--size-4-2, 8px);
     overflow: hidden;
 }
@@ -41,7 +60,7 @@
 .lilbee-relevance-bar {
     height: 100%;
     background-color: var(--interactive-accent);
-    border-radius: 2px;
+    border-radius: 3px;
     min-width: 2px;
     transition: width 0.2s ease;
 }
@@ -77,12 +96,13 @@
 
 .lilbee-source-chip {
     display: inline-block;
-    padding: 1px var(--size-4-2, 8px);
-    border-radius: 999px;
-    background-color: var(--background-secondary);
-    color: var(--text-muted);
+    padding: 2px 10px;
+    border-radius: 10px;
+    background-color: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+    color: var(--interactive-accent);
     font-size: var(--font-smallest, 10px);
-    border: 1px solid var(--background-modifier-border);
+    font-weight: var(--font-medium, 500);
+    border: none;
     margin: 2px 2px 0 0;
     cursor: default;
 }
@@ -123,6 +143,21 @@
     display: flex;
     align-items: center;
     gap: 2px;
+}
+
+.lilbee-embed-browse {
+    font-size: var(--font-smallest, 10px);
+    padding: 2px 6px;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    cursor: pointer;
+}
+
+.lilbee-embed-browse:hover {
+    color: var(--text-normal);
+    background-color: var(--background-modifier-hover);
 }
 
 .lilbee-toolbar-spacer {
@@ -166,16 +201,16 @@
 }
 
 .lilbee-progress-bar-container {
-    height: 3px;
+    height: 4px;
     background-color: var(--background-modifier-border);
-    border-radius: 2px;
+    border-radius: 4px;
     overflow: hidden;
 }
 
 .lilbee-progress-bar {
     height: 100%;
     background-color: var(--interactive-accent);
-    border-radius: 2px;
+    border-radius: 4px;
     width: 0%;
     transition: width 200ms ease-out;
 }
@@ -219,9 +254,8 @@
 }
 
 .lilbee-chat-message {
-    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
-    border-radius: var(--radius-m, 6px);
-    max-width: 88%;
+    padding: 10px 16px;
+    max-width: 80%;
     line-height: var(--line-height-normal, 1.5);
     font-size: var(--font-text-size, 15px);
     word-break: break-word;
@@ -236,14 +270,27 @@
 
 .lilbee-chat-message.user {
     align-self: flex-end;
-    background-color: var(--interactive-accent);
-    color: var(--text-on-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 15%, transparent);
+    color: var(--text-normal);
+    border-radius: 16px 16px 4px 16px;
 }
 
 .lilbee-chat-message.assistant {
     align-self: flex-start;
-    background-color: var(--background-secondary);
+    background-color: color-mix(in srgb, var(--background-modifier-border) 40%, transparent);
     color: var(--text-normal);
+    border-radius: 4px 16px 16px 16px;
+}
+
+.lilbee-chat-message-error {
+    align-self: flex-start;
+    background-color: var(--background-modifier-error, rgba(200, 60, 60, 0.15));
+    color: var(--text-error);
+    border-left: 3px solid var(--text-error);
+}
+
+.lilbee-chat-error-text {
+    font-style: italic;
 }
 
 .lilbee-chat-content {
@@ -283,8 +330,8 @@
     background-color: var(--background-secondary);
     color: var(--text-normal);
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-m, 6px);
-    padding: 6px var(--size-4-2, 8px);
+    border-radius: 12px;
+    padding: 10px 14px;
     font-family: var(--font-interface);
     font-size: var(--font-text-size, 15px);
     line-height: 1.4;
@@ -306,7 +353,7 @@
     cursor: pointer;
     color: var(--text-muted);
     padding: var(--size-4-2, 8px);
-    border-radius: var(--radius-s, 4px);
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -321,14 +368,14 @@
 
 .lilbee-chat-send {
     flex-shrink: 0;
-    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    padding: 8px 18px;
     background-color: var(--interactive-accent);
     color: var(--text-on-accent);
     border: none;
-    border-radius: var(--radius-m, 6px);
+    border-radius: 10px;
     cursor: pointer;
     font-size: var(--font-small, 13px);
-    font-weight: var(--font-medium, 500);
+    font-weight: var(--font-semibold, 600);
     line-height: 1;
     min-height: 36px;
 }
@@ -354,11 +401,11 @@
 
 .lilbee-search-input {
     width: 100%;
-    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    padding: 10px 14px;
     background-color: var(--background-secondary);
     color: var(--text-normal);
     border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-m, 6px);
+    border-radius: 12px;
     font-size: var(--font-text-size, 15px);
     outline: none;
     box-sizing: border-box;
@@ -404,12 +451,13 @@
 }
 
 .lilbee-ask-answer {
-    padding: var(--size-4-3, 12px);
+    padding: 14px;
     color: var(--text-normal);
     font-size: var(--font-text-size, 15px);
     line-height: var(--line-height-normal, 1.5);
-    border-radius: var(--radius-m, 6px);
+    border-radius: 12px;
     background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
     margin-bottom: var(--size-4-2, 8px);
 }
 
@@ -473,14 +521,6 @@
     color: var(--text-on-accent);
     font-size: var(--font-smallest, 10px);
     font-weight: var(--font-medium, 500);
-}
-
-.lilbee-pull-progress {
-    display: inline-block;
-    color: var(--text-muted);
-    font-size: var(--font-smallest, 10px);
-    min-width: 2.5em;
-    text-align: right;
 }
 
 .lilbee-progress-row {
@@ -550,40 +590,37 @@
     height: 14px;
 }
 
+.lilbee-ocr-toggle {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: var(--radius-s, 4px);
+}
+
+.lilbee-ocr-toggle:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-ocr-toggle.is-auto .lilbee-toolbar-icon {
+    color: var(--text-muted);
+    opacity: 0.6;
+}
+
+.lilbee-ocr-toggle.is-on .lilbee-toolbar-icon {
+    color: var(--text-accent);
+}
+
+.lilbee-ocr-toggle.is-off .lilbee-toolbar-icon {
+    color: var(--text-faint);
+    opacity: 0.4;
+}
+
 .lilbee-generation-details summary {
     cursor: pointer;
     font-weight: var(--font-semibold, 600);
     padding: var(--size-4-2, 8px) 0;
     color: var(--text-normal);
-}
-
-.lilbee-pull-banner {
-    display: flex;
-    align-items: center;
-    gap: var(--size-4-2, 8px);
-    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
-    background-color: var(--background-secondary);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-m, 6px);
-    margin: var(--size-4-2, 8px) 0;
-    font-size: var(--font-small, 13px);
-    color: var(--text-muted);
-}
-
-.lilbee-pull-banner-cancel {
-    margin-left: auto;
-    background: none;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: var(--radius-s, 4px);
-    cursor: pointer;
-    color: var(--text-muted);
-    padding: 2px var(--size-4-2, 8px);
-    font-size: var(--font-smallest, 10px);
-}
-
-.lilbee-pull-banner-cancel:hover {
-    color: var(--text-error);
-    border-color: var(--text-error);
 }
 
 .lilbee-health-status {
@@ -676,6 +713,13 @@
     padding: 0 var(--size-4-2, 8px);
 }
 
+.lilbee-status-error {
+    color: var(--text-on-accent) !important;
+    background-color: var(--text-error);
+    border-radius: var(--radius-s, 4px);
+    padding: 0 var(--size-4-2, 8px);
+}
+
 .lilbee-status-adding {
     color: var(--text-on-accent) !important;
     background-color: var(--interactive-accent);
@@ -700,3 +744,2114 @@
     );
     animation: lilbee-knight 1.4s ease-in-out infinite;
 }
+
+/* Catalog Modal */
+
+.lilbee-catalog-modal {
+    padding: var(--size-4-3, 12px);
+}
+
+.lilbee-catalog-filters {
+    display: flex;
+    gap: var(--size-4-2, 8px);
+    flex-wrap: wrap;
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-catalog-filters select,
+.lilbee-catalog-search {
+    padding: 5px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-catalog-search {
+    flex: 1;
+    min-width: 150px;
+}
+
+.lilbee-catalog-results {
+    max-height: 50vh;
+    overflow-y: auto;
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-catalog-active {
+    display: inline-block;
+    padding: 1px var(--size-4-2, 8px);
+    border-radius: 999px;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    font-size: var(--font-smallest, 10px);
+    font-weight: var(--font-medium, 500);
+}
+
+.lilbee-catalog-pull {
+    padding: 4px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: none;
+    cursor: pointer;
+    color: var(--text-normal);
+    font-size: var(--font-smallest, 10px);
+}
+
+.lilbee-catalog-pull:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-catalog-use,
+.lilbee-catalog-remove {
+    padding: 4px 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: none;
+    cursor: pointer;
+    color: var(--text-normal);
+    font-size: var(--font-smallest, 10px);
+}
+
+.lilbee-catalog-use:hover,
+.lilbee-catalog-remove:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-catalog-empty {
+    padding: var(--size-4-3, 12px);
+    text-align: center;
+    color: var(--text-muted);
+    font-size: var(--font-small, 13px);
+}
+
+
+/* Card Grid Layout */
+
+.lilbee-catalog-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+}
+
+.lilbee-model-card {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    padding: 14px;
+    cursor: pointer;
+    transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+    background-color: var(--background-secondary);
+}
+
+.lilbee-model-card:hover {
+    border-color: var(--interactive-accent);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.lilbee-model-card.is-selected {
+    border-color: var(--interactive-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+    box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+.lilbee-model-card.is-featured {
+    background-color: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
+    border-color: color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+}
+
+.lilbee-model-card.is-featured:hover {
+    border-color: color-mix(in srgb, var(--interactive-accent) 40%, transparent);
+}
+
+.lilbee-model-card-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+
+.lilbee-model-card-name {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.lilbee-model-card-specs {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-bottom: 4px;
+}
+
+.lilbee-model-card-status {
+    font-size: 11px;
+}
+
+.lilbee-model-card-downloads {
+    color: var(--text-muted);
+    font-size: 11px;
+}
+
+.lilbee-model-card-actions {
+    margin-top: 8px;
+    display: flex;
+    gap: 6px;
+}
+
+/* Pill/Badge */
+
+.lilbee-pill {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.lilbee-pill-pick {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.lilbee-pill-task-chat,
+.lilbee-pill-task-embedding,
+.lilbee-pill-task-vision {
+    background: var(--background-secondary);
+    color: var(--text-muted);
+}
+
+.lilbee-pill-task-rerank {
+    background: rgba(56, 139, 176, 0.15);
+    color: rgb(56, 139, 176);
+}
+
+.lilbee-pill-installed {
+    background: var(--background-modifier-success);
+    color: var(--text-on-accent);
+}
+
+.lilbee-pill-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.lilbee-pill-provider {
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+
+/* Section Headings */
+
+.lilbee-catalog-section-heading {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 16px 0 8px;
+    padding: 0 4px;
+}
+
+.lilbee-catalog-section-heading-featured {
+    color: var(--interactive-accent);
+}
+
+/* View Toggle CTA Banner */
+
+.lilbee-view-toggle-cta {
+    text-align: center;
+    padding: 12px;
+    margin: 12px 0;
+    background: var(--background-secondary);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.lilbee-view-toggle-cta button {
+    margin-left: 8px;
+}
+
+/* List View */
+
+.lilbee-catalog-list {
+    width: 100%;
+}
+
+.lilbee-catalog-list-header {
+    display: flex;
+    gap: 8px;
+    padding: 6px 8px;
+    border-bottom: 2px solid var(--background-modifier-border);
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.lilbee-catalog-list-row {
+    display: flex;
+    gap: 8px;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    font-size: 13px;
+    align-items: center;
+}
+
+.lilbee-catalog-list-row:hover {
+    background: var(--background-modifier-hover);
+}
+
+.lilbee-catalog-list-col-name {
+    flex: 2;
+    font-weight: 500;
+}
+
+.lilbee-catalog-list-col-task {
+    flex: 0.8;
+}
+
+.lilbee-catalog-list-col-size {
+    flex: 0.6;
+    text-align: right;
+}
+
+.lilbee-catalog-list-col-quant {
+    flex: 0.8;
+}
+
+.lilbee-catalog-list-col-downloads {
+    flex: 0.8;
+    text-align: right;
+    color: var(--text-muted);
+}
+
+.lilbee-catalog-list-col-action {
+    flex: 0.8;
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+/* Crawl Modal */
+
+.lilbee-crawl-modal {
+    padding: var(--size-4-3, 12px);
+}
+
+.lilbee-crawl-url {
+    width: 100%;
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    margin-bottom: var(--size-4-2, 8px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 6px);
+    font-size: var(--font-text-size, 15px);
+    outline: none;
+    box-sizing: border-box;
+}
+
+.lilbee-crawl-url:focus {
+    border-color: var(--interactive-accent);
+}
+
+.lilbee-crawl-recursive-row {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1, 4px);
+    margin: var(--size-4-2, 8px) 0;
+}
+
+.lilbee-crawl-recursive {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    font-size: var(--font-small, 13px);
+    cursor: pointer;
+}
+
+.lilbee-crawl-info-btn {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 50%;
+    background: none;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: var(--font-semibold, 600);
+    font-style: italic;
+    font-family: var(--font-interface);
+    cursor: pointer;
+    line-height: 1;
+}
+
+.lilbee-crawl-info-btn:hover {
+    color: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
+}
+
+.lilbee-crawl-info-btn[aria-expanded="true"] {
+    color: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+}
+
+.lilbee-crawl-notice {
+    margin: 0 0 var(--size-4-2, 8px);
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    border-left: 3px solid var(--interactive-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 6%, transparent);
+    border-radius: 0 var(--radius-s, 4px) var(--radius-s, 4px) 0;
+    color: var(--text-muted);
+    font-size: var(--font-smaller, 12px);
+    line-height: var(--line-height-normal, 1.5);
+}
+
+.lilbee-crawl-notice[hidden] {
+    display: none;
+}
+
+.lilbee-crawl-exclude-patterns {
+    font-family: var(--font-monospace);
+    font-size: var(--font-smaller, 12px);
+    min-height: 10em;
+    resize: vertical;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.lilbee-crawl-advanced {
+    margin: var(--size-4-2, 8px) 0 var(--size-4-3, 12px);
+}
+
+.lilbee-crawl-advanced > summary {
+    cursor: pointer;
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    padding: var(--size-4-1, 4px) 0;
+    user-select: none;
+}
+
+.lilbee-crawl-advanced > summary:hover {
+    color: var(--text-normal);
+}
+
+.lilbee-crawl-options {
+    display: flex;
+    gap: var(--size-4-4, 16px);
+    margin-top: var(--size-4-2, 8px);
+}
+
+.lilbee-crawl-options label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-1, 4px);
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+}
+
+.lilbee-crawl-options input {
+    width: 80px;
+    padding: var(--size-4-1, 4px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-crawl-options input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.lilbee-crawl-error {
+    font-size: var(--font-smaller, 12px);
+    color: var(--text-error);
+    margin-top: var(--size-4-1, 4px);
+    min-height: 1em;
+}
+
+.lilbee-crawl-progress {
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    margin-bottom: var(--size-4-2, 8px);
+    min-height: 1.5em;
+}
+
+.lilbee-crawl-actions {
+    display: flex;
+    gap: var(--size-4-2, 8px);
+    justify-content: flex-end;
+}
+
+/* Documents Modal */
+
+.lilbee-documents-modal {
+    padding: var(--size-4-3, 12px);
+}
+
+.lilbee-documents-search {
+    width: 100%;
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    margin-bottom: var(--size-4-2, 8px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 6px);
+    font-size: var(--font-text-size, 15px);
+    outline: none;
+    box-sizing: border-box;
+}
+
+.lilbee-documents-search:focus {
+    border-color: var(--interactive-accent);
+}
+
+.lilbee-documents-remove {
+    margin-bottom: var(--size-4-2, 8px);
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    background: none;
+    cursor: pointer;
+    color: var(--text-error);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-documents-remove:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.lilbee-documents-remove:not(:disabled):hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-documents-results {
+    max-height: 50vh;
+    overflow-y: auto;
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-documents-row {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-2, 8px);
+    border-bottom: 1px solid var(--background-modifier-border);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-documents-row:last-child {
+    border-bottom: none;
+}
+
+.lilbee-documents-checkbox {
+    flex-shrink: 0;
+}
+
+.lilbee-documents-row-name {
+    flex: 1;
+    font-weight: var(--font-medium, 500);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lilbee-documents-row-chunks {
+    color: var(--text-muted);
+    min-width: 70px;
+}
+
+.lilbee-documents-row-date {
+    color: var(--text-faint);
+    min-width: 100px;
+    font-size: var(--font-smallest, 10px);
+}
+
+.lilbee-documents-sentinel {
+    height: 1px;
+    margin-top: 8px;
+}
+
+/* Chat Empty State */
+
+.lilbee-chat-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    gap: var(--size-4-3, 12px);
+    padding: var(--size-4-8, 32px) var(--size-4-4, 16px);
+    color: var(--text-faint);
+    font-size: var(--font-small, 13px);
+    text-align: center;
+}
+
+.lilbee-chat-empty-state p {
+    margin: 0;
+}
+
+.lilbee-chat-empty-icon {
+    font-size: 32px;
+    opacity: 0.4;
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-chat-empty-heading {
+    color: var(--text-muted);
+    font-weight: var(--font-semibold, 600);
+    font-size: var(--font-text-size, 14px);
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-chat-empty-state .mod-cta {
+    margin-top: var(--size-4-2, 8px);
+    padding: 8px 20px;
+    border-radius: 10px;
+    background-color: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+    color: var(--interactive-accent);
+    border: 1px solid color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+    font-size: var(--font-small, 13px);
+    cursor: pointer;
+}
+
+.lilbee-chat-empty-state .mod-cta:hover {
+    background-color: color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+}
+
+/* Thinking dots animation */
+
+.lilbee-thinking-dots {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    padding: 12px 16px;
+}
+
+.lilbee-thinking-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--text-muted);
+    animation: lilbee-pulse 1.4s infinite;
+}
+
+.lilbee-thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+.lilbee-thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes lilbee-pulse {
+    0%, 80%, 100% { opacity: 0.5; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1); }
+}
+
+/* Server Defaults (read-only config display) */
+
+.lilbee-server-defaults {
+    margin-top: var(--size-4-2, 8px);
+}
+
+/* Advanced details */
+
+.lilbee-advanced-details summary {
+    cursor: pointer;
+    font-weight: var(--font-semibold, 600);
+    padding: var(--size-4-2, 8px) 0;
+    color: var(--text-normal);
+}
+
+/* Setup Wizard
+ *
+ * Visual language shared with Task Center + Catalog:
+ *   - Every step carries a semantic color via --wizard-step-color, scoped
+ *     per [data-step]. Badge, rail, progress fill, Task Center CTA all
+ *     reference that one variable so the step tells a coherent color story.
+ *   - Active long-running steps pulse their left rail using the same
+ *     keyframe (lilbee-rail-pulse) as Task Center rows — the wizard
+ *     visually becomes a Task Center entry while work is happening.
+ *   - Numbered step indicator with labels echoes the flight-deck feel:
+ *     uppercase section headers, letter-spaced, tabular numerals.
+ */
+
+.lilbee-wizard {
+    max-width: 580px;
+}
+
+.lilbee-wizard-step {
+    --wizard-step-color: var(--interactive-accent);
+    position: relative;
+    padding: var(--size-4-4, 16px) var(--size-4-4, 16px) var(--size-4-4, 16px) var(--size-4-6, 24px);
+}
+
+.lilbee-wizard-step[data-step="welcome"]   { --wizard-step-color: var(--lilbee-color-setup); }
+.lilbee-wizard-step[data-step="server"]    { --wizard-step-color: var(--interactive-accent); }
+.lilbee-wizard-step[data-step="model"]     { --wizard-step-color: var(--lilbee-color-pull); }
+.lilbee-wizard-step[data-step="embedding"] { --wizard-step-color: var(--lilbee-color-download); }
+.lilbee-wizard-step[data-step="vision"]    { --wizard-step-color: var(--lilbee-color-vision); }
+.lilbee-wizard-step[data-step="sync"]      { --wizard-step-color: var(--lilbee-color-sync); }
+.lilbee-wizard-step[data-step="wiki"]      { --wizard-step-color: var(--lilbee-color-wiki); }
+.lilbee-wizard-step[data-step="done"]      { --wizard-step-color: var(--text-success, #22c55e); }
+
+/* Left-edge rail — mirrors Task Center's .lilbee-task-rail, same radius, same
+ * width, same pulse keyframe. Becomes the direct visual bridge to the Task
+ * Center when the step kicks off a long-running op. */
+.lilbee-wizard-rail {
+    position: absolute;
+    top: var(--size-4-4, 16px);
+    bottom: var(--size-4-4, 16px);
+    left: 0;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+    background-color: color-mix(in srgb, var(--wizard-step-color) 45%, transparent);
+    transition: background-color 200ms ease;
+}
+
+.lilbee-wizard-rail.is-active {
+    background-color: var(--wizard-step-color);
+    animation: lilbee-rail-pulse 1s ease-in-out infinite;
+}
+
+/* Step indicator: numbered circles + labels, connecting lines fill with the
+ * semantic color of the preceding step when complete. */
+.lilbee-wizard-step-indicator {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: var(--size-4-6, 24px);
+    padding: 0 var(--size-4-2, 8px);
+}
+
+.lilbee-wizard-step-slot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.lilbee-wizard-step-circle {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--background-secondary);
+    border: 1.5px solid var(--background-modifier-border);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: var(--font-semibold, 600);
+    font-variant-numeric: tabular-nums;
+    transition: all 250ms ease;
+}
+
+.lilbee-wizard-step-slot[data-step="welcome"]   .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-setup); }
+.lilbee-wizard-step-slot[data-step="server"]    .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--interactive-accent); }
+.lilbee-wizard-step-slot[data-step="model"]     .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-pull); }
+.lilbee-wizard-step-slot[data-step="embedding"] .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-download); }
+.lilbee-wizard-step-slot[data-step="vision"]    .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-vision); }
+.lilbee-wizard-step-slot[data-step="sync"]      .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-sync); }
+.lilbee-wizard-step-slot[data-step="wiki"]      .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-wiki); }
+.lilbee-wizard-step-slot[data-step="done"]      .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--text-success, #22c55e); }
+
+.lilbee-wizard-step-circle.is-active {
+    background-color: var(--wizard-step-color, var(--interactive-accent));
+    border-color: var(--wizard-step-color, var(--interactive-accent));
+    color: var(--text-on-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--wizard-step-color, var(--interactive-accent)) 18%, transparent);
+}
+
+.lilbee-wizard-step-circle.is-done {
+    background-color: color-mix(in srgb, var(--text-success, #22c55e) 20%, transparent);
+    border-color: color-mix(in srgb, var(--text-success, #22c55e) 45%, transparent);
+    color: var(--text-success, #22c55e);
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.lilbee-wizard-step-label {
+    font-size: 10px;
+    font-weight: var(--font-semibold, 600);
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    line-height: 1;
+}
+
+.lilbee-wizard-step-slot:has(.is-active) .lilbee-wizard-step-label,
+.lilbee-wizard-step-slot:has(.is-done) .lilbee-wizard-step-label {
+    color: var(--text-muted);
+}
+
+.lilbee-wizard-step-line {
+    flex: 1;
+    min-width: 10px;
+    max-width: 36px;
+    height: 2px;
+    margin: 12px 2px 0;
+    background-color: var(--background-modifier-border);
+    transition: background-color 250ms ease;
+}
+
+.lilbee-wizard-step-line.is-done {
+    background-color: color-mix(in srgb, var(--text-success, #22c55e) 45%, transparent);
+}
+
+/* Step header: Task-Center-style uppercase badge followed by the title */
+.lilbee-wizard-step-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-3, 12px);
+    flex-wrap: wrap;
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-wizard-step-header h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: var(--font-semibold, 600);
+    letter-spacing: -0.01em;
+}
+
+.lilbee-wizard-step-badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: var(--font-semibold, 600);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
+    background-color: color-mix(in srgb, var(--wizard-step-color) 14%, transparent);
+    color: var(--wizard-step-color);
+    border: 1px solid color-mix(in srgb, var(--wizard-step-color) 28%, transparent);
+    flex-shrink: 0;
+}
+
+.lilbee-wizard-section-heading {
+    font-size: 10px;
+    font-weight: var(--font-semibold, 600);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: var(--size-4-3, 12px) 0 var(--size-4-2, 8px);
+}
+
+.lilbee-wizard-step p {
+    margin: 0 0 var(--size-4-2, 8px);
+    color: var(--text-normal);
+    line-height: var(--line-height-normal, 1.5);
+}
+
+.lilbee-wizard-step ul {
+    margin: 0 0 var(--size-4-2, 8px);
+    padding-left: var(--size-4-6, 24px);
+}
+
+.lilbee-wizard-intro-list {
+    color: var(--text-muted);
+}
+
+/* Choice option cards (Server mode + Wiki Enable/Skip) */
+.lilbee-wizard-model-option {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: var(--size-4-2, 8px);
+    cursor: pointer;
+    transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+    background-color: var(--background-secondary);
+}
+
+.lilbee-wizard-model-option:hover {
+    border-color: var(--wizard-step-color, var(--interactive-accent));
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.lilbee-wizard-model-option.selected {
+    border-color: var(--wizard-step-color, var(--interactive-accent));
+    background-color: color-mix(in srgb, var(--wizard-step-color, var(--interactive-accent)) 10%, transparent);
+    box-shadow: 0 0 0 1px var(--wizard-step-color, var(--interactive-accent));
+}
+
+.lilbee-wizard-model-option strong {
+    display: block;
+    margin-bottom: var(--size-4-1, 4px);
+    font-size: 14px;
+    font-weight: var(--font-semibold, 600);
+}
+
+.lilbee-wizard-model-option p {
+    margin: 0;
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    line-height: 1.45;
+}
+
+.lilbee-wizard-model-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-wizard-model-ram {
+    font-size: var(--font-smallest, 10px) !important;
+    color: var(--text-faint) !important;
+}
+
+.lilbee-wizard-recommended {
+    display: inline-block;
+    padding: 1px var(--size-4-2, 8px);
+    border-radius: 999px;
+    background-color: var(--wizard-step-color, var(--interactive-accent));
+    color: var(--text-on-accent);
+    font-size: var(--font-smallest, 10px);
+    font-weight: var(--font-medium, 500);
+}
+
+.lilbee-wizard-system-info {
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted) !important;
+}
+
+/* Progress panel: sits inside long-running steps. Indeterminate on start,
+ * handoff to determinate once percentages arrive. Task Center CTA and
+ * background-processing helper live in the footer row. */
+.lilbee-wizard-progress {
+    margin: var(--size-4-3, 12px) 0;
+    padding: var(--size-4-3, 12px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    background-color: color-mix(in srgb, var(--wizard-step-color) 4%, var(--background-secondary));
+}
+
+.lilbee-wizard-progress .lilbee-progress-bar-container {
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    background-color: var(--background-modifier-border);
+}
+
+.lilbee-wizard-progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    background-color: var(--wizard-step-color, var(--interactive-accent));
+    transition: width 200ms ease-out;
+}
+
+.lilbee-wizard-progress-indeterminate {
+    background: linear-gradient(
+        90deg,
+        var(--background-modifier-border) 0%,
+        var(--wizard-step-color, var(--interactive-accent)) 50%,
+        var(--background-modifier-border) 100%
+    );
+    background-size: 200% 100%;
+    animation: lilbee-task-indeterminate 1.2s linear infinite;
+}
+
+.lilbee-wizard-progress-label {
+    font-size: var(--font-small, 13px);
+    color: var(--text-normal);
+    margin-top: var(--size-4-2, 8px);
+    font-variant-numeric: tabular-nums;
+}
+
+.lilbee-wizard-progress-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--size-4-3, 12px);
+    margin-top: var(--size-4-2, 8px);
+    flex-wrap: wrap;
+}
+
+.lilbee-wizard-progress-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
+    flex: 1;
+    min-width: 200px;
+}
+
+/* Task Center CTA: styled like a task-type chip, colored by step. Visible
+ * the moment a download starts so the user knows their next move if they
+ * want to step out of the wizard. */
+.lilbee-wizard-task-center-cta {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 10px;
+    background-color: transparent;
+    color: var(--wizard-step-color, var(--interactive-accent));
+    border: 1px solid color-mix(in srgb, var(--wizard-step-color, var(--interactive-accent)) 40%, transparent);
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: var(--font-semibold, 600);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+    flex-shrink: 0;
+}
+
+.lilbee-wizard-task-center-cta:hover {
+    background-color: color-mix(in srgb, var(--wizard-step-color, var(--interactive-accent)) 12%, transparent);
+    border-color: var(--wizard-step-color, var(--interactive-accent));
+}
+
+.lilbee-wizard-actions {
+    display: flex;
+    gap: var(--size-4-2, 8px);
+    justify-content: flex-end;
+    margin-top: var(--size-4-4, 16px);
+}
+
+.lilbee-wizard-actions button {
+    border-radius: 10px;
+}
+
+.lilbee-wizard-summary p {
+    font-weight: var(--font-medium, 500);
+}
+
+.lilbee-wizard-tips {
+    margin-top: var(--size-4-2, 8px);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+/* Done-step summary: styled like a completed Task Center row, all-green. */
+.lilbee-wizard-summary-card {
+    position: relative;
+    background-color: color-mix(in srgb, var(--text-success, #22c55e) 8%, var(--background-secondary));
+    border: 1px solid color-mix(in srgb, var(--text-success, #22c55e) 25%, var(--background-modifier-border));
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin: var(--size-4-4, 16px) 0;
+    overflow: hidden;
+}
+
+.lilbee-wizard-summary-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 3px;
+    background-color: var(--text-success, #22c55e);
+}
+
+.lilbee-wizard-summary-body {
+    padding-left: var(--size-4-2, 8px);
+}
+
+.lilbee-wizard-summary-body .lilbee-wizard-section-heading {
+    margin-top: 0;
+    color: var(--text-success, #22c55e);
+}
+
+.lilbee-wizard-summary-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    font-size: var(--font-small, 13px);
+    color: var(--text-normal);
+    font-variant-numeric: tabular-nums;
+}
+
+.lilbee-wizard-summary-stat {
+    display: inline-flex;
+    align-items: center;
+}
+
+.lilbee-wizard-summary-stat::before {
+    content: "";
+    display: inline-block;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background-color: var(--text-success, #22c55e);
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.lilbee-wizard-summary-card p {
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    margin: 0 0 var(--size-4-1, 4px);
+}
+
+.lilbee-wizard-summary-card strong {
+    color: var(--text-normal);
+}
+
+.lilbee-wizard-done-icon {
+    font-size: 36px;
+    text-align: center;
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-wizard-tip {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-3, 12px);
+    padding: 8px 10px;
+    font-size: var(--font-small, 13px);
+    color: var(--text-normal);
+    border-radius: 8px;
+    transition: background-color 150ms ease;
+}
+
+.lilbee-wizard-tip:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-wizard-tip-icon {
+    color: var(--interactive-accent);
+    flex-shrink: 0;
+    font-size: 15px;
+}
+
+.lilbee-wizard-hint {
+    font-size: 12px;
+    color: var(--text-muted) !important;
+    line-height: 1.45;
+}
+
+.lilbee-wizard-status {
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    min-height: 1.5em;
+    margin: var(--size-4-2, 8px) 0;
+}
+
+.lilbee-wizard-url-input {
+    width: 100%;
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    margin: var(--size-4-1, 4px) 0 var(--size-4-2, 8px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    font-size: var(--font-text-size, 15px);
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+    font-variant-numeric: tabular-nums;
+}
+
+.lilbee-wizard-url-input:focus {
+    border-color: var(--wizard-step-color, var(--interactive-accent));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--wizard-step-color, var(--interactive-accent)) 20%, transparent);
+}
+
+.lilbee-wizard-external-fields {
+    margin: var(--size-4-2, 8px) 0 var(--size-4-3, 12px);
+}
+
+.lilbee-wizard-field-label {
+    font-size: 10px;
+    font-weight: var(--font-semibold, 600);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: var(--size-4-2, 8px);
+}
+
+/* Experimental warning note on the Wiki step — calm, yellow-tinted, framed
+ * so users read it before the Enable/Skip cards rather than scanning past it. */
+.lilbee-wizard-experimental-note {
+    border: 1px solid color-mix(in srgb, var(--color-yellow, #eab308) 35%, var(--background-modifier-border));
+    background-color: color-mix(in srgb, var(--color-yellow, #eab308) 8%, var(--background-secondary));
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: var(--size-4-2, 8px) 0 var(--size-4-3, 12px);
+}
+
+.lilbee-wizard-experimental-note .lilbee-wizard-section-heading {
+    margin-top: 0;
+    color: color-mix(in srgb, var(--color-yellow, #eab308) 80%, var(--text-muted));
+}
+
+.lilbee-wizard-experimental-note p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-normal);
+    line-height: 1.5;
+}
+
+.lilbee-wizard-experimental-intro {
+    margin-bottom: 6px !important;
+    font-weight: var(--font-medium, 500);
+}
+
+.lilbee-wizard-experimental-bullets {
+    margin: 0 !important;
+    padding-left: 18px !important;
+}
+
+.lilbee-wizard-experimental-bullets li {
+    font-size: 13px;
+    color: var(--text-normal);
+    line-height: 1.5;
+    margin-bottom: 6px;
+}
+
+.lilbee-wizard-experimental-bullets li:last-child {
+    margin-bottom: 0;
+}
+
+/* Wiki step tradeoff disclosure — wordy pros/cons tucked behind a <details> */
+.lilbee-wizard-wiki-tradeoffs {
+    margin: var(--size-4-2, 8px) 0 var(--size-4-3, 12px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    background-color: var(--background-secondary);
+    overflow: hidden;
+}
+
+.lilbee-wizard-wiki-tradeoffs > summary {
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: var(--font-semibold, 600);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    user-select: none;
+    transition: color 150ms ease, background-color 150ms ease;
+}
+
+.lilbee-wizard-wiki-tradeoffs > summary::marker {
+    color: var(--wizard-step-color, var(--interactive-accent));
+}
+
+.lilbee-wizard-wiki-tradeoffs:hover > summary {
+    color: var(--text-normal);
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-wizard-wiki-tradeoffs[open] > summary {
+    color: var(--text-normal);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-wizard-wiki-tradeoffs .lilbee-wizard-wiki-section {
+    padding: 0 14px;
+}
+
+.lilbee-wizard-wiki-tradeoffs .lilbee-wizard-wiki-section:last-child {
+    padding-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-wizard-url-input:focus {
+    border-color: var(--interactive-accent);
+}
+
+
+.lilbee-tasks-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+    padding: var(--size-4-3, 12px);
+}
+
+.lilbee-tasks-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-tasks-header h2 {
+    margin: 0;
+    font-size: var(--font-text-size, 15px);
+    font-weight: var(--font-semibold, 600);
+}
+
+.lilbee-tasks-cap-pill {
+    font-size: var(--font-smallest, 11px);
+    color: var(--text-on-accent, #fff);
+    background-color: var(--interactive-accent);
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: auto;
+    margin-right: var(--size-4-2, 8px);
+}
+
+.lilbee-tasks-clear {
+    background: none;
+    border: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: var(--font-small, 13px);
+    padding: 4px 12px;
+    border-radius: 8px;
+}
+
+.lilbee-tasks-clear:hover {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.lilbee-tasks-section {
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-tasks-section-header {
+    font-size: var(--font-smallest, 10px);
+    font-weight: var(--font-semibold, 600);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-tasks-counters {
+    font-size: var(--font-smallest, 11px);
+    color: var(--text-muted);
+    margin-left: auto;
+    margin-right: var(--size-4-2, 8px);
+}
+
+.lilbee-task-row {
+    display: flex;
+    align-items: stretch;
+    gap: var(--size-4-2, 8px);
+    padding: 8px 10px 8px 0;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    transition: border-color 150ms ease, background-color 400ms ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.lilbee-task-row:hover {
+    border-color: color-mix(in srgb, var(--text-normal) 15%, transparent);
+}
+
+.lilbee-task-rail {
+    flex-shrink: 0;
+    width: 4px;
+    align-self: stretch;
+    border-radius: 0 2px 2px 0;
+    background-color: var(--text-faint);
+}
+
+.lilbee-task-row[data-state="active"] .lilbee-task-rail {
+    background-color: var(--interactive-accent);
+    animation: lilbee-rail-pulse 1s ease-in-out infinite;
+}
+
+@keyframes lilbee-rail-pulse {
+    0%, 100% {
+        background-color: var(--interactive-accent);
+        opacity: 1;
+    }
+    50% {
+        background-color: color-mix(in srgb, var(--interactive-accent) 55%, transparent);
+        opacity: 0.7;
+    }
+}
+
+.lilbee-statusbar-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+    background-color: var(--text-muted);
+    animation: lilbee-dot-pulse 1s ease-in-out infinite;
+}
+
+.lilbee-statusbar-dot.is-primary {
+    background-color: var(--interactive-accent);
+}
+
+.lilbee-statusbar-dot.is-success {
+    background-color: var(--text-success, #22c55e);
+}
+
+.lilbee-statusbar-dot.is-error {
+    background-color: var(--text-error, #ef4444);
+}
+
+@keyframes lilbee-dot-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .lilbee-task-row[data-state="active"] .lilbee-task-rail,
+    .lilbee-statusbar-dot,
+    .lilbee-task-progress-fill.lilbee-task-progress-indeterminate,
+    .lilbee-status-downloading::before,
+    .lilbee-status-starting::before,
+    .lilbee-status-adding::before {
+        animation: none;
+    }
+}
+
+.lilbee-task-row[data-state="queued"] .lilbee-task-rail {
+    background-color: var(--text-muted);
+}
+
+.lilbee-task-row[data-state="done"] .lilbee-task-rail {
+    background-color: var(--text-success, #22c55e);
+}
+
+.lilbee-task-row[data-state="failed"] .lilbee-task-rail {
+    background-color: var(--text-error, #ef4444);
+}
+
+.lilbee-task-row[data-state="cancelled"] .lilbee-task-rail {
+    background-color: var(--text-faint);
+}
+
+.lilbee-task-row[data-state="waiting"] .lilbee-task-rail {
+    background-color: var(--text-accent, var(--interactive-accent));
+}
+
+.lilbee-task-row[data-state="cancelled"] .lilbee-task-name,
+.lilbee-task-row[data-state="cancelled"] .lilbee-task-progress-fill {
+    text-decoration: line-through;
+    opacity: 0.7;
+}
+
+.lilbee-task-flash {
+    background-color: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-secondary));
+}
+
+.lilbee-task-row[data-state="failed"].lilbee-task-flash {
+    background-color: color-mix(in srgb, var(--text-error, #ef4444) 10%, var(--background-secondary));
+}
+
+.lilbee-task-row[data-state="done"].lilbee-task-flash {
+    background-color: color-mix(in srgb, var(--text-success, #22c55e) 10%, var(--background-secondary));
+}
+
+.lilbee-task-body {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex: 1;
+    min-width: 0;
+    padding: 2px 0;
+}
+
+.lilbee-task-head {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    min-width: 0;
+}
+
+.lilbee-task-type-badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 8px;
+    font-size: 9px;
+    font-weight: var(--font-semibold, 600);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+
+.lilbee-task-badge-sync { background-color: color-mix(in srgb, var(--lilbee-color-sync) 12%, transparent); color: var(--lilbee-color-sync); }
+.lilbee-task-badge-add { background-color: color-mix(in srgb, var(--lilbee-color-add) 12%, transparent); color: var(--lilbee-color-add); }
+.lilbee-task-badge-pull { background-color: color-mix(in srgb, var(--lilbee-color-pull) 12%, transparent); color: var(--lilbee-color-pull); }
+.lilbee-task-badge-crawl { background-color: color-mix(in srgb, var(--lilbee-color-crawl) 12%, transparent); color: var(--lilbee-color-crawl); }
+.lilbee-task-badge-download { background-color: color-mix(in srgb, var(--lilbee-color-download) 12%, transparent); color: var(--lilbee-color-download); }
+.lilbee-task-badge-wiki { background-color: color-mix(in srgb, var(--lilbee-color-wiki) 12%, transparent); color: var(--lilbee-color-wiki); }
+.lilbee-task-badge-delete { background-color: color-mix(in srgb, var(--lilbee-color-delete) 12%, transparent); color: var(--lilbee-color-delete); }
+.lilbee-task-badge-setup { background-color: color-mix(in srgb, var(--lilbee-color-setup) 12%, transparent); color: var(--lilbee-color-setup); }
+
+.lilbee-task-name {
+    font-size: var(--font-small, 13px);
+    color: var(--text-normal);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lilbee-task-meta {
+    font-size: var(--font-smallest, 10px);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+.lilbee-task-stats {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--size-4-2, 8px);
+    font-size: var(--font-smallest, 10px);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    min-height: 12px;
+}
+
+.lilbee-task-stats-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.lilbee-task-pct {
+    flex-shrink: 0;
+}
+
+.lilbee-task-progress-bar {
+    width: 100%;
+    height: 4px;
+    background-color: var(--background-modifier-border);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 2px;
+}
+
+.lilbee-task-progress-fill {
+    height: 100%;
+    background-color: var(--interactive-accent);
+    border-radius: 3px;
+    transition: width 200ms ease-out;
+}
+
+.lilbee-task-row[data-state="done"] .lilbee-task-progress-fill {
+    background-color: var(--text-success, #22c55e);
+}
+
+.lilbee-task-row[data-state="failed"] .lilbee-task-progress-fill {
+    background-color: var(--text-error, #ef4444);
+}
+
+.lilbee-task-row[data-state="cancelled"] .lilbee-task-progress-fill {
+    background-color: var(--text-faint);
+}
+
+.lilbee-task-row[data-state="waiting"] .lilbee-task-progress-fill {
+    background-color: var(--text-accent, var(--interactive-accent));
+    opacity: 0.6;
+}
+
+.lilbee-task-progress-fill.lilbee-task-progress-indeterminate {
+    background: linear-gradient(
+        90deg,
+        var(--background-modifier-border) 0%,
+        var(--interactive-accent) 50%,
+        var(--background-modifier-border) 100%
+    );
+    background-size: 200% 100%;
+    animation: lilbee-task-indeterminate 1.2s linear infinite;
+}
+
+@keyframes lilbee-task-indeterminate {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.side-dock-ribbon-action.lilbee-ribbon-icon {
+    position: relative;
+}
+
+.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-active::after,
+.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-success::after,
+.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-error::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1.5px solid var(--background-primary);
+    pointer-events: none;
+}
+
+.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-active::after {
+    background-color: var(--interactive-accent);
+    animation: lilbee-dot-pulse 1s ease-in-out infinite;
+}
+
+.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-success::after {
+    background-color: var(--text-success, #22c55e);
+}
+
+.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-error::after {
+    background-color: var(--text-error, #ef4444);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-active::after {
+        animation: none;
+    }
+}
+
+.lilbee-task-cancel {
+    background: none;
+    border: 1px solid transparent;
+    cursor: pointer;
+    color: var(--text-faint);
+    font-size: 13px;
+    line-height: 1;
+    padding: 2px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+}
+
+.lilbee-task-cancel:hover {
+    color: var(--text-error);
+    border-color: var(--text-error);
+    background-color: color-mix(in srgb, var(--text-error) 10%, transparent);
+}
+
+.lilbee-task-retry {
+    background: none;
+    border: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1;
+    padding: 3px 8px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    align-self: center;
+}
+
+.lilbee-task-retry:hover {
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+}
+
+.lilbee-tasks-empty {
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    font-style: italic;
+}
+
+.lilbee-task-info {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1, 4px);
+    flex: 1;
+    min-width: 0;
+}
+
+.lilbee-task-time {
+    font-size: var(--font-smallest, 10px);
+    color: var(--text-faint);
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+/* ── Wiki view ── */
+
+.lilbee-wiki-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.lilbee-wiki-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-wiki-header h2 {
+    margin: 0;
+    font-size: var(--font-ui-medium, 15px);
+}
+
+.lilbee-wiki-search {
+    margin: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    width: calc(100% - var(--size-4-3, 12px) * 2);
+}
+
+.lilbee-wiki-list {
+    flex: 0 0 auto;
+    max-height: 40%;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+}
+
+.lilbee-wiki-page-item {
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-bottom: var(--size-4-1, 4px);
+    transition: all 120ms ease;
+}
+
+.lilbee-wiki-page-item:hover {
+    background-color: color-mix(in srgb, var(--text-normal) 5%, transparent);
+}
+
+.lilbee-wiki-page-item.active {
+    background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+    border-left: 3px solid var(--interactive-accent);
+    padding-left: 7px;
+}
+
+.lilbee-wiki-type-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: var(--font-semibold, 600);
+    text-transform: uppercase;
+    padding: 1px 7px;
+    border-radius: 8px;
+    margin-right: var(--size-4-1, 4px);
+}
+
+.lilbee-wiki-type-summary {
+    background-color: color-mix(in srgb, var(--lilbee-color-wiki) 12%, transparent);
+    color: var(--lilbee-color-wiki);
+}
+
+.lilbee-wiki-type-synthesis {
+    background-color: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+    color: var(--interactive-accent);
+}
+
+.lilbee-wiki-detail {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--size-4-3, 12px);
+}
+
+.lilbee-wiki-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-4-2, 8px);
+    align-items: center;
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-wiki-content {
+    font-size: var(--font-text-size, 14px);
+    line-height: 1.7;
+}
+
+/* ── Source chip wiki modifier ── */
+
+.lilbee-source-chip-wiki {
+    background-color: color-mix(in srgb, var(--lilbee-color-wiki) 12%, transparent);
+    color: var(--lilbee-color-wiki);
+}
+
+.lilbee-claim-fact {
+    border-left-style: solid;
+}
+
+.lilbee-claim-inference {
+    border-left-style: dashed;
+}
+
+/* ── Citation modal ── */
+
+.lilbee-citation-card {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 6px);
+    padding: var(--size-4-3, 12px);
+    margin-bottom: var(--size-4-2, 8px);
+    background-color: var(--background-primary);
+}
+
+.lilbee-citation-key {
+    font-family: var(--font-monospace);
+    font-size: var(--font-small, 13px);
+    color: var(--text-accent);
+}
+
+.lilbee-citation-claim-badge {
+    display: inline-block;
+    font-size: var(--font-smallest, 10px);
+    font-weight: var(--font-semibold, 600);
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: var(--radius-s, 4px);
+    margin-left: var(--size-4-1, 4px);
+}
+
+.lilbee-claim-fact .lilbee-citation-claim-badge,
+.lilbee-citation-claim-badge.lilbee-claim-fact {
+    background-color: var(--interactive-accent);
+    color: #fff;
+}
+
+.lilbee-citation-claim-badge.lilbee-claim-inference {
+    background-color: transparent;
+    border: 1px dashed var(--interactive-accent);
+    color: var(--interactive-accent);
+}
+
+.lilbee-citation-excerpt {
+    margin: var(--size-4-2, 8px) 0;
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    border-left: 3px solid var(--background-modifier-border);
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+}
+
+.lilbee-citation-hash-status {
+    font-size: var(--font-smallest, 10px);
+    font-weight: var(--font-semibold, 600);
+    padding: 1px 6px;
+    border-radius: var(--radius-s, 4px);
+}
+
+.lilbee-hash-current {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+}
+
+.lilbee-hash-stale {
+    background-color: rgba(234, 179, 8, 0.15);
+    color: #eab308;
+}
+
+/* ── Drafts review modal ── */
+
+.lilbee-drafts-modal {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-2, 8px);
+    min-width: 600px;
+}
+
+.lilbee-drafts-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--size-4-2, 8px);
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-drafts-header h2 {
+    margin: 0;
+}
+
+.lilbee-drafts-refresh {
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-drafts-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-1, 4px);
+    max-height: 40vh;
+    overflow-y: auto;
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-draft-row {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 6px);
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    cursor: pointer;
+    background-color: var(--background-primary);
+}
+
+.lilbee-draft-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-draft-row.is-selected {
+    border-color: var(--interactive-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+}
+
+.lilbee-draft-slug {
+    display: block;
+    font-family: var(--font-monospace);
+    font-size: var(--font-small, 13px);
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-draft-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-4-2, 8px);
+    align-items: center;
+    font-size: var(--font-smallest, 12px);
+    color: var(--text-muted);
+}
+
+.lilbee-draft-kind {
+    font-weight: var(--font-semibold, 600);
+    letter-spacing: 0.04em;
+    padding: 1px 6px;
+    border-radius: var(--radius-s, 4px);
+    background-color: color-mix(in srgb, var(--text-warning) 18%, transparent);
+    color: var(--text-warning);
+}
+
+.lilbee-draft-drift,
+.lilbee-draft-faith,
+.lilbee-draft-pub {
+    font-variant-numeric: tabular-nums;
+}
+
+.lilbee-draft-diff {
+    max-height: 45vh;
+    overflow: auto;
+    font-family: var(--font-monospace);
+    font-size: var(--font-smallest, 12px);
+    line-height: 1.5;
+    padding: var(--size-4-2, 8px);
+    background-color: var(--background-secondary);
+    border-radius: var(--radius-s, 4px);
+    white-space: pre;
+    margin: 0 0 var(--size-4-3, 12px) 0;
+}
+
+.lilbee-draft-diff-add {
+    color: #10b981;
+    background-color: rgba(16, 185, 129, 0.08);
+}
+
+.lilbee-draft-diff-del {
+    color: #ef4444;
+    background-color: rgba(239, 68, 68, 0.08);
+}
+
+.lilbee-draft-diff-meta {
+    color: var(--text-muted);
+    font-weight: var(--font-semibold, 600);
+}
+
+.lilbee-draft-diff-hunk {
+    color: var(--text-accent);
+}
+
+.lilbee-draft-diff-ctx {
+    color: var(--text-normal);
+}
+
+.lilbee-drafts-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--size-4-2, 8px);
+}
+
+/* ── Lint modal ── */
+
+.lilbee-lint-summary {
+    font-weight: var(--font-semibold, 600);
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-lint-group {
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-lint-group h3 {
+    font-size: var(--font-ui-medium, 15px);
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-lint-issue {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-1, 4px) 0;
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-lint-status {
+    display: inline-block;
+    font-size: var(--font-smallest, 10px);
+    font-weight: var(--font-semibold, 600);
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: var(--radius-s, 4px);
+    color: #fff;
+}
+
+.lilbee-lint-valid { background-color: #22c55e; }
+.lilbee-lint-stale { background-color: #eab308; }
+.lilbee-lint-deleted { background-color: #ef4444; }
+.lilbee-lint-missing { background-color: #f97316; }
+.lilbee-lint-model { background-color: #3b82f6; }
+
+.lilbee-lint-detail {
+    color: var(--text-muted);
+    flex: 1;
+}
+
+/* ── Search mode toggle ── */
+
+.lilbee-search-mode {
+    display: flex;
+    gap: 4px;
+    margin: var(--size-4-2, 8px) 0;
+    width: fit-content;
+}
+
+.lilbee-search-mode-btn {
+    padding: 3px 12px;
+    font-size: var(--font-small, 13px);
+    background: transparent;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    cursor: pointer;
+    color: var(--text-faint);
+    transition: all 150ms ease;
+}
+
+.lilbee-search-mode-btn:hover {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-muted);
+}
+
+.lilbee-search-mode-btn.active {
+    background-color: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+    color: var(--interactive-accent);
+}
+
+/* Source preview modal (external-server sources that aren't in the vault).
+   The outer modal frame (``.lilbee-preview-modal-frame``) carries the CSS
+   ``resize: both`` handle so users can drag the bottom-right corner to make
+   the preview as large as they need. Applying resize to the inner contentEl
+   gets clipped by Obsidian's default ``overflow: hidden`` on the frame. */
+.lilbee-preview-modal-frame {
+    position: relative;
+    width: min(880px, 92vw);
+    height: min(640px, 85vh);
+    min-width: 360px;
+    min-height: 320px;
+    max-width: 98vw;
+    max-height: 95vh;
+    resize: both;
+    overflow: hidden;
+}
+
+.lilbee-preview-modal {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/* Make the resize handle visible — Obsidian's modal-container has overflow
+   hidden that would normally clip it. The diagonal grip doubles as a visual
+   cue so users notice the modal is resizable. */
+.lilbee-preview-modal-frame::after {
+    content: "";
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    width: 14px;
+    height: 14px;
+    background:
+        linear-gradient(135deg, transparent 0 50%, var(--text-faint) 50% 58%, transparent 58% 66%, var(--text-faint) 66% 74%, transparent 74% 82%, var(--text-faint) 82% 90%, transparent 90%);
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+.lilbee-preview-header {
+    font-family: var(--font-monospace);
+    font-size: 0.85em;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    word-break: break-all;
+}
+
+.lilbee-preview-path {
+    user-select: text;
+}
+
+.lilbee-preview-meta {
+    display: inline-block;
+    font-size: 0.8em;
+    color: var(--text-faint);
+    margin-bottom: 12px;
+}
+
+.lilbee-preview-host {
+    flex: 1 1 auto;
+    min-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 12px;
+    background-color: var(--background-primary);
+}
+
+.lilbee-preview-loading {
+    width: 18px;
+    height: 18px;
+    margin: 24px auto;
+    border: 2px solid var(--background-modifier-border);
+    border-top-color: var(--interactive-accent);
+    border-radius: 50%;
+    animation: lilbee-spin 0.9s linear infinite;
+}
+
+.lilbee-preview-body {
+    font-size: 0.9em;
+    line-height: 1.45;
+}
+
+.lilbee-preview-pdf-frame {
+    width: 100%;
+    height: 100%;
+    min-height: 420px;
+    border: none;
+}
+
+.lilbee-preview-error {
+    color: var(--text-error);
+    font-size: 0.9em;
+}
+
+.lilbee-preview-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.lilbee-preview-save[disabled] {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+

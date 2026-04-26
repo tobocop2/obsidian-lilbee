@@ -1,5 +1,6 @@
 import { App, Modal } from "obsidian";
 import type { ModelInfo } from "../types";
+import { MESSAGES } from "../locales/en";
 
 export class ConfirmPullModal extends Modal {
     private model: ModelInfo;
@@ -20,21 +21,21 @@ export class ConfirmPullModal extends Modal {
         contentEl.empty();
         contentEl.addClass("lilbee-confirm-pull");
 
-        contentEl.createEl("h2", { text: "Download model?" });
+        contentEl.createEl("h2", { text: MESSAGES.TITLE_DOWNLOAD_MODEL });
 
         const info = contentEl.createDiv({ cls: "lilbee-confirm-pull-info" });
-        info.createEl("p", { text: `Model: ${this.model.name}` });
-        info.createEl("p", { text: `Size: ${this.model.size_gb} GB` });
-        info.createEl("p", { text: `Minimum RAM: ${this.model.min_ram_gb} GB` });
+        info.createEl("p", { text: `${MESSAGES.LABEL_MODEL}: ${this.model.name}` });
+        info.createEl("p", { text: `${MESSAGES.LABEL_SIZE}: ${this.model.size_gb} GB` });
+        info.createEl("p", { text: `${MESSAGES.LABEL_MIN_RAM}: ${this.model.min_ram_gb} GB` });
 
         const actions = contentEl.createDiv({ cls: "lilbee-confirm-pull-actions" });
         const pullBtn = actions.createEl("button", {
-            text: "Pull Model",
+            text: MESSAGES.BUTTON_PULL_MODEL,
             cls: "mod-cta",
         });
         pullBtn.addEventListener("click", () => this.decide(true));
 
-        const cancelBtn = actions.createEl("button", { text: "Cancel" });
+        const cancelBtn = actions.createEl("button", { text: MESSAGES.BUTTON_CANCEL });
         cancelBtn.addEventListener("click", () => this.decide(false));
     }
 

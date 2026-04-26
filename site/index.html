@@ -3,182 +3,124 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>lilbee for Obsidian — chat with your documents privately</title>
-<style>
-  :root {
-    --bg: #111118;
-    --purple: #a78bfa;
-    --dim: #6d5daa;
-    --faint: #3b3566;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Courier New', monospace;
-    background: var(--bg);
-    color: var(--purple);
-    min-height: 100vh;
-    padding: 2rem;
-    font-size: 14px;
-    line-height: 1.4;
-  }
-  body::after {
-    content: "";
-    position: fixed;
-    inset: 0;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(0, 0, 0, 0.12) 2px,
-      rgba(0, 0, 0, 0.12) 4px
-    );
-    pointer-events: none;
-    z-index: 999;
-  }
-  pre { font: inherit; white-space: pre; }
-  a { color: var(--purple); text-decoration: none; }
-  a:hover { text-shadow: 0 0 8px rgba(167, 139, 250, 0.5); }
-  .dim { color: var(--dim); }
-  .faint { color: var(--faint); }
-  .cursor {
-    display: inline-block;
-    width: 0.6em;
-    height: 1.1em;
-    background: var(--purple);
-    vertical-align: text-bottom;
-    animation: blink 1s step-end infinite;
-  }
-  @keyframes blink { 50% { opacity: 0; } }
-  h1 {
-    position: absolute;
-    width: 1px; height: 1px;
-    overflow: hidden;
-    clip: rect(0,0,0,0);
-  }
-
-  .layout {
-    display: flex;
-    gap: 3rem;
-    align-items: flex-start;
-  }
-  .main { flex: 0 1 auto; min-width: 0; }
-  .bee-art {
-    flex: 0 0 auto;
-    font-size: 7px;
-    line-height: 1.1;
-    color: var(--dim);
-    text-shadow: 0 0 4px rgba(167, 139, 250, 0.15);
-    user-select: none;
-    padding-top: 1rem;
-  }
-
-  .bee-sm { display: none; }
-  @media (max-width: 900px) {
-    .bee-art { display: none; }
-    .bee-sm { display: inline; color: var(--dim); }
-  }
-  .link-dots { }
-  .link-desc { }
-  @media (max-width: 600px) {
-    body { padding: 1rem; font-size: 11px; }
-    .link-dots, .link-desc { display: none; }
-  }
-  .main pre { overflow-x: auto; }
-</style>
+<title>lilbee for Obsidian — verify every answer at the source</title>
+<meta name="description" content="An Obsidian plugin that pairs your vault with a local search engine. Click any citation to preview the source passage in place — verify every answer without leaving the editor.">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <h1>lilbee for Obsidian</h1>
 <div class="layout">
-<div class="main"><pre><span class="bee-sm">
-      \)  (/
-     _{    }_
-    / /o  o\ \
-    \  \__/  /
-     '-____-'
+  <div class="main">
 
-</span>888 d8b 888 888
+    <div class="topstrip reveal r1">
+      <div><span class="faint">lilbee for Obsidian v0.1.5</span></div>
+      <div class="right">
+        <span class="faint">MIT License · 100% coverage · typed</span>
+      </div>
+    </div>
+
+    <section class="reveal r2">
+      <pre class="wordmark" aria-hidden="true">888 d8b 888 888
 888 Y8P 888 888
 888     888 888
 888 888 888 88888b.  .d88b.  .d88b.
 888 888 888 888 "88bd8P  Y8bd8P  Y8b
 888 888 888 888  88888888888888888888
 888 888 888 888 d88PY8b.    Y8b.
-888 888 888 88888P"  "Y8888  "Y8888
-
-<span class="dim">  __            ___  _       _    _ _
+888 888 888 88888P"  "Y8888  "Y8888</pre>
+      <pre class="wordmark-sub" aria-hidden="true">  __            ___  _       _    _ _
  / _|___ _ _   / _ \| |__ __(_)__| (_)__ _ _ _
 |  _/ _ \ '_| | (_) | '_ (_-&lt; / _` | / _` | ' \
-|_| \___/_|    \___/|_.__/__/_\__,_|_\__,_|_||_|</span>
+|_| \___/_|    \___/|_.__/__/_\__,_|_\__,_|_||_|</pre>
+      <p class="tagline">an <span>Obsidian plugin</span> that pairs your vault with a local search engine. <span class="dim">click any citation to preview the source passage in place — verify every answer without leaving the editor.</span></p>
+      <pre class="hr-line" aria-hidden="true">════════════════════════════════════════════════════════════════</pre>
+    </section>
 
-<span class="dim">chat with your documents privately</span>
+    <section class="reveal r3">
+      <div class="label">preview</div>
+      <div class="demo">
+<pre class="frame-top">┌─ lilbee chat · vault ────────────────────────────── [qwen3:8b] ┐</pre>
+<div class="row"><pre class="bar">│ </pre><div class="content"><span class="prompt">&gt;</span> what does the oil pressure warning mean?</div><pre class="bar"> │</pre></div>
+<div class="row"><pre class="bar">│ </pre><div class="content">the oil pressure warning indicates low oil pressure.<sup>[¹]</sup></div><pre class="bar"> │</pre></div>
+<div class="row"><pre class="bar">│ </pre><div class="content">when the light stays on, stop the engine immediately.<sup>[²]</sup></div><pre class="bar"> │</pre></div>
+<div class="row"><pre class="bar">│ </pre><div class="content">&nbsp;</div><pre class="bar"> │</pre></div>
+<div class="row"><pre class="bar">│ </pre><div class="content"><span class="cite">─── sources ──────────────────────────────────────────────</span></div><pre class="bar"> │</pre></div>
+<div class="row"><pre class="bar">│ </pre><div class="content"><span class="cite">[¹ owners-manual.pdf:42]</span> <span class="dim">← click to preview the source</span></div><pre class="bar"> │</pre></div>
+<div class="row"><pre class="bar">│ </pre><div class="content"><span class="cite">[² owners-manual.pdf:43]</span></div><pre class="bar"> │</pre></div>
+<div class="row"><pre class="bar">│ </pre><div class="content">&nbsp;</div><pre class="bar"> │</pre></div>
+<div class="row"><pre class="bar">│ </pre><div class="content"><span class="prompt">&gt;</span> <span class="cursor"></span></div><pre class="bar"> │</pre></div>
+<pre class="frame-bot">└────────────────────────────────────────────────────────────────┘</pre>
+      </div>
+    </section>
 
-<span class="faint">════════════════════════════════════════════</span>
+    <section class="reveal r4">
+      <div class="label">what it does</div>
+      <div class="caps">
+        <div class="cap">
+          <h3>encyclopedia of your vault</h3>
+          <p>Index every note, PDF, ebook, and code file. Every answer clicks back to the source line. A private Encarta you build from your own vault.</p>
+        </div>
+        <div class="cap">
+          <h3>verify at the source</h3>
+          <p>Every citation in chat or wiki opens a Source Preview modal scrolled to the exact chunk, with the cited lines highlighted. The TUI shows sources; the plugin lets you read them.</p>
+        </div>
+        <div class="cap">
+          <h3>auto-generated wiki</h3>
+          <p>Concept and entity pages compounded across sources, citation-verified, with drafts queued for review. Renders in Obsidian's graph view via <code>[[wiki links]]</code>.</p>
+        </div>
+        <div class="cap">
+          <h3>scans &amp; OCR</h3>
+          <p>Scanned PDFs and photographed pages go through Tesseract or a local vision GGUF, landing as searchable markdown with layout preserved.</p>
+        </div>
+      </div>
+    </section>
 
- <a href="https://github.com/tobocop2/obsidian-lilbee">[1] GitHub</a><span class="link-dots"> <span class="faint">··············</span></span><span class="link-desc"> <span class="dim">source &amp; README</span></span>
- <a href="https://github.com/tobocop2/obsidian-lilbee#quick-start">[2] Quick start</a><span class="link-dots"> <span class="faint">·········</span></span><span class="link-desc"> <span class="dim">install in 4 steps</span></span>
- <a href="https://github.com/tobocop2/obsidian-lilbee/blob/main/docs/usage.md">[3] Usage guide</a><span class="link-dots"> <span class="faint">·········</span></span><span class="link-desc"> <span class="dim">commands, settings, formats</span></span>
- <a href="coverage/">[4] Coverage</a><span class="link-dots"> <span class="faint">············</span></span><span class="link-desc"> <span class="dim">100% tested</span></span>
+    <section class="reveal r5">
+      <div class="label">install</div>
+      <div class="install">
+<pre class="box-top">┌──────────────────────────────────────────────────────────────────┐</pre>
+<div class="box-mid">
+  <span class="bar">│</span>
+  <span class="cmd"><span class="dollar">brat:</span><span id="install-cmd">tobocop2/obsidian-lilbee</span><span class="cursor"></span></span>
+  <button type="button" class="copy" id="copy-btn" aria-label="Copy install slug">[ copy ]</button>
+  <span class="bar">│</span>
+</div>
+<pre class="box-bot">└──────────────────────────────────────────────────────────────────┘</pre>
+      </div>
+      <p class="extras"><span class="faint">prereq:</span> install <a href="https://github.com/TfTHacker/obsidian42-brat">BRAT</a> from Community Plugins, then <em>BRAT: Add a beta plugin</em> and paste the slug above.</p>
+      <p class="extras"><span class="faint">first launch:</span> the plugin downloads and verifies the lilbee server binary automatically. no Python, no terminal.</p>
+      <p class="extras"><span class="faint">beta:</span> every release is a pre-release. <a href="https://github.com/tobocop2/obsidian-lilbee/releases">latest on GitHub →</a></p>
+    </section>
 
-<span class="faint">════════════════════════════════════════════</span>
+    <section class="reveal r6">
+      <div class="label">go deeper</div>
+      <div class="links">
+        <a href="https://github.com/tobocop2/obsidian-lilbee"><span class="num">[1] GitHub</span><span class="dots">···················</span><span class="desc">source &amp; readme</span></a>
+        <a href="https://github.com/tobocop2/obsidian-lilbee#quick-start"><span class="num">[2] Quick start</span><span class="dots">··············</span><span class="desc">install in 4 steps</span></a>
+        <a href="https://github.com/tobocop2/obsidian-lilbee/blob/main/docs/usage.md"><span class="num">[3] Usage guide</span><span class="dots">··············</span><span class="desc">commands &amp; settings</span></a>
+        <a href="coverage/"><span class="num">[4] Coverage</span><span class="dots">·················</span><span class="desc">100%</span></a>
+        <a href="https://github.com/tobocop2/obsidian-lilbee/releases"><span class="num">[5] Releases</span><span class="dots">·················</span><span class="desc">changelog</span></a>
+        <a href="https://tobocop2.github.io/lilbee/"><span class="num">[6] lilbee</span><span class="dots">···················</span><span class="desc">the engine</span></a>
+        <a href="https://obsidian.md"><span class="num">[7] Obsidian</span><span class="dots">·················</span><span class="desc">obsidian.md</span></a>
+      </div>
+    </section>
 
- <span class="dim">&gt;</span> 100% local — nothing leaves your machine
- <span class="dim">&gt;</span> ask questions, get answers from your docs
- <span class="dim">&gt;</span> search across notes, PDFs, and code
- <span class="dim">&gt;</span> attach anything — PDFs, images, Word, Excel
- <span class="dim">&gt;</span> read scanned documents and images with OCR
- <span class="dim">&gt;</span> save conversations back to your vault
- <span class="dim">&gt;</span> one-click model download and server updates
-
-<span class="faint">────</span> <span class="dim">what you need</span> <span class="faint">─────────────────────────</span>
-
- <span class="dim">1.</span> <a href="https://ollama.com">Ollama</a> <span class="dim">— runs AI models locally on
-    your machine. free, no account needed.</span>
-
- <span class="dim">2.</span> <a href="https://obsidian.md">Obsidian</a>
-
-<span class="faint">────</span> <span class="dim">install</span> <span class="faint">────────────────────────────────</span>
-
- <span class="dim">1.</span> Install + open <a href="https://ollama.com">Ollama</a>
- <span class="dim">2.</span> Install <a href="https://github.com/TfTHacker/obsidian42-brat">BRAT</a> from Community Plugins
- <span class="dim">3.</span> BRAT → Add Beta Plugin →
-    <span class="dim">tobocop2/obsidian-lilbee</span>
- <span class="dim">4.</span> Enable "lilbee" in Community Plugins
-
- <span class="dim">the plugin downloads the server and models
- automatically — no terminal needed.</span>
-
-<span class="faint">────</span> <span class="dim">open the chat</span> <span class="faint">──────────────────────────</span>
-
- <span class="dim">wait for the status bar to show</span> lilbee: ready
- <span class="dim">then open the command palette and run:</span>
-
- <span class="dim">macOS ···</span> Cmd + P → lilbee: Open chat
- <span class="dim">Win/Linux</span> Ctrl + P → lilbee: Open chat
-
- <span class="dim">the chat panel opens in the sidebar.
- start asking questions, attach files,
- or sync your whole vault first.</span><span class="cursor"></span>
-
-<span class="faint">────</span> <span class="dim">built on</span> <span class="faint">──────────────────────────────</span>
-
- <a href="https://tobocop2.github.io/lilbee/">lilbee</a> <span class="dim">— local-first knowledge base.
- this plugin is built on top of it.</span>
-
-<span class="faint">════════════════════════════════════════════</span>
-<span class="faint">────</span> <span class="dim">contact</span> <span class="faint">───────────────────────────────</span>
-
-<span class="dim">+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    <footer class="reveal r7">
+      <div>
+<pre aria-hidden="true">+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |t|o|b|i|a|s|.|p|e|r|e|l|s|t|e|i|n|
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-+-+-+-+-+-+-+-+-+-+-+
-|@|g|m|a|i|l|.|c|o|m|
-+-+-+-+-+-+-+-+-+-+-+</span>
+        +-+-+-+-+-+-+-+-+-+-+
+        |@|g|m|a|i|l|.|c|o|m|
+        +-+-+-+-+-+-+-+-+-+-+</pre>
+      </div>
+      <div class="meta">
+        <div><a href="https://github.com/tobocop2/obsidian-lilbee">obsidian-lilbee</a> · MIT License</div>
+      </div>
+    </footer>
+  </div>
 
-<span class="faint">════════════════════════════════════════════</span>
- <span class="faint"><a href="https://github.com/tobocop2/obsidian-lilbee">lilbee for Obsidian</a> — <a href="https://opensource.org/licenses/MIT">MIT License</a></span>
-</pre></div>
-<aside class="bee-art" aria-hidden="true"><pre>
-     %           %
+  <aside class="bee-art reveal r3" aria-hidden="true"><pre>     %           %
          %           %
             %           %
                %          %
@@ -192,9 +134,9 @@
           ZZZ%ZZZZZZ%%%%%%%%%%%%%%ZZZZZZZZZ::::::***:::::::::::::::::::::::
         ZZZ%ZZZZZZZZZZ%%%%%%%%%%ZZZZZZ%ZZZZ:::***:::::::::::::::::::::::
        ZZ%ZZZZZZZZZZZZZZZZZZZZZZZ%%%%% %ZZZ:**::::::::::::::::::::::
-      ZZ%ZZZZZZZZZZZZZZZZZZZZZ%%%%% | | %ZZZ *:::::::::::::::::::
-      Z%ZZZZZZZZZZZZZZZZZ%%%%%%%%%%%%%%%ZZZ::::::::::::::::::::::::::
-       ZZZZZZZZZZZ%%%%%ZZZZZZZZZZZZZZZZZZZ%%%%:::ZZZZ:::::::::::::::::
+      ZZ%ZZZZZZZZZZZZZZZZZZZ%%%%% | | %ZZZ *:::::::::::::::::::
+      Z%ZZZZZZZZZZZZZZZ%%%%%%%%%%%%%%%ZZZ::::::::::::::::::::::::::
+       ZZZZZZZZZZZ%%%%%ZZZZZZZZZZZZZZZZZ%%%%:::ZZZZ:::::::::::::::::
          ZZZZ%%%%%ZZZZZZZZZZZZZZZZZZ%%%%%ZZZ%%ZZZ%ZZ%%*:::::::::::
             ZZZZZZZZZZZZZZZZZZ%%%%%%%%%ZZZZZZZZZZ%ZZ%:::*:::::::
             *:::%%%%%%%%%%%%%%%%%%%%%%%ZZZZZZZZZZ%%%*::::*::::
@@ -215,8 +157,33 @@
                               ZZZZ
                               ZZZ
                              ZZ
-                            Z
-</pre></aside>
+                            Z</pre></aside>
 </div>
+<script>
+(function () {
+  var btn = document.getElementById('copy-btn');
+  if (!btn) return;
+  var cmd = document.getElementById('install-cmd');
+  btn.addEventListener('click', function () {
+    var text = cmd ? cmd.textContent : 'tobocop2/obsidian-lilbee';
+    var done = function () {
+      var original = btn.textContent;
+      btn.textContent = '[ copied ]';
+      setTimeout(function () { btn.textContent = original; }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, done);
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+      done();
+    }
+  });
+})();
+</script>
 </body>
 </html>

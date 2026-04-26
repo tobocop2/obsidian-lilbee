@@ -3,7 +3,7 @@
   "name": "lilbee",
   "version": "0.1.5",
   "minAppVersion": "1.0.0",
-  "description": "Search, chat, and sync your local knowledge base powered by lilbee",
+  "description": "Chat with your vault and verify every answer at the source. Click any citation to preview the cited passage in place.",
   "author": "tobocop2",
   "authorUrl": "https://tobocop2.github.io/obsidian-lilbee/",
   "isDesktopOnly": true

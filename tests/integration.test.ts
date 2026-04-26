@@ -21,7 +21,9 @@ async function requestUrlPolyfill(req: { url: string; headers?: Record<string, s
     const res = await fetch(req.url, { headers: { ...authHeaders, ...req.headers }, redirect: "follow" });
     const arrayBuffer = await res.arrayBuffer();
     let json: unknown = {};
-    try { json = JSON.parse(new TextDecoder().decode(arrayBuffer)); } catch {}
+    try {
+        json = JSON.parse(new TextDecoder().decode(arrayBuffer));
+    } catch {}
     return { status: res.status, json, arrayBuffer, headers: Object.fromEntries(res.headers) };
 }
 
@@ -55,7 +57,6 @@ describe("integration: server start", () => {
             binaryPath: bm.binaryPath,
             dataDir: tempDir,
             port: null,
-            ollamaUrl: "http://127.0.0.1:11434",
             systemPrompt: "",
         });
 

@@ -42,19 +42,18 @@ function defaultOpts(overrides?: Partial<ServerManagerOptions>): ServerManagerOp
         binaryPath: "/usr/local/bin/lilbee",
         dataDir: "/tmp/data",
         port: 7433,
-        ollamaUrl: "http://localhost:11434",
         systemPrompt: "",
         ...overrides,
     };
 }
 
 /** Returns a fetch mock that succeeds (ok: true) on health checks. */
-function healthyFetch() {
+function _healthyFetch() {
     return vi.fn().mockResolvedValue({ ok: true });
 }
 
 /** Returns a fetch mock that always rejects. */
-function failingFetch() {
+function _failingFetch() {
     return vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
 }
 
@@ -97,6 +96,11 @@ describe("ServerManager", () => {
             const mgr = new ServerManager(defaultOpts({ port: 9999 }));
             expect(mgr.serverUrl).toBe("http://127.0.0.1:9999");
         });
+
+        it("dataDir getter returns the configured data dir", () => {
+            const mgr = new ServerManager(defaultOpts({ dataDir: "/var/lilbee" }));
+            expect(mgr.dataDir).toBe("/var/lilbee");
+        });
     });
 
     // ── start() ─────────────────────────────────────────────────────
@@ -104,9 +108,7 @@ describe("ServerManager", () => {
     describe("start()", () => {
         it("spawns the binary with correct args and env, sets state to ready", async () => {
             const stateChanges: string[] = [];
-            const mgr = new ServerManager(
-                defaultOpts({ onStateChange: (s) => stateChanges.push(s) }),
-            );
+            const mgr = new ServerManager(defaultOpts({ onStateChange: (s) => stateChanges.push(s) }));
 
             const startPromise = mgr.start();
             // Health poll setTimeout — advance past it
@@ -116,13 +118,7 @@ describe("ServerManager", () => {
             expect(spawnSpy).toHaveBeenCalledOnce();
             const [bin, args, opts] = spawnSpy.mock.calls[0] as any[];
             expect(bin).toBe("/usr/local/bin/lilbee");
-            expect(args).toEqual([
-                "serve",
-                "--host", "127.0.0.1",
-                "--port", "7433",
-                "--data-dir", "/tmp/data",
-            ]);
-            expect(opts.env.OLLAMA_HOST).toBe("http://localhost:11434");
+            expect(args).toEqual(["serve", "--host", "127.0.0.1", "--port", "7433", "--data-dir", "/tmp/data"]);
             expect(opts.env.LILBEE_CORS_ORIGINS).toBe("app://obsidian.md");
             expect(opts.env.LILBEE_SYSTEM_PROMPT).toBeUndefined();
             expect(opts.stdio).toEqual(["ignore", "ignore", "pipe"]);
@@ -134,9 +130,7 @@ describe("ServerManager", () => {
         });
 
         it("passes LILBEE_SYSTEM_PROMPT env when systemPrompt is set", async () => {
-            const mgr = new ServerManager(
-                defaultOpts({ systemPrompt: "You are a pirate." }),
-            );
+            const mgr = new ServerManager(defaultOpts({ systemPrompt: "You are a pirate." }));
 
             const startPromise = mgr.start();
             await vi.advanceTimersByTimeAsync(1000);
@@ -148,9 +142,7 @@ describe("ServerManager", () => {
 
         it("in dynamic port mode (port: null), reads port from file and sets state to ready", async () => {
             const stateChanges: string[] = [];
-            const mgr = new ServerManager(
-                defaultOpts({ port: null, onStateChange: (s) => stateChanges.push(s) }),
-            );
+            const mgr = new ServerManager(defaultOpts({ port: null, onStateChange: (s) => stateChanges.push(s) }));
 
             const startPromise = mgr.start();
             await vi.advanceTimersByTimeAsync(200);
@@ -159,11 +151,7 @@ describe("ServerManager", () => {
             expect(spawnSpy).toHaveBeenCalledOnce();
             const [bin, args] = spawnSpy.mock.calls[0] as any[];
             expect(bin).toBe("/usr/local/bin/lilbee");
-            expect(args).toEqual([
-                "serve",
-                "--host", "127.0.0.1",
-                "--data-dir", "/tmp/data",
-            ]);
+            expect(args).toEqual(["serve", "--host", "127.0.0.1", "--data-dir", "/tmp/data"]);
             expect(existsSyncSpy).toHaveBeenCalled();
             expect(readFileSyncSpy).toHaveBeenCalled();
 
@@ -197,9 +185,7 @@ describe("ServerManager", () => {
         it("sets state to error when health polling times out", async () => {
             fetchSpy.mockRejectedValue(new Error("ECONNREFUSED"));
             const stateChanges: string[] = [];
-            const mgr = new ServerManager(
-                defaultOpts({ onStateChange: (s) => stateChanges.push(s) }),
-            );
+            const mgr = new ServerManager(defaultOpts({ onStateChange: (s) => stateChanges.push(s) }));
 
             const startPromise = mgr.start();
             // 120 attempts * 1000ms each = 120000ms
@@ -226,9 +212,7 @@ describe("ServerManager", () => {
     describe("stop()", () => {
         it("with no child, sets state to stopped immediately", async () => {
             const stateChanges: string[] = [];
-            const mgr = new ServerManager(
-                defaultOpts({ onStateChange: (s) => stateChanges.push(s) }),
-            );
+            const mgr = new ServerManager(defaultOpts({ onStateChange: (s) => stateChanges.push(s) }));
             await mgr.stop();
             expect(mgr.state).toBe("stopped");
             expect(stateChanges).toContain("stopped");
@@ -312,10 +296,7 @@ describe("ServerManager", () => {
             await vi.advanceTimersByTimeAsync(50);
             await stopPromise;
 
-            expect(execFileSpy).toHaveBeenCalledWith(
-                "taskkill",
-                ["/pid", "1234", "/f", "/t"],
-            );
+            expect(execFileSpy).toHaveBeenCalledWith("taskkill", ["/pid", "1234", "/f", "/t"]);
             expect(mgr.state).toBe("stopped");
 
             Object.defineProperty(process, "platform", { value: originalPlatform });
@@ -414,9 +395,7 @@ describe("ServerManager", () => {
     describe("crash recovery", () => {
         it("increments crashCount, sets error, and schedules restart on exit", async () => {
             const stateChanges: string[] = [];
-            const mgr = new ServerManager(
-                defaultOpts({ onStateChange: (s) => stateChanges.push(s) }),
-            );
+            const mgr = new ServerManager(defaultOpts({ onStateChange: (s) => stateChanges.push(s) }));
 
             const p1 = mgr.start();
             await vi.advanceTimersByTimeAsync(1000);
@@ -525,9 +504,7 @@ describe("ServerManager", () => {
     describe("error event", () => {
         it("sets state to error and nullifies child", async () => {
             const stateChanges: string[] = [];
-            const mgr = new ServerManager(
-                defaultOpts({ onStateChange: (s) => stateChanges.push(s) }),
-            );
+            const mgr = new ServerManager(defaultOpts({ onStateChange: (s) => stateChanges.push(s) }));
 
             const p1 = mgr.start();
             // Fire error before health check completes
@@ -598,20 +575,7 @@ describe("ServerManager", () => {
         });
     });
 
-    // ── updateOllamaUrl / updatePort ────────────────────────────────
-
-    describe("updateOllamaUrl", () => {
-        it("updates the Ollama URL in options", () => {
-            const mgr = new ServerManager(defaultOpts());
-            mgr.updateOllamaUrl("http://remote:11434");
-
-            // Start to verify the new URL is used
-            mgr.start();
-            const env = (spawnSpy.mock.calls[0] as any[])[2].env;
-            expect(env.OLLAMA_HOST).toBe("http://remote:11434");
-            expect(env.LILBEE_CORS_ORIGINS).toBe("app://obsidian.md");
-        });
-    });
+    // ── updatePort ──────────────────────────────────────────────
 
     describe("updatePort", () => {
         it("updates the port in options", () => {
@@ -633,9 +597,7 @@ describe("ServerManager", () => {
     describe("onStateChange", () => {
         it("fires for each state transition during start", async () => {
             const stateChanges: string[] = [];
-            const mgr = new ServerManager(
-                defaultOpts({ onStateChange: (s) => stateChanges.push(s) }),
-            );
+            const mgr = new ServerManager(defaultOpts({ onStateChange: (s) => stateChanges.push(s) }));
 
             const p = mgr.start();
             await vi.advanceTimersByTimeAsync(1000);
@@ -646,9 +608,7 @@ describe("ServerManager", () => {
 
         it("fires for state transitions during stop", async () => {
             const stateChanges: string[] = [];
-            const mgr = new ServerManager(
-                defaultOpts({ onStateChange: (s) => stateChanges.push(s) }),
-            );
+            const mgr = new ServerManager(defaultOpts({ onStateChange: (s) => stateChanges.push(s) }));
 
             const p1 = mgr.start();
             await vi.advanceTimersByTimeAsync(1000);

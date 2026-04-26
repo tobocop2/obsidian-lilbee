@@ -7,15 +7,40 @@
     "dev": "node esbuild.config.mjs",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "lint": "eslint src/ tests/",
+    "lint:fix": "eslint src/ tests/ --fix",
+    "format": "prettier --write 'src/**/*.ts' 'tests/**/*.ts'",
+    "format:check": "prettier --check 'src/**/*.ts' 'tests/**/*.ts'",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "src/**/*.ts": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "tests/**/*.ts": [
+      "eslint --fix",
+      "prettier --write"
+    ]
+  },
+  "dependencies": {
+    "neverthrow": "^8.2.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^2.1.9",
     "builtin-modules": "^4.0.0",
     "esbuild": "^0.24.0",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
     "obsidian": "^1.12.0",
+    "prettier": "^3.8.1",
     "typescript": "^5.6.0",
+    "typescript-eslint": "^8.58.0",
     "vitest": "^2.1.9"
   }
 }
