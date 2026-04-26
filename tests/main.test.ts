@@ -3451,6 +3451,41 @@ describe("LilbeePlugin", () => {
 
             expect(mockUpdatePort).toHaveBeenCalledWith(9999);
         });
+
+        it("2rf: managed → external sets status to 'ready [external]', not 'stopped'", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            plugin.settings.serverMode = "external";
+            await plugin.saveSettings();
+            await flush();
+
+            const text = (plugin as any).statusBarEl?.textContent ?? "";
+            expect(text).toContain("[external]");
+            expect(text).not.toContain("stopped");
+        });
+
+        it("2rf: handleServerStateChange STOPPED is ignored in external mode", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const stateChange = mockServerOpts?.onStateChange;
+            // First land READY in managed mode so status starts at "ready"
+            stateChange("ready");
+            // Switch to external — status should reflect external readiness
+            plugin.settings.serverMode = "external";
+            await plugin.saveSettings();
+            await flush();
+            // The managed child fires STOPPED on its way out; that callback
+            // must NOT repaint the status as stopped now that we're external.
+            stateChange("stopped");
+
+            const text = (plugin as any).statusBarEl?.textContent ?? "";
+            expect(text).not.toContain("stopped");
+            expect(text).toContain("[external]");
+        });
     });
 
     describe("cancelSync()", () => {

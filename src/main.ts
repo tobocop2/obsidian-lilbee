@@ -429,6 +429,12 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private handleServerStateChange(state: ServerState): void {
+        // The managed child fires state transitions even after the user has
+        // switched to External mode (e.g. STOPPED on the way out). Painting
+        // "stopped" / "starting" / "error" from a now-irrelevant managed
+        // process would lie about the user's actually-reachable external
+        // server, so external mode owns its own status via the health probe.
+        if (this.settings.serverMode === SERVER_MODE.EXTERNAL) return;
         switch (state) {
             case SERVER_STATE.READY:
                 if (this.serverManager) {
@@ -650,11 +656,12 @@ export default class LilbeePlugin extends Plugin {
             this.api = new LilbeeClient(this.settings.serverUrl);
             this.api.setTokenProvider(() => this.readCurrentToken());
             this.api.setToken(this.readCurrentToken());
-            // Stopping the managed child fires STATE.STOPPED on the way out
-            // which leaves the status bar reading "lilbee: stopped" even
-            // though we're about to talk to an external server. Refresh so
-            // the bar reflects external reachability instead of the stale
-            // managed-stopped label.
+            // External mode owns its own status via the health probe; paint
+            // "ready [external]" optimistically so the user doesn't see a
+            // stale "stopped" label between the mode switch and the next
+            // probe tick. If the external server is in fact unreachable,
+            // the probe will flip to error on its next run.
+            this.setStatusReady();
             void this.fetchActiveModel();
         }
 
