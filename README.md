@@ -33,7 +33,7 @@ Local AI tools have gotten great at getting you to a chat window fast. The first
 
 Local AI can be made more substantial than a chatbot. A vault is already a curated set of documents — notes you've taken, PDFs you've collected, scans you've filed away — and that's exactly the corpus a real local search engine wants. lilbee for Obsidian pairs your vault with the [lilbee](https://github.com/tobocop2/lilbee) search engine, so a local model can reason over your own library and answer with citations you can click back to the source.
 
-**The reason this is the GUI client and not the TUI.** lilbee's terminal app streams replies with clickable citations that point to a file and a line. That's enough when you trust the corpus. When you don't — when the answer matters and you want to read what the model read — the plugin goes one step further. Every citation in chat or wiki opens a **Source Preview** modal that scrolls to the exact chunk in the original document, with the surrounding paragraphs visible. No "open document, find the page, scroll to the line." The verification loop is one click.
+**The verification loop is one click.** When the answer matters and you want to read what the model read, every citation in chat or wiki opens a **Source Preview** that scrolls to the exact passage in the original document, with the surrounding paragraphs visible. No "open the file, find the page, scroll to the line."
 
 An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, from your own vault, shaped to your needs.
 
@@ -172,7 +172,7 @@ Point lilbee at your vault and it indexes every note, PDF, ebook, and code file 
 
 ### Verify every answer at the source
 
-Every citation in a chat reply or wiki page is a live link. Click it and a Source Preview modal opens scrolled to the exact chunk in the source document, with the surrounding paragraphs visible and the cited lines highlighted. From there you can open the full document or copy a deep link back to the citation. The TUI tells you where the answer came from; the plugin lets you read it.
+Every citation in a chat reply or wiki page is a live link. Click it and a Source Preview modal opens scrolled to the exact passage in the source document, with the surrounding paragraphs visible and the cited lines highlighted. From there you can open the full document or copy a deep link back to the citation.
 
 This matters for the things you'd actually want a private knowledge base for — medical references, legal documents, manuals, internal docs. A confident-sounding answer with a footnote is only as good as the footnote. Treating verification as a one-click action, not a separate workflow, is the difference between trusting the system and double-checking everything by hand.
 
@@ -205,7 +205,7 @@ By default everything stays on your machine — server, models, index, vault. Fo
 3. Enable **lilbee** in Settings → Community plugins.
 4. The Setup Wizard auto-launches. Pick a chat model and an embedding model from the featured grid, then run the initial sync.
 
-The plugin downloads and manages the [lilbee](https://github.com/tobocop2/lilbee) server binary automatically — no Python, no `pip`, no terminal. The first launch fetches the right binary for your platform and verifies it before starting. Wait for the status bar to show `lilbee: ready`, then open the chat.
+The plugin downloads and manages the [lilbee](https://github.com/tobocop2/lilbee) server automatically — nothing to install separately. The first launch fetches the right version for your platform and verifies it before starting. Wait for the status bar to show `lilbee: ready`, then open the chat.
 
 > **Hardware note:** the server runs on your CPU or GPU. A Mac with Apple Silicon (M1+) or a PC with an NVIDIA / AMD / Intel Arc GPU gives the best performance. 8 GB of RAM is the minimum; 16–32 GB is recommended. See [lilbee's hardware requirements](https://github.com/tobocop2/lilbee#hardware-requirements) for the full table.
 
@@ -222,7 +222,7 @@ The chat panel opens in the sidebar. From there you can ask questions, attach in
 
 ## How it works
 
-The plugin runs [lilbee](https://github.com/tobocop2/lilbee) as a managed sidecar — on first launch it downloads the server binary for your platform, spawns it in the background, and shuts it down when you close Obsidian. Your vault is the corpus. lilbee handles indexing, retrieval, generation, and the wiki; the plugin is the GUI on top.
+The plugin runs [lilbee](https://github.com/tobocop2/lilbee) in the background for you — on first launch it downloads the right version for your platform, starts it automatically, and shuts it down when you close Obsidian. Your vault is the corpus. lilbee handles indexing, retrieval, generation, and the wiki; the plugin is the interface on top.
 
 Everything stays on your machine. The server, the models, the index, and your vault all live locally. Like all Obsidian plugins, lilbee is installed per vault — each vault runs its own server instance with its own index, so there's no shared global store. If you'd rather run your own lilbee server (on a different machine, in a container, or on a port you control), point the plugin at it from Settings → Connection.
 
