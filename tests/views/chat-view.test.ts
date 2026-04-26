@@ -97,44 +97,60 @@ function makePlugin(): LilbeePlugin {
     return {
         api: {
             chatStream: vi.fn(),
-            listModels: vi.fn().mockResolvedValue({
-                chat: { active: "llama3", installed: ["llama3", "phi3"], catalog: [] },
-            }),
-            installedModels: vi.fn().mockResolvedValue({
-                models: [
-                    { name: "llama3", source: "native" },
-                    { name: "phi3", source: "native" },
-                ],
+            installedModels: vi.fn().mockImplementation((params?: { task?: string }) => {
+                if (params?.task === "chat") {
+                    return Promise.resolve({
+                        models: [
+                            { name: "llama3", source: "native" },
+                            { name: "phi3", source: "native" },
+                        ],
+                    });
+                }
+                return Promise.resolve({
+                    models: [
+                        { name: "llama3", source: "native" },
+                        { name: "phi3", source: "native" },
+                        { name: "nomic-embed-text", source: "native" },
+                    ],
+                });
             }),
             setChatModel: vi.fn().mockResolvedValue(ok(undefined)),
             setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
             pullModel: vi.fn(),
-            catalog: vi.fn().mockResolvedValue(
-                ok({
-                    total: 1,
-                    limit: 50,
-                    offset: 0,
-                    models: [
-                        {
-                            name: "nomic-embed-text",
-                            display_name: "nomic-embed-text",
-                            size_gb: 0.3,
-                            min_ram_gb: 1,
-                            description: "Embedding",
-                            installed: true,
-                            source: "native",
-                            hf_repo: "nomic-embed-text",
-                            tag: "",
-                            task: "embedding",
-                            featured: true,
-                            downloads: 1000,
-                            quality_tier: "good",
-                        },
-                    ],
-                    has_more: false,
-                }),
-            ),
-            config: vi.fn().mockResolvedValue({ embedding_model: "nomic-embed-text" }),
+            catalog: vi.fn().mockImplementation((params?: { task?: string }) => {
+                if (params?.task === "chat") {
+                    // Empty featured chat catalog — installed refs go under the "Other" group.
+                    return Promise.resolve(ok({ total: 0, limit: 50, offset: 0, models: [], has_more: false }));
+                }
+                // Embedding picker keeps the legacy nomic-embed entry for the
+                // separate embedding-selector flow.
+                return Promise.resolve(
+                    ok({
+                        total: 1,
+                        limit: 50,
+                        offset: 0,
+                        models: [
+                            {
+                                hf_repo: "nomic-embed-text",
+                                gguf_filename: "",
+                                display_name: "nomic-embed-text",
+                                size_gb: 0.3,
+                                min_ram_gb: 1,
+                                description: "Embedding",
+                                installed: true,
+                                source: "native",
+                                task: "embedding",
+                                featured: true,
+                                downloads: 1000,
+                                quality_tier: "good",
+                                param_count: "137M",
+                            },
+                        ],
+                        has_more: false,
+                    }),
+                );
+            }),
+            config: vi.fn().mockResolvedValue({ chat_model: "llama3", embedding_model: "nomic-embed-text" }),
         },
         settings: { topK: 5, enableOcr: null as boolean | null, wikiEnabled: true, searchChunkType: "all" as const },
         activeModel: "llama3",
@@ -152,6 +168,64 @@ function makePlugin(): LilbeePlugin {
             },
         },
     } as unknown as LilbeePlugin;
+}
+
+/**
+ * Map the legacy `chat: { active, installed, catalog }` test fixture into the
+ * three endpoints the post-PR-#183 chat picker actually calls. Catalog entries
+ * are stamped with the minimum CatalogEntry shape; we keep the legacy short
+ * names as `hf_repo` so existing dropdown-value assertions still hold.
+ */
+function mockChatPicker(
+    plugin: LilbeePlugin,
+    chat: {
+        active: string;
+        installed: string[];
+        catalog: Array<{
+            name: string;
+            size_gb: number;
+            min_ram_gb: number;
+            description: string;
+            installed: boolean;
+            source?: string;
+        }>;
+    },
+): void {
+    (plugin.api as any).config = vi.fn().mockResolvedValue({ chat_model: chat.active });
+    (plugin.api as any).installedModels = vi.fn().mockImplementation((params?: { task?: string }) => {
+        if (params?.task === "chat" || params === undefined) {
+            return Promise.resolve({ models: chat.installed.map((name) => ({ name, source: "native" })) });
+        }
+        return Promise.resolve({ models: [] });
+    });
+    (plugin.api as any).catalog = vi.fn().mockImplementation((params?: { task?: string }) => {
+        if (params?.task === "chat") {
+            return Promise.resolve(
+                ok({
+                    total: chat.catalog.length,
+                    limit: 50,
+                    offset: 0,
+                    has_more: false,
+                    models: chat.catalog.map((m) => ({
+                        hf_repo: m.name,
+                        gguf_filename: "",
+                        display_name: m.name,
+                        size_gb: m.size_gb,
+                        min_ram_gb: m.min_ram_gb,
+                        description: m.description,
+                        installed: m.installed,
+                        source: m.source ?? "native",
+                        task: "chat",
+                        featured: true,
+                        downloads: 0,
+                        quality_tier: "balanced",
+                        param_count: "",
+                    })),
+                }),
+            );
+        }
+        return Promise.resolve(ok({ total: 0, limit: 50, offset: 0, has_more: false, models: [] }));
+    });
 }
 
 function makeSource(overrides: Partial<Source> = {}): Source {
@@ -879,11 +953,61 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onClose();
     });
 
+    it("appends provider suffix when a featured entry has non-native source", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.catalog = vi.fn().mockImplementation((p?: { task?: string }) => {
+            if (p?.task === "chat") {
+                return Promise.resolve(
+                    ok({
+                        total: 1,
+                        limit: 50,
+                        offset: 0,
+                        has_more: false,
+                        models: [
+                            {
+                                hf_repo: "ollama/qwen3:8b",
+                                gguf_filename: "",
+                                display_name: "qwen3:8b",
+                                size_gb: 0,
+                                min_ram_gb: 0,
+                                description: "",
+                                installed: true,
+                                source: "ollama",
+                                task: "chat",
+                                featured: true,
+                                downloads: 0,
+                                quality_tier: "",
+                                param_count: "",
+                            },
+                        ],
+                    }),
+                );
+            }
+            return Promise.resolve(ok({ total: 0, limit: 50, offset: 0, has_more: false, models: [] }));
+        });
+        plugin.api.installedModels = vi.fn().mockResolvedValue({
+            models: [{ name: "ollama/qwen3:8b", source: "ollama" }],
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const c = view.containerEl.children[1] as unknown as MockElement;
+        const select = c.find("lilbee-chat-model-select")!;
+        const options = select.children.filter((ch) => ch.tagName === "OPTION");
+        const labels = options.map((o) => o.textContent);
+        expect(labels).toContain("qwen3:8b [ollama]");
+        await view.onClose();
+    });
+
     it("shows (connecting...) option on both selects when listModels fails", async () => {
         vi.useFakeTimers();
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.catalog = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.installedModels = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.config = vi.fn().mockRejectedValue(new Error("offline"));
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         await vi.advanceTimersByTimeAsync(0);
@@ -998,15 +1122,13 @@ describe("ChatView.onOpen — model selector", () => {
     it("excludes uninstalled catalog models from dropdown options", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3"],
-                catalog: [
-                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
-                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
-                ],
-            },
+        mockChatPicker(plugin, {
+            active: "llama3",
+            installed: ["llama3"],
+            catalog: [
+                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+            ],
         });
 
         const view = new ChatView(makeLeaf(), plugin);
@@ -1025,15 +1147,13 @@ describe("ChatView.onOpen — model selector", () => {
     it("selecting uninstalled catalog model triggers auto-pull with progress", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3"],
-                catalog: [
-                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
-                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
-                ],
-            },
+        mockChatPicker(plugin, {
+            active: "llama3",
+            installed: ["llama3"],
+            catalog: [
+                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+            ],
         });
 
         async function* fakePull() {
@@ -1062,15 +1182,13 @@ describe("ChatView.onOpen — model selector", () => {
     it("auto-pull progress with no percent and no total skips update", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3"],
-                catalog: [
-                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
-                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
-                ],
-            },
+        mockChatPicker(plugin, {
+            active: "llama3",
+            installed: ["llama3"],
+            catalog: [
+                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+            ],
         });
 
         async function* fakePull() {
@@ -1096,15 +1214,13 @@ describe("ChatView.onOpen — model selector", () => {
     it("auto-pull progress with current/total computes percentage", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3"],
-                catalog: [
-                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
-                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
-                ],
-            },
+        mockChatPicker(plugin, {
+            active: "llama3",
+            installed: ["llama3"],
+            catalog: [
+                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+            ],
         });
 
         async function* fakePull() {
@@ -1130,15 +1246,13 @@ describe("ChatView.onOpen — model selector", () => {
     it("auto-pull failure shows failure notice", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3"],
-                catalog: [
-                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
-                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
-                ],
-            },
+        mockChatPicker(plugin, {
+            active: "llama3",
+            installed: ["llama3"],
+            catalog: [
+                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+            ],
         });
 
         async function* failingPull(): AsyncGenerator<never> {
@@ -1163,15 +1277,13 @@ describe("ChatView.onOpen — model selector", () => {
     it("auto-pull SSE_EVENT.ERROR shows failure notice and fails task", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3"],
-                catalog: [
-                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
-                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
-                ],
-            },
+        mockChatPicker(plugin, {
+            active: "llama3",
+            installed: ["llama3"],
+            catalog: [
+                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+            ],
         });
 
         async function* errorPull() {
@@ -1197,15 +1309,13 @@ describe("ChatView.onOpen — model selector", () => {
     it("auto-pull SSE_EVENT.ERROR with string data fails the task", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3"],
-                catalog: [
-                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
-                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
-                ],
-            },
+        mockChatPicker(plugin, {
+            active: "llama3",
+            installed: ["llama3"],
+            catalog: [
+                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+            ],
         });
 
         async function* errorPull() {
@@ -1231,15 +1341,13 @@ describe("ChatView.onOpen — model selector", () => {
     it("auto-pull SSE_EVENT.ERROR with empty object uses fallback message", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3"],
-                catalog: [
-                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
-                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
-                ],
-            },
+        mockChatPicker(plugin, {
+            active: "llama3",
+            installed: ["llama3"],
+            catalog: [
+                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+            ],
         });
 
         async function* errorPull() {
@@ -1265,15 +1373,13 @@ describe("ChatView.onOpen — model selector", () => {
     it("auto-pull AbortError shows Pull cancelled notice", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3"],
-                catalog: [
-                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
-                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
-                ],
-            },
+        mockChatPicker(plugin, {
+            active: "llama3",
+            installed: ["llama3"],
+            catalog: [
+                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+            ],
         });
 
         const abortError = new Error("Aborted");
@@ -1300,15 +1406,13 @@ describe("ChatView.onOpen — model selector", () => {
     it("auto-pull non-Error throw uses 'unknown' in taskQueue", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3"],
-                catalog: [
-                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
-                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
-                ],
-            },
+        mockChatPicker(plugin, {
+            active: "llama3",
+            installed: ["llama3"],
+            catalog: [
+                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+            ],
         });
 
         async function* failingPull(): AsyncGenerator<never> {
@@ -1335,15 +1439,13 @@ describe("ChatView.onOpen — model selector", () => {
     it("auto-pull with total=0 does not send progress", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3"],
-                catalog: [
-                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
-                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
-                ],
-            },
+        mockChatPicker(plugin, {
+            active: "llama3",
+            installed: ["llama3"],
+            catalog: [
+                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+            ],
         });
 
         async function* fakePull() {
@@ -2215,15 +2317,13 @@ describe("ChatView.onClose — aborts both controllers", () => {
     it("aborts pullController when active", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3"],
-                catalog: [
-                    { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
-                    { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
-                ],
-            },
+        mockChatPicker(plugin, {
+            active: "llama3",
+            installed: ["llama3"],
+            catalog: [
+                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true },
+                { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "MS", installed: false },
+            ],
         });
 
         let resolveWait!: () => void;
@@ -2418,13 +2518,23 @@ describe("ChatView — offline retry", () => {
 
     it("retries fetching models after failure", async () => {
         const plugin = makePlugin();
-        let callCount = 0;
-        plugin.api.listModels = vi.fn().mockImplementation(() => {
-            callCount++;
-            if (callCount === 1) return Promise.reject(new Error("offline"));
-            return Promise.resolve({
-                chat: { active: "llama3", installed: ["llama3"], catalog: [] },
-            });
+        let online = false;
+        const offline = () => Promise.reject(new Error("offline"));
+        const installedOk = (p?: { task?: string }) => {
+            if (p?.task === "chat" || p === undefined) {
+                return Promise.resolve({ models: [{ name: "llama3", source: "native" }] });
+            }
+            return Promise.resolve({ models: [] });
+        };
+        const catalogOk = () => Promise.resolve(ok({ total: 0, limit: 50, offset: 0, has_more: false, models: [] }));
+        plugin.api.installedModels = vi.fn().mockImplementation((p?: { task?: string }) => {
+            return online ? installedOk(p) : offline();
+        });
+        plugin.api.config = vi.fn().mockImplementation(() => {
+            return online ? Promise.resolve({ chat_model: "llama3" }) : offline();
+        });
+        plugin.api.catalog = vi.fn().mockImplementation(() => {
+            return online ? catalogOk() : offline();
         });
 
         const view = new ChatView(makeLeaf(), plugin);
@@ -2437,7 +2547,8 @@ describe("ChatView — offline retry", () => {
         const chatOptions = chatSelect.children.filter((c) => c.tagName === "OPTION");
         expect(chatOptions.some((o) => o.textContent === "(connecting...)")).toBe(true);
 
-        // Advance past the 5s retry
+        // Server comes back online; the 5s retry hits the new mocks.
+        online = true;
         await vi.advanceTimersByTimeAsync(5000);
 
         const updatedOptions = chatSelect.children.filter((c) => c.tagName === "OPTION");
@@ -2449,7 +2560,9 @@ describe("ChatView — offline retry", () => {
 
     it("shows offline notice only at threshold", async () => {
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.catalog = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.installedModels = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.config = vi.fn().mockRejectedValue(new Error("offline"));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -2475,13 +2588,22 @@ describe("ChatView — offline retry", () => {
 
     it("clears retry timer and retryCount on successful fetch", async () => {
         const plugin = makePlugin();
-        let callCount = 0;
-        plugin.api.listModels = vi.fn().mockImplementation(() => {
-            callCount++;
-            if (callCount === 1) return Promise.reject(new Error("offline"));
-            return Promise.resolve({
-                chat: { active: "llama3", installed: ["llama3"], catalog: [] },
-            });
+        let online = false;
+        const offline = () => Promise.reject(new Error("offline"));
+        plugin.api.installedModels = vi.fn().mockImplementation((p?: { task?: string }) => {
+            if (!online) return offline();
+            if (p?.task === "chat" || p === undefined) {
+                return Promise.resolve({ models: [{ name: "llama3", source: "native" }] });
+            }
+            return Promise.resolve({ models: [] });
+        });
+        plugin.api.config = vi.fn().mockImplementation(() => {
+            return online ? Promise.resolve({ chat_model: "llama3" }) : offline();
+        });
+        plugin.api.catalog = vi.fn().mockImplementation(() => {
+            return online
+                ? Promise.resolve(ok({ total: 0, limit: 50, offset: 0, has_more: false, models: [] }))
+                : offline();
         });
 
         const view = new ChatView(makeLeaf(), plugin);
@@ -2493,6 +2615,7 @@ describe("ChatView — offline retry", () => {
         expect((view as any).retryCount).toBe(1);
 
         // Advance past retry — success
+        online = true;
         await vi.advanceTimersByTimeAsync(5000);
 
         expect((view as any).retryTimer).toBeNull();
@@ -2503,7 +2626,9 @@ describe("ChatView — offline retry", () => {
 
     it("clears retry timer and retryCount on close", async () => {
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.catalog = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.installedModels = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.config = vi.fn().mockRejectedValue(new Error("offline"));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -2520,7 +2645,9 @@ describe("ChatView — offline retry", () => {
 
     it("clears existing options before retry", async () => {
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.catalog = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.installedModels = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.config = vi.fn().mockRejectedValue(new Error("offline"));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -2549,7 +2676,9 @@ describe("ChatView — offline retry", () => {
 
     it("shows (connecting...) then (offline) after threshold", async () => {
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.catalog = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.installedModels = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.config = vi.fn().mockRejectedValue(new Error("offline"));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -2576,16 +2705,22 @@ describe("ChatView — offline retry", () => {
     it("retries when server reachable but no models installed", async () => {
         const plugin = makePlugin();
         let callCount = 0;
-        plugin.api.listModels = vi.fn().mockImplementation(() => {
-            callCount++;
-            if (callCount <= 2) {
-                return Promise.resolve({
-                    chat: { active: "", installed: [], catalog: [{ name: "llama3", installed: false }] },
-                });
+        plugin.api.installedModels = vi.fn().mockImplementation((p?: { task?: string }) => {
+            if (p?.task === "chat") {
+                callCount++;
+                if (callCount <= 2) return Promise.resolve({ models: [] });
+                return Promise.resolve({ models: [{ name: "llama3", source: "native" }] });
             }
-            return Promise.resolve({
-                chat: { active: "llama3", installed: ["llama3"], catalog: [{ name: "llama3", installed: true }] },
-            });
+            return Promise.resolve({ models: [] });
+        });
+        plugin.api.config = vi.fn().mockImplementation(() => {
+            return Promise.resolve({ chat_model: callCount <= 2 ? "" : "llama3" });
+        });
+        plugin.api.catalog = vi.fn().mockImplementation((p?: { task?: string }) => {
+            if (p?.task === "chat") {
+                return Promise.resolve(ok({ total: 0, limit: 50, offset: 0, has_more: false, models: [] }));
+            }
+            return Promise.resolve(ok({ total: 0, limit: 50, offset: 0, has_more: false, models: [] }));
         });
 
         const view = new ChatView(makeLeaf(), plugin);
@@ -2613,9 +2748,11 @@ describe("ChatView — offline retry", () => {
 
     it("stops no-installed-models retry on close", async () => {
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: { active: "", installed: [], catalog: [] },
-        });
+        plugin.api.installedModels = vi.fn().mockResolvedValue({ models: [] });
+        plugin.api.config = vi.fn().mockResolvedValue({ chat_model: "" });
+        plugin.api.catalog = vi
+            .fn()
+            .mockResolvedValue(ok({ total: 0, limit: 50, offset: 0, has_more: false, models: [] }));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -2631,9 +2768,11 @@ describe("ChatView — offline retry", () => {
     it("Browse Catalog button in empty state opens CatalogModal", async () => {
         const { CatalogModal } = await import("../../src/views/catalog-modal");
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: { active: "", installed: [], catalog: [] },
-        });
+        plugin.api.installedModels = vi.fn().mockResolvedValue({ models: [] });
+        plugin.api.config = vi.fn().mockResolvedValue({ chat_model: "" });
+        plugin.api.catalog = vi
+            .fn()
+            .mockResolvedValue(ok({ total: 0, limit: 50, offset: 0, has_more: false, models: [] }));
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -2654,13 +2793,22 @@ describe("ChatView — offline retry", () => {
 
     it("resets retryCount on success after failures", async () => {
         const plugin = makePlugin();
-        let callCount = 0;
-        plugin.api.listModels = vi.fn().mockImplementation(() => {
-            callCount++;
-            if (callCount <= 2) return Promise.reject(new Error("offline"));
-            return Promise.resolve({
-                chat: { active: "llama3", installed: ["llama3"], catalog: [] },
-            });
+        let online = false;
+        const offline = () => Promise.reject(new Error("offline"));
+        plugin.api.installedModels = vi.fn().mockImplementation((p?: { task?: string }) => {
+            if (!online) return offline();
+            if (p?.task === "chat" || p === undefined) {
+                return Promise.resolve({ models: [{ name: "llama3", source: "native" }] });
+            }
+            return Promise.resolve({ models: [] });
+        });
+        plugin.api.config = vi.fn().mockImplementation(() => {
+            return online ? Promise.resolve({ chat_model: "llama3" }) : offline();
+        });
+        plugin.api.catalog = vi.fn().mockImplementation(() => {
+            return online
+                ? Promise.resolve(ok({ total: 0, limit: 50, offset: 0, has_more: false, models: [] }))
+                : offline();
         });
 
         const view = new ChatView(makeLeaf(), plugin);
@@ -2674,7 +2822,8 @@ describe("ChatView — offline retry", () => {
         await vi.advanceTimersByTimeAsync(5000);
         expect((view as any).retryCount).toBe(2);
 
-        // Success — resets to 0
+        // Server comes back online; the next retry succeeds.
+        online = true;
         await vi.advanceTimersByTimeAsync(5000);
         expect((view as any).retryCount).toBe(0);
 
@@ -2913,7 +3062,9 @@ describe("ChatView — embedding model selector", () => {
     it("shows connecting label on embedding select when offline", async () => {
         vi.useFakeTimers();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.catalog = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.installedModels = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.config = vi.fn().mockRejectedValue(new Error("offline"));
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         await vi.advanceTimersByTimeAsync(0);
@@ -2930,7 +3081,9 @@ describe("ChatView — embedding model selector", () => {
     it("shows offline label on embedding select after threshold", async () => {
         vi.useFakeTimers();
         const plugin = makePlugin();
-        plugin.api.listModels = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.catalog = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.installedModels = vi.fn().mockRejectedValue(new Error("offline"));
+        plugin.api.config = vi.fn().mockRejectedValue(new Error("offline"));
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
 
@@ -3054,7 +3207,14 @@ describe("ChatView — embedding model selector", () => {
 
     it("handles null catalog result in fillEmbeddingSelector", async () => {
         const plugin = makePlugin();
-        plugin.api.catalog = vi.fn().mockRejectedValue(new Error("fail"));
+        // Chat catalog still succeeds — only the embedding catalog rejects, so the
+        // embedding selector falls back to displaying the active model from config.
+        plugin.api.catalog = vi.fn().mockImplementation((p?: { task?: string }) => {
+            if (p?.task === "chat") {
+                return Promise.resolve(ok({ total: 0, limit: 50, offset: 0, has_more: false, models: [] }));
+            }
+            return Promise.reject(new Error("fail"));
+        });
         plugin.api.config = vi.fn().mockResolvedValue({ embedding_model: "fallback" });
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -3101,8 +3261,14 @@ describe("ChatView — autoPullAndSet post-pull set failure", () => {
         plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("activate-failed")));
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
-        await (view as any).autoPullAndSet({ name: "phi3" });
-        const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "phi3");
+        const entry = {
+            hf_repo: "microsoft/Phi-3-mini-4k-Instruct-GGUF",
+            display_name: "Phi 3 Mini",
+            size_gb: 2.3,
+            min_ram_gb: 4,
+        };
+        await (view as any).autoPullAndSet(entry);
+        const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "Phi 3 Mini");
         expect(Notice.instances.map((n: any) => n.message)).toContain(setFailed);
         expect(plugin.taskQueue.completed.some((t: any) => t.status === "done")).toBe(true);
         expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(false);
@@ -3155,65 +3321,59 @@ describe("ChatView — role separation on main-screen selectors", () => {
         // Contaminated models.chat.installed: server has (incorrectly) mixed vision/reranker
         // names into the chat role. The plugin must still render them — this proves the
         // plugin is NOT filtering client-side; filtering is the server's job.
-        plugin.api.listModels = vi.fn().mockResolvedValue({
-            chat: {
-                active: "llama3",
-                installed: ["llama3", "Qwen/Qwen2-VL-7B-Instruct", "BAAI/bge-reranker-v2-m3"],
-                catalog: [],
-            },
-            embedding: {
-                active: "nomic-embed-text",
-                installed: ["nomic-embed-text"],
-                catalog: [],
-            },
-            vision: {
-                active: "Qwen/Qwen2-VL-7B-Instruct",
-                installed: ["Qwen/Qwen2-VL-7B-Instruct"],
-                catalog: [],
-            },
-            reranker: {
-                active: "BAAI/bge-reranker-v2-m3",
-                installed: ["BAAI/bge-reranker-v2-m3"],
-                catalog: [],
-            },
-        });
-        plugin.api.installedModels = vi.fn().mockResolvedValue({
-            models: [
-                { name: "llama3", source: "native" },
-                { name: "nomic-embed-text", source: "native" },
-                { name: "Qwen/Qwen2-VL-7B-Instruct", source: "native" },
-                { name: "BAAI/bge-reranker-v2-m3", source: "native" },
-            ],
-        });
-        // catalog({task: EMBEDDING}) returns embedding-only. If the plugin ever called
-        // catalog with a different task or with no filter, this mock would not cover
-        // those other tasks and the embedding selector would end up empty / wrong.
-        plugin.api.catalog = vi.fn().mockResolvedValue(
-            ok({
-                total: 1,
-                limit: 50,
-                offset: 0,
+        // Server-side filtering: chat task returns the installed list scoped to chat
+        // (which here contains some "contaminated" rows the server lets through). The
+        // chat picker echoes that list verbatim — no client-side re-filter.
+        plugin.api.installedModels = vi.fn().mockImplementation((p?: { task?: string }) => {
+            if (p?.task === "chat") {
+                return Promise.resolve({
+                    models: [
+                        { name: "llama3", source: "native" },
+                        { name: "Qwen/Qwen2-VL-7B-Instruct", source: "native" },
+                        { name: "BAAI/bge-reranker-v2-m3", source: "native" },
+                    ],
+                });
+            }
+            return Promise.resolve({
                 models: [
-                    {
-                        name: "nomic-embed-text",
-                        display_name: "nomic-embed-text",
-                        size_gb: 0.3,
-                        min_ram_gb: 1,
-                        description: "embedding",
-                        installed: true,
-                        source: "native",
-                        hf_repo: "nomic-embed-text",
-                        tag: "",
-                        task: "embedding",
-                        featured: true,
-                        downloads: 100,
-                        quality_tier: "good",
-                    },
+                    { name: "llama3", source: "native" },
+                    { name: "nomic-embed-text", source: "native" },
+                    { name: "Qwen/Qwen2-VL-7B-Instruct", source: "native" },
+                    { name: "BAAI/bge-reranker-v2-m3", source: "native" },
                 ],
-                has_more: false,
-            }),
-        );
-        plugin.api.config = vi.fn().mockResolvedValue({ embedding_model: "nomic-embed-text" });
+            });
+        });
+        plugin.api.catalog = vi.fn().mockImplementation((p?: { task?: string }) => {
+            if (p?.task === "chat") {
+                return Promise.resolve(ok({ total: 0, limit: 50, offset: 0, has_more: false, models: [] }));
+            }
+            return Promise.resolve(
+                ok({
+                    total: 1,
+                    limit: 50,
+                    offset: 0,
+                    models: [
+                        {
+                            hf_repo: "nomic-embed-text",
+                            gguf_filename: "",
+                            display_name: "nomic-embed-text",
+                            size_gb: 0.3,
+                            min_ram_gb: 1,
+                            description: "embedding",
+                            installed: true,
+                            source: "native",
+                            task: "embedding",
+                            featured: true,
+                            downloads: 100,
+                            quality_tier: "good",
+                            param_count: "",
+                        },
+                    ],
+                    has_more: false,
+                }),
+            );
+        });
+        plugin.api.config = vi.fn().mockResolvedValue({ chat_model: "llama3", embedding_model: "nomic-embed-text" });
 
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();

@@ -1,15 +1,9 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Notice, Setting } from "obsidian";
 import { MockElement } from "./__mocks__/obsidian";
-import {
-    LilbeeSettingTab,
-    buildModelOptions,
-    deduplicateLatest,
-    SEPARATOR_KEY,
-    SEPARATOR_LABEL,
-} from "../src/settings";
-import type { LilbeeSettings, ModelCatalog, ModelsResponse } from "../src/types";
-import { DEFAULT_SETTINGS, SSE_EVENT } from "../src/types";
+import { LilbeeSettingTab, SEPARATOR_KEY } from "../src/settings";
+import type { CatalogEntry, CatalogResponse, InstalledModel, LilbeeSettings } from "../src/types";
+import { DEFAULT_SETTINGS, MODEL_TASK, SSE_EVENT } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import { ok, err } from "neverthrow";
 import { TaskQueue } from "../src/task-queue";
@@ -110,21 +104,65 @@ function makeTab(plugin: ReturnType<typeof makePlugin>) {
     return new LilbeeSettingTab(app as any, plugin as any);
 }
 
-function makeModelsResponse(): ModelsResponse {
-    const empty: ModelCatalog = { active: "", installed: [], catalog: [] };
+const LLAMA_REF = "meta-llama/Llama-3-8B-Instruct-GGUF/Llama-3-8B-Instruct.Q4_K_M.gguf";
+const PHI_REF = "microsoft/Phi-3-mini-4k-Instruct-GGUF/Phi-3-mini-4k-Instruct.Q4_K_M.gguf";
+
+function chatEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     return {
-        chat: {
-            active: "llama3",
-            installed: ["llama3"],
-            catalog: [
-                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta Llama 3", installed: true },
-                { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "Microsoft Phi-3", installed: false },
-            ],
-        },
-        embedding: empty,
-        vision: empty,
-        reranker: empty,
+        hf_repo: "meta-llama/Llama-3-8B-Instruct-GGUF",
+        gguf_filename: "*Q4_K_M.gguf",
+        display_name: "Llama 3 8B",
+        size_gb: 4.7,
+        min_ram_gb: 8,
+        description: "Meta Llama 3",
+        quality_tier: "balanced",
+        installed: true,
+        source: "native",
+        task: MODEL_TASK.CHAT,
+        featured: true,
+        downloads: 0,
+        param_count: "8B",
+        ...overrides,
     };
+}
+
+function makeChatCatalogResult(entries: CatalogEntry[]): ReturnType<typeof ok<CatalogResponse, Error>> {
+    return ok({ total: entries.length, limit: 50, offset: 0, has_more: false, models: entries });
+}
+
+function makeChatInstalled(refs: string[]): { models: InstalledModel[] } {
+    return { models: refs.map((name) => ({ name, source: "native" })) };
+}
+
+/**
+ * Wire the chat-picker mocks (catalog + installedModels) so the Settings → Models
+ * section renders a recognisable Llama+Phi pair. Does NOT mock `api.config` —
+ * tests that care about config values should mock it themselves; the chat picker
+ * tolerates `chat_model` being undefined and renders an empty active value.
+ */
+function mockChatPicker(plugin: ReturnType<typeof makePlugin>, _active = LLAMA_REF, phiInstalled = false): void {
+    const entries = [
+        chatEntry({ installed: true }),
+        chatEntry({
+            hf_repo: "microsoft/Phi-3-mini-4k-Instruct-GGUF",
+            display_name: "Phi 3 Mini",
+            description: "Microsoft Phi-3",
+            installed: phiInstalled,
+            param_count: "3.8B",
+            size_gb: 2.3,
+            min_ram_gb: 4,
+        }),
+    ];
+    const installedRefs = [LLAMA_REF];
+    if (phiInstalled) installedRefs.push(PHI_REF);
+    (plugin.api.catalog as ReturnType<typeof vi.fn>).mockImplementation((params?: { task?: string }) => {
+        if (params?.task === MODEL_TASK.CHAT) return Promise.resolve(makeChatCatalogResult(entries));
+        return Promise.resolve(err(new Error("unmocked")));
+    });
+    (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockImplementation((params?: { task?: string }) => {
+        if (params?.task === MODEL_TASK.CHAT) return Promise.resolve(makeChatInstalled(installedRefs));
+        return Promise.resolve({ models: [] });
+    });
 }
 
 type TextOnChange = (v: string) => Promise<void>;
@@ -352,14 +390,14 @@ describe("LilbeeSettingTab", () => {
     describe("display()", () => {
         it("renders server URL, topK, and sync-mode settings without error", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             expect(() => tab.display()).not.toThrow();
         });
 
         it("creates h3 'Models' and description paragraph", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
             const h3 = tab.containerEl.children.find((c) => c.tagName === "H3");
@@ -372,7 +410,7 @@ describe("LilbeeSettingTab", () => {
 
         it("creates a models container div", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
             const container = tab.containerEl.find("lilbee-models-container");
@@ -381,7 +419,7 @@ describe("LilbeeSettingTab", () => {
 
         it("shows sync-debounce setting when syncMode is 'auto'", () => {
             const plugin = makePlugin({ syncMode: "auto" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
             // serverPort + 6 generation + syncDebounce + 10 crawling + wikiVaultFolder + 2 chunks + rerank_candidates + hfToken + litellm = 24
@@ -390,7 +428,7 @@ describe("LilbeeSettingTab", () => {
 
         it("does NOT show sync-debounce when syncMode is 'manual'", () => {
             const plugin = makePlugin({ syncMode: "manual" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
             // serverPort + 6 generation + 10 crawling + wikiVaultFolder + 2 chunks + rerank_candidates + hfToken + litellm = 23
@@ -401,7 +439,7 @@ describe("LilbeeSettingTab", () => {
     describe("serverUrl setting onChange", () => {
         it("updates plugin settings and calls saveSettings", async () => {
             const plugin = makePlugin({ serverMode: "external" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -414,7 +452,7 @@ describe("LilbeeSettingTab", () => {
     describe("manual token setting onChange", () => {
         it("updates manualToken and calls saveSettings", async () => {
             const plugin = makePlugin({ serverMode: "external" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -428,7 +466,7 @@ describe("LilbeeSettingTab", () => {
     describe("topK slider onChange", () => {
         it("updates topK and calls saveSettings", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { sliderOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -441,7 +479,7 @@ describe("LilbeeSettingTab", () => {
     describe("maxDistance slider onChange", () => {
         it("updates maxDistance and calls saveSettings", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { sliderOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -452,7 +490,7 @@ describe("LilbeeSettingTab", () => {
 
         it("uses default value when maxDistance is undefined", async () => {
             const plugin = makePlugin({ maxDistance: undefined });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             captureSettingCallbacks(() => tab.display());
 
@@ -465,7 +503,7 @@ describe("LilbeeSettingTab", () => {
     describe("adaptiveThreshold toggle onChange", () => {
         it("updates adaptiveThreshold and calls saveSettings", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -476,7 +514,7 @@ describe("LilbeeSettingTab", () => {
 
         it("uses default value when adaptiveThreshold is undefined", async () => {
             const plugin = makePlugin({ adaptiveThreshold: undefined });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
 
             // When adaptiveThreshold is undefined, setValue should use ?? false fallback
@@ -493,7 +531,7 @@ describe("LilbeeSettingTab", () => {
 
         it("onChange true persists and triggers configureManagedStorage", async () => {
             const plugin = makePlugin({ serverMode: "managed", storeContentInVault: false });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -505,7 +543,7 @@ describe("LilbeeSettingTab", () => {
 
         it("onChange false persists and does not trigger configureManagedStorage", async () => {
             const plugin = makePlugin({ serverMode: "managed", storeContentInVault: true });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -516,7 +554,7 @@ describe("LilbeeSettingTab", () => {
 
         it("is disabled and marks the row in external mode", async () => {
             const plugin = makePlugin({ serverMode: "external", storeContentInVault: true });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
 
@@ -528,7 +566,7 @@ describe("LilbeeSettingTab", () => {
     describe("syncMode dropdown onChange", () => {
         it("updates syncMode, saves, and re-renders display", async () => {
             const plugin = makePlugin({ serverMode: "external", syncMode: "manual" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
@@ -549,7 +587,7 @@ describe("LilbeeSettingTab", () => {
 
         it("updates syncDebounceMs for valid positive number", async () => {
             const plugin = makePlugin({ syncMode: "auto" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -560,7 +598,7 @@ describe("LilbeeSettingTab", () => {
 
         it("accepts zero as a valid debounce value", async () => {
             const plugin = makePlugin({ syncMode: "auto" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -572,7 +610,7 @@ describe("LilbeeSettingTab", () => {
 
         it("does NOT save for NaN input", async () => {
             const plugin = makePlugin({ syncMode: "auto" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -584,7 +622,7 @@ describe("LilbeeSettingTab", () => {
 
         it("does NOT save for negative number input", async () => {
             const plugin = makePlugin({ syncMode: "auto" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -598,7 +636,7 @@ describe("LilbeeSettingTab", () => {
     describe("system prompt setting", () => {
         it("saves systemPrompt when changed", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -622,7 +660,7 @@ describe("LilbeeSettingTab", () => {
         for (const { idx, key, value, expected } of GEN_FIELDS) {
             it(`patches ${key} to parsed number`, async () => {
                 const plugin = makePlugin();
-                (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+                mockChatPicker(plugin);
                 const tab = makeTab(plugin);
                 const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -632,7 +670,7 @@ describe("LilbeeSettingTab", () => {
 
             it(`patches ${key} to null when cleared`, async () => {
                 const plugin = makePlugin();
-                (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+                mockChatPicker(plugin);
                 const tab = makeTab(plugin);
                 const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -643,7 +681,7 @@ describe("LilbeeSettingTab", () => {
 
         it("does not patch for NaN integer input", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -655,7 +693,7 @@ describe("LilbeeSettingTab", () => {
 
         it("does not patch for NaN float input", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -668,7 +706,7 @@ describe("LilbeeSettingTab", () => {
         it("surfaces a failure notice when the server rejects the patch", async () => {
             Notice.clear();
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("boom"));
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
@@ -680,7 +718,7 @@ describe("LilbeeSettingTab", () => {
         it("surfaces a failure notice when the null-clear PATCH is rejected", async () => {
             Notice.clear();
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("boom"));
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
@@ -691,7 +729,7 @@ describe("LilbeeSettingTab", () => {
 
         it("renders inside a <details> element", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
             const details = tab.containerEl.children.find(
@@ -704,7 +742,7 @@ describe("LilbeeSettingTab", () => {
 
         it("uses 'Not set' placeholders on fresh mount", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
 
             const placeholders: string[] = [];
@@ -735,7 +773,7 @@ describe("LilbeeSettingTab", () => {
         it("shows model name in summary when active model is set", () => {
             const plugin = makePlugin();
             (plugin as any).activeModel = "llama3";
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
             const details = tab.containerEl.children.find(
@@ -749,7 +787,7 @@ describe("LilbeeSettingTab", () => {
     describe("Refresh models button", () => {
         it("onClick calls loadModels with the models container", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
@@ -764,7 +802,7 @@ describe("LilbeeSettingTab", () => {
         it("onClick opens SetupWizard", async () => {
             const { SetupWizard } = await import("../src/views/setup-wizard");
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
@@ -779,7 +817,7 @@ describe("LilbeeSettingTab", () => {
         it("onClick opens CatalogModal", async () => {
             const { CatalogModal } = await import("../src/views/catalog-modal");
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
@@ -793,21 +831,25 @@ describe("LilbeeSettingTab", () => {
     describe("loadModels()", () => {
         it("renders chat section on success", async () => {
             const plugin = makePlugin();
-            const models = makeModelsResponse();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(models);
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: LLAMA_REF });
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
             await (tab as any).loadModels(container);
+            await new Promise((r) => setTimeout(r, 0));
             const sections = (container as unknown as MockElement).findAll("lilbee-model-section");
             expect(sections.length).toBe(1);
         });
 
         it("silently handles API failure without showing warning", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("network"));
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("network"));
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("network"));
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("network"));
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
             await (tab as any).loadModels(container);
+            await new Promise((r) => setTimeout(r, 0));
             const p = (container as unknown as MockElement).children.find(
                 (c) => c.tagName === "P" && c.textContent.includes("Could not connect"),
             );
@@ -815,73 +857,77 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
-    describe("renderModelSection()", () => {
-        it("chat section does NOT have 'Disabled' dropdown option", () => {
+    describe("renderChatPicker()", () => {
+        function buildEntries(opts: { phiInstalled?: boolean } = {}): CatalogEntry[] {
+            return [
+                chatEntry({ installed: true }),
+                chatEntry({
+                    hf_repo: "microsoft/Phi-3-mini-4k-Instruct-GGUF",
+                    display_name: "Phi 3 Mini",
+                    description: "Microsoft Phi-3",
+                    installed: opts.phiInstalled ?? false,
+                    param_count: "3.8B",
+                    size_gb: 2.3,
+                    min_ram_gb: 4,
+                }),
+            ];
+        }
+
+        function renderPicker(plugin: ReturnType<typeof makePlugin>, active: string, phiInstalled = false) {
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const entries = buildEntries({ phiInstalled });
+            const installed: InstalledModel[] = [{ name: LLAMA_REF, source: "native" }];
+            if (phiInstalled) installed.push({ name: PHI_REF, source: "native" });
+            const captured = captureSettingCallbacks(() => {
+                (tab as any).renderChatPicker(container, active, entries, installed);
+            });
+            return { tab, container, captured };
+        }
+
+        it("chat section has no 'Disabled' option", () => {
             const plugin = makePlugin();
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
-
             const allOptions = captureDropdownOptions(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
+                (tab as any).renderChatPicker(container, LLAMA_REF, buildEntries(), [
+                    { name: LLAMA_REF, source: "native" },
+                ]);
             });
-
             expect(allOptions.length).toBeGreaterThan(0);
             expect("" in allOptions[0]).toBe(false);
         });
 
-        it("active chat model onChange calls setChatModel and shows Notice for installed model", async () => {
+        it("dropdown switch to installed featured ref calls setChatModel", async () => {
             const plugin = makePlugin();
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
+            const { tab, captured } = renderPicker(plugin, LLAMA_REF, true);
             const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
-            await dropdownOnChanges[0]("llama3");
-            expect(plugin.api.setChatModel).toHaveBeenCalledWith("llama3");
-            expect(Notice.instances.some((n) => n.message.includes("llama3"))).toBe(true);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("microsoft/Phi-3-mini-4k-Instruct-GGUF");
+            expect(Notice.instances.some((n) => n.message.toLowerCase().includes("phi 3 mini"))).toBe(true);
             expect(displaySpy).toHaveBeenCalled();
         });
 
-        it("setting model to empty string shows 'not set' in Notice", async () => {
+        it("setting model to empty string shows 'not set' in notice", async () => {
             const plugin = makePlugin();
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-            const catalog = { ...makeModelsResponse().chat, active: "" };
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", catalog);
-            });
-
-            await dropdownOnChanges[0]("");
+            const { captured } = renderPicker(plugin, "");
+            await captured.dropdownOnChanges[0]("");
             expect(Notice.instances.some((n) => n.message.includes("not set"))).toBe(true);
         });
 
-        it("active model onChange shows failure Notice on API error for installed model", async () => {
+        it("dropdown switch shows failure notice on setChatModel error", async () => {
             const plugin = makePlugin();
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("fail")));
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            // llama3 is installed, so it goes through the direct set path
-            await dropdownOnChanges[0]("llama3");
+            const { captured } = renderPicker(plugin, LLAMA_REF, true);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             expect(Notice.instances.some((n) => n.message.includes("Failed to set"))).toBe(true);
         });
 
-        it("renders table with header columns", () => {
+        it("renders catalog table with rows", () => {
             const plugin = makePlugin();
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-            (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
+            const { container } = renderPicker(plugin, LLAMA_REF);
             function findTag(el: MockElement, tag: string): MockElement | null {
                 if (el.tagName === tag.toUpperCase()) return el;
                 for (const child of el.children) {
@@ -894,33 +940,63 @@ describe("LilbeeSettingTab", () => {
             expect(table).not.toBeNull();
         });
 
-        it("desc shows active model name when set", () => {
+        it("desc shows clean display label when active is set", () => {
             const plugin = makePlugin();
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-            expect(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            }).not.toThrow();
+            expect(() => renderPicker(plugin, LLAMA_REF)).not.toThrow();
         });
 
-        it("desc shows 'Not set' for chat when active is empty", () => {
+        it("desc shows 'Not set' when active is empty", () => {
+            const plugin = makePlugin();
+            expect(() => renderPicker(plugin, "")).not.toThrow();
+        });
+
+        it("renders 'Other installed' group for installed models outside the featured catalog", () => {
             const plugin = makePlugin();
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
-            const catalog = { ...makeModelsResponse().chat, active: "" };
-            expect(() => {
-                (tab as any).renderModelSection(container, "Chat Model", catalog);
-            }).not.toThrow();
+            const entries = [chatEntry({ installed: true })];
+            const installed: InstalledModel[] = [
+                { name: LLAMA_REF, source: "native" },
+                { name: "ollama/qwen3:8b", source: "ollama" },
+            ];
+            const opts: Array<[string, string]> = (tab as any).buildChatOptions(entries, installed);
+            const keys = opts.map(([k]) => k);
+            expect(keys).toContain("meta-llama/Llama-3-8B-Instruct-GGUF");
+            expect(keys).toContain(SEPARATOR_KEY);
+            expect(keys).toContain("ollama/qwen3:8b");
+            (tab as any).renderChatPicker(container, LLAMA_REF, entries, installed);
+        });
+
+        it("appends provider source tag for non-native featured entries", () => {
+            const plugin = makePlugin();
+            const tab = makeTab(plugin);
+            const entries = [chatEntry({ installed: true, source: "ollama" })];
+            const installed: InstalledModel[] = [{ name: LLAMA_REF, source: "ollama" }];
+            const opts: Array<[string, string]> = (tab as any).buildChatOptions(entries, installed);
+            expect(opts[0][1]).toContain("[ollama]");
+        });
+
+        it("falls back to empty active when catalog fetch errors", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: LLAMA_REF });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("nope")));
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+            await (tab as any).renderChatSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            // Renders without throwing even when the catalog Result is err.
+            expect((container as unknown as MockElement).findAll("lilbee-model-section").length).toBe(1);
         });
     });
 
-    describe("renderCatalogRow()", () => {
+    describe("renderChatCatalogRow()", () => {
         it("shows 'Installed' badge for installed models", () => {
             const plugin = makePlugin();
             const tab = makeTab(plugin);
             const table = new MockElement("table") as unknown as HTMLTableElement;
-            const model = makeModelsResponse().chat.catalog[0];
-            (tab as any).renderCatalogRow(table, model);
+            const entry = chatEntry({ installed: true });
+            (tab as any).renderChatCatalogRow(table, entry, LLAMA_REF);
             const row = (table as unknown as MockElement).children[0];
             const actionCell = row.children[3];
             const badge = actionCell.children[0];
@@ -932,8 +1008,8 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             const tab = makeTab(plugin);
             const table = new MockElement("table") as unknown as HTMLTableElement;
-            const model = makeModelsResponse().chat.catalog[1];
-            (tab as any).renderCatalogRow(table, model);
+            const entry = chatEntry({ installed: false, hf_repo: "microsoft/Phi-3", display_name: "Phi 3" });
+            (tab as any).renderChatCatalogRow(table, entry, "");
             const row = (table as unknown as MockElement).children[0];
             const actionCell = row.children[3];
             const btn = actionCell.children[0];
@@ -941,40 +1017,34 @@ describe("LilbeeSettingTab", () => {
             expect(btn.textContent).toBe("Pull");
         });
 
-        it("renders model name, size, and description cells", () => {
+        it("renders display_name, size, and description cells", () => {
             const plugin = makePlugin();
             const tab = makeTab(plugin);
             const table = new MockElement("table") as unknown as HTMLTableElement;
-            const model = makeModelsResponse().chat.catalog[0];
-            (tab as any).renderCatalogRow(table, model);
+            const entry = chatEntry({ installed: true });
+            (tab as any).renderChatCatalogRow(table, entry, LLAMA_REF);
             const row = (table as unknown as MockElement).children[0];
-            expect(row.children[0].textContent).toBe("llama3");
+            expect(row.children[0].textContent).toBe("Llama 3 8B");
             expect(row.children[1].textContent).toBe("4.7 GB");
             expect(row.children[2].textContent).toBe("Meta Llama 3");
         });
     });
 
-    describe("Delete button", () => {
-        function setupDeleteButton(plugin: ReturnType<typeof makePlugin>) {
+    describe("deleteChatEntry()", () => {
+        function setupDeleteButton(plugin: ReturnType<typeof makePlugin>, active = "") {
             const tab = makeTab(plugin);
             const table = new MockElement("table") as unknown as HTMLTableElement;
-            const catalog = makeModelsResponse();
-            const model = catalog.chat.catalog[0];
-
-            (tab as any).renderCatalogRow(table, model);
-
+            const entry = chatEntry({ installed: true });
+            (tab as any).renderChatCatalogRow(table, entry, active);
             const row = (table as unknown as MockElement).children[0];
             const actionCell = row.children[3];
-            // actionCell children: [0] = "Installed" span, [1] = delete button
             const deleteBtn = actionCell.children[1];
-
-            return { tab, deleteBtn, actionCell };
+            return { tab, deleteBtn, actionCell, entry };
         }
 
         it("shows trash icon button with lilbee-model-delete class for installed model", () => {
             const plugin = makePlugin();
             const { deleteBtn } = setupDeleteButton(plugin);
-
             expect(deleteBtn.tagName).toBe("BUTTON");
             expect(deleteBtn.classList.contains("lilbee-model-delete")).toBe(true);
             expect(deleteBtn.attributes["data-icon"]).toBe("trash-2");
@@ -984,7 +1054,7 @@ describe("LilbeeSettingTab", () => {
         it("successful delete shows 'Deleted' notice", async () => {
             const plugin = makePlugin();
             (plugin.api.deleteModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
             const { tab, deleteBtn } = setupDeleteButton(plugin);
             const modelsContainer = new MockElement("div");
@@ -994,18 +1064,17 @@ describe("LilbeeSettingTab", () => {
             await (deleteBtn as unknown as MockElement).trigger("click");
             await new Promise((r) => setTimeout(r, 0));
 
-            expect(plugin.api.deleteModel).toHaveBeenCalledWith("llama3");
-            expect(Notice.instances.some((n) => n.message.includes("Deleted llama3"))).toBe(true);
+            expect(plugin.api.deleteModel).toHaveBeenCalledWith("meta-llama/Llama-3-8B-Instruct-GGUF", "native");
+            expect(Notice.instances.some((n) => n.message.includes("Llama 3 8B"))).toBe(true);
             expect(plugin.fetchActiveModel).toHaveBeenCalled();
         });
 
         it("successful delete reloads models container when found", async () => {
             const plugin = makePlugin();
             (plugin.api.deleteModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
             const { tab, deleteBtn } = setupDeleteButton(plugin);
-
             Object.defineProperty(globalThis, "HTMLElement", {
                 value: MockElement,
                 configurable: true,
@@ -1017,20 +1086,21 @@ describe("LilbeeSettingTab", () => {
             await (deleteBtn as unknown as MockElement).trigger("click");
             await new Promise((r) => setTimeout(r, 0));
 
-            expect(plugin.api.listModels).toHaveBeenCalled();
+            // After deletion, the chat picker is rebuilt via the new endpoints.
+            expect(plugin.api.catalog).toHaveBeenCalled();
 
             // @ts-expect-error removing test-only global
             delete (globalThis as any).HTMLElement;
         });
 
-        it("deleting active chat model clears it", async () => {
+        it("deleting active chat model clears it (active = full HF ref)", async () => {
             const plugin = makePlugin();
-            (plugin as any).activeModel = "llama3";
+            (plugin as any).activeModel = LLAMA_REF;
             (plugin.api.deleteModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
-            const { tab, deleteBtn } = setupDeleteButton(plugin);
+            const { tab, deleteBtn } = setupDeleteButton(plugin, LLAMA_REF);
             tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
 
             await (deleteBtn as unknown as MockElement).trigger("click");
@@ -1074,7 +1144,11 @@ describe("LilbeeSettingTab", () => {
 
             const tab = makeTab(plugin);
             const table = new MockElement("table") as unknown as HTMLTableElement;
-            const model = makeModelsResponse().chat.catalog[1];
+            const entry = chatEntry({
+                installed: false,
+                hf_repo: "microsoft/Phi-3-mini-4k-Instruct-GGUF",
+                display_name: "Phi 3 Mini",
+            });
 
             const clickHandlers: Function[] = [];
             const origAddEventListener = MockElement.prototype.addEventListener;
@@ -1082,7 +1156,7 @@ describe("LilbeeSettingTab", () => {
                 if (event === "click") clickHandlers.push(handler);
                 origAddEventListener.call(this, event, handler);
             };
-            (tab as any).renderCatalogRow(table, model);
+            (tab as any).renderChatCatalogRow(table, entry, "");
             MockElement.prototype.addEventListener = origAddEventListener;
 
             const pullPromise = clickHandlers[0]();
@@ -1099,21 +1173,32 @@ describe("LilbeeSettingTab", () => {
     });
 
     describe("ConfirmPullModal integration", () => {
+        function renderPickerWithPhi(plugin: ReturnType<typeof makePlugin>) {
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const entries = [
+                chatEntry({ installed: true }),
+                chatEntry({
+                    hf_repo: "microsoft/Phi-3-mini-4k-Instruct-GGUF",
+                    display_name: "Phi 3 Mini",
+                    installed: false,
+                }),
+            ];
+            const installed: InstalledModel[] = [{ name: LLAMA_REF, source: "native" }];
+            const captured = captureSettingCallbacks(() => {
+                (tab as any).renderChatPicker(container, LLAMA_REF, entries, installed);
+            });
+            return { tab, captured };
+        }
+
         it("dropdown onChange for uninstalled model opens ConfirmPullModal", async () => {
             const plugin = makePlugin();
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            await dropdownOnChanges[0]("phi3");
+            const { captured } = renderPickerWithPhi(plugin);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
 
             expect(ConfirmPullModal).toHaveBeenCalled();
             expect(plugin.api.pullModel).toHaveBeenCalled();
@@ -1122,22 +1207,33 @@ describe("LilbeeSettingTab", () => {
         it("canceling modal prevents pull from starting", async () => {
             (mockConfirmResult as any) = false;
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            await dropdownOnChanges[0]("phi3");
+            const { captured } = renderPickerWithPhi(plugin);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
 
             expect(plugin.api.pullModel).not.toHaveBeenCalled();
         });
     });
 
-    describe("Auto-pull task queue updates", () => {
+    describe("auto-pull (chat picker dropdown)", () => {
+        function renderPickerWithPhi(plugin: ReturnType<typeof makePlugin>) {
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const entries = [
+                chatEntry({ installed: true }),
+                chatEntry({
+                    hf_repo: "microsoft/Phi-3-mini-4k-Instruct-GGUF",
+                    display_name: "Phi 3 Mini",
+                    installed: false,
+                }),
+            ];
+            const installed: InstalledModel[] = [{ name: LLAMA_REF, source: "native" }];
+            const captured = captureSettingCallbacks(() => {
+                (tab as any).renderChatPicker(container, LLAMA_REF, entries, installed);
+            });
+            return { tab, captured };
+        }
+
         it("progress events update the task queue with percent", async () => {
             const plugin = makePlugin();
             async function* fakePull() {
@@ -1145,19 +1241,12 @@ describe("LilbeeSettingTab", () => {
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
 
             const updateSpy = vi.spyOn(plugin.taskQueue, "update");
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
+            const { captured } = renderPickerWithPhi(plugin);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
 
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            await dropdownOnChanges[0]("phi3");
-
-            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 50, "phi3", expect.any(Object));
+            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 50, "Phi 3 Mini", expect.any(Object));
         });
 
         it("taskQueue.cancel during auto-pull aborts and shows notice", async () => {
@@ -1177,14 +1266,8 @@ describe("LilbeeSettingTab", () => {
                 (n: string, s: string, sig: AbortSignal) => slowPull(n, s, sig),
             );
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            const pullPromise = dropdownOnChanges[0]("phi3");
+            const { captured } = renderPickerWithPhi(plugin);
+            const pullPromise = captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             await new Promise((r) => setTimeout(r, 10));
 
             const active = plugin.taskQueue.active;
@@ -1195,12 +1278,9 @@ describe("LilbeeSettingTab", () => {
 
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_PULL_CANCELLED)).toBe(true);
         });
-    });
 
-    describe("Auto-pull AbortError", () => {
         it("auto-pull AbortError shows 'Pull cancelled' notice", async () => {
             const plugin = makePlugin();
-
             async function* abortingPull(): AsyncGenerator<never> {
                 const err = new Error("The operation was aborted");
                 err.name = "AbortError";
@@ -1208,85 +1288,55 @@ describe("LilbeeSettingTab", () => {
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(abortingPull());
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            // phi3 is uninstalled in catalog — triggers autoPullAndSet
-            await dropdownOnChanges[0]("phi3");
+            const { captured } = renderPickerWithPhi(plugin);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_PULL_CANCELLED)).toBe(true);
         });
-    });
 
-    describe("Auto-pull SSE_EVENT.ERROR", () => {
-        it("shows failure notice and fails task on SSE error event", async () => {
+        it("SSE error event (object with message) fails the task", async () => {
             const plugin = makePlugin();
-
             async function* errorPull() {
                 yield { event: SSE_EVENT.ERROR, data: { message: "pull exploded" } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            await dropdownOnChanges[0]("phi3");
+            const { captured } = renderPickerWithPhi(plugin);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
 
-        it("handles SSE error event with string data", async () => {
+        it("SSE error event with string data fails the task", async () => {
             const plugin = makePlugin();
-
             async function* errorPull() {
                 yield { event: SSE_EVENT.ERROR, data: "raw error string" };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            await dropdownOnChanges[0]("phi3");
+            const { captured } = renderPickerWithPhi(plugin);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
 
-        it("handles SSE error event with empty object (no message)", async () => {
+        it("SSE error event with empty object falls back to unknown message", async () => {
             const plugin = makePlugin();
-
             async function* errorPull() {
                 yield { event: SSE_EVENT.ERROR, data: {} };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            await dropdownOnChanges[0]("phi3");
+            const { captured } = renderPickerWithPhi(plugin);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
     });
 
-    describe("Pull button", () => {
+    describe("Pull button (catalog table)", () => {
         interface PullSetup {
             tab: LilbeeSettingTab;
             clickHandler: () => Promise<void>;
@@ -1296,36 +1346,37 @@ describe("LilbeeSettingTab", () => {
         async function setupPullButton(plugin: ReturnType<typeof makePlugin>): Promise<PullSetup> {
             const tab = makeTab(plugin);
             const table = new MockElement("table") as unknown as HTMLTableElement;
-            const catalog = makeModelsResponse();
-            const model = catalog.chat.catalog[1];
+            const entry = chatEntry({
+                hf_repo: "microsoft/Phi-3-mini-4k-Instruct-GGUF",
+                display_name: "Phi 3 Mini",
+                installed: false,
+                description: "Microsoft Phi-3",
+                size_gb: 2.3,
+                min_ram_gb: 4,
+            });
 
             let clickHandler: (() => Promise<void>) | null = null;
             const origAddEventListener = MockElement.prototype.addEventListener;
             MockElement.prototype.addEventListener = function (event: string, handler: Function) {
-                if (event === "click") {
-                    clickHandler = handler as () => Promise<void>;
-                }
+                if (event === "click") clickHandler = handler as () => Promise<void>;
                 origAddEventListener.call(this, event, handler);
             };
-
-            (tab as any).renderCatalogRow(table, model);
+            (tab as any).renderChatCatalogRow(table, entry, "");
             MockElement.prototype.addEventListener = origAddEventListener;
 
             const row = (table as unknown as MockElement).children[0];
             const actionCell = row.children[3];
-
             return { tab, clickHandler: clickHandler!, actionCell };
         }
 
         it("successful pull: updates taskQueue with percent and shows success Notice", async () => {
             const plugin = makePlugin();
-
             async function* fakePull() {
                 yield { event: "progress", data: { percent: 75 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
             const updateSpy = vi.spyOn(plugin.taskQueue, "update");
             const { tab, clickHandler } = await setupPullButton(plugin);
@@ -1335,20 +1386,21 @@ describe("LilbeeSettingTab", () => {
 
             await clickHandler();
 
-            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 75, "phi3", expect.any(Object));
-            expect(Notice.instances.some((n) => n.message.includes("phi3") && n.message.includes("pulled"))).toBe(true);
-            expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
+            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 75, "Phi 3 Mini", expect.any(Object));
+            expect(Notice.instances.some((n) => n.message.includes("Phi 3 Mini") && n.message.includes("pulled"))).toBe(
+                true,
+            );
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("microsoft/Phi-3-mini-4k-Instruct-GGUF");
         });
 
         it("progress event with no percent and no total: skips taskQueue.update", async () => {
             const plugin = makePlugin();
-
             async function* fakePull() {
                 yield { event: "progress", data: {} };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
             const updateSpy = vi.spyOn(plugin.taskQueue, "update");
             const { tab, clickHandler } = await setupPullButton(plugin);
@@ -1357,19 +1409,17 @@ describe("LilbeeSettingTab", () => {
             tab.containerEl.children.push(modelsContainer);
 
             await clickHandler();
-
             expect(updateSpy).not.toHaveBeenCalled();
         });
 
         it("progress event with current/total (no percent): computes percentage", async () => {
             const plugin = makePlugin();
-
             async function* fakePull() {
                 yield { event: "progress", data: { current: 50, total: 100 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
             const updateSpy = vi.spyOn(plugin.taskQueue, "update");
             const { tab, clickHandler } = await setupPullButton(plugin);
@@ -1378,19 +1428,17 @@ describe("LilbeeSettingTab", () => {
             tab.containerEl.children.push(modelsContainer);
 
             await clickHandler();
-
-            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 50, "phi3", expect.any(Object));
+            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 50, "Phi 3 Mini", expect.any(Object));
         });
 
         it("progress event with percent=0: updates taskQueue with 0", async () => {
             const plugin = makePlugin();
-
             async function* fakePull() {
                 yield { event: "progress", data: { percent: 0 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
             const updateSpy = vi.spyOn(plugin.taskQueue, "update");
             const { tab, clickHandler } = await setupPullButton(plugin);
@@ -1399,39 +1447,30 @@ describe("LilbeeSettingTab", () => {
             tab.containerEl.children.push(modelsContainer);
 
             await clickHandler();
-
-            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 0, "phi3", expect.any(Object));
+            expect(updateSpy).toHaveBeenCalledWith(expect.any(String), 0, "Phi 3 Mini", expect.any(Object));
         });
 
-        it("pull failure: shows failure Notice and re-enables button with 'Pull' text", async () => {
+        it("pull failure: shows failure Notice", async () => {
             const plugin = makePlugin();
-
             async function* failingPull(): AsyncGenerator<never> {
                 throw new Error("network error");
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(failingPull());
 
-            const { tab: _tab, clickHandler, actionCell } = await setupPullButton(plugin);
-            const btn = actionCell.children[0];
-
+            const { clickHandler } = await setupPullButton(plugin);
             await clickHandler();
-
             expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
-            expect(btn.disabled).toBe(false);
-            expect(btn.textContent).toBe("Pull");
         });
 
         it("pull failure with non-Error throw uses 'unknown' in taskQueue", async () => {
             const plugin = makePlugin();
-
             async function* failingPull(): AsyncGenerator<never> {
                 throw "string error";
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(failingPull());
 
-            const { tab: _tab, clickHandler } = await setupPullButton(plugin);
+            const { clickHandler } = await setupPullButton(plugin);
             await clickHandler();
-
             const failed = plugin.taskQueue.completed.find((t: any) => t.status === "failed");
             expect(failed).toBeDefined();
             expect(failed!.error).toBe("unknown error");
@@ -1439,123 +1478,67 @@ describe("LilbeeSettingTab", () => {
 
         it("SSE_EVENT.ERROR shows failure notice and fails the task", async () => {
             const plugin = makePlugin();
-
             async function* errorPull() {
                 yield { event: SSE_EVENT.ERROR, data: { message: "pull exploded" } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
-            const { tab: _tab, clickHandler } = await setupPullButton(plugin);
+            const { clickHandler } = await setupPullButton(plugin);
             await clickHandler();
-
             expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
 
         it("SSE_EVENT.ERROR with string data fails the task", async () => {
             const plugin = makePlugin();
-
             async function* errorPull() {
                 yield { event: SSE_EVENT.ERROR, data: "raw error string" };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
-            const { tab: _tab, clickHandler } = await setupPullButton(plugin);
+            const { clickHandler } = await setupPullButton(plugin);
             await clickHandler();
-
             expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
 
         it("SSE_EVENT.ERROR with empty object uses fallback message", async () => {
             const plugin = makePlugin();
-
             async function* errorPull() {
                 yield { event: SSE_EVENT.ERROR, data: {} };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(errorPull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
-            const { tab: _tab, clickHandler } = await setupPullButton(plugin);
+            const { clickHandler } = await setupPullButton(plugin);
             await clickHandler();
-
             expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
 
         it("successful pull without models container: does not crash", async () => {
             const plugin = makePlugin();
-
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
             const { clickHandler } = await setupPullButton(plugin);
-
             await expect(clickHandler()).resolves.not.toThrow();
             expect(Notice.instances.some((n) => n.message.includes("pulled"))).toBe(true);
         });
 
-        it("successful pull with HTMLElement container: reloads models", async () => {
-            const plugin = makePlugin();
-
-            async function* fakePull() {}
-            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-
-            const { tab, clickHandler } = await setupPullButton(plugin);
-
-            Object.defineProperty(globalThis, "HTMLElement", {
-                value: MockElement,
-                configurable: true,
-                writable: true,
-            });
-            const fakeContainer = new MockElement("div");
-            tab.containerEl.querySelector = vi.fn().mockReturnValue(fakeContainer);
-
-            await clickHandler();
-
-            expect(plugin.api.listModels).toHaveBeenCalled();
-
-            // @ts-expect-error removing test-only global
-            delete (globalThis as any).HTMLElement;
-        });
-
-        it("pull progress updates taskQueue", async () => {
-            const plugin = makePlugin();
-
-            async function* fakePull() {
-                yield { event: "progress", data: { percent: 45 } };
-            }
-            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-
-            const { tab, clickHandler } = await setupPullButton(plugin);
-            const modelsContainer = new MockElement("div");
-            modelsContainer.classList.add("lilbee-models-container");
-            tab.containerEl.children.push(modelsContainer);
-
-            await clickHandler();
-
-            // Task should be completed in history
-            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
-        });
-
         it("successful pull calls fetchActiveModel", async () => {
             const plugin = makePlugin();
-
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
             const { tab, clickHandler } = await setupPullButton(plugin);
             const modelsContainer = new MockElement("div");
@@ -1563,44 +1546,39 @@ describe("LilbeeSettingTab", () => {
             tab.containerEl.children.push(modelsContainer);
 
             await clickHandler();
-
             expect(plugin.fetchActiveModel).toHaveBeenCalled();
         });
 
         it("pull progress does not update status bar when statusBarEl is null", async () => {
             const plugin = makePlugin();
             (plugin as any).statusBarEl = null;
-
             async function* fakePull() {
                 yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
             const { tab, clickHandler } = await setupPullButton(plugin);
             const modelsContainer = new MockElement("div");
             modelsContainer.classList.add("lilbee-models-container");
             tab.containerEl.children.push(modelsContainer);
-
             await expect(clickHandler()).resolves.not.toThrow();
         });
 
         it("non-progress events during pull are ignored (no crash)", async () => {
             const plugin = makePlugin();
-
             async function* fakePull() {
                 yield { event: "other", data: {} };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
             const { tab, clickHandler } = await setupPullButton(plugin);
             const modelsContainer = new MockElement("div");
             modelsContainer.classList.add("lilbee-models-container");
             tab.containerEl.children.push(modelsContainer);
-
             await expect(clickHandler()).resolves.not.toThrow();
         });
     });
@@ -1710,7 +1688,7 @@ describe("LilbeeSettingTab", () => {
         it("auto-checks server endpoint on display", async () => {
             globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
             const plugin = makePlugin({ serverMode: "external" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
 
             tab.display();
@@ -1729,7 +1707,7 @@ describe("LilbeeSettingTab", () => {
         it("Test button calls checkEndpoint", async () => {
             globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
             const plugin = makePlugin({ serverMode: "external" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
 
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -1754,9 +1732,11 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
+            const entries = [chatEntry({ installed: true })];
+            const installed: InstalledModel[] = [{ name: LLAMA_REF, source: "native" }];
 
             const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
+                (tab as any).renderChatPicker(container, LLAMA_REF, entries, installed);
             });
 
             await dropdownOnChanges[0](SEPARATOR_KEY);
@@ -1765,71 +1745,68 @@ describe("LilbeeSettingTab", () => {
     });
 
     describe("auto-pull via dropdown", () => {
+        function pickerSetup(plugin: ReturnType<typeof makePlugin>) {
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+            tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
+            const entries = [
+                chatEntry({ installed: true }),
+                chatEntry({
+                    hf_repo: "microsoft/Phi-3-mini-4k-Instruct-GGUF",
+                    display_name: "Phi 3 Mini",
+                    installed: false,
+                }),
+            ];
+            const installed: InstalledModel[] = [{ name: LLAMA_REF, source: "native" }];
+            const captured = captureSettingCallbacks(() => {
+                (tab as any).renderChatPicker(container, LLAMA_REF, entries, installed);
+            });
+            return { tab, captured };
+        }
+
         it("selecting uninstalled catalog model triggers auto-pull", async () => {
             const plugin = makePlugin();
-
             async function* fakePull() {
                 yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-            const modelsContainer = new MockElement("div");
-            modelsContainer.classList.add("lilbee-models-container");
-            tab.containerEl.children.push(modelsContainer);
-            tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
+            const { captured } = pickerSetup(plugin);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
 
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            // phi3 is uninstalled in catalog, should trigger auto-pull
-            await dropdownOnChanges[0]("phi3");
-            expect(plugin.api.pullModel).toHaveBeenCalledWith("phi3", "native", expect.any(AbortSignal));
-            expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
-            expect(Notice.instances.some((n) => n.message === "lilbee: phi3 pulled and activated")).toBe(true);
+            expect(plugin.api.pullModel).toHaveBeenCalledWith(
+                "microsoft/Phi-3-mini-4k-Instruct-GGUF",
+                "native",
+                expect.any(AbortSignal),
+            );
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("microsoft/Phi-3-mini-4k-Instruct-GGUF");
+            expect(Notice.instances.some((n) => n.message === "lilbee: Phi 3 Mini pulled and activated")).toBe(true);
         });
 
         it("auto-pull failure shows failure notice", async () => {
             const plugin = makePlugin();
-
             async function* failingPull(): AsyncGenerator<never> {
                 throw new Error("network");
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(failingPull());
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            await dropdownOnChanges[0]("phi3");
+            const { captured } = pickerSetup(plugin);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
         });
 
         it("auto-pull failure with non-Error throw uses 'unknown' in taskQueue", async () => {
             const plugin = makePlugin();
-
             async function* failingPull(): AsyncGenerator<never> {
                 throw "string error";
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(failingPull());
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-            tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            await dropdownOnChanges[0]("phi3");
+            const { captured } = pickerSetup(plugin);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
 
             const failed = plugin.taskQueue.completed.find((t: any) => t.status === "failed");
             expect(failed).toBeDefined();
@@ -1838,355 +1815,138 @@ describe("LilbeeSettingTab", () => {
 
         it("auto-pull updates taskQueue with progress", async () => {
             const plugin = makePlugin();
-
             async function* fakePull() {
                 yield { event: "progress", data: { percent: 75 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-            tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            await dropdownOnChanges[0]("phi3");
-            // Task should be completed in history with progress
+            const { captured } = pickerSetup(plugin);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
         it("auto-pull completes task in taskQueue", async () => {
             const plugin = makePlugin();
-
             async function* fakePull() {
                 yield { event: "progress", data: { current: 60, total: 100 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-            tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            await dropdownOnChanges[0]("phi3");
+            const { captured } = pickerSetup(plugin);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             const done = plugin.taskQueue.completed.find((t: any) => t.status === "done");
             expect(done).toBeDefined();
         });
 
         it("auto-pull progress with no percent and no total skips update", async () => {
             const plugin = makePlugin();
-
             async function* fakePull() {
                 yield { event: "progress", data: {} };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-            tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            await dropdownOnChanges[0]("phi3");
+            const { captured } = pickerSetup(plugin);
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
-        });
-
-        it("auto-pull with total=0 does not update status bar", async () => {
-            const plugin = makePlugin();
-
-            async function* fakePull() {
-                yield { event: "progress", data: { percent: 0 } };
-            }
-            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-            tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            await dropdownOnChanges[0]("phi3");
-            // total=0 means no status bar update for progress
-            expect(plugin.statusBarEl!.setText).not.toHaveBeenCalled();
         });
 
         it("auto-pull without statusBarEl does not crash", async () => {
             const plugin = makePlugin();
             (plugin as any).statusBarEl = null;
-
             async function* fakePull() {
                 yield { event: "progress", data: { percent: 50 } };
             }
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-            tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            await expect(dropdownOnChanges[0]("phi3")).resolves.not.toThrow();
-        });
-
-        it("auto-pull without statusBarEl does not crash (via dropdown)", async () => {
-            const plugin = makePlugin();
-            (plugin as any).statusBarEl = null;
-
-            async function* fakePull() {
-                yield { event: "progress", data: { percent: 50 } };
-            }
-            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-            tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
-            await expect(dropdownOnChanges[0]("phi3")).resolves.not.toThrow();
+            const { captured } = pickerSetup(plugin);
+            await expect(captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF")).resolves.not.toThrow();
         });
 
         it("auto-pull re-renders settings after success", async () => {
             const plugin = makePlugin();
-
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
-
+            const { tab, captured } = pickerSetup(plugin);
             const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
-            await dropdownOnChanges[0]("phi3");
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             expect(displaySpy).toHaveBeenCalled();
         });
     });
 
     describe("queue-full on pull", () => {
-        it("autoPullAndSet surfaces NOTICE_QUEUE_FULL when enqueue returns null", async () => {
-            const plugin = makePlugin();
-            plugin.taskQueue.enqueue = vi.fn(() => null) as any;
+        function pickerSetup(plugin: ReturnType<typeof makePlugin>) {
             const tab = makeTab(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
+            const entries = [
+                chatEntry({ installed: true }),
+                chatEntry({
+                    hf_repo: "microsoft/Phi-3-mini-4k-Instruct-GGUF",
+                    display_name: "Phi 3 Mini",
+                    installed: false,
+                }),
+            ];
+            const installed: InstalledModel[] = [{ name: LLAMA_REF, source: "native" }];
+            const captured = captureSettingCallbacks(() => {
+                (tab as any).renderChatPicker(container, LLAMA_REF, entries, installed);
             });
-            Notice.clear();
-            await dropdownOnChanges[0]("phi3");
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_QUEUE_FULL)).toBe(true);
-        });
+            return { tab, captured };
+        }
 
-        it("executePull (manual) surfaces NOTICE_QUEUE_FULL when enqueue returns null", async () => {
+        it("pullAndSetChat surfaces NOTICE_QUEUE_FULL when enqueue returns null", async () => {
             const plugin = makePlugin();
             plugin.taskQueue.enqueue = vi.fn(() => null) as any;
-            const tab = makeTab(plugin);
+            const { captured } = pickerSetup(plugin);
             Notice.clear();
-            await (tab as any).executePull({ name: "phi3" });
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_QUEUE_FULL)).toBe(true);
         });
 
-        it("deleteModel surfaces NOTICE_QUEUE_FULL when enqueue returns null", async () => {
+        it("deleteChatEntry surfaces NOTICE_QUEUE_FULL when enqueue returns null", async () => {
             const plugin = makePlugin();
             plugin.taskQueue.enqueue = vi.fn(() => null) as any;
             const tab = makeTab(plugin);
             const btn = new MockElement("button") as unknown as HTMLButtonElement;
             Notice.clear();
-            await (tab as any).deleteModel(btn, { name: "phi3" });
+            await (tab as any).deleteChatEntry(btn, chatEntry({ installed: true }), "");
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_QUEUE_FULL)).toBe(true);
             expect(plugin.api.deleteModel).not.toHaveBeenCalled();
         });
 
-        it("autoPullAndSet completes pull and shows set-failed notice when setModel throws", async () => {
+        it("pullAndSetChat completes pull and shows set-failed notice when setModel throws", async () => {
             const plugin = makePlugin();
             async function* fakePull() {}
             (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("set fail")));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
 
-            const tab = makeTab(plugin);
-            const container = new MockElement("div") as unknown as HTMLElement;
-            const { dropdownOnChanges } = captureSettingCallbacks(() => {
-                (tab as any).renderModelSection(container, "Chat Model", makeModelsResponse().chat);
-            });
+            const { captured } = pickerSetup(plugin);
             Notice.clear();
 
-            await dropdownOnChanges[0]("phi3");
+            await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
 
-            const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "phi3");
+            const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "Phi 3 Mini");
             expect(Notice.instances.some((n) => n.message === setFailed)).toBe(true);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "done")).toBe(true);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(false);
         });
-
-        it("executePull (manual) completes pull and shows set-failed notice when setModel throws", async () => {
-            const plugin = makePlugin();
-            async function* fakePull() {}
-            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(fakePull());
-            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("set fail")));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
-
-            const tab = makeTab(plugin);
-            Notice.clear();
-
-            await (tab as any).executePull({ name: "phi3" });
-
-            const setFailed = MESSAGES.ERROR_SET_MODEL.replace("{model}", "phi3");
-            expect(Notice.instances.some((n) => n.message === setFailed)).toBe(true);
-            expect(plugin.taskQueue.completed.some((t: any) => t.status === "done")).toBe(true);
-            expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(false);
-        });
-    });
-});
-
-describe("buildModelOptions()", () => {
-    it("chat: catalog models first, then separator, then other installed", () => {
-        const catalog: ModelCatalog = {
-            active: "llama3",
-            catalog: [
-                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta Llama 3", installed: true },
-                { name: "phi3", size_gb: 2.3, min_ram_gb: 4, description: "Microsoft Phi-3", installed: false },
-            ],
-            installed: ["llama3", "custom-model"],
-        };
-        const options = buildModelOptions(catalog);
-        const keys = Object.keys(options);
-        expect(keys).toEqual(["llama3", "phi3", SEPARATOR_KEY, "custom-model"]);
-        expect(options["llama3"]).toBe("llama3");
-        expect(options["phi3"]).toBe("phi3 (not installed)");
-        expect(options[SEPARATOR_KEY]).toBe(SEPARATOR_LABEL);
-        expect(options["custom-model"]).toBe("custom-model");
-    });
-
-    it("no separator when all installed models are in catalog", () => {
-        const catalog: ModelCatalog = {
-            active: "llama3",
-            catalog: [{ name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true }],
-            installed: ["llama3"],
-        };
-        const options = buildModelOptions(catalog);
-        expect(SEPARATOR_KEY in options).toBe(false);
-    });
-
-    it("preserves server catalog order (no alphabetical sort)", () => {
-        const catalog: ModelCatalog = {
-            active: "zeta",
-            catalog: [
-                { name: "zeta", size_gb: 1, min_ram_gb: 2, description: "Z", installed: true },
-                { name: "alpha", size_gb: 1, min_ram_gb: 2, description: "A", installed: true },
-            ],
-            installed: ["zeta", "alpha"],
-        };
-        const options = buildModelOptions(catalog);
-        const keys = Object.keys(options);
-        expect(keys[0]).toBe("zeta");
-        expect(keys[1]).toBe("alpha");
-    });
-
-    it("sorts other installed models alphabetically", () => {
-        const catalog: ModelCatalog = {
-            active: "foo",
-            catalog: [],
-            installed: ["zoo", "bar", "foo"],
-        };
-        const options = buildModelOptions(catalog);
-        const keys = Object.keys(options);
-        // separator then bar, foo, zoo
-        expect(keys).toEqual([SEPARATOR_KEY, "bar", "foo", "zoo"]);
-    });
-
-    it("empty catalog and empty installed returns empty for chat", () => {
-        const catalog: ModelCatalog = { active: "", catalog: [], installed: [] };
-        const options = buildModelOptions(catalog);
-        expect(Object.keys(options).length).toBe(0);
-    });
-
-    it("shows source tag when model has source", () => {
-        const catalog: ModelCatalog = {
-            active: "llama3",
-            catalog: [
-                { name: "llama3", size_gb: 4.7, min_ram_gb: 8, description: "Meta", installed: true, source: "native" },
-            ],
-            installed: ["llama3"],
-        };
-        const options = buildModelOptions(catalog);
-        expect(options["llama3"]).toBe("llama3 [native]");
-    });
-
-    it("deduplicates :latest when a specific tag exists", () => {
-        const catalog: ModelCatalog = {
-            active: "mistral:7b",
-            catalog: [],
-            installed: ["mistral:latest", "mistral:7b", "llama3:latest"],
-        };
-        const options = buildModelOptions(catalog);
-        const keys = Object.keys(options);
-        expect(keys).toContain("mistral:7b");
-        expect(keys).not.toContain("mistral:latest");
-        // llama3:latest has no specific tag sibling, so it stays
-        expect(keys).toContain("llama3:latest");
-    });
-});
-
-describe("deduplicateLatest()", () => {
-    it("removes :latest when a more specific tag exists", () => {
-        const result = deduplicateLatest(["mistral:latest", "mistral:7b"]);
-        expect(result).toEqual(["mistral:7b"]);
-    });
-
-    it("keeps :latest when no specific tag exists", () => {
-        const result = deduplicateLatest(["llama3:latest"]);
-        expect(result).toEqual(["llama3:latest"]);
-    });
-
-    it("handles models without tags", () => {
-        const result = deduplicateLatest(["phi3", "phi3:latest"]);
-        expect(result).toEqual(["phi3"]);
-    });
-
-    it("handles empty list", () => {
-        expect(deduplicateLatest([])).toEqual([]);
-    });
-
-    it("handles multiple model families", () => {
-        const result = deduplicateLatest(["mistral:latest", "mistral:7b", "llama3:latest", "llama3:8b", "phi3:latest"]);
-        expect(result).toEqual(["mistral:7b", "llama3:8b", "phi3:latest"]);
     });
 });
 
 describe("managed mode settings", () => {
     it("server mode dropdown onChange updates serverMode and re-renders", async () => {
         const plugin = makePlugin({ serverMode: "managed" });
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
@@ -2202,7 +1962,7 @@ describe("managed mode settings", () => {
 
     it("port field onChange updates serverPort", async () => {
         const plugin = makePlugin({ serverMode: "managed" });
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { textOnChanges } = captureSettingCallbacks(() => tab.display());
@@ -2216,7 +1976,7 @@ describe("managed mode settings", () => {
 
     it("port field displays empty string when serverPort is null", () => {
         const plugin = makePlugin({ serverMode: "managed", serverPort: null });
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         captureSettingCallbacks(() => tab.display());
@@ -2225,7 +1985,7 @@ describe("managed mode settings", () => {
 
     it("port field ignores invalid values", async () => {
         const plugin = makePlugin({ serverMode: "managed", serverPort: 7433 });
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { textOnChanges } = captureSettingCallbacks(() => tab.display());
@@ -2237,7 +1997,7 @@ describe("managed mode settings", () => {
 
     it("port field sets to null when empty string is entered", async () => {
         const plugin = makePlugin({ serverMode: "managed", serverPort: 7433 });
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { textOnChanges } = captureSettingCallbacks(() => tab.display());
@@ -2249,7 +2009,7 @@ describe("managed mode settings", () => {
 
     it("port field sets to null when 0 is entered", async () => {
         const plugin = makePlugin({ serverMode: "managed", serverPort: 7433 });
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { textOnChanges } = captureSettingCallbacks(() => tab.display());
@@ -2266,7 +2026,7 @@ describe("managed mode settings", () => {
         (plugin as any).checkForUpdate = vi
             .fn()
             .mockResolvedValue({ available: true, release: { tag: "v0.2.0", assetUrl: "https://example.com" } });
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -2283,7 +2043,7 @@ describe("managed mode settings", () => {
 
         const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
         (plugin as any).checkForUpdate = vi.fn().mockResolvedValue({ available: false });
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -2302,7 +2062,7 @@ describe("managed mode settings", () => {
 
         const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "" });
         (plugin as any).checkForUpdate = vi.fn().mockResolvedValue({ available: false });
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -2324,7 +2084,7 @@ describe("managed mode settings", () => {
             .mockImplementation(async (_release: any, onProgress?: (msg: string) => void) => {
                 onProgress?.("Downloading...");
             });
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -2345,7 +2105,7 @@ describe("managed mode settings", () => {
         (plugin as any).checkForUpdate = vi
             .fn()
             .mockResolvedValue({ available: true, release: { tag: "v0.2.0", assetUrl: "https://example.com" } });
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -2365,7 +2125,7 @@ describe("managed mode settings", () => {
             .fn()
             .mockResolvedValue({ available: true, release: { tag: "v0.2.0", assetUrl: "https://example.com" } });
         (plugin as any).updateServer = vi.fn().mockRejectedValue(new Error("download failed"));
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -2382,7 +2142,7 @@ describe("managed mode settings", () => {
 
         const plugin = makePlugin({ serverMode: "managed" });
         (plugin as any).checkForUpdate = vi.fn().mockRejectedValue(new Error("network error"));
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -2395,7 +2155,7 @@ describe("managed mode settings", () => {
 
     it("renders server status indicator in managed mode", () => {
         const plugin = makePlugin({ serverMode: "managed" });
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
         tab.display();
 
@@ -2408,7 +2168,7 @@ describe("managed mode settings", () => {
     it("renders server state from serverManager when present", () => {
         const plugin = makePlugin({ serverMode: "managed" });
         (plugin as any).serverManager = { state: "ready" };
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
         tab.display();
 
@@ -2421,7 +2181,7 @@ describe("managed mode settings", () => {
 
     it("Reset to managed button resets serverMode and serverUrl", async () => {
         const plugin = makePlugin({ serverMode: "external", serverUrl: "http://remote:9999" });
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -2440,7 +2200,7 @@ describe("managed mode settings", () => {
     it("shows Start button when server is stopped", () => {
         const plugin = makePlugin({ serverMode: "managed" });
         (plugin as any).serverManager = null; // state defaults to "stopped"
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         (plugin as any).startManagedServer = vi.fn().mockResolvedValue(undefined);
         const tab = makeTab(plugin);
 
@@ -2453,7 +2213,7 @@ describe("managed mode settings", () => {
     it("Start button calls startManagedServer", async () => {
         const plugin = makePlugin({ serverMode: "managed" });
         (plugin as any).serverManager = null; // state defaults to "stopped"
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const mockStart = vi.fn().mockResolvedValue(undefined);
         (plugin as any).startManagedServer = mockStart;
         const tab = makeTab(plugin);
@@ -2471,7 +2231,7 @@ describe("managed mode settings", () => {
         const plugin = makePlugin({ serverMode: "managed" });
         const mockStop = vi.fn().mockResolvedValue(undefined);
         (plugin as any).serverManager = { state: "ready", stop: mockStop, restart: vi.fn() };
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -2487,7 +2247,7 @@ describe("managed mode settings", () => {
         const plugin = makePlugin({ serverMode: "managed" });
         const mockRestart = vi.fn().mockResolvedValue(undefined);
         (plugin as any).serverManager = { state: "ready", stop: vi.fn(), restart: mockRestart };
-        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -2502,7 +2262,7 @@ describe("managed mode settings", () => {
     describe("Advanced chunk fields onChange", () => {
         it("chunk_size calls updateConfig after confirm", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2513,7 +2273,7 @@ describe("managed mode settings", () => {
 
         it("chunk_overlap calls updateConfig after confirm", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2524,7 +2284,7 @@ describe("managed mode settings", () => {
 
         it("skips empty value", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2534,7 +2294,7 @@ describe("managed mode settings", () => {
 
         it("skips invalid number", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2544,7 +2304,7 @@ describe("managed mode settings", () => {
 
         it("skips negative number", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2555,7 +2315,7 @@ describe("managed mode settings", () => {
         it("aborts when user cancels confirm", async () => {
             mockGenericConfirmResult = false;
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2570,7 +2330,7 @@ describe("managed mode settings", () => {
                 updated: ["chunk_size"],
                 reindex_required: true,
             });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2581,7 +2341,7 @@ describe("managed mode settings", () => {
         it("shows error notice on updateConfig failure", async () => {
             const plugin = makePlugin();
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2593,7 +2353,7 @@ describe("managed mode settings", () => {
     describe("Embedding model dropdown", () => {
         it("calls setEmbeddingModel when catalog loads successfully", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
                     total: 1,
@@ -2615,7 +2375,7 @@ describe("managed mode settings", () => {
 
         it("embedding dropdown onChange sets model and triggers sync", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             (plugin.api.setEmbeddingModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
@@ -2659,7 +2419,7 @@ describe("managed mode settings", () => {
         it("embedding dropdown onChange aborts when user cancels confirm", async () => {
             mockGenericConfirmResult = false;
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
                     total: 1,
@@ -2697,7 +2457,7 @@ describe("managed mode settings", () => {
 
         it("embedding dropdown shows error notice on failure", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             (plugin.api.setEmbeddingModel as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("fail")));
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
@@ -2737,7 +2497,7 @@ describe("managed mode settings", () => {
 
         it("embedding dropdown skips empty value", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
                 ok({
                     total: 1,
@@ -2774,7 +2534,7 @@ describe("managed mode settings", () => {
 
         it("falls back to text input when catalog fails", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             const tab = makeTab(plugin);
             tab.display();
@@ -2786,7 +2546,7 @@ describe("managed mode settings", () => {
 
         it("falls back to text input when catalog returns error result", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
 
@@ -2797,7 +2557,7 @@ describe("managed mode settings", () => {
 
         it("fallback text input calls setEmbeddingModel on non-empty value", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
 
@@ -2826,7 +2586,7 @@ describe("managed mode settings", () => {
 
         it("fallback text input skips empty value", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
 
@@ -2855,7 +2615,7 @@ describe("managed mode settings", () => {
         it("fallback text input aborts when user cancels confirm", async () => {
             mockGenericConfirmResult = false;
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
 
@@ -2885,7 +2645,7 @@ describe("managed mode settings", () => {
         it("fallback text input shows error notice on failure", async () => {
             const plugin = makePlugin();
             (plugin.api.setEmbeddingModel as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("fail")));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
 
@@ -2917,7 +2677,7 @@ describe("managed mode settings", () => {
     describe("Crawling fields onChange", () => {
         it("calls updateConfig with valid crawl_max_depth", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2928,7 +2688,7 @@ describe("managed mode settings", () => {
 
         it("calls updateConfig with valid crawl_max_pages", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2938,7 +2698,7 @@ describe("managed mode settings", () => {
 
         it("sends null when nullable crawl_max_depth is cleared", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2948,7 +2708,7 @@ describe("managed mode settings", () => {
 
         it("skips invalid number", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2958,7 +2718,7 @@ describe("managed mode settings", () => {
 
         it("skips negative number", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2968,7 +2728,7 @@ describe("managed mode settings", () => {
 
         it("skips blank on non-nullable crawl_timeout (index 9)", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2978,7 +2738,7 @@ describe("managed mode settings", () => {
 
         it("accepts float for crawl_mean_delay (index 10)", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2988,7 +2748,7 @@ describe("managed mode settings", () => {
 
         it("accepts int for crawl_concurrent_requests (index 12)", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -2998,7 +2758,7 @@ describe("managed mode settings", () => {
 
         it("rejects non-integer for crawl_concurrent_requests (index 12)", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3008,7 +2768,7 @@ describe("managed mode settings", () => {
 
         it("accepts float for crawl_retry_max_backoff (index 15)", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3018,7 +2778,7 @@ describe("managed mode settings", () => {
 
         it("crawl_retry_on_rate_limit toggle updates config", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3030,7 +2790,7 @@ describe("managed mode settings", () => {
         it("toggle shows error notice when updateConfig rejects", async () => {
             const plugin = makePlugin();
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3041,7 +2801,7 @@ describe("managed mode settings", () => {
         it("nullable-clear shows error notice when updateConfig rejects", async () => {
             const plugin = makePlugin();
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3052,7 +2812,7 @@ describe("managed mode settings", () => {
         it("shows error notice on updateConfig failure", async () => {
             const plugin = makePlugin();
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3069,7 +2829,7 @@ describe("managed mode settings", () => {
                 chunk_overlap: 64,
                 embedding_model: "nomic-embed-text",
             });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
 
@@ -3085,7 +2845,7 @@ describe("managed mode settings", () => {
                 chunk_size: 512,
                 // chunk_overlap and embedding_model are absent
             });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
 
@@ -3101,7 +2861,7 @@ describe("managed mode settings", () => {
                 crawl_max_pages: 200,
                 crawl_retry_on_rate_limit: true,
             });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
 
@@ -3126,7 +2886,7 @@ describe("managed mode settings", () => {
 
         it("does not echo-patch the server when populating a toggle from cfg (bb-t6yg)", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
             await new Promise((r) => setTimeout(r, 0));
@@ -3144,7 +2904,7 @@ describe("managed mode settings", () => {
 
         it("without the suppress flag, a toggle setValue onChange WOULD echo-patch", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
             await new Promise((r) => setTimeout(r, 0));
@@ -3158,7 +2918,7 @@ describe("managed mode settings", () => {
 
         it("suppressToggleChanges === true short-circuits the crawl-retry toggle onChange", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
             await new Promise((r) => setTimeout(r, 0));
@@ -3180,7 +2940,7 @@ describe("managed mode settings", () => {
                 seed: 42,
                 system_prompt: "You are helpful.",
             });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
 
             // Track input elements to verify the value was written.
@@ -3231,7 +2991,7 @@ describe("managed mode settings", () => {
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 crawl_exclude_patterns: ["/page/\\d+/?$", "/tag/"],
             });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const textAreas: Array<{ value: string; placeholder: string }> = [];
             const origAddTextArea = (Setting.prototype as any).addTextArea;
@@ -3257,7 +3017,7 @@ describe("managed mode settings", () => {
     describe("loadConfigDefaults", () => {
         it("caches the server response for later reset lookups", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ chunk_size: 512 });
             const tab = makeTab(plugin);
             tab.display();
@@ -3268,7 +3028,7 @@ describe("managed mode settings", () => {
 
         it("falls back to an empty map when the endpoint is missing", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("404"));
             const tab = makeTab(plugin);
             tab.display();
@@ -3281,7 +3041,7 @@ describe("managed mode settings", () => {
     describe("crawl_exclude_patterns textarea", () => {
         it("PATCHes the array split on newlines, trimmed, empties dropped", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
             // textAreaOnChanges[0] = systemPrompt, textAreaOnChanges[1] = crawl_exclude_patterns.
@@ -3294,7 +3054,7 @@ describe("managed mode settings", () => {
         it("surfaces a failure notice when the server rejects", async () => {
             Notice.clear();
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             const tab = makeTab(plugin);
             const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
@@ -3313,7 +3073,7 @@ describe("managed mode settings", () => {
         it("server-backed reset PATCHes the cached default", async () => {
             Notice.clear();
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
             // Seed the cache directly so we don't race the async configDefaults fetch.
@@ -3325,7 +3085,7 @@ describe("managed mode settings", () => {
         it("server-backed reset silently no-ops when defaults haven't loaded yet", async () => {
             Notice.clear();
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
             (tab as any).configDefaults = {};
@@ -3338,7 +3098,7 @@ describe("managed mode settings", () => {
         it("server-backed reset surfaces a reset-failure notice when updateConfig rejects", async () => {
             Notice.clear();
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -3349,7 +3109,7 @@ describe("managed mode settings", () => {
 
         it("local reset writes DEFAULT_SETTINGS[key] to plugin state", async () => {
             const plugin = makePlugin({ serverMode: "external" });
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
             // Index 0 is the serverMode reset (local).
@@ -3364,7 +3124,7 @@ describe("managed mode settings", () => {
             Notice.clear();
             const plugin = makePlugin({ wikiEnabled: true, wikiPruneRaw: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             // configDefaults is re-fetched on each display(); keep it resolving to our seed.
             (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ wiki_prune_raw: false });
             const tab = makeTab(plugin);
@@ -3389,7 +3149,7 @@ describe("managed mode settings", () => {
             Notice.clear();
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             // configDefaults resolves to empty so the early-return branch is exercised.
             (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({});
             const tab = makeTab(plugin);
@@ -3409,7 +3169,7 @@ describe("managed mode settings", () => {
             Notice.clear();
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             (plugin.api.configDefaults as ReturnType<typeof vi.fn>).mockResolvedValue({ wiki_prune_raw: false });
             const tab = makeTab(plugin);
@@ -3429,7 +3189,7 @@ describe("managed mode settings", () => {
             Notice.clear();
             mockGenericConfirmResult = false;
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
             (tab as any).configDefaults = { chunk_size: 512 };
@@ -3443,7 +3203,7 @@ describe("managed mode settings", () => {
             Notice.clear();
             mockGenericConfirmResult = true;
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
             (tab as any).configDefaults = {
@@ -3461,7 +3221,7 @@ describe("managed mode settings", () => {
         it("does not PATCH when every default is filtered out by the credential block", async () => {
             mockGenericConfirmResult = true;
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
             (tab as any).configDefaults = { openai_api_key: "", hf_token: "" };
@@ -3474,7 +3234,7 @@ describe("managed mode settings", () => {
             Notice.clear();
             mockGenericConfirmResult = true;
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
@@ -3487,7 +3247,7 @@ describe("managed mode settings", () => {
     describe("API key on blur", () => {
         it("calls updateConfig with openai_api_key on blur", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { blurHandlers } = captureSettingCallbacks(() => tab.display());
 
@@ -3499,7 +3259,7 @@ describe("managed mode settings", () => {
 
         it("calls updateConfig with anthropic_api_key on blur", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { blurHandlers } = captureSettingCallbacks(() => tab.display());
 
@@ -3510,7 +3270,7 @@ describe("managed mode settings", () => {
 
         it("calls updateConfig with gemini_api_key on blur", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { blurHandlers } = captureSettingCallbacks(() => tab.display());
 
@@ -3521,7 +3281,7 @@ describe("managed mode settings", () => {
 
         it("skips empty value on blur", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { blurHandlers } = captureSettingCallbacks(() => tab.display());
 
@@ -3533,7 +3293,7 @@ describe("managed mode settings", () => {
         it("shows error notice on failure", async () => {
             const plugin = makePlugin();
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { blurHandlers } = captureSettingCallbacks(() => tab.display());
 
@@ -3546,7 +3306,7 @@ describe("managed mode settings", () => {
     describe("HuggingFace token onChange", () => {
         it("calls updateConfig and saves settings on non-empty value", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3559,7 +3319,7 @@ describe("managed mode settings", () => {
 
         it("saves empty token", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3570,7 +3330,7 @@ describe("managed mode settings", () => {
         it("shows error notice on failure", async () => {
             const plugin = makePlugin();
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3584,7 +3344,7 @@ describe("managed mode settings", () => {
     describe("settings filter", () => {
         it("renders a filter input at the top", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
             const input = tab.containerEl.children.find(
@@ -3595,7 +3355,7 @@ describe("managed mode settings", () => {
 
         it("calls filterSettings on input event", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
 
@@ -3614,7 +3374,7 @@ describe("managed mode settings", () => {
 
         it("filterSettings hides non-matching items and shows matching ones", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
 
@@ -3641,7 +3401,7 @@ describe("managed mode settings", () => {
 
         it("filterSettings handles items without setting-item-name", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
 
@@ -3659,7 +3419,7 @@ describe("managed mode settings", () => {
 
         it("filterSettings hides entire section when no items match", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
 
@@ -3678,7 +3438,7 @@ describe("managed mode settings", () => {
 
         it("filterSettings shows all items when query is empty", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
 
@@ -3699,7 +3459,7 @@ describe("managed mode settings", () => {
 
         it("di8: filterSettings hides non-matching top-level setting items", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
 
@@ -3717,7 +3477,7 @@ describe("managed mode settings", () => {
 
         it("di8: empty query restores top-level items hidden by an earlier filter", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
 
@@ -3734,7 +3494,7 @@ describe("managed mode settings", () => {
 
         it("di8: top-level items without setting-item-name are hidden when a query is present", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
 
@@ -3747,7 +3507,7 @@ describe("managed mode settings", () => {
 
         it("di8: non-setting-item children of containerEl are left untouched", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
 
@@ -3768,7 +3528,7 @@ describe("managed mode settings", () => {
     describe("LiteLLM base URL onChange", () => {
         it("calls updateConfig on non-empty value", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3779,7 +3539,7 @@ describe("managed mode settings", () => {
 
         it("skips empty value", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3790,7 +3550,7 @@ describe("managed mode settings", () => {
         it("shows error notice on failure", async () => {
             const plugin = makePlugin();
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3803,7 +3563,7 @@ describe("managed mode settings", () => {
         it("always renders wiki section heading even when wikiEnabled is false", () => {
             const plugin = makePlugin({ wikiEnabled: false });
             (plugin as any).wikiEnabled = false;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
             const details = tab.containerEl.children.find(
@@ -3823,7 +3583,7 @@ describe("managed mode settings", () => {
         it("shows wiki settings when wikiEnabled is true", () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleOnChanges, buttonOnClicks } = captureSettingCallbacks(() => tab.display());
             // Wiki section adds: 1 toggle (enable) + 1 toggle (prune raw) + 1 slider (faithfulness) + 1 dropdown (search mode) + 2 buttons (lint, prune)
@@ -3835,7 +3595,7 @@ describe("managed mode settings", () => {
         it("wiki enable toggle saves setting and syncs runtime flag", async () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3859,7 +3619,7 @@ describe("managed mode settings", () => {
         it("wiki enable toggle re-enables sub-settings when toggled back on", async () => {
             const plugin = makePlugin({ wikiEnabled: false });
             (plugin as any).wikiEnabled = false;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3882,7 +3642,7 @@ describe("managed mode settings", () => {
         it("sub-settings hidden when wikiEnabled setting is false", () => {
             const plugin = makePlugin({ wikiEnabled: false });
             (plugin as any).wikiEnabled = false;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
             const details = tab.containerEl.children.find(
@@ -3901,7 +3661,7 @@ describe("managed mode settings", () => {
         it("sub-settings visible when wikiEnabled setting is true", () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
             const details = tab.containerEl.children.find(
@@ -3920,7 +3680,7 @@ describe("managed mode settings", () => {
         it("prune raw toggle calls updateConfig", async () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3935,7 +3695,7 @@ describe("managed mode settings", () => {
         it("faithfulness slider calls updateConfig", async () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { sliderOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3950,7 +3710,7 @@ describe("managed mode settings", () => {
         it("search mode dropdown updates settings", async () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -3967,7 +3727,7 @@ describe("managed mode settings", () => {
         it("lint button click calls runWikiLint", async () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
@@ -3981,7 +3741,7 @@ describe("managed mode settings", () => {
         it("prune button click calls runWikiPrune", async () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
@@ -3994,7 +3754,7 @@ describe("managed mode settings", () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -4008,7 +3768,7 @@ describe("managed mode settings", () => {
         it("sync-to-vault toggle enables wiki sync", async () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -4023,7 +3783,7 @@ describe("managed mode settings", () => {
         it("sync-to-vault toggle disabling clears wikiSync", async () => {
             const plugin = makePlugin({ wikiEnabled: true, wikiSyncToVault: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -4036,7 +3796,7 @@ describe("managed mode settings", () => {
         it("vault folder text field updates settings", async () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -4056,7 +3816,7 @@ describe("managed mode settings", () => {
         it("vault folder text field defaults to lilbee-wiki when empty", async () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -4073,7 +3833,7 @@ describe("managed mode settings", () => {
         it("vault folder change re-initializes WikiSync when sync enabled", async () => {
             const plugin = makePlugin({ wikiEnabled: true, wikiSyncToVault: true });
             (plugin as any).wikiEnabled = true;
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -4093,7 +3853,7 @@ describe("managed mode settings", () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { sliderOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -4108,7 +3868,7 @@ describe("managed mode settings", () => {
     describe("LLM provider dropdown onChange", () => {
         it("calls updateConfig with selected provider", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -4120,7 +3880,7 @@ describe("managed mode settings", () => {
 
         it("hides litellm container when provider is not litellm", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -4132,7 +3892,7 @@ describe("managed mode settings", () => {
         it("shows error notice on failure", async () => {
             const plugin = makePlugin();
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -4145,7 +3905,7 @@ describe("managed mode settings", () => {
     describe("password masking for sensitive fields", () => {
         it("sets API key input types to password", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const inputs: Array<{ type?: string }> = [];
             const origAddText = Setting.prototype.addText;
@@ -4171,7 +3931,7 @@ describe("managed mode settings", () => {
 
         it("sets HF token input type to password", () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const inputs: Array<{ type?: string }> = [];
             const origAddText = Setting.prototype.addText;
@@ -4269,9 +4029,8 @@ describe("managed mode settings", () => {
                     offset: 0,
                     models: [
                         {
-                            name: "bge-reranker-v2-m3",
-                            tag: "latest",
                             hf_repo: "BAAI/bge-reranker-v2-m3",
+                            gguf_filename: "*Q4_K_M.gguf",
                             display_name: "BGE v2",
                             size_gb: 1,
                             min_ram_gb: 4,
@@ -4280,13 +4039,16 @@ describe("managed mode settings", () => {
                             installed: true,
                             source: "native",
                             task: "rerank",
+                            featured: true,
+                            downloads: 0,
+                            param_count: "335M",
                         },
                     ],
                     has_more: false,
                 }),
             );
             (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
-                models: [{ name: "bge-reranker-v2-m3:latest", source: "native" }],
+                models: [{ name: "BAAI/bge-reranker-v2-m3/bge-reranker-v2-m3.Q4_K_M.gguf", source: "native" }],
             });
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
@@ -4297,8 +4059,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             expect(options[0][""]).toBe(MESSAGES.LABEL_RERANKER_DISABLED);
-            // Dropdown option keys use hf_repo (canonical id), not display name
-            expect(options[0]["bge-reranker-v2-m3:latest"]).toBe("BAAI/bge-reranker-v2-m3");
+            expect(options[0]["BAAI/bge-reranker-v2-m3"]).toBe("BGE v2");
             expect(values[0]).toBe("");
         });
 
@@ -4386,10 +4147,9 @@ describe("managed mode settings", () => {
                     offset: 0,
                     models: [
                         {
-                            name: "bge",
-                            tag: "latest",
                             hf_repo: "BAAI/bge",
-                            display_name: "",
+                            gguf_filename: "*Q4_K_M.gguf",
+                            display_name: "BGE",
                             size_gb: 1,
                             min_ram_gb: 4,
                             description: "",
@@ -4397,13 +4157,16 @@ describe("managed mode settings", () => {
                             installed: true,
                             source: "native",
                             task: "rerank",
+                            featured: true,
+                            downloads: 0,
+                            param_count: "335M",
                         },
                     ],
                     has_more: false,
                 }),
             );
             (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
-                models: [{ name: "bge:latest", source: "native" }],
+                models: [{ name: "BAAI/bge/bge.Q4_K_M.gguf", source: "native" }],
             });
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
@@ -4413,7 +4176,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await dropdowns[0]("bge:latest");
+            await dropdowns[0]("BAAI/bge");
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_RERANKER)).toBe(true);
         });
 
@@ -4434,10 +4197,9 @@ describe("managed mode settings", () => {
                     offset: 0,
                     models: [
                         {
-                            name: "bge-reranker-large",
-                            tag: "latest",
                             hf_repo: "BAAI/bge-reranker-large",
-                            display_name: "",
+                            gguf_filename: "*Q4_K_M.gguf",
+                            display_name: "BGE Reranker Large",
                             size_gb: 2,
                             min_ram_gb: 4,
                             description: "",
@@ -4445,6 +4207,9 @@ describe("managed mode settings", () => {
                             installed: false,
                             source: "native",
                             task: "rerank",
+                            featured: true,
+                            downloads: 0,
+                            param_count: "560M",
                         },
                     ],
                     has_more: false,
@@ -4459,14 +4224,13 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            // pullModel and setRerankerModel must use hf_repo (canonical id), not display name
-            await dropdowns[0]("bge-reranker-large:latest");
+            await dropdowns[0]("BAAI/bge-reranker-large");
             expect(plugin.api.pullModel).toHaveBeenCalledWith(
                 "BAAI/bge-reranker-large",
                 "native",
                 expect.any(AbortSignal),
             );
-            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("bge-reranker-large:latest");
+            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("BAAI/bge-reranker-large");
         });
 
         it("hosted litellm entry skips pull and calls setRerankerModel directly", async () => {
@@ -4482,10 +4246,9 @@ describe("managed mode settings", () => {
                     offset: 0,
                     models: [
                         {
-                            name: "rerank-english-v3.0",
-                            tag: "latest",
                             hf_repo: "cohere/rerank-english-v3.0",
-                            display_name: "Cohere",
+                            gguf_filename: "",
+                            display_name: "Cohere Rerank",
                             size_gb: 0,
                             min_ram_gb: 0,
                             description: "",
@@ -4493,6 +4256,9 @@ describe("managed mode settings", () => {
                             installed: false,
                             source: "litellm",
                             task: "rerank",
+                            featured: false,
+                            downloads: 0,
+                            param_count: "",
                         },
                     ],
                     has_more: false,
@@ -4507,15 +4273,15 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await dropdowns[0]("rerank-english-v3.0:latest");
+            await dropdowns[0]("cohere/rerank-english-v3.0");
             expect(plugin.api.pullModel).not.toHaveBeenCalled();
-            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("rerank-english-v3.0:latest");
+            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("cohere/rerank-english-v3.0");
         });
 
-        it("hosted litellm entry with 422 response surfaces API-key notice", async () => {
+        it("422 response surfaces failure notice (no LiteLLM-key fallback)", async () => {
             const plugin = makePlugin();
             (plugin.api.setRerankerModel as ReturnType<typeof vi.fn>).mockResolvedValue(
-                err(new Error("Server responded 422: key missing")),
+                err(new Error("Server responded 422: bare name:tag is rejected")),
             );
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
@@ -4528,10 +4294,9 @@ describe("managed mode settings", () => {
                     offset: 0,
                     models: [
                         {
-                            name: "rerank",
-                            tag: "latest",
                             hf_repo: "cohere/rerank",
-                            display_name: "",
+                            gguf_filename: "",
+                            display_name: "Cohere Rerank",
                             size_gb: 0,
                             min_ram_gb: 0,
                             description: "",
@@ -4539,6 +4304,9 @@ describe("managed mode settings", () => {
                             installed: false,
                             source: "litellm",
                             task: "rerank",
+                            featured: false,
+                            downloads: 0,
+                            param_count: "",
                         },
                     ],
                     has_more: false,
@@ -4553,8 +4321,11 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await dropdowns[0]("rerank:latest");
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_NEEDS_KEY)).toBe(true);
+            await dropdowns[0]("cohere/rerank");
+            // The previous code mapped any 422 to NOTICE_RERANKER_NEEDS_KEY ("configure LiteLLM API key");
+            // that misled users hitting unrelated 422 paths. Now the generic fallback fires.
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_RERANKER)).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_NEEDS_KEY)).toBe(false);
         });
 
         it("role-mismatch 422 surfaces the server's detail verbatim (not the API-key notice)", async () => {
@@ -4679,10 +4450,9 @@ describe("managed mode settings", () => {
                     offset: 0,
                     models: [
                         {
-                            name: "bge",
-                            tag: "latest",
                             hf_repo: "BAAI/bge",
-                            display_name: "",
+                            gguf_filename: "*Q4_K_M.gguf",
+                            display_name: "BGE",
                             size_gb: 1,
                             min_ram_gb: 4,
                             description: "",
@@ -4690,6 +4460,9 @@ describe("managed mode settings", () => {
                             installed: false,
                             source: "native",
                             task: "rerank",
+                            featured: true,
+                            downloads: 0,
+                            param_count: "335M",
                         },
                     ],
                     has_more: false,
@@ -4704,7 +4477,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await dropdowns[0]("bge:latest");
+            await dropdowns[0]("BAAI/bge");
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_QUEUE_FULL)).toBe(true);
             expect(plugin.api.pullModel).not.toHaveBeenCalled();
         });
@@ -4726,10 +4499,9 @@ describe("managed mode settings", () => {
                     offset: 0,
                     models: [
                         {
-                            name: "bge",
-                            tag: "latest",
                             hf_repo: "BAAI/bge",
-                            display_name: "",
+                            gguf_filename: "*Q4_K_M.gguf",
+                            display_name: "BGE",
                             size_gb: 1,
                             min_ram_gb: 4,
                             description: "",
@@ -4737,6 +4509,9 @@ describe("managed mode settings", () => {
                             installed: false,
                             source: "native",
                             task: "rerank",
+                            featured: true,
+                            downloads: 0,
+                            param_count: "335M",
                         },
                     ],
                     has_more: false,
@@ -4751,7 +4526,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await dropdowns[0]("bge:latest");
+            await dropdowns[0]("BAAI/bge");
             expect(Notice.instances.some((n) => n.message.includes("failed to pull"))).toBe(true);
             expect(plugin.api.setRerankerModel).not.toHaveBeenCalled();
         });
@@ -4775,10 +4550,9 @@ describe("managed mode settings", () => {
                     offset: 0,
                     models: [
                         {
-                            name: "bge",
-                            tag: "latest",
                             hf_repo: "BAAI/bge",
-                            display_name: "",
+                            gguf_filename: "*Q4_K_M.gguf",
+                            display_name: "BGE",
                             size_gb: 1,
                             min_ram_gb: 4,
                             description: "",
@@ -4786,6 +4560,9 @@ describe("managed mode settings", () => {
                             installed: false,
                             source: "native",
                             task: "rerank",
+                            featured: true,
+                            downloads: 0,
+                            param_count: "335M",
                         },
                     ],
                     has_more: false,
@@ -4800,7 +4577,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await dropdowns[0]("bge:latest");
+            await dropdowns[0]("BAAI/bge");
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_PULL_CANCELLED)).toBe(true);
         });
 
@@ -4821,10 +4598,9 @@ describe("managed mode settings", () => {
                     offset: 0,
                     models: [
                         {
-                            name: "bge",
-                            tag: "latest",
                             hf_repo: "BAAI/bge",
-                            display_name: "",
+                            gguf_filename: "*Q4_K_M.gguf",
+                            display_name: "BGE",
                             size_gb: 1,
                             min_ram_gb: 4,
                             description: "",
@@ -4832,6 +4608,9 @@ describe("managed mode settings", () => {
                             installed: false,
                             source: "native",
                             task: "rerank",
+                            featured: true,
+                            downloads: 0,
+                            param_count: "335M",
                         },
                     ],
                     has_more: false,
@@ -4846,7 +4625,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await dropdowns[0]("bge:latest");
+            await dropdowns[0]("BAAI/bge");
             const failed = plugin.taskQueue.completed.find((t: any) => t.status === "failed");
             expect(failed).toBeDefined();
             expect(failed!.error).toBe("unknown error");
@@ -4869,10 +4648,9 @@ describe("managed mode settings", () => {
                     offset: 0,
                     models: [
                         {
-                            name: "bge",
-                            tag: "latest",
                             hf_repo: "BAAI/bge",
-                            display_name: "",
+                            gguf_filename: "*Q4_K_M.gguf",
+                            display_name: "BGE",
                             size_gb: 1,
                             min_ram_gb: 4,
                             description: "",
@@ -4880,6 +4658,9 @@ describe("managed mode settings", () => {
                             installed: false,
                             source: "native",
                             task: "rerank",
+                            featured: true,
+                            downloads: 0,
+                            param_count: "335M",
                         },
                     ],
                     has_more: false,
@@ -4894,11 +4675,11 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            await expect(dropdowns[0]("bge:latest")).resolves.not.toThrow();
-            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("bge:latest");
+            await expect(dropdowns[0]("BAAI/bge")).resolves.not.toThrow();
+            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("BAAI/bge");
         });
 
-        it("buildRerankerOptions includes only installed-first then not-installed then hosted", async () => {
+        it("buildRerankerOptions: installed first, then not-installed, then hosted", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
@@ -4911,10 +4692,9 @@ describe("managed mode settings", () => {
                     offset: 0,
                     models: [
                         {
-                            name: "bge-installed",
-                            tag: "latest",
                             hf_repo: "BAAI/bge-installed",
-                            display_name: "",
+                            gguf_filename: "*Q4_K_M.gguf",
+                            display_name: "BGE Installed",
                             size_gb: 1,
                             min_ram_gb: 4,
                             description: "",
@@ -4922,12 +4702,14 @@ describe("managed mode settings", () => {
                             installed: true,
                             source: "native",
                             task: "rerank",
+                            featured: true,
+                            downloads: 0,
+                            param_count: "335M",
                         },
                         {
-                            name: "bge-not-installed",
-                            tag: "latest",
                             hf_repo: "BAAI/bge-not-installed",
-                            display_name: "",
+                            gguf_filename: "*Q4_K_M.gguf",
+                            display_name: "BGE Not Installed",
                             size_gb: 1,
                             min_ram_gb: 4,
                             description: "",
@@ -4935,12 +4717,14 @@ describe("managed mode settings", () => {
                             installed: false,
                             source: "native",
                             task: "rerank",
+                            featured: true,
+                            downloads: 0,
+                            param_count: "335M",
                         },
                         {
-                            name: "rerank",
-                            tag: "latest",
                             hf_repo: "cohere/rerank",
-                            display_name: "",
+                            gguf_filename: "",
+                            display_name: "Cohere Rerank",
                             size_gb: 0,
                             min_ram_gb: 0,
                             description: "",
@@ -4948,13 +4732,16 @@ describe("managed mode settings", () => {
                             installed: false,
                             source: "litellm",
                             task: "rerank",
+                            featured: false,
+                            downloads: 0,
+                            param_count: "",
                         },
                     ],
                     has_more: false,
                 }),
             );
             (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
-                models: [{ name: "bge-installed:latest", source: "native" }],
+                models: [{ name: "BAAI/bge-installed/bge-installed.Q4_K_M.gguf", source: "native" }],
             });
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
@@ -4964,27 +4751,24 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            // Dropdown VALUES use the canonical ``name:tag`` ref so the
-            // server's active-reranker string (returned in name:tag form)
-            // matches an option and setValue resolves. Display labels still
-            // show hf_repo so the UI stays human-readable.
             const keys = Object.keys(options[0]);
-            expect(keys).toEqual(["", "bge-installed:latest", "bge-not-installed:latest", "rerank:latest"]);
-            expect(options[0]["bge-installed:latest"]).toBe("BAAI/bge-installed");
-            expect(options[0]["bge-not-installed:latest"]).toContain(MESSAGES.LABEL_NOT_INSTALLED);
-            expect(options[0]["rerank:latest"]).toContain(MESSAGES.LABEL_RERANKER_HOSTED_GROUP);
+            expect(keys).toEqual(["", "BAAI/bge-installed", "BAAI/bge-not-installed", "cohere/rerank"]);
+            expect(options[0]["BAAI/bge-installed"]).toBe("BGE Installed");
+            expect(options[0]["BAAI/bge-not-installed"]).toContain(MESSAGES.LABEL_NOT_INSTALLED);
+            expect(options[0]["cohere/rerank"]).toContain(MESSAGES.LABEL_RERANKER_HOSTED_GROUP);
         });
 
-        it("installed reranker with server's name:tag ref is NOT labelled (not installed)", async () => {
-            // Regression: buildRerankerOptions used to compare against
-            // ``entry.hf_repo`` but the server's ``/api/models/installed``
-            // returns the canonical ``name:tag`` ref. That mismatch made
-            // installed rerankers render as "(not installed)" and the
-            // dropdown fall back to "(disabled)" even when the server had
-            // an active reranker set. Guard the both forms here.
+        it("installed reranker with full HF ref is NOT mislabelled (not installed)", async () => {
+            // Regression for bb-e45z: post-PR-#183 the server's installed list
+            // returns full HF refs (`<repo>/<file>.gguf`). Membership against
+            // `entry.hf_repo` only works after stripping the trailing filename.
+            // Otherwise every installed reranker would render `(not installed)`
+            // and the dropdown would fall back to "(disabled)" even when the
+            // server had an active reranker set.
             const plugin = makePlugin();
+            const installedRef = "gpustack/bge-reranker-v2-m3-GGUF/bge-reranker-v2-m3.Q4_K_M.gguf";
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
-                reranker_model: "bge-reranker-v2-m3:latest",
+                reranker_model: installedRef,
                 rerank_candidates: 20,
                 reranker_available: true,
             });
@@ -4995,10 +4779,9 @@ describe("managed mode settings", () => {
                     offset: 0,
                     models: [
                         {
-                            name: "bge-reranker-v2-m3",
-                            tag: "latest",
                             hf_repo: "gpustack/bge-reranker-v2-m3-GGUF",
-                            display_name: "BGE",
+                            gguf_filename: "*Q4_K_M.gguf",
+                            display_name: "BGE Reranker v2 m3",
                             size_gb: 0.4,
                             min_ram_gb: 2,
                             description: "",
@@ -5006,13 +4789,16 @@ describe("managed mode settings", () => {
                             installed: true,
                             source: "native",
                             task: "rerank",
+                            featured: true,
+                            downloads: 0,
+                            param_count: "335M",
                         },
                     ],
                     has_more: false,
                 }),
             );
             (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
-                models: [{ name: "bge-reranker-v2-m3:latest", source: "native" }],
+                models: [{ name: installedRef, source: "native" }],
             });
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
@@ -5022,9 +4808,9 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            expect(options[0]["bge-reranker-v2-m3:latest"]).toBe("gpustack/bge-reranker-v2-m3-GGUF");
-            expect(options[0]["bge-reranker-v2-m3:latest"]).not.toContain(MESSAGES.LABEL_NOT_INSTALLED);
-            expect(values[0]).toBe("bge-reranker-v2-m3:latest");
+            expect(options[0]["gpustack/bge-reranker-v2-m3-GGUF"]).toBe("BGE Reranker v2 m3");
+            expect(options[0]["gpustack/bge-reranker-v2-m3-GGUF"]).not.toContain(MESSAGES.LABEL_NOT_INSTALLED);
+            expect(values[0]).toBe(installedRef);
         });
 
         it("parses reranker_model as empty when config lacks the field", async () => {
@@ -5101,9 +4887,9 @@ describe("managed mode settings", () => {
                     offset: 0,
                     models: [
                         {
-                            name: "qwen2-vl",
-                            hf_repo: "Qwen/Qwen2-VL-7B-Instruct",
-                            display_name: "Qwen2-VL",
+                            hf_repo: "Qwen/Qwen2-VL-7B-Instruct-GGUF",
+                            gguf_filename: "*Q4_K_M.gguf",
+                            display_name: "Qwen2 VL 7B",
                             size_gb: 8,
                             min_ram_gb: 16,
                             description: "vision",
@@ -5111,13 +4897,16 @@ describe("managed mode settings", () => {
                             installed: true,
                             source: "native",
                             task: "vision",
+                            featured: true,
+                            downloads: 0,
+                            param_count: "7B",
                         },
                     ],
                     has_more: false,
                 }),
             );
             (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({
-                models: [{ name: "Qwen/Qwen2-VL-7B-Instruct", source: "native" }],
+                models: [{ name: "Qwen/Qwen2-VL-7B-Instruct-GGUF/Qwen2-VL-7B-Instruct.Q4_K_M.gguf", source: "native" }],
             });
             const container = new MockElement("div") as unknown as HTMLElement;
             const tab = makeTab(plugin);
@@ -5128,7 +4917,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             expect(options[0][""]).toBe(MESSAGES.LABEL_VISION_DISABLED);
-            expect(options[0]["Qwen/Qwen2-VL-7B-Instruct"]).toBe("Qwen/Qwen2-VL-7B-Instruct");
+            expect(options[0]["Qwen/Qwen2-VL-7B-Instruct-GGUF"]).toBe("Qwen2 VL 7B");
             expect(values[0]).toBe("");
         });
 
@@ -5319,10 +5108,10 @@ describe("managed mode settings", () => {
             expect(plugin.api.setVisionModel).toHaveBeenCalledWith("openai/gpt-4o");
         });
 
-        it("hosted litellm entry with 422 response surfaces API-key notice", async () => {
+        it("422 response surfaces failure notice (no LiteLLM-key fallback)", async () => {
             const plugin = makePlugin();
             (plugin.api.setVisionModel as ReturnType<typeof vi.fn>).mockResolvedValue(
-                err(new Error("Server responded 422: key missing")),
+                err(new Error("Server responded 422: bare name:tag rejected")),
             );
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
@@ -5332,9 +5121,9 @@ describe("managed mode settings", () => {
                     offset: 0,
                     models: [
                         {
-                            name: "gpt-4o",
                             hf_repo: "openai/gpt-4o",
-                            display_name: "",
+                            gguf_filename: "",
+                            display_name: "GPT-4o",
                             size_gb: 0,
                             min_ram_gb: 0,
                             description: "",
@@ -5342,6 +5131,9 @@ describe("managed mode settings", () => {
                             installed: false,
                             source: "litellm",
                             task: "vision",
+                            featured: false,
+                            downloads: 0,
+                            param_count: "",
                         },
                     ],
                     has_more: false,
@@ -5357,7 +5149,8 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             await dropdowns[0]("openai/gpt-4o");
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_NEEDS_KEY)).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_VISION)).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_NEEDS_KEY)).toBe(false);
         });
 
         it("role-mismatch 422 surfaces the server's detail verbatim (not the API-key notice)", async () => {
@@ -5887,7 +5680,7 @@ describe("managed mode settings", () => {
 
         it("calls updateConfig with parsed number after debounce", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -5901,7 +5694,7 @@ describe("managed mode settings", () => {
 
         it("debounces rapid changes into a single PATCH", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -5915,7 +5708,7 @@ describe("managed mode settings", () => {
 
         it("skips empty value", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -5926,7 +5719,7 @@ describe("managed mode settings", () => {
 
         it("rejects NaN input", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -5937,7 +5730,7 @@ describe("managed mode settings", () => {
 
         it("rejects out-of-range low value", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -5948,7 +5741,7 @@ describe("managed mode settings", () => {
 
         it("rejects out-of-range high value", async () => {
             const plugin = makePlugin();
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
@@ -5960,7 +5753,7 @@ describe("managed mode settings", () => {
         it("shows error notice on updateConfig failure", async () => {
             const plugin = makePlugin();
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
-            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 

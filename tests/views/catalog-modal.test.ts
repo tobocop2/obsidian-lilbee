@@ -31,7 +31,8 @@ vi.mock("../../src/views/confirm-modal", () => ({
 
 function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     return {
-        name: "qwen3",
+        hf_repo: "Qwen/Qwen3-8B-GGUF",
+        gguf_filename: "*Q4_K_M.gguf",
         display_name: "Qwen3 8B",
         size_gb: 5,
         min_ram_gb: 8,
@@ -39,11 +40,10 @@ function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
         quality_tier: "balanced",
         installed: false,
         source: "native",
-        hf_repo: "qwen/qwen3-8b",
-        tag: "8b",
         task: "chat",
         featured: false,
         downloads: 0,
+        param_count: "8B",
         ...overrides,
     };
 }
@@ -176,7 +176,7 @@ describe("CatalogModal", () => {
                 ok(
                     makeCatalogResponse([
                         makeEntry({ name: "qwen3:0.6b", display_name: "Qwen3 0.6B", installed: true }),
-                        makeEntry({ hf_repo: "qwen/qwen3-8b", display_name: "Qwen3 8B", installed: false }),
+                        makeEntry({ hf_repo: "Qwen/Qwen3-8B-GGUF", display_name: "Qwen3 8B", installed: false }),
                     ]),
                 ),
             );
@@ -277,11 +277,11 @@ describe("CatalogModal", () => {
             expect(content.find("lilbee-catalog-remove")).not.toBeNull();
         });
 
-        it("shows Active when the entry is the plugin's active model (legacy hf_repo value)", async () => {
-            // Back-compat: vaults set up before 1s1 stored hf_repo; the badge
-            // must still resolve so users don't see "Use" on a model that's
-            // already active.
-            const plugin = makePlugin({ activeModel: "qwen/qwen3-8b" });
+        it("shows Active when activeModel's leading hf_repo segment matches the entry", async () => {
+            // Post-PR-#183 the active ref is the full HF path. The Active badge
+            // resolves by stripping the trailing `<file>.gguf` and comparing the
+            // bare repo to `entry.hf_repo`.
+            const plugin = makePlugin({ activeModel: "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf" });
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
             const modal = await openModal(plugin);
             const content = contentEl(modal);
@@ -290,23 +290,8 @@ describe("CatalogModal", () => {
             expect(content.find("lilbee-catalog-active")).not.toBeNull();
         });
 
-        it("shows Active when activeModel matches entry.name (1s1 short ref)", async () => {
-            // After 1s1, fresh sets persist entry.name. The Active badge must
-            // resolve from the short ref too — otherwise the badge silently
-            // disappears the moment the user picks a model from the catalog.
-            const plugin = makePlugin({ activeModel: "qwen3" });
-            plugin.api.catalog.mockResolvedValue(
-                ok(makeCatalogResponse([makeEntry({ installed: true, name: "qwen3", hf_repo: "qwen/qwen3-8b" })])),
-            );
-            const modal = await openModal(plugin);
-            const content = contentEl(modal);
-            content.find("lilbee-catalog-view-toggle")!.trigger("click");
-            await tick();
-            expect(content.find("lilbee-catalog-active")).not.toBeNull();
-        });
-
-        it("does NOT show Active when activeModel matches neither entry.name nor entry.hf_repo", async () => {
-            const plugin = makePlugin({ activeModel: "some-other-model" });
+        it("does NOT show Active when activeModel doesn't match entry.hf_repo", async () => {
+            const plugin = makePlugin({ activeModel: "some/other-model-GGUF/file.gguf" });
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
             const modal = await openModal(plugin);
             const content = contentEl(modal);
@@ -672,7 +657,7 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            expect(plugin.api.pullModel).toHaveBeenCalledWith("qwen/qwen3-8b", "native", expect.any(AbortSignal));
+            expect(plugin.api.pullModel).toHaveBeenCalledWith("Qwen/Qwen3-8B-GGUF", "native", expect.any(AbortSignal));
         });
 
         it("does not run pull when user cancels the confirm modal", async () => {
@@ -748,7 +733,7 @@ describe("CatalogModal", () => {
             useBtn.trigger("click");
             await tick();
             await tick();
-            expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("qwen/qwen3-8b");
+            expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("Qwen/Qwen3-8B-GGUF");
         });
 
         it("4u1: handleUse refreshes the Settings tab on success", async () => {
@@ -801,7 +786,7 @@ describe("CatalogModal", () => {
             useBtn.trigger("click");
             await tick();
             await tick();
-            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("qwen/qwen3-8b");
+            expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("Qwen/Qwen3-8B-GGUF");
             expect(plugin.api.setChatModel).not.toHaveBeenCalled();
             // activeModel is the chat model and must NOT be mutated by the rerank branch
             expect(plugin.activeModel).toBe("");
@@ -818,12 +803,12 @@ describe("CatalogModal", () => {
             useBtn.trigger("click");
             await tick();
             await tick();
-            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("qwen/qwen3-8b");
+            expect(plugin.api.setVisionModel).toHaveBeenCalledWith("Qwen/Qwen3-8B-GGUF");
             expect(plugin.api.setChatModel).not.toHaveBeenCalled();
             expect(plugin.activeModel).toBe("");
         });
 
-        it("1s1: uses setChatModel with the catalog short ref (entry.name), not the long-form hf_repo", async () => {
+        it("uses setChatModel with hf_repo and stores it as plugin.activeModel", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
             const modal = await openModal(plugin);
@@ -832,13 +817,11 @@ describe("CatalogModal", () => {
             useBtn.trigger("click");
             await tick();
             await tick();
-            // Default makeEntry has name="qwen3" and hf_repo="qwen/qwen3-8b" — must use the short name.
-            expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen3");
-            expect(plugin.api.setChatModel).not.toHaveBeenCalledWith("qwen/qwen3-8b");
-            expect(plugin.activeModel).toBe("qwen3");
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("Qwen/Qwen3-8B-GGUF");
+            expect(plugin.activeModel).toBe("Qwen/Qwen3-8B-GGUF");
         });
 
-        it("1s1: chat-task activation toast names the catalog short ref, not hf_repo", async () => {
+        it("activation toast uses display_name (chat task)", async () => {
             Notice.clear();
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
@@ -848,13 +831,10 @@ describe("CatalogModal", () => {
             useBtn.trigger("click");
             await tick();
             await tick();
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_MODEL_ACTIVATED("qwen3"))).toBe(true);
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_MODEL_ACTIVATED("qwen/qwen3-8b"))).toBe(
-                false,
-            );
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_MODEL_ACTIVATED("Qwen3 8B"))).toBe(true);
         });
 
-        it("1s1: embedding-task activation toast still names hf_repo (set via hf_repo)", async () => {
+        it("activation toast uses display_name (embedding task)", async () => {
             Notice.clear();
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(
@@ -866,9 +846,7 @@ describe("CatalogModal", () => {
             useBtn.trigger("click");
             await tick();
             await tick();
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_MODEL_ACTIVATED("qwen/qwen3-8b"))).toBe(
-                true,
-            );
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_MODEL_ACTIVATED("Qwen3 8B"))).toBe(true);
         });
 
         it("notices failure when Use fails", async () => {
@@ -882,7 +860,7 @@ describe("CatalogModal", () => {
             await tick();
             await tick();
             const messages = Notice.instances.map((n) => n.message);
-            expect(messages.some((m) => m.includes("qwen/qwen3-8b"))).toBe(true);
+            expect(messages.some((m) => m.includes("Qwen/Qwen3-8B-GGUF"))).toBe(true);
         });
 
         it("surfaces server role-mismatch detail verbatim when Use hits a vision endpoint with a reranker model", async () => {
@@ -892,7 +870,7 @@ describe("CatalogModal", () => {
                 ok(makeCatalogResponse([makeEntry({ installed: true, task: "vision" })])),
             );
             const detail =
-                "Model 'qwen/qwen3-8b' is a rerank model, not vision. Set it via PUT /api/models/reranker instead.";
+                "Model 'Qwen/Qwen3-8B-GGUF' is a rerank model, not vision. Set it via PUT /api/models/reranker instead.";
             plugin.api.setVisionModel = vi
                 .fn()
                 .mockResolvedValue(err(new Error(`Server responded 422: {"detail": "${detail}"}`)));
@@ -905,7 +883,7 @@ describe("CatalogModal", () => {
             const messages = Notice.instances.map((n) => n.message);
             expect(messages).toContain(detail);
             // The generic fallback must NOT also appear — role-mismatch wins.
-            expect(messages.some((m) => m === MESSAGES.ERROR_SET_MODEL.replace("{model}", "qwen/qwen3-8b"))).toBe(
+            expect(messages.some((m) => m === MESSAGES.ERROR_SET_MODEL.replace("{model}", "Qwen/Qwen3-8B-GGUF"))).toBe(
                 false,
             );
         });
@@ -917,7 +895,7 @@ describe("CatalogModal", () => {
                 ok(makeCatalogResponse([makeEntry({ installed: true, task: "rerank" })])),
             );
             const detail =
-                "Model 'qwen/qwen3-8b' is a vision model, not rerank. Set it via PUT /api/models/vision instead.";
+                "Model 'Qwen/Qwen3-8B-GGUF' is a vision model, not rerank. Set it via PUT /api/models/vision instead.";
             plugin.api.setRerankerModel = vi
                 .fn()
                 .mockResolvedValue(err(new Error(`Server responded 422: {"detail": "${detail}"}`)));
@@ -929,7 +907,7 @@ describe("CatalogModal", () => {
             await tick();
             const messages = Notice.instances.map((n) => n.message);
             expect(messages).toContain(detail);
-            expect(messages.some((m) => m === MESSAGES.ERROR_SET_MODEL.replace("{model}", "qwen/qwen3-8b"))).toBe(
+            expect(messages.some((m) => m === MESSAGES.ERROR_SET_MODEL.replace("{model}", "Qwen/Qwen3-8B-GGUF"))).toBe(
                 false,
             );
         });
@@ -939,14 +917,14 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
             plugin.api.deleteModel = vi
                 .fn()
-                .mockResolvedValue(ok({ deleted: true, model: "qwen/qwen3-8b", freed_gb: 5 }));
+                .mockResolvedValue(ok({ deleted: true, model: "Qwen/Qwen3-8B-GGUF", freed_gb: 5 }));
             const modal = await openModal(plugin);
             const content = contentEl(modal);
             const removeBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_REMOVE)!;
             removeBtn.trigger("click");
             await tick();
             await tick();
-            expect(plugin.api.deleteModel).toHaveBeenCalledWith("qwen/qwen3-8b", "native");
+            expect(plugin.api.deleteModel).toHaveBeenCalledWith("Qwen/Qwen3-8B-GGUF", "native");
         });
 
         it("skips delete when confirm is cancelled", async () => {
@@ -974,7 +952,7 @@ describe("CatalogModal", () => {
             await tick();
             await tick();
             const messages = Notice.instances.map((n) => n.message);
-            expect(messages.some((m) => m.includes("qwen/qwen3-8b"))).toBe(true);
+            expect(messages.some((m) => m.includes("Qwen/Qwen3-8B-GGUF"))).toBe(true);
         });
 
         it("fails the task and surfaces a Notice when pull aborts", async () => {
@@ -1006,7 +984,7 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "Qwen/Qwen3-8B-GGUF");
             expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: Server responded 403: forbidden`);
         });
 
@@ -1022,7 +1000,7 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "Qwen/Qwen3-8B-GGUF");
             expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: unknown error`);
         });
 
@@ -1038,7 +1016,7 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "Qwen/Qwen3-8B-GGUF");
             expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: pull exploded`);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
@@ -1055,7 +1033,7 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "Qwen/Qwen3-8B-GGUF");
             expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: raw error string`);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
@@ -1072,7 +1050,7 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "qwen/qwen3-8b");
+            const prefix = MESSAGES.ERROR_PULL_MODEL.replace("{model}", "Qwen/Qwen3-8B-GGUF");
             expect(Notice.instances.map((n) => n.message)).toContain(`${prefix}: unknown error`);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
         });
@@ -1090,7 +1068,7 @@ describe("CatalogModal", () => {
             pullBtn.trigger("click");
             await tick();
             await tick();
-            const setFailedNotice = MESSAGES.ERROR_SET_MODEL.replace("{model}", "qwen/qwen3-8b");
+            const setFailedNotice = MESSAGES.ERROR_SET_MODEL.replace("{model}", "Qwen/Qwen3-8B-GGUF");
             expect(Notice.instances.map((n) => n.message)).toContain(setFailedNotice);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "done")).toBe(true);
             expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(false);
@@ -1131,7 +1109,7 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
             plugin.api.deleteModel = vi
                 .fn()
-                .mockResolvedValue(ok({ deleted: true, model: "qwen/qwen3-8b", freed_gb: 5 }));
+                .mockResolvedValue(ok({ deleted: true, model: "Qwen/Qwen3-8B-GGUF", freed_gb: 5 }));
             const modal = await openModal(plugin);
             const content = contentEl(modal);
             const removeBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_REMOVE)!;

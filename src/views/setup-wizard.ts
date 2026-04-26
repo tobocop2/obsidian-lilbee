@@ -69,7 +69,21 @@ export function recommendedIndex(models: FeaturedModel[], memGB: number | null):
  * as the first four tiles gets an immediate sense of what's familiar. Any
  * native models outside these families backfill after.
  */
-const PREFERRED_FAMILIES = ["gemma-4", "gemma-3", "gemma-2", "qwen3", "qwen2", "llama-3", "phi-3"];
+// Substrings (lowercase) matched against `hf_repo`. Featured chat repos ship under varied orgs
+// (`Qwen/`, `unsloth/`, `ggml-org/`, `bartowski/`, …), so we don't pin to `<org>/<family>`.
+// Order matters: more specific families (Qwen3 Coder) come before less specific (Qwen3).
+const PREFERRED_FAMILIES = [
+    "gemma-4",
+    "gemma-3",
+    "gemma-2",
+    "qwen3-coder",
+    "qwen3",
+    "qwen2",
+    "llama-3",
+    "phi-3",
+    "mistral",
+    "smollm",
+];
 const MAX_FEATURED_PICKS = 8;
 
 /**
@@ -94,7 +108,7 @@ export function pickNativeChatModels(
     const ordered: FeaturedModel[] = [];
     for (const prefix of PREFERRED_FAMILIES) {
         for (const m of eligible) {
-            if (m.name.startsWith(prefix) && !seen.has(m.hf_repo)) {
+            if (m.hf_repo.toLowerCase().includes(prefix) && !seen.has(m.hf_repo)) {
                 ordered.push(m);
                 seen.add(m.hf_repo);
                 if (ordered.length >= MAX_FEATURED_PICKS) return ordered;
@@ -594,12 +608,7 @@ export class SetupWizard extends Modal {
                 }
             }
 
-            // Use the catalog short ref (`name:tag`) so cfg.chat_model is the
-            // same identifier the dropdown / status bar show. Setting via
-            // hf_repo stored the long-form HF identity, which made the
-            // Settings dropdown go blank and the subtitle show two different
-            // labels for the same model.
-            const setResult = await this.plugin.api.setChatModel(model.name);
+            const setResult = await this.plugin.api.setChatModel(model.hf_repo);
             if (setResult.isErr()) {
                 new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.display_name));
                 statusEl.textContent = setResult.error.message;
@@ -607,7 +616,7 @@ export class SetupWizard extends Modal {
                 (downloadBtn as HTMLButtonElement).disabled = false;
                 return;
             }
-            this.plugin.activeModel = model.name;
+            this.plugin.activeModel = model.hf_repo;
             this.plugin.fetchActiveModel();
             this.pulledModelName = model.display_name;
             this.step = WIZARD_STEP.EMBEDDING_PICKER;
@@ -657,11 +666,12 @@ export class SetupWizard extends Modal {
                 return;
             }
             if (this.selectedEmbedding.installed) {
-                const name = this.selectedEmbedding.name;
+                const ref = this.selectedEmbedding.hf_repo;
+                const label = this.selectedEmbedding.display_name;
                 void (async () => {
-                    const result = await this.plugin.api.setEmbeddingModel(name);
+                    const result = await this.plugin.api.setEmbeddingModel(ref);
                     if (result.isErr()) {
-                        new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", name));
+                        new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", label));
                         return;
                     }
                     this.step = WIZARD_STEP.SYNC;
@@ -699,7 +709,7 @@ export class SetupWizard extends Modal {
             return;
         }
 
-        const recommended = this.embeddingModels.findIndex((m) => m.name.includes("nomic-embed-text"));
+        const recommended = this.embeddingModels.findIndex((m) => m.hf_repo.toLowerCase().includes("nomic-embed-text"));
         const defaultIdx = recommended >= 0 ? recommended : 0;
         this.selectedEmbedding = this.embeddingModels[defaultIdx] ?? null;
 

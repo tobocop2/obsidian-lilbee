@@ -12,17 +12,9 @@ import {
     TASK_TYPE,
     ERROR_NAME,
 } from "./types";
-import type {
-    CatalogEntry,
-    ConfigResponse,
-    InstalledModel,
-    LilbeeSettings,
-    ModelCatalog,
-    ModelInfo,
-    ModelsResponse,
-    ServerMode,
-} from "./types";
+import type { CatalogEntry, ConfigResponse, InstalledModel, LilbeeSettings, ServerMode } from "./types";
 import { MESSAGES } from "./locales/en";
+import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import { CatalogModal } from "./views/catalog-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { ConfirmPullModal } from "./views/confirm-pull-modal";
@@ -56,40 +48,6 @@ const CREDENTIAL_FIELDS = new Set([
     "hf_token",
     "manual_session_token",
 ]);
-
-/**
- * Remove `:latest` entries when a more specific tag of the same model exists.
- * e.g. if both `mistral:latest` and `mistral:7b` are present, drop `mistral:latest`.
- */
-export function deduplicateLatest(models: string[]): string[] {
-    const bases = new Set(models.filter((m) => !m.endsWith(":latest")).map((m) => m.split(":")[0]));
-    return models.filter((m) => {
-        if (!m.endsWith(":latest")) return true;
-        return !bases.has(m.split(":")[0]);
-    });
-}
-
-export function buildModelOptions(catalog: ModelCatalog): Record<string, string> {
-    const options: Record<string, string> = {};
-
-    const catalogNames = new Set(catalog.catalog.map((m) => m.name));
-    for (const model of catalog.catalog) {
-        const suffix = model.installed ? "" : MESSAGES.LABEL_NOT_INSTALLED;
-        const sourceTag = model.source ? ` [${model.source}]` : "";
-        options[model.name] = `${model.name}${sourceTag}${suffix}`;
-    }
-
-    const otherInstalled = deduplicateLatest(catalog.installed.filter((name) => !catalogNames.has(name))).sort();
-
-    if (otherInstalled.length > 0) {
-        options[SEPARATOR_KEY] = SEPARATOR_LABEL;
-        for (const name of otherInstalled) {
-            options[name] = name;
-        }
-    }
-
-    return options;
-}
 
 export { SEPARATOR_KEY, SEPARATOR_LABEL };
 
@@ -572,7 +530,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private renderGenerationSettings(containerEl: HTMLElement): void {
         const details = containerEl.createEl("details", { cls: "lilbee-generation-details lilbee-settings-section" });
-        const modelLabel = this.plugin.activeModel || MESSAGES.LABEL_NO_MODEL_SELECTED;
+        const modelLabel = displayLabelForRef(this.plugin.activeModel) || MESSAGES.LABEL_NO_MODEL_SELECTED;
         details.createEl("summary", { text: `${MESSAGES.LABEL_GENERATION} (${modelLabel})` });
         details.createEl("p", {
             text: MESSAGES.LABEL_GENERATION_HELP,
@@ -680,7 +638,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     .addDropdown((dropdown) => {
                         for (const model of models) {
                             const suffix = model.installed ? "" : MESSAGES.LABEL_NOT_INSTALLED;
-                            dropdown.addOption(model.name, `${model.name}${suffix}`);
+                            dropdown.addOption(model.hf_repo, `${model.display_name}${suffix}`);
                         }
                         dropdown.onChange(async (value) => {
                             if (!value) return;
@@ -752,21 +710,21 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private buildRerankerOptions(catalogEntries: CatalogEntry[], installed: InstalledModel[]): Array<[string, string]> {
-        // ``installed`` carries the server's canonical ``name:tag`` ref, while
-        // catalog entries expose ``name`` and ``tag`` separately. Compare via the
-        // same ``name:tag`` form so an installed reranker isn't mislabelled
-        // ``(not installed)`` just because the catalog exposes the hf_repo.
-        const installedRefs = new Set(installed.map((m) => m.name));
-        const ref = (e: CatalogEntry): string => `${e.name}:${e.tag}`;
-        const isInstalled = (e: CatalogEntry): boolean => installedRefs.has(ref(e));
+        // `installed[].name` is the server's canonical ref (full HF path, or `provider/name`).
+        // For HF refs we strip the trailing `/<filename>.gguf` so it matches `entry.hf_repo`;
+        // provider refs pass through unchanged, so a hosted reranker isn't mislabelled
+        // `(not installed)`.
+        const installedRepos = new Set(installed.map((m) => extractHfRepo(m.name)));
+        const isInstalled = (e: CatalogEntry): boolean => installedRepos.has(e.hf_repo);
         const opts: Array<[string, string]> = [[RERANKER_DISABLED_KEY, MESSAGES.LABEL_RERANKER_DISABLED]];
         const localInstalled = catalogEntries.filter((e) => e.source !== MODEL_SOURCE.LITELLM && isInstalled(e));
         const localNotInstalled = catalogEntries.filter((e) => e.source !== MODEL_SOURCE.LITELLM && !isInstalled(e));
         const hosted = catalogEntries.filter((e) => e.source === MODEL_SOURCE.LITELLM);
-        for (const e of localInstalled) opts.push([ref(e), e.hf_repo]);
-        for (const e of localNotInstalled) opts.push([ref(e), `${e.hf_repo}${MESSAGES.LABEL_NOT_INSTALLED}`]);
+        for (const e of localInstalled) opts.push([e.hf_repo, e.display_name]);
+        for (const e of localNotInstalled) opts.push([e.hf_repo, `${e.display_name}${MESSAGES.LABEL_NOT_INSTALLED}`]);
         if (hosted.length > 0) {
-            for (const e of hosted) opts.push([ref(e), `${e.hf_repo} — ${MESSAGES.LABEL_RERANKER_HOSTED_GROUP}`]);
+            for (const e of hosted)
+                opts.push([e.hf_repo, `${e.display_name} — ${MESSAGES.LABEL_RERANKER_HOSTED_GROUP}`]);
         }
         return opts;
     }
@@ -776,11 +734,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
         catalogEntries: CatalogEntry[],
         installed: InstalledModel[],
     ): Promise<void> {
-        const installedRefs = new Set(installed.map((m) => m.name));
-        const catalogEntry = catalogEntries.find((e) => `${e.name}:${e.tag}` === value);
+        const installedRepos = new Set(installed.map((m) => extractHfRepo(m.name)));
+        const catalogEntry = catalogEntries.find((e) => e.hf_repo === value);
         if (
             value === RERANKER_DISABLED_KEY ||
-            installedRefs.has(value) ||
+            installedRepos.has(value) ||
             catalogEntry?.source === MODEL_SOURCE.LITELLM
         ) {
             await this.applyRerankerSelection(value);
@@ -794,17 +752,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private async applyRerankerSelection(value: string): Promise<void> {
         const result = await this.plugin.api.setRerankerModel(value);
         if (result.isErr()) {
-            const fallback = result.error.message.includes("422")
-                ? MESSAGES.NOTICE_RERANKER_NEEDS_KEY
-                : MESSAGES.NOTICE_FAILED_RERANKER;
-            new Notice(noticeForResultError(result.error, fallback));
+            new Notice(noticeForResultError(result.error, MESSAGES.NOTICE_FAILED_RERANKER));
             return;
         }
         new Notice(MESSAGES.NOTICE_RERANKER_UPDATED);
     }
 
     private async pullAndSetReranker(entry: CatalogEntry): Promise<void> {
-        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.hf_repo}`, TASK_TYPE.PULL);
+        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.display_name}`, TASK_TYPE.PULL);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
@@ -814,7 +769,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const ok = await this.streamRerankerPull(taskId, entry, controller.signal);
         if (!ok) return;
         this.plugin.taskQueue.complete(taskId);
-        await this.applyRerankerSelection(`${entry.name}:${entry.tag}`);
+        await this.applyRerankerSelection(entry.hf_repo);
     }
 
     private async streamRerankerPull(taskId: string, entry: CatalogEntry, signal: AbortSignal): Promise<boolean> {
@@ -838,13 +793,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const d = data as { percent?: number; current?: number; total?: number };
         const pct = percentFromSse(d);
         if (pct !== undefined) {
-            this.plugin.taskQueue.update(taskId, pct, entry.hf_repo, { current: d.current, total: d.total });
+            this.plugin.taskQueue.update(taskId, pct, entry.display_name, { current: d.current, total: d.total });
         }
     }
 
     private handleRerankerPullSseError(taskId: string, entry: CatalogEntry, data: unknown): void {
         const msg = extractSseErrorMessage(data as { message?: string } | string, MESSAGES.ERROR_UNKNOWN);
-        new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.hf_repo)}: ${msg}`);
+        new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.display_name)}: ${msg}`);
         this.plugin.taskQueue.fail(taskId, msg);
     }
 
@@ -855,7 +810,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             return;
         }
         const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
-        new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.hf_repo)}: ${reason}`);
+        new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.display_name)}: ${reason}`);
         this.plugin.taskQueue.fail(taskId, reason);
     }
 
@@ -902,19 +857,20 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private buildVisionOptions(catalogEntries: CatalogEntry[], installed: InstalledModel[]): Array<[string, string]> {
-        const installedNames = new Set(installed.map((m) => m.name));
+        // Strip the trailing `/<filename>.gguf` from installed refs so they match the catalog's bare `hf_repo`.
+        const installedRepos = new Set(installed.map((m) => extractHfRepo(m.name)));
         const opts: Array<[string, string]> = [[VISION_DISABLED_KEY, MESSAGES.LABEL_VISION_DISABLED]];
         const localInstalled = catalogEntries.filter(
-            (e) => e.source !== MODEL_SOURCE.LITELLM && installedNames.has(e.hf_repo),
+            (e) => e.source !== MODEL_SOURCE.LITELLM && installedRepos.has(e.hf_repo),
         );
         const localNotInstalled = catalogEntries.filter(
-            (e) => e.source !== MODEL_SOURCE.LITELLM && !installedNames.has(e.hf_repo),
+            (e) => e.source !== MODEL_SOURCE.LITELLM && !installedRepos.has(e.hf_repo),
         );
         const hosted = catalogEntries.filter((e) => e.source === MODEL_SOURCE.LITELLM);
-        for (const e of localInstalled) opts.push([e.hf_repo, e.hf_repo]);
-        for (const e of localNotInstalled) opts.push([e.hf_repo, `${e.hf_repo}${MESSAGES.LABEL_NOT_INSTALLED}`]);
+        for (const e of localInstalled) opts.push([e.hf_repo, e.display_name]);
+        for (const e of localNotInstalled) opts.push([e.hf_repo, `${e.display_name}${MESSAGES.LABEL_NOT_INSTALLED}`]);
         if (hosted.length > 0) {
-            for (const e of hosted) opts.push([e.hf_repo, `${e.hf_repo} — ${MESSAGES.LABEL_VISION_HOSTED_GROUP}`]);
+            for (const e of hosted) opts.push([e.hf_repo, `${e.display_name} — ${MESSAGES.LABEL_VISION_HOSTED_GROUP}`]);
         }
         return opts;
     }
@@ -924,11 +880,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
         catalogEntries: CatalogEntry[],
         installed: InstalledModel[],
     ): Promise<void> {
-        const installedNames = new Set(installed.map((m) => m.name));
+        const installedRepos = new Set(installed.map((m) => extractHfRepo(m.name)));
         const catalogEntry = catalogEntries.find((e) => e.hf_repo === value);
         if (
             value === VISION_DISABLED_KEY ||
-            installedNames.has(value) ||
+            installedRepos.has(value) ||
             catalogEntry?.source === MODEL_SOURCE.LITELLM
         ) {
             await this.applyVisionSelection(value);
@@ -942,17 +898,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private async applyVisionSelection(value: string): Promise<void> {
         const result = await this.plugin.api.setVisionModel(value);
         if (result.isErr()) {
-            const fallback = result.error.message.includes("422")
-                ? MESSAGES.NOTICE_VISION_NEEDS_KEY
-                : MESSAGES.NOTICE_FAILED_VISION;
-            new Notice(noticeForResultError(result.error, fallback));
+            new Notice(noticeForResultError(result.error, MESSAGES.NOTICE_FAILED_VISION));
             return;
         }
         new Notice(MESSAGES.NOTICE_VISION_UPDATED);
     }
 
     private async pullAndSetVision(entry: CatalogEntry): Promise<void> {
-        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.hf_repo}`, TASK_TYPE.PULL);
+        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.display_name}`, TASK_TYPE.PULL);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
@@ -986,13 +939,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const d = data as { percent?: number; current?: number; total?: number };
         const pct = percentFromSse(d);
         if (pct !== undefined) {
-            this.plugin.taskQueue.update(taskId, pct, entry.hf_repo, { current: d.current, total: d.total });
+            this.plugin.taskQueue.update(taskId, pct, entry.display_name, { current: d.current, total: d.total });
         }
     }
 
     private handleVisionPullSseError(taskId: string, entry: CatalogEntry, data: unknown): void {
         const msg = extractSseErrorMessage(data as { message?: string } | string, MESSAGES.ERROR_UNKNOWN);
-        new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.hf_repo)}: ${msg}`);
+        new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.display_name)}: ${msg}`);
         this.plugin.taskQueue.fail(taskId, msg);
     }
 
@@ -1003,7 +956,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             return;
         }
         const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
-        new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.hf_repo)}: ${reason}`);
+        new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.display_name)}: ${reason}`);
         this.plugin.taskQueue.fail(taskId, reason);
     }
 
@@ -1644,12 +1597,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private async loadModels(container: HTMLElement): Promise<void> {
         container.empty();
-        try {
-            const models = await this.plugin.api.listModels();
-            this.renderModelSection(container, MESSAGES.LABEL_CHAT_MODEL, models.chat);
-        } catch {
-            // Connection status is shown via the Test button — no duplicate warning needed
-        }
+        const chatContainer = container.createDiv({ cls: "lilbee-chat-container" });
+        this.renderChatSection(chatContainer);
         const embeddingContainer = container.createDiv({ cls: "lilbee-embedding-container" });
         this.loadEmbeddingDropdown(embeddingContainer);
         const visionContainer = container.createDiv({ cls: "lilbee-vision-container" });
@@ -1658,25 +1607,46 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderRerankerSection(rerankerContainer);
     }
 
-    private renderModelSection(container: HTMLElement, label: string, catalog: ModelsResponse["chat"]): void {
+    private renderChatSection(container: HTMLElement): void {
+        Promise.all([
+            this.plugin.api.config(),
+            this.plugin.api.catalog({ task: MODEL_TASK.CHAT }),
+            this.plugin.api.installedModels({ task: MODEL_TASK.CHAT }).catch(() => ({ models: [] })),
+        ])
+            .then(([cfg, catalogResult, installedResp]) => {
+                const active = typeof cfg.chat_model === "string" ? cfg.chat_model : "";
+                const catalogEntries = catalogResult.isOk() ? catalogResult.value.models : [];
+                this.renderChatPicker(container, active, catalogEntries, installedResp.models);
+            })
+            .catch(() => {
+                // Connection status is shown via the Test button — no duplicate warning needed.
+            });
+    }
+
+    private renderChatPicker(
+        container: HTMLElement,
+        active: string,
+        catalogEntries: CatalogEntry[],
+        installed: InstalledModel[],
+    ): void {
         const section = container.createDiv("lilbee-model-section");
-        section.createEl("h4", { text: label });
+        section.createEl("h4", { text: MESSAGES.LABEL_CHAT_MODEL });
 
         const activeSetting = new Setting(section)
             .setName(`${MESSAGES.LABEL_ACTIVE} chat model`)
-            .setDesc(catalog.active || MESSAGES.LABEL_NOT_SET);
+            .setDesc(displayLabelForRef(active) || MESSAGES.LABEL_NOT_SET);
 
-        const options = buildModelOptions(catalog);
-
-        activeSetting.addDropdown((dropdown) =>
-            dropdown
-                .addOptions(options)
-                .setValue(catalog.active)
-                .onChange(async (value) => {
-                    if (value === SEPARATOR_KEY) return;
-                    await this.handleModelChange(value, catalog, label, container);
-                }),
-        );
+        const options = this.buildChatOptions(catalogEntries, installed);
+        activeSetting.addDropdown((dropdown) => {
+            for (const [value, label] of options) {
+                dropdown.addOption(value, label);
+            }
+            dropdown.setValue(active);
+            dropdown.onChange(async (value) => {
+                if (value === SEPARATOR_KEY) return;
+                await this.handleChatChange(value, catalogEntries);
+            });
+        });
 
         const catalogEl = section.createDiv("lilbee-model-catalog");
         const table = catalogEl.createEl("table");
@@ -1685,68 +1655,108 @@ export class LilbeeSettingTab extends PluginSettingTab {
         header.createEl("th", { text: MESSAGES.LABEL_SIZE });
         header.createEl("th", { text: MESSAGES.LABEL_DESCRIPTION });
         header.createEl("th", { text: "" });
-
-        for (const model of catalog.catalog) {
-            this.renderCatalogRow(table, model);
+        for (const entry of catalogEntries) {
+            this.renderChatCatalogRow(table, entry, active);
         }
     }
 
-    private async setModel(model: { name: string }): ReturnType<typeof this.plugin.api.setChatModel> {
-        return this.plugin.api.setChatModel(model.name);
+    private buildChatOptions(catalogEntries: CatalogEntry[], installed: InstalledModel[]): Array<[string, string]> {
+        const installedRepos = new Set(installed.map((m) => extractHfRepo(m.name)));
+        const opts: Array<[string, string]> = [];
+        for (const entry of catalogEntries) {
+            const sourceTag = entry.source && entry.source !== MODEL_SOURCE.NATIVE ? ` [${entry.source}]` : "";
+            const installedFlag = installedRepos.has(entry.hf_repo);
+            const suffix = installedFlag ? "" : MESSAGES.LABEL_NOT_INSTALLED;
+            opts.push([entry.hf_repo, `${entry.display_name}${sourceTag}${suffix}`]);
+        }
+        const featuredRepos = new Set(catalogEntries.map((e) => e.hf_repo));
+        const otherInstalled = installed
+            .filter((m) => !featuredRepos.has(extractHfRepo(m.name)))
+            .sort((a, b) => a.name.localeCompare(b.name));
+        if (otherInstalled.length > 0) {
+            opts.push([SEPARATOR_KEY, SEPARATOR_LABEL]);
+            for (const m of otherInstalled) {
+                opts.push([m.name, displayLabelForRef(m.name)]);
+            }
+        }
+        return opts;
     }
 
-    private async handleModelChange(
-        value: string,
-        catalog: ModelCatalog,
-        label: string,
-        container: HTMLElement,
-    ): Promise<void> {
-        const uninstalledCatalogModel = catalog.catalog.find((m) => m.name === value && !m.installed);
-        if (uninstalledCatalogModel) {
-            const modal = new ConfirmPullModal(this.app, uninstalledCatalogModel);
+    private async handleChatChange(value: string, catalogEntries: CatalogEntry[]): Promise<void> {
+        const featuredEntry = catalogEntries.find((e) => e.hf_repo === value);
+        if (featuredEntry && !featuredEntry.installed) {
+            const modal = new ConfirmPullModal(this.app, {
+                displayName: featuredEntry.display_name,
+                sizeGb: featuredEntry.size_gb,
+                minRamGb: featuredEntry.min_ram_gb,
+            });
             modal.open();
             const confirmed = await modal.result;
             if (!confirmed) return;
-            await this.autoPullAndSet(uninstalledCatalogModel, container);
+            await this.pullAndSetChat(featuredEntry);
             return;
         }
-        const result = await this.setModel({ name: value });
+        const label = featuredEntry?.display_name ?? displayLabelForRef(value);
+        await this.applyChatSelection(value, label);
+    }
+
+    private async applyChatSelection(ref: string, label: string): Promise<void> {
+        const result = await this.plugin.api.setChatModel(ref);
         if (result.isErr()) {
             new Notice(noticeForResultError(result.error, MESSAGES.NOTICE_FAILED_SET_MODEL(MODEL_TASK.CHAT)));
             return;
         }
-        new Notice(MESSAGES.NOTICE_SET_MODEL(label, value || MESSAGES.LABEL_NOT_SET.toLowerCase()));
+        new Notice(MESSAGES.NOTICE_SET_MODEL(MESSAGES.LABEL_CHAT_MODEL, label || MESSAGES.LABEL_NOT_SET.toLowerCase()));
         this.plugin.fetchActiveModel();
         this.display();
     }
 
-    private async autoPullAndSet(model: ModelInfo, _container: HTMLElement): Promise<void> {
-        const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
+    private async pullAndSetChat(entry: CatalogEntry): Promise<void> {
+        const ok = await this.streamChatPull(entry);
+        if (!ok) return;
+        const setResult = await this.plugin.api.setChatModel(entry.hf_repo);
+        if (setResult.isErr()) {
+            new Notice(
+                noticeForResultError(setResult.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", entry.display_name)),
+            );
+        } else {
+            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.display_name));
+        }
+        this.plugin.fetchActiveModel();
+        this.display();
+    }
+
+    private async streamChatPull(entry: CatalogEntry): Promise<boolean> {
+        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.display_name}`, TASK_TYPE.PULL);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
-            return;
+            return false;
         }
         const controller = new AbortController();
         this.plugin.taskQueue.registerAbort(taskId, controller);
-        let pullFailed = false;
         try {
-            for await (const event of this.plugin.api.pullModel(model.name, MODEL_SOURCE.NATIVE, controller.signal)) {
+            for await (const event of this.plugin.api.pullModel(
+                entry.hf_repo,
+                MODEL_SOURCE.NATIVE,
+                controller.signal,
+            )) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = percentFromSse(d);
                     if (pct !== undefined) {
-                        this.plugin.taskQueue.update(taskId, pct, model.name, {
+                        this.plugin.taskQueue.update(taskId, pct, entry.display_name, {
                             current: d.current,
                             total: d.total,
                         });
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
-                    const d = event.data as { message?: string } | string;
-                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
-                    new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${msg}`);
+                    const msg = extractSseErrorMessage(
+                        event.data as { message?: string } | string,
+                        MESSAGES.ERROR_UNKNOWN,
+                    );
+                    new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.display_name)}: ${msg}`);
                     this.plugin.taskQueue.fail(taskId, msg);
-                    pullFailed = true;
-                    break;
+                    return false;
                 }
             }
         } catch (err) {
@@ -1755,122 +1765,53 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 this.plugin.taskQueue.cancel(taskId);
             } else {
                 const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
-                new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${reason}`);
+                new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.display_name)}: ${reason}`);
                 this.plugin.taskQueue.fail(taskId, reason);
             }
-            return;
+            return false;
         }
-
-        if (pullFailed) return;
-
         this.plugin.taskQueue.complete(taskId);
-
-        const setResult = await this.setModel(model);
-        if (setResult.isErr()) {
-            new Notice(noticeForResultError(setResult.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name)));
-        } else {
-            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
-        }
-        this.plugin.fetchActiveModel();
-        this.display();
+        return true;
     }
 
-    private renderCatalogRow(table: HTMLTableElement, model: ModelInfo): void {
+    private renderChatCatalogRow(table: HTMLTableElement, entry: CatalogEntry, active: string): void {
         const row = table.createEl("tr");
-        row.createEl("td", { text: model.name });
-        row.createEl("td", { text: `${model.size_gb} GB` });
-        row.createEl("td", { text: model.description });
+        row.createEl("td", { text: entry.display_name });
+        row.createEl("td", { text: `${entry.size_gb} GB` });
+        row.createEl("td", { text: entry.description });
         const actionCell = row.createEl("td");
-
-        if (model.installed) {
+        if (entry.installed) {
             actionCell.createEl("span", { text: MESSAGES.LABEL_INSTALLED, cls: "lilbee-installed" });
             const deleteBtn = actionCell.createEl("button", { cls: "lilbee-model-delete" }) as HTMLButtonElement;
             setIcon(deleteBtn, "trash-2");
             deleteBtn.setAttribute("aria-label", MESSAGES.LABEL_DELETE_MODEL);
-            deleteBtn.addEventListener("click", () => this.deleteModel(deleteBtn, model));
+            deleteBtn.addEventListener("click", () => this.deleteChatEntry(deleteBtn, entry, active));
         } else {
             const btn = actionCell.createEl("button", { text: MESSAGES.BUTTON_PULL }) as HTMLButtonElement;
-            btn.addEventListener("click", () => this.pullModel(model));
+            btn.addEventListener("click", () => this.pullAndSetChat(entry));
         }
     }
 
-    private async pullModel(model: ModelInfo): Promise<void> {
-        await this.executePull(model);
-    }
-
-    private async executePull(model: ModelInfo): Promise<void> {
-        const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
-        if (taskId === null) {
-            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
-            return;
-        }
-        const controller = new AbortController();
-        this.plugin.taskQueue.registerAbort(taskId, controller);
-        let pullFailed = false;
-        try {
-            for await (const event of this.plugin.api.pullModel(model.name, MODEL_SOURCE.NATIVE, controller.signal)) {
-                if (event.event === SSE_EVENT.PROGRESS) {
-                    const d = event.data as { percent?: number; current?: number; total?: number };
-                    const pct = percentFromSse(d);
-                    if (pct !== undefined) {
-                        this.plugin.taskQueue.update(taskId, pct, model.name, {
-                            current: d.current,
-                            total: d.total,
-                        });
-                    }
-                } else if (event.event === SSE_EVENT.ERROR) {
-                    const d = event.data as { message?: string } | string;
-                    const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
-                    new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${msg}`);
-                    this.plugin.taskQueue.fail(taskId, msg);
-                    pullFailed = true;
-                    break;
-                }
-            }
-        } catch (err) {
-            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
-                new Notice(MESSAGES.NOTICE_PULL_CANCELLED);
-                this.plugin.taskQueue.cancel(taskId);
-            } else {
-                const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
-                new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${reason}`);
-                this.plugin.taskQueue.fail(taskId, reason);
-            }
-            return;
-        }
-
-        if (pullFailed) return;
-
-        this.plugin.taskQueue.complete(taskId);
-
-        const setResult = await this.setModel(model);
-        if (setResult.isErr()) {
-            new Notice(noticeForResultError(setResult.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name)));
-        } else {
-            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
-        }
-        this.plugin.fetchActiveModel();
-        this.display();
-    }
-
-    private async deleteModel(btn: HTMLButtonElement, model: ModelInfo): Promise<void> {
-        const taskId = this.plugin.taskQueue.enqueue(`Remove ${model.name}`, TASK_TYPE.DELETE);
+    private async deleteChatEntry(btn: HTMLButtonElement, entry: CatalogEntry, active: string): Promise<void> {
+        const taskId = this.plugin.taskQueue.enqueue(`Remove ${entry.display_name}`, TASK_TYPE.DELETE);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
         }
         btn.disabled = true;
-        this.plugin.taskQueue.update(taskId, -1, model.name);
-        const result = await this.plugin.api.deleteModel(model.name);
+        this.plugin.taskQueue.update(taskId, -1, entry.display_name);
+        const result = await this.plugin.api.deleteModel(entry.hf_repo, entry.source);
         if (result.isErr()) {
-            new Notice(noticeForResultError(result.error, MESSAGES.ERROR_DELETE_MODEL.replace("{model}", model.name)));
+            new Notice(
+                noticeForResultError(result.error, MESSAGES.ERROR_DELETE_MODEL.replace("{model}", entry.display_name)),
+            );
             this.plugin.taskQueue.fail(taskId, errorMessage(result.error, result.error.message));
             btn.disabled = false;
             return;
         }
         this.plugin.taskQueue.complete(taskId);
-        new Notice(MESSAGES.NOTICE_REMOVED(model.name));
-        if (model.name === this.plugin.activeModel) {
+        new Notice(MESSAGES.NOTICE_REMOVED(entry.display_name));
+        if (extractHfRepo(active) === entry.hf_repo) {
             const clearResult = await this.plugin.api.setChatModel("");
             if (clearResult.isOk()) {
                 this.plugin.activeModel = "";
