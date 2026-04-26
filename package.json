@@ -28,19 +28,19 @@
     "neverthrow": "^8.2.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
-    "@types/node": "^22.0.0",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.6.0",
     "@vitest/coverage-v8": "^2.1.9",
-    "builtin-modules": "^4.0.0",
-    "esbuild": "^0.24.0",
-    "eslint": "^9.39.4",
+    "builtin-modules": "^5.1.0",
+    "esbuild": "^0.28.0",
+    "eslint": "^10.2.1",
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "obsidian": "^1.12.0",
-    "prettier": "^3.8.1",
+    "prettier": "^3.8.3",
     "typescript": "^5.6.0",
-    "typescript-eslint": "^8.58.0",
+    "typescript-eslint": "^8.59.0",
     "vitest": "^2.1.9"
   }
 }
