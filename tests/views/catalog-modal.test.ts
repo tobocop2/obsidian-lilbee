@@ -795,7 +795,7 @@ describe("CatalogModal", () => {
             expect(plugin.activeModel).toBe("");
         });
 
-        it("uses setChatModel by default", async () => {
+        it("1s1: uses setChatModel with the catalog short ref (entry.name), not the long-form hf_repo", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
             const modal = await openModal(plugin);
@@ -804,7 +804,10 @@ describe("CatalogModal", () => {
             useBtn.trigger("click");
             await tick();
             await tick();
-            expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen/qwen3-8b");
+            // Default makeEntry has name="qwen3" and hf_repo="qwen/qwen3-8b" — must use the short name.
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen3");
+            expect(plugin.api.setChatModel).not.toHaveBeenCalledWith("qwen/qwen3-8b");
+            expect(plugin.activeModel).toBe("qwen3");
         });
 
         it("notices failure when Use fails", async () => {

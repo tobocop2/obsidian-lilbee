@@ -442,8 +442,13 @@ export class CatalogModal extends Modal {
         if (entry.task === MODEL_TASK.VISION) {
             return this.plugin.api.setVisionModel(entry.hf_repo);
         }
-        const result = await this.plugin.api.setChatModel(entry.hf_repo);
-        if (result.isOk()) this.plugin.activeModel = entry.hf_repo;
+        // Pin chat to the catalog short ref (`name:tag`) so the dropdown,
+        // status bar, and Settings subtitle all read the same identifier.
+        // Setting via hf_repo persisted the long-form HF identity in
+        // cfg.chat_model, which left the Settings dropdown unable to
+        // round-trip the value back to a known option.
+        const result = await this.plugin.api.setChatModel(entry.name);
+        if (result.isOk()) this.plugin.activeModel = entry.name;
         return result;
     }
 
