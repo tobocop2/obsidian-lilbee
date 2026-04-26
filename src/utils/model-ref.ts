@@ -47,5 +47,10 @@ export function displayLabelForRef(ref: string): string {
     for (const prefix of PROVIDER_PREFIXES) {
         if (ref.startsWith(prefix)) return ref.slice(prefix.length);
     }
+    // Bare HF repo (e.g. plugin.activeModel after a dropdown change, before
+    // fetchActiveModel re-syncs from /api/models) — strip the org and tidy.
+    if (ref.includes("/")) {
+        return cleanDisplayName(ref);
+    }
     return ref;
 }

@@ -46,8 +46,12 @@ describe("displayLabelForRef", () => {
         expect(displayLabelForRef("weird-thing")).toBe("weird-thing");
     });
 
-    it("passes through a bare repo (no .gguf, no provider prefix)", () => {
-        expect(displayLabelForRef("Qwen/Qwen3-0.6B-GGUF")).toBe("Qwen/Qwen3-0.6B-GGUF");
+    it("cleans a bare HF repo (set-then-fetchActiveModel transient state)", () => {
+        expect(displayLabelForRef("Qwen/Qwen3-0.6B-GGUF")).toBe("Qwen3 0.6B");
+    });
+
+    it("cleans a Meta-prefixed bare repo", () => {
+        expect(displayLabelForRef("meta-llama/Meta-Llama-3-8B-Instruct-GGUF")).toBe("Llama 3 8B");
     });
 });
 
