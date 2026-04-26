@@ -256,7 +256,8 @@ export const CONTENT_TYPE = {
 } as const;
 
 export interface CatalogEntry {
-    name: string;
+    hf_repo: string;
+    gguf_filename: string;
     display_name: string;
     size_gb: number;
     min_ram_gb: number;
@@ -264,12 +265,10 @@ export interface CatalogEntry {
     quality_tier: string;
     installed: boolean;
     source: string;
-    hf_repo: string;
-    tag: string;
     task: ModelTask;
     featured: boolean;
     downloads: number;
-    param_count?: string;
+    param_count: string;
 }
 
 export interface CatalogResponse {
