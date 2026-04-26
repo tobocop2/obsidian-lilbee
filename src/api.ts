@@ -463,7 +463,7 @@ export class LilbeeClient {
     async wikiBuild(): Promise<WikiBuildResult> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/build`, {
             method: "POST",
-            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            headers: this.authHeaders(),
         });
         return res.json();
     }
@@ -471,7 +471,7 @@ export class LilbeeClient {
     async wikiUpdate(): Promise<WikiBuildResult> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/update`, {
             method: "PATCH",
-            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            headers: this.authHeaders(),
         });
         return res.json();
     }

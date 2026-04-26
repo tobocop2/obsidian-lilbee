@@ -301,6 +301,48 @@ describe("SourcePreviewModal — unsupported mime", () => {
         expect(errorEl).not.toBeNull();
         expect(errorEl!.textContent).toContain("application/octet-stream");
     });
+
+    it.each(["text/html", "text/javascript", "application/javascript", "application/xhtml+xml", "text/css"])(
+        "denies inline render for %s even though it falls under text/*",
+        async (mime) => {
+            const app = new App();
+            const api = makeApi({
+                getSource: vi.fn().mockResolvedValue({
+                    markdown: "<script>alert(1)</script>",
+                    content_type: mime,
+                }),
+            });
+            const modal = new SourcePreviewModal(app as never, api, makeSource({ source: "evil", content_type: mime }));
+            modal.open();
+            await tick();
+            const el = modal.contentEl as unknown as MockElement;
+            expect(el.find("lilbee-preview-body")).toBeNull();
+            const errorEl = el.find("lilbee-preview-error");
+            expect(errorEl).not.toBeNull();
+            expect(errorEl!.textContent).toContain(mime);
+        },
+    );
+
+    it("still renders text/plain inline (regression guard for the deny-list)", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({
+                markdown: "plain text body",
+                content_type: "text/plain",
+            }),
+        });
+        const modal = new SourcePreviewModal(
+            app as never,
+            api,
+            makeSource({ source: "notes.txt", content_type: "text/plain" }),
+        );
+        modal.open();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        const body = el.find("lilbee-preview-body");
+        expect(body).not.toBeNull();
+        expect(body!.textContent).toContain("plain text body");
+    });
 });
 
 describe("SourcePreviewModal — error", () => {
