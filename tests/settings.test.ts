@@ -3678,6 +3678,73 @@ describe("managed mode settings", () => {
             expect(item1.style.display).toBe("");
             expect(section.style.display).toBe("");
         });
+
+        it("di8: filterSettings hides non-matching top-level setting items", () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const container = new MockElement("div") as any;
+            const portItem = container.createDiv({ cls: "setting-item" });
+            portItem.createDiv({ cls: "setting-item-name" }).textContent = "Server port";
+            const modeItem = container.createDiv({ cls: "setting-item" });
+            modeItem.createDiv({ cls: "setting-item-name" }).textContent = "Server mode";
+
+            (tab as any).filterSettings(container, "port");
+
+            expect(portItem.style.display).toBe("");
+            expect(modeItem.style.display).toBe("none");
+        });
+
+        it("di8: empty query restores top-level items hidden by an earlier filter", () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const container = new MockElement("div") as any;
+            const item = container.createDiv({ cls: "setting-item" });
+            item.createDiv({ cls: "setting-item-name" }).textContent = "Server mode";
+
+            (tab as any).filterSettings(container, "zzz");
+            expect(item.style.display).toBe("none");
+
+            (tab as any).filterSettings(container, "");
+            expect(item.style.display).toBe("");
+        });
+
+        it("di8: top-level items without setting-item-name are hidden when a query is present", () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const container = new MockElement("div") as any;
+            const item = container.createDiv({ cls: "setting-item" });
+
+            (tab as any).filterSettings(container, "anything");
+            expect(item.style.display).toBe("none");
+        });
+
+        it("di8: non-setting-item children of containerEl are left untouched", () => {
+            const plugin = makePlugin();
+            (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const container = new MockElement("div") as any;
+            const filterInput = container.createEl("input", { cls: "lilbee-settings-filter" });
+            const item = container.createDiv({ cls: "setting-item" });
+            item.createDiv({ cls: "setting-item-name" }).textContent = "Server port";
+
+            (tab as any).filterSettings(container, "port");
+            // The filter input itself is not a .setting-item, so the
+            // function must not touch its style. (Mock leaves untouched
+            // style.display undefined; the real check is "not 'none'".)
+            expect(filterInput.style.display).not.toBe("none");
+            expect(item.style.display).toBe("");
+        });
     });
 
     describe("LiteLLM base URL onChange", () => {

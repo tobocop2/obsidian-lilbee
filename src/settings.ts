@@ -140,16 +140,30 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private filterSettings(containerEl: HTMLElement, query: string): void {
         const term = query.trim().toLowerCase();
+        const matches = (item: Element): boolean => {
+            const nameEl = item.querySelector(".setting-item-name");
+            const name = nameEl?.textContent?.toLowerCase() ?? "";
+            return !term || name.includes(term);
+        };
+
+        // Top-level setting-items live as direct children of containerEl,
+        // outside any .lilbee-settings-section wrapper. The original
+        // implementation only walked into sections, so the bulk of the
+        // settings page (server controls, port, models, etc.) stayed
+        // visible regardless of the filter query.
+        for (const child of Array.from(containerEl.children)) {
+            if (!child.classList.contains("setting-item")) continue;
+            (child as HTMLElement).style.display = matches(child) ? "" : "none";
+        }
+
         const sections = containerEl.querySelectorAll(".lilbee-settings-section");
         for (const section of Array.from(sections)) {
             const items = section.querySelectorAll(".setting-item");
             let visibleCount = 0;
             for (const item of Array.from(items)) {
-                const nameEl = item.querySelector(".setting-item-name");
-                const name = nameEl?.textContent?.toLowerCase() ?? "";
-                const matches = !term || name.includes(term);
-                (item as HTMLElement).style.display = matches ? "" : "none";
-                if (matches) visibleCount++;
+                const m = matches(item);
+                (item as HTMLElement).style.display = m ? "" : "none";
+                if (m) visibleCount++;
             }
             (section as HTMLElement).style.display = visibleCount > 0 || !term ? "" : "none";
             if (term && visibleCount > 0) {
