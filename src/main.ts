@@ -27,6 +27,7 @@ import {
     type VaultAdapter,
 } from "./types";
 import { MESSAGES } from "./locales/en";
+import { displayLabelForRef } from "./utils/model-ref";
 import {
     errorMessage,
     extractSseErrorMessage,
@@ -672,7 +673,8 @@ export default class LilbeePlugin extends Plugin {
 
     private updateStatusBar(text: string, dotState: DotState | null = null): void {
         if (!this.statusBarEl) return;
-        const model = this.activeModel ? ` (${this.activeModel})` : "";
+        const label = displayLabelForRef(this.activeModel);
+        const model = label ? ` (${label})` : "";
         this.statusBarEl.empty();
         if (dotState) {
             const dot = this.statusBarEl.createSpan({ cls: `lilbee-statusbar-dot is-${dotState}` });

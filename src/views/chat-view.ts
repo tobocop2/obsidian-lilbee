@@ -10,10 +10,11 @@ import {
 } from "obsidian";
 import type LilbeePlugin from "../main";
 import { MODEL_SOURCE, MODEL_TASK, SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
-import type { CatalogEntry, Message, ModelCatalog, SearchChunkType, Source, SSEEvent } from "../types";
+import type { CatalogEntry, InstalledModel, Message, SearchChunkType, Source, SSEEvent } from "../types";
 
 import { renderSourceChip } from "./results";
-import { buildModelOptions, SEPARATOR_KEY } from "../settings";
+import { SEPARATOR_KEY, SEPARATOR_LABEL } from "../settings";
+import { displayLabelForRef, extractHfRepo } from "../utils/model-ref";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import { ConfirmModal } from "./confirm-modal";
 import { CatalogModal } from "./catalog-modal";
@@ -62,7 +63,9 @@ export class ChatView extends ItemView {
     private sending = false;
     private streamController: AbortController | null = null;
     private pullController: AbortController | null = null;
-    private chatCatalog: ModelCatalog | null = null;
+    private chatCatalogEntries: CatalogEntry[] = [];
+    private chatInstalled: InstalledModel[] = [];
+    private chatActive = "";
     private chatSelectEl: HTMLSelectElement | null = null;
     private embeddingSelectEl: HTMLSelectElement | null = null;
     private embeddingModels: CatalogEntry[] = [];
@@ -239,26 +242,26 @@ export class ChatView extends ItemView {
 
     private fetchAndFillSelectors(): void {
         Promise.all([
-            this.plugin.api.listModels(),
-            this.plugin.api.installedModels().catch(() => ({ models: [] })),
+            this.plugin.api.catalog({ task: MODEL_TASK.CHAT }),
+            this.plugin.api.installedModels({ task: MODEL_TASK.CHAT }).catch(() => ({ models: [] })),
             this.plugin.api.catalog({ task: MODEL_TASK.EMBEDDING }).catch(() => null),
             this.plugin.api.config().catch(() => null),
         ])
-            .then(([models, installed, embeddingResult, serverConfig]) => {
+            .then(([chatCatalogResult, chatInstalled, embeddingResult, serverConfig]) => {
                 if (this.retryTimer) {
                     clearTimeout(this.retryTimer);
                     this.retryTimer = null;
                 }
                 this.retryCount = 0;
                 if (this.chatSelectEl) this.chatSelectEl.empty();
-                this.chatCatalog = models.chat;
-                const sourceMap = new Map(installed.models.map((m) => [m.name, m.source]));
-                if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl, models.chat, sourceMap);
+                this.chatCatalogEntries = chatCatalogResult.isOk() ? chatCatalogResult.value.models : [];
+                this.chatInstalled = chatInstalled.models;
+                this.chatActive = serverConfig ? String(serverConfig["chat_model"] ?? "") : "";
+                if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl);
 
                 this.fillEmbeddingSelector(embeddingResult, serverConfig);
 
-                // No models installed — show empty state with catalog button
-                if (models.chat.installed.length === 0) {
+                if (this.chatInstalled.length === 0) {
                     this.showEmptyState();
                     this.retryTimer = setTimeout(() => this.fetchAndFillSelectors(), RETRY_INTERVAL_MS);
                 } else {
@@ -299,39 +302,52 @@ export class ChatView extends ItemView {
         this.embeddingModels = models;
 
         for (const model of models) {
-            const option = this.embeddingSelectEl.createEl("option", { text: model.name });
-            (option as HTMLOptionElement).value = model.name;
-            if (model.name === activeModel) {
+            const option = this.embeddingSelectEl.createEl("option", { text: model.display_name });
+            (option as HTMLOptionElement).value = model.hf_repo;
+            if (model.hf_repo === extractHfRepo(activeModel)) {
                 (option as HTMLOptionElement).selected = true;
             }
         }
 
         if (models.length === 0 && activeModel) {
-            const option = this.embeddingSelectEl.createEl("option", { text: activeModel });
+            const option = this.embeddingSelectEl.createEl("option", { text: displayLabelForRef(activeModel) });
             (option as HTMLOptionElement).value = activeModel;
             (option as HTMLOptionElement).selected = true;
         }
     }
 
-    private fillSelectOptions(
-        selectEl: HTMLSelectElement,
-        catalog: ModelCatalog,
-        sourceMap: Map<string, string> = new Map(),
-    ): void {
-        const installedOnly: ModelCatalog = {
-            ...catalog,
-            catalog: catalog.catalog.filter((m) => m.installed),
-        };
-        const options = buildModelOptions(installedOnly);
-        for (const [value, label] of Object.entries(options)) {
-            const source = sourceMap.get(value) ?? "";
-            const suffix = source && source !== MODEL_SOURCE.NATIVE ? ` [${source}]` : "";
-            const option = selectEl.createEl("option", { text: `${label}${suffix}` });
-            (option as HTMLOptionElement).value = value;
-            if (value === SEPARATOR_KEY) {
-                (option as HTMLOptionElement).disabled = true;
+    private fillSelectOptions(selectEl: HTMLSelectElement): void {
+        const sourceMap = new Map(this.chatInstalled.map((m) => [m.name, m.source]));
+        const installedRepos = new Set(this.chatInstalled.map((m) => extractHfRepo(m.name)));
+        const activeRepo = extractHfRepo(this.chatActive);
+
+        // Featured rows that have an installed quant.
+        const featuredInstalled = this.chatCatalogEntries.filter((e) => installedRepos.has(e.hf_repo));
+        for (const entry of featuredInstalled) {
+            const sourceTag = entry.source && entry.source !== MODEL_SOURCE.NATIVE ? ` [${entry.source}]` : "";
+            const option = selectEl.createEl("option", { text: `${entry.display_name}${sourceTag}` });
+            (option as HTMLOptionElement).value = entry.hf_repo;
+            if (entry.hf_repo === activeRepo) {
+                (option as HTMLOptionElement).selected = true;
             }
-            if (value === catalog.active) {
+        }
+
+        // Anything installed that isn't in the featured catalog (manually pulled, ollama/, openai/, …).
+        const featuredRepos = new Set(this.chatCatalogEntries.map((e) => e.hf_repo));
+        const otherInstalled = this.chatInstalled
+            .filter((m) => !featuredRepos.has(extractHfRepo(m.name)))
+            .sort((a, b) => a.name.localeCompare(b.name));
+        if (otherInstalled.length > 0 && featuredInstalled.length > 0) {
+            const sep = selectEl.createEl("option", { text: SEPARATOR_LABEL });
+            (sep as HTMLOptionElement).value = SEPARATOR_KEY;
+            (sep as HTMLOptionElement).disabled = true;
+        }
+        for (const m of otherInstalled) {
+            const source = sourceMap.get(m.name) ?? "";
+            const suffix = source && source !== MODEL_SOURCE.NATIVE ? ` [${source}]` : "";
+            const option = selectEl.createEl("option", { text: `${displayLabelForRef(m.name)}${suffix}` });
+            (option as HTMLOptionElement).value = m.name;
+            if (m.name === this.chatActive) {
                 (option as HTMLOptionElement).selected = true;
             }
         }
@@ -340,9 +356,13 @@ export class ChatView extends ItemView {
     private attachChatListener(el: HTMLSelectElement): void {
         el.addEventListener("change", () => {
             if (!el.value || el.value === SEPARATOR_KEY) return;
-            const uninstalled = this.chatCatalog?.catalog.find((m) => m.name === el.value && !m.installed);
+            const uninstalled = this.chatCatalogEntries.find((e) => e.hf_repo === el.value && !e.installed);
             if (uninstalled) {
-                const modal = new ConfirmPullModal(this.plugin.app, uninstalled);
+                const modal = new ConfirmPullModal(this.plugin.app, {
+                    displayName: uninstalled.display_name,
+                    sizeGb: uninstalled.size_gb,
+                    minRamGb: uninstalled.min_ram_gb,
+                });
                 modal.open();
                 void modal.result.then((confirmed) => {
                     if (confirmed) {
@@ -403,8 +423,8 @@ export class ChatView extends ItemView {
         void this.fetchAndFillSelectors();
     }
 
-    private async autoPullAndSet(model: { name: string }): Promise<void> {
-        const taskId = this.plugin.taskQueue.enqueue(`Pull ${model.name}`, TASK_TYPE.PULL);
+    private async autoPullAndSet(entry: CatalogEntry): Promise<void> {
+        const taskId = this.plugin.taskQueue.enqueue(`Pull ${entry.display_name}`, TASK_TYPE.PULL);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
@@ -414,7 +434,7 @@ export class ChatView extends ItemView {
         let pullFailed = false;
         try {
             for await (const event of this.plugin.api.pullModel(
-                model.name,
+                entry.hf_repo,
                 MODEL_SOURCE.NATIVE,
                 this.pullController.signal,
             )) {
@@ -422,7 +442,7 @@ export class ChatView extends ItemView {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = percentFromSse(d);
                     if (pct !== undefined) {
-                        this.plugin.taskQueue.update(taskId, pct, model.name, {
+                        this.plugin.taskQueue.update(taskId, pct, entry.display_name, {
                             current: d.current,
                             total: d.total,
                         });
@@ -430,7 +450,7 @@ export class ChatView extends ItemView {
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
                     const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
-                    new Notice(MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name));
+                    new Notice(MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.display_name));
                     this.plugin.taskQueue.fail(taskId, msg);
                     pullFailed = true;
                     break;
@@ -442,7 +462,7 @@ export class ChatView extends ItemView {
                 this.plugin.taskQueue.cancel(taskId);
             } else {
                 const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
-                new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", model.name)}: ${reason}`);
+                new Notice(`${MESSAGES.ERROR_PULL_MODEL.replace("{model}", entry.display_name)}: ${reason}`);
                 this.plugin.taskQueue.fail(taskId, reason);
             }
             this.pullController = null;
@@ -454,12 +474,14 @@ export class ChatView extends ItemView {
 
         this.plugin.taskQueue.complete(taskId);
 
-        const result = await this.plugin.api.setChatModel(model.name);
+        const result = await this.plugin.api.setChatModel(entry.hf_repo);
         if (result.isErr()) {
-            new Notice(noticeForResultError(result.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", model.name)));
+            new Notice(
+                noticeForResultError(result.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", entry.display_name)),
+            );
         } else {
-            this.plugin.activeModel = model.name;
-            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
+            this.plugin.activeModel = entry.hf_repo;
+            new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.display_name));
             this.plugin.refreshSettingsTab();
         }
         this.plugin.fetchActiveModel();

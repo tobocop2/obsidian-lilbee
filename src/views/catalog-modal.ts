@@ -3,6 +3,7 @@ import type LilbeePlugin from "../main";
 import type { CatalogEntry, CatalogViewMode, ModelTask, ModelSize } from "../types";
 import { MODEL_TASK, SSE_EVENT, TASK_TYPE, CATALOG_VIEW_MODE, ERROR_NAME, MODEL_SOURCE } from "../types";
 import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
+import { extractHfRepo } from "../utils/model-ref";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import {
@@ -269,12 +270,10 @@ export class CatalogModal extends Modal {
     }
 
     private isActiveEntry(entry: CatalogEntry): boolean {
-        // 1s1 pinned the chat-model setter to entry.name (catalog short ref),
-        // but the value persisted on the server before that change was the
-        // hf_repo. Match both so the "active" badge stays correct on already-
-        // ingested vaults until the user re-selects the model.
-        const active = this.plugin.activeModel;
-        return active === entry.name || active === entry.hf_repo;
+        // After PR #183 the canonical chat ref is the full HF path
+        // (`<org>/<repo>/<filename>.gguf`). Strip the trailing filename
+        // before comparing to the catalog's bare `hf_repo`.
+        return extractHfRepo(this.plugin.activeModel) === entry.hf_repo;
     }
 
     private renderViewToggleCta(): void {
@@ -437,14 +436,9 @@ export class CatalogModal extends Modal {
         this.resetAndFetch();
     }
 
-    /**
-     * Identifier to surface in user-facing toasts. Chat models use the
-     * catalog short ref (matches what 1s1 persists as cfg.chat_model and
-     * what the status bar / settings dropdown render). Other model roles
-     * still set via hf_repo, so the toast names that.
-     */
+    /** Identifier to surface in user-facing toasts. */
     private activatedRefFor(entry: CatalogEntry): string {
-        return entry.task === MODEL_TASK.CHAT ? entry.name : entry.hf_repo;
+        return entry.display_name;
     }
 
     private async setActiveFor(entry: CatalogEntry): ReturnType<typeof this.plugin.api.setChatModel> {
@@ -457,25 +451,17 @@ export class CatalogModal extends Modal {
         if (entry.task === MODEL_TASK.VISION) {
             return this.plugin.api.setVisionModel(entry.hf_repo);
         }
-        // Pin chat to the catalog short ref (`name:tag`) so the dropdown,
-        // status bar, and Settings subtitle all read the same identifier.
-        // Setting via hf_repo persisted the long-form HF identity in
-        // cfg.chat_model, which left the Settings dropdown unable to
-        // round-trip the value back to a known option.
-        const result = await this.plugin.api.setChatModel(entry.name);
-        if (result.isOk()) this.plugin.activeModel = entry.name;
+        const result = await this.plugin.api.setChatModel(entry.hf_repo);
+        if (result.isOk()) this.plugin.activeModel = entry.hf_repo;
         return result;
     }
 
     private handlePull(entry: CatalogEntry): void {
-        const info = {
-            name: entry.hf_repo,
-            size_gb: entry.size_gb,
-            min_ram_gb: entry.min_ram_gb,
-            description: entry.description,
-            installed: entry.installed,
-        };
-        const confirmModal = new ConfirmPullModal(this.app, info);
+        const confirmModal = new ConfirmPullModal(this.app, {
+            displayName: entry.display_name,
+            sizeGb: entry.size_gb,
+            minRamGb: entry.min_ram_gb,
+        });
         confirmModal.open();
         void confirmModal.result.then((confirmed) => {
             if (!confirmed) return;
