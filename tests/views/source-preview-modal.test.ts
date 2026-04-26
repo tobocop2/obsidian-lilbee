@@ -303,7 +303,7 @@ describe("SourcePreviewModal — unsupported mime", () => {
     });
 
     it.each(["text/html", "text/javascript", "application/javascript", "application/xhtml+xml", "text/css"])(
-        "denies inline render for %s even though it falls under text/*",
+        "denies inline render for script- or style-carrying mime %s",
         async (mime) => {
             const app = new App();
             const api = makeApi({

@@ -535,7 +535,7 @@ export class LilbeeClient {
     async wikiDraftAccept(slug: string): Promise<DraftAcceptResponse> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/drafts/${encodeURIComponent(slug)}/accept`, {
             method: "POST",
-            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            headers: this.authHeaders(),
         });
         return res.json();
     }
