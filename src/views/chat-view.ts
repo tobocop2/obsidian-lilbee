@@ -641,6 +641,10 @@ export class ChatView extends ItemView {
             case SSE_EVENT.ERROR: {
                 const errMsg = extractString(event.data, "message");
                 assistantBubble.empty();
+                // Match the thrown-error path: drop the assistant skin so the
+                // error bubble doesn't inherit the assistant background colour
+                // from .lilbee-chat-message.assistant.
+                assistantBubble.removeClass("assistant");
                 assistantBubble.addClass("lilbee-chat-message-error");
                 assistantBubble.setAttribute("role", "alert");
                 assistantBubble.createDiv({

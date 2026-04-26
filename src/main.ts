@@ -433,7 +433,9 @@ export default class LilbeePlugin extends Plugin {
         // switched to External mode (e.g. STOPPED on the way out). Painting
         // "stopped" / "starting" / "error" from a now-irrelevant managed
         // process would lie about the user's actually-reachable external
-        // server, so external mode owns its own status via the health probe.
+        // server, so external mode owns its own status — set optimistically
+        // by saveSettings on the mode switch and corrected by the health
+        // probe thereafter.
         if (this.settings.serverMode === SERVER_MODE.EXTERNAL) return;
         switch (state) {
             case SERVER_STATE.READY:

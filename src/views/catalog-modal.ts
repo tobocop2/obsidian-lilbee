@@ -433,8 +433,18 @@ export class CatalogModal extends Modal {
 
         this.plugin.fetchActiveModel();
         this.plugin.refreshSettingsTab();
-        new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(entry.hf_repo));
+        new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(this.activatedRefFor(entry)));
         this.resetAndFetch();
+    }
+
+    /**
+     * Identifier to surface in user-facing toasts. Chat models use the
+     * catalog short ref (matches what 1s1 persists as cfg.chat_model and
+     * what the status bar / settings dropdown render). Other model roles
+     * still set via hf_repo, so the toast names that.
+     */
+    private activatedRefFor(entry: CatalogEntry): string {
+        return entry.task === MODEL_TASK.CHAT ? entry.name : entry.hf_repo;
     }
 
     private async setActiveFor(entry: CatalogEntry): ReturnType<typeof this.plugin.api.setChatModel> {
@@ -530,7 +540,7 @@ export class CatalogModal extends Modal {
 
         this.plugin.fetchActiveModel();
         this.plugin.refreshSettingsTab();
-        new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.hf_repo));
+        new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(this.activatedRefFor(entry)));
         this.resetAndFetch();
     }
 }

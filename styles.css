@@ -2860,3 +2860,15 @@
     cursor: not-allowed;
 }
 
+.lilbee-preview-open-vault {
+    /* Primary action when the previewed source resolves to a vault file —
+     * mirror the standard Obsidian CTA so it reads as the recommended next
+     * step without overpowering the modal's other footer buttons. */
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.lilbee-preview-open-vault:hover {
+    background-color: var(--interactive-accent-hover);
+}
+

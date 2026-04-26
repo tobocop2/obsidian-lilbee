@@ -27,7 +27,8 @@ function documentResultToSource(result: DocumentResult): Source {
  * non-PDFs prefer `(lines N–M)` when line bounds are present (markdown is
  * the common case) and otherwise return null. The `content_type` gate
  * silences the `(p. 0)` artefact that the server emits for some markdown
- * sources whose `page_start` is a placeholder rather than a real page.
+ * sources whose `page_start` is a placeholder rather than a real page —
+ * which means it must be threaded by every caller, not optional.
  */
 export function formatLocation(
     excerpt: {
@@ -36,10 +37,9 @@ export function formatLocation(
         line_start: number | null;
         line_end: number | null;
     },
-    content_type?: string,
+    content_type: string,
 ): string | null {
-    const isPdf = content_type === CONTENT_TYPE.PDF;
-    if (isPdf && excerpt.page_start !== null) {
+    if (content_type === CONTENT_TYPE.PDF && excerpt.page_start !== null) {
         return excerpt.page_end !== null && excerpt.page_end !== excerpt.page_start
             ? `pp. ${excerpt.page_start}–${excerpt.page_end}`
             : `p. ${excerpt.page_start}`;
@@ -48,13 +48,6 @@ export function formatLocation(
         return excerpt.line_end !== null && excerpt.line_end !== excerpt.line_start
             ? `lines ${excerpt.line_start}–${excerpt.line_end}`
             : `line ${excerpt.line_start}`;
-    }
-    // Fallback for callers that don't (yet) thread content_type through —
-    // preserve the legacy page label so older surfaces keep working.
-    if (content_type === undefined && excerpt.page_start !== null) {
-        return excerpt.page_end !== null && excerpt.page_end !== excerpt.page_start
-            ? `pp. ${excerpt.page_start}–${excerpt.page_end}`
-            : `p. ${excerpt.page_start}`;
     }
     return null;
 }

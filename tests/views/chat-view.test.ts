@@ -2805,6 +2805,26 @@ describe("ChatView — embedding model selector", () => {
         expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_EMBEDDING_UPDATED)).toBe(true);
         expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_REINDEX_REQUIRED)).toBe(true);
         expect(plugin.triggerSync).toHaveBeenCalled();
+        // 4u1: embedding success path must also refresh the Settings tab so
+        // the dropdown / subtitle reflect the new active embedding.
+        expect(plugin.refreshSettingsTab).toHaveBeenCalled();
+    });
+
+    it("4u1: embedding setEmbeddingModel failure does NOT refresh the Settings tab", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.setEmbeddingModel = vi.fn().mockResolvedValue(err(new Error("nope")));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        (select as any).value = "nomic-embed-text";
+        select.trigger("change");
+        await tick();
+
+        expect(plugin.refreshSettingsTab).not.toHaveBeenCalled();
     });
 
     it("reverts dropdown on cancel", async () => {

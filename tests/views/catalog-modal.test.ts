@@ -838,6 +838,39 @@ describe("CatalogModal", () => {
             expect(plugin.activeModel).toBe("qwen3");
         });
 
+        it("1s1: chat-task activation toast names the catalog short ref, not hf_repo", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_MODEL_ACTIVATED("qwen3"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_MODEL_ACTIVATED("qwen/qwen3-8b"))).toBe(
+                false,
+            );
+        });
+
+        it("1s1: embedding-task activation toast still names hf_repo (set via hf_repo)", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ installed: true, task: "embedding" })])),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_MODEL_ACTIVATED("qwen/qwen3-8b"))).toBe(
+                true,
+            );
+        });
+
         it("notices failure when Use fails", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));

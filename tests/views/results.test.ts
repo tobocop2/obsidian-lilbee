@@ -14,7 +14,7 @@ vi.mock("../../src/views/source-preview-modal", () => ({
     })),
 }));
 
-import { formatLocation, renderDocumentResult, renderSourceChip } from "../../src/views/results";
+import { renderDocumentResult, renderSourceChip } from "../../src/views/results";
 
 function makeContainer(): MockElement {
     return new MockElement("div");
@@ -413,16 +413,6 @@ describe("formatLocation — page branches", () => {
             makeApi(),
         );
         expect(container.find("lilbee-location")!.textContent).toBe("lines 12–18");
-    });
-
-    it("formatLocation called without content_type still renders page label (back-compat)", () => {
-        const result = formatLocation({ page_start: 3, page_end: 3, line_start: null, line_end: null });
-        expect(result).toBe("p. 3");
-    });
-
-    it("formatLocation back-compat with page range when content_type missing", () => {
-        const result = formatLocation({ page_start: 3, page_end: 5, line_start: null, line_end: null });
-        expect(result).toBe("pp. 3–5");
     });
 
     it("page_start !== page_end (PDF) renders 'pp. X-Y'", () => {
