@@ -1,5 +1,7 @@
 # [lilbee for Obsidian](https://tobocop2.github.io/obsidian-lilbee/)
 
+An Obsidian plugin that pairs your vault with a local search engine. Click any citation to preview the source passage in place — verify every answer without leaving the editor.
+
 [![CI](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml/badge.svg)](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml)
 [![Coverage](https://tobocop2.github.io/obsidian-lilbee/coverage/badge.svg)](https://tobocop2.github.io/obsidian-lilbee/coverage/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -7,60 +9,207 @@
 ![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
 [![Obsidian](https://img.shields.io/badge/Obsidian-Plugin-7c3aed?logo=obsidian&logoColor=white)](https://obsidian.md)
 
-> Beta — feedback and bug reports welcome. [Open an issue](https://github.com/tobocop2/obsidian-lilbee/issues).
+> ## ⚠️ Beta software
 >
-> If you delete a file from your vault, it will still show up in search results. Removing deleted files from the index is coming soon.
-
-Chat with your documents privately, entirely on your own machine. Ask questions about your notes, PDFs, code, spreadsheets, and images — and get answers grounded in what you've actually written, with source citations. Save conversations back to your vault as markdown. No cloud services, no API keys, no data leaves your computer.
-
-## Demo
-
-<details>
-<summary><b>Scanned PDF → vision OCR → chat</b> (click to expand)</summary>
-
-Attaching a scanned 1998 Star Wars: X-Wing Collector's Edition manual (PDF with no extractable text), indexing it with vision OCR, and chatting about the dev team credits — entirely local.
-
-> Recording sped up 5.5x. Real time ~4 min on M1 Pro / 32 GB. Most time is vision OCR.
-
-![Obsidian chat demo](demos/obsidian-chat.gif)
-</details>
+> The plugin is in **active beta**. Installation goes through [BRAT](https://github.com/TfTHacker/obsidian42-brat) so you always get the latest pre-release. Interfaces, settings layout, and on-disk formats may shift between betas. Feedback, bug reports, and issues are very welcome — that's the whole point of the beta.
+>
+> Track the current release: [PR #7 →](https://github.com/tobocop2/obsidian-lilbee/pull/7)
 
 ---
 
-## What you need
+- [Why lilbee for Obsidian](#why-lilbee-for-obsidian)
+- [Previews](#previews)
+- [What you can do with it](#what-you-can-do-with-it)
+- [Quick start](#quick-start)
+- [Open the chat](#open-the-chat)
+- [How it works](#how-it-works)
+- [Updating the plugin](#updating-the-plugin)
+- [Updating the server](#updating-the-server)
+- [Documentation](#documentation)
 
-### Ollama
+---
 
-**[Ollama](https://ollama.com)** is a free app that runs AI models locally on your computer. lilbee uses it behind the scenes to understand your documents and answer your questions — nothing is sent to the cloud.
+## Why lilbee for Obsidian
 
-1. Download and install Ollama from [ollama.com](https://ollama.com)
-2. Open it — it runs in the background (you'll see a llama icon in your menu bar on macOS or system tray on Windows/Linux)
+Local AI tools have gotten great at getting you to a chat window fast. The first evening with a local model is genuinely fun. What makes it more than a novelty is grounding: the model needs context from your notes, your files, your codebase. Without that, the local AI tool runs out of places to go.
 
-That's it. The plugin takes care of downloading the specific models it needs. You don't need to use the Ollama terminal or know any commands.
+Local AI can be made more substantial than a chatbot. A vault is already a curated set of documents — notes you've taken, PDFs you've collected, scans you've filed away — and that's exactly the corpus a real local search engine wants. lilbee for Obsidian pairs your vault with the [lilbee](https://github.com/tobocop2/lilbee) search engine, so a local model can reason over your own library and answer with citations you can click back to the source.
 
-### Models — what they are and why you need them
+**The reason this is the GUI client and not the TUI.** lilbee's terminal app streams replies with clickable citations that point to a file and a line. That's enough when you trust the corpus. When you don't — when the answer matters and you want to read what the model read — the plugin goes one step further. Every citation in chat or wiki opens a **Source Preview** modal that scrolls to the exact chunk in the original document, with the surrounding paragraphs visible. No "open document, find the page, scroll to the line." The verification loop is one click.
 
-A "model" is an AI brain that runs on your computer. lilbee uses three kinds:
+An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, from your own vault, shaped to your needs.
 
-| Model type | What it does | Do I need to set it up? |
-|-----------|-------------|------------------------|
-| **Embedding model** | Reads your documents and converts them into a searchable format so lilbee can find the right passages when you ask a question. This is what makes search work. | No — the plugin downloads this automatically the first time you sync. |
-| **Chat model** | The AI that reads the relevant passages and writes an answer in plain language. This is what you're talking to in the chat sidebar. | The plugin shows you a list of recommended models and downloads your pick with one click. |
-| **Vision model** *(optional)* | Can "read" images and scanned PDFs that don't have selectable text — think photographed pages, screenshots, or old scanned documents. It converts them to text so they become searchable. | Only needed if you want to index images or scanned PDFs. You can enable it in settings whenever you're ready. |
+## Previews
 
-Models are large files (a few GB each) and take a few minutes to download the first time. After that they're cached on your machine and load in seconds.
+> Real recordings coming soon. Previews below give the shape of each screen.
 
-> **Hardware note:** Models run on your CPU or GPU. A Mac with Apple Silicon (M1/M2/M3/M4) or a PC with an NVIDIA GPU will give the best performance. 8 GB of RAM is the minimum; 16–32 GB is recommended for a smooth experience.
+**Chat sidebar.** Streaming replies with `[¹]` citations. Click a citation to open the source preview.
+
+```
+ ┌─ Chat ────────────────────────────────────┐
+ │ [💬 qwen3:8b ▾] [🗄 nomic-embed ▾]         │
+ │ [OCR] [All|Wiki|Raw]       [💾] [Clear]    │
+ │──────────────────────────────────────────│
+ │                                            │
+ │ You:  what does the oil pressure warning   │
+ │       mean?                                │
+ │                                            │
+ │ ▸ thinking...                              │
+ │                                            │
+ │ Lilbee: The oil pressure warning indicates │
+ │         low oil pressure.[¹] When the      │
+ │         light stays on, stop the engine    │
+ │         immediately.[²]                    │
+ │         ────────────────────────────────   │
+ │         Sources                            │
+ │         [¹ owners-manual.pdf:42] ← preview │
+ │         [² owners-manual.pdf:43]           │
+ │                                            │
+ │──────────────────────────────────────────│
+ │ [📎] Ask anything...              [Send]   │
+ └────────────────────────────────────────────┘
+```
+
+**Source preview.** Opens when you click any `[¹]` citation in chat or wiki. Scrolls to the exact chunk and highlights the cited lines.
+
+```
+ ┌─ Source preview ──────────────────────────────────┐
+ │ owners-manual.pdf · chunk 42 of 188     [Close ×] │
+ │───────────────────────────────────────────────────│
+ │ ...                                               │
+ │ Engine warnings                                   │
+ │                                                   │
+ │ ▌The oil pressure warning indicates low oil      ▐│
+ │ ▌pressure. When the light stays on, stop the     ▐│
+ │ ▌engine immediately and check the oil level.     ▐│
+ │                                                   │
+ │ If the warning persists after a top-up, do not    │
+ │ continue driving — call for service.              │
+ │ ...                                               │
+ │                                                   │
+ │              [Open document]  [Copy link]         │
+ └───────────────────────────────────────────────────┘
+```
+
+**Model Catalog.** Browse, search, and install models without leaving Obsidian. Featured picks for each role; full HuggingFace catalog one toggle away. `★` marks the developer's recommendation.
+
+```
+ ┌─ Model Catalog ─────────────────────────┐
+ │ [All tasks ▾] [All sizes ▾] [Featured ▾]│
+ │ 🔍 search...                 [Grid|List]│
+ │                                          │
+ │ Our picks                                │
+ │ ┌────────────┐ ┌────────────┐           │
+ │ │ Qwen3 8B ★ │ │ Nomic      │           │
+ │ │ ▌chat▐     │ │ ▌embed▐    │           │
+ │ │ [GGUF]     │ │ [GGUF]     │           │
+ │ │ 4.9 GB  ✓  │ │ 274 MB     │           │
+ │ │ [Use]      │ │ [Pull]     │           │
+ │ └────────────┘ └────────────┘           │
+ │                                          │
+ │            [Load more]                   │
+ └──────────────────────────────────────────┘
+```
+
+**Task Center.** Every background job (sync, crawl, wiki build, model pull) in one place. Per-type concurrent queues with a global cap.
+
+```
+ ┌─ Task Center ───────── [cap 3/3] [Clear]┐
+ │ ACTIVE (2)                               │
+ │   ████████████░░░░░░░░  42%  PULL  qwen3 │
+ │   ██████░░░░░░░░░░░░░░  18%  SYNC  vault │
+ │ QUEUED (1)                               │
+ │   CRAWL  https://docs.example.com        │
+ │ COMPLETED                                │
+ │   ✓ SYNC  vault              2 min ago  │
+ │   ✗ PULL  mistral            5 min ago  │
+ └──────────────────────────────────────────┘
+```
+
+**Wiki sidebar.** Auto-generated concept and entity pages, drafts queue, citation footnotes that open the source preview.
+
+```
+ ┌─ Wiki ───────────────────────────────────┐
+ │ 🔍 Filter pages...                        │
+ │                                           │
+ │ Summaries (12)                            │
+ │   Oil System Overview          3 src     │
+ │ Concepts (8)                              │
+ │   Maintenance Schedule         5 src     │
+ │ Drafts (2)                                │
+ │   Tire Pressure                1 src     │
+ │─────────────────────────────────────────│
+ │ ┌─ Oil System Overview ─────────────────┐│
+ │ │ 3 sources · faithfulness 0.92         ││
+ │ │                                        ││
+ │ │ The oil system uses a wet-sump         ││
+ │ │ design with a capacity of 5 quarts     ││
+ │ │ including filter.[¹]                   ││
+ │ │                                        ││
+ │ │ [¹ owners-manual.pdf:42]  ← preview   ││
+ │ └────────────────────────────────────────┘│
+ └──────────────────────────────────────────┘
+```
+
+**Setup wizard.** 7-step guided onboarding on first launch. Re-runnable from the command palette.
+
+```
+ ●──○──○──○──○──○──○
+ 1  2  3  4  5  6  7
+
+ 1  Welcome
+ 2  Server mode      → Managed or External (URL + health)
+ 3  Chat model       → Featured grid, RAM-based pick
+ 4  Embedding model  → Featured grid (or keep current)
+ 5  Initial sync     → SSE progress bar
+ 6  Wiki (optional)  → Pros/cons, recommend skipping
+ 7  Done             → Summary + tips + [Open chat]
+```
+
+## What you can do with it
+
+### A personal encyclopedia of your vault
+
+Point lilbee at your vault and it indexes every note, PDF, ebook, and code file into a searchable archive with citations that click back to the source line. The same pattern works for any vault you've curated: a medical textbook collection, a guitar theory library, a field's research papers, a car's service manuals, your company's internal wiki. Whatever corpus your vault holds becomes a searchable, talkable version of exactly what you have.
+
+### Verify every answer at the source
+
+Every citation in a chat reply or wiki page is a live link. Click it and a Source Preview modal opens scrolled to the exact chunk in the source document, with the surrounding paragraphs visible and the cited lines highlighted. From there you can open the full document or copy a deep link back to the citation. The TUI tells you where the answer came from; the plugin lets you read it.
+
+This matters for the things you'd actually want a private knowledge base for — medical references, legal documents, manuals, internal docs. A confident-sounding answer with a footnote is only as good as the footnote. Treating verification as a one-click action, not a separate workflow, is the difference between trusting the system and double-checking everything by hand.
+
+### An auto-generated wiki of your knowledge
+
+The plugin reads everything you've indexed and writes a wiki about it. Pages compound across sources instead of being one-per-document, so concepts and entities that show up repeatedly get their own page with citations from every source that mentions them. Pages live in a configurable vault folder (default `lilbee/`) as ordinary markdown with `[[wiki links]]`, so Obsidian's graph view picks them up.
+
+Every section is citation-verified against the source chunks and scored for embedding faithfulness before publish. Low-confidence pages land in a drafts queue with a review modal — accept, reject, or edit them inline. A lint command surfaces stale or broken citations grouped by page.
+
+### Documents, code, and scanned images
+
+Your vault is full of more than markdown. lilbee indexes PDFs, Office files (`.docx`, `.xlsx`, `.pptx`), ebooks (`.epub`), CSV / TSV / JSON / YAML, and 150+ programming languages. Prose goes through [Kreuzberg](https://github.com/Goldziher/kreuzberg)'s heading-aware extraction so each chunk keeps its section context. Code goes through [tree-sitter](https://tree-sitter.github.io/tree-sitter/)'s AST-aware splitter, so chunks map to real functions, classes, and modules instead of arbitrary line ranges.
+
+Scanned PDFs and photographed pages go through OCR — Tesseract for plain text, or a local GGUF vision model that preserves tables and layout as markdown. OCR is a per-vault toggle in Settings.
+
+### Pick and tune your models
+
+Chat, embedding, vision, and reranker are four separate roles, each picked and managed independently. The Model Catalog (`Open model catalog` from the command palette, or the toolbar dropdown in chat) lets you browse featured picks or search the full HuggingFace catalog, see size and RAM requirements before pulling, and confirm before downloading. Pulls run through the Task Center with progress and cancel.
+
+Retrieval and generation are deeply tunable from Settings: chunk size and overlap, search strictness, query rewriting on/off, reranker pass with a configurable candidate count, and per-knob reset-to-default. Search & Retrieval, Generation, Sync, Crawling, Wiki, and Advanced are all separate sections with a filter on top.
+
+### Local-first, frontier-capable
+
+By default everything stays on your machine — server, models, index, vault. For roles where a frontier model genuinely helps (sometimes vision OCR, sometimes long-context summarization), Settings → Advanced lets you key in OpenAI, Anthropic, Gemini, or any LiteLLM-compatible endpoint and use it for that role only, while keeping the rest local. The plugin shows a persistent indicator whenever a cloud model is the active chat or vision backend so it's clear when chunks are leaving the machine.
 
 ## Quick start
 
-1. Install and open **[Ollama](https://ollama.com)**
-2. Install **[BRAT](https://github.com/TfTHacker/obsidian42-brat)** in Obsidian (Settings → Community plugins → Browse → search "BRAT" → Install → Enable)
-3. Open the command palette (`Cmd/Ctrl + P`) → **BRAT: Plugins: Add a beta plugin for testing** → paste `tobocop2/obsidian-lilbee` → Add Plugin
-4. Enable **lilbee** in Settings → Community plugins
-5. Go to **Settings → lilbee** (or click the gear icon next to lilbee in Community plugins) to choose a chat model — pick one from the catalog and it downloads with one click. Optionally enable a vision model for images and scanned PDFs.
+1. Install **[BRAT](https://github.com/TfTHacker/obsidian42-brat)** in Obsidian (Settings → Community plugins → Browse → search "BRAT" → Install → Enable).
+2. Open the command palette (`Cmd/Ctrl + P`) → **BRAT: Plugins: Add a beta plugin for testing** → paste `tobocop2/obsidian-lilbee` → **Add Plugin**.
+3. Enable **lilbee** in Settings → Community plugins.
+4. The Setup Wizard auto-launches. Pick a chat model and an embedding model from the featured grid, then run the initial sync.
 
-The plugin downloads and manages the [lilbee](https://github.com/tobocop2/lilbee) server automatically — no terminal commands, no Python, no manual setup. Wait for the status bar to show `lilbee: ready`, then open the chat.
+The plugin downloads and manages the [lilbee](https://github.com/tobocop2/lilbee) server binary automatically — no Python, no `pip`, no terminal. The first launch fetches the right binary for your platform and verifies it before starting. Wait for the status bar to show `lilbee: ready`, then open the chat.
+
+> **Hardware note:** the server runs on your CPU or GPU. A Mac with Apple Silicon (M1+) or a PC with an NVIDIA / AMD / Intel Arc GPU gives the best performance. 8 GB of RAM is the minimum; 16–32 GB is recommended. See [lilbee's hardware requirements](https://github.com/tobocop2/lilbee#hardware-requirements) for the full table.
 
 ### Open the chat
 
@@ -71,33 +220,27 @@ Once the status bar shows **lilbee: ready**:
 | **macOS** | `Cmd + P` → type **lilbee: Open chat** → Enter |
 | **Windows / Linux** | `Ctrl + P` → type **lilbee: Open chat** → Enter |
 
-The chat panel opens in the sidebar. From there you can start asking questions, attach files, or run **Sync vault** (`Cmd/Ctrl + P` → "lilbee: Sync vault") to index everything at once.
+The chat panel opens in the sidebar. From there you can ask questions, attach individual files, or run **Sync vault** (`Cmd/Ctrl + P` → "lilbee: Sync vault") to index everything at once.
 
 ## How it works
 
-On first launch, the plugin downloads the [lilbee](https://github.com/tobocop2/lilbee) server and runs it in the background. When you sync your vault or attach files in the chat, this server breaks your documents into passages and uses Ollama to create searchable embeddings. When you ask a question, it finds the most relevant passages and sends them to the chat model, which writes an answer grounded in your actual documents — with links back to the sources.
+The plugin runs [lilbee](https://github.com/tobocop2/lilbee) as a managed sidecar — on first launch it downloads the server binary for your platform, spawns it in the background, and shuts it down when you close Obsidian. Your vault is the corpus. lilbee handles indexing, retrieval, generation, and the wiki; the plugin is the GUI on top.
 
-Everything stays on your machine. The server, the models, the search index, and your documents all live locally. Like all Obsidian plugins, lilbee is installed per vault — each vault runs its own server instance with its own index, so there is no shared global store. If you already run your own lilbee server, you can point the plugin at it by overriding the server URL in Settings → lilbee.
+Everything stays on your machine. The server, the models, the index, and your vault all live locally. Like all Obsidian plugins, lilbee is installed per vault — each vault runs its own server instance with its own index, so there's no shared global store. If you'd rather run your own lilbee server (on a different machine, in a container, or on a port you control), point the plugin at it from Settings → Connection.
 
-> **macOS users:** The server binary is unsigned (Apple charges [$99/year](https://developer.apple.com/support/enrollment/) for that). The plugin clears the quarantine flag automatically. If macOS still blocks it, go to System Settings → Privacy & Security and click "Allow Anyway". See the [lilbee source](https://github.com/tobocop2/lilbee) if you want to audit the build.
+> **macOS users:** the server binary is unsigned (Apple charges [$99/year](https://developer.apple.com/support/enrollment/) for signing). The plugin clears the quarantine flag automatically. If macOS still blocks it, go to System Settings → Privacy & Security and click **Allow Anyway**. See the [lilbee source](https://github.com/tobocop2/lilbee) if you want to audit the build.
 
 ## Updating the plugin
 
-Go to **Settings → BRAT → Beta Plugin List**, click the edit (pencil) icon next to lilbee, and change the version to the latest release tag. BRAT will download the new version. **Restart Obsidian** after the update for the new version to take effect.
+Settings → BRAT → Beta Plugin List → click the edit (pencil) icon next to lilbee → change the version to the latest release tag. BRAT downloads the new version. **Restart Obsidian** after the update for the new version to take effect.
 
 ## Updating the server
 
-The plugin tracks the installed lilbee server version. Go to Settings → lilbee → **Check for updates**. If a newer release is available, the button changes to **Update to vX.Y.Z** — one click stops the running server, downloads the new version, and restarts.
+The plugin tracks the installed lilbee server version. Go to Settings → lilbee → **Check for updates**. If a newer release is available the button changes to **Update to vX.Y.Z** — one click stops the running server, downloads the new version, verifies it, and restarts.
 
 ## Documentation
 
-See **[Usage Guide](docs/usage.md)** for the full reference — all commands, settings, chat features, supported formats, troubleshooting, and advanced configuration.
-
-## Build your own integration
-
-lilbee exposes a REST API that isn't tied to any specific model. The search endpoint returns relevant passages without calling an LLM — so you can build your own tools on top of it, or integrate document search into other apps. This plugin is a full working example of a client built on that API.
-
-See the [lilbee README](https://github.com/tobocop2/lilbee) for the API docs.
+See **[Usage Guide](docs/usage.md)** for the full reference — every command, every setting, the chat toolbar, supported formats, troubleshooting, and advanced configuration. For the underlying engine — what it indexes, how retrieval works, model formats, hardware requirements — see [lilbee](https://github.com/tobocop2/lilbee).
 
 ## License
 
