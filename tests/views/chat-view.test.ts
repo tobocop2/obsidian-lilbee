@@ -130,6 +130,7 @@ function makePlugin(): LilbeePlugin {
         settings: { topK: 5, enableOcr: null as boolean | null, wikiEnabled: true, searchChunkType: "all" as const },
         activeModel: "llama3",
         fetchActiveModel: vi.fn(),
+        refreshSettingsTab: vi.fn(),
         saveSettings: vi.fn().mockResolvedValue(undefined),
         cancelSync: vi.fn(),
         triggerSync: vi.fn().mockResolvedValue(undefined),
@@ -918,6 +919,39 @@ describe("ChatView.onOpen — model selector", () => {
         await tick();
 
         expect(Notice.instances.some((n) => n.message.includes("failed to switch"))).toBe(true);
+    });
+
+    it("4u1: chat-view setChatModel success refreshes the Settings tab", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-chat-model-select")!;
+        (select as any).value = "phi3";
+        select.trigger("change");
+        await tick();
+
+        expect(plugin.refreshSettingsTab).toHaveBeenCalled();
+    });
+
+    it("4u1: chat-view setChatModel failure does NOT refresh the Settings tab", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("fail")));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-chat-model-select")!;
+        (select as any).value = "bad-model";
+        select.trigger("change");
+        await tick();
+
+        expect(plugin.refreshSettingsTab).not.toHaveBeenCalled();
     });
 
     it("change event does nothing when value is empty", async () => {

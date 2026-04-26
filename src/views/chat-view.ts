@@ -355,6 +355,7 @@ export class ChatView extends ItemView {
                 if (result.isOk()) {
                     this.plugin.activeModel = el.value;
                     this.plugin.fetchActiveModel();
+                    this.plugin.refreshSettingsTab();
                 } else {
                     new Notice(MESSAGES.ERROR_SWITCH_MODEL);
                 }
@@ -382,6 +383,7 @@ export class ChatView extends ItemView {
                 this.activeEmbeddingModel = el.value;
                 new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
                 new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
+                this.plugin.refreshSettingsTab();
                 void this.plugin.triggerSync();
             });
         });
@@ -458,6 +460,7 @@ export class ChatView extends ItemView {
         } else {
             this.plugin.activeModel = model.name;
             new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
+            this.plugin.refreshSettingsTab();
         }
         this.plugin.fetchActiveModel();
         this.refreshModelSelector();

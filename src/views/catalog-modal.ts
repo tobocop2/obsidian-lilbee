@@ -427,6 +427,7 @@ export class CatalogModal extends Modal {
         }
 
         this.plugin.fetchActiveModel();
+        this.plugin.refreshSettingsTab();
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(entry.hf_repo));
         this.resetAndFetch();
     }
@@ -518,6 +519,7 @@ export class CatalogModal extends Modal {
         }
 
         this.plugin.fetchActiveModel();
+        this.plugin.refreshSettingsTab();
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.hf_repo));
         this.resetAndFetch();
     }

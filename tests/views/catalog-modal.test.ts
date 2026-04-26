@@ -69,6 +69,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         },
         activeModel: "",
         fetchActiveModel: vi.fn(),
+        refreshSettingsTab: vi.fn(),
         taskQueue: new TaskQueue(),
         ...overrides,
     };
@@ -720,6 +721,45 @@ describe("CatalogModal", () => {
             await tick();
             await tick();
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("qwen/qwen3-8b");
+        });
+
+        it("4u1: handleUse refreshes the Settings tab on success", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(plugin.refreshSettingsTab).toHaveBeenCalled();
+        });
+
+        it("4u1: handleUse does not refresh the Settings tab on failure", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("nope")));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(plugin.refreshSettingsTab).not.toHaveBeenCalled();
+        });
+
+        it("4u1: executePull refreshes the Settings tab after successful pull + setActive", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            plugin.api.pullModel = vi.fn().mockImplementation(() => emptyStream());
+            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
+            pullBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(plugin.refreshSettingsTab).toHaveBeenCalled();
         });
 
         it("uses setRerankerModel when the entry is a rerank task (and does not mutate activeModel)", async () => {
