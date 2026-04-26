@@ -1655,6 +1655,11 @@
 }
 
 .lilbee-wizard-progress-indeterminate {
+    /* The base .lilbee-progress-bar starts at width:0 so the determinate
+     * `style.width` JS path can grow it. Indeterminate mode has no width
+     * to grow — it animates a moving gradient — so the bar must already
+     * span the full container before the gradient becomes visible. */
+    width: 100%;
     background: linear-gradient(
         90deg,
         var(--background-modifier-border) 0%,

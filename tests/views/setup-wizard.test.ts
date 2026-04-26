@@ -2708,6 +2708,27 @@ describe("SetupWizard", () => {
             expect(fill).not.toBeNull();
             expect(fill!.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(true);
         });
+
+        it("410: managed-server start keeps the progress fill indeterminate until completion", async () => {
+            const plugin = makePlugin({ serverManager: null });
+            // Hold startManagedServer open so we can inspect the mid-flight state.
+            plugin.startManagedServer = vi.fn().mockImplementation(async () => {
+                await new Promise(() => {});
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const nextBtn = findButtons(el).find((b) => b.textContent === "Next")!;
+            nextBtn.trigger("click");
+            await tick();
+            await tick();
+
+            const fill = el.find("lilbee-wizard-progress-fill");
+            expect(fill).not.toBeNull();
+            expect(fill!.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(true);
+        });
     });
 
     describe("Wiki step disclosure", () => {
