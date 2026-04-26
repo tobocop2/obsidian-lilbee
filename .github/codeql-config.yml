@@ -1,0 +1,9 @@
+name: obsidian-lilbee CodeQL config
+
+# Analyse the plugin's own TypeScript: shipped code in src/ and the test
+# suite. Everything outside these paths (build output, esbuild config,
+# generated site assets, vendored binaries) is excluded so findings are
+# strictly about code we author.
+paths:
+  - src
+  - tests
