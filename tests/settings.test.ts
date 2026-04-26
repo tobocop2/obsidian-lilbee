@@ -2278,7 +2278,7 @@ describe("managed mode settings", () => {
         expect(Notice.instances.some((n) => n.message.includes("update available"))).toBe(false);
     });
 
-    it("check for updates button shows 'already up to date' when no update", async () => {
+    it("51g: check for updates with no newer version surfaces a 'up to date' Notice naming the current version", async () => {
         Notice.clear();
 
         const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
@@ -2291,7 +2291,25 @@ describe("managed mode settings", () => {
         // buttonOnClicks[0] = Setup wizard, [1] = Start, [2] = Check for updates
         await buttonOnClicks[2]();
 
-        expect(Notice.instances.some((n) => n.message.includes("already up to date"))).toBe(true);
+        // Notice mentions the current version so the click visibly registered.
+        expect(Notice.instances.some((n) => n.message.includes("up to date") && n.message.includes("v0.1.0"))).toBe(
+            true,
+        );
+    });
+
+    it("51g: check for updates with no version persisted falls back to a generic 'unknown version' label", async () => {
+        Notice.clear();
+
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "" });
+        (plugin as any).checkForUpdate = vi.fn().mockResolvedValue({ available: false });
+        (plugin.api.listModels as ReturnType<typeof vi.fn>).mockResolvedValue(makeModelsResponse());
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+
+        await buttonOnClicks[2]();
+
+        expect(Notice.instances.some((n) => n.message.includes("unknown version"))).toBe(true);
     });
 
     it("update button calls updateServer and shows success notice", async () => {

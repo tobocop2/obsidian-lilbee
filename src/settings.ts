@@ -305,8 +305,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         checkBtn.setButtonText(`Update to ${result.release.tag}`);
                         checkBtn.setDisabled(false);
                     } else {
-                        new Notice(MESSAGES.ERROR_ALREADY_UPTODATE);
-                        checkBtn.setButtonText(MESSAGES.BUTTON_CHECK_UPDATES);
+                        // 51g: explicit feedback on the no-update path so the
+                        // click visibly registers. Surface the *current*
+                        // version so the user can see what was checked, and
+                        // pin the inline button label to "Up to date" until
+                        // the next click — both the toast and the button
+                        // change confirm the action.
+                        const current = this.plugin.settings.lilbeeVersion || MESSAGES.LABEL_UNKNOWN;
+                        new Notice(MESSAGES.NOTICE_SERVER_UPTODATE(current));
+                        checkBtn.setButtonText(MESSAGES.LABEL_UPTODATE);
                         checkBtn.setDisabled(false);
                     }
                 } catch {
