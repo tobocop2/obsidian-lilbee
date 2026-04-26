@@ -277,7 +277,10 @@ describe("CatalogModal", () => {
             expect(content.find("lilbee-catalog-remove")).not.toBeNull();
         });
 
-        it("shows Active when the entry is the plugin's active model", async () => {
+        it("shows Active when the entry is the plugin's active model (legacy hf_repo value)", async () => {
+            // Back-compat: vaults set up before 1s1 stored hf_repo; the badge
+            // must still resolve so users don't see "Use" on a model that's
+            // already active.
             const plugin = makePlugin({ activeModel: "qwen/qwen3-8b" });
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
             const modal = await openModal(plugin);
@@ -285,6 +288,31 @@ describe("CatalogModal", () => {
             content.find("lilbee-catalog-view-toggle")!.trigger("click");
             await tick();
             expect(content.find("lilbee-catalog-active")).not.toBeNull();
+        });
+
+        it("shows Active when activeModel matches entry.name (1s1 short ref)", async () => {
+            // After 1s1, fresh sets persist entry.name. The Active badge must
+            // resolve from the short ref too — otherwise the badge silently
+            // disappears the moment the user picks a model from the catalog.
+            const plugin = makePlugin({ activeModel: "qwen3" });
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ installed: true, name: "qwen3", hf_repo: "qwen/qwen3-8b" })])),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            content.find("lilbee-catalog-view-toggle")!.trigger("click");
+            await tick();
+            expect(content.find("lilbee-catalog-active")).not.toBeNull();
+        });
+
+        it("does NOT show Active when activeModel matches neither entry.name nor entry.hf_repo", async () => {
+            const plugin = makePlugin({ activeModel: "some-other-model" });
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            content.find("lilbee-catalog-view-toggle")!.trigger("click");
+            await tick();
+            expect(content.find("lilbee-catalog-active")).toBeNull();
         });
 
         it("sorts ascending then descending on repeated column clicks", async () => {

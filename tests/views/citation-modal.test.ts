@@ -156,7 +156,7 @@ describe("CitationModal", () => {
         expect(badge!.textContent).toBe("inference");
     });
 
-    it("renders page range when page_start and page_end differ", async () => {
+    it("renders page range when page_start and page_end differ on a PDF citation", async () => {
         const app = new App();
         const plugin = makePlugin();
         plugin.api.wikiCitations.mockResolvedValue({
@@ -165,7 +165,7 @@ describe("CitationModal", () => {
                 {
                     citation_key: "k",
                     claim_type: "fact",
-                    source_filename: "s.md",
+                    source_filename: "s.pdf",
                     source_hash: "h",
                     page_start: 1,
                     page_end: 3,
@@ -186,7 +186,7 @@ describe("CitationModal", () => {
         expect(loc!.textContent).toBe("pp. 1\u20133");
     });
 
-    it("renders single page when page_start equals page_end", async () => {
+    it("renders single page when page_start equals page_end on a PDF citation", async () => {
         const app = new App();
         const plugin = makePlugin();
         plugin.api.wikiCitations.mockResolvedValue({
@@ -195,7 +195,7 @@ describe("CitationModal", () => {
                 {
                     citation_key: "k",
                     claim_type: "fact",
-                    source_filename: "s.md",
+                    source_filename: "s.pdf",
                     source_hash: "h",
                     page_start: 5,
                     page_end: 5,
@@ -214,6 +214,67 @@ describe("CitationModal", () => {
         const loc = el.find("lilbee-location");
         expect(loc).not.toBeNull();
         expect(loc!.textContent).toBe("p. 5");
+    });
+
+    it("1mu: markdown citation with placeholder page_start does not render '(p. 0)'", async () => {
+        // WikiCitation has no content_type field; we infer it from the
+        // filename extension. A .md source must skip page rendering even when
+        // the server emits page_start=0 (a known artefact of the chunker).
+        const app = new App();
+        const plugin = makePlugin();
+        plugin.api.wikiCitations.mockResolvedValue({
+            wiki_page: "Page",
+            citations: [
+                {
+                    citation_key: "k",
+                    claim_type: "fact",
+                    source_filename: "battery-storage.md",
+                    source_hash: "h",
+                    page_start: 0,
+                    page_end: 0,
+                    line_start: null,
+                    line_end: null,
+                    excerpt: "",
+                    created_at: "2025-01-01",
+                },
+            ],
+        });
+        const modal = new CitationModal(app as any, plugin as any, "slug");
+        modal.onOpen();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        expect(el.find("lilbee-location")).toBeNull();
+    });
+
+    it("1mu: markdown citation with line bounds renders 'lines N\u2013M' instead of pages", async () => {
+        const app = new App();
+        const plugin = makePlugin();
+        plugin.api.wikiCitations.mockResolvedValue({
+            wiki_page: "Page",
+            citations: [
+                {
+                    citation_key: "k",
+                    claim_type: "fact",
+                    source_filename: "notes.md",
+                    source_hash: "h",
+                    page_start: 0,
+                    page_end: 0,
+                    line_start: 12,
+                    line_end: 18,
+                    excerpt: "",
+                    created_at: "2025-01-01",
+                },
+            ],
+        });
+        const modal = new CitationModal(app as any, plugin as any, "slug");
+        modal.onOpen();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const loc = el.find("lilbee-location");
+        expect(loc).not.toBeNull();
+        expect(loc!.textContent).toBe("lines 12\u201318");
     });
 
     it("renders line range when line_start and line_end differ", async () => {

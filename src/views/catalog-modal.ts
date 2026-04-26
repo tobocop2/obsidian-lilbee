@@ -269,7 +269,12 @@ export class CatalogModal extends Modal {
     }
 
     private isActiveEntry(entry: CatalogEntry): boolean {
-        return this.plugin.activeModel === entry.hf_repo;
+        // 1s1 pinned the chat-model setter to entry.name (catalog short ref),
+        // but the value persisted on the server before that change was the
+        // hf_repo. Match both so the "active" badge stays correct on already-
+        // ingested vaults until the user re-selects the model.
+        const active = this.plugin.activeModel;
+        return active === entry.name || active === entry.hf_repo;
     }
 
     private renderViewToggleCta(): void {
