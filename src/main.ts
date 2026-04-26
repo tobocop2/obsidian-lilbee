@@ -438,6 +438,7 @@ export default class LilbeePlugin extends Plugin {
                 }
                 this.serverUnreachable = false;
                 this.setStatusReady();
+                this.refreshSettingsTab();
                 new Notice(MESSAGES.STATUS_READY, NOTICE_DURATION_MS);
                 break;
             case SERVER_STATE.STARTING:
@@ -1140,6 +1141,20 @@ export default class LilbeePlugin extends Plugin {
         if (!setting) return;
         setting.open();
         setting.openTabById(this.manifest.id);
+    }
+
+    /**
+     * Re-render the Settings tab if (and only if) the open tab is ours.
+     * Called whenever server-owned state — active models, persisted config,
+     * server reachability — changes from somewhere other than the Settings
+     * UI itself, so the rendered controls don't lie about the live state.
+     */
+    refreshSettingsTab(): void {
+        const setting = (this.app as unknown as { setting?: { activeTab?: unknown } }).setting;
+        const activeTab = setting?.activeTab;
+        if (activeTab instanceof LilbeeSettingTab) {
+            activeTab.display();
+        }
     }
 
     async activateWikiView(): Promise<void> {

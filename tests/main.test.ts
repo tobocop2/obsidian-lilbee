@@ -3271,6 +3271,52 @@ describe("LilbeePlugin", () => {
             expect(plugin.statusBarEl?.classList.contains("lilbee-status-error")).toBe(true);
         });
 
+        it("handleServerStateChange ready re-renders an open lilbee Settings tab (ydt)", async () => {
+            const { LilbeeSettingTab } = await import("../src/settings");
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const tab = new LilbeeSettingTab(plugin.app, plugin);
+            const display = vi.spyOn(tab, "display").mockImplementation(() => {});
+            (plugin.app as any).setting = { activeTab: tab };
+
+            const stateChange = mockServerOpts?.onStateChange;
+            stateChange("ready");
+            expect(display).toHaveBeenCalled();
+        });
+
+        it("handleServerStateChange ready does not call display when active tab is not lilbee (ydt)", async () => {
+            const { PluginSettingTab } = await import("obsidian");
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const otherTab = new PluginSettingTab(plugin.app, plugin as any);
+            const display = vi.spyOn(otherTab, "display").mockImplementation(() => {});
+            (plugin.app as any).setting = { activeTab: otherTab };
+
+            const stateChange = mockServerOpts?.onStateChange;
+            stateChange("ready");
+            expect(display).not.toHaveBeenCalled();
+        });
+
+        it("refreshSettingsTab is a no-op when app.setting is undefined (ydt)", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+            (plugin.app as any).setting = undefined;
+            expect(() => plugin.refreshSettingsTab()).not.toThrow();
+        });
+
+        it("refreshSettingsTab is a no-op when activeTab is null (ydt)", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+            (plugin.app as any).setting = { activeTab: null };
+            expect(() => plugin.refreshSettingsTab()).not.toThrow();
+        });
+
         it("sets status bar to downloading only when binary is missing", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
