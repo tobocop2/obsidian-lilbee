@@ -137,7 +137,28 @@ describe("SourcePreviewModal — loading + success (markdown)", () => {
         expect(header.textContent).toContain("external/path.md");
     });
 
-    it("shows page metadata when page_start is set", async () => {
+    it("shows page metadata when page_start is set on a PDF source", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({
+                markdown: "body",
+                content_type: CONTENT_TYPE.PDF,
+            }),
+        });
+        const modal = new SourcePreviewModal(
+            app as never,
+            api,
+            makeSource({ content_type: CONTENT_TYPE.PDF, page_start: 5 }),
+        );
+        modal.open();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        const meta = el.find("lilbee-preview-meta");
+        expect(meta).not.toBeNull();
+        expect(meta!.textContent).toContain("p. 5");
+    });
+
+    it("omits page metadata on markdown sources even when page_start is set (1mu regression)", async () => {
         const app = new App();
         const api = makeApi({
             getSource: vi.fn().mockResolvedValue({
@@ -145,13 +166,15 @@ describe("SourcePreviewModal — loading + success (markdown)", () => {
                 content_type: CONTENT_TYPE.MARKDOWN,
             }),
         });
-        const modal = new SourcePreviewModal(app as never, api, makeSource({ page_start: 5 }));
+        const modal = new SourcePreviewModal(
+            app as never,
+            api,
+            makeSource({ content_type: CONTENT_TYPE.MARKDOWN, page_start: 5 }),
+        );
         modal.open();
         await tick();
         const el = modal.contentEl as unknown as MockElement;
-        const meta = el.find("lilbee-preview-meta");
-        expect(meta).not.toBeNull();
-        expect(meta!.textContent).toContain("p. 5");
+        expect(el.find("lilbee-preview-meta")).toBeNull();
     });
 
     it("shows line metadata when line_start is set", async () => {
@@ -363,7 +386,7 @@ describe("SourcePreviewModal — error", () => {
 });
 
 describe("SourcePreviewModal — footer", () => {
-    it("renders Close and disabled Save-to-vault buttons", async () => {
+    it("renders Close and disabled Save-to-vault buttons when source is not in vault", async () => {
         const app = new App();
         const api = makeApi({
             getSource: vi.fn().mockResolvedValue({
@@ -381,6 +404,73 @@ describe("SourcePreviewModal — footer", () => {
         const save = buttons.find((b) => b.classList.contains("lilbee-preview-save"))!;
         expect(save.disabled).toBe(true);
         expect(save.attributes["title"]).toBeDefined();
+    });
+
+    it("renders Open-in-vault button when source.vault_path resolves to a vault file", async () => {
+        const app = new App();
+        app.vault.getAbstractFileByPath = vi.fn((path: string) =>
+            path === "lilbee/imported/book.pdf" ? ({ path, name: "book.pdf" } as unknown as null) : null,
+        ) as ReturnType<typeof vi.fn>;
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({ markdown: "", content_type: CONTENT_TYPE.PDF }),
+        });
+        const modal = new SourcePreviewModal(
+            app as never,
+            api,
+            makeSource({
+                source: "lilbee/imported/book.pdf",
+                vault_path: "lilbee/imported/book.pdf",
+                content_type: CONTENT_TYPE.PDF,
+            }),
+        );
+        modal.open();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        const open = el.find("lilbee-preview-open-vault");
+        expect(open).not.toBeNull();
+        expect(el.find("lilbee-preview-save")).toBeNull();
+    });
+
+    it("renders Open-in-vault button when source.source resolves to a vault file", async () => {
+        const app = new App();
+        app.vault.getAbstractFileByPath = vi.fn((path: string) =>
+            path === "cv-manual.pdf" ? ({ path, name: "cv-manual.pdf" } as unknown as null) : null,
+        ) as ReturnType<typeof vi.fn>;
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({ markdown: "", content_type: CONTENT_TYPE.PDF }),
+        });
+        const modal = new SourcePreviewModal(
+            app as never,
+            api,
+            makeSource({ source: "cv-manual.pdf", vault_path: null, content_type: CONTENT_TYPE.PDF }),
+        );
+        modal.open();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        expect(el.find("lilbee-preview-open-vault")).not.toBeNull();
+    });
+
+    it("Open-in-vault button opens the path in the workspace and closes the modal", async () => {
+        const app = new App();
+        app.vault.getAbstractFileByPath = vi.fn((path: string) =>
+            path === "cv-manual.pdf" ? ({ path, name: "cv-manual.pdf" } as unknown as null) : null,
+        ) as ReturnType<typeof vi.fn>;
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({ markdown: "", content_type: CONTENT_TYPE.PDF }),
+        });
+        const modal = new SourcePreviewModal(
+            app as never,
+            api,
+            makeSource({ source: "cv-manual.pdf", vault_path: null, content_type: CONTENT_TYPE.PDF }),
+        );
+        const closeSpy = vi.spyOn(modal, "close");
+        modal.open();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        const openBtn = el.find("lilbee-preview-open-vault")!;
+        openBtn.trigger("click");
+        expect(app.workspace.openLinkText).toHaveBeenCalledWith("cv-manual.pdf", "");
+        expect(closeSpy).toHaveBeenCalled();
     });
 
     it("Close button closes the modal", async () => {

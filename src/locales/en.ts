@@ -380,6 +380,7 @@ export const MESSAGES = {
     ERROR_CRAWLER_SETUP_FAILED_SHORT: "Chromium setup failed — see setup task",
     ERROR_SERVER_UNREACHABLE: "Could not connect to lilbee server. Is it running?",
     ERROR_STREAM: (msg: string) => `lilbee: ${msg}`,
+    ERROR_CHAT_FAILED: (reason: string) => `Chat failed: ${reason}`,
     ERROR_ADD_FAILED_DETAIL: (msg: string) => `lilbee: add failed — ${msg}`,
     NOTICE_ALREADY_INGESTING: (source: string) =>
         `lilbee: server is already ingesting ${source} — waiting for it to finish`,
@@ -516,6 +517,7 @@ export const MESSAGES = {
     TITLE_SOURCE_PREVIEW: "Source preview",
     LABEL_PREVIEW_CLOSE: "Close",
     LABEL_PREVIEW_SAVE_TO_VAULT: "Save to vault",
+    LABEL_PREVIEW_OPEN_IN_VAULT: "Open in vault",
     TOOLTIP_PREVIEW_SAVE_SOON: "Coming soon — available once the server supports vault storage.",
     ERROR_PREVIEW_INVALID_SOURCE: "Cannot preview: source reference is empty.",
     ERROR_PREVIEW_LOAD: (reason: string) => `Failed to load source: ${reason}`,

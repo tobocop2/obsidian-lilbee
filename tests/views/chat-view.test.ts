@@ -682,7 +682,7 @@ describe("ChatView.sendMessage — error event", () => {
 });
 
 describe("ChatView.sendMessage — API throws", () => {
-    it("removes assistant bubble, pops history, and shows Notice when chatStream throws", async () => {
+    it("renders an error bubble, pops history, and shows a 'Chat failed' Notice when chatStream throws", async () => {
         Notice.clear();
         const plugin = makePlugin();
         let resolveThrown!: () => void;
@@ -692,7 +692,7 @@ describe("ChatView.sendMessage — API throws", () => {
         plugin.api.chatStream = vi.fn().mockReturnValue(
             (async function* () {
                 resolveThrown();
-                throw new Error("network");
+                throw new Error("server returned 500");
             })(),
         );
         const view = new ChatView(makeLeaf(), plugin);
@@ -706,15 +706,42 @@ describe("ChatView.sendMessage — API throws", () => {
         await thrown;
         await tick();
 
-        // Assistant bubble removed — only user bubble remains
-        expect(messagesEl.children.length).toBe(1);
+        // User bubble + error bubble both kept on screen — error must remain
+        // visible inline so the failure isn't silent.
+        expect(messagesEl.children.length).toBe(2);
         expect(messagesEl.children[0].classList.contains("user")).toBe(true);
-        // Notice shown
-        expect(Notice.instances.some((n) => n.message === "Could not connect to lilbee server. Is it running?")).toBe(
-            true,
-        );
-        // History popped — no user message either
+        const errBubble = messagesEl.children[1];
+        expect(errBubble.classList.contains("lilbee-chat-message-error")).toBe(true);
+        expect(errBubble.attributes["role"]).toBe("alert");
+        expect(errBubble.find("lilbee-chat-error-text")!.textContent).toContain("server returned 500");
+        // Notice carries the underlying reason — no more generic "could not connect"
+        expect(Notice.instances.some((n) => n.message.startsWith("Chat failed:"))).toBe(true);
+        expect(Notice.instances.some((n) => n.message.includes("server returned 500"))).toBe(true);
+        // History popped — assistant message did not finish
         expect((view as any).history.length).toBe(0);
+    });
+
+    it("surfaces 'Chat failed' Notice when handleSend itself throws synchronously", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "boom";
+        // Sabotage the trim() call to throw — this models a class of "no fetch
+        // fired, no error surfaced" failures we saw on wrapped multi-line input.
+        Object.defineProperty(textarea, "value", {
+            get() {
+                throw new Error("textarea boom");
+            },
+        });
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        expect(Notice.instances.some((n) => n.message.startsWith("Chat failed:"))).toBe(true);
+        expect(Notice.instances.some((n) => n.message.includes("textarea boom"))).toBe(true);
     });
 });
 

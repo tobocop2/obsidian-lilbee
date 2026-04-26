@@ -1,6 +1,7 @@
 import { App } from "obsidian";
 import type { LilbeeClient } from "../api";
 import type { DocumentResult, Source } from "../types";
+import { CONTENT_TYPE } from "../types";
 import { executeSourceClick, sourceClickAction } from "../utils/source-click";
 
 const MAX_EXCERPT_CHARS = 200;
@@ -21,13 +22,24 @@ function documentResultToSource(result: DocumentResult): Source {
     };
 }
 
-export function formatLocation(excerpt: {
-    page_start: number | null;
-    page_end: number | null;
-    line_start: number | null;
-    line_end: number | null;
-}): string | null {
-    if (excerpt.page_start !== null) {
+/**
+ * Format a citation suffix. PDFs get a `(p. N)` / `(pp. N–M)` page label;
+ * non-PDFs prefer `(lines N–M)` when line bounds are present (markdown is
+ * the common case) and otherwise return null. The `content_type` gate
+ * silences the `(p. 0)` artefact that the server emits for some markdown
+ * sources whose `page_start` is a placeholder rather than a real page.
+ */
+export function formatLocation(
+    excerpt: {
+        page_start: number | null;
+        page_end: number | null;
+        line_start: number | null;
+        line_end: number | null;
+    },
+    content_type?: string,
+): string | null {
+    const isPdf = content_type === CONTENT_TYPE.PDF;
+    if (isPdf && excerpt.page_start !== null) {
         return excerpt.page_end !== null && excerpt.page_end !== excerpt.page_start
             ? `pp. ${excerpt.page_start}–${excerpt.page_end}`
             : `p. ${excerpt.page_start}`;
@@ -36,6 +48,13 @@ export function formatLocation(excerpt: {
         return excerpt.line_end !== null && excerpt.line_end !== excerpt.line_start
             ? `lines ${excerpt.line_start}–${excerpt.line_end}`
             : `line ${excerpt.line_start}`;
+    }
+    // Fallback for callers that don't (yet) thread content_type through —
+    // preserve the legacy page label so older surfaces keep working.
+    if (content_type === undefined && excerpt.page_start !== null) {
+        return excerpt.page_end !== null && excerpt.page_end !== excerpt.page_start
+            ? `pp. ${excerpt.page_start}–${excerpt.page_end}`
+            : `p. ${excerpt.page_start}`;
     }
     return null;
 }
@@ -81,7 +100,7 @@ export function renderDocumentResult(
     for (const excerpt of excerpts) {
         const excerptEl = card.createDiv({ cls: "lilbee-excerpt" });
         excerptEl.createEl("p", { text: truncate(excerpt.content, MAX_EXCERPT_CHARS) });
-        const loc = formatLocation(excerpt);
+        const loc = formatLocation(excerpt, result.content_type);
         if (loc) {
             excerptEl.createEl("span", { text: loc, cls: "lilbee-location" });
         }
@@ -113,7 +132,7 @@ export function renderSourceChip(
     }
 
     let label = source.source;
-    const loc = formatLocation(source);
+    const loc = formatLocation(source, source.content_type);
     if (loc) {
         label += ` (${loc})`;
     }

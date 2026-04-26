@@ -206,11 +206,20 @@ export class ChatView extends ItemView {
         }) as HTMLButtonElement;
 
         const handleSend = (): void => {
-            if (this.sending) return;
-            const text = textarea.value.trim();
-            if (!text) return;
-            textarea.value = "";
-            void this.sendMessage(text);
+            // Defensively wrap in try/catch — exceptions in the click/keydown
+            // path used to bubble out silently because Obsidian swallows them
+            // at the event-listener boundary, leaving the user staring at a
+            // chat with their question echoed back but no fetch fired.
+            try {
+                if (this.sending) return;
+                const text = textarea.value.trim();
+                if (!text) return;
+                textarea.value = "";
+                void this.sendMessage(text);
+            } catch (err) {
+                const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
+                new Notice(MESSAGES.ERROR_CHAT_FAILED(reason));
+            }
         };
 
         this.sendBtn.addEventListener("click", () => {
@@ -563,9 +572,22 @@ export class ChatView extends ItemView {
                     textEl.textContent = MESSAGES.LABEL_STOPPED;
                 }
             } else {
-                assistantBubble.remove();
+                // Replace the in-flight assistant bubble with an inline error
+                // bubble so a failed request stays visible alongside the user's
+                // question, instead of vanishing without a trace. Surface a
+                // Notice with the underlying reason so 5xx / model-not-loaded
+                // failures get diagnosed instead of silently swallowed.
+                const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
                 this.history.pop();
-                new Notice(MESSAGES.ERROR_SERVER_UNREACHABLE);
+                assistantBubble.empty();
+                assistantBubble.removeClass("assistant");
+                assistantBubble.addClass("lilbee-chat-message-error");
+                assistantBubble.setAttribute("role", "alert");
+                assistantBubble.createDiv({
+                    cls: "lilbee-chat-error-text",
+                    text: MESSAGES.ERROR_CHAT_FAILED(reason),
+                });
+                new Notice(MESSAGES.ERROR_CHAT_FAILED(reason));
             }
         } finally {
             this.sending = false;
