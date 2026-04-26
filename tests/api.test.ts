@@ -1566,6 +1566,28 @@ describe("wikiStatus()", () => {
     });
 });
 
+describe("wikiSynthesize()", () => {
+    it("POSTs to /api/wiki/synthesize and returns the synthesis summary", async () => {
+        const data = { paths: ["wiki/synthesis/typing.md"], count: 1 };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.wikiSynthesize();
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/synthesize`,
+            expect.objectContaining({ method: "POST" }),
+        );
+        expect(result).toEqual(data);
+    });
+
+    it("returns the empty-cluster shape when no clusters meet the threshold", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ paths: [], count: 0 }));
+        const result = await client.wikiSynthesize();
+        expect(result.count).toBe(0);
+        expect(result.paths).toEqual([]);
+    });
+});
+
 describe("wikiGenerate()", () => {
     it("POSTs to /api/wiki/generate with source and yields SSE events", async () => {
         fetchMock.mockResolvedValue(sseResponse(['event: wiki_generate_done\ndata: {"slug":"test"}\n\n']));

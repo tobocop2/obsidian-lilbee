@@ -404,6 +404,12 @@ export interface WikiStatusResult {
     lint_warnings: number;
 }
 
+/** Result of generating synthesis pages for cross-source clusters. */
+export interface WikiSynthesizeResult {
+    paths: string[];
+    count: number;
+}
+
 /** Obsidian's DataAdapter has these methods but the type declarations are incomplete. */
 export interface VaultAdapter {
     getBasePath(): string;

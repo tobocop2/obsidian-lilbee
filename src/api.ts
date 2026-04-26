@@ -27,6 +27,7 @@ import type {
     WikiPage,
     WikiPageDetail,
     WikiStatusResult,
+    WikiSynthesizeResult,
 } from "./types";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const RETRY_COUNT = 2;
@@ -478,6 +479,14 @@ export class LilbeeClient {
 
     async wikiStatus(): Promise<WikiStatusResult> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/status`, {
+            headers: this.authHeaders(),
+        });
+        return res.json();
+    }
+
+    async wikiSynthesize(): Promise<WikiSynthesizeResult> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/synthesize`, {
+            method: "POST",
             headers: this.authHeaders(),
         });
         return res.json();
