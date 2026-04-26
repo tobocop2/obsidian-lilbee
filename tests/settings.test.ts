@@ -949,6 +949,45 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             expect(() => renderPicker(plugin, "")).not.toThrow();
         });
+
+        it("renders 'Other installed' group for installed models outside the featured catalog", () => {
+            const plugin = makePlugin();
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const entries = [chatEntry({ installed: true })];
+            const installed: InstalledModel[] = [
+                { name: LLAMA_REF, source: "native" },
+                { name: "ollama/qwen3:8b", source: "ollama" },
+            ];
+            const opts: Array<[string, string]> = (tab as any).buildChatOptions(entries, installed);
+            const keys = opts.map(([k]) => k);
+            expect(keys).toContain("meta-llama/Llama-3-8B-Instruct-GGUF");
+            expect(keys).toContain(SEPARATOR_KEY);
+            expect(keys).toContain("ollama/qwen3:8b");
+            (tab as any).renderChatPicker(container, LLAMA_REF, entries, installed);
+        });
+
+        it("appends provider source tag for non-native featured entries", () => {
+            const plugin = makePlugin();
+            const tab = makeTab(plugin);
+            const entries = [chatEntry({ installed: true, source: "ollama" })];
+            const installed: InstalledModel[] = [{ name: LLAMA_REF, source: "ollama" }];
+            const opts: Array<[string, string]> = (tab as any).buildChatOptions(entries, installed);
+            expect(opts[0][1]).toContain("[ollama]");
+        });
+
+        it("falls back to empty active when catalog fetch errors", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: LLAMA_REF });
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("nope")));
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const tab = makeTab(plugin);
+            const container = new MockElement("div") as unknown as HTMLElement;
+            await (tab as any).renderChatSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            // Renders without throwing even when the catalog Result is err.
+            expect((container as unknown as MockElement).findAll("lilbee-model-section").length).toBe(1);
+        });
     });
 
     describe("renderChatCatalogRow()", () => {

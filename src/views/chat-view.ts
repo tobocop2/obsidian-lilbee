@@ -337,13 +337,13 @@ export class ChatView extends ItemView {
         const otherInstalled = this.chatInstalled
             .filter((m) => !featuredRepos.has(extractHfRepo(m.name)))
             .sort((a, b) => a.name.localeCompare(b.name));
-        if (otherInstalled.length > 0 && featuredInstalled.length > 0) {
+        if (otherInstalled.length > 0) {
             const sep = selectEl.createEl("option", { text: SEPARATOR_LABEL });
             (sep as HTMLOptionElement).value = SEPARATOR_KEY;
             (sep as HTMLOptionElement).disabled = true;
         }
         for (const m of otherInstalled) {
-            const source = sourceMap.get(m.name) ?? "";
+            const source = sourceMap.get(m.name);
             const suffix = source && source !== MODEL_SOURCE.NATIVE ? ` [${source}]` : "";
             const option = selectEl.createEl("option", { text: `${displayLabelForRef(m.name)}${suffix}` });
             (option as HTMLOptionElement).value = m.name;

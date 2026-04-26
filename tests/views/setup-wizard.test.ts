@@ -17,7 +17,8 @@ vi.mock("../../src/views/catalog-modal", () => ({
 
 function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     return {
-        name: "qwen3",
+        hf_repo: "Qwen/Qwen3-0.6B-GGUF",
+        gguf_filename: "*Q4_K_M.gguf",
         display_name: "Qwen3 0.6B",
         size_gb: 0.5,
         min_ram_gb: 4,
@@ -25,11 +26,10 @@ function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
         quality_tier: "balanced",
         installed: false,
         source: "native",
-        hf_repo: "qwen/qwen3-0.6B",
-        tag: "0.6b",
         task: "chat",
         featured: true,
         downloads: 0,
+        param_count: "0.6B",
         ...overrides,
     };
 }
@@ -780,11 +780,8 @@ describe("SetupWizard", () => {
             expect(plugin.api.pullModel).toHaveBeenCalled();
         });
 
-        it("1s1: Download & continue pins activeModel + setChatModel to entry.name (short ref)", async () => {
-            // entry.name is the short catalog ref ("qwen3:0.6b"); entry.hf_repo
-            // is the long HF identity. The wizard used to set chat via hf_repo,
-            // which made cfg.chat_model and the Settings dropdown disagree.
-            const entries = [makeEntry({ name: "qwen3:0.6b", hf_repo: "qwen/qwen3-0.6B" })];
+        it("Download & continue uses hf_repo for both pull and setChatModel", async () => {
+            const entries = [makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF" })];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
@@ -811,17 +808,19 @@ describe("SetupWizard", () => {
             await tick();
             await tick();
 
-            // Pull still uses hf_repo (server caches by HF identity).
-            expect(plugin.api.pullModel).toHaveBeenCalledWith("qwen/qwen3-0.6B", "native", expect.any(AbortSignal));
-            // setChatModel and activeModel use the catalog short ref so the
-            // dropdown can round-trip the value back to a known option.
-            expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen3:0.6b");
-            expect(plugin.api.setChatModel).not.toHaveBeenCalledWith("qwen/qwen3-0.6B");
-            expect(plugin.activeModel).toBe("qwen3:0.6b");
+            // Post-PR-#183 the canonical model identity is the HF ref. Both pull
+            // and set use it; cfg.chat_model and the Settings dropdown line up.
+            expect(plugin.api.pullModel).toHaveBeenCalledWith(
+                "Qwen/Qwen3-0.6B-GGUF",
+                "native",
+                expect.any(AbortSignal),
+            );
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("Qwen/Qwen3-0.6B-GGUF");
+            expect(plugin.activeModel).toBe("Qwen/Qwen3-0.6B-GGUF");
         });
 
         it("Download & continue pulls model and advances to sync step", async () => {
-            const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
+            const entries = [makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF" })];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
             plugin.api.pullModel = vi.fn().mockReturnValue(
@@ -851,8 +850,12 @@ describe("SetupWizard", () => {
             await tick();
             await tick();
 
-            expect(plugin.api.pullModel).toHaveBeenCalledWith("qwen/qwen3-0.6B", "native", expect.any(AbortSignal));
-            expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen/qwen3-0.6B");
+            expect(plugin.api.pullModel).toHaveBeenCalledWith(
+                "Qwen/Qwen3-0.6B-GGUF",
+                "native",
+                expect.any(AbortSignal),
+            );
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("Qwen/Qwen3-0.6B-GGUF");
             // After pull completes, it goes to step 3 (embedding picker)
             await tick();
             await tick();
@@ -1829,25 +1832,27 @@ describe("SetupWizard", () => {
 
         it("orders recognised families before others", () => {
             const models = [
-                makeEntry({ name: "smollm2", hf_repo: "a/a" }),
-                makeEntry({ name: "qwen3-0.6b", hf_repo: "b/b" }),
-                makeEntry({ name: "gemma-3-1b", hf_repo: "c/c" }),
+                makeEntry({ hf_repo: "bartowski/SmolLM2-135M-Instruct-GGUF", display_name: "SmolLM2 135M" }),
+                makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF", display_name: "Qwen3 0.6B" }),
+                makeEntry({ hf_repo: "ggml-org/gemma-3-1b-it-GGUF", display_name: "Gemma 3 1B" }),
             ];
             const picks = pickNativeChatModels(models);
             // Gemma family comes first in PREFERRED_FAMILIES order.
-            expect(picks[0].name).toBe("gemma-3-1b");
-            expect(picks[1].name).toBe("qwen3-0.6b");
-            expect(picks[2].name).toBe("smollm2");
+            expect(picks[0].display_name).toBe("Gemma 3 1B");
+            expect(picks[1].display_name).toBe("Qwen3 0.6B");
+            expect(picks[2].display_name).toBe("SmolLM2 135M");
         });
 
         it("dedupes entries sharing the same hf_repo", () => {
-            const dup = makeEntry({ name: "qwen3-0.6b", hf_repo: "q/a" });
+            const dup = makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF" });
             const picks = pickNativeChatModels([dup, dup]);
             expect(picks.length).toBe(1);
         });
 
         it("caps at MAX_FEATURED_PICKS even after preferred-family and backfill rounds", () => {
-            const models = Array.from({ length: 20 }, (_, i) => makeEntry({ name: `other-${i}`, hf_repo: `x/${i}` }));
+            const models = Array.from({ length: 20 }, (_, i) =>
+                makeEntry({ hf_repo: `org/other-${i}-GGUF`, display_name: `Other ${i}` }),
+            );
             const picks = pickNativeChatModels(models);
             expect(picks.length).toBe(8);
         });
@@ -1855,7 +1860,7 @@ describe("SetupWizard", () => {
         it("caps MID-preferred-family iteration when max is reached", () => {
             // Exercise the early-return inside the preferred-families loop.
             const models = Array.from({ length: 10 }, (_, i) =>
-                makeEntry({ name: `gemma-3-${i}b`, hf_repo: `g/${i}` }),
+                makeEntry({ hf_repo: `ggml-org/gemma-3-${i}b-it-GGUF`, display_name: `Gemma 3 ${i}B` }),
             );
             const picks = pickNativeChatModels(models);
             expect(picks.length).toBe(8);
@@ -1863,8 +1868,8 @@ describe("SetupWizard", () => {
 
         it("applies a custom filter predicate when provided", () => {
             const models = [
-                makeEntry({ name: "qwen3-0.6b", hf_repo: "q/a", source: "litellm" }),
-                makeEntry({ name: "gemma-3-1b", hf_repo: "g/b", source: "native" }),
+                makeEntry({ hf_repo: "Qwen/Qwen3-0.6B-GGUF", source: "litellm" }),
+                makeEntry({ hf_repo: "ggml-org/gemma-3-1b-it-GGUF", source: "native" }),
             ];
             const picks = pickNativeChatModels(models, (m) => m.source !== "litellm");
             expect(picks.length).toBe(1);
@@ -2053,8 +2058,8 @@ describe("SetupWizard", () => {
         it("download & continue with installed model sets embedding and advances to sync step", async () => {
             const entries = [
                 makeEntry({
-                    name: "nomic-embed-text",
-                    hf_repo: "nomic/nomic-embed-text",
+                    hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF",
+                    display_name: "nomic-embed-text",
                     task: "embedding",
                     installed: true,
                 }),
@@ -2078,7 +2083,7 @@ describe("SetupWizard", () => {
                 .trigger("click");
             await tick();
 
-            expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
+            expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-ai/nomic-embed-text-v1.5-GGUF");
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("Index your vault"))).toBe(true);
         });
@@ -2087,8 +2092,8 @@ describe("SetupWizard", () => {
             Notice.clear();
             const entries = [
                 makeEntry({
-                    name: "nomic-embed-text",
-                    hf_repo: "nomic/nomic-embed-text",
+                    hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF",
+                    display_name: "nomic-embed-text",
                     task: "embedding",
                     installed: true,
                 }),

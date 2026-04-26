@@ -2,15 +2,13 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { ConfirmPullModal } from "../../src/views/confirm-pull-modal";
-import type { ModelInfo } from "../../src/types";
+import type { ConfirmPullInfo } from "../../src/views/confirm-pull-modal";
 
-function makeModel(overrides: Partial<ModelInfo> = {}): ModelInfo {
+function makeInfo(overrides: Partial<ConfirmPullInfo> = {}): ConfirmPullInfo {
     return {
-        name: "phi3",
-        size_gb: 2.3,
-        min_ram_gb: 4,
-        description: "Microsoft Phi-3",
-        installed: false,
+        displayName: "Phi 3 Mini",
+        sizeGb: 2.3,
+        minRamGb: 4,
         ...overrides,
     };
 }
@@ -37,20 +35,18 @@ describe("ConfirmPullModal", () => {
         Notice.clear();
     });
 
-    it("renders model name in onOpen", () => {
+    it("renders display name in onOpen", () => {
         const app = new App();
-        const model = makeModel({ name: "mistral" });
-        const modal = new ConfirmPullModal(app as any, model);
+        const modal = new ConfirmPullModal(app as any, makeInfo({ displayName: "Mistral 7B" }));
         modal.onOpen();
 
         const texts = collectTexts(modal.contentEl as unknown as MockElement);
-        expect(texts.some((t) => t.includes("mistral"))).toBe(true);
+        expect(texts.some((t) => t.includes("Mistral 7B"))).toBe(true);
     });
 
     it("renders model size in onOpen", () => {
         const app = new App();
-        const model = makeModel({ size_gb: 4.7 });
-        const modal = new ConfirmPullModal(app as any, model);
+        const modal = new ConfirmPullModal(app as any, makeInfo({ sizeGb: 4.7 }));
         modal.onOpen();
 
         const texts = collectTexts(modal.contentEl as unknown as MockElement);
@@ -59,8 +55,7 @@ describe("ConfirmPullModal", () => {
 
     it("renders minimum RAM in onOpen", () => {
         const app = new App();
-        const model = makeModel({ min_ram_gb: 8 });
-        const modal = new ConfirmPullModal(app as any, model);
+        const modal = new ConfirmPullModal(app as any, makeInfo({ minRamGb: 8 }));
         modal.onOpen();
 
         const texts = collectTexts(modal.contentEl as unknown as MockElement);
@@ -69,7 +64,7 @@ describe("ConfirmPullModal", () => {
 
     it("renders Pull Model and Cancel buttons", () => {
         const app = new App();
-        const modal = new ConfirmPullModal(app as any, makeModel());
+        const modal = new ConfirmPullModal(app as any, makeInfo());
         modal.onOpen();
 
         const buttons = findButtons(modal.contentEl as unknown as MockElement);
@@ -80,7 +75,7 @@ describe("ConfirmPullModal", () => {
 
     it("clicking Pull Model resolves result to true", async () => {
         const app = new App();
-        const modal = new ConfirmPullModal(app as any, makeModel());
+        const modal = new ConfirmPullModal(app as any, makeInfo());
         modal.onOpen();
 
         const buttons = findButtons(modal.contentEl as unknown as MockElement);
@@ -93,7 +88,7 @@ describe("ConfirmPullModal", () => {
 
     it("clicking Cancel resolves result to false", async () => {
         const app = new App();
-        const modal = new ConfirmPullModal(app as any, makeModel());
+        const modal = new ConfirmPullModal(app as any, makeInfo());
         modal.onOpen();
 
         const buttons = findButtons(modal.contentEl as unknown as MockElement);
@@ -106,7 +101,7 @@ describe("ConfirmPullModal", () => {
 
     it("onClose resolves result to false", async () => {
         const app = new App();
-        const modal = new ConfirmPullModal(app as any, makeModel());
+        const modal = new ConfirmPullModal(app as any, makeInfo());
         modal.onOpen();
         modal.onClose();
 
@@ -116,7 +111,7 @@ describe("ConfirmPullModal", () => {
 
     it("decide is idempotent — second call is a no-op", async () => {
         const app = new App();
-        const modal = new ConfirmPullModal(app as any, makeModel());
+        const modal = new ConfirmPullModal(app as any, makeInfo());
         modal.onOpen();
 
         const buttons = findButtons(modal.contentEl as unknown as MockElement);
