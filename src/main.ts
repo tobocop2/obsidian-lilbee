@@ -429,6 +429,14 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private handleServerStateChange(state: ServerState): void {
+        // The managed child fires state transitions even after the user has
+        // switched to External mode (e.g. STOPPED on the way out). Painting
+        // "stopped" / "starting" / "error" from a now-irrelevant managed
+        // process would lie about the user's actually-reachable external
+        // server, so external mode owns its own status — set optimistically
+        // by saveSettings on the mode switch and corrected by the health
+        // probe thereafter.
+        if (this.settings.serverMode === SERVER_MODE.EXTERNAL) return;
         switch (state) {
             case SERVER_STATE.READY:
                 if (this.serverManager) {
@@ -438,6 +446,7 @@ export default class LilbeePlugin extends Plugin {
                 }
                 this.serverUnreachable = false;
                 this.setStatusReady();
+                this.refreshSettingsTab();
                 new Notice(MESSAGES.STATUS_READY, NOTICE_DURATION_MS);
                 break;
             case SERVER_STATE.STARTING:
@@ -649,11 +658,12 @@ export default class LilbeePlugin extends Plugin {
             this.api = new LilbeeClient(this.settings.serverUrl);
             this.api.setTokenProvider(() => this.readCurrentToken());
             this.api.setToken(this.readCurrentToken());
-            // Stopping the managed child fires STATE.STOPPED on the way out
-            // which leaves the status bar reading "lilbee: stopped" even
-            // though we're about to talk to an external server. Refresh so
-            // the bar reflects external reachability instead of the stale
-            // managed-stopped label.
+            // External mode owns its own status via the health probe; paint
+            // "ready [external]" optimistically so the user doesn't see a
+            // stale "stopped" label between the mode switch and the next
+            // probe tick. If the external server is in fact unreachable,
+            // the probe will flip to error on its next run.
+            this.setStatusReady();
             void this.fetchActiveModel();
         }
 
@@ -1140,6 +1150,20 @@ export default class LilbeePlugin extends Plugin {
         if (!setting) return;
         setting.open();
         setting.openTabById(this.manifest.id);
+    }
+
+    /**
+     * Re-render the Settings tab if (and only if) the open tab is ours.
+     * Called whenever server-owned state — active models, persisted config,
+     * server reachability — changes from somewhere other than the Settings
+     * UI itself, so the rendered controls don't lie about the live state.
+     */
+    refreshSettingsTab(): void {
+        const setting = (this.app as unknown as { setting?: { activeTab?: unknown } }).setting;
+        const activeTab = setting?.activeTab;
+        if (activeTab instanceof LilbeeSettingTab) {
+            activeTab.display();
+        }
     }
 
     async activateWikiView(): Promise<void> {

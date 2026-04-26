@@ -140,16 +140,30 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private filterSettings(containerEl: HTMLElement, query: string): void {
         const term = query.trim().toLowerCase();
+        const matches = (item: Element): boolean => {
+            const nameEl = item.querySelector(".setting-item-name");
+            const name = nameEl?.textContent?.toLowerCase() ?? "";
+            return !term || name.includes(term);
+        };
+
+        // Top-level setting-items live as direct children of containerEl,
+        // outside any .lilbee-settings-section wrapper. The original
+        // implementation only walked into sections, so the bulk of the
+        // settings page (server controls, port, models, etc.) stayed
+        // visible regardless of the filter query.
+        for (const child of Array.from(containerEl.children)) {
+            if (!child.classList.contains("setting-item")) continue;
+            (child as HTMLElement).style.display = matches(child) ? "" : "none";
+        }
+
         const sections = containerEl.querySelectorAll(".lilbee-settings-section");
         for (const section of Array.from(sections)) {
             const items = section.querySelectorAll(".setting-item");
             let visibleCount = 0;
             for (const item of Array.from(items)) {
-                const nameEl = item.querySelector(".setting-item-name");
-                const name = nameEl?.textContent?.toLowerCase() ?? "";
-                const matches = !term || name.includes(term);
-                (item as HTMLElement).style.display = matches ? "" : "none";
-                if (matches) visibleCount++;
+                const m = matches(item);
+                (item as HTMLElement).style.display = m ? "" : "none";
+                if (m) visibleCount++;
             }
             (section as HTMLElement).style.display = visibleCount > 0 || !term ? "" : "none";
             if (term && visibleCount > 0) {
@@ -291,8 +305,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         checkBtn.setButtonText(`Update to ${result.release.tag}`);
                         checkBtn.setDisabled(false);
                     } else {
-                        new Notice(MESSAGES.ERROR_ALREADY_UPTODATE);
-                        checkBtn.setButtonText(MESSAGES.BUTTON_CHECK_UPDATES);
+                        // 51g: explicit feedback on the no-update path so the
+                        // click visibly registers. Surface the *current*
+                        // version so the user can see what was checked, and
+                        // pin the inline button label to "Up to date" until
+                        // the next click — both the toast and the button
+                        // change confirm the action.
+                        const current = this.plugin.settings.lilbeeVersion || MESSAGES.LABEL_UNKNOWN;
+                        new Notice(MESSAGES.NOTICE_SERVER_UPTODATE(current));
+                        checkBtn.setButtonText(MESSAGES.LABEL_UPTODATE);
                         checkBtn.setDisabled(false);
                     }
                 } catch {

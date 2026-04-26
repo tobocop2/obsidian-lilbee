@@ -206,11 +206,20 @@ export class ChatView extends ItemView {
         }) as HTMLButtonElement;
 
         const handleSend = (): void => {
-            if (this.sending) return;
-            const text = textarea.value.trim();
-            if (!text) return;
-            textarea.value = "";
-            void this.sendMessage(text);
+            // Defensively wrap in try/catch — exceptions in the click/keydown
+            // path used to bubble out silently because Obsidian swallows them
+            // at the event-listener boundary, leaving the user staring at a
+            // chat with their question echoed back but no fetch fired.
+            try {
+                if (this.sending) return;
+                const text = textarea.value.trim();
+                if (!text) return;
+                textarea.value = "";
+                void this.sendMessage(text);
+            } catch (err) {
+                const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
+                new Notice(MESSAGES.ERROR_CHAT_FAILED(reason));
+            }
         };
 
         this.sendBtn.addEventListener("click", () => {
@@ -346,6 +355,7 @@ export class ChatView extends ItemView {
                 if (result.isOk()) {
                     this.plugin.activeModel = el.value;
                     this.plugin.fetchActiveModel();
+                    this.plugin.refreshSettingsTab();
                 } else {
                     new Notice(MESSAGES.ERROR_SWITCH_MODEL);
                 }
@@ -373,6 +383,7 @@ export class ChatView extends ItemView {
                 this.activeEmbeddingModel = el.value;
                 new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
                 new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
+                this.plugin.refreshSettingsTab();
                 void this.plugin.triggerSync();
             });
         });
@@ -449,6 +460,7 @@ export class ChatView extends ItemView {
         } else {
             this.plugin.activeModel = model.name;
             new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(model.name));
+            this.plugin.refreshSettingsTab();
         }
         this.plugin.fetchActiveModel();
         this.refreshModelSelector();
@@ -563,9 +575,22 @@ export class ChatView extends ItemView {
                     textEl.textContent = MESSAGES.LABEL_STOPPED;
                 }
             } else {
-                assistantBubble.remove();
+                // Replace the in-flight assistant bubble with an inline error
+                // bubble so a failed request stays visible alongside the user's
+                // question, instead of vanishing without a trace. Surface a
+                // Notice with the underlying reason so 5xx / model-not-loaded
+                // failures get diagnosed instead of silently swallowed.
+                const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
                 this.history.pop();
-                new Notice(MESSAGES.ERROR_SERVER_UNREACHABLE);
+                assistantBubble.empty();
+                assistantBubble.removeClass("assistant");
+                assistantBubble.addClass("lilbee-chat-message-error");
+                assistantBubble.setAttribute("role", "alert");
+                assistantBubble.createDiv({
+                    cls: "lilbee-chat-error-text",
+                    text: MESSAGES.ERROR_CHAT_FAILED(reason),
+                });
+                new Notice(MESSAGES.ERROR_CHAT_FAILED(reason));
             }
         } finally {
             this.sending = false;
@@ -616,6 +641,10 @@ export class ChatView extends ItemView {
             case SSE_EVENT.ERROR: {
                 const errMsg = extractString(event.data, "message");
                 assistantBubble.empty();
+                // Match the thrown-error path: drop the assistant skin so the
+                // error bubble doesn't inherit the assistant background colour
+                // from .lilbee-chat-message.assistant.
+                assistantBubble.removeClass("assistant");
                 assistantBubble.addClass("lilbee-chat-message-error");
                 assistantBubble.setAttribute("role", "alert");
                 assistantBubble.createDiv({
@@ -660,6 +689,19 @@ export class ChatView extends ItemView {
                     new CrawlModal(this.app, this.plugin).open();
                 });
         });
+        // Belt-and-braces ESC dismissal. Obsidian's Menu is supposed to close
+        // on ESC, but in QA the popover stayed open — the textarea kept
+        // focus, so the keypress never reached the menu. Routing the ESC
+        // listener through the document with capture=true catches it before
+        // any input handler can swallow it.
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") {
+                e.preventDefault();
+                menu.hide();
+            }
+        };
+        document.addEventListener("keydown", onKey, true);
+        menu.onHide(() => document.removeEventListener("keydown", onKey, true));
         menu.showAtMouseEvent(event);
     }
 

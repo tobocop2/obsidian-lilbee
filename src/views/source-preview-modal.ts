@@ -85,7 +85,7 @@ export class SourcePreviewModal extends Modal {
             text: this.source.vault_path ?? this.source.source,
             cls: "lilbee-preview-path",
         });
-        const loc = formatLocation(this.source);
+        const loc = formatLocation(this.source, this.source.content_type);
         if (loc) {
             container.createEl("span", { text: loc, cls: "lilbee-preview-meta" });
         }
@@ -93,18 +93,46 @@ export class SourcePreviewModal extends Modal {
 
     private renderFooter(container: HTMLElement): void {
         const footer = container.createDiv({ cls: "lilbee-preview-footer" });
-        const save = footer.createEl("button", {
-            text: MESSAGES.LABEL_PREVIEW_SAVE_TO_VAULT,
-            cls: "lilbee-preview-save",
-        }) as HTMLButtonElement;
-        save.disabled = true;
-        save.setAttribute("title", MESSAGES.TOOLTIP_PREVIEW_SAVE_SOON);
+        // When the source resolves to a vault file, swap the disabled
+        // "Save to vault" stub for an "Open in vault" affordance — clicking
+        // it dismisses the preview and opens the original file in the main
+        // pane via Obsidian's standard link routing.
+        const inVaultPath = this.resolveVaultPath();
+        if (inVaultPath !== null) {
+            const openBtn = footer.createEl("button", {
+                text: MESSAGES.LABEL_PREVIEW_OPEN_IN_VAULT,
+                cls: "lilbee-preview-open-vault",
+            });
+            openBtn.addEventListener("click", () => {
+                this.app.workspace.openLinkText(inVaultPath, "");
+                this.close();
+            });
+        } else {
+            const save = footer.createEl("button", {
+                text: MESSAGES.LABEL_PREVIEW_SAVE_TO_VAULT,
+                cls: "lilbee-preview-save",
+            }) as HTMLButtonElement;
+            save.disabled = true;
+            save.setAttribute("title", MESSAGES.TOOLTIP_PREVIEW_SAVE_SOON);
+        }
 
         const close = footer.createEl("button", {
             text: MESSAGES.LABEL_PREVIEW_CLOSE,
             cls: "lilbee-preview-close mod-cta",
         });
         close.addEventListener("click", () => this.close());
+    }
+
+    private resolveVaultPath(): string | null {
+        const vault = this.app.vault;
+        const vaultPath = this.source.vault_path;
+        if (vaultPath && vault.getAbstractFileByPath(vaultPath)) {
+            return vaultPath;
+        }
+        if (this.source.source && vault.getAbstractFileByPath(this.source.source)) {
+            return this.source.source;
+        }
+        return null;
     }
 
     private async loadContent(host: HTMLElement): Promise<void> {

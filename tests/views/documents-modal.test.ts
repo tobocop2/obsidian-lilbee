@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Notice } from "obsidian";
-import { MockElement } from "../__mocks__/obsidian";
+import { MockElement, MockScope } from "../__mocks__/obsidian";
 import { DocumentsModal } from "../../src/views/documents-modal";
 import type { DocumentEntry, DocumentsResponse } from "../../src/types";
 
@@ -85,6 +85,23 @@ describe("DocumentsModal", () => {
         const texts = collectTexts(el);
         expect(texts.some((t) => t.includes("Documents"))).toBe(true);
         expect(el.find("lilbee-documents-search")).not.toBeNull();
+    });
+
+    it("tg7: explicit ESC binding on Modal.scope invokes close()", async () => {
+        // Note: jsdom-less Node can't simulate the actual focus-routing bug
+        // (search input swallowing the keystroke). We assert the binding is
+        // registered on the modal's own scope — which is focus-independent —
+        // rather than relying on the default Modal scope to bubble up.
+        const plugin = makePlugin();
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        const closeSpy = vi.spyOn(modal, "close");
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const scope = (modal as unknown as { scope: MockScope }).scope;
+        scope.trigger("Escape");
+        expect(closeSpy).toHaveBeenCalled();
     });
 
     it("fetches documents on open", async () => {

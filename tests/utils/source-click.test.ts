@@ -52,7 +52,7 @@ beforeEach(() => {
 });
 
 describe("sourceClickAction — vault resolution", () => {
-    it("returns vault-pdf when vault_path is set, file exists, and content_type is PDF", () => {
+    it("returns preview for PDF sources even when vault_path resolves", () => {
         const vault = makeVault(true);
         const source = makeSource({
             vault_path: "lilbee/imported/book.pdf",
@@ -60,26 +60,19 @@ describe("sourceClickAction — vault resolution", () => {
             page_start: 4,
         });
         const action = sourceClickAction(source, vault as never);
-        expect(action).toEqual({
-            kind: SOURCE_ACTION.VAULT_PDF,
-            path: "lilbee/imported/book.pdf",
-            page: 4,
-        });
+        expect(action).toEqual({ kind: SOURCE_ACTION.PREVIEW, source });
     });
 
-    it("defaults vault-pdf page to 1 when page_start is null", () => {
-        const vault = makeVault(true);
+    it("returns preview for PDF sources when only source.source resolves", () => {
+        const vault = makeVaultWithPaths(["cv-manual.pdf"]);
         const source = makeSource({
-            vault_path: "lilbee/imported/book.pdf",
+            source: "cv-manual.pdf",
+            vault_path: null,
             content_type: CONTENT_TYPE.PDF,
-            page_start: null,
+            page_start: 235,
         });
         const action = sourceClickAction(source, vault as never);
-        expect(action).toEqual({
-            kind: SOURCE_ACTION.VAULT_PDF,
-            path: "lilbee/imported/book.pdf",
-            page: 1,
-        });
+        expect(action).toEqual({ kind: SOURCE_ACTION.PREVIEW, source });
     });
 
     it("returns vault-markdown when vault_path hits a markdown file with line_start set", () => {
@@ -142,18 +135,6 @@ describe("sourceClickAction — vault resolution", () => {
 });
 
 describe("sourceClickAction — source fallback", () => {
-    it("falls back to source.source for PDFs when vault_path is null", () => {
-        const vault = makeVaultWithPaths(["cv-manual.pdf"]);
-        const source = makeSource({
-            source: "cv-manual.pdf",
-            vault_path: null,
-            content_type: CONTENT_TYPE.PDF,
-            page_start: 235,
-        });
-        const action = sourceClickAction(source, vault as never);
-        expect(action).toEqual({ kind: SOURCE_ACTION.VAULT_PDF, path: "cv-manual.pdf", page: 235 });
-    });
-
     it("falls back to source.source for markdown with line deep-link", () => {
         const vault = makeVaultWithPaths(["lilbee/crawled/example.com/page.md"]);
         const source = makeSource({
@@ -181,28 +162,32 @@ describe("sourceClickAction — source fallback", () => {
         expect(action).toEqual({ kind: SOURCE_ACTION.VAULT_NOTE, path: "lilbee/imported/data.csv" });
     });
 
-    it("uses vault_path in preference to source.source when both resolve", () => {
-        const vault = makeVaultWithPaths(["lilbee/alias/book.pdf", "cv-manual.pdf"]);
+    it("uses vault_path in preference to source.source for markdown when both resolve", () => {
+        const vault = makeVaultWithPaths(["lilbee/alias/page.md", "page.md"]);
         const source = makeSource({
-            source: "cv-manual.pdf",
-            vault_path: "lilbee/alias/book.pdf",
-            content_type: CONTENT_TYPE.PDF,
-            page_start: 3,
+            source: "page.md",
+            vault_path: "lilbee/alias/page.md",
+            content_type: CONTENT_TYPE.MARKDOWN,
+            line_start: 9,
         });
         const action = sourceClickAction(source, vault as never);
-        expect(action).toEqual({ kind: SOURCE_ACTION.VAULT_PDF, path: "lilbee/alias/book.pdf", page: 3 });
+        expect(action).toEqual({
+            kind: SOURCE_ACTION.VAULT_MARKDOWN,
+            path: "lilbee/alias/page.md",
+            line: 9,
+        });
     });
 
-    it("falls back to source.source when vault_path is set but file is missing", () => {
-        const vault = makeVaultWithPaths(["cv-manual.pdf"]);
+    it("falls back to source.source when vault_path is set but file is missing (markdown)", () => {
+        const vault = makeVaultWithPaths(["page.md"]);
         const source = makeSource({
-            source: "cv-manual.pdf",
-            vault_path: "lilbee/stale/book.pdf",
-            content_type: CONTENT_TYPE.PDF,
-            page_start: 7,
+            source: "page.md",
+            vault_path: "lilbee/stale/page.md",
+            content_type: CONTENT_TYPE.MARKDOWN,
+            line_start: 5,
         });
         const action = sourceClickAction(source, vault as never);
-        expect(action).toEqual({ kind: SOURCE_ACTION.VAULT_PDF, path: "cv-manual.pdf", page: 7 });
+        expect(action).toEqual({ kind: SOURCE_ACTION.VAULT_MARKDOWN, path: "page.md", line: 5 });
     });
 });
 
@@ -237,17 +222,6 @@ describe("sourceClickAction — preview fallback", () => {
 });
 
 describe("executeSourceClick — dispatch", () => {
-    it("vault-pdf: opens with #page=N appended to the path", async () => {
-        const app = new App();
-        const api = {} as LilbeeClient;
-        await executeSourceClick(app as never, api, {
-            kind: SOURCE_ACTION.VAULT_PDF,
-            path: "lilbee/imported/book.pdf",
-            page: 4,
-        });
-        expect(app.workspace.openLinkText).toHaveBeenCalledWith("lilbee/imported/book.pdf#page=4", "");
-    });
-
     it("vault-markdown: opens with eState.line ephemeral state", async () => {
         const app = new App();
         const api = {} as LilbeeClient;

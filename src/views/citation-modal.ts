@@ -1,6 +1,7 @@
 import { App, Modal } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { Source, WikiCitation, WikiCitationChain } from "../types";
+import { CONTENT_TYPE } from "../types";
 import { MESSAGES } from "../locales/en";
 import { formatLocation } from "./results";
 import { executeSourceClick, sourceClickAction } from "../utils/source-click";
@@ -94,8 +95,14 @@ export class CitationModal extends Modal {
             void executeSourceClick(this.app, this.plugin.api, sourceClickAction(source, this.app.vault));
         });
 
-        // Location info
-        const loc = formatLocation(citation);
+        // Location info — infer content_type from the filename so markdown
+        // citations don't render the spurious "(p. 0)" suffix that the server
+        // emits when a chunk has no real page number. WikiCitation doesn't
+        // carry content_type, so we fall back to extension-sniffing.
+        const inferredType = citation.source_filename.toLowerCase().endsWith(".pdf")
+            ? CONTENT_TYPE.PDF
+            : CONTENT_TYPE.MARKDOWN;
+        const loc = formatLocation(citation, inferredType);
         if (loc) {
             card.createEl("span", { text: loc, cls: "lilbee-location" });
         }

@@ -279,11 +279,14 @@ describe("renderDocumentResult — excerpts", () => {
         expect(loc).toBeNull();
     });
 
-    it("renders a location span when page_start is set", () => {
+    it("renders a location span when page_start is set on a PDF", () => {
         const container = makeContainer();
         renderDocumentResult(
             container as unknown as HTMLElement,
-            makeDocumentResult({ excerpts: [makeExcerpt("Has page", 3)] }),
+            makeDocumentResult({
+                content_type: "application/pdf",
+                excerpts: [makeExcerpt("Has page", 3)],
+            }),
             makeApp(),
             makeApi(),
         );
@@ -353,33 +356,73 @@ describe("renderDocumentResult — truncate", () => {
 });
 
 describe("formatLocation — page branches", () => {
-    it("page_start only → 'p. X'", () => {
+    it("page_start only → 'p. X' for PDF content", () => {
         const container = makeContainer();
         renderDocumentResult(
             container as unknown as HTMLElement,
-            makeDocumentResult({ excerpts: [makeExcerpt("text", 5, null)] }),
+            makeDocumentResult({
+                content_type: "application/pdf",
+                excerpts: [makeExcerpt("text", 5, null)],
+            }),
             makeApp(),
             makeApi(),
         );
         expect(container.find("lilbee-location")!.textContent).toBe("p. 5");
     });
 
-    it("page_start === page_end → 'p. X' (same page)", () => {
+    it("page_start === page_end → 'p. X' (same page) for PDF content", () => {
         const container = makeContainer();
         renderDocumentResult(
             container as unknown as HTMLElement,
-            makeDocumentResult({ excerpts: [makeExcerpt("text", 7, 7)] }),
+            makeDocumentResult({
+                content_type: "application/pdf",
+                excerpts: [makeExcerpt("text", 7, 7)],
+            }),
             makeApp(),
             makeApi(),
         );
         expect(container.find("lilbee-location")!.textContent).toBe("p. 7");
     });
 
-    it("page_start !== page_end → 'pp. X–Y'", () => {
+    it("markdown source with page_start renders no '(p. N)' suffix when no line info", () => {
         const container = makeContainer();
         renderDocumentResult(
             container as unknown as HTMLElement,
-            makeDocumentResult({ excerpts: [makeExcerpt("text", 2, 4)] }),
+            makeDocumentResult({
+                content_type: "text/markdown",
+                excerpts: [makeExcerpt("text", 0, 0)],
+            }),
+            makeApp(),
+            makeApi(),
+        );
+        // Regression: '(p. 0)' was emitted for markdown sources where page_start
+        // was a placeholder. The fix branches on content_type so markdown skips
+        // page rendering and prefers line bounds when available.
+        expect(container.find("lilbee-location")).toBeNull();
+    });
+
+    it("markdown source with page_start prefers line bounds when present", () => {
+        const container = makeContainer();
+        renderDocumentResult(
+            container as unknown as HTMLElement,
+            makeDocumentResult({
+                content_type: "text/markdown",
+                excerpts: [makeExcerpt("text", 0, 0, 12, 18)],
+            }),
+            makeApp(),
+            makeApi(),
+        );
+        expect(container.find("lilbee-location")!.textContent).toBe("lines 12–18");
+    });
+
+    it("page_start !== page_end (PDF) renders 'pp. X-Y'", () => {
+        const container = makeContainer();
+        renderDocumentResult(
+            container as unknown as HTMLElement,
+            makeDocumentResult({
+                content_type: "application/pdf",
+                excerpts: [makeExcerpt("text", 2, 4)],
+            }),
             makeApp(),
             makeApi(),
         );
@@ -472,7 +515,7 @@ describe("renderSourceChip — basic", () => {
         const container = makeContainer();
         const source: Source = {
             source: "book.pdf",
-            content_type: "pdf",
+            content_type: "application/pdf",
             distance: 0.2,
             chunk: "...",
             page_start: 42,
@@ -488,7 +531,7 @@ describe("renderSourceChip — basic", () => {
         const container = makeContainer();
         const source: Source = {
             source: "book.pdf",
-            content_type: "pdf",
+            content_type: "application/pdf",
             distance: 0.2,
             chunk: "...",
             page_start: 10,
@@ -504,7 +547,7 @@ describe("renderSourceChip — basic", () => {
         const container = makeContainer();
         const source: Source = {
             source: "book.pdf",
-            content_type: "pdf",
+            content_type: "application/pdf",
             distance: 0.2,
             chunk: "...",
             page_start: 5,
@@ -727,7 +770,7 @@ describe("renderSourceChip — wiki chunk_type", () => {
         expect(previewOpens).toHaveLength(0);
     });
 
-    it("non-wiki PDF chip with vault_path hits a vault file and opens with #page=N", () => {
+    it("non-wiki PDF chip with vault_path routes to the preview modal (Obsidian PDF viewer ignores #page=N)", () => {
         previewOpens.length = 0;
         const container = makeContainer();
         const source: Source = {
@@ -745,6 +788,9 @@ describe("renderSourceChip — wiki chunk_type", () => {
         app.vault.getAbstractFileByPath = vi.fn(() => ({ path: "lilbee/imported/book.pdf" }) as unknown as null);
         renderSourceChip(container as unknown as HTMLElement, source, app, makeApi());
         container.find("lilbee-source-chip")!.trigger("click");
-        expect(app.workspace.openLinkText).toHaveBeenCalledWith("lilbee/imported/book.pdf#page=5", "");
+        expect(app.workspace.openLinkText).not.toHaveBeenCalled();
+        expect(previewOpens).toHaveLength(1);
+        expect(previewOpens[0].source.source).toBe("book.pdf");
+        expect(previewOpens[0].source.page_start).toBe(5);
     });
 });

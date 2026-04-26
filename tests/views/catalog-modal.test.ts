@@ -69,6 +69,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         },
         activeModel: "",
         fetchActiveModel: vi.fn(),
+        refreshSettingsTab: vi.fn(),
         taskQueue: new TaskQueue(),
         ...overrides,
     };
@@ -276,7 +277,10 @@ describe("CatalogModal", () => {
             expect(content.find("lilbee-catalog-remove")).not.toBeNull();
         });
 
-        it("shows Active when the entry is the plugin's active model", async () => {
+        it("shows Active when the entry is the plugin's active model (legacy hf_repo value)", async () => {
+            // Back-compat: vaults set up before 1s1 stored hf_repo; the badge
+            // must still resolve so users don't see "Use" on a model that's
+            // already active.
             const plugin = makePlugin({ activeModel: "qwen/qwen3-8b" });
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
             const modal = await openModal(plugin);
@@ -284,6 +288,31 @@ describe("CatalogModal", () => {
             content.find("lilbee-catalog-view-toggle")!.trigger("click");
             await tick();
             expect(content.find("lilbee-catalog-active")).not.toBeNull();
+        });
+
+        it("shows Active when activeModel matches entry.name (1s1 short ref)", async () => {
+            // After 1s1, fresh sets persist entry.name. The Active badge must
+            // resolve from the short ref too — otherwise the badge silently
+            // disappears the moment the user picks a model from the catalog.
+            const plugin = makePlugin({ activeModel: "qwen3" });
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ installed: true, name: "qwen3", hf_repo: "qwen/qwen3-8b" })])),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            content.find("lilbee-catalog-view-toggle")!.trigger("click");
+            await tick();
+            expect(content.find("lilbee-catalog-active")).not.toBeNull();
+        });
+
+        it("does NOT show Active when activeModel matches neither entry.name nor entry.hf_repo", async () => {
+            const plugin = makePlugin({ activeModel: "some-other-model" });
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            content.find("lilbee-catalog-view-toggle")!.trigger("click");
+            await tick();
+            expect(content.find("lilbee-catalog-active")).toBeNull();
         });
 
         it("sorts ascending then descending on repeated column clicks", async () => {
@@ -722,6 +751,45 @@ describe("CatalogModal", () => {
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("qwen/qwen3-8b");
         });
 
+        it("4u1: handleUse refreshes the Settings tab on success", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(plugin.refreshSettingsTab).toHaveBeenCalled();
+        });
+
+        it("4u1: handleUse does not refresh the Settings tab on failure", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("nope")));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(plugin.refreshSettingsTab).not.toHaveBeenCalled();
+        });
+
+        it("4u1: executePull refreshes the Settings tab after successful pull + setActive", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            plugin.api.pullModel = vi.fn().mockImplementation(() => emptyStream());
+            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
+            pullBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(plugin.refreshSettingsTab).toHaveBeenCalled();
+        });
+
         it("uses setRerankerModel when the entry is a rerank task (and does not mutate activeModel)", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(
@@ -755,7 +823,7 @@ describe("CatalogModal", () => {
             expect(plugin.activeModel).toBe("");
         });
 
-        it("uses setChatModel by default", async () => {
+        it("1s1: uses setChatModel with the catalog short ref (entry.name), not the long-form hf_repo", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
             const modal = await openModal(plugin);
@@ -764,7 +832,43 @@ describe("CatalogModal", () => {
             useBtn.trigger("click");
             await tick();
             await tick();
-            expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen/qwen3-8b");
+            // Default makeEntry has name="qwen3" and hf_repo="qwen/qwen3-8b" — must use the short name.
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen3");
+            expect(plugin.api.setChatModel).not.toHaveBeenCalledWith("qwen/qwen3-8b");
+            expect(plugin.activeModel).toBe("qwen3");
+        });
+
+        it("1s1: chat-task activation toast names the catalog short ref, not hf_repo", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_MODEL_ACTIVATED("qwen3"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_MODEL_ACTIVATED("qwen/qwen3-8b"))).toBe(
+                false,
+            );
+        });
+
+        it("1s1: embedding-task activation toast still names hf_repo (set via hf_repo)", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ installed: true, task: "embedding" })])),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_MODEL_ACTIVATED("qwen/qwen3-8b"))).toBe(
+                true,
+            );
         });
 
         it("notices failure when Use fails", async () => {

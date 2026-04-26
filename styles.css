@@ -1655,6 +1655,11 @@
 }
 
 .lilbee-wizard-progress-indeterminate {
+    /* The base .lilbee-progress-bar starts at width:0 so the determinate
+     * `style.width` JS path can grow it. Indeterminate mode has no width
+     * to grow — it animates a moving gradient — so the bar must already
+     * span the full container before the gradient becomes visible. */
+    width: 100%;
     background: linear-gradient(
         90deg,
         var(--background-modifier-border) 0%,
@@ -2853,5 +2858,17 @@
 .lilbee-preview-save[disabled] {
     opacity: 0.55;
     cursor: not-allowed;
+}
+
+.lilbee-preview-open-vault {
+    /* Primary action when the previewed source resolves to a vault file —
+     * mirror the standard Obsidian CTA so it reads as the recommended next
+     * step without overpowering the modal's other footer buttons. */
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.lilbee-preview-open-vault:hover {
+    background-color: var(--interactive-accent-hover);
 }
 

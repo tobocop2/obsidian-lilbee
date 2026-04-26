@@ -594,7 +594,12 @@ export class SetupWizard extends Modal {
                 }
             }
 
-            const setResult = await this.plugin.api.setChatModel(model.hf_repo);
+            // Use the catalog short ref (`name:tag`) so cfg.chat_model is the
+            // same identifier the dropdown / status bar show. Setting via
+            // hf_repo stored the long-form HF identity, which made the
+            // Settings dropdown go blank and the subtitle show two different
+            // labels for the same model.
+            const setResult = await this.plugin.api.setChatModel(model.name);
             if (setResult.isErr()) {
                 new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.display_name));
                 statusEl.textContent = setResult.error.message;
@@ -602,7 +607,7 @@ export class SetupWizard extends Modal {
                 (downloadBtn as HTMLButtonElement).disabled = false;
                 return;
             }
-            this.plugin.activeModel = model.hf_repo;
+            this.plugin.activeModel = model.name;
             this.plugin.fetchActiveModel();
             this.pulledModelName = model.display_name;
             this.step = WIZARD_STEP.EMBEDDING_PICKER;

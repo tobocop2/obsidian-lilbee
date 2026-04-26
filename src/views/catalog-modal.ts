@@ -269,7 +269,12 @@ export class CatalogModal extends Modal {
     }
 
     private isActiveEntry(entry: CatalogEntry): boolean {
-        return this.plugin.activeModel === entry.hf_repo;
+        // 1s1 pinned the chat-model setter to entry.name (catalog short ref),
+        // but the value persisted on the server before that change was the
+        // hf_repo. Match both so the "active" badge stays correct on already-
+        // ingested vaults until the user re-selects the model.
+        const active = this.plugin.activeModel;
+        return active === entry.name || active === entry.hf_repo;
     }
 
     private renderViewToggleCta(): void {
@@ -427,8 +432,19 @@ export class CatalogModal extends Modal {
         }
 
         this.plugin.fetchActiveModel();
-        new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(entry.hf_repo));
+        this.plugin.refreshSettingsTab();
+        new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(this.activatedRefFor(entry)));
         this.resetAndFetch();
+    }
+
+    /**
+     * Identifier to surface in user-facing toasts. Chat models use the
+     * catalog short ref (matches what 1s1 persists as cfg.chat_model and
+     * what the status bar / settings dropdown render). Other model roles
+     * still set via hf_repo, so the toast names that.
+     */
+    private activatedRefFor(entry: CatalogEntry): string {
+        return entry.task === MODEL_TASK.CHAT ? entry.name : entry.hf_repo;
     }
 
     private async setActiveFor(entry: CatalogEntry): ReturnType<typeof this.plugin.api.setChatModel> {
@@ -441,8 +457,13 @@ export class CatalogModal extends Modal {
         if (entry.task === MODEL_TASK.VISION) {
             return this.plugin.api.setVisionModel(entry.hf_repo);
         }
-        const result = await this.plugin.api.setChatModel(entry.hf_repo);
-        if (result.isOk()) this.plugin.activeModel = entry.hf_repo;
+        // Pin chat to the catalog short ref (`name:tag`) so the dropdown,
+        // status bar, and Settings subtitle all read the same identifier.
+        // Setting via hf_repo persisted the long-form HF identity in
+        // cfg.chat_model, which left the Settings dropdown unable to
+        // round-trip the value back to a known option.
+        const result = await this.plugin.api.setChatModel(entry.name);
+        if (result.isOk()) this.plugin.activeModel = entry.name;
         return result;
     }
 
@@ -518,7 +539,8 @@ export class CatalogModal extends Modal {
         }
 
         this.plugin.fetchActiveModel();
-        new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.hf_repo));
+        this.plugin.refreshSettingsTab();
+        new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(this.activatedRefFor(entry)));
         this.resetAndFetch();
     }
 }

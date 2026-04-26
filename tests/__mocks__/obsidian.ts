@@ -258,6 +258,35 @@ export interface TFile {
     parent: { path: string; name: string } | null;
 }
 
+type ModalKeyHandler = (e: KeyboardEvent) => unknown;
+
+export class MockScope {
+    handlers: Array<{ modifiers: string[] | null; key: string | null; cb: ModalKeyHandler }> = [];
+    register(modifiers: string[] | null, key: string | null, cb: ModalKeyHandler): unknown {
+        const handler = { modifiers, key, cb };
+        this.handlers.push(handler);
+        return handler;
+    }
+    unregister(handler: unknown): void {
+        const idx = this.handlers.indexOf(
+            handler as { modifiers: string[] | null; key: string | null; cb: ModalKeyHandler },
+        );
+        if (idx >= 0) this.handlers.splice(idx, 1);
+    }
+    /** Test helper: simulate firing a key event through this scope. */
+    trigger(key: string, modifiers: string[] = []): void {
+        for (const h of this.handlers) {
+            const keyMatches = h.key === null || h.key === key;
+            const modMatches =
+                h.modifiers === null ||
+                (h.modifiers.length === modifiers.length && h.modifiers.every((m) => modifiers.includes(m)));
+            if (keyMatches && modMatches) {
+                h.cb({ key, preventDefault: () => {} } as unknown as KeyboardEvent);
+            }
+        }
+    }
+}
+
 export class Modal {
     app: App;
     contentEl: MockElement;
@@ -265,11 +294,13 @@ export class Modal {
     // Tests that assert on modal-level styles or classes rely on this being
     // a mockable element with addClass + style.
     modalEl: MockElement;
+    scope: MockScope;
 
     constructor(app: App) {
         this.app = app;
         this.contentEl = new MockElement("div");
         this.modalEl = new MockElement("div");
+        this.scope = new MockScope();
     }
 
     open(): void {
@@ -328,6 +359,7 @@ class MockMenuItem {
 
 export class Menu {
     private _items: MockMenuItem[] = [];
+    private _hideCallbacks: Array<() => void> = [];
 
     addItem(cb: (item: MockMenuItem) => void): this {
         const item = new MockMenuItem();
@@ -338,6 +370,16 @@ export class Menu {
 
     showAtMouseEvent(_event: unknown): void {
         /* noop */
+    }
+
+    hide(): this {
+        for (const cb of this._hideCallbacks) cb();
+        this._hideCallbacks = [];
+        return this;
+    }
+
+    onHide(cb: () => void): void {
+        this._hideCallbacks.push(cb);
     }
 }
 

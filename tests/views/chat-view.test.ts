@@ -8,6 +8,15 @@ if (typeof globalThis.requestAnimationFrame === "undefined") {
     };
 }
 
+// Polyfill document.{add,remove}EventListener for Node — chat-view's paperclip
+// menu registers a document-level ESC listener for dismissal (uog).
+if (typeof globalThis.document === "undefined") {
+    (globalThis as any).document = {
+        addEventListener: () => {},
+        removeEventListener: () => {},
+    };
+}
+
 import { Notice, WorkspaceLeaf } from "../__mocks__/obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal, electronDialog } from "../../src/views/chat-view";
@@ -130,6 +139,7 @@ function makePlugin(): LilbeePlugin {
         settings: { topK: 5, enableOcr: null as boolean | null, wikiEnabled: true, searchChunkType: "all" as const },
         activeModel: "llama3",
         fetchActiveModel: vi.fn(),
+        refreshSettingsTab: vi.fn(),
         saveSettings: vi.fn().mockResolvedValue(undefined),
         cancelSync: vi.fn(),
         triggerSync: vi.fn().mockResolvedValue(undefined),
@@ -682,7 +692,7 @@ describe("ChatView.sendMessage — error event", () => {
 });
 
 describe("ChatView.sendMessage — API throws", () => {
-    it("removes assistant bubble, pops history, and shows Notice when chatStream throws", async () => {
+    it("renders an error bubble, pops history, and shows a 'Chat failed' Notice when chatStream throws", async () => {
         Notice.clear();
         const plugin = makePlugin();
         let resolveThrown!: () => void;
@@ -692,7 +702,7 @@ describe("ChatView.sendMessage — API throws", () => {
         plugin.api.chatStream = vi.fn().mockReturnValue(
             (async function* () {
                 resolveThrown();
-                throw new Error("network");
+                throw new Error("server returned 500");
             })(),
         );
         const view = new ChatView(makeLeaf(), plugin);
@@ -706,15 +716,42 @@ describe("ChatView.sendMessage — API throws", () => {
         await thrown;
         await tick();
 
-        // Assistant bubble removed — only user bubble remains
-        expect(messagesEl.children.length).toBe(1);
+        // User bubble + error bubble both kept on screen — error must remain
+        // visible inline so the failure isn't silent.
+        expect(messagesEl.children.length).toBe(2);
         expect(messagesEl.children[0].classList.contains("user")).toBe(true);
-        // Notice shown
-        expect(Notice.instances.some((n) => n.message === "Could not connect to lilbee server. Is it running?")).toBe(
-            true,
-        );
-        // History popped — no user message either
+        const errBubble = messagesEl.children[1];
+        expect(errBubble.classList.contains("lilbee-chat-message-error")).toBe(true);
+        expect(errBubble.attributes["role"]).toBe("alert");
+        expect(errBubble.find("lilbee-chat-error-text")!.textContent).toContain("server returned 500");
+        // Notice carries the underlying reason — no more generic "could not connect"
+        expect(Notice.instances.some((n) => n.message.startsWith("Chat failed:"))).toBe(true);
+        expect(Notice.instances.some((n) => n.message.includes("server returned 500"))).toBe(true);
+        // History popped — assistant message did not finish
         expect((view as any).history.length).toBe(0);
+    });
+
+    it("surfaces 'Chat failed' Notice when handleSend itself throws synchronously", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "boom";
+        // Sabotage the trim() call to throw — this models a class of "no fetch
+        // fired, no error surfaced" failures we saw on wrapped multi-line input.
+        Object.defineProperty(textarea, "value", {
+            get() {
+                throw new Error("textarea boom");
+            },
+        });
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        expect(Notice.instances.some((n) => n.message.startsWith("Chat failed:"))).toBe(true);
+        expect(Notice.instances.some((n) => n.message.includes("textarea boom"))).toBe(true);
     });
 });
 
@@ -891,6 +928,39 @@ describe("ChatView.onOpen — model selector", () => {
         await tick();
 
         expect(Notice.instances.some((n) => n.message.includes("failed to switch"))).toBe(true);
+    });
+
+    it("4u1: chat-view setChatModel success refreshes the Settings tab", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-chat-model-select")!;
+        (select as any).value = "phi3";
+        select.trigger("change");
+        await tick();
+
+        expect(plugin.refreshSettingsTab).toHaveBeenCalled();
+    });
+
+    it("4u1: chat-view setChatModel failure does NOT refresh the Settings tab", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("fail")));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-chat-model-select")!;
+        (select as any).value = "bad-model";
+        select.trigger("change");
+        await tick();
+
+        expect(plugin.refreshSettingsTab).not.toHaveBeenCalled();
     });
 
     it("change event does nothing when value is empty", async () => {
@@ -1622,6 +1692,86 @@ describe("ChatView.onOpen — add file button opens menu", () => {
         await tick();
 
         expect(Notice.instances.some((n) => n.message.includes("could not open file picker"))).toBe(true);
+    });
+
+    it("uog: ESC keydown dismisses the paperclip menu", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+
+        const addEvents: Array<
+            [string, EventListenerOrEventListenerObject, boolean | AddEventListenerOptions | undefined]
+        > = [];
+        const removeEvents: Array<
+            [string, EventListenerOrEventListenerObject, boolean | EventListenerOptions | undefined]
+        > = [];
+        const origAdd = document.addEventListener.bind(document);
+        const origRemove = document.removeEventListener.bind(document);
+        document.addEventListener = vi.fn((type: string, listener: any, opts: any) => {
+            addEvents.push([type, listener, opts]);
+            return origAdd(type, listener, opts);
+        }) as typeof document.addEventListener;
+        document.removeEventListener = vi.fn((type: string, listener: any, opts: any) => {
+            removeEvents.push([type, listener, opts]);
+            return origRemove(type, listener, opts);
+        }) as typeof document.removeEventListener;
+
+        try {
+            const container = view.containerEl.children[1] as unknown as MockElement;
+            const addBtn = container.find("lilbee-chat-add-file")!;
+            addBtn.trigger("click", { clientX: 0, clientY: 0 } as MouseEvent);
+
+            const escHandler = addEvents.find(([type]) => type === "keydown");
+            expect(escHandler).toBeDefined();
+            // Simulate ESC: invoke the handler — it should call menu.hide(),
+            // which fires onHide → document.removeEventListener("keydown", …).
+            const handler = escHandler![1] as (e: KeyboardEvent) => void;
+            handler({ key: "Escape", preventDefault: vi.fn() } as unknown as KeyboardEvent);
+
+            const escRemoval = removeEvents.find(([type]) => type === "keydown");
+            expect(escRemoval).toBeDefined();
+        } finally {
+            document.addEventListener = origAdd as typeof document.addEventListener;
+            document.removeEventListener = origRemove as typeof document.removeEventListener;
+        }
+    });
+
+    it("uog: non-ESC keys are ignored and do not dismiss the menu", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+
+        const addEvents: Array<[string, EventListenerOrEventListenerObject]> = [];
+        const removeEvents: Array<[string, EventListenerOrEventListenerObject]> = [];
+        const origAdd = document.addEventListener.bind(document);
+        const origRemove = document.removeEventListener.bind(document);
+        document.addEventListener = vi.fn((type: string, listener: any, opts: any) => {
+            addEvents.push([type, listener]);
+            return origAdd(type, listener, opts);
+        }) as typeof document.addEventListener;
+        document.removeEventListener = vi.fn((type: string, listener: any, opts: any) => {
+            removeEvents.push([type, listener]);
+            return origRemove(type, listener, opts);
+        }) as typeof document.removeEventListener;
+
+        try {
+            const container = view.containerEl.children[1] as unknown as MockElement;
+            const addBtn = container.find("lilbee-chat-add-file")!;
+            addBtn.trigger("click", { clientX: 0, clientY: 0 } as MouseEvent);
+
+            const handler = addEvents.find(([type]) => type === "keydown")![1] as (e: KeyboardEvent) => void;
+            const preventDefault = vi.fn();
+            handler({ key: "a", preventDefault } as unknown as KeyboardEvent);
+
+            // 'a' is not ESC — handler is a no-op, menu stays open, listener still registered.
+            expect(preventDefault).not.toHaveBeenCalled();
+            expect(removeEvents.some(([type]) => type === "keydown")).toBe(false);
+        } finally {
+            document.addEventListener = origAdd as typeof document.addEventListener;
+            document.removeEventListener = origRemove as typeof document.removeEventListener;
+        }
     });
 });
 
@@ -2655,6 +2805,26 @@ describe("ChatView — embedding model selector", () => {
         expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_EMBEDDING_UPDATED)).toBe(true);
         expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_REINDEX_REQUIRED)).toBe(true);
         expect(plugin.triggerSync).toHaveBeenCalled();
+        // 4u1: embedding success path must also refresh the Settings tab so
+        // the dropdown / subtitle reflect the new active embedding.
+        expect(plugin.refreshSettingsTab).toHaveBeenCalled();
+    });
+
+    it("4u1: embedding setEmbeddingModel failure does NOT refresh the Settings tab", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.setEmbeddingModel = vi.fn().mockResolvedValue(err(new Error("nope")));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-embed-model-select")!;
+        (select as any).value = "nomic-embed-text";
+        select.trigger("change");
+        await tick();
+
+        expect(plugin.refreshSettingsTab).not.toHaveBeenCalled();
     });
 
     it("reverts dropdown on cancel", async () => {

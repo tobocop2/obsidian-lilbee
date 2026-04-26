@@ -780,6 +780,46 @@ describe("SetupWizard", () => {
             expect(plugin.api.pullModel).toHaveBeenCalled();
         });
 
+        it("1s1: Download & continue pins activeModel + setChatModel to entry.name (short ref)", async () => {
+            // entry.name is the short catalog ref ("qwen3:0.6b"); entry.hf_repo
+            // is the long HF identity. The wizard used to set chat via hf_repo,
+            // which made cfg.chat_model and the Settings dropdown disagree.
+            const entries = [makeEntry({ name: "qwen3:0.6b", hf_repo: "qwen/qwen3-0.6B" })];
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse(entries)));
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.PROGRESS, data: { percent: 100 } };
+                })(),
+            );
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: { added: [], updated: [], removed: [], unchanged: 0, failed: [] },
+                    };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const downloadBtn = findButtons(el).find((b) => b.textContent === "Download & continue")!;
+            downloadBtn.trigger("click");
+            await tick();
+            await tick();
+
+            // Pull still uses hf_repo (server caches by HF identity).
+            expect(plugin.api.pullModel).toHaveBeenCalledWith("qwen/qwen3-0.6B", "native", expect.any(AbortSignal));
+            // setChatModel and activeModel use the catalog short ref so the
+            // dropdown can round-trip the value back to a known option.
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("qwen3:0.6b");
+            expect(plugin.api.setChatModel).not.toHaveBeenCalledWith("qwen/qwen3-0.6B");
+            expect(plugin.activeModel).toBe("qwen3:0.6b");
+        });
+
         it("Download & continue pulls model and advances to sync step", async () => {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
@@ -2704,6 +2744,27 @@ describe("SetupWizard", () => {
             (wizard as any).renderStep();
 
             const el = wizard.contentEl as unknown as MockElement;
+            const fill = el.find("lilbee-wizard-progress-fill");
+            expect(fill).not.toBeNull();
+            expect(fill!.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(true);
+        });
+
+        it("410: managed-server start keeps the progress fill indeterminate until completion", async () => {
+            const plugin = makePlugin({ serverManager: null });
+            // Hold startManagedServer open so we can inspect the mid-flight state.
+            plugin.startManagedServer = vi.fn().mockImplementation(async () => {
+                await new Promise(() => {});
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const nextBtn = findButtons(el).find((b) => b.textContent === "Next")!;
+            nextBtn.trigger("click");
+            await tick();
+            await tick();
+
             const fill = el.find("lilbee-wizard-progress-fill");
             expect(fill).not.toBeNull();
             expect(fill!.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(true);

@@ -3271,6 +3271,52 @@ describe("LilbeePlugin", () => {
             expect(plugin.statusBarEl?.classList.contains("lilbee-status-error")).toBe(true);
         });
 
+        it("handleServerStateChange ready re-renders an open lilbee Settings tab (ydt)", async () => {
+            const { LilbeeSettingTab } = await import("../src/settings");
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const tab = new LilbeeSettingTab(plugin.app, plugin);
+            const display = vi.spyOn(tab, "display").mockImplementation(() => {});
+            (plugin.app as any).setting = { activeTab: tab };
+
+            const stateChange = mockServerOpts?.onStateChange;
+            stateChange("ready");
+            expect(display).toHaveBeenCalled();
+        });
+
+        it("handleServerStateChange ready does not call display when active tab is not lilbee (ydt)", async () => {
+            const { PluginSettingTab } = await import("obsidian");
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const otherTab = new PluginSettingTab(plugin.app, plugin as any);
+            const display = vi.spyOn(otherTab, "display").mockImplementation(() => {});
+            (plugin.app as any).setting = { activeTab: otherTab };
+
+            const stateChange = mockServerOpts?.onStateChange;
+            stateChange("ready");
+            expect(display).not.toHaveBeenCalled();
+        });
+
+        it("refreshSettingsTab is a no-op when app.setting is undefined (ydt)", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+            (plugin.app as any).setting = undefined;
+            expect(() => plugin.refreshSettingsTab()).not.toThrow();
+        });
+
+        it("refreshSettingsTab is a no-op when activeTab is null (ydt)", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+            (plugin.app as any).setting = { activeTab: null };
+            expect(() => plugin.refreshSettingsTab()).not.toThrow();
+        });
+
         it("sets status bar to downloading only when binary is missing", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
@@ -3404,6 +3450,41 @@ describe("LilbeePlugin", () => {
             await plugin.saveSettings();
 
             expect(mockUpdatePort).toHaveBeenCalledWith(9999);
+        });
+
+        it("2rf: managed → external sets status to 'ready [external]', not 'stopped'", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            plugin.settings.serverMode = "external";
+            await plugin.saveSettings();
+            await flush();
+
+            const text = (plugin as any).statusBarEl?.textContent ?? "";
+            expect(text).toContain("[external]");
+            expect(text).not.toContain("stopped");
+        });
+
+        it("2rf: handleServerStateChange STOPPED is ignored in external mode", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const stateChange = mockServerOpts?.onStateChange;
+            // First land READY in managed mode so status starts at "ready"
+            stateChange("ready");
+            // Switch to external — status should reflect external readiness
+            plugin.settings.serverMode = "external";
+            await plugin.saveSettings();
+            await flush();
+            // The managed child fires STOPPED on its way out; that callback
+            // must NOT repaint the status as stopped now that we're external.
+            stateChange("stopped");
+
+            const text = (plugin as any).statusBarEl?.textContent ?? "";
+            expect(text).not.toContain("stopped");
+            expect(text).toContain("[external]");
         });
     });
 
