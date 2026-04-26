@@ -37,7 +37,7 @@ jobs:
       - name: Assemble site
         run: |
           mkdir -p _site
-          cp site/index.html _site/
+          cp -r site/. _site/
           cp -r coverage _site/coverage
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
