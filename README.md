@@ -1,6 +1,8 @@
-# [lilbee for Obsidian](https://tobocop2.github.io/obsidian-lilbee/)
+# lilbee for Obsidian — local-first RAG with click-to-source citations
 
-An Obsidian plugin that pairs your vault with a local search engine. Click any citation to preview the source passage in place — verify every answer without leaving the editor.
+[Project site](https://tobocop2.github.io/obsidian-lilbee/) · [Releases](https://github.com/tobocop2/obsidian-lilbee/releases) · [lilbee engine](https://github.com/tobocop2/lilbee)
+
+Local-first RAG for your Obsidian vault. Chat with your notes, PDFs, code, and 150+ formats — and verify every answer at the source. Every citation in chat or wiki opens a Source Preview that scrolls to the exact passage in the original document. Private, offline, self-hosted.
 
 [![CI](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml/badge.svg)](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml)
 [![Coverage](https://tobocop2.github.io/obsidian-lilbee/coverage/badge.svg)](https://tobocop2.github.io/obsidian-lilbee/coverage/)
@@ -15,7 +17,7 @@ An Obsidian plugin that pairs your vault with a local search engine. Click any c
 
 ---
 
-- [Why lilbee for Obsidian](#why-lilbee-for-obsidian)
+- [Why a local-first RAG plugin for Obsidian](#why-a-local-first-rag-plugin-for-obsidian)
 - [Previews](#previews)
 - [What you can do with it](#what-you-can-do-with-it)
 - [Quick start](#quick-start)
@@ -27,7 +29,7 @@ An Obsidian plugin that pairs your vault with a local search engine. Click any c
 
 ---
 
-## Why lilbee for Obsidian
+## Why a local-first RAG plugin for Obsidian
 
 Local AI tools have gotten great at getting you to a chat window fast. The first evening with a local model is genuinely fun. What makes it more than a novelty is grounding: the model needs context from your notes, your files, your codebase. Without that, the local AI tool runs out of places to go.
 
