@@ -26,6 +26,10 @@ vi.mock("../src/api", () => ({
         setToken: vi.fn(),
         setTokenProvider: vi.fn(),
         health: vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} }),
+        // Default config matches the test vault layout so the fire-and-forget
+        // configureManagedStorage() in startManagedServer() hits the early
+        // no-op exit instead of throwing on a missing method.
+        config: vi.fn().mockResolvedValue({ documents_dir: "/test/vault/lilbee", vault_base: "/test/vault" }),
         addFiles: vi.fn(),
         crawl: vi.fn(),
         wikiLint: vi.fn(),
