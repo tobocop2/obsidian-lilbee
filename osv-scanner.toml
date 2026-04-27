@@ -8,3 +8,17 @@
 #   [[IgnoredVulns]]
 #   id = "GHSA-xxxx-xxxx-xxxx"
 #   reason = "..."
+
+# Transitive dev-only CVEs pinned by vitest 2.x (vite 5.4.21 -> esbuild 0.21.5).
+# Both target the dev server attack surface; we invoke vitest as a test runner,
+# not as a dev server. The npm-audit step already exempts dev-tool advisories
+# below --audit-level=high. Auto-resolves with the vitest 4 migration tracked
+# in bead obsidian-lilbee-w87.
+
+[[IgnoredVulns]]
+id = "GHSA-4w7w-66w2-5vf9"
+reason = "vite <6.4.2 dev-server path traversal; we don't run vite dev server, only vitest as a test runner. Resolved by vitest 4 migration."
+
+[[IgnoredVulns]]
+id = "GHSA-67mh-4wv8-2f99"
+reason = "esbuild <0.25.0 dev-server SSRF; transitive via vite 5.4.21 -> vitest 2.x. Direct esbuild is already 0.28.0. Resolved by vitest 4 migration."
