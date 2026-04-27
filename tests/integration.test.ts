@@ -7,8 +7,18 @@ import { ServerManager } from "../src/server-manager";
 
 const tempDir = mkdtempSync(join(tmpdir(), "lilbee-integration-"));
 
-afterAll(() => {
-    rmSync(tempDir, { recursive: true, force: true });
+afterAll(async () => {
+    // Windows can briefly hold a file lock on the just-stopped lilbee binary,
+    // making rmdir bin/ throw ENOTEMPTY. Retry briefly, then give up — the CI
+    // runner reclaims the temp dir on job exit either way.
+    for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+            rmSync(tempDir, { recursive: true, force: true });
+            return;
+        } catch {
+            if (attempt < 4) await new Promise((r) => setTimeout(r, 200));
+        }
+    }
 });
 
 // Auth header avoids GitHub API rate limits (60/hr unauthenticated vs 5000/hr)
