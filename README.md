@@ -46,27 +46,27 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
 **Chat sidebar.** Streaming replies with `[¹]` citations. Click a citation to open the source preview.
 
 ```
- ┌─ Chat ────────────────────────────────────┐
- │ [💬 qwen3:8b ▾] [🗄 nomic-embed ▾]         │
- │ [OCR] [All|Wiki|Raw]       [💾] [Clear]    │
- │──────────────────────────────────────────│
+ ┌─ Chat ─────────────────────────────────────┐
+ │ [Chat: qwen3 8B v]   [Embed: nomic v]      │
+ │ [OCR]  [All | Wiki | Raw]  [Save] [Clear]  │
+ ├────────────────────────────────────────────┤
  │                                            │
  │ You:  what does the oil pressure warning   │
  │       mean?                                │
  │                                            │
- │ ▸ thinking...                              │
+ │ > thinking...                              │
  │                                            │
  │ Lilbee: The oil pressure warning indicates │
- │         low oil pressure.[¹] When the      │
+ │         low oil pressure.[1] When the      │
  │         light stays on, stop the engine    │
- │         immediately.[²]                    │
- │         ────────────────────────────────   │
+ │         immediately.[2]                    │
+ │         ───────────────────────────────    │
  │         Sources                            │
- │         [¹ owners-manual.pdf:42] ← preview │
- │         [² owners-manual.pdf:43]           │
+ │         [1 owners-manual.pdf:42] <-preview │
+ │         [2 owners-manual.pdf:43]           │
  │                                            │
- │──────────────────────────────────────────│
- │ [📎] Ask anything...              [Send]   │
+ ├────────────────────────────────────────────┤
+ │ [Attach]  Ask anything...          [Send]  │
  └────────────────────────────────────────────┘
 ```
 
@@ -74,96 +74,96 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
 
 ```
  ┌─ Source preview ──────────────────────────────────┐
- │ owners-manual.pdf · chunk 42 of 188     [Close ×] │
- │───────────────────────────────────────────────────│
+ │ owners-manual.pdf | chunk 42 of 188     [Close x] │
+ ├───────────────────────────────────────────────────┤
  │ ...                                               │
  │ Engine warnings                                   │
  │                                                   │
- │ ▌The oil pressure warning indicates low oil      ▐│
- │ ▌pressure. When the light stays on, stop the     ▐│
- │ ▌engine immediately and check the oil level.     ▐│
+ │ > The oil pressure warning indicates low oil      │
+ │ > pressure. When the light stays on, stop the     │
+ │ > engine immediately and check the oil level.     │
  │                                                   │
  │ If the warning persists after a top-up, do not    │
- │ continue driving — call for service.              │
+ │ continue driving -- call for service.             │
  │ ...                                               │
  │                                                   │
- │              [Open document]  [Copy link]         │
+ │              [Open document]   [Copy link]        │
  └───────────────────────────────────────────────────┘
 ```
 
-**Model Catalog.** Browse, search, and install models without leaving Obsidian. Featured picks for each role; full HuggingFace catalog one toggle away. `★` marks the developer's recommendation.
+**Model Catalog.** Browse, search, and install models without leaving Obsidian. Featured picks for each role; full HuggingFace catalog one toggle away. `*` marks the developer's recommendation.
 
 ```
  ┌─ Model Catalog ─────────────────────────┐
- │ [All tasks ▾] [All sizes ▾] [Featured ▾]│
- │ 🔍 search...                 [Grid|List]│
- │                                          │
- │ Our picks                                │
+ │ [All tasks v] [All sizes v] [Featured v]│
+ │ search...                  [Grid | List]│
+ │                                         │
+ │ Our picks                               │
  │ ┌────────────┐ ┌────────────┐           │
- │ │ Qwen3 8B ★ │ │ Nomic      │           │
- │ │ ▌chat▐     │ │ ▌embed▐    │           │
+ │ │ Qwen3 8B * │ │ Nomic      │           │
+ │ │ [chat]     │ │ [embed]    │           │
  │ │ [GGUF]     │ │ [GGUF]     │           │
- │ │ 4.9 GB  ✓  │ │ 274 MB     │           │
+ │ │ 4.9 GB  ok │ │ 274 MB     │           │
  │ │ [Use]      │ │ [Pull]     │           │
  │ └────────────┘ └────────────┘           │
- │                                          │
- │            [Load more]                   │
- └──────────────────────────────────────────┘
+ │                                         │
+ │             [Load more]                 │
+ └─────────────────────────────────────────┘
 ```
 
 **Task Center.** Every background job (sync, crawl, wiki build, model pull) in one place. Per-type concurrent queues with a global cap.
 
 ```
- ┌─ Task Center ───────── [cap 3/3] [Clear]┐
- │ ACTIVE (2)                               │
- │   ████████████░░░░░░░░  42%  PULL  qwen3 │
- │   ██████░░░░░░░░░░░░░░  18%  SYNC  vault │
- │ QUEUED (1)                               │
- │   CRAWL  https://docs.example.com        │
- │ COMPLETED                                │
- │   ✓ SYNC  vault              2 min ago  │
- │   ✗ PULL  mistral            5 min ago  │
- └──────────────────────────────────────────┘
+ ┌─ Task Center ─────────── [cap 3/3] [Clear]┐
+ │ ACTIVE (2)                                │
+ │   [============-----]  42%  PULL  qwen3   │
+ │   [======-----------]  18%  SYNC  vault   │
+ │ QUEUED (1)                                │
+ │   CRAWL  https://docs.example.com         │
+ │ COMPLETED                                 │
+ │   [v] SYNC  vault              2 min ago  │
+ │   [x] PULL  mistral            5 min ago  │
+ └───────────────────────────────────────────┘
 ```
 
 **Wiki sidebar.** Auto-generated concept and entity pages, drafts queue, citation footnotes that open the source preview.
 
 ```
  ┌─ Wiki ───────────────────────────────────┐
- │ 🔍 Filter pages...                        │
- │                                           │
- │ Summaries (12)                            │
+ │ Filter pages...                          │
+ │                                          │
+ │ Summaries (12)                           │
  │   Oil System Overview          3 src     │
- │ Concepts (8)                              │
+ │ Concepts (8)                             │
  │   Maintenance Schedule         5 src     │
- │ Drafts (2)                                │
+ │ Drafts (2)                               │
  │   Tire Pressure                1 src     │
- │─────────────────────────────────────────│
- │ ┌─ Oil System Overview ─────────────────┐│
- │ │ 3 sources · faithfulness 0.92         ││
- │ │                                        ││
- │ │ The oil system uses a wet-sump         ││
- │ │ design with a capacity of 5 quarts     ││
- │ │ including filter.[¹]                   ││
- │ │                                        ││
- │ │ [¹ owners-manual.pdf:42]  ← preview   ││
- │ └────────────────────────────────────────┘│
+ ├──────────────────────────────────────────┤
+ │ ┌─ Oil System Overview ────────────────┐ │
+ │ │ 3 sources | faithfulness 0.92        │ │
+ │ │                                      │ │
+ │ │ The oil system uses a wet-sump       │ │
+ │ │ design with a capacity of 5 quarts   │ │
+ │ │ including filter.[1]                 │ │
+ │ │                                      │ │
+ │ │ [1 owners-manual.pdf:42]  <-preview  │ │
+ │ └──────────────────────────────────────┘ │
  └──────────────────────────────────────────┘
 ```
 
 **Setup wizard.** 7-step guided onboarding on first launch. Re-runnable from the command palette.
 
 ```
- ●──○──○──○──○──○──○
- 1  2  3  4  5  6  7
+ (1)--(2)--(3)--(4)--(5)--(6)--(7)
+  1    2    3    4    5    6    7
 
- 1  Welcome
- 2  Server mode      → Managed or External (URL + health)
- 3  Chat model       → Featured grid, RAM-based pick
- 4  Embedding model  → Featured grid (or keep current)
- 5  Initial sync     → SSE progress bar
- 6  Wiki (optional)  → Pros/cons, recommend skipping
- 7  Done             → Summary + tips + [Open chat]
+  1  Welcome
+  2  Server mode      ->  Managed or External (URL + health)
+  3  Chat model       ->  Featured grid, RAM-based pick
+  4  Embedding model  ->  Featured grid (or keep current)
+  5  Initial sync     ->  SSE progress bar
+  6  Wiki (optional)  ->  Pros/cons, recommend skipping
+  7  Done             ->  Summary + tips + [Open chat]
 ```
 
 ## What you can do with it
