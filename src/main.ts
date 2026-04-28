@@ -312,6 +312,9 @@ export default class LilbeePlugin extends Plugin {
                         const detail = stderr ? `\n${stderr.split("\n").slice(-5).join("\n")}` : "";
                         new Notice(`${MESSAGES.ERROR_SERVER_CRASHED}${detail}`, NOTICE_PERMANENT);
                     },
+                    onShutdownFailure: (err: Error) => {
+                        new Notice(`${MESSAGES.ERROR_SERVER_SHUTDOWN_FAILED}: ${err.message}`);
+                    },
                 });
 
                 this.updateStatusBar(MESSAGES.STATUS_STARTING, DOT_STATE.PRIMARY);

@@ -352,6 +352,7 @@ export const MESSAGES = {
 
     ERROR_COULD_NOT_CONNECT: "lilbee: cannot connect to server",
     ERROR_SERVER_CRASHED: "lilbee: server crashed after multiple restarts",
+    ERROR_SERVER_SHUTDOWN_FAILED: "lilbee: failed to stop the managed server",
     ERROR_FAILED_DOWNLOAD: "lilbee: failed to download server",
     ERROR_FAILED_START: "lilbee: failed to start server",
     ERROR_FAILED_UPDATE: "lilbee: update failed",

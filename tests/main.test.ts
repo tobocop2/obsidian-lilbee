@@ -3045,6 +3045,21 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.length).toBe(beforeCount);
         });
 
+        it("onShutdownFailure shows a notice with the failure message", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const onShutdownFailure = mockServerOpts?.onShutdownFailure;
+            expect(onShutdownFailure).toBeDefined();
+
+            onShutdownFailure(new Error("process not found"));
+
+            const notice = Notice.instances.find((n) => n.message.includes("failed to stop"));
+            expect(notice).toBeDefined();
+            expect(notice!.message).toContain("process not found");
+        });
+
         it("showError includes lastStderr in the notice", async () => {
             mockLastStderr = "fatal: database locked";
             mockServerStart.mockRejectedValueOnce(new Error("startup failed"));

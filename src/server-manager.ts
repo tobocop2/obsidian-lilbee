@@ -20,6 +20,7 @@ export interface ServerManagerOptions {
     systemPrompt: string;
     onStateChange?: (state: ServerState) => void;
     onRestartsExhausted?: (stderr: string) => void;
+    onShutdownFailure?: (error: Error) => void;
 }
 
 export class ServerManager {
@@ -96,6 +97,7 @@ export class ServerManager {
         const env: Record<string, string | undefined> = {
             ...process.env,
             LILBEE_CORS_ORIGINS: "app://obsidian.md",
+            LILBEE_PARENT_PID: String(process.pid),
         };
         if (this.opts.systemPrompt) {
             env.LILBEE_SYSTEM_PROMPT = this.opts.systemPrompt;
@@ -192,8 +194,8 @@ export class ServerManager {
         if (process.platform === PLATFORM.WIN32) {
             try {
                 await node.execFile("taskkill", ["/pid", String(child.pid), "/f", "/t"]);
-            } catch {
-                // process may already be gone
+            } catch (err) {
+                this.opts.onShutdownFailure?.(err instanceof Error ? err : new Error(String(err)));
             }
         } else {
             child.kill("SIGTERM");
