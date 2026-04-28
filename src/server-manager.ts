@@ -47,6 +47,7 @@ export class ServerManager {
 
     get serverUrl(): string {
         const port = this._actualPort ?? this.opts.port;
+        if (port === null) return "";
         return `http://127.0.0.1:${port}`;
     }
 
@@ -161,11 +162,14 @@ export class ServerManager {
 
     private async waitForReady(): Promise<void> {
         for (let i = 0; i < SERVER_MANAGER_CONFIG.HEALTH_POLL_MAX_ATTEMPTS; i++) {
-            try {
-                const res = await node.fetch(`${this.serverUrl}/api/health`);
-                if (res.ok) return;
-            } catch {
-                // not ready yet
+            const url = this.serverUrl;
+            if (url) {
+                try {
+                    const res = await node.fetch(`${url}/api/health`);
+                    if (res.ok) return;
+                } catch {
+                    // not ready yet
+                }
             }
             await new Promise((r) => setTimeout(r, SERVER_MANAGER_CONFIG.HEALTH_POLL_INTERVAL_MS));
         }

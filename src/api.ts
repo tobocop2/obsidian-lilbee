@@ -48,6 +48,18 @@ export class SessionTokenError extends Error {
     }
 }
 
+/**
+ * Thrown when a request is attempted before the managed server has reported
+ * its random listen port. Lets callers (settings UI, status bar) render a
+ * "starting…" state instead of firing requests at the default port.
+ */
+export class ServerStartingError extends Error {
+    constructor() {
+        super("Server is still starting up");
+        this.name = ERROR_NAME.SERVER_STARTING;
+    }
+}
+
 export class LilbeeClient {
     private token: string | null = null;
     private tokenProvider: (() => string | null) | null = null;
@@ -128,6 +140,7 @@ export class LilbeeClient {
         init?: RequestInit,
         opts?: { stream?: boolean; signal?: AbortSignal },
     ): Promise<Response> {
+        if (!this.baseUrl) throw new ServerStartingError();
         const maxAttempts = RETRY_COUNT + 1;
         let lastError: unknown;
         let authRetried = false;

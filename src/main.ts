@@ -169,7 +169,7 @@ function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
 
 export default class LilbeePlugin extends Plugin {
     settings: LilbeeSettings = { ...DEFAULT_SETTINGS };
-    api: LilbeeClient = new LilbeeClient(DEFAULT_SETTINGS.serverUrl);
+    api: LilbeeClient = new LilbeeClient("");
     activeModel = "";
     statusBarEl: HTMLElement | null = null;
     ribbonIconEl: HTMLElement | null = null;

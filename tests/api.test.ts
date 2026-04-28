@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { LilbeeClient, SessionTokenError } from "../src/api";
+import { LilbeeClient, ServerStartingError, SessionTokenError } from "../src/api";
 import type { Message } from "../src/types";
 
 const BASE_URL = "http://localhost:7433";
@@ -1827,6 +1827,50 @@ describe("fetchWithRetry() — signal and AbortError", () => {
         const result = await client.health();
         expect(result.isErr()).toBe(true);
         expect(result._unsafeUnwrapErr().name).toBe("AbortError");
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("ServerStartingError", () => {
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+        fetchMock = vi.fn();
+        vi.stubGlobal("fetch", fetchMock);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it("carries the expected name and message", () => {
+        const e = new ServerStartingError();
+        expect(e.name).toBe("ServerStartingError");
+        expect(e.message).toContain("starting");
+    });
+
+    it("is thrown by fetchWithRetry when baseUrl is empty (no fetch attempted)", async () => {
+        const c = new LilbeeClient("");
+        await expect(c.fetchWithRetry("/api/health")).rejects.toBeInstanceOf(ServerStartingError);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("surfaces via Result-returning methods as a typed error", async () => {
+        const c = new LilbeeClient("");
+        const result = await c.health();
+        expect(result.isErr()).toBe(true);
+        expect(result._unsafeUnwrapErr()).toBeInstanceOf(ServerStartingError);
+    });
+
+    it("clears once setBaseUrl is called with a real URL", async () => {
+        const c = new LilbeeClient("");
+        fetchMock.mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ status: "ok", version: "1" }),
+        } as unknown as Response);
+        c.setBaseUrl(BASE_URL);
+        const result = await c.health();
+        expect(result.isOk()).toBe(true);
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 });
