@@ -10,6 +10,9 @@ export const MESSAGES = {
     BUTTON_CANCEL: "Cancel",
     BUTTON_PULL: "Pull",
     BUTTON_PULL_MODEL: "Pull Model",
+    BUTTON_PULL_ANYWAY: "Pull anyway",
+    WARNING_MODEL_EXCEEDS_RAM: (needed: number, have: number) =>
+        `This model needs ${needed} GB of RAM but your system has only ${have} GB. Loading it will likely fail.`,
     BUTTON_USE: "Use",
     BUTTON_REMOVE: "Delete",
     BUTTON_REFRESH: "Refresh",

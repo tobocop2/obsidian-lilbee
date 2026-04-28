@@ -1,7 +1,8 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
-import { SetupWizard, getSystemMemoryGB, pickNativeChatModels, recommendedIndex } from "../../src/views/setup-wizard";
+import { SetupWizard, pickNativeChatModels, recommendedIndex } from "../../src/views/setup-wizard";
+import { getSystemMemoryGB } from "../../src/utils";
 import { SessionTokenError } from "../../src/api";
 import { SSE_EVENT, WIZARD_STEP } from "../../src/types";
 import { ok, err } from "neverthrow";

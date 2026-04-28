@@ -123,4 +123,42 @@ describe("ConfirmPullModal", () => {
         // Second decide call should be a no-op (no throw, no infinite recursion)
         modal.onClose();
     });
+
+    it("renders a RAM warning when systemMemGb is below minRamGb", () => {
+        const app = new App();
+        const modal = new ConfirmPullModal(app as any, makeInfo({ minRamGb: 8, systemMemGb: 4 }));
+        modal.onOpen();
+
+        const texts = collectTexts(modal.contentEl as unknown as MockElement);
+        expect(texts.some((t) => t.includes("8 GB of RAM but your system has only 4 GB"))).toBe(true);
+    });
+
+    it("changes the action button to 'Pull anyway' when system RAM is insufficient", () => {
+        const app = new App();
+        const modal = new ConfirmPullModal(app as any, makeInfo({ minRamGb: 8, systemMemGb: 4 }));
+        modal.onOpen();
+
+        const buttons = findButtons(modal.contentEl as unknown as MockElement);
+        const buttonTexts = buttons.map((b) => b.textContent);
+        expect(buttonTexts).toContain("Pull anyway");
+        expect(buttonTexts).not.toContain("Pull Model");
+    });
+
+    it("does not warn when systemMemGb meets or exceeds minRamGb", () => {
+        const app = new App();
+        const modal = new ConfirmPullModal(app as any, makeInfo({ minRamGb: 4, systemMemGb: 16 }));
+        modal.onOpen();
+
+        const texts = collectTexts(modal.contentEl as unknown as MockElement);
+        expect(texts.some((t) => t.includes("RAM but your system has only"))).toBe(false);
+    });
+
+    it("does not warn when systemMemGb is null (could not be detected)", () => {
+        const app = new App();
+        const modal = new ConfirmPullModal(app as any, makeInfo({ minRamGb: 8, systemMemGb: null }));
+        modal.onOpen();
+
+        const texts = collectTexts(modal.contentEl as unknown as MockElement);
+        expect(texts.some((t) => t.includes("RAM but your system has only"))).toBe(false);
+    });
 });

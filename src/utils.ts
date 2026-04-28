@@ -229,3 +229,15 @@ export function formatElapsed(ms: number): string {
     }
     return `${mm}:${ss}`;
 }
+
+/** Total system RAM in GB, rounded; null when ``os`` is unavailable. */
+export function getSystemMemoryGB(): number | null {
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const os = require("os") as { totalmem(): number };
+        return Math.round(os.totalmem() / (1024 * 1024 * 1024));
+        /* v8 ignore next 3 */
+    } catch {
+        return null;
+    }
+}

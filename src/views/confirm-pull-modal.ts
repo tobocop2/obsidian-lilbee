@@ -5,6 +5,8 @@ export interface ConfirmPullInfo {
     displayName: string;
     sizeGb: number;
     minRamGb: number;
+    /** Total system RAM in GB. When set and below ``minRamGb`` the modal warns the user. */
+    systemMemGb?: number | null;
 }
 
 export class ConfirmPullModal extends Modal {
@@ -33,9 +35,17 @@ export class ConfirmPullModal extends Modal {
         info.createEl("p", { text: `${MESSAGES.LABEL_SIZE}: ${this.model.sizeGb} GB` });
         info.createEl("p", { text: `${MESSAGES.LABEL_MIN_RAM}: ${this.model.minRamGb} GB` });
 
+        const tooLarge = typeof this.model.systemMemGb === "number" && this.model.systemMemGb < this.model.minRamGb;
+        if (tooLarge) {
+            const warn = contentEl.createDiv({ cls: "lilbee-confirm-pull-warning" });
+            warn.createEl("p", {
+                text: MESSAGES.WARNING_MODEL_EXCEEDS_RAM(this.model.minRamGb, this.model.systemMemGb!),
+            });
+        }
+
         const actions = contentEl.createDiv({ cls: "lilbee-confirm-pull-actions" });
         const pullBtn = actions.createEl("button", {
-            text: MESSAGES.BUTTON_PULL_MODEL,
+            text: tooLarge ? MESSAGES.BUTTON_PULL_ANYWAY : MESSAGES.BUTTON_PULL_MODEL,
             cls: "mod-cta",
         });
         pullBtn.addEventListener("click", () => this.decide(true));
