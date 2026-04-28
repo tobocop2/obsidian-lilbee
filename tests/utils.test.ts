@@ -1,5 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Notice } from "obsidian";
 import {
+    _resetServerUnreachableDebounce,
     ensureUrlScheme,
     errorMessage,
     extractServerErrorDetail,
@@ -9,11 +11,12 @@ import {
     getRelevantSystemMemoryGB,
     isRoleMismatchDetail,
     noticeForResultError,
+    noticeServerUnreachableIfApplicable,
     percentFromSse,
     StreamIdleError,
     withIdleTimeout,
 } from "../src/utils";
-import { SessionTokenError } from "../src/api";
+import { ServerStartingError, SessionTokenError } from "../src/api";
 import { SERVER_MODE } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import { ERROR_NAME } from "../src/types";
@@ -273,5 +276,63 @@ describe("getRelevantSystemMemoryGB()", () => {
 
     it("returns null in external mode (the server's RAM is on a remote host)", () => {
         expect(getRelevantSystemMemoryGB(SERVER_MODE.EXTERNAL)).toBeNull();
+    });
+});
+
+describe("noticeServerUnreachableIfApplicable()", () => {
+    beforeEach(() => {
+        Notice.clear();
+        _resetServerUnreachableDebounce();
+    });
+
+    it("returns true and emits one notice for ECONNREFUSED", () => {
+        const handled = noticeServerUnreachableIfApplicable(new Error("connect ECONNREFUSED 127.0.0.1"));
+        expect(handled).toBe(true);
+        expect(Notice.instances).toHaveLength(1);
+        expect(Notice.instances[0].message).toContain("server unreachable");
+    });
+
+    it("returns true and emits one notice for 'Failed to fetch'", () => {
+        const handled = noticeServerUnreachableIfApplicable(new TypeError("Failed to fetch"));
+        expect(handled).toBe(true);
+        expect(Notice.instances).toHaveLength(1);
+    });
+
+    it("treats ServerStartingError as handled but emits no notice", () => {
+        const handled = noticeServerUnreachableIfApplicable(new ServerStartingError());
+        expect(handled).toBe(true);
+        expect(Notice.instances).toHaveLength(0);
+    });
+
+    it("returns false for unrelated errors", () => {
+        const handled = noticeServerUnreachableIfApplicable(new Error("Server responded 500"));
+        expect(handled).toBe(false);
+        expect(Notice.instances).toHaveLength(0);
+    });
+
+    it("returns false for non-Error values", () => {
+        expect(noticeServerUnreachableIfApplicable("oops")).toBe(false);
+        expect(noticeServerUnreachableIfApplicable(null)).toBe(false);
+    });
+
+    it("debounces follow-up notices within the window", () => {
+        noticeServerUnreachableIfApplicable(new Error("ECONNREFUSED"));
+        noticeServerUnreachableIfApplicable(new Error("ECONNREFUSED"));
+        noticeServerUnreachableIfApplicable(new Error("ECONNREFUSED"));
+        expect(Notice.instances).toHaveLength(1);
+    });
+
+    it("re-emits after the debounce window expires", () => {
+        const realDateNow = Date.now;
+        let now = 1_000_000;
+        Date.now = () => now;
+        try {
+            noticeServerUnreachableIfApplicable(new Error("ECONNREFUSED"));
+            now += 6_000;
+            noticeServerUnreachableIfApplicable(new Error("ECONNREFUSED"));
+        } finally {
+            Date.now = realDateNow;
+        }
+        expect(Notice.instances).toHaveLength(2);
     });
 });

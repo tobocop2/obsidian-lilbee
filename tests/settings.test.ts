@@ -4395,6 +4395,29 @@ describe("managed mode settings", () => {
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_LOAD_FAILED)).toBe(true);
         });
 
+        it("skips the load-failed notice when the error is ECONNREFUSED (server unreachable)", async () => {
+            Notice.clear();
+            const { _resetServerUnreachableDebounce } = await import("../src/utils");
+            _resetServerUnreachableDebounce();
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockRejectedValue(
+                new Error("connect ECONNREFUSED 127.0.0.1:7433"),
+            );
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+
+            (tab as any).renderRerankerSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_LOAD_FAILED)).toBe(false);
+            expect(Notice.instances.some((n) => n.message.includes("server unreachable"))).toBe(true);
+        });
+
         it("falls back to notice when installedModels rejects (caught by inner catch)", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -5215,6 +5238,29 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_LOAD_FAILED)).toBe(true);
+        });
+
+        it("skips the load-failed notice when the error is ECONNREFUSED (server unreachable)", async () => {
+            Notice.clear();
+            const { _resetServerUnreachableDebounce } = await import("../src/utils");
+            _resetServerUnreachableDebounce();
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockRejectedValue(
+                new Error("connect ECONNREFUSED 127.0.0.1:7433"),
+            );
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({ total: 0, limit: 20, offset: 0, models: [], has_more: false }),
+            );
+            (plugin.api.installedModels as ReturnType<typeof vi.fn>).mockResolvedValue({ models: [] });
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+
+            (tab as any).renderVisionSection(container);
+            await new Promise((r) => setTimeout(r, 0));
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_LOAD_FAILED)).toBe(false);
+            expect(Notice.instances.some((n) => n.message.includes("server unreachable"))).toBe(true);
         });
 
         it("falls back to empty dropdown when installedModels rejects", async () => {

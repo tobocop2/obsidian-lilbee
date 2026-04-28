@@ -1874,3 +1874,76 @@ describe("ServerStartingError", () => {
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 });
+
+describe("setOutcomeCallback", () => {
+    let fetchMock: ReturnType<typeof vi.fn>;
+    let outcomes: string[];
+    let client: LilbeeClient;
+
+    beforeEach(() => {
+        fetchMock = vi.fn();
+        vi.stubGlobal("fetch", fetchMock);
+        outcomes = [];
+        client = new LilbeeClient(BASE_URL);
+        client.setOutcomeCallback((o) => outcomes.push(o));
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it("fires 'starting' when baseUrl is empty", async () => {
+        const c = new LilbeeClient("");
+        c.setOutcomeCallback((o) => outcomes.push(o));
+        await c.health();
+        expect(outcomes).toContain("starting");
+    });
+
+    it("fires 'ok' on a successful request", async () => {
+        fetchMock.mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ status: "ok", version: "1" }),
+        } as unknown as Response);
+        await client.health();
+        expect(outcomes).toContain("ok");
+    });
+
+    it("fires 'auth_error' when 401 surfaces SessionTokenError", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 401,
+            text: () => Promise.resolve(""),
+        } as unknown as Response);
+        const result = await client.health();
+        expect(result.isErr()).toBe(true);
+        expect(outcomes).toContain("auth_error");
+    });
+
+    it("fires 'server_error' on a non-auth HTTP error", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 500,
+            text: () => Promise.resolve("boom"),
+        } as unknown as Response);
+        const result = await client.health();
+        expect(result.isErr()).toBe(true);
+        expect(outcomes).toContain("server_error");
+    });
+
+    it("fires 'unreachable' when fetch keeps rejecting", async () => {
+        fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
+        const result = await client.health();
+        expect(result.isErr()).toBe(true);
+        expect(outcomes).toContain("unreachable");
+    });
+
+    it("setOutcomeCallback(null) detaches the subscriber", async () => {
+        client.setOutcomeCallback(null);
+        fetchMock.mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ status: "ok", version: "1" }),
+        } as unknown as Response);
+        await client.health();
+        expect(outcomes).toEqual([]);
+    });
+});

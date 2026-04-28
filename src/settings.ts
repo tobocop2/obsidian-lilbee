@@ -27,6 +27,7 @@ import {
     extractSseErrorMessage,
     noticeForResultError,
     getRelevantSystemMemoryGB,
+    noticeServerUnreachableIfApplicable,
 } from "./utils";
 
 const CHECK_TIMEOUT_MS = 5000;
@@ -679,7 +680,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 const catalogEntries = catalogResult.isOk() ? catalogResult.value.models : [];
                 this.renderRerankerDropdown(container, active, catalogEntries, installedResp.models);
             })
-            .catch(() => {
+            .catch((err) => {
+                if (noticeServerUnreachableIfApplicable(err)) return;
                 new Notice(MESSAGES.NOTICE_RERANKER_LOAD_FAILED);
             });
     }
@@ -826,7 +828,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 const catalogEntries = catalogResult.isOk() ? catalogResult.value.models : [];
                 this.renderVisionDropdown(container, active, catalogEntries, installedResp.models);
             })
-            .catch(() => {
+            .catch((err) => {
+                if (noticeServerUnreachableIfApplicable(err)) return;
                 new Notice(MESSAGES.NOTICE_VISION_LOAD_FAILED);
             });
     }

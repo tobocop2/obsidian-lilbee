@@ -316,6 +316,8 @@ export const MESSAGES = {
     STATUS_READY: "lilbee: ready",
     STATUS_READY_EXTERNAL: "lilbee: ready [external]",
     STATUS_ERROR: "lilbee: error",
+    STATUS_AUTH_ERROR: "lilbee: auth error",
+    NOTICE_SERVER_UNREACHABLE: "lilbee: server unreachable",
     STATUS_STOPPED: "lilbee: stopped",
     STATUS_ADDING: "lilbee: adding {label}...",
     STATUS_NOTHING_NEW: "lilbee: nothing new to add",

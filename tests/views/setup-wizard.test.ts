@@ -71,6 +71,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
             setBaseUrl: vi.fn(),
             setToken: vi.fn(),
             setTokenProvider: vi.fn(),
+            setOutcomeCallback: vi.fn(),
         },
         activeModel: "",
         fetchActiveModel: vi.fn(),
