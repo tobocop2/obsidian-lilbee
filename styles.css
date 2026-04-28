@@ -284,13 +284,14 @@
 
 .lilbee-chat-message-error {
     align-self: flex-start;
-    background-color: var(--background-modifier-error, rgba(200, 60, 60, 0.15));
-    color: var(--text-error);
+    background-color: var(--background-modifier-error, rgba(200, 60, 60, 0.4));
+    color: var(--text-on-accent, var(--text-normal));
     border-left: 3px solid var(--text-error);
 }
 
 .lilbee-chat-error-text {
     font-style: italic;
+    color: var(--text-on-accent, var(--text-normal));
 }
 
 .lilbee-chat-content {
