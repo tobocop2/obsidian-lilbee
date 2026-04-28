@@ -1,5 +1,7 @@
 import { SessionTokenError } from "./api";
 import { MESSAGES } from "./locales/en";
+import { SERVER_MODE } from "./types";
+import type { ServerMode } from "./types";
 
 export function debounce<T extends (...args: unknown[]) => unknown>(
     fn: T,
@@ -240,4 +242,14 @@ export function getSystemMemoryGB(): number | null {
     } catch {
         return null;
     }
+}
+
+/**
+ * The local machine's RAM only constrains model loads in managed mode where
+ * the server runs on this machine. In external mode the server lives on
+ * another host whose RAM we don't know — return null and skip the warning.
+ */
+export function getRelevantSystemMemoryGB(serverMode: ServerMode): number | null {
+    if (serverMode !== SERVER_MODE.MANAGED) return null;
+    return getSystemMemoryGB();
 }

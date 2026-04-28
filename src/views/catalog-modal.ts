@@ -14,7 +14,7 @@ import {
     errorMessage,
     extractSseErrorMessage,
     noticeForResultError,
-    getSystemMemoryGB,
+    getRelevantSystemMemoryGB,
 } from "../utils";
 import { renderModelCard } from "../components/model-card";
 
@@ -462,7 +462,7 @@ export class CatalogModal extends Modal {
             displayName: entry.display_name,
             sizeGb: entry.size_gb,
             minRamGb: entry.min_ram_gb,
-            systemMemGb: getSystemMemoryGB(),
+            systemMemGb: getRelevantSystemMemoryGB(this.plugin.settings.serverMode),
         });
         confirmModal.open();
         void confirmModal.result.then((confirmed) => {

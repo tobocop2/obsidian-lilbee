@@ -27,7 +27,7 @@ import {
     errorMessage,
     extractSseErrorMessage,
     noticeForResultError,
-    getSystemMemoryGB,
+    getRelevantSystemMemoryGB,
 } from "../utils";
 
 interface OpenDialogResult {
@@ -363,7 +363,7 @@ export class ChatView extends ItemView {
                     displayName: uninstalled.display_name,
                     sizeGb: uninstalled.size_gb,
                     minRamGb: uninstalled.min_ram_gb,
-                    systemMemGb: getSystemMemoryGB(),
+                    systemMemGb: getRelevantSystemMemoryGB(this.plugin.settings.serverMode),
                 });
                 modal.open();
                 void modal.result.then((confirmed) => {

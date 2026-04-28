@@ -6,6 +6,7 @@ import {
     formatBytes,
     formatRate,
     formatElapsed,
+    getRelevantSystemMemoryGB,
     isRoleMismatchDetail,
     noticeForResultError,
     percentFromSse,
@@ -13,6 +14,7 @@ import {
     withIdleTimeout,
 } from "../src/utils";
 import { SessionTokenError } from "../src/api";
+import { SERVER_MODE } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import { ERROR_NAME } from "../src/types";
 
@@ -259,5 +261,17 @@ describe("isRoleMismatchDetail", () => {
         // a generic "see PUT /api/models/ for options") must NOT be misclassified as a
         // role-mismatch. The sentinel is the `Set it via PUT /api/models/` prefix.
         expect(isRoleMismatchDetail("Auth failed — see PUT /api/models/ docs for the right endpoint.")).toBe(false);
+    });
+});
+
+describe("getRelevantSystemMemoryGB()", () => {
+    it("returns the local system RAM in managed mode", () => {
+        const result = getRelevantSystemMemoryGB(SERVER_MODE.MANAGED);
+        expect(typeof result).toBe("number");
+        expect(result).toBeGreaterThan(0);
+    });
+
+    it("returns null in external mode (the server's RAM is on a remote host)", () => {
+        expect(getRelevantSystemMemoryGB(SERVER_MODE.EXTERNAL)).toBeNull();
     });
 });

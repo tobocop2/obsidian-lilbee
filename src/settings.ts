@@ -26,7 +26,7 @@ import {
     errorMessage,
     extractSseErrorMessage,
     noticeForResultError,
-    getSystemMemoryGB,
+    getRelevantSystemMemoryGB,
 } from "./utils";
 
 const CHECK_TIMEOUT_MS = 5000;
@@ -1690,7 +1690,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 displayName: featuredEntry.display_name,
                 sizeGb: featuredEntry.size_gb,
                 minRamGb: featuredEntry.min_ram_gb,
-                systemMemGb: getSystemMemoryGB(),
+                systemMemGb: getRelevantSystemMemoryGB(this.plugin.settings.serverMode),
             });
             modal.open();
             const confirmed = await modal.result;
