@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { LilbeeClient, SessionTokenError } from "../src/api";
+import { LilbeeClient, ServerStartingError, SessionTokenError } from "../src/api";
 import type { Message } from "../src/types";
 
 const BASE_URL = "http://localhost:7433";
@@ -1828,5 +1828,122 @@ describe("fetchWithRetry() — signal and AbortError", () => {
         expect(result.isErr()).toBe(true);
         expect(result._unsafeUnwrapErr().name).toBe("AbortError");
         expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("ServerStartingError", () => {
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+        fetchMock = vi.fn();
+        vi.stubGlobal("fetch", fetchMock);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it("carries the expected name and message", () => {
+        const e = new ServerStartingError();
+        expect(e.name).toBe("ServerStartingError");
+        expect(e.message).toContain("starting");
+    });
+
+    it("is thrown by fetchWithRetry when baseUrl is empty (no fetch attempted)", async () => {
+        const c = new LilbeeClient("");
+        await expect(c.fetchWithRetry("/api/health")).rejects.toBeInstanceOf(ServerStartingError);
+        expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("surfaces via Result-returning methods as a typed error", async () => {
+        const c = new LilbeeClient("");
+        const result = await c.health();
+        expect(result.isErr()).toBe(true);
+        expect(result._unsafeUnwrapErr()).toBeInstanceOf(ServerStartingError);
+    });
+
+    it("clears once setBaseUrl is called with a real URL", async () => {
+        const c = new LilbeeClient("");
+        fetchMock.mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ status: "ok", version: "1" }),
+        } as unknown as Response);
+        c.setBaseUrl(BASE_URL);
+        const result = await c.health();
+        expect(result.isOk()).toBe(true);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("setOutcomeCallback", () => {
+    let fetchMock: ReturnType<typeof vi.fn>;
+    let outcomes: string[];
+    let client: LilbeeClient;
+
+    beforeEach(() => {
+        fetchMock = vi.fn();
+        vi.stubGlobal("fetch", fetchMock);
+        outcomes = [];
+        client = new LilbeeClient(BASE_URL);
+        client.setOutcomeCallback((o) => outcomes.push(o));
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it("fires 'starting' when baseUrl is empty", async () => {
+        const c = new LilbeeClient("");
+        c.setOutcomeCallback((o) => outcomes.push(o));
+        await c.health();
+        expect(outcomes).toContain("starting");
+    });
+
+    it("fires 'ok' on a successful request", async () => {
+        fetchMock.mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ status: "ok", version: "1" }),
+        } as unknown as Response);
+        await client.health();
+        expect(outcomes).toContain("ok");
+    });
+
+    it("fires 'auth_error' when 401 surfaces SessionTokenError", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 401,
+            text: () => Promise.resolve(""),
+        } as unknown as Response);
+        const result = await client.health();
+        expect(result.isErr()).toBe(true);
+        expect(outcomes).toContain("auth_error");
+    });
+
+    it("fires 'server_error' on a non-auth HTTP error", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 500,
+            text: () => Promise.resolve("boom"),
+        } as unknown as Response);
+        const result = await client.health();
+        expect(result.isErr()).toBe(true);
+        expect(outcomes).toContain("server_error");
+    });
+
+    it("fires 'unreachable' when fetch keeps rejecting", async () => {
+        fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
+        const result = await client.health();
+        expect(result.isErr()).toBe(true);
+        expect(outcomes).toContain("unreachable");
+    });
+
+    it("setOutcomeCallback(null) detaches the subscriber", async () => {
+        client.setOutcomeCallback(null);
+        fetchMock.mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ status: "ok", version: "1" }),
+        } as unknown as Response);
+        await client.health();
+        expect(outcomes).toEqual([]);
     });
 });

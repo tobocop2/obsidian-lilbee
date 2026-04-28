@@ -6,7 +6,7 @@ import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TA
 import { CatalogModal } from "./catalog-modal";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
-import { percentFromSse, extractSseErrorMessage } from "../utils";
+import { percentFromSse, extractSseErrorMessage, getSystemMemoryGB } from "../utils";
 
 type FeaturedModel = CatalogEntry;
 type EmbeddingModel = CatalogEntry;
@@ -39,16 +39,6 @@ const STEP_KEY: Record<number, string> = {
     [WIZARD_STEP.WIKI]: "wiki",
     [WIZARD_STEP.DONE]: "done",
 };
-
-export function getSystemMemoryGB(): number | null {
-    try {
-        const os = require("os") as { totalmem(): number };
-        return Math.round(os.totalmem() / (1024 * 1024 * 1024));
-        /* v8 ignore next 3 */
-    } catch {
-        return null;
-    }
-}
 
 export function recommendedIndex(models: FeaturedModel[], memGB: number | null): number {
     if (memGB === null || models.length === 0) return 0;

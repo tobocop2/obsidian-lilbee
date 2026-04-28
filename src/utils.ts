@@ -1,5 +1,8 @@
-import { SessionTokenError } from "./api";
+import { Notice } from "obsidian";
+import { ServerStartingError, SessionTokenError } from "./api";
 import { MESSAGES } from "./locales/en";
+import { SERVER_MODE } from "./types";
+import type { ServerMode } from "./types";
 
 export function debounce<T extends (...args: unknown[]) => unknown>(
     fn: T,
@@ -228,4 +231,58 @@ export function formatElapsed(ms: number): string {
         return `${hours}:${mm}:${ss}`;
     }
     return `${mm}:${ss}`;
+}
+
+/** Total system RAM in GB, rounded; null when ``os`` is unavailable. */
+export function getSystemMemoryGB(): number | null {
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const os = require("os") as { totalmem(): number };
+        return Math.round(os.totalmem() / (1024 * 1024 * 1024));
+        /* v8 ignore next 3 */
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * The local machine's RAM only constrains model loads in managed mode where
+ * the server runs on this machine. In external mode the server lives on
+ * another host whose RAM we don't know — return null and skip the warning.
+ */
+export function getRelevantSystemMemoryGB(serverMode: ServerMode): number | null {
+    if (serverMode !== SERVER_MODE.MANAGED) return null;
+    return getSystemMemoryGB();
+}
+
+const SERVER_UNREACHABLE_DEBOUNCE_MS = 5000;
+let lastServerUnreachableAt = 0;
+
+/** Reset the debounce timer (test-only). */
+export function _resetServerUnreachableDebounce(): void {
+    lastServerUnreachableAt = 0;
+}
+
+function looksLikeConnectionRefused(err: Error): boolean {
+    const msg = err.message.toLowerCase();
+    return msg.includes("econnrefused") || msg.includes("failed to fetch") || msg.includes("fetch failed");
+}
+
+/**
+ * Inspect a thrown error and emit at most one "server unreachable" notice per
+ * debounce window, swallowing the per-feature message in that case. Returns
+ * ``true`` when the error was handled and the caller should skip its own
+ * follow-up notice. ``ServerStartingError`` is treated as unreachable too —
+ * the user can already see the "starting" UI elsewhere.
+ */
+export function noticeServerUnreachableIfApplicable(err: unknown): boolean {
+    if (err instanceof ServerStartingError) return true;
+    if (!(err instanceof Error)) return false;
+    if (!looksLikeConnectionRefused(err)) return false;
+    const now = Date.now();
+    if (now - lastServerUnreachableAt > SERVER_UNREACHABLE_DEBOUNCE_MS) {
+        lastServerUnreachableAt = now;
+        new Notice(MESSAGES.NOTICE_SERVER_UNREACHABLE);
+    }
+    return true;
 }

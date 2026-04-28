@@ -25,6 +25,7 @@ vi.mock("../src/api", () => ({
         setChatModel: vi.fn(),
         setToken: vi.fn(),
         setTokenProvider: vi.fn(),
+        setOutcomeCallback: vi.fn(),
         health: vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} }),
         // Default config matches the test vault layout so the fire-and-forget
         // configureManagedStorage() in startManagedServer() hits the early
@@ -2504,6 +2505,45 @@ describe("LilbeePlugin", () => {
         });
     });
 
+    describe("handleRequestOutcome", () => {
+        it("flips status to ready on 'ok'", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).updateStatusBar(MESSAGES.STATUS_ERROR);
+            (plugin as any).handleRequestOutcome("ok");
+            expect((plugin.statusBarEl as any)?.textContent).toContain("ready");
+        });
+
+        it("flips status to auth error on 'auth_error'", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).handleRequestOutcome("auth_error");
+            expect((plugin.statusBarEl as any)?.textContent).toContain("auth error");
+        });
+
+        it("flips status to error on 'server_error'", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).handleRequestOutcome("server_error");
+            expect((plugin.statusBarEl as any)?.textContent).toContain("error");
+        });
+
+        it("flips status to error on 'unreachable'", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).handleRequestOutcome("unreachable");
+            expect((plugin.statusBarEl as any)?.textContent).toContain("error");
+        });
+
+        it("does not change status on 'starting' (existing UI handles startup)", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const before = (plugin.statusBarEl as any)?.textContent;
+            (plugin as any).handleRequestOutcome("starting");
+            expect((plugin.statusBarEl as any)?.textContent).toBe(before);
+        });
+    });
+
     describe("active model in status bar", () => {
         it("fetchActiveModel sets activeModel and updates status bar", async () => {
             const plugin = await createPlugin();
@@ -3043,6 +3083,21 @@ describe("LilbeePlugin", () => {
 
             // No additional notice created
             expect(Notice.instances.length).toBe(beforeCount);
+        });
+
+        it("onShutdownFailure shows a notice with the failure message", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            const onShutdownFailure = mockServerOpts?.onShutdownFailure;
+            expect(onShutdownFailure).toBeDefined();
+
+            onShutdownFailure(new Error("process not found"));
+
+            const notice = Notice.instances.find((n) => n.message.includes("failed to stop"));
+            expect(notice).toBeDefined();
+            expect(notice!.message).toContain("process not found");
         });
 
         it("showError includes lastStderr in the notice", async () => {

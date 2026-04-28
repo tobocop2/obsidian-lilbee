@@ -10,6 +10,9 @@ export const MESSAGES = {
     BUTTON_CANCEL: "Cancel",
     BUTTON_PULL: "Pull",
     BUTTON_PULL_MODEL: "Pull Model",
+    BUTTON_PULL_ANYWAY: "Pull anyway",
+    WARNING_MODEL_EXCEEDS_RAM: (needed: number, have: number) =>
+        `This model needs ${needed} GB of RAM but your system has only ${have} GB. Loading it will likely fail.`,
     BUTTON_USE: "Use",
     BUTTON_REMOVE: "Delete",
     BUTTON_REFRESH: "Refresh",
@@ -313,6 +316,8 @@ export const MESSAGES = {
     STATUS_READY: "lilbee: ready",
     STATUS_READY_EXTERNAL: "lilbee: ready [external]",
     STATUS_ERROR: "lilbee: error",
+    STATUS_AUTH_ERROR: "lilbee: auth error",
+    NOTICE_SERVER_UNREACHABLE: "lilbee: server unreachable",
     STATUS_STOPPED: "lilbee: stopped",
     STATUS_ADDING: "lilbee: adding {label}...",
     STATUS_NOTHING_NEW: "lilbee: nothing new to add",
@@ -352,6 +357,7 @@ export const MESSAGES = {
 
     ERROR_COULD_NOT_CONNECT: "lilbee: cannot connect to server",
     ERROR_SERVER_CRASHED: "lilbee: server crashed after multiple restarts",
+    ERROR_SERVER_SHUTDOWN_FAILED: "lilbee: failed to stop the managed server",
     ERROR_FAILED_DOWNLOAD: "lilbee: failed to download server",
     ERROR_FAILED_START: "lilbee: failed to start server",
     ERROR_FAILED_UPDATE: "lilbee: update failed",

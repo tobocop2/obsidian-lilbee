@@ -284,13 +284,14 @@
 
 .lilbee-chat-message-error {
     align-self: flex-start;
-    background-color: var(--background-modifier-error, rgba(200, 60, 60, 0.15));
-    color: var(--text-error);
+    background-color: var(--background-modifier-error, rgba(200, 60, 60, 0.4));
+    color: var(--text-on-accent, var(--text-normal));
     border-left: 3px solid var(--text-error);
 }
 
 .lilbee-chat-error-text {
     font-style: italic;
+    color: var(--text-on-accent, var(--text-normal));
 }
 
 .lilbee-chat-content {
@@ -2870,5 +2871,14 @@
 
 .lilbee-preview-open-vault:hover {
     background-color: var(--interactive-accent-hover);
+}
+
+.lilbee-confirm-pull-warning {
+    margin: var(--size-4-2, 8px) 0;
+    padding: var(--size-4-2, 8px);
+    border-radius: var(--radius-s, 4px);
+    background-color: var(--background-modifier-error, rgba(200, 60, 60, 0.4));
+    color: var(--text-on-accent, var(--text-normal));
+    border-left: 3px solid var(--text-error);
 }
 

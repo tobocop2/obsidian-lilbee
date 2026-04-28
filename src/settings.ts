@@ -26,6 +26,8 @@ import {
     errorMessage,
     extractSseErrorMessage,
     noticeForResultError,
+    getRelevantSystemMemoryGB,
+    noticeServerUnreachableIfApplicable,
 } from "./utils";
 
 const CHECK_TIMEOUT_MS = 5000;
@@ -678,7 +680,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 const catalogEntries = catalogResult.isOk() ? catalogResult.value.models : [];
                 this.renderRerankerDropdown(container, active, catalogEntries, installedResp.models);
             })
-            .catch(() => {
+            .catch((err) => {
+                if (noticeServerUnreachableIfApplicable(err)) return;
                 new Notice(MESSAGES.NOTICE_RERANKER_LOAD_FAILED);
             });
     }
@@ -825,7 +828,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 const catalogEntries = catalogResult.isOk() ? catalogResult.value.models : [];
                 this.renderVisionDropdown(container, active, catalogEntries, installedResp.models);
             })
-            .catch(() => {
+            .catch((err) => {
+                if (noticeServerUnreachableIfApplicable(err)) return;
                 new Notice(MESSAGES.NOTICE_VISION_LOAD_FAILED);
             });
     }
@@ -1689,6 +1693,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 displayName: featuredEntry.display_name,
                 sizeGb: featuredEntry.size_gb,
                 minRamGb: featuredEntry.min_ram_gb,
+                systemMemGb: getRelevantSystemMemoryGB(this.plugin.settings.serverMode),
             });
             modal.open();
             const confirmed = await modal.result;

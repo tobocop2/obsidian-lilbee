@@ -48,9 +48,25 @@ export class SessionTokenError extends Error {
     }
 }
 
+/**
+ * Thrown when a request is attempted before the managed server has reported
+ * its random listen port. Lets callers (settings UI, status bar) render a
+ * "starting…" state instead of firing requests at the default port.
+ */
+export class ServerStartingError extends Error {
+    constructor() {
+        super("Server is still starting up");
+        this.name = ERROR_NAME.SERVER_STARTING;
+    }
+}
+
+/** Coarse outcome of a single ``fetchWithRetry`` call, reported to subscribers. */
+export type RequestOutcome = "ok" | "auth_error" | "server_error" | "unreachable" | "starting";
+
 export class LilbeeClient {
     private token: string | null = null;
     private tokenProvider: (() => string | null) | null = null;
+    private outcomeCb: ((o: RequestOutcome) => void) | null = null;
 
     constructor(
         private baseUrl: string,
@@ -65,6 +81,15 @@ export class LilbeeClient {
 
     setTokenProvider(provider: (() => string | null) | null): void {
         this.tokenProvider = provider;
+    }
+
+    /** Subscribe to the outcome of every ``fetchWithRetry`` call. */
+    setOutcomeCallback(cb: ((o: RequestOutcome) => void) | null): void {
+        this.outcomeCb = cb;
+    }
+
+    private recordOutcome(outcome: RequestOutcome): void {
+        this.outcomeCb?.(outcome);
     }
 
     /** Repoint the client at a new base URL in place — lets the wizard update
@@ -128,6 +153,10 @@ export class LilbeeClient {
         init?: RequestInit,
         opts?: { stream?: boolean; signal?: AbortSignal },
     ): Promise<Response> {
+        if (!this.baseUrl) {
+            this.recordOutcome("starting");
+            throw new ServerStartingError();
+        }
         const maxAttempts = RETRY_COUNT + 1;
         let lastError: unknown;
         let authRetried = false;
@@ -157,9 +186,12 @@ export class LilbeeClient {
                         // token still failed. The stored session token is stale — surface a
                         // typed error so the UI can tell the user what to do.
                         const text = await res.text().catch(() => "");
+                        this.recordOutcome("auth_error");
                         throw new SessionTokenError(res.status, text);
                     }
-                    return await this.assertOk(res);
+                    const okRes = await this.assertOk(res);
+                    this.recordOutcome("ok");
+                    return okRes;
                 } finally {
                     if (timer !== undefined) clearTimeout(timer);
                 }
@@ -169,6 +201,7 @@ export class LilbeeClient {
                     throw err;
                 }
                 if (err instanceof Error && err.message.startsWith("Server responded")) {
+                    this.recordOutcome("server_error");
                     throw err;
                 }
                 if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
@@ -176,6 +209,7 @@ export class LilbeeClient {
                 }
             }
         }
+        this.recordOutcome("unreachable");
         throw lastError;
     }
 

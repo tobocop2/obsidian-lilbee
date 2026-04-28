@@ -97,6 +97,11 @@ describe("ServerManager", () => {
             expect(mgr.serverUrl).toBe("http://127.0.0.1:9999");
         });
 
+        it("serverUrl is empty in managed mode before the port file is read", () => {
+            const mgr = new ServerManager(defaultOpts({ port: null }));
+            expect(mgr.serverUrl).toBe("");
+        });
+
         it("dataDir getter returns the configured data dir", () => {
             const mgr = new ServerManager(defaultOpts({ dataDir: "/var/lilbee" }));
             expect(mgr.dataDir).toBe("/var/lilbee");
@@ -120,6 +125,7 @@ describe("ServerManager", () => {
             expect(bin).toBe("/usr/local/bin/lilbee");
             expect(args).toEqual(["serve", "--host", "127.0.0.1", "--port", "7433", "--data-dir", "/tmp/data"]);
             expect(opts.env.LILBEE_CORS_ORIGINS).toBe("app://obsidian.md");
+            expect(opts.env.LILBEE_PARENT_PID).toBe(String(process.pid));
             expect(opts.env.LILBEE_SYSTEM_PROMPT).toBeUndefined();
             expect(opts.stdio).toEqual(["ignore", "ignore", "pipe"]);
             expect(opts.detached).toBe(false);
@@ -302,7 +308,33 @@ describe("ServerManager", () => {
             Object.defineProperty(process, "platform", { value: originalPlatform });
         });
 
-        it("handles taskkill failure gracefully on Windows", async () => {
+        it("surfaces taskkill failures on Windows via onShutdownFailure callback", async () => {
+            const originalPlatform = process.platform;
+            Object.defineProperty(process, "platform", { value: "win32" });
+            execFileSpy.mockImplementation(async () => {
+                setTimeout(() => child._emit("exit", 0, null), 10);
+                throw new Error("process not found");
+            });
+
+            const failures: Error[] = [];
+            const mgr = new ServerManager(defaultOpts({ onShutdownFailure: (err) => failures.push(err) }));
+            const p1 = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p1;
+
+            const stopPromise = mgr.stop();
+            await vi.advanceTimersByTimeAsync(50);
+            await stopPromise;
+
+            // State still reaches stopped — but the failure is surfaced, not swallowed.
+            expect(mgr.state).toBe("stopped");
+            expect(failures).toHaveLength(1);
+            expect(failures[0].message).toBe("process not found");
+
+            Object.defineProperty(process, "platform", { value: originalPlatform });
+        });
+
+        it("does not invoke onShutdownFailure when no callback is registered", async () => {
             const originalPlatform = process.platform;
             Object.defineProperty(process, "platform", { value: "win32" });
             execFileSpy.mockImplementation(async () => {
@@ -317,11 +349,34 @@ describe("ServerManager", () => {
 
             const stopPromise = mgr.stop();
             await vi.advanceTimersByTimeAsync(50);
+            // Should not throw despite no callback.
             await stopPromise;
 
-            // Should not throw — error is swallowed
             expect(mgr.state).toBe("stopped");
+            Object.defineProperty(process, "platform", { value: originalPlatform });
+        });
 
+        it("wraps a non-Error thrown value when surfacing a shutdown failure", async () => {
+            const originalPlatform = process.platform;
+            Object.defineProperty(process, "platform", { value: "win32" });
+            execFileSpy.mockImplementation(async () => {
+                setTimeout(() => child._emit("exit", 0, null), 10);
+                throw "some string failure";
+            });
+
+            const failures: Error[] = [];
+            const mgr = new ServerManager(defaultOpts({ onShutdownFailure: (err) => failures.push(err) }));
+            const p1 = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p1;
+
+            const stopPromise = mgr.stop();
+            await vi.advanceTimersByTimeAsync(50);
+            await stopPromise;
+
+            expect(failures).toHaveLength(1);
+            expect(failures[0]).toBeInstanceOf(Error);
+            expect(failures[0].message).toBe("some string failure");
             Object.defineProperty(process, "platform", { value: originalPlatform });
         });
 

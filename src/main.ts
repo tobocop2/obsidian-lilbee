@@ -1,5 +1,6 @@
 import { type EventRef, type Menu, type MenuItem, Notice, Plugin, type TAbstractFile } from "obsidian";
 import { LilbeeClient, SessionTokenError } from "./api";
+import type { RequestOutcome } from "./api";
 import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
@@ -169,7 +170,7 @@ function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
 
 export default class LilbeePlugin extends Plugin {
     settings: LilbeeSettings = { ...DEFAULT_SETTINGS };
-    api: LilbeeClient = new LilbeeClient(DEFAULT_SETTINGS.serverUrl);
+    api: LilbeeClient = new LilbeeClient("");
     activeModel = "";
     statusBarEl: HTMLElement | null = null;
     ribbonIconEl: HTMLElement | null = null;
@@ -231,9 +232,7 @@ export default class LilbeePlugin extends Plugin {
             if (this.settings.serverMode === SERVER_MODE.MANAGED) {
                 void this.startManagedServer();
             } else {
-                this.api = new LilbeeClient(this.settings.serverUrl);
-                this.api.setTokenProvider(() => this.readCurrentToken());
-                this.api.setToken(this.readCurrentToken());
+                this.configureApi(this.settings.serverUrl);
                 this.setStatusReady();
                 this.fetchActiveModel();
             }
@@ -312,15 +311,16 @@ export default class LilbeePlugin extends Plugin {
                         const detail = stderr ? `\n${stderr.split("\n").slice(-5).join("\n")}` : "";
                         new Notice(`${MESSAGES.ERROR_SERVER_CRASHED}${detail}`, NOTICE_PERMANENT);
                     },
+                    onShutdownFailure: (err: Error) => {
+                        new Notice(`${MESSAGES.ERROR_SERVER_SHUTDOWN_FAILED}: ${err.message}`);
+                    },
                 });
 
                 this.updateStatusBar(MESSAGES.STATUS_STARTING, DOT_STATE.PRIMARY);
                 this.setStatusClass("lilbee-status-starting");
                 onProgress?.({ phase: "starting", message: MESSAGES.STATUS_STARTING_SERVER });
                 await this.serverManager.start();
-                this.api = new LilbeeClient(this.serverManager.serverUrl);
-                this.api.setTokenProvider(() => this.readCurrentToken());
-                this.api.setToken(this.readCurrentToken());
+                this.configureApi(this.serverManager.serverUrl);
                 this.fetchActiveModel();
                 void this.configureManagedStorage();
                 onProgress?.({ phase: "ready", message: "" });
@@ -441,9 +441,7 @@ export default class LilbeePlugin extends Plugin {
         switch (state) {
             case SERVER_STATE.READY:
                 if (this.serverManager) {
-                    this.api = new LilbeeClient(this.serverManager.serverUrl);
-                    this.api.setTokenProvider(() => this.readCurrentToken());
-                    this.api.setToken(this.readCurrentToken());
+                    this.configureApi(this.serverManager.serverUrl);
                 }
                 this.serverUnreachable = false;
                 this.setStatusReady();
@@ -490,6 +488,32 @@ export default class LilbeePlugin extends Plugin {
         }
         const dataRoot = resolveExternalDataRoot(this.getVaultBasePath());
         return readSessionToken(dataRoot);
+    }
+
+    /** Build a fresh API client for *baseUrl* and re-register all hooks. */
+    private configureApi(baseUrl: string): void {
+        this.api = new LilbeeClient(baseUrl);
+        this.api.setTokenProvider(() => this.readCurrentToken());
+        this.api.setToken(this.readCurrentToken());
+        this.api.setOutcomeCallback((outcome) => this.handleRequestOutcome(outcome));
+    }
+
+    /** Update the status bar to reflect the latest API outcome. */
+    private handleRequestOutcome(outcome: RequestOutcome): void {
+        if (outcome === "ok") {
+            this.setStatusReady();
+            return;
+        }
+        if (outcome === "auth_error") {
+            this.updateStatusBar(MESSAGES.STATUS_AUTH_ERROR, DOT_STATE.ERROR);
+            this.setStatusClass("lilbee-status-error");
+            return;
+        }
+        if (outcome === "server_error" || outcome === "unreachable") {
+            this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
+            this.setStatusClass("lilbee-status-error");
+        }
+        // "starting" is a no-op — the existing startup UI already says so.
     }
 
     private registerCommands(): void {
@@ -646,9 +670,7 @@ export default class LilbeePlugin extends Plugin {
                 void this.startManagedServer();
             } else if (this.serverManager) {
                 this.serverManager.updatePort(this.settings.serverPort);
-                this.api = new LilbeeClient(this.serverManager.serverUrl);
-                this.api.setTokenProvider(() => this.readCurrentToken());
-                this.api.setToken(this.readCurrentToken());
+                this.configureApi(this.serverManager.serverUrl);
             }
         } else {
             if (previousMode === SERVER_MODE.MANAGED) {
@@ -656,9 +678,7 @@ export default class LilbeePlugin extends Plugin {
                 this.serverManager = null;
                 this.binaryManager = null;
             }
-            this.api = new LilbeeClient(this.settings.serverUrl);
-            this.api.setTokenProvider(() => this.readCurrentToken());
-            this.api.setToken(this.readCurrentToken());
+            this.configureApi(this.settings.serverUrl);
             // External mode owns its own status via the health probe; paint
             // "ready [external]" optimistically so the user doesn't see a
             // stale "stopped" label between the mode switch and the next

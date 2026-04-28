@@ -68,6 +68,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
             deleteModel: vi.fn().mockResolvedValue(ok({ deleted: true, model: "", freed_gb: 2.5 })),
         },
         activeModel: "",
+        settings: { serverMode: "managed" },
         fetchActiveModel: vi.fn(),
         refreshSettingsTab: vi.fn(),
         taskQueue: new TaskQueue(),
