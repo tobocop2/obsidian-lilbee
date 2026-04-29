@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>lilbee for Obsidian: local RAG with click-to-source citations</title>
-<meta name="description" content="Local-first RAG plugin for Obsidian. Chat with your vault and verify every answer at the source. Every citation opens a preview of the cited passage in the original document. Notes, PDFs, code, 150+ formats. Private, offline, self-hosted.">
+<meta name="description" content="A private research assistant for everything in your Obsidian vault — notes, PDFs, ebooks, code, scans, and 150+ formats in all. Ask anything; every answer is cited and one click previews the exact passage. Runs offline on your machine.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,9 +15,9 @@
     <div class="topstrip">
       <div><span class="badge">lilbee for Obsidian</span> <span>v0.6.66b422</span></div>
       <div>
-        <span class="pill">MIT License</span>
-        <span class="pill">100% coverage</span>
-        <span class="pill">typed</span>
+        <span class="pill">Runs offline</span>
+        <span class="pill">Open source</span>
+        <span class="pill">MIT licensed</span>
       </div>
     </div>
 
@@ -34,8 +34,8 @@
  / _|___ _ _   / _ \| |__ __(_)__| (_)__ _ _ _
 |  _/ _ \ '_| | (_) | '_ (_-&lt; / _` | / _` | ' \
 |_| \___/_|    \___/|_.__/__/_\__,_|_\__,_|_||_|</pre>
-      <p class="tagline"><strong>local-first RAG</strong> for your Obsidian vault.</p>
-      <p class="sub">Click any citation to preview the source passage in place. Verify every answer without leaving the editor.</p>
+      <p class="tagline">A <strong>private research assistant</strong> for everything in your vault.</p>
+      <p class="sub">Ask anything across your notes, PDFs, ebooks, code, scans — <strong>150+ formats</strong> in all. Every answer cites its sources; click any citation to read the original passage in place. Everything stays on your machine.</p>
     </section>
 
     <section>
@@ -43,7 +43,7 @@
       <div class="demo" role="figure" aria-label="terminal preview">
         <div class="titlebar">
           <span class="title">lilbee chat . vault</span>
-          <span>[qwen3:8b]</span>
+          <span>[gemma3:12b]</span>
         </div>
         <div class="body">
           <div class="line"><span class="prompt">&gt;</span><span class="answer">what does the oil pressure warning mean?</span></div>
@@ -62,19 +62,19 @@
       <div class="caps">
         <div class="cap">
           <h3>encyclopedia of your vault</h3>
-          <p>Index every note, PDF, ebook, and code file. Every answer clicks back to the source line. A private Encarta you build from your own vault.</p>
+          <p>Index every note, PDF, ebook, and code file in your vault. Every answer points back to the line it came from — your own private <a href="https://en.wikipedia.org/wiki/Encarta">Encarta</a>, built from documents you already have.</p>
         </div>
         <div class="cap">
           <h3>verify at the source</h3>
-          <p>Every citation in chat or wiki opens a Source Preview modal scrolled to the exact passage, with the cited lines highlighted. Verification is one click. Useful anywhere a confident answer needs proof.</p>
+          <p>Every citation in chat or wiki opens the source document scrolled to the exact passage, with the cited lines highlighted. One click, every time. Useful anywhere a confident-sounding answer needs proof.</p>
         </div>
         <div class="cap">
           <h3>auto-generated wiki</h3>
-          <p>Concept and entity pages compounded across sources, citation-verified, with drafts queued for review. Renders in Obsidian's graph view via <code>[[wiki links]]</code>.</p>
+          <p>Concept and entity pages, written automatically from your documents and verified against the sources they cite. Drafts queue for review. Pages plug into Obsidian's graph view alongside your notes.</p>
         </div>
         <div class="cap">
-          <h3>scans &amp; OCR</h3>
-          <p>Scanned PDFs and photographed pages go through Tesseract or a local vision GGUF, landing as searchable markdown with layout preserved.</p>
+          <h3>scans and photos</h3>
+          <p>Scanned PDFs and photographed pages are converted into searchable text — tables, columns, and layout preserved.</p>
         </div>
       </div>
     </section>
@@ -82,13 +82,13 @@
     <section>
       <div class="label">install</div>
       <div class="install">
-        <span class="prompt">brat:</span>
+        <span class="prompt">install:</span>
         <span class="cmd" id="install-cmd">tobocop2/obsidian-lilbee</span>
         <button type="button" class="copy" id="copy-btn" aria-label="Copy install slug">[ COPY ]</button>
       </div>
-      <p class="extras"><span class="k">prereq:</span> install <a href="https://github.com/TfTHacker/obsidian42-brat">BRAT</a> from Community Plugins, then <em>BRAT: Add a beta plugin</em> and paste the slug above.</p>
-      <p class="extras"><span class="k">first launch:</span> the plugin downloads and verifies the lilbee server automatically. Nothing to install separately.</p>
-      <p class="extras"><span class="k">beta:</span> every release is a pre-release. <a href="https://github.com/tobocop2/obsidian-lilbee/releases">latest on GitHub →</a></p>
+      <p class="extras">lilbee is in beta, so it ships through <a href="https://github.com/TfTHacker/obsidian42-brat">BRAT</a> — the standard helper Obsidian users install for beta plugins. Install BRAT from <em>Settings → Community plugins → Browse</em>, then run <em>BRAT: Add a beta plugin</em> and paste the slug above.</p>
+      <p class="extras">The plugin downloads the lilbee engine on first launch — there's nothing to install separately. New release every few days; you'll get them automatically.</p>
+      <p class="extras"><a href="https://github.com/tobocop2/obsidian-lilbee/releases">latest release on GitHub →</a></p>
     </section>
 
     <section>
