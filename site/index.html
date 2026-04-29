@@ -3,24 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>lilbee for Obsidian — local RAG with click-to-source citations</title>
-<meta name="description" content="Local-first RAG plugin for Obsidian. Chat with your vault and verify every answer at the source — every citation opens a preview of the cited passage in the original document. Notes, PDFs, code, 150+ formats. Private, offline, self-hosted.">
+<title>lilbee for Obsidian: local RAG with click-to-source citations</title>
+<meta name="description" content="Local-first RAG plugin for Obsidian. Chat with your vault and verify every answer at the source. Every citation opens a preview of the cited passage in the original document. Notes, PDFs, code, 150+ formats. Private, offline, self-hosted.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1>lilbee for Obsidian</h1>
+<h1 class="sr">lilbee for Obsidian</h1>
 <div class="layout">
-  <div class="main">
+  <main class="main">
 
-    <div class="topstrip reveal r1">
-      <div><span class="faint">lilbee for Obsidian v0.6.66b422</span></div>
-      <div class="right">
-        <span class="faint">MIT License · 100% coverage · typed</span>
+    <div class="topstrip">
+      <div><span class="badge">lilbee for Obsidian</span> <span>v0.6.66b422</span></div>
+      <div>
+        <span class="pill">MIT License</span>
+        <span class="pill">100% coverage</span>
+        <span class="pill">typed</span>
       </div>
     </div>
 
-    <section class="reveal r2">
-      <pre class="wordmark" aria-hidden="true">888 d8b 888 888
+    <section class="hero">
+<pre class="wordmark" aria-hidden="true">888 d8b 888 888
 888 Y8P 888 888
 888     888 888
 888 888 888 88888b.  .d88b.  .d88b.
@@ -28,32 +30,34 @@
 888 888 888 888  88888888888888888888
 888 888 888 888 d88PY8b.    Y8b.
 888 888 888 88888P"  "Y8888  "Y8888</pre>
-      <pre class="wordmark-sub" aria-hidden="true">  __            ___  _       _    _ _
+<pre class="wordmark-sub" aria-hidden="true">  __            ___  _       _    _ _
  / _|___ _ _   / _ \| |__ __(_)__| (_)__ _ _ _
 |  _/ _ \ '_| | (_) | '_ (_-&lt; / _` | / _` | ' \
 |_| \___/_|    \___/|_.__/__/_\__,_|_\__,_|_||_|</pre>
-      <p class="tagline"><span>local-first RAG</span> for your Obsidian vault. <span class="dim">click any citation to preview the source passage in place — verify every answer without leaving the editor.</span></p>
-      <pre class="hr-line" aria-hidden="true">════════════════════════════════════════════════════════════════</pre>
+      <p class="tagline"><strong>local-first RAG</strong> for your Obsidian vault.</p>
+      <p class="sub">Click any citation to preview the source passage in place. Verify every answer without leaving the editor.</p>
     </section>
 
-    <section class="reveal r3">
+    <section>
       <div class="label">preview</div>
-      <div class="demo">
-<pre class="frame-top">┌─ lilbee chat · vault ────────────────────────────── [qwen3:8b] ┐</pre>
-<div class="row"><pre class="bar">│ </pre><div class="content"><span class="prompt">&gt;</span> what does the oil pressure warning mean?</div><pre class="bar"> │</pre></div>
-<div class="row"><pre class="bar">│ </pre><div class="content">the oil pressure warning indicates low oil pressure.<sup>[¹]</sup></div><pre class="bar"> │</pre></div>
-<div class="row"><pre class="bar">│ </pre><div class="content">when the light stays on, stop the engine immediately.<sup>[²]</sup></div><pre class="bar"> │</pre></div>
-<div class="row"><pre class="bar">│ </pre><div class="content">&nbsp;</div><pre class="bar"> │</pre></div>
-<div class="row"><pre class="bar">│ </pre><div class="content"><span class="cite">─── sources ──────────────────────────────────────────────</span></div><pre class="bar"> │</pre></div>
-<div class="row"><pre class="bar">│ </pre><div class="content"><span class="cite">[¹ owners-manual.pdf:42]</span> <span class="dim">← click to preview the source</span></div><pre class="bar"> │</pre></div>
-<div class="row"><pre class="bar">│ </pre><div class="content"><span class="cite">[² owners-manual.pdf:43]</span></div><pre class="bar"> │</pre></div>
-<div class="row"><pre class="bar">│ </pre><div class="content">&nbsp;</div><pre class="bar"> │</pre></div>
-<div class="row"><pre class="bar">│ </pre><div class="content"><span class="prompt">&gt;</span> <span class="cursor"></span></div><pre class="bar"> │</pre></div>
-<pre class="frame-bot">└────────────────────────────────────────────────────────────────┘</pre>
+      <div class="demo" role="figure" aria-label="terminal preview">
+        <div class="titlebar">
+          <span class="title">lilbee chat . vault</span>
+          <span>[qwen3:8b]</span>
+        </div>
+        <div class="body">
+          <div class="line"><span class="prompt">&gt;</span><span class="answer">what does the oil pressure warning mean?</span></div>
+          <div class="line"><span class="answer">the oil pressure warning indicates low oil pressure.<sup>[1]</sup></span></div>
+          <div class="line"><span class="answer">when the light stays on, stop the engine immediately.<sup>[2]</sup></span></div>
+          <div class="rule">─── sources ─────────────────────────────────</div>
+          <div class="cite"><span class="cite-link">[1] owners-manual.pdf:42</span> &nbsp;<span class="hint">← click to preview the source</span></div>
+          <div class="cite"><span class="cite-link">[2] owners-manual.pdf:43</span></div>
+          <div class="line" style="margin-top:0.6rem"><span class="prompt">&gt;</span><span class="cursor"></span></div>
+        </div>
       </div>
     </section>
 
-    <section class="reveal r4">
+    <section>
       <div class="label">what it does</div>
       <div class="caps">
         <div class="cap">
@@ -62,7 +66,7 @@
         </div>
         <div class="cap">
           <h3>verify at the source</h3>
-          <p>Every citation in chat or wiki opens a Source Preview modal scrolled to the exact passage, with the cited lines highlighted. Verification is one click — useful anywhere a confident answer needs proof.</p>
+          <p>Every citation in chat or wiki opens a Source Preview modal scrolled to the exact passage, with the cited lines highlighted. Verification is one click. Useful anywhere a confident answer needs proof.</p>
         </div>
         <div class="cap">
           <h3>auto-generated wiki</h3>
@@ -75,37 +79,32 @@
       </div>
     </section>
 
-    <section class="reveal r5">
+    <section>
       <div class="label">install</div>
       <div class="install">
-<pre class="box-top">┌──────────────────────────────────────────────────────────────────┐</pre>
-<div class="box-mid">
-  <span class="bar">│</span>
-  <span class="cmd"><span class="dollar">brat:</span><span id="install-cmd">tobocop2/obsidian-lilbee</span><span class="cursor"></span></span>
-  <button type="button" class="copy" id="copy-btn" aria-label="Copy install slug">[ copy ]</button>
-  <span class="bar">│</span>
-</div>
-<pre class="box-bot">└──────────────────────────────────────────────────────────────────┘</pre>
+        <span class="prompt">brat:</span>
+        <span class="cmd" id="install-cmd">tobocop2/obsidian-lilbee</span>
+        <button type="button" class="copy" id="copy-btn" aria-label="Copy install slug">[ COPY ]</button>
       </div>
-      <p class="extras"><span class="faint">prereq:</span> install <a href="https://github.com/TfTHacker/obsidian42-brat">BRAT</a> from Community Plugins, then <em>BRAT: Add a beta plugin</em> and paste the slug above.</p>
-      <p class="extras"><span class="faint">first launch:</span> the plugin downloads and verifies the lilbee server automatically. nothing to install separately.</p>
-      <p class="extras"><span class="faint">beta:</span> every release is a pre-release. <a href="https://github.com/tobocop2/obsidian-lilbee/releases">latest on GitHub →</a></p>
+      <p class="extras"><span class="k">prereq:</span> install <a href="https://github.com/TfTHacker/obsidian42-brat">BRAT</a> from Community Plugins, then <em>BRAT: Add a beta plugin</em> and paste the slug above.</p>
+      <p class="extras"><span class="k">first launch:</span> the plugin downloads and verifies the lilbee server automatically. Nothing to install separately.</p>
+      <p class="extras"><span class="k">beta:</span> every release is a pre-release. <a href="https://github.com/tobocop2/obsidian-lilbee/releases">latest on GitHub →</a></p>
     </section>
 
-    <section class="reveal r6">
+    <section>
       <div class="label">go deeper</div>
       <div class="links">
-        <a href="https://github.com/tobocop2/obsidian-lilbee"><span class="num">[1] GitHub</span><span class="dots">···················</span><span class="desc">source &amp; readme</span></a>
-        <a href="https://github.com/tobocop2/obsidian-lilbee#quick-start"><span class="num">[2] Quick start</span><span class="dots">··············</span><span class="desc">install in 4 steps</span></a>
-        <a href="https://github.com/tobocop2/obsidian-lilbee/blob/main/docs/usage.md"><span class="num">[3] Usage guide</span><span class="dots">··············</span><span class="desc">commands &amp; settings</span></a>
-        <a href="coverage/"><span class="num">[4] Coverage</span><span class="dots">·················</span><span class="desc">100%</span></a>
-        <a href="https://github.com/tobocop2/obsidian-lilbee/releases"><span class="num">[5] Releases</span><span class="dots">·················</span><span class="desc">changelog</span></a>
-        <a href="https://tobocop2.github.io/lilbee/"><span class="num">[6] lilbee</span><span class="dots">···················</span><span class="desc">the engine</span></a>
-        <a href="https://obsidian.md"><span class="num">[7] Obsidian</span><span class="dots">·················</span><span class="desc">obsidian.md</span></a>
+        <a href="https://github.com/tobocop2/obsidian-lilbee"><span class="num">[1]</span><span>GitHub</span><span class="dots">·······································</span><span class="desc">source &amp; readme</span></a>
+        <a href="https://github.com/tobocop2/obsidian-lilbee#quick-start"><span class="num">[2]</span><span>Quick start</span><span class="dots">·······································</span><span class="desc">install in 4 steps</span></a>
+        <a href="https://github.com/tobocop2/obsidian-lilbee/blob/main/docs/usage.md"><span class="num">[3]</span><span>Usage guide</span><span class="dots">·······································</span><span class="desc">commands &amp; settings</span></a>
+        <a href="coverage/"><span class="num">[4]</span><span>Coverage</span><span class="dots">·······································</span><span class="desc">100%</span></a>
+        <a href="https://github.com/tobocop2/obsidian-lilbee/releases"><span class="num">[5]</span><span>Releases</span><span class="dots">·······································</span><span class="desc">changelog</span></a>
+        <a href="https://tobocop2.github.io/lilbee/"><span class="num">[6]</span><span>lilbee</span><span class="dots">·······································</span><span class="desc">the engine</span></a>
+        <a href="https://obsidian.md"><span class="num">[7]</span><span>Obsidian</span><span class="dots">·······································</span><span class="desc">obsidian.md</span></a>
       </div>
     </section>
 
-    <footer class="reveal r7">
+    <footer>
       <div>
 <pre aria-hidden="true">+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |t|o|b|i|a|s|.|p|e|r|e|l|s|t|e|i|n|
@@ -114,13 +113,11 @@
         |@|g|m|a|i|l|.|c|o|m|
         +-+-+-+-+-+-+-+-+-+-+</pre>
       </div>
-      <div class="meta">
-        <div><a href="https://github.com/tobocop2/obsidian-lilbee">obsidian-lilbee</a> · MIT License</div>
-      </div>
+      <div class="meta"><a href="https://github.com/tobocop2/obsidian-lilbee">obsidian-lilbee</a> &nbsp;.&nbsp; MIT License</div>
     </footer>
-  </div>
+  </main>
 
-  <aside class="bee-art reveal r3" aria-hidden="true"><pre>     %           %
+  <aside class="bee-art" aria-hidden="true"><pre>     %           %
          %           %
             %           %
                %          %
@@ -168,7 +165,7 @@
     var text = cmd ? cmd.textContent : 'tobocop2/obsidian-lilbee';
     var done = function () {
       var original = btn.textContent;
-      btn.textContent = '[ copied ]';
+      btn.textContent = '[ COPIED ]';
       setTimeout(function () { btn.textContent = original; }, 1200);
     };
     if (navigator.clipboard && navigator.clipboard.writeText) {
