@@ -2882,3 +2882,166 @@
     border-left: 3px solid var(--text-error);
 }
 
+
+/* tui-quality-sweep additions —
+   Banner, Local|Frontier tabs, frontier rows, key-status pills, model picker. */
+
+.lilbee-chat-banner {
+    margin: 4px 0 6px;
+    padding: 6px 10px;
+    border-left: 3px solid var(--color-yellow, #d4a841);
+    background-color: var(--background-modifier-border-hover, rgba(212, 168, 65, 0.12));
+    color: var(--text-muted);
+    font-size: var(--font-ui-small, 12px);
+    border-radius: var(--radius-s, 4px);
+}
+
+.lilbee-chat-mode-container {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+    margin-left: auto;
+}
+
+.lilbee-chat-mode-btn {
+    background-color: var(--background-secondary);
+    color: var(--text-muted);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    padding: 2px 8px;
+    font-size: var(--font-ui-small, 12px);
+    cursor: pointer;
+}
+
+.lilbee-chat-mode-btn.active {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.lilbee-chat-mode-btn.lilbee-disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.lilbee-catalog-tab-bar {
+    display: flex;
+    border-bottom: 1px solid var(--background-modifier-border);
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-catalog-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    padding: 6px 16px;
+    font-size: var(--font-ui-small, 12px);
+    cursor: pointer;
+}
+
+.lilbee-catalog-tab-active {
+    color: var(--text-normal);
+    border-bottom-color: var(--interactive-accent);
+}
+
+.lilbee-frontier-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+}
+
+.lilbee-frontier-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-frontier-row-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+}
+
+.lilbee-provider-pill,
+.lilbee-key-status-pill {
+    display: inline-block;
+    font-size: var(--font-ui-smaller, 10px);
+    padding: 2px 7px;
+    border-radius: 10px;
+    border: 1px solid;
+    font-weight: 500;
+}
+
+.lilbee-provider-pill {
+    background-color: var(--background-modifier-border);
+    border-color: var(--background-modifier-border);
+    color: var(--text-muted);
+}
+
+.lilbee-key-status-pill-ready {
+    background-color: rgba(72, 180, 97, 0.15);
+    border-color: var(--color-green, #48b461);
+    color: var(--color-green, #7cd498);
+}
+
+.lilbee-key-status-pill-needs-key {
+    background-color: rgba(212, 168, 65, 0.15);
+    border-color: var(--color-yellow, #d4a841);
+    color: var(--color-yellow, #e8c878);
+}
+
+.lilbee-model-picker-modal .lilbee-model-picker-search {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-model-picker-search-input {
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: var(--radius-s, 4px);
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    font-size: var(--font-ui-small, 12px);
+}
+
+.lilbee-model-picker-list {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.lilbee-model-picker-section-header {
+    padding: 6px 12px;
+    font-size: var(--font-ui-smaller, 11px);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    background-color: var(--background-secondary);
+    border-top: 1px solid var(--background-modifier-border);
+    font-weight: 600;
+}
+
+.lilbee-model-picker-row {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-model-picker-row:hover,
+.lilbee-model-picker-row-highlighted {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-model-picker-row-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.lilbee-model-picker-empty {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted);
+}
