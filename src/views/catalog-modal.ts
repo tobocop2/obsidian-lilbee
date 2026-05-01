@@ -91,12 +91,6 @@ export class CatalogModal extends Modal {
         this.resetAndFetch();
     }
 
-    /**
-     * Render the Local | Frontier tab bar. The Frontier tab is created up front
-     * but hidden until at least one frontier row reports `key_status === "ready"`
-     * (i.e. the user has configured at least one provider key). Visibility is
-     * flipped by `updateFrontierTabVisibility` after each fetch.
-     */
     private renderTabBar(parent: HTMLElement): void {
         this.tabBarEl = parent.createDiv({ cls: "lilbee-catalog-tab-bar" });
         const localBtn = this.tabBarEl.createEl("button", {
@@ -118,7 +112,7 @@ export class CatalogModal extends Modal {
     private switchTab(tab: CatalogSource): void {
         if (this.currentTab === tab) return;
         this.currentTab = tab;
-        /* v8 ignore next 2 -- defensive; renderTabBar always sets tabBarEl before any tab can be clicked */
+        /* v8 ignore next 2 */
         if (!this.tabBarEl) return;
         for (const btn of Array.from(this.tabBarEl.children) as HTMLElement[]) {
             const isActive =
@@ -131,14 +125,14 @@ export class CatalogModal extends Modal {
     }
 
     private updateFrontierTabVisibility(): void {
-        /* v8 ignore next 2 -- defensive; renderTabBar always sets frontierTabBtn before fetchPage runs */
+        /* v8 ignore next 2 */
         if (!this.frontierTabBtn) return;
         if (hasReadyFrontierRow(this.entries)) {
             this.frontierTabBtn.style.display = "";
             return;
         }
-        // No keys yet; if the user was on Frontier (rare race) bounce them home.
         this.frontierTabBtn.style.display = "none";
+        // Bounce the user home if a refetch revoked the only ready frontier row.
         if (this.currentTab === CATALOG_SOURCE.FRONTIER) this.switchTab(CATALOG_SOURCE.LOCAL);
     }
 
@@ -287,15 +281,8 @@ export class CatalogModal extends Modal {
         }
     }
 
-    /**
-     * Render the Frontier tab body: a single virtualized-style list grouped
-     * by provider. Rows are paginated via the same `/api/models/catalog`
-     * cursor as Local. Each row carries a provider pill + key-status pill;
-     * clicking a `Needs key` row deep-links the user to the provider's
-     * API-key input in Settings without losing modal state.
-     */
     private renderFrontierResults(): void {
-        /* v8 ignore next 2 -- defensive; renderResults early-returns when resultsEl is null before reaching us */
+        /* v8 ignore next 2 */
         if (!this.resultsEl) return;
         const rows = frontierRowsOnly(this.entries);
         if (rows.length === 0) {

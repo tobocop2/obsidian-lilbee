@@ -76,12 +76,7 @@ export interface ModelsResponse {
     reranker?: ModelCatalog;
 }
 
-/**
- * `chat_mode`, `general_system_prompt`, and `wiki` may be absent on servers
- * that predate the tui-quality-sweep series — readers must check for
- * undefined. `rag_system_prompt` is the post-rename name (the legacy
- * `system_prompt` field is rejected by current servers).
- */
+/** Optional fields are absent on pre-tui-quality-sweep servers. */
 export interface ConfigResponse {
     reranker_model: string | null;
     rerank_candidates: number;
@@ -158,14 +153,7 @@ export interface GenerationOptions {
     seed?: number;
 }
 
-/**
- * Server-sent event envelope. `data` is `unknown` because the shape varies
- * per `event` (token strings, structured progress payloads, the DONE
- * sentinel, …). Notable optional field on object-shaped `data`: `banner`,
- * a string the chat view renders verbatim above the answer bubble when
- * present (drives mode-aware copy like "Search needs an embedding model").
- * Absent banner → no banner element rendered.
- */
+/** Object-shaped `data` may carry an optional `banner` string the chat view renders above the answer bubble. */
 export interface SSEEvent {
     event: string;
     data: unknown;
@@ -211,9 +199,7 @@ export interface LilbeeSettings {
     serverMode: ServerMode;
     serverPort: number | null;
     lilbeeVersion: string;
-    /** System prompt used when answering with retrieved documents (RAG path). Maps to server `cfg.rag_system_prompt`. */
     ragSystemPrompt: string;
-    /** System prompt used when answering without documents (general chat / zero-result fallthrough). Maps to server `cfg.general_system_prompt`. */
     generalSystemPrompt: string;
     setupCompleted: boolean;
     wikiEnabled: boolean;
@@ -329,17 +315,6 @@ export interface CatalogEntry {
     param_count: string;
 }
 
-/**
- * Discriminated catalog row, sealed over `source`. Mirrors
- * `LocalCatalogRow | FrontierCatalogRow` on the lilbee tui-quality-sweep
- * server (`bb-zd0w`). Local rows keep the legacy CatalogEntry fields plus
- * a literal `source: "local"`; frontier rows carry only the cross-cutting
- * identity fields plus provider/key/context metadata.
- *
- * `LilbeeClient.catalog()` normalizes legacy server values
- * (`"native"` → `"local"`, `"litellm"` → `"frontier"`) so consumers in
- * `src/views/` see only the new union.
- */
 export interface LocalCatalogRow extends CatalogEntry {
     source: "local";
 }

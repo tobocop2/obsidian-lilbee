@@ -67,12 +67,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
     // Set to true while loadServerDefaults is programmatically syncing toggles to the server
     // value so their onChange doesn't round-trip the same value back to the server.
     private suppressToggleChanges = false;
-    // The chat_mode dropdown is hidden until /api/config confirms the field is present
-    // (older servers omit it). loadServerDefaults toggles visibility and seeds the value.
     private chatModeSettingEl: HTMLElement | null = null;
     private chatModeDropdown: { setValue: (v: string) => unknown } | null = null;
     private chatModeSelectEl: HTMLSelectElement | null = null;
-    /** Wrapper containers captured during display() so capability probes can hide whole sections asynchronously. */
     private apiKeysContainerEl: HTMLElement | null = null;
     private crawlingContainerEl: HTMLElement | null = null;
     private wikiContainerEl: HTMLElement | null = null;
@@ -113,13 +110,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
         void this.applyCapabilityGating();
     }
 
-    /**
-     * Probe each capability and hide the wrapping section container when the
-     * server doesn't expose that feature. Crawling is hidden when the crawler
-     * package isn't installed; Wiki when cfg.wiki is false; API Keys when
-     * litellm itself is uninstalled. Each probe failure-opens (returns true) —
-     * a degraded settings page is better than one missing affordances.
-     */
     private async applyCapabilityGating(): Promise<void> {
         const [apiKeys, crawling, wiki] = await Promise.all([
             this.plugin.api.getCapability(CAPABILITY.API_KEYS),
@@ -469,12 +459,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         textArea.value = v.join("\n");
                     }
                 }
-                // Populate system-prompt placeholders from server config.
-                // The server splits the legacy `system_prompt` field into
-                // `rag_system_prompt` (cited answers) and `general_system_prompt`
-                // (no-retrieval answers). Each placeholder is sourced from its
-                // own server-side default so users see the same text the chat
-                // model would receive on a blank-input run.
                 if (typeof cfg.rag_system_prompt === "string") {
                     const ragInput = this.serverConfigInputs.get("rag_system_prompt");
                     if (ragInput) {
@@ -494,15 +478,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
     }
 
-    /**
-     * Sync the chat-mode dropdown to /api/config. Hides the entire setting
-     * row when the server doesn't expose cfg.chat_mode (pre-tui-quality-sweep
-     * builds). When the row is visible, a missing embedding_model coerces the
-     * dropdown to disabled with a tooltip — matches the TUI's "configure an
-     * embedding model to enable Search" behavior.
-     */
     private applyChatModeFromConfig(cfg: ConfigResponse): void {
-        /* v8 ignore next 2 -- defensive guard; renderGenerationSettings always sets this before loadServerDefaults runs */
+        /* v8 ignore next 2 */
         if (!this.chatModeSettingEl) return;
         if (cfg.chat_mode === undefined) {
             this.chatModeSettingEl.style.display = "none";
@@ -641,10 +618,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
             MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT,
         );
 
-        // Chat-mode dropdown — hidden by default, revealed by loadServerDefaults
-        // when cfg.chat_mode is present on the connected server. Disabled state
-        // is also driven from cfg (set when no embedding model is configured),
-        // not from local plugin settings.
         const chatModeSetting = new Setting(details)
             .setName(MESSAGES.LABEL_CHAT_MODE)
             .setDesc(MESSAGES.DESC_CHAT_MODE)
@@ -1608,8 +1581,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
             },
         ];
 
-        // Wrap API-key fields in a captured container so applyCapabilityGating()
-        // can hide the whole subsection when litellm isn't installed.
         const apiKeysContainer = details.createDiv({ cls: "lilbee-api-keys-section" });
         this.apiKeysContainerEl = apiKeysContainer;
         for (const apiField of apiKeyFields) {
@@ -1624,9 +1595,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         if (trimmed === "") return;
                         try {
                             await this.plugin.api.updateConfig({ [apiField.configKey]: trimmed });
-                            // A new key may flip a frontier row's key_status from
-                            // missing_key to ready — invalidate the catalog cache
-                            // so the next /api/catalog request picks up the change.
                             this.plugin.api.invalidateCapability(CAPABILITY.API_KEYS);
                             new Notice(MESSAGES.NOTICE_API_KEY_SAVED);
                         } catch {

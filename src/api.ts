@@ -64,14 +64,7 @@ export class ServerStartingError extends Error {
 /** Coarse outcome of a single ``fetchWithRetry`` call, reported to subscribers. */
 export type RequestOutcome = "ok" | "auth_error" | "server_error" | "unreachable" | "starting";
 
-/**
- * Normalize a server-supplied catalog row source value to the post-tui-quality-sweep
- * discriminator. Older servers emit `"native"` / `"litellm"`; newer servers emit
- * `"local"` / `"frontier"`. Unknown values default to `"local"` because that's the
- * non-cloud, no-key-required path: misclassifying a frontier row as local keeps
- * the user's keys safe (no row click triggers a deep-link they didn't expect),
- * while misclassifying local as frontier would surface fake key-status pills.
- */
+/** Map legacy `"native"` / `"litellm"` to `"local"` / `"frontier"`; pass through unknown values. */
 export function normalizeCatalogSource(raw: string): string {
     if (raw === "litellm") return CATALOG_SOURCE.FRONTIER;
     if (raw === "native") return CATALOG_SOURCE.LOCAL;
@@ -237,18 +230,7 @@ export class LilbeeClient {
         return this.fetchResult(`${this.baseUrl}/api/status`);
     }
 
-    /**
-     * Returns whether a server-side feature is installed/enabled. Probes the
-     * existing endpoint that already exposes the relevant signal — there is no
-     * dedicated capability flag in /api/health yet. Cached per session; call
-     * `invalidateCapability` after any user-driven write that could change the
-     * answer (key save, crawler bootstrap stream completing, wiki toggle).
-     *
-     * Failure mode: any probe error (network, malformed payload, HTTP 5xx)
-     * returns `true`. False-negative hides the section the user needs; false-
-     * positive shows a section that simply won't function — the latter degrades
-     * more gracefully.
-     */
+    /** Cached per session; fail-open on probe error (showing a section that won't work degrades better than hiding one the user needs). */
     async getCapability(cap: Capability): Promise<boolean> {
         const cached = this.capabilityCache.get(cap);
         if (cached !== undefined) return cached;

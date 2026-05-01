@@ -17,9 +17,7 @@ export interface ServerManagerOptions {
     binaryPath: string;
     dataDir: string;
     port: number | null;
-    /** System prompt for the RAG (cited) answer path; passed to the server as LILBEE_RAG_SYSTEM_PROMPT. */
     ragSystemPrompt: string;
-    /** System prompt for the general (no-retrieval) answer path; passed as LILBEE_GENERAL_SYSTEM_PROMPT. */
     generalSystemPrompt: string;
     onStateChange?: (state: ServerState) => void;
     onRestartsExhausted?: (stderr: string) => void;

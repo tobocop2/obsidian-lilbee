@@ -56,11 +56,6 @@ function extractString(data: unknown, field: string): string {
     return String(data);
 }
 
-/**
- * Pull a non-empty string `banner` field off an SSE event payload, or
- * return null. Used by the chat view to surface server-emitted mode-driven
- * messages (e.g. "Search needs an embedding model") without owning the copy.
- */
 export function extractBanner(data: unknown): string | null {
     if (data === null || typeof data !== "object") return null;
     const banner = (data as Record<string, unknown>).banner;
@@ -163,9 +158,6 @@ export class ChatView extends ItemView {
         this.updateOcrToggle();
         this.ocrToggleEl.addEventListener("click", () => this.cycleOcr());
 
-        // Empty placeholder; populated by fetchAndFillSelectors once the server's
-        // /api/config response confirms cfg.chat_mode is exposed (older servers
-        // omit it). Stays empty -> the toggle is invisible on those servers.
         this.chatModeContainer = toolbar.createDiv({ cls: "lilbee-chat-mode-container" });
 
         this.fetchAndFillSelectors();
@@ -307,18 +299,8 @@ export class ChatView extends ItemView {
             });
     }
 
-    /**
-     * Render (or hide) the Search/Chat mode toggle in the toolbar.
-     *
-     * Visibility: the toggle only appears when /api/config exposes a
-     * `chat_mode` field. Older servers don't advertise the field; the toggle
-     * stays hidden so users don't see a control whose write would 404.
-     *
-     * Disabled state: when no embedding model is configured the toggle is
-     * disabled (the server forces "chat" mode in that case). Tooltip explains.
-     */
     private renderChatModeToggle(serverConfig: Record<string, unknown> | null): void {
-        /* v8 ignore next 2 -- defensive; createToolbar creates the container before fetchAndFillSelectors can resolve */
+        /* v8 ignore next 2 */
         if (!this.chatModeContainer) return;
         this.chatModeContainer.empty();
         const rawMode = serverConfig?.chat_mode;
@@ -360,7 +342,7 @@ export class ChatView extends ItemView {
     }
 
     private applyActiveClassToChatModeButtons(mode: ChatMode): void {
-        /* v8 ignore next 2 -- defensive; renderChatModeToggle creates the container before any click can fire */
+        /* v8 ignore next 2 */
         if (!this.chatModeContainer) return;
         const buttons = this.chatModeContainer.querySelectorAll(".lilbee-chat-mode-btn");
         const activeIdx = mode === CHAT_MODE.SEARCH ? 0 : 1;
@@ -407,7 +389,6 @@ export class ChatView extends ItemView {
         // Featured rows that have an installed quant.
         const featuredInstalled = this.chatCatalogEntries.filter((e) => installedRepos.has(e.hf_repo));
         for (const entry of featuredInstalled) {
-            // Post-normalization the discriminator is "local"/"frontier"; tag anything non-local.
             const sourceTag = entry.source && entry.source !== CATALOG_SOURCE.LOCAL ? ` [${entry.source}]` : "";
             const option = selectEl.createEl("option", { text: `${entry.display_name}${sourceTag}` });
             (option as HTMLOptionElement).value = entry.hf_repo;
@@ -887,12 +868,6 @@ export class ChatView extends ItemView {
         }
     }
 
-    /**
-     * Insert a server-emitted banner above the assistant bubble. The banner
-     * is a string field on the SSE event payload (typically on DONE) that
-     * the server uses to surface mode-driven state — e.g. "Search needs an
-     * embedding model". Absent / empty / non-string -> no banner element.
-     */
     private renderBannerIfPresent(data: unknown, assistantBubble: HTMLElement): void {
         const banner = extractBanner(data);
         if (banner === null || !this.messagesEl) return;

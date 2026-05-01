@@ -169,6 +169,17 @@ describe("catalog-helpers", () => {
             (globalThis as any).document = originalDocument;
         });
 
+        it("returns early without throwing when document is undefined at firing time (Node-only test envs)", async () => {
+            const originalDocument = (globalThis as any).document;
+            // Simulate the post-test cleanup: app.setting is wired but the DOM is gone.
+            (globalThis as any).document = undefined;
+            const app = new App();
+            deepLinkToApiKeySettings(app as any, "OpenAI");
+            // Let the inner setTimeout fire — must not throw.
+            await new Promise((r) => setTimeout(r, 60));
+            (globalThis as any).document = originalDocument;
+        });
+
         it("safely handles a query that finds nothing", async () => {
             const docMock = {
                 querySelector: vi.fn().mockReturnValue(null),

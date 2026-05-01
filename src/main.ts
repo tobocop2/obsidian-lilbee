@@ -675,12 +675,7 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    /**
-     * One-shot rename of the legacy `systemPrompt` plugin setting to `ragSystemPrompt`,
-     * mirroring the lilbee server's `system_prompt` → `rag_system_prompt` rename.
-     * Returns the same blob untouched when no legacy key is present, otherwise a new
-     * blob with the value moved. Persistence is handled by `loadSettings`.
-     */
+    /** Mirrors the server's `system_prompt` → `rag_system_prompt` rename for the local plugin setting. */
     private migrateLegacySystemPrompt<T extends { systemPrompt?: string; ragSystemPrompt?: string }>(
         blob: T | null,
     ): T | null {

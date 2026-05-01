@@ -16,27 +16,8 @@ import {
 const SEARCH_DEBOUNCE_MS = 100;
 const PAGE_SIZE = 50;
 
-/** Scope of a picker — controls the title, the catalog task filter, and the PATCH key. */
 export type PickerScope = "chat" | "embedding";
 
-/**
- * ModelPickerModal — replaces the inline `<select>` chat-model and
- * embedding-model dropdowns in the chat header. Layout:
- *
- *   [search input                            ]
- *   ── Local ──
- *     row, row, …
- *   ── OpenAI ──
- *     row, row, …
- *   ── Anthropic ──
- *     row, row, …
- *
- * Frontier rows are filtered out entirely when no provider key is
- * configured (matches the catalog modal's Frontier-tab gating). Search
- * filters all rows client-side over what's already loaded.
- *
- * Keyboard: ↑/↓ navigate, Enter select, Escape close.
- */
 export class ModelPickerModal extends Modal {
     private plugin: LilbeePlugin;
     private pickerScope: PickerScope;
@@ -79,7 +60,7 @@ export class ModelPickerModal extends Modal {
             placeholder: MESSAGES.MODEL_PICKER_SEARCH_PLACEHOLDER,
         }) as HTMLInputElement;
         this.searchInputEl.addEventListener("input", () => {
-            /* v8 ignore next -- searchInputEl is set on the previous statement so the optional chain always finds it */
+            /* v8 ignore next */
             const value = this.searchInputEl?.value ?? "";
             if (this.filterTimer !== null) clearTimeout(this.filterTimer);
             this.filterTimer = setTimeout(() => {
@@ -87,21 +68,14 @@ export class ModelPickerModal extends Modal {
                 this.applyFilterAndRender();
             }, SEARCH_DEBOUNCE_MS);
         });
-        // Auto-focus on open so the user can start typing immediately.
         setTimeout(() => this.searchInputEl?.focus(), 0);
     }
 
-    /**
-     * Register Enter / Escape / ↑↓ on the modal scope. Obsidian's `Scope.register`
-     * is the supported way to handle keys without leaking listeners across
-     * modals — `Modal.scope` is created by Obsidian per-instance and torn down
-     * on close.
-     */
     private registerKeyHandlers(): void {
         const scope = (
             this as { scope?: { register: (mods: string[] | null, key: string, cb: () => unknown) => unknown } }
         ).scope;
-        /* v8 ignore next -- Modal always provides scope; the guard exists only for hostile test stubs */
+        /* v8 ignore next */
         if (!scope || typeof scope.register !== "function") return;
         scope.register([], "Enter", () => this.activateHighlighted());
         scope.register([], "Escape", () => {
@@ -125,7 +99,7 @@ export class ModelPickerModal extends Modal {
     }
 
     private repaintHighlight(): void {
-        /* v8 ignore next -- listEl is set in onOpen before any keypress can reach moveHighlight */
+        /* v8 ignore next */
         if (!this.listEl) return;
         const rows = this.listEl.querySelectorAll(".lilbee-model-picker-row");
         for (let i = 0; i < rows.length; i++) {
@@ -135,7 +109,7 @@ export class ModelPickerModal extends Modal {
 
     private activateHighlighted(): void {
         const row = this.filteredRows[this.highlightedIndex];
-        /* v8 ignore next -- Enter is wired to activateHighlighted only after fetchAndRender produces filteredRows */
+        /* v8 ignore next */
         if (!row) return;
         void this.activateRow(row);
     }
@@ -151,11 +125,6 @@ export class ModelPickerModal extends Modal {
         this.applyFilterAndRender();
     }
 
-    /**
-     * Compose the visible row set: Local rows always show; Frontier rows show
-     * only when at least one provider key is configured (gate matches the
-     * catalog modal). Then the search filter trims by display name.
-     */
     private applyFilterAndRender(): void {
         const local = localRowsOnly(this.allRows);
         const frontier = hasReadyFrontierRow(this.allRows) ? frontierRowsOnly(this.allRows) : [];
@@ -166,7 +135,7 @@ export class ModelPickerModal extends Modal {
     }
 
     private renderList(): void {
-        /* v8 ignore next -- listEl is set in onOpen before applyFilterAndRender runs */
+        /* v8 ignore next */
         if (!this.listEl) return;
         this.listEl.empty();
         if (this.filteredRows.length === 0) {
@@ -194,9 +163,8 @@ export class ModelPickerModal extends Modal {
         const name = rowEl.createSpan({ cls: "lilbee-model-picker-row-name", text: row.display_name });
         if (row.source === CATALOG_SOURCE.FRONTIER) {
             const frontier = row as CatalogEntry & { provider?: string; key_status?: KeyStatus };
-            /* v8 ignore next -- frontier rows are server-side guaranteed to carry these fields; the ?? is paranoia */
+            /* v8 ignore next 2 */
             const provider = frontier.provider ?? "";
-            /* v8 ignore next */
             const keyStatus = frontier.key_status ?? KEY_STATUS.MISSING_KEY;
             renderProviderPill(name, provider);
             renderKeyStatusPill(name, keyStatus);
@@ -209,10 +177,10 @@ export class ModelPickerModal extends Modal {
     private async activateRow(row: CatalogEntry): Promise<void> {
         if (row.source === CATALOG_SOURCE.FRONTIER) {
             const frontier = row as CatalogEntry & { provider?: string; key_status?: KeyStatus };
-            /* v8 ignore next -- server-guaranteed; defensive fallback only */
+            /* v8 ignore next */
             const keyStatus = frontier.key_status ?? KEY_STATUS.MISSING_KEY;
             if (keyStatus === KEY_STATUS.MISSING_KEY) {
-                /* v8 ignore next -- server-guaranteed; defensive fallback only */
+                /* v8 ignore next */
                 const provider = frontier.provider ?? "";
                 this.close();
                 deepLinkToApiKeySettings(this.app, provider);
@@ -235,10 +203,6 @@ export class ModelPickerModal extends Modal {
     }
 }
 
-/**
- * Filter `rows` by case-insensitive substring match on display_name. Empty
- * filter returns everything. Exported for direct unit testing.
- */
 export function filterRowsByText(rows: CatalogEntry[], text: string): CatalogEntry[] {
     const trimmed = text.trim().toLowerCase();
     if (trimmed === "") return rows;
