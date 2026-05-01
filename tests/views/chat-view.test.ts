@@ -3644,3 +3644,140 @@ describe("ChatView — role separation on main-screen selectors", () => {
         expect(embedOptionValues).toEqual(["nomic-embed-text"]);
     });
 });
+
+describe("ChatView — textarea disabled while a chat stream is in flight", () => {
+    it("disables the textarea synchronously when a message is sent", async () => {
+        const plugin = makePlugin();
+        let resolveStream!: () => void;
+        plugin.api.chatStream = vi.fn().mockImplementation(async function* () {
+            await new Promise<void>((r) => {
+                resolveStream = r;
+            });
+            yield { event: SSE_EVENT.DONE, data: null };
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")! as MockElement;
+        (textarea as any).value = "in-flight";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        expect((textarea as any).disabled).toBe(true);
+
+        resolveStream();
+        await tick();
+    });
+
+    it("re-enables the textarea after the stream completes normally", async () => {
+        const plugin = makePlugin();
+        plugin.api.chatStream = vi.fn().mockReturnValue(
+            (async function* () {
+                yield { event: SSE_EVENT.DONE, data: null };
+            })(),
+        );
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")! as MockElement;
+        (textarea as any).value = "complete";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        expect((textarea as any).disabled).toBe(false);
+    });
+
+    it("re-enables the textarea after the stream is aborted", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const abortError = new Error("Aborted");
+        abortError.name = "AbortError";
+        plugin.api.chatStream = vi.fn().mockReturnValue(
+            (async function* () {
+                throw abortError;
+            })(),
+        );
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")! as MockElement;
+        (textarea as any).value = "abort";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        expect((textarea as any).disabled).toBe(false);
+    });
+
+    it("re-enables the textarea after a generic stream error", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.chatStream = vi.fn().mockReturnValue(
+            (async function* () {
+                throw new Error("server returned 500");
+            })(),
+        );
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")! as MockElement;
+        (textarea as any).value = "boom";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        expect((textarea as any).disabled).toBe(false);
+    });
+});
+
+describe("ChatView.sendMessage — RateLimitedError", () => {
+    it("renders an inline error bubble with rate-limit copy and shows a busy Notice when retry-after is present", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { RateLimitedError } = await import("../../src/api");
+        plugin.api.chatStream = vi.fn().mockReturnValue(
+            (async function* () {
+                throw new RateLimitedError(7);
+            })(),
+        );
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "rate limited q";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        const errBubble = messagesEl.children[1];
+        expect(errBubble.classList.contains("lilbee-chat-message-error")).toBe(true);
+        expect(errBubble.attributes["role"]).toBe("alert");
+        expect(errBubble.find("lilbee-chat-error-text")!.textContent).toContain("Try again in 7 seconds");
+        expect(Notice.instances.some((n) => n.message.includes("Try again in 7 seconds"))).toBe(true);
+        expect(Notice.instances.some((n) => n.message.startsWith("Chat failed:"))).toBe(false);
+        expect((view as any).history.length).toBe(0);
+    });
+
+    it("falls back to a generic 'try again in a moment' notice when retry-after is null", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { RateLimitedError } = await import("../../src/api");
+        plugin.api.chatStream = vi.fn().mockReturnValue(
+            (async function* () {
+                throw new RateLimitedError(null);
+            })(),
+        );
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        container.find("lilbee-chat-textarea")!.value = "no retry-after";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        expect(Notice.instances.some((n) => n.message.includes("Try again in a moment"))).toBe(true);
+    });
+});

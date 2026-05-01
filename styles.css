@@ -347,6 +347,11 @@
     border-color: var(--interactive-accent);
 }
 
+.lilbee-chat-input textarea:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .lilbee-chat-add-file {
     flex-shrink: 0;
     background: none;

@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { LilbeeClient, ServerStartingError, SessionTokenError } from "../src/api";
+import { LilbeeClient, RateLimitedError, ServerStartingError, SessionTokenError } from "../src/api";
 import type { Message } from "../src/types";
 
 const BASE_URL = "http://localhost:7433";
@@ -2018,5 +2018,64 @@ describe("getCapability()", () => {
     it("fails open (returns true) when the probe throws", async () => {
         fetchMock.mockRejectedValue(new Error("network down"));
         await expect(client.getCapability("api_keys")).resolves.toBe(true);
+    });
+});
+
+describe("RateLimitedError", () => {
+    function rateLimitedResponse(retryAfter: string | null = null): Response {
+        return {
+            ok: false,
+            status: 429,
+            headers: { get: (name: string) => (name === "Retry-After" ? retryAfter : null) },
+            text: () => Promise.resolve("Too Many Requests"),
+            body: null,
+        } as unknown as Response;
+    }
+
+    it("carries the expected name and message", () => {
+        const e = new RateLimitedError(5);
+        expect(e.name).toBe("RateLimitedError");
+        expect(e.message).toContain("busy");
+        expect(e.retryAfterSeconds).toBe(5);
+    });
+
+    it("defaults retryAfterSeconds to null when omitted", () => {
+        const e = new RateLimitedError();
+        expect(e.retryAfterSeconds).toBeNull();
+    });
+
+    it("is thrown when the server responds 429 with a numeric Retry-After header", async () => {
+        fetchMock.mockResolvedValue(rateLimitedResponse("7"));
+        await expect(client.chat("hi", [] as Message[])).rejects.toMatchObject({
+            name: "RateLimitedError",
+            retryAfterSeconds: 7,
+        });
+    });
+
+    it("leaves retryAfterSeconds null when the Retry-After header is absent", async () => {
+        fetchMock.mockResolvedValue(rateLimitedResponse(null));
+        await expect(client.chat("hi", [] as Message[])).rejects.toMatchObject({
+            name: "RateLimitedError",
+            retryAfterSeconds: null,
+        });
+    });
+
+    it("leaves retryAfterSeconds null when the Retry-After header is non-numeric", async () => {
+        fetchMock.mockResolvedValue(rateLimitedResponse("not-a-number"));
+        await expect(client.chat("hi", [] as Message[])).rejects.toMatchObject({
+            name: "RateLimitedError",
+            retryAfterSeconds: null,
+        });
+    });
+
+    it("does not retry on 429 — single fetch attempt before propagating", async () => {
+        fetchMock.mockResolvedValue(rateLimitedResponse("3"));
+        await expect(client.chat("hi", [] as Message[])).rejects.toBeInstanceOf(RateLimitedError);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("propagates as the typed error from streaming endpoints", async () => {
+        fetchMock.mockResolvedValue(rateLimitedResponse("2"));
+        await expect(collect(client.chatStream("hi", [] as Message[]))).rejects.toBeInstanceOf(RateLimitedError);
     });
 });

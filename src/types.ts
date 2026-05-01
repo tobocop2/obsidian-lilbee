@@ -529,6 +529,7 @@ export const ERROR_NAME = {
     ABORT_ERROR: "AbortError",
     SESSION_TOKEN: "SessionTokenError",
     SERVER_STARTING: "ServerStartingError",
+    RATE_LIMITED: "RateLimitedError",
 } as const;
 
 export const WIZARD_STEP = {

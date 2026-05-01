@@ -61,6 +61,21 @@ export class ServerStartingError extends Error {
     }
 }
 
+/**
+ * Thrown when the server returns HTTP 429 (e.g. a streaming endpoint already
+ * has a stream in flight from another client). Carries the optional Retry-After
+ * value in seconds so callers can include it in user copy. Never auto-retried —
+ * the bead contract is "surface gracefully, do not silently retry-loop".
+ */
+export class RateLimitedError extends Error {
+    readonly retryAfterSeconds: number | null;
+    constructor(retryAfterSeconds: number | null = null) {
+        super("lilbee is busy with another request");
+        this.name = ERROR_NAME.RATE_LIMITED;
+        this.retryAfterSeconds = retryAfterSeconds;
+    }
+}
+
 /** Coarse outcome of a single ``fetchWithRetry`` call, reported to subscribers. */
 export type RequestOutcome = "ok" | "auth_error" | "server_error" | "unreachable" | "starting";
 
@@ -130,6 +145,11 @@ export class LilbeeClient {
     }
 
     private async assertOk(res: Response): Promise<Response> {
+        if (res.status === 429) {
+            const header = res.headers.get("Retry-After");
+            const seconds = header ? parseInt(header, 10) : NaN;
+            throw new RateLimitedError(Number.isFinite(seconds) ? seconds : null);
+        }
         if (!res.ok) {
             const text = await res.text().catch(() => "");
             throw new Error(`Server responded ${res.status}: ${text}`);
@@ -207,6 +227,10 @@ export class LilbeeClient {
             } catch (err) {
                 lastError = err;
                 if (err instanceof SessionTokenError) {
+                    throw err;
+                }
+                if (err instanceof RateLimitedError) {
+                    this.recordOutcome("server_error");
                     throw err;
                 }
                 if (err instanceof Error && err.message.startsWith("Server responded")) {

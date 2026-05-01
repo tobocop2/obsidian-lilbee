@@ -11,6 +11,7 @@ import {
 import type LilbeePlugin from "../main";
 import { CATALOG_SOURCE, CHAT_MODE, CONFIG_KEY, MODEL_TASK, SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
 import type { CatalogEntry, ChatMode, InstalledModel, Message, SearchChunkType, Source, SSEEvent } from "../types";
+import { RateLimitedError } from "../api";
 
 import { renderSourceChip } from "./results";
 import { SEPARATOR_KEY, SEPARATOR_LABEL } from "../settings";
@@ -67,6 +68,7 @@ export class ChatView extends ItemView {
     private history: Message[] = [];
     private messagesEl: HTMLElement | null = null;
     private sendBtn: HTMLButtonElement | null = null;
+    private textareaEl: HTMLTextAreaElement | null = null;
     private sending = false;
     private streamController: AbortController | null = null;
     private pullController: AbortController | null = null;
@@ -213,7 +215,8 @@ export class ChatView extends ItemView {
         const textarea = inputArea.createEl("textarea", {
             placeholder: MESSAGES.PLACEHOLDER_ASK_SOMETHING,
             cls: "lilbee-chat-textarea",
-        });
+        }) as HTMLTextAreaElement;
+        this.textareaEl = textarea;
         this.sendBtn = inputArea.createEl("button", {
             text: MESSAGES.BUTTON_SEND,
             cls: "lilbee-chat-send",
@@ -599,6 +602,7 @@ export class ChatView extends ItemView {
         this.sending = true;
         this.streamController = new AbortController();
         if (this.sendBtn) this.sendBtn.textContent = MESSAGES.BUTTON_STOP;
+        if (this.textareaEl) this.textareaEl.disabled = true;
 
         const userBubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message user" });
         userBubble.createEl("p", { text });
@@ -658,23 +662,13 @@ export class ChatView extends ItemView {
                 } else {
                     textEl.textContent = MESSAGES.LABEL_STOPPED;
                 }
+            } else if (err instanceof RateLimitedError) {
+                this.renderInlineError(assistantBubble, MESSAGES.ERROR_RATE_LIMITED(err.retryAfterSeconds));
             } else {
-                // Replace the in-flight assistant bubble with an inline error
-                // bubble so a failed request stays visible alongside the user's
-                // question, instead of vanishing without a trace. Surface a
-                // Notice with the underlying reason so 5xx / model-not-loaded
-                // failures get diagnosed instead of silently swallowed.
-                const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
-                this.history.pop();
-                assistantBubble.empty();
-                assistantBubble.removeClass("assistant");
-                assistantBubble.addClass("lilbee-chat-message-error");
-                assistantBubble.setAttribute("role", "alert");
-                assistantBubble.createDiv({
-                    cls: "lilbee-chat-error-text",
-                    text: MESSAGES.ERROR_CHAT_FAILED(reason),
-                });
-                new Notice(MESSAGES.ERROR_CHAT_FAILED(reason));
+                this.renderInlineError(
+                    assistantBubble,
+                    MESSAGES.ERROR_CHAT_FAILED(errorMessage(err, MESSAGES.ERROR_UNKNOWN)),
+                );
             }
         } finally {
             this.sending = false;
@@ -682,6 +676,7 @@ export class ChatView extends ItemView {
             if (this.sendBtn) {
                 this.sendBtn.textContent = MESSAGES.BUTTON_SEND;
             }
+            if (this.textareaEl) this.textareaEl.disabled = false;
         }
     }
 
@@ -746,6 +741,16 @@ export class ChatView extends ItemView {
         el.empty();
         await MarkdownRenderer.render(this.app, markdown, el, "", this.plugin);
         el.addClass("markdown-rendered");
+    }
+
+    private renderInlineError(assistantBubble: HTMLElement, text: string): void {
+        this.history.pop();
+        assistantBubble.empty();
+        assistantBubble.removeClass("assistant");
+        assistantBubble.addClass("lilbee-chat-message-error");
+        assistantBubble.setAttribute("role", "alert");
+        assistantBubble.createDiv({ cls: "lilbee-chat-error-text", text });
+        new Notice(text);
     }
 
     private openFilePicker(event: MouseEvent): void {

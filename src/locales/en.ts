@@ -411,6 +411,10 @@ export const MESSAGES = {
     ERROR_SERVER_UNREACHABLE: "Could not connect to lilbee server. Is it running?",
     ERROR_STREAM: (msg: string) => `lilbee: ${msg}`,
     ERROR_CHAT_FAILED: (reason: string) => `Chat failed: ${reason}`,
+    ERROR_RATE_LIMITED: (retryAfterSeconds: number | null) =>
+        retryAfterSeconds !== null
+            ? `lilbee is busy with another request. Try again in ${retryAfterSeconds} seconds.`
+            : `lilbee is busy with another request. Try again in a moment.`,
     ERROR_ADD_FAILED_DETAIL: (msg: string) => `lilbee: add failed — ${msg}`,
     NOTICE_ALREADY_INGESTING: (source: string) =>
         `lilbee: server is already ingesting ${source} — waiting for it to finish`,
