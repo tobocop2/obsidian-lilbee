@@ -2,7 +2,7 @@ import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import { SessionTokenError } from "../api";
 import type { CatalogEntry, SSEEvent, SyncDone } from "../types";
-import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK, MODEL_SOURCE } from "../types";
+import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK } from "../types";
 import { CatalogModal } from "./catalog-modal";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
@@ -574,11 +574,7 @@ export class SetupWizard extends Modal {
         this.updateProgress(step, progressFill, undefined);
 
         try {
-            for await (const event of this.plugin.api.pullModel(
-                model.hf_repo,
-                MODEL_SOURCE.NATIVE,
-                this.pullController.signal,
-            )) {
+            for await (const event of this.plugin.api.pullModel(model.hf_repo, "native", this.pullController.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = percentFromSse(d);
@@ -743,11 +739,7 @@ export class SetupWizard extends Modal {
         this.updateProgress(step, progressFill, undefined);
 
         try {
-            for await (const event of this.plugin.api.pullModel(
-                model.hf_repo,
-                MODEL_SOURCE.NATIVE,
-                this.pullController.signal,
-            )) {
+            for await (const event of this.plugin.api.pullModel(model.hf_repo, "native", this.pullController.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = percentFromSse(d);

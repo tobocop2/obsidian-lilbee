@@ -214,7 +214,10 @@ function mockChatPicker(
                         min_ram_gb: m.min_ram_gb,
                         description: m.description,
                         installed: m.installed,
-                        source: m.source ?? "native",
+                        // Catalog rows pass through api.catalog() which normalizes
+                        // legacy "native"/"litellm" to "local"/"frontier"; the mock
+                        // shortcuts that and emits the post-normalization shape.
+                        source: m.source ?? "local",
                         task: "chat",
                         featured: true,
                         downloads: 0,

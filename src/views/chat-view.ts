@@ -9,7 +9,7 @@ import {
     WorkspaceLeaf,
 } from "obsidian";
 import type LilbeePlugin from "../main";
-import { CHAT_MODE, CONFIG_KEY, MODEL_SOURCE, MODEL_TASK, SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
+import { CATALOG_SOURCE, CHAT_MODE, CONFIG_KEY, MODEL_TASK, SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
 import type { CatalogEntry, ChatMode, InstalledModel, Message, SearchChunkType, Source, SSEEvent } from "../types";
 
 import { renderSourceChip } from "./results";
@@ -407,7 +407,8 @@ export class ChatView extends ItemView {
         // Featured rows that have an installed quant.
         const featuredInstalled = this.chatCatalogEntries.filter((e) => installedRepos.has(e.hf_repo));
         for (const entry of featuredInstalled) {
-            const sourceTag = entry.source && entry.source !== MODEL_SOURCE.NATIVE ? ` [${entry.source}]` : "";
+            // Post-normalization the discriminator is "local"/"frontier"; tag anything non-local.
+            const sourceTag = entry.source && entry.source !== CATALOG_SOURCE.LOCAL ? ` [${entry.source}]` : "";
             const option = selectEl.createEl("option", { text: `${entry.display_name}${sourceTag}` });
             (option as HTMLOptionElement).value = entry.hf_repo;
             if (entry.hf_repo === activeRepo) {
@@ -427,7 +428,7 @@ export class ChatView extends ItemView {
         }
         for (const m of otherInstalled) {
             const source = sourceMap.get(m.name);
-            const suffix = source && source !== MODEL_SOURCE.NATIVE ? ` [${source}]` : "";
+            const suffix = source && source !== "native" ? ` [${source}]` : "";
             const option = selectEl.createEl("option", { text: `${displayLabelForRef(m.name)}${suffix}` });
             (option as HTMLOptionElement).value = m.name;
             if (m.name === this.chatActive) {
@@ -517,11 +518,7 @@ export class ChatView extends ItemView {
         this.plugin.taskQueue.registerAbort(taskId, this.pullController);
         let pullFailed = false;
         try {
-            for await (const event of this.plugin.api.pullModel(
-                entry.hf_repo,
-                MODEL_SOURCE.NATIVE,
-                this.pullController.signal,
-            )) {
+            for await (const event of this.plugin.api.pullModel(entry.hf_repo, "native", this.pullController.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = percentFromSse(d);

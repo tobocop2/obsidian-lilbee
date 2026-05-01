@@ -550,11 +550,6 @@ export const MODEL_TASK = {
     RERANK: "rerank",
 } as const satisfies Record<string, ModelTask>;
 
-export const MODEL_SOURCE = {
-    NATIVE: "native",
-    LITELLM: "litellm",
-} as const;
-
 export const ERROR_NAME = {
     ABORT_ERROR: "AbortError",
     SESSION_TOKEN: "SessionTokenError",

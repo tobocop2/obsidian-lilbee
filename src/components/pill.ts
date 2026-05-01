@@ -1,4 +1,4 @@
-import { MODEL_TASK, MODEL_SOURCE } from "../types";
+import { CATALOG_SOURCE, MODEL_TASK } from "../types";
 import { MESSAGES } from "../locales/en";
 
 export const PILL_CLS = {
@@ -36,6 +36,6 @@ export function renderPickPill(container: HTMLElement): HTMLElement {
 }
 
 export function renderProviderPill(container: HTMLElement, source: string): HTMLElement | null {
-    if (source === MODEL_SOURCE.NATIVE) return null;
+    if (source === CATALOG_SOURCE.LOCAL) return null;
     return renderPill(container, source, PILL_CLS.PROVIDER);
 }

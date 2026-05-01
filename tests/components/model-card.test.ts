@@ -112,17 +112,17 @@ describe("renderModelCard", () => {
         expect(card.find(PILL_CLS.PICK)).toBeNull();
     });
 
-    it("renders a provider pill for non-native sources", () => {
+    it("renders a provider pill for non-local sources (post-tui-quality-sweep, source is the discriminator)", () => {
         const c = container();
-        const card = renderModelCard(c, makeEntry({ source: "litellm" }), {}) as unknown as MockElement;
+        const card = renderModelCard(c, makeEntry({ source: "frontier" }), {}) as unknown as MockElement;
         const pill = card.find(PILL_CLS.PROVIDER);
         expect(pill).not.toBeNull();
-        expect(pill?.textContent).toBe("litellm");
+        expect(pill?.textContent).toBe("frontier");
     });
 
-    it("omits the provider pill for native sources", () => {
+    it("omits the provider pill for local sources", () => {
         const c = container();
-        const card = renderModelCard(c, makeEntry({ source: "native" }), {}) as unknown as MockElement;
+        const card = renderModelCard(c, makeEntry({ source: "local" }), {}) as unknown as MockElement;
         expect(card.find(PILL_CLS.PROVIDER)).toBeNull();
     });
 

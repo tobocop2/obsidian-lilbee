@@ -3,10 +3,10 @@ import type LilbeePlugin from "./main";
 import type { ReleaseInfo } from "./binary-manager";
 import {
     CAPABILITY,
+    CATALOG_SOURCE,
     CHAT_MODE,
     CONFIG_KEY,
     DEFAULT_SETTINGS,
-    MODEL_SOURCE,
     MODEL_TASK,
     SERVER_MODE,
     SERVER_STATE,
@@ -832,9 +832,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const installedRepos = new Set(installed.map((m) => extractHfRepo(m.name)));
         const isInstalled = (e: CatalogEntry): boolean => installedRepos.has(e.hf_repo);
         const opts: Array<[string, string]> = [[RERANKER_DISABLED_KEY, MESSAGES.LABEL_RERANKER_DISABLED]];
-        const localInstalled = catalogEntries.filter((e) => e.source !== MODEL_SOURCE.LITELLM && isInstalled(e));
-        const localNotInstalled = catalogEntries.filter((e) => e.source !== MODEL_SOURCE.LITELLM && !isInstalled(e));
-        const hosted = catalogEntries.filter((e) => e.source === MODEL_SOURCE.LITELLM);
+        const localInstalled = catalogEntries.filter((e) => e.source !== CATALOG_SOURCE.FRONTIER && isInstalled(e));
+        const localNotInstalled = catalogEntries.filter((e) => e.source !== CATALOG_SOURCE.FRONTIER && !isInstalled(e));
+        const hosted = catalogEntries.filter((e) => e.source === CATALOG_SOURCE.FRONTIER);
         for (const e of localInstalled) opts.push([e.hf_repo, e.display_name]);
         for (const e of localNotInstalled) opts.push([e.hf_repo, `${e.display_name}${MESSAGES.LABEL_NOT_INSTALLED}`]);
         if (hosted.length > 0) {
@@ -854,7 +854,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         if (
             value === RERANKER_DISABLED_KEY ||
             installedRepos.has(value) ||
-            catalogEntry?.source === MODEL_SOURCE.LITELLM
+            catalogEntry?.source === CATALOG_SOURCE.FRONTIER
         ) {
             await this.applyRerankerSelection(value);
             return;
@@ -889,7 +889,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private async streamRerankerPull(taskId: string, entry: CatalogEntry, signal: AbortSignal): Promise<boolean> {
         try {
-            for await (const event of this.plugin.api.pullModel(entry.hf_repo, MODEL_SOURCE.NATIVE, signal)) {
+            for await (const event of this.plugin.api.pullModel(entry.hf_repo, "native", signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     this.handleRerankerPullProgress(taskId, entry, event.data);
                 } else if (event.event === SSE_EVENT.ERROR) {
@@ -977,12 +977,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const installedRepos = new Set(installed.map((m) => extractHfRepo(m.name)));
         const opts: Array<[string, string]> = [[VISION_DISABLED_KEY, MESSAGES.LABEL_VISION_DISABLED]];
         const localInstalled = catalogEntries.filter(
-            (e) => e.source !== MODEL_SOURCE.LITELLM && installedRepos.has(e.hf_repo),
+            (e) => e.source !== CATALOG_SOURCE.FRONTIER && installedRepos.has(e.hf_repo),
         );
         const localNotInstalled = catalogEntries.filter(
-            (e) => e.source !== MODEL_SOURCE.LITELLM && !installedRepos.has(e.hf_repo),
+            (e) => e.source !== CATALOG_SOURCE.FRONTIER && !installedRepos.has(e.hf_repo),
         );
-        const hosted = catalogEntries.filter((e) => e.source === MODEL_SOURCE.LITELLM);
+        const hosted = catalogEntries.filter((e) => e.source === CATALOG_SOURCE.FRONTIER);
         for (const e of localInstalled) opts.push([e.hf_repo, e.display_name]);
         for (const e of localNotInstalled) opts.push([e.hf_repo, `${e.display_name}${MESSAGES.LABEL_NOT_INSTALLED}`]);
         if (hosted.length > 0) {
@@ -1001,7 +1001,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         if (
             value === VISION_DISABLED_KEY ||
             installedRepos.has(value) ||
-            catalogEntry?.source === MODEL_SOURCE.LITELLM
+            catalogEntry?.source === CATALOG_SOURCE.FRONTIER
         ) {
             await this.applyVisionSelection(value);
             return;
@@ -1036,7 +1036,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     private async streamVisionPull(taskId: string, entry: CatalogEntry, signal: AbortSignal): Promise<boolean> {
         try {
-            for await (const event of this.plugin.api.pullModel(entry.hf_repo, MODEL_SOURCE.NATIVE, signal)) {
+            for await (const event of this.plugin.api.pullModel(entry.hf_repo, "native", signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     this.handleVisionPullProgress(taskId, entry, event.data);
                 } else if (event.event === SSE_EVENT.ERROR) {
@@ -1792,7 +1792,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const installedRepos = new Set(installed.map((m) => extractHfRepo(m.name)));
         const opts: Array<[string, string]> = [];
         for (const entry of catalogEntries) {
-            const sourceTag = entry.source && entry.source !== MODEL_SOURCE.NATIVE ? ` [${entry.source}]` : "";
+            const sourceTag = entry.source && entry.source !== CATALOG_SOURCE.LOCAL ? ` [${entry.source}]` : "";
             const installedFlag = installedRepos.has(entry.hf_repo);
             const suffix = installedFlag ? "" : MESSAGES.LABEL_NOT_INSTALLED;
             opts.push([entry.hf_repo, `${entry.display_name}${sourceTag}${suffix}`]);
@@ -1864,11 +1864,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const controller = new AbortController();
         this.plugin.taskQueue.registerAbort(taskId, controller);
         try {
-            for await (const event of this.plugin.api.pullModel(
-                entry.hf_repo,
-                MODEL_SOURCE.NATIVE,
-                controller.signal,
-            )) {
+            for await (const event of this.plugin.api.pullModel(entry.hf_repo, "native", controller.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = percentFromSse(d);

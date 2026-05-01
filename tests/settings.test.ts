@@ -1074,13 +1074,22 @@ describe("LilbeeSettingTab", () => {
             (tab as any).renderChatPicker(container, LLAMA_REF, entries, installed);
         });
 
-        it("appends provider source tag for non-native featured entries", () => {
+        it("appends provider source tag for non-local featured entries", () => {
             const plugin = makePlugin();
             const tab = makeTab(plugin);
-            const entries = [chatEntry({ installed: true, source: "ollama" })];
-            const installed: InstalledModel[] = [{ name: LLAMA_REF, source: "ollama" }];
+            const entries = [chatEntry({ installed: true, source: "frontier" })];
+            const installed: InstalledModel[] = [{ name: LLAMA_REF, source: "litellm" }];
             const opts: Array<[string, string]> = (tab as any).buildChatOptions(entries, installed);
-            expect(opts[0][1]).toContain("[ollama]");
+            expect(opts[0][1]).toContain("[frontier]");
+        });
+
+        it("omits the source tag when entry.source is empty", () => {
+            const plugin = makePlugin();
+            const tab = makeTab(plugin);
+            const entries = [chatEntry({ installed: true, source: "" })];
+            const installed: InstalledModel[] = [{ name: LLAMA_REF, source: "native" }];
+            const opts: Array<[string, string]> = (tab as any).buildChatOptions(entries, installed);
+            expect(opts[0][1]).not.toContain("[");
         });
 
         it("falls back to empty active when catalog fetch errors", async () => {
@@ -4406,7 +4415,7 @@ describe("managed mode settings", () => {
                             description: "",
                             quality_tier: "",
                             installed: false,
-                            source: "litellm",
+                            source: "frontier",
                             task: "rerank",
                             featured: false,
                             downloads: 0,
@@ -4454,7 +4463,7 @@ describe("managed mode settings", () => {
                             description: "",
                             quality_tier: "",
                             installed: false,
-                            source: "litellm",
+                            source: "frontier",
                             task: "rerank",
                             featured: false,
                             downloads: 0,
@@ -4905,7 +4914,7 @@ describe("managed mode settings", () => {
                             description: "",
                             quality_tier: "",
                             installed: false,
-                            source: "litellm",
+                            source: "frontier",
                             task: "rerank",
                             featured: false,
                             downloads: 0,
@@ -5262,7 +5271,7 @@ describe("managed mode settings", () => {
                             description: "",
                             quality_tier: "",
                             installed: false,
-                            source: "litellm",
+                            source: "frontier",
                             task: "vision",
                         },
                     ],
@@ -5304,7 +5313,7 @@ describe("managed mode settings", () => {
                             description: "",
                             quality_tier: "",
                             installed: false,
-                            source: "litellm",
+                            source: "frontier",
                             task: "vision",
                             featured: false,
                             downloads: 0,
@@ -5704,7 +5713,7 @@ describe("managed mode settings", () => {
                             description: "",
                             quality_tier: "",
                             installed: false,
-                            source: "litellm",
+                            source: "frontier",
                             task: "vision",
                         },
                     ],
