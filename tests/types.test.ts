@@ -64,9 +64,10 @@ describe("DEFAULT_SETTINGS", () => {
             "serverUrl",
             "setupCompleted",
             "storeContentInVault",
+            "generalSystemPrompt",
+            "ragSystemPrompt",
             "syncDebounceMs",
             "syncMode",
-            "systemPrompt",
             "topK",
             "wikiEnabled",
             "wikiFaithfulnessThreshold",
@@ -282,7 +283,8 @@ describe("LilbeeSettings interface", () => {
             serverMode: "managed",
             serverPort: null,
             lilbeeVersion: "",
-            systemPrompt: "",
+            ragSystemPrompt: "",
+            generalSystemPrompt: "",
             setupCompleted: false,
         };
         expect(s.syncMode).toBe("manual");
@@ -305,7 +307,8 @@ describe("LilbeeSettings interface", () => {
             serverMode: "managed",
             serverPort: null,
             lilbeeVersion: "",
-            systemPrompt: "",
+            ragSystemPrompt: "",
+            generalSystemPrompt: "",
             setupCompleted: true,
         };
         expect(s.syncMode).toBe("auto");

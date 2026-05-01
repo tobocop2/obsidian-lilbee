@@ -436,11 +436,22 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         textArea.value = v.join("\n");
                     }
                 }
-                // Populate system prompt placeholder from server config.
-                if (cfg.system_prompt !== undefined) {
-                    const sysPromptInput = this.serverConfigInputs.get("system_prompt");
-                    if (sysPromptInput) {
-                        sysPromptInput.placeholder = String(cfg.system_prompt);
+                // Populate system-prompt placeholders from server config.
+                // The server splits the legacy `system_prompt` field into
+                // `rag_system_prompt` (cited answers) and `general_system_prompt`
+                // (no-retrieval answers). Each placeholder is sourced from its
+                // own server-side default so users see the same text the chat
+                // model would receive on a blank-input run.
+                if (typeof cfg.rag_system_prompt === "string") {
+                    const ragInput = this.serverConfigInputs.get("rag_system_prompt");
+                    if (ragInput) {
+                        ragInput.placeholder = cfg.rag_system_prompt;
+                    }
+                }
+                if (typeof cfg.general_system_prompt === "string") {
+                    const generalInput = this.serverConfigInputs.get("general_system_prompt");
+                    if (generalInput) {
+                        generalInput.placeholder = cfg.general_system_prompt;
                     }
                 }
             })
@@ -539,19 +550,37 @@ export class LilbeeSettingTab extends PluginSettingTab {
             cls: "setting-item-description",
         });
 
-        const promptSetting = new Setting(details)
-            .setName(MESSAGES.LABEL_SYSTEM_PROMPT)
-            .setDesc(MESSAGES.DESC_SYSTEM_PROMPT)
+        const ragPromptSetting = new Setting(details)
+            .setName(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)
+            .setDesc(MESSAGES.DESC_RAG_SYSTEM_PROMPT)
             .addTextArea((text) => {
                 text.setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT)
-                    .setValue(this.plugin.settings.systemPrompt)
+                    .setValue(this.plugin.settings.ragSystemPrompt)
                     .onChange(async (value) => {
-                        this.plugin.settings.systemPrompt = value;
+                        this.plugin.settings.ragSystemPrompt = value;
                         await this.plugin.saveSettings();
                     });
-                this.serverConfigInputs.set("system_prompt", text.inputEl as unknown as HTMLInputElement);
+                this.serverConfigInputs.set("rag_system_prompt", text.inputEl as unknown as HTMLInputElement);
             });
-        this.appendLocalResetAffordance(promptSetting, "systemPrompt", MESSAGES.LABEL_SYSTEM_PROMPT);
+        this.appendLocalResetAffordance(ragPromptSetting, "ragSystemPrompt", MESSAGES.LABEL_RAG_SYSTEM_PROMPT);
+
+        const generalPromptSetting = new Setting(details)
+            .setName(MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT)
+            .setDesc(MESSAGES.DESC_GENERAL_SYSTEM_PROMPT)
+            .addTextArea((text) => {
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT)
+                    .setValue(this.plugin.settings.generalSystemPrompt)
+                    .onChange(async (value) => {
+                        this.plugin.settings.generalSystemPrompt = value;
+                        await this.plugin.saveSettings();
+                    });
+                this.serverConfigInputs.set("general_system_prompt", text.inputEl as unknown as HTMLInputElement);
+            });
+        this.appendLocalResetAffordance(
+            generalPromptSetting,
+            "generalSystemPrompt",
+            MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT,
+        );
 
         const fields: { key: GenKey; name: string; desc: string; integer: boolean }[] = [
             {

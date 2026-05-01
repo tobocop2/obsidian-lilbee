@@ -304,7 +304,8 @@ export default class LilbeePlugin extends Plugin {
                     binaryPath,
                     dataDir: `${pluginDir}/server-data`,
                     port: this.settings.serverPort,
-                    systemPrompt: this.settings.systemPrompt,
+                    ragSystemPrompt: this.settings.ragSystemPrompt,
+                    generalSystemPrompt: this.settings.generalSystemPrompt,
                     onStateChange: (state) => this.handleServerStateChange(state),
                     onRestartsExhausted: (stderr: string) => {
                         if (this.serverStartFailed) return;
@@ -646,10 +647,37 @@ export default class LilbeePlugin extends Plugin {
     }
 
     async loadSettings(): Promise<void> {
-        const blob = (await this.loadData()) as (LilbeeSettings & { taskHistory?: { history?: unknown[] } }) | null;
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, blob ?? {});
+        const raw = (await this.loadData()) as
+            | (LilbeeSettings & {
+                  taskHistory?: { history?: unknown[] };
+                  systemPrompt?: string;
+              })
+            | null;
+        const migrated = this.migrateLegacySystemPrompt(raw);
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, migrated ?? {});
         this.previousServerMode = this.settings.serverMode;
-        this.taskQueue.loadFromJSON(blob?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
+        this.taskQueue.loadFromJSON(migrated?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
+        if (migrated && migrated !== raw) {
+            await this.persistAll();
+        }
+    }
+
+    /**
+     * One-shot rename of the legacy `systemPrompt` plugin setting to `ragSystemPrompt`,
+     * mirroring the lilbee server's `system_prompt` → `rag_system_prompt` rename.
+     * Returns the same blob untouched when no legacy key is present, otherwise a new
+     * blob with the value moved. Persistence is handled by `loadSettings`.
+     */
+    private migrateLegacySystemPrompt<T extends { systemPrompt?: string; ragSystemPrompt?: string }>(
+        blob: T | null,
+    ): T | null {
+        if (blob === null || blob.systemPrompt === undefined) return blob;
+        const { systemPrompt, ...rest } = blob;
+        const next = { ...rest } as T;
+        if (next.ragSystemPrompt === undefined && systemPrompt !== "") {
+            next.ragSystemPrompt = systemPrompt;
+        }
+        return next;
     }
 
     private async persistAll(): Promise<void> {

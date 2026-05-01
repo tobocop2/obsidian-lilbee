@@ -67,7 +67,8 @@ describe("integration: server start", () => {
             binaryPath: bm.binaryPath,
             dataDir: tempDir,
             port: null,
-            systemPrompt: "",
+            ragSystemPrompt: "",
+            generalSystemPrompt: "",
         });
 
         try {

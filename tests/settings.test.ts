@@ -633,16 +633,28 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
-    describe("system prompt setting", () => {
-        it("saves systemPrompt when changed", async () => {
+    describe("system prompt settings", () => {
+        it("saves ragSystemPrompt when the cited-answer textarea changes", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // System prompt is now a textarea — textAreaOnChanges[0]
+            // The cited-answer textarea is the first textarea in Generation settings.
             await textAreaOnChanges[0]("You are a pirate.");
-            expect(plugin.settings.systemPrompt).toBe("You are a pirate.");
+            expect(plugin.settings.ragSystemPrompt).toBe("You are a pirate.");
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+
+        it("saves generalSystemPrompt when the no-document textarea changes", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // The no-document textarea is the second textarea in Generation settings.
+            await textAreaOnChanges[1]("You are a friendly tutor.");
+            expect(plugin.settings.generalSystemPrompt).toBe("You are a friendly tutor.");
             expect(plugin.saveSettings).toHaveBeenCalled();
         });
     });
@@ -764,7 +776,7 @@ describe("LilbeeSettingTab", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // Indices 1-6 are the 6 generation fields (0=port, systemPrompt is textarea).
+            // Indices 1-6 are the 6 generation fields (0=port, system prompts are textareas).
             for (let i = 1; i <= 6; i++) {
                 expect(placeholders[i]).toBe("Not set");
             }
@@ -2938,7 +2950,8 @@ describe("managed mode settings", () => {
                 repeat_penalty: 1.1,
                 num_ctx: 4096,
                 seed: 42,
-                system_prompt: "You are helpful.",
+                rag_system_prompt: "You are helpful.",
+                general_system_prompt: "You answer plainly.",
             });
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
@@ -2982,8 +2995,10 @@ describe("managed mode settings", () => {
             expect(inputs[1].value).toBe("0.7");
             expect(inputs[2].value).toBe("0.9");
 
-            // System prompt textarea placeholder is still populated from server defaults.
+            // Rag-system-prompt textarea is the first; general-system-prompt is the second.
+            // Both placeholders are populated from server defaults.
             expect(textAreas[0].placeholder).toBe("You are helpful.");
+            expect(textAreas[1].placeholder).toBe("You answer plainly.");
         });
 
         it("populates crawl_exclude_patterns textarea from server config array", async () => {
@@ -3009,7 +3024,7 @@ describe("managed mode settings", () => {
             tab.display();
             (Setting.prototype as any).addTextArea = origAddTextArea;
             await new Promise((r) => setTimeout(r, 0));
-            // Last textarea is crawl_exclude_patterns (systemPrompt is first).
+            // Last textarea is crawl_exclude_patterns; the two system-prompt textareas precede it.
             expect(textAreas[textAreas.length - 1].value).toBe("/page/\\d+/?$\n/tag/");
         });
     });
@@ -3044,8 +3059,8 @@ describe("managed mode settings", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
-            // textAreaOnChanges[0] = systemPrompt, textAreaOnChanges[1] = crawl_exclude_patterns.
-            await textAreaOnChanges[1]("  /page/\\d+/?$  \n\n/tag/\n  \n/author/");
+            // textAreaOnChanges[0]=ragSystemPrompt, [1]=generalSystemPrompt, [2]=crawl_exclude_patterns.
+            await textAreaOnChanges[2]("  /page/\\d+/?$  \n\n/tag/\n  \n/author/");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({
                 crawl_exclude_patterns: ["/page/\\d+/?$", "/tag/", "/author/"],
             });
@@ -3058,7 +3073,7 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             const tab = makeTab(plugin);
             const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
-            await textAreaOnChanges[1]("/page/");
+            await textAreaOnChanges[2]("/page/");
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
         });
     });
@@ -3066,9 +3081,9 @@ describe("managed mode settings", () => {
     describe("per-row reset-to-default affordance", () => {
         // Reset button order (managed + manual-sync defaults):
         // 0=serverMode(local) 1=serverPort(local) 2=topK 3=maxDistance 4=adaptiveThreshold
-        // 5=systemPrompt(local) 6=temperature 7=top_p 8=top_k_sampling 9=repeat_penalty
-        // 10=num_ctx 11=seed 12=syncMode(local) 13=crawl_max_depth ...
-        const TEMPERATURE_RESET = 6;
+        // 5=ragSystemPrompt(local) 6=generalSystemPrompt(local) 7=temperature 8=top_p
+        // 9=top_k_sampling 10=repeat_penalty 11=num_ctx 12=seed 13=syncMode(local) ...
+        const TEMPERATURE_RESET = 7;
 
         it("server-backed reset PATCHes the cached default", async () => {
             Notice.clear();

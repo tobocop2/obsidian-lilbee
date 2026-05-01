@@ -211,7 +211,10 @@ export interface LilbeeSettings {
     serverMode: ServerMode;
     serverPort: number | null;
     lilbeeVersion: string;
-    systemPrompt: string;
+    /** System prompt used when answering with retrieved documents (RAG path). Maps to server `cfg.rag_system_prompt`. */
+    ragSystemPrompt: string;
+    /** System prompt used when answering without documents (general chat / zero-result fallthrough). Maps to server `cfg.general_system_prompt`. */
+    generalSystemPrompt: string;
     setupCompleted: boolean;
     wikiEnabled: boolean;
     wikiPruneRaw: boolean;
@@ -240,7 +243,8 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     serverMode: "managed",
     serverPort: null,
     lilbeeVersion: "",
-    systemPrompt: "",
+    ragSystemPrompt: "",
+    generalSystemPrompt: "",
     setupCompleted: false,
     wikiEnabled: false,
     wikiPruneRaw: false,

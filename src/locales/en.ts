@@ -87,7 +87,8 @@ export const MESSAGES = {
     LABEL_MAX_DISTANCE: "Search strictness",
     LABEL_ADAPTIVE_THRESHOLD: "Adaptive threshold",
     LABEL_GENERATION: "Advanced settings",
-    LABEL_SYSTEM_PROMPT: "System prompt",
+    LABEL_RAG_SYSTEM_PROMPT: "When answering with documents",
+    LABEL_GENERAL_SYSTEM_PROMPT: "When answering without documents",
     LABEL_GEN_TEMPERATURE: "Creativity",
     LABEL_GEN_TOP_P: "Top P",
     LABEL_GEN_TOP_K: "Top K (sampling)",
@@ -240,7 +241,10 @@ export const MESSAGES = {
     DESC_MAX_DISTANCE:
         "How closely results must match your query. Lower = only very close matches, higher = broader results",
     DESC_ADAPTIVE_THRESHOLD: "Automatically broaden the search if too few results are found",
-    DESC_SYSTEM_PROMPT: "Instructions that shape how the AI responds. Leave blank for the default.",
+    DESC_RAG_SYSTEM_PROMPT:
+        "Instructions sent when the answer is grounded in retrieved documents (Search mode with at least one match). Leave blank for the default.",
+    DESC_GENERAL_SYSTEM_PROMPT:
+        "Instructions sent in Chat mode and when Search returns zero results. Leave blank for the default.",
     DESC_GEN_TEMPERATURE: "Higher = more creative and varied responses, lower = more focused and predictable",
     DESC_GEN_TOP_P: "Controls response diversity. Most users should leave this at the default.",
     DESC_GEN_TOP_K: "Limits which words the AI considers. Most users should leave this at the default.",
