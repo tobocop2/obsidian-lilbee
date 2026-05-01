@@ -430,7 +430,7 @@ describe("pullModel()", () => {
     });
 
     describe("catalog()", () => {
-        it("calls GET /api/models/catalog and returns the parsed response", async () => {
+        it("calls GET /api/models/catalog and normalizes legacy source values to local/frontier", async () => {
             const data = {
                 total: 2,
                 limit: 20,
@@ -464,7 +464,23 @@ describe("pullModel()", () => {
 
             expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/catalog`, expect.objectContaining({}));
             expect(result.isOk()).toBe(true);
-            expect(result._unsafeUnwrap()).toEqual(data);
+            const unwrapped = result._unsafeUnwrap();
+            expect(unwrapped.models[0].source).toBe("frontier");
+            expect(unwrapped.models[1].source).toBe("local");
+            expect(unwrapped.total).toBe(2);
+        });
+
+        it("passes through new server values (local, frontier) untouched", async () => {
+            fetchMock.mockResolvedValue(
+                jsonResponse({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [{ name: "x", display_name: "X", source: "frontier" }],
+                }),
+            );
+            const result = await client.catalog();
+            expect(result._unsafeUnwrap().models[0].source).toBe("frontier");
         });
 
         it("returns err(error) when the underlying HTTP call fails", async () => {
@@ -1945,5 +1961,62 @@ describe("setOutcomeCallback", () => {
         } as unknown as Response);
         await client.health();
         expect(outcomes).toEqual([]);
+    });
+});
+
+describe("getCapability()", () => {
+    it("API_KEYS returns true when /api/models/external responds with no error field", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ models: [], error: null }));
+        await expect(client.getCapability("api_keys")).resolves.toBe(true);
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/external`, expect.anything());
+    });
+
+    it("API_KEYS returns false when /api/models/external reports a litellm-not-installed error", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ models: [], error: "litellm not installed" }));
+        await expect(client.getCapability("api_keys")).resolves.toBe(false);
+    });
+
+    it("CRAWLING returns true only when package_installed is exactly true", async () => {
+        fetchMock.mockResolvedValueOnce(jsonResponse({ package_installed: true, chromium_installed: false }));
+        await expect(client.getCapability("crawling")).resolves.toBe(true);
+        client.invalidateCapability("crawling");
+        fetchMock.mockResolvedValueOnce(jsonResponse({ package_installed: false }));
+        await expect(client.getCapability("crawling")).resolves.toBe(false);
+    });
+
+    it("WIKI returns the boolean from /api/config.wiki", async () => {
+        fetchMock.mockResolvedValueOnce(jsonResponse({ wiki: true }));
+        await expect(client.getCapability("wiki")).resolves.toBe(true);
+        client.invalidateCapability("wiki");
+        fetchMock.mockResolvedValueOnce(jsonResponse({ wiki: false }));
+        await expect(client.getCapability("wiki")).resolves.toBe(false);
+    });
+
+    it("caches the resolved capability per session and skips a second probe", async () => {
+        fetchMock.mockResolvedValueOnce(jsonResponse({ models: [], error: null }));
+        await client.getCapability("api_keys");
+        await client.getCapability("api_keys");
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("invalidateCapability(cap) re-runs the probe on the next call", async () => {
+        fetchMock.mockResolvedValueOnce(jsonResponse({ models: [], error: null }));
+        await client.getCapability("api_keys");
+        client.invalidateCapability("api_keys");
+        fetchMock.mockResolvedValueOnce(jsonResponse({ models: [], error: "gone" }));
+        await expect(client.getCapability("api_keys")).resolves.toBe(false);
+    });
+
+    it("invalidateCapability() with no arg clears every cached entry", async () => {
+        fetchMock.mockResolvedValueOnce(jsonResponse({ wiki: true }));
+        await client.getCapability("wiki");
+        client.invalidateCapability();
+        fetchMock.mockResolvedValueOnce(jsonResponse({ wiki: false }));
+        await expect(client.getCapability("wiki")).resolves.toBe(false);
+    });
+
+    it("fails open (returns true) when the probe throws", async () => {
+        fetchMock.mockRejectedValue(new Error("network down"));
+        await expect(client.getCapability("api_keys")).resolves.toBe(true);
     });
 });

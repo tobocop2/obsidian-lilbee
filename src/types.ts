@@ -76,12 +76,58 @@ export interface ModelsResponse {
     reranker?: ModelCatalog;
 }
 
+/**
+ * `chat_mode`, `general_system_prompt`, and `wiki` may be absent on servers
+ * that predate the tui-quality-sweep series — readers must check for
+ * undefined. `rag_system_prompt` is the post-rename name (the legacy
+ * `system_prompt` field is rejected by current servers).
+ */
 export interface ConfigResponse {
     reranker_model: string | null;
     rerank_candidates: number;
     vision_model: string | null;
+    rag_system_prompt?: string;
+    general_system_prompt?: string;
+    chat_mode?: ChatMode;
+    embedding_model?: string;
+    wiki?: boolean;
     [key: string]: unknown;
 }
+
+export const CONFIG_KEY = {
+    RAG_SYSTEM_PROMPT: "rag_system_prompt",
+    GENERAL_SYSTEM_PROMPT: "general_system_prompt",
+    CHAT_MODE: "chat_mode",
+} as const;
+
+export type ChatMode = "search" | "chat";
+
+export const CHAT_MODE = {
+    SEARCH: "search",
+    CHAT: "chat",
+} as const satisfies Record<string, ChatMode>;
+
+export type CatalogSource = "local" | "frontier";
+
+export const CATALOG_SOURCE = {
+    LOCAL: "local",
+    FRONTIER: "frontier",
+} as const satisfies Record<string, CatalogSource>;
+
+export type KeyStatus = "ready" | "missing_key";
+
+export const KEY_STATUS = {
+    READY: "ready",
+    MISSING_KEY: "missing_key",
+} as const satisfies Record<string, KeyStatus>;
+
+export type Capability = "api_keys" | "crawling" | "wiki";
+
+export const CAPABILITY = {
+    API_KEYS: "api_keys",
+    CRAWLING: "crawling",
+    WIKI: "wiki",
+} as const satisfies Record<string, Capability>;
 
 export interface StatusResponse {
     config: Record<string, string>;
@@ -112,6 +158,14 @@ export interface GenerationOptions {
     seed?: number;
 }
 
+/**
+ * Server-sent event envelope. `data` is `unknown` because the shape varies
+ * per `event` (token strings, structured progress payloads, the DONE
+ * sentinel, …). Notable optional field on object-shaped `data`: `banner`,
+ * a string the chat view renders verbatim above the answer bubble when
+ * present (drives mode-aware copy like "Search needs an embedding model").
+ * Absent banner → no banner element rendered.
+ */
 export interface SSEEvent {
     event: string;
     data: unknown;
@@ -270,6 +324,36 @@ export interface CatalogEntry {
     downloads: number;
     param_count: string;
 }
+
+/**
+ * Discriminated catalog row, sealed over `source`. Mirrors
+ * `LocalCatalogRow | FrontierCatalogRow` on the lilbee tui-quality-sweep
+ * server (`bb-zd0w`). Local rows keep the legacy CatalogEntry fields plus
+ * a literal `source: "local"`; frontier rows carry only the cross-cutting
+ * identity fields plus provider/key/context metadata.
+ *
+ * `LilbeeClient.catalog()` normalizes legacy server values
+ * (`"native"` → `"local"`, `"litellm"` → `"frontier"`) so consumers in
+ * `src/views/` see only the new union.
+ */
+export interface LocalCatalogRow extends CatalogEntry {
+    source: "local";
+}
+
+export interface FrontierCatalogRow {
+    hf_repo: string;
+    display_name: string;
+    description: string;
+    task: ModelTask;
+    source: "frontier";
+    provider: string;
+    key_status: KeyStatus;
+    is_curated: boolean;
+    context_window: number;
+    modality: string;
+}
+
+export type CatalogRow = LocalCatalogRow | FrontierCatalogRow;
 
 export interface CatalogResponse {
     total: number;

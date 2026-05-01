@@ -1,8 +1,9 @@
-import { JSON_HEADERS, SEARCH_CHUNK_TYPE, SSE_EVENT, ERROR_NAME } from "./types";
+import { CAPABILITY, CATALOG_SOURCE, JSON_HEADERS, SEARCH_CHUNK_TYPE, SSE_EVENT, ERROR_NAME } from "./types";
 import { ok, err, Result } from "neverthrow";
 
 import type {
     AskResponse,
+    Capability,
     CatalogResponse,
     ConfigResponse,
     ConfigUpdateResponse,
@@ -63,10 +64,25 @@ export class ServerStartingError extends Error {
 /** Coarse outcome of a single ``fetchWithRetry`` call, reported to subscribers. */
 export type RequestOutcome = "ok" | "auth_error" | "server_error" | "unreachable" | "starting";
 
+/**
+ * Normalize a server-supplied catalog row source value to the post-tui-quality-sweep
+ * discriminator. Older servers emit `"native"` / `"litellm"`; newer servers emit
+ * `"local"` / `"frontier"`. Unknown values default to `"local"` because that's the
+ * non-cloud, no-key-required path: misclassifying a frontier row as local keeps
+ * the user's keys safe (no row click triggers a deep-link they didn't expect),
+ * while misclassifying local as frontier would surface fake key-status pills.
+ */
+export function normalizeCatalogSource(raw: string): string {
+    if (raw === "litellm") return CATALOG_SOURCE.FRONTIER;
+    if (raw === "native") return CATALOG_SOURCE.LOCAL;
+    return raw;
+}
+
 export class LilbeeClient {
     private token: string | null = null;
     private tokenProvider: (() => string | null) | null = null;
     private outcomeCb: ((o: RequestOutcome) => void) | null = null;
+    private capabilityCache: Map<Capability, boolean> = new Map();
 
     constructor(
         private baseUrl: string,
@@ -221,6 +237,67 @@ export class LilbeeClient {
         return this.fetchResult(`${this.baseUrl}/api/status`);
     }
 
+    /**
+     * Returns whether a server-side feature is installed/enabled. Probes the
+     * existing endpoint that already exposes the relevant signal — there is no
+     * dedicated capability flag in /api/health yet. Cached per session; call
+     * `invalidateCapability` after any user-driven write that could change the
+     * answer (key save, crawler bootstrap stream completing, wiki toggle).
+     *
+     * Failure mode: any probe error (network, malformed payload, HTTP 5xx)
+     * returns `true`. False-negative hides the section the user needs; false-
+     * positive shows a section that simply won't function — the latter degrades
+     * more gracefully.
+     */
+    async getCapability(cap: Capability): Promise<boolean> {
+        const cached = this.capabilityCache.get(cap);
+        if (cached !== undefined) return cached;
+        let value: boolean;
+        try {
+            value = await this.probeCapability(cap);
+        } catch {
+            value = true;
+        }
+        this.capabilityCache.set(cap, value);
+        return value;
+    }
+
+    invalidateCapability(cap?: Capability): void {
+        if (cap === undefined) {
+            this.capabilityCache.clear();
+            return;
+        }
+        this.capabilityCache.delete(cap);
+    }
+
+    private async probeCapability(cap: Capability): Promise<boolean> {
+        switch (cap) {
+            case CAPABILITY.API_KEYS:
+                return this.probeLitellmInstalled();
+            case CAPABILITY.CRAWLING:
+                return this.probeCrawlerInstalled();
+            case CAPABILITY.WIKI:
+                return this.probeWikiEnabled();
+        }
+    }
+
+    private async probeLitellmInstalled(): Promise<boolean> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/external`);
+        const body = (await res.json()) as { models?: unknown; error?: unknown };
+        return body.error === null || body.error === undefined;
+    }
+
+    private async probeCrawlerInstalled(): Promise<boolean> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/setup/crawler/status`);
+        const body = (await res.json()) as { package_installed?: boolean };
+        return body.package_installed === true;
+    }
+
+    private async probeWikiEnabled(): Promise<boolean> {
+        const cfg = await this.config();
+        return cfg.wiki === true;
+    }
+
     async search(query: string, topK?: number, chunkType?: SearchChunkType): Promise<DocumentResult[]> {
         const params = new URLSearchParams({ q: query });
         if (topK !== undefined) params.set("top_k", String(topK));
@@ -344,7 +421,11 @@ export class LilbeeClient {
         if (params?.limit !== undefined) qs.set("limit", String(params.limit));
         if (params?.offset !== undefined) qs.set("offset", String(params.offset));
         const suffix = qs.toString() ? `?${qs}` : "";
-        return this.fetchResult<CatalogResponse>(`${this.baseUrl}/api/models/catalog${suffix}`);
+        const result = await this.fetchResult<CatalogResponse>(`${this.baseUrl}/api/models/catalog${suffix}`);
+        return result.map((response) => ({
+            ...response,
+            models: response.models.map((row) => ({ ...row, source: normalizeCatalogSource(row.source) })),
+        }));
     }
 
     async installedModels(params?: { task?: ModelTask }): Promise<InstalledResponse> {
