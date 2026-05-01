@@ -2,6 +2,7 @@ import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
 import type { ReleaseInfo } from "./binary-manager";
 import {
+    CAPABILITY,
     CHAT_MODE,
     CONFIG_KEY,
     DEFAULT_SETTINGS,
@@ -71,6 +72,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private chatModeSettingEl: HTMLElement | null = null;
     private chatModeDropdown: { setValue: (v: string) => unknown } | null = null;
     private chatModeSelectEl: HTMLSelectElement | null = null;
+    /** Wrapper containers captured during display() so capability probes can hide whole sections asynchronously. */
+    private apiKeysContainerEl: HTMLElement | null = null;
+    private crawlingContainerEl: HTMLElement | null = null;
+    private wikiContainerEl: HTMLElement | null = null;
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app, plugin);
@@ -98,11 +103,32 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderSearchRetrievalSettings(containerEl);
         this.renderGenerationSettings(containerEl);
         this.renderSyncSettings(containerEl);
-        this.renderCrawlingSettings(containerEl);
-        this.renderWikiSettings(containerEl);
+        this.crawlingContainerEl = containerEl.createDiv();
+        this.renderCrawlingSettings(this.crawlingContainerEl);
+        this.wikiContainerEl = containerEl.createDiv();
+        this.renderWikiSettings(this.wikiContainerEl);
         this.renderAdvancedSettings(containerEl);
         this.loadServerDefaults();
         this.loadConfigDefaults();
+        void this.applyCapabilityGating();
+    }
+
+    /**
+     * Probe each capability and hide the wrapping section container when the
+     * server doesn't expose that feature. Crawling is hidden when the crawler
+     * package isn't installed; Wiki when cfg.wiki is false; API Keys when
+     * litellm itself is uninstalled. Each probe failure-opens (returns true) —
+     * a degraded settings page is better than one missing affordances.
+     */
+    private async applyCapabilityGating(): Promise<void> {
+        const [apiKeys, crawling, wiki] = await Promise.all([
+            this.plugin.api.getCapability(CAPABILITY.API_KEYS),
+            this.plugin.api.getCapability(CAPABILITY.CRAWLING),
+            this.plugin.api.getCapability(CAPABILITY.WIKI),
+        ]);
+        if (!apiKeys && this.apiKeysContainerEl) this.apiKeysContainerEl.style.display = "none";
+        if (!crawling && this.crawlingContainerEl) this.crawlingContainerEl.style.display = "none";
+        if (!wiki && this.wikiContainerEl) this.wikiContainerEl.style.display = "none";
     }
 
     private filterSettings(containerEl: HTMLElement, query: string): void {
@@ -1561,26 +1587,33 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
         this.appendResetAffordance(llmSetting, "llm_provider", MESSAGES.LABEL_LLM_PROVIDER);
 
-        const apiKeyFields: { label: string; desc: string; configKey: string }[] = [
+        const apiKeyFields: { label: string; desc: string; configKey: string; provider: string }[] = [
             {
                 label: MESSAGES.LABEL_OPENAI_API_KEY,
                 desc: MESSAGES.DESC_OPENAI_API_KEY,
                 configKey: "openai_api_key",
+                provider: "openai",
             },
             {
                 label: MESSAGES.LABEL_ANTHROPIC_API_KEY,
                 desc: MESSAGES.DESC_ANTHROPIC_API_KEY,
                 configKey: "anthropic_api_key",
+                provider: "anthropic",
             },
             {
                 label: MESSAGES.LABEL_GEMINI_API_KEY,
                 desc: MESSAGES.DESC_GEMINI_API_KEY,
                 configKey: "gemini_api_key",
+                provider: "gemini",
             },
         ];
 
+        // Wrap API-key fields in a captured container so applyCapabilityGating()
+        // can hide the whole subsection when litellm isn't installed.
+        const apiKeysContainer = details.createDiv({ cls: "lilbee-api-keys-section" });
+        this.apiKeysContainerEl = apiKeysContainer;
         for (const apiField of apiKeyFields) {
-            new Setting(details)
+            const setting = new Setting(apiKeysContainer)
                 .setName(apiField.label)
                 .setDesc(apiField.desc)
                 .addText((text) => {
@@ -1591,12 +1624,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         if (trimmed === "") return;
                         try {
                             await this.plugin.api.updateConfig({ [apiField.configKey]: trimmed });
+                            // A new key may flip a frontier row's key_status from
+                            // missing_key to ready — invalidate the catalog cache
+                            // so the next /api/catalog request picks up the change.
+                            this.plugin.api.invalidateCapability(CAPABILITY.API_KEYS);
                             new Notice(MESSAGES.NOTICE_API_KEY_SAVED);
                         } catch {
                             new Notice(MESSAGES.NOTICE_FAILED_SAVE_KEY);
                         }
                     });
                 });
+            setting.settingEl.setAttribute("data-lilbee-api-key", apiField.provider);
         }
 
         new Setting(details)

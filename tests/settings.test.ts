@@ -70,6 +70,8 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
         setVisionModel: vi.fn().mockResolvedValue(ok(undefined)),
         installedModels: vi.fn().mockResolvedValue({ models: [] }),
         catalog: vi.fn().mockResolvedValue(err(new Error("unreachable"))),
+        getCapability: vi.fn().mockResolvedValue(true),
+        invalidateCapability: vi.fn(),
     };
     const saveSettings = vi.fn().mockResolvedValue(undefined);
     const statusBarEl = { setText: vi.fn(), textContent: "" };
@@ -220,6 +222,13 @@ function captureSettingCallbacks(fn: () => void): Captured {
                 value: "",
                 addClass: vi.fn(),
                 classList: { add: vi.fn(), remove: vi.fn() },
+                attributes: {} as Record<string, string>,
+                setAttribute(name: string, value: string): void {
+                    this.attributes[name] = value;
+                },
+                getAttribute(name: string): string | null {
+                    return this.attributes[name] ?? null;
+                },
                 addEventListener: (event: string, handler: BlurHandler) => {
                     if (event === "blur") blurHandlers.push({ handler, inputEl: fakeText.inputEl });
                 },
@@ -3660,18 +3669,68 @@ describe("managed mode settings", () => {
         });
     });
 
+    describe("capability-gated section visibility", () => {
+        it("hides the Crawling, Wiki, and API Keys sections when their capability probes return false", async () => {
+            const plugin = makePlugin();
+            (plugin.api as any).getCapability = vi.fn().mockResolvedValue(false);
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            // Crawling and Wiki are wrapped in dedicated container divs.
+            expect((tab as any).crawlingContainerEl?.style.display).toBe("none");
+            expect((tab as any).wikiContainerEl?.style.display).toBe("none");
+            expect((tab as any).apiKeysContainerEl?.style.display).toBe("none");
+        });
+
+        it("leaves all three sections visible when probes return true", async () => {
+            const plugin = makePlugin();
+            (plugin.api as any).getCapability = vi.fn().mockResolvedValue(true);
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            // Default style.display is "" / undefined for visible elements; "none" only when hidden.
+            expect((tab as any).crawlingContainerEl?.style.display).not.toBe("none");
+            expect((tab as any).wikiContainerEl?.style.display).not.toBe("none");
+            expect((tab as any).apiKeysContainerEl?.style.display).not.toBe("none");
+        });
+
+        it("calls invalidateCapability(API_KEYS) after a key save so the catalog refresh can pick up the new state", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
+            // The API-key fields are the last three text inputs registered; trigger
+            // the blur on the first one (OpenAI) with a non-empty value.
+            const apiKeyHandler = blurHandlers.find((h) => h.inputEl.type === "password");
+            expect(apiKeyHandler).toBeDefined();
+            apiKeyHandler!.inputEl.value = "sk-test";
+            await apiKeyHandler!.handler();
+            expect(plugin.api.invalidateCapability).toHaveBeenCalledWith("api_keys");
+        });
+    });
+
     describe("renderWikiSettings", () => {
+        // Wiki section now lives inside a capability-gated wrapper div, so the
+        // DETAILS element is a grandchild of containerEl. This walker traverses
+        // one level deeper to keep the existing assertions readable.
+        const findWikiDetails = (tab: any): any =>
+            tab.containerEl.children
+                .flatMap((c: any) => [c, ...(c.children ?? [])])
+                .find(
+                    (c: any) =>
+                        c.tagName === "DETAILS" &&
+                        c.children?.some((s: any) => s.tagName === "SUMMARY" && s.textContent.includes("Wiki (beta)")),
+                );
+
         it("always renders wiki section heading even when wikiEnabled is false", () => {
             const plugin = makePlugin({ wikiEnabled: false });
             (plugin as any).wikiEnabled = false;
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
-            const details = tab.containerEl.children.find(
-                (c) =>
-                    c.tagName === "DETAILS" &&
-                    c.children.some((s: any) => s.tagName === "SUMMARY" && s.textContent.includes("Wiki (beta)")),
-            );
+            const details = findWikiDetails(tab);
             expect(details).toBeDefined();
             // Sub-settings should be hidden when wikiEnabled is false
             const subContainer = details!.children.find(
@@ -3746,11 +3805,7 @@ describe("managed mode settings", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
-            const details = tab.containerEl.children.find(
-                (c) =>
-                    c.tagName === "DETAILS" &&
-                    c.children.some((s: any) => s.tagName === "SUMMARY" && s.textContent.includes("Wiki")),
-            );
+            const details = findWikiDetails(tab);
             expect(details).toBeDefined();
             const subContainer = details!.children.find(
                 (c: any) => c.classList && c.classList.contains("lilbee-wiki-sub-settings"),
@@ -3765,11 +3820,7 @@ describe("managed mode settings", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
-            const details = tab.containerEl.children.find(
-                (c) =>
-                    c.tagName === "DETAILS" &&
-                    c.children.some((s: any) => s.tagName === "SUMMARY" && s.textContent.includes("Wiki")),
-            );
+            const details = findWikiDetails(tab);
             expect(details).toBeDefined();
             const subContainer = details!.children.find(
                 (c: any) => c.classList && c.classList.contains("lilbee-wiki-sub-settings"),

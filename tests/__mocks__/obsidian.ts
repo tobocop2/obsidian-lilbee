@@ -610,17 +610,28 @@ function mockInputEl(): {
     placeholder: string;
     type: string;
     value: string;
+    attributes: Record<string, string>;
     addEventListener: ReturnType<typeof vi.fn>;
     addClass: ReturnType<typeof vi.fn>;
     classList: { add: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn> };
+    setAttribute: (name: string, value: string) => void;
+    getAttribute: (name: string) => string | null;
 } {
+    const attributes: Record<string, string> = {};
     return {
         placeholder: "",
         type: "text",
         value: "",
+        attributes,
         addEventListener: vi.fn(),
         addClass: vi.fn(),
         classList: { add: vi.fn(), remove: vi.fn() },
+        setAttribute(name: string, value: string): void {
+            attributes[name] = value;
+        },
+        getAttribute(name: string): string | null {
+            return attributes[name] ?? null;
+        },
     };
 }
 
