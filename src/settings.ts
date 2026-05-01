@@ -2,6 +2,8 @@ import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
 import type { ReleaseInfo } from "./binary-manager";
 import {
+    CHAT_MODE,
+    CONFIG_KEY,
     DEFAULT_SETTINGS,
     MODEL_SOURCE,
     MODEL_TASK,
@@ -64,6 +66,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
     // Set to true while loadServerDefaults is programmatically syncing toggles to the server
     // value so their onChange doesn't round-trip the same value back to the server.
     private suppressToggleChanges = false;
+    // The chat_mode dropdown is hidden until /api/config confirms the field is present
+    // (older servers omit it). loadServerDefaults toggles visibility and seeds the value.
+    private chatModeSettingEl: HTMLElement | null = null;
+    private chatModeDropdown: { setValue: (v: string) => unknown } | null = null;
+    private chatModeSelectEl: HTMLSelectElement | null = null;
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app, plugin);
@@ -454,10 +461,36 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         generalInput.placeholder = cfg.general_system_prompt;
                     }
                 }
+                this.applyChatModeFromConfig(cfg);
             })
             .catch(() => {
                 // Connection status is shown via the Test button — no duplicate warning needed
             });
+    }
+
+    /**
+     * Sync the chat-mode dropdown to /api/config. Hides the entire setting
+     * row when the server doesn't expose cfg.chat_mode (pre-tui-quality-sweep
+     * builds). When the row is visible, a missing embedding_model coerces the
+     * dropdown to disabled with a tooltip — matches the TUI's "configure an
+     * embedding model to enable Search" behavior.
+     */
+    private applyChatModeFromConfig(cfg: ConfigResponse): void {
+        /* v8 ignore next 2 -- defensive guard; renderGenerationSettings always sets this before loadServerDefaults runs */
+        if (!this.chatModeSettingEl) return;
+        if (cfg.chat_mode === undefined) {
+            this.chatModeSettingEl.style.display = "none";
+            return;
+        }
+        this.chatModeSettingEl.style.display = "";
+        if (this.chatModeDropdown) {
+            this.chatModeDropdown.setValue(cfg.chat_mode);
+        }
+        if (this.chatModeSelectEl) {
+            const noEmbedding = !cfg.embedding_model || cfg.embedding_model === "";
+            this.chatModeSelectEl.disabled = noEmbedding;
+            this.chatModeSelectEl.title = noEmbedding ? MESSAGES.TOOLTIP_CHAT_MODE_NEEDS_EMBEDDING : "";
+        }
     }
 
     private loadConfigDefaults(): void {
@@ -581,6 +614,30 @@ export class LilbeeSettingTab extends PluginSettingTab {
             "generalSystemPrompt",
             MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT,
         );
+
+        // Chat-mode dropdown — hidden by default, revealed by loadServerDefaults
+        // when cfg.chat_mode is present on the connected server. Disabled state
+        // is also driven from cfg (set when no embedding model is configured),
+        // not from local plugin settings.
+        const chatModeSetting = new Setting(details)
+            .setName(MESSAGES.LABEL_CHAT_MODE)
+            .setDesc(MESSAGES.DESC_CHAT_MODE)
+            .addDropdown((dd) => {
+                dd.addOption(CHAT_MODE.SEARCH, MESSAGES.LABEL_CHAT_MODE_SEARCH);
+                dd.addOption(CHAT_MODE.CHAT, MESSAGES.LABEL_CHAT_MODE_CHAT);
+                dd.setValue(CHAT_MODE.SEARCH);
+                dd.onChange(async (value) => {
+                    try {
+                        await this.plugin.api.updateConfig({ [CONFIG_KEY.CHAT_MODE]: value });
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_CHAT_MODE));
+                    }
+                });
+                this.chatModeDropdown = dd;
+                this.chatModeSelectEl = dd.selectEl as HTMLSelectElement;
+            });
+        this.chatModeSettingEl = chatModeSetting.settingEl;
+        this.chatModeSettingEl.style.display = "none";
 
         const fields: { key: GenKey; name: string; desc: string; integer: boolean }[] = [
             {

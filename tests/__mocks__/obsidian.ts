@@ -105,10 +105,44 @@ export class MockElement {
 
     setAttribute(name: string, value: string): void {
         this.attributes[name] = value;
+        if (name === "title") this.title = value;
+    }
+
+    getAttribute(name: string): string | null {
+        if (name === "title" && this.title) return this.title;
+        return this.attributes[name] ?? null;
     }
 
     removeAttribute(name: string): void {
         delete this.attributes[name];
+    }
+
+    /**
+     * Insert `node` before `reference` in this element's children, mirroring
+     * DOM `Node.insertBefore`. Maintains parentElement linkage. Used by chat-view
+     * to place a server-emitted banner above an existing assistant bubble.
+     */
+    insertBefore(node: MockElement, reference: MockElement | null): MockElement {
+        // If node is already a child elsewhere, detach first.
+        node.parentElement?.removeChild(node);
+        if (reference === null) {
+            this.children.push(node);
+        } else {
+            const idx = this.children.indexOf(reference);
+            if (idx < 0) {
+                this.children.push(node);
+            } else {
+                this.children.splice(idx, 0, node);
+            }
+        }
+        node.parentElement = this;
+        return node;
+    }
+
+    private removeChild(node: MockElement): void {
+        const idx = this.children.indexOf(node);
+        if (idx >= 0) this.children.splice(idx, 1);
+        node.parentElement = null;
     }
 
     addClass(cls: string): void {
@@ -643,14 +677,20 @@ class MockSliderComponent {
 
 class MockDropdownComponent {
     private _onChange: ((v: string) => void) | null = null;
+    private _value = "";
+    selectEl = { disabled: false, title: "" };
     addOption(_value: string, _label: string): this {
         return this;
     }
     addOptions(_opts: Record<string, string>): this {
         return this;
     }
-    setValue(_v: string): this {
+    setValue(v: string): this {
+        this._value = v;
         return this;
+    }
+    getValue(): string {
+        return this._value;
     }
     onChange(cb: (v: string) => void): this {
         this._onChange = cb;

@@ -572,7 +572,10 @@ describe("LilbeeSettingTab", () => {
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
             const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
 
-            await dropdownOnChanges[1]("auto");
+            // Dropdown index shifted from 1 to 2 with the addition of the chat_mode
+            // dropdown in renderGenerationSettings. Order: 0=serverMode, 1=chat_mode,
+            // 2=syncMode (the test target).
+            await dropdownOnChanges[2]("auto");
 
             expect(plugin.settings.syncMode).toBe("auto");
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -656,6 +659,89 @@ describe("LilbeeSettingTab", () => {
             await textAreaOnChanges[1]("You are a friendly tutor.");
             expect(plugin.settings.generalSystemPrompt).toBe("You are a friendly tutor.");
             expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+    });
+
+    describe("chat_mode dropdown", () => {
+        it("hides the row when /api/config does not include chat_mode (older server)", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                rag_system_prompt: "x",
+                embedding_model: "nomic",
+                // no chat_mode
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            expect((tab as any).chatModeSettingEl?.style.display).toBe("none");
+        });
+
+        it("shows the row and seeds the value when chat_mode is present", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                rag_system_prompt: "x",
+                embedding_model: "nomic",
+                chat_mode: "chat",
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            expect((tab as any).chatModeSettingEl?.style.display).toBe("");
+            expect((tab as any).chatModeDropdown?.getValue()).toBe("chat");
+        });
+
+        it("disables the dropdown with a tooltip when no embedding model is configured", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                rag_system_prompt: "x",
+                embedding_model: "",
+                chat_mode: "search",
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            expect((tab as any).chatModeSelectEl?.disabled).toBe(true);
+            expect((tab as any).chatModeSelectEl?.title).toBe("Configure an embedding model to enable Search.");
+        });
+
+        it("enables the dropdown when an embedding model is configured", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                rag_system_prompt: "x",
+                embedding_model: "nomic-embed",
+                chat_mode: "search",
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            expect((tab as any).chatModeSelectEl?.disabled).toBe(false);
+            expect((tab as any).chatModeSelectEl?.title).toBe("");
+        });
+
+        it("PATCHes /api/config when the user changes the dropdown", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
+            // Generation-section chat_mode is the first dropdown rendered there;
+            // 0=serverMode (in connection), 1=chat_mode (in generation).
+            await dropdownOnChanges[1]("chat");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chat_mode: "chat" });
+        });
+
+        it("surfaces a notice when the PATCH fails", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
+            await dropdownOnChanges[1]("chat");
+            expect(Notice.instances.some((n) => n.message.includes("Chat mode"))).toBe(true);
         });
     });
 

@@ -9,8 +9,8 @@ import {
     WorkspaceLeaf,
 } from "obsidian";
 import type LilbeePlugin from "../main";
-import { MODEL_SOURCE, MODEL_TASK, SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
-import type { CatalogEntry, InstalledModel, Message, SearchChunkType, Source, SSEEvent } from "../types";
+import { CHAT_MODE, CONFIG_KEY, MODEL_SOURCE, MODEL_TASK, SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
+import type { CatalogEntry, ChatMode, InstalledModel, Message, SearchChunkType, Source, SSEEvent } from "../types";
 
 import { renderSourceChip } from "./results";
 import { SEPARATOR_KEY, SEPARATOR_LABEL } from "../settings";
@@ -56,6 +56,17 @@ function extractString(data: unknown, field: string): string {
     return String(data);
 }
 
+/**
+ * Pull a non-empty string `banner` field off an SSE event payload, or
+ * return null. Used by the chat view to surface server-emitted mode-driven
+ * messages (e.g. "Search needs an embedding model") without owning the copy.
+ */
+export function extractBanner(data: unknown): string | null {
+    if (data === null || typeof data !== "object") return null;
+    const banner = (data as Record<string, unknown>).banner;
+    return typeof banner === "string" && banner.length > 0 ? banner : null;
+}
+
 export class ChatView extends ItemView {
     private plugin: LilbeePlugin;
     private history: Message[] = [];
@@ -72,6 +83,8 @@ export class ChatView extends ItemView {
     private embeddingModels: CatalogEntry[] = [];
     private activeEmbeddingModel = "";
     private ocrToggleEl: HTMLElement | null = null;
+    private chatModeContainer: HTMLElement | null = null;
+    private chatModeCurrent: ChatMode | null = null;
     private static readonly OFFLINE_THRESHOLD = 3;
     private retryTimer: ReturnType<typeof setTimeout> | null = null;
     private retryCount = 0;
@@ -149,6 +162,11 @@ export class ChatView extends ItemView {
         this.ocrToggleEl = toolbar.createDiv({ cls: "lilbee-ocr-toggle" });
         this.updateOcrToggle();
         this.ocrToggleEl.addEventListener("click", () => this.cycleOcr());
+
+        // Empty placeholder; populated by fetchAndFillSelectors once the server's
+        // /api/config response confirms cfg.chat_mode is exposed (older servers
+        // omit it). Stays empty -> the toggle is invisible on those servers.
+        this.chatModeContainer = toolbar.createDiv({ cls: "lilbee-chat-mode-container" });
 
         this.fetchAndFillSelectors();
 
@@ -261,6 +279,7 @@ export class ChatView extends ItemView {
                 if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl);
 
                 this.fillEmbeddingSelector(embeddingResult, serverConfig);
+                this.renderChatModeToggle(serverConfig);
 
                 if (this.chatInstalled.length === 0) {
                     this.showEmptyState();
@@ -286,6 +305,69 @@ export class ChatView extends ItemView {
                 }
                 this.retryTimer = setTimeout(() => this.fetchAndFillSelectors(), RETRY_INTERVAL_MS);
             });
+    }
+
+    /**
+     * Render (or hide) the Search/Chat mode toggle in the toolbar.
+     *
+     * Visibility: the toggle only appears when /api/config exposes a
+     * `chat_mode` field. Older servers don't advertise the field; the toggle
+     * stays hidden so users don't see a control whose write would 404.
+     *
+     * Disabled state: when no embedding model is configured the toggle is
+     * disabled (the server forces "chat" mode in that case). Tooltip explains.
+     */
+    private renderChatModeToggle(serverConfig: Record<string, unknown> | null): void {
+        /* v8 ignore next 2 -- defensive; createToolbar creates the container before fetchAndFillSelectors can resolve */
+        if (!this.chatModeContainer) return;
+        this.chatModeContainer.empty();
+        const rawMode = serverConfig?.chat_mode;
+        if (rawMode !== CHAT_MODE.SEARCH && rawMode !== CHAT_MODE.CHAT) return;
+        this.chatModeCurrent = rawMode;
+        const embeddingModel = typeof serverConfig?.embedding_model === "string" ? serverConfig.embedding_model : "";
+        const noEmbedding = embeddingModel === "";
+
+        const segments: { mode: ChatMode; label: string }[] = [
+            { mode: CHAT_MODE.SEARCH, label: MESSAGES.LABEL_CHAT_MODE_SEARCH },
+            { mode: CHAT_MODE.CHAT, label: MESSAGES.LABEL_CHAT_MODE_CHAT },
+        ];
+        for (const seg of segments) {
+            const btn = this.chatModeContainer.createEl("button", {
+                text: seg.label,
+                cls: `lilbee-chat-mode-btn${seg.mode === rawMode ? " active" : ""}`,
+            });
+            if (noEmbedding) {
+                btn.disabled = true;
+                btn.setAttribute("title", MESSAGES.TOOLTIP_CHAT_MODE_NEEDS_EMBEDDING);
+                btn.addClass("lilbee-disabled");
+            }
+            btn.addEventListener("click", () => {
+                if (noEmbedding || seg.mode === this.chatModeCurrent) return;
+                void this.persistChatMode(seg.mode);
+            });
+        }
+    }
+
+    private async persistChatMode(mode: ChatMode): Promise<void> {
+        try {
+            await this.plugin.api.updateConfig({ [CONFIG_KEY.CHAT_MODE]: mode });
+            this.chatModeCurrent = mode;
+            this.applyActiveClassToChatModeButtons(mode);
+        } catch (err) {
+            const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
+            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(`${MESSAGES.LABEL_CHAT_MODE}: ${reason}`));
+        }
+    }
+
+    private applyActiveClassToChatModeButtons(mode: ChatMode): void {
+        /* v8 ignore next 2 -- defensive; renderChatModeToggle creates the container before any click can fire */
+        if (!this.chatModeContainer) return;
+        const buttons = this.chatModeContainer.querySelectorAll(".lilbee-chat-mode-btn");
+        const activeIdx = mode === CHAT_MODE.SEARCH ? 0 : 1;
+        for (let i = 0; i < buttons.length; i++) {
+            if (i === activeIdx) buttons[i].addClass("active");
+            else buttons[i].removeClass("active");
+        }
     }
 
     private fillEmbeddingSelector(
@@ -657,6 +739,7 @@ export class ChatView extends ItemView {
                     void MarkdownRenderer.render(this.app, state.reasoningContent, content, "", this.plugin);
                     details.removeAttribute("open");
                 }
+                this.renderBannerIfPresent(event.data, assistantBubble);
                 void this.renderMarkdown(textEl, rendered);
                 if (state.sources.length > 0) this.renderSources(assistantBubble, state.sources);
                 this.history.push({ role: "assistant", content: rendered });
@@ -805,6 +888,20 @@ export class ChatView extends ItemView {
         for (const source of sources) {
             renderSourceChip(chipsEl, source, this.app, this.plugin.api);
         }
+    }
+
+    /**
+     * Insert a server-emitted banner above the assistant bubble. The banner
+     * is a string field on the SSE event payload (typically on DONE) that
+     * the server uses to surface mode-driven state — e.g. "Search needs an
+     * embedding model". Absent / empty / non-string -> no banner element.
+     */
+    private renderBannerIfPresent(data: unknown, assistantBubble: HTMLElement): void {
+        const banner = extractBanner(data);
+        if (banner === null || !this.messagesEl) return;
+        const bannerEl = this.messagesEl.createDiv({ cls: "lilbee-chat-banner" });
+        bannerEl.setText(banner);
+        this.messagesEl.insertBefore(bannerEl, assistantBubble);
     }
 }
 
