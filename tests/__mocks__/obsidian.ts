@@ -155,6 +155,13 @@ export class MockElement {
         }
     }
 
+    toggleClass(cls: string, force?: boolean): void {
+        const present = this.classList.contains(cls);
+        const target = force ?? !present;
+        if (target && !present) this.classList.add(cls);
+        else if (!target && present) this.classList.remove(cls);
+    }
+
     addEventListener(event: string, handler: Function, _options?: unknown): void {
         if (!this._listeners[event]) this._listeners[event] = [];
         this._listeners[event].push(handler);

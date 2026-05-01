@@ -1263,4 +1263,290 @@ describe("CatalogModal", () => {
         el.textContent = "hi";
         expect(collectTexts(el)).toContain("hi");
     });
+
+    describe("Local | Frontier tabs", () => {
+        function makeFrontierEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
+            return {
+                hf_repo: "openai/gpt-4o",
+                gguf_filename: "",
+                display_name: "gpt-4o",
+                size_gb: 0,
+                min_ram_gb: 0,
+                description: "OpenAI flagship",
+                quality_tier: "flagship",
+                installed: false,
+                source: "frontier",
+                task: "chat",
+                featured: false,
+                downloads: 0,
+                param_count: "",
+                // Frontier-only fields supplied via cast.
+                ...({
+                    provider: "OpenAI",
+                    key_status: "missing_key",
+                    is_curated: true,
+                    context_window: 128000,
+                    modality: "text",
+                } as Partial<CatalogEntry>),
+                ...overrides,
+            };
+        }
+
+        it("hides the Frontier tab when no frontier rows have key_status=ready", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ source: "local" }), makeFrontierEntry()])),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const frontierTab = findButtons(content).find((b) => b.textContent === MESSAGES.TAB_FRONTIER);
+            expect(frontierTab).toBeDefined();
+            expect(frontierTab?.style.display).toBe("none");
+        });
+
+        it("reveals the Frontier tab when at least one frontier row reports key_status=ready", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeEntry({ source: "local" }),
+                        makeFrontierEntry({
+                            ...({ key_status: "ready" } as Partial<CatalogEntry>),
+                        }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const frontierTab = findButtons(content).find((b) => b.textContent === MESSAGES.TAB_FRONTIER);
+            expect(frontierTab?.style.display).toBe("");
+        });
+
+        it("Local tab renders only local rows even when frontier rows are present", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeEntry({ source: "local", display_name: "Local model" }),
+                        makeFrontierEntry({ display_name: "Frontier model" }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const texts = collectTexts(content).join("\n");
+            expect(texts).toContain("Local model");
+            expect(texts).not.toContain("Frontier model");
+        });
+
+        it("Frontier tab renders provider section headers and a row per frontier model", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeFrontierEntry({
+                            display_name: "gpt-4o",
+                            ...({ provider: "OpenAI", key_status: "ready" } as Partial<CatalogEntry>),
+                        }),
+                        makeFrontierEntry({
+                            hf_repo: "anthropic/claude",
+                            display_name: "claude-opus-4-7",
+                            ...({ provider: "Anthropic", key_status: "missing_key" } as Partial<CatalogEntry>),
+                        }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            // Switch to Frontier tab.
+            const frontierTab = findButtons(content).find((b) => b.textContent === MESSAGES.TAB_FRONTIER)!;
+            frontierTab.trigger("click");
+            await tick();
+            const rows = content.findAll("lilbee-frontier-row");
+            expect(rows.length).toBe(2);
+            const sectionHeadings = content.findAll("lilbee-catalog-section-heading").map((h) => h.textContent);
+            expect(sectionHeadings).toContain("OpenAI");
+            expect(sectionHeadings).toContain("Anthropic");
+            expect(content.findAll("lilbee-key-status-pill-ready").length).toBe(1);
+            expect(content.findAll("lilbee-key-status-pill-needs-key").length).toBe(1);
+        });
+
+        it("clicking a Ready frontier row sets that model active and closes the modal", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeFrontierEntry({
+                            ...({ key_status: "ready" } as Partial<CatalogEntry>),
+                        }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin);
+            const closeSpy = vi.spyOn(modal, "close").mockImplementation(() => {});
+            const content = contentEl(modal);
+            findButtons(content)
+                .find((b) => b.textContent === MESSAGES.TAB_FRONTIER)!
+                .trigger("click");
+            await tick();
+            const row = content.find("lilbee-frontier-row")!;
+            row.trigger("click");
+            await tick();
+            expect(plugin.api.setChatModel).toHaveBeenCalled();
+            expect(closeSpy).toHaveBeenCalled();
+        });
+
+        it("clicking a Needs-key frontier row closes the modal without setting an active model", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeFrontierEntry({ ...({ key_status: "missing_key" } as Partial<CatalogEntry>) }),
+                        makeFrontierEntry({
+                            hf_repo: "x/y",
+                            ...({ key_status: "ready" } as Partial<CatalogEntry>),
+                        }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin);
+            const closeSpy = vi.spyOn(modal, "close").mockImplementation(() => {});
+            const content = contentEl(modal);
+            findButtons(content)
+                .find((b) => b.textContent === MESSAGES.TAB_FRONTIER)!
+                .trigger("click");
+            await tick();
+            const rows = content.findAll("lilbee-frontier-row");
+            // Row 0 is missing_key.
+            rows[0].trigger("click");
+            await tick();
+            expect(closeSpy).toHaveBeenCalled();
+            expect(plugin.api.setChatModel).not.toHaveBeenCalled();
+        });
+
+        it("surfaces a Notice when activating a Ready frontier row fails", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeFrontierEntry({ ...({ key_status: "ready" } as Partial<CatalogEntry>) })])),
+            );
+            plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("boom")));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            findButtons(content)
+                .find((b) => b.textContent === MESSAGES.TAB_FRONTIER)!
+                .trigger("click");
+            await tick();
+            content.find("lilbee-frontier-row")!.trigger("click");
+            await tick();
+            expect(Notice.instances.length).toBeGreaterThan(0);
+        });
+
+        it("re-renders when switching back to the Local tab", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeEntry({ source: "local", display_name: "Local-A" }),
+                        makeFrontierEntry({ ...({ key_status: "ready" } as Partial<CatalogEntry>) }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            // Frontier first.
+            findButtons(content)
+                .find((b) => b.textContent === MESSAGES.TAB_FRONTIER)!
+                .trigger("click");
+            await tick();
+            expect(content.findAll("lilbee-frontier-row").length).toBeGreaterThan(0);
+            // Back to Local.
+            findButtons(content)
+                .find((b) => b.textContent === MESSAGES.TAB_LOCAL)!
+                .trigger("click");
+            await tick();
+            expect(content.findAll("lilbee-frontier-row").length).toBe(0);
+            expect(collectTexts(content).join("\n")).toContain("Local-A");
+        });
+
+        it("bounces the user back to Local when a refetch removes all ready frontier rows", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeFrontierEntry({ ...({ key_status: "ready" } as Partial<CatalogEntry>) })])),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            findButtons(content)
+                .find((b) => b.textContent === MESSAGES.TAB_FRONTIER)!
+                .trigger("click");
+            await tick();
+            expect((modal as any).currentTab).toBe("frontier");
+            // Simulate a refetch that returns no ready rows (e.g. user revoked the key).
+            (modal as any).entries = [
+                makeFrontierEntry({ ...({ key_status: "missing_key" } as Partial<CatalogEntry>) }),
+            ];
+            (modal as any).updateFrontierTabVisibility();
+            expect((modal as any).currentTab).toBe("local");
+        });
+
+        it("renders frontier rows that omit provider/key_status fields without crashing (defaults to missing_key)", async () => {
+            const plugin = makePlugin();
+            // Frontier row with NO provider / key_status — default branches in renderFrontierRow run.
+            const minimalFrontier = makeEntry({
+                source: "frontier",
+                display_name: "minimal",
+                hf_repo: "x/minimal",
+            });
+            // Plus a ready frontier row so the tab is visible.
+            const readyFrontier = makeFrontierEntry({ ...({ key_status: "ready" } as Partial<CatalogEntry>) });
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([readyFrontier, minimalFrontier])));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            findButtons(content)
+                .find((b) => b.textContent === MESSAGES.TAB_FRONTIER)!
+                .trigger("click");
+            await tick();
+            // Both rows render. The minimal one defaults to missing_key pill.
+            expect(content.findAll("lilbee-frontier-row").length).toBe(2);
+            expect(content.findAll("lilbee-key-status-pill-needs-key").length).toBeGreaterThan(0);
+        });
+
+        it("Frontier tab body falls back to empty state when no frontier rows are loaded yet", async () => {
+            const plugin = makePlugin();
+            // Initial response has only a ready frontier row to make the tab visible.
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeFrontierEntry({ ...({ key_status: "ready" } as Partial<CatalogEntry>) })])),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            findButtons(content)
+                .find((b) => b.textContent === MESSAGES.TAB_FRONTIER)!
+                .trigger("click");
+            await tick();
+            // Force-clear the entries map and re-render — exercises the empty branch.
+            (modal as any).entries = [];
+            (modal as any).renderResults();
+            const empty = content.find("lilbee-catalog-empty");
+            expect(empty?.textContent).toBe(MESSAGES.LABEL_NO_MODELS_FOUND);
+        });
+
+        it("clicking the already-active tab is a no-op", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeEntry({ source: "local", display_name: "Local-A" }),
+                        makeFrontierEntry({ ...({ key_status: "ready" } as Partial<CatalogEntry>) }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const localTab = findButtons(content).find((b) => b.textContent === MESSAGES.TAB_LOCAL)!;
+            localTab.trigger("click"); // Already active.
+            await tick();
+            // Sanity: no frontier rows surfaced from a stray render.
+            expect(content.findAll("lilbee-frontier-row").length).toBe(0);
+        });
+    });
 });

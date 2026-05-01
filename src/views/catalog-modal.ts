@@ -1,7 +1,16 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { CatalogEntry, CatalogViewMode, ModelTask, ModelSize } from "../types";
-import { MODEL_TASK, SSE_EVENT, TASK_TYPE, CATALOG_VIEW_MODE, ERROR_NAME, MODEL_SOURCE } from "../types";
+import type { CatalogEntry, CatalogSource, CatalogViewMode, KeyStatus, ModelTask, ModelSize } from "../types";
+import {
+    CATALOG_SOURCE,
+    KEY_STATUS,
+    MODEL_TASK,
+    SSE_EVENT,
+    TASK_TYPE,
+    CATALOG_VIEW_MODE,
+    ERROR_NAME,
+    MODEL_SOURCE,
+} from "../types";
 import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
 import { extractHfRepo } from "../utils/model-ref";
 import { ConfirmModal } from "./confirm-modal";
@@ -17,6 +26,15 @@ import {
     getRelevantSystemMemoryGB,
 } from "../utils";
 import { renderModelCard } from "../components/model-card";
+import {
+    deepLinkToApiKeySettings,
+    frontierRowsOnly,
+    groupByProvider,
+    hasReadyFrontierRow,
+    localRowsOnly,
+    renderKeyStatusPill,
+    renderProviderPill,
+} from "./catalog-helpers";
 
 const PAGE_SIZE = 20;
 const SCROLL_BOTTOM_THRESHOLD_PX = 200;
@@ -49,6 +67,9 @@ export class CatalogModal extends Modal {
     private viewToggleBtn: HTMLElement | null = null;
     private debouncedSearch: () => void;
     private cancelDebouncedSearch: () => void;
+    private currentTab: CatalogSource = CATALOG_SOURCE.LOCAL;
+    private tabBarEl: HTMLElement | null = null;
+    private frontierTabBtn: HTMLElement | null = null;
 
     /**
      * @param initialTaskFilter Pre-select a task tab when opening (e.g.
@@ -70,12 +91,64 @@ export class CatalogModal extends Modal {
         contentEl.addClass("lilbee-catalog-modal");
 
         contentEl.createEl("h2", { text: MESSAGES.TITLE_MODEL_CATALOG });
+        this.renderTabBar(contentEl);
         this.renderFilterBar(contentEl);
 
         this.resultsEl = contentEl.createDiv({ cls: "lilbee-catalog-results" });
         this.resultsEl.addEventListener("scroll", this.onScroll);
 
         this.resetAndFetch();
+    }
+
+    /**
+     * Render the Local | Frontier tab bar. The Frontier tab is created up front
+     * but hidden until at least one frontier row reports `key_status === "ready"`
+     * (i.e. the user has configured at least one provider key). Visibility is
+     * flipped by `updateFrontierTabVisibility` after each fetch.
+     */
+    private renderTabBar(parent: HTMLElement): void {
+        this.tabBarEl = parent.createDiv({ cls: "lilbee-catalog-tab-bar" });
+        const localBtn = this.tabBarEl.createEl("button", {
+            text: MESSAGES.TAB_LOCAL,
+            cls: "lilbee-catalog-tab lilbee-catalog-tab-active",
+        });
+        localBtn.setAttribute("aria-selected", "true");
+        localBtn.addEventListener("click", () => this.switchTab(CATALOG_SOURCE.LOCAL));
+
+        this.frontierTabBtn = this.tabBarEl.createEl("button", {
+            text: MESSAGES.TAB_FRONTIER,
+            cls: "lilbee-catalog-tab",
+        });
+        this.frontierTabBtn.setAttribute("aria-selected", "false");
+        this.frontierTabBtn.style.display = "none";
+        this.frontierTabBtn.addEventListener("click", () => this.switchTab(CATALOG_SOURCE.FRONTIER));
+    }
+
+    private switchTab(tab: CatalogSource): void {
+        if (this.currentTab === tab) return;
+        this.currentTab = tab;
+        /* v8 ignore next 2 -- defensive; renderTabBar always sets tabBarEl before any tab can be clicked */
+        if (!this.tabBarEl) return;
+        for (const btn of Array.from(this.tabBarEl.children) as HTMLElement[]) {
+            const isActive =
+                (tab === CATALOG_SOURCE.LOCAL && btn.textContent === MESSAGES.TAB_LOCAL) ||
+                (tab === CATALOG_SOURCE.FRONTIER && btn.textContent === MESSAGES.TAB_FRONTIER);
+            btn.toggleClass("lilbee-catalog-tab-active", isActive);
+            btn.setAttribute("aria-selected", isActive ? "true" : "false");
+        }
+        this.renderResults();
+    }
+
+    private updateFrontierTabVisibility(): void {
+        /* v8 ignore next 2 -- defensive; renderTabBar always sets frontierTabBtn before fetchPage runs */
+        if (!this.frontierTabBtn) return;
+        if (hasReadyFrontierRow(this.entries)) {
+            this.frontierTabBtn.style.display = "";
+            return;
+        }
+        // No keys yet; if the user was on Frontier (rare race) bounce them home.
+        this.frontierTabBtn.style.display = "none";
+        if (this.currentTab === CATALOG_SOURCE.FRONTIER) this.switchTab(CATALOG_SOURCE.LOCAL);
     }
 
     onClose(): void {
@@ -191,6 +264,7 @@ export class CatalogModal extends Modal {
             this.entries.push(...response.models);
             this.offset += response.models.length;
 
+            this.updateFrontierTabVisibility();
             this.renderResults();
         } finally {
             this.isFetching = false;
@@ -201,7 +275,13 @@ export class CatalogModal extends Modal {
         if (!this.resultsEl) return;
         this.resultsEl.empty();
 
-        if (this.entries.length === 0) {
+        if (this.currentTab === CATALOG_SOURCE.FRONTIER) {
+            this.renderFrontierResults();
+            return;
+        }
+
+        const localEntries = localRowsOnly(this.entries);
+        if (localEntries.length === 0) {
             this.resultsEl.createDiv({
                 cls: "lilbee-catalog-empty",
                 text: MESSAGES.LABEL_NO_MODELS_FOUND,
@@ -210,10 +290,66 @@ export class CatalogModal extends Modal {
         }
 
         if (this.viewMode === CATALOG_VIEW_MODE.GRID) {
-            this.renderGridView(this.entries);
+            this.renderGridView(localEntries);
         } else {
-            this.renderListView(this.entries);
+            this.renderListView(localEntries);
         }
+    }
+
+    /**
+     * Render the Frontier tab body: a single virtualized-style list grouped
+     * by provider. Rows are paginated via the same `/api/models/catalog`
+     * cursor as Local. Each row carries a provider pill + key-status pill;
+     * clicking a `Needs key` row deep-links the user to the provider's
+     * API-key input in Settings without losing modal state.
+     */
+    private renderFrontierResults(): void {
+        /* v8 ignore next 2 -- defensive; renderResults early-returns when resultsEl is null before reaching us */
+        if (!this.resultsEl) return;
+        const rows = frontierRowsOnly(this.entries);
+        if (rows.length === 0) {
+            this.resultsEl.createDiv({
+                cls: "lilbee-catalog-empty",
+                text: MESSAGES.LABEL_NO_MODELS_FOUND,
+            });
+            return;
+        }
+        for (const [provider, group] of groupByProvider(rows)) {
+            this.resultsEl.createDiv({ cls: "lilbee-catalog-section-heading", text: provider });
+            const list = this.resultsEl.createDiv({ cls: "lilbee-catalog-frontier-list" });
+            for (const row of group) {
+                this.renderFrontierRow(list, row);
+            }
+        }
+    }
+
+    private renderFrontierRow(parent: HTMLElement, row: CatalogEntry): void {
+        const rowEl = parent.createDiv({ cls: "lilbee-frontier-row" });
+        const nameEl = rowEl.createSpan({ cls: "lilbee-frontier-row-name", text: row.display_name });
+        const provider = (row as CatalogEntry & { provider?: string }).provider ?? "";
+        const keyStatus = (row as CatalogEntry & { key_status?: KeyStatus }).key_status ?? KEY_STATUS.MISSING_KEY;
+        renderProviderPill(nameEl, provider);
+        renderKeyStatusPill(nameEl, keyStatus);
+        rowEl.addEventListener("click", () => {
+            if (keyStatus === KEY_STATUS.MISSING_KEY) {
+                this.close();
+                deepLinkToApiKeySettings(this.app, provider);
+                return;
+            }
+            void this.handleUseFrontier(row);
+        });
+    }
+
+    private async handleUseFrontier(row: CatalogEntry): Promise<void> {
+        const result = await this.setActiveFor(row);
+        if (result.isErr()) {
+            new Notice(noticeForResultError(result.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", row.hf_repo)));
+            return;
+        }
+        this.plugin.fetchActiveModel();
+        this.plugin.refreshSettingsTab();
+        new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(this.activatedRefFor(row)));
+        this.close();
     }
 
     private renderGridView(entries: CatalogEntry[]): void {
