@@ -53,6 +53,10 @@ vi.mock("../src/views/catalog-modal", () => ({
     CatalogModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
 }));
 
+vi.mock("../src/views/model-picker-modal", () => ({
+    ModelPickerModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
+}));
+
 vi.mock("../src/views/crawl-modal", () => ({
     CrawlModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
 }));
@@ -211,11 +215,14 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerView).toHaveBeenCalled();
         });
 
-        it("adds all fifteen commands", async () => {
+        it("adds all seventeen commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(15);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(17);
+            const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
+            expect(allIds).toContain("lilbee:model-picker-chat");
+            expect(allIds).toContain("lilbee:model-picker-embedding");
             const ids = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(ids).toContain("lilbee:search");
             expect(ids).toContain("lilbee:chat");
@@ -845,6 +852,26 @@ describe("LilbeePlugin", () => {
             expect(CatalogModal).toHaveBeenCalled();
             const instance = (CatalogModal as ReturnType<typeof vi.fn>).mock.results[0].value;
             expect(instance.open).toHaveBeenCalled();
+        });
+
+        it("lilbee:model-picker-chat opens ModelPickerModal scoped to chat", async () => {
+            const { ModelPickerModal } = await import("../src/views/model-picker-modal");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const cb = await getCommandCallback(plugin, "lilbee:model-picker-chat");
+            cb?.();
+            expect(ModelPickerModal).toHaveBeenCalledWith(expect.anything(), plugin, "chat");
+            const inst = (ModelPickerModal as ReturnType<typeof vi.fn>).mock.results.at(-1)!.value;
+            expect(inst.open).toHaveBeenCalled();
+        });
+
+        it("lilbee:model-picker-embedding opens ModelPickerModal scoped to embedding", async () => {
+            const { ModelPickerModal } = await import("../src/views/model-picker-modal");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const cb = await getCommandCallback(plugin, "lilbee:model-picker-embedding");
+            cb?.();
+            expect(ModelPickerModal).toHaveBeenCalledWith(expect.anything(), plugin, "embedding");
         });
 
         it("lilbee:tasks calls activateTaskView", async () => {

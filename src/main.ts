@@ -41,6 +41,7 @@ import {
     withIdleTimeout,
 } from "./utils";
 import { CatalogModal } from "./views/catalog-modal";
+import { ModelPickerModal } from "./views/model-picker-modal";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
 import { CrawlModal } from "./views/crawl-modal";
 import { DocumentsModal } from "./views/documents-modal";
@@ -563,6 +564,18 @@ export default class LilbeePlugin extends Plugin {
             id: "lilbee:catalog",
             name: "Browse model catalog",
             callback: () => new CatalogModal(this.app, this).open(),
+        });
+
+        this.addCommand({
+            id: "lilbee:model-picker-chat",
+            name: MESSAGES.COMMAND_MODEL_PICKER_CHAT,
+            callback: () => new ModelPickerModal(this.app, this, "chat").open(),
+        });
+
+        this.addCommand({
+            id: "lilbee:model-picker-embedding",
+            name: MESSAGES.COMMAND_MODEL_PICKER_EMBED,
+            callback: () => new ModelPickerModal(this.app, this, "embedding").open(),
         });
 
         this.addCommand({
