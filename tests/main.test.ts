@@ -1423,6 +1423,32 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("1 added"))).toBe(true);
         });
 
+        it("includes skipped count in summary Notice when server reports skipped files", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* withSkipped() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        added: ["good.pdf"],
+                        updated: [],
+                        removed: [],
+                        failed: [],
+                        unchanged: 0,
+                        skipped: ["corrupt.pdf"],
+                    },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withSkipped());
+
+            await plugin.addExternalFiles(["/home/user/good.pdf", "/home/user/corrupt.pdf"]);
+
+            expect(Notice.instances.some((n) => n.message.includes("1 added"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message.includes("1 skipped"))).toBe(true);
+        });
+
         it("updates status bar on FILE_START during addExternalFiles", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -2365,15 +2391,22 @@ describe("LilbeePlugin", () => {
         it("parseAddDoneEvent decodes every input shape with stable defaults", async () => {
             const { parseAddDoneEvent } = await import("../src/main");
 
-            // Plain SyncDone shape with all fields present.
             expect(
-                parseAddDoneEvent({ added: ["a"], updated: ["b"], removed: ["c"], unchanged: 2, failed: ["d"] }),
+                parseAddDoneEvent({
+                    added: ["a"],
+                    updated: ["b"],
+                    removed: ["c"],
+                    unchanged: 2,
+                    failed: ["d"],
+                    skipped: ["e"],
+                }),
             ).toEqual({
                 added: ["a"],
                 updated: ["b"],
                 removed: ["c"],
                 unchanged: 2,
                 failed: ["d"],
+                skipped: ["e"],
             });
 
             // Partial SyncDone shape — missing fields get sensible defaults.
@@ -2383,6 +2416,7 @@ describe("LilbeePlugin", () => {
                 removed: [],
                 unchanged: 0,
                 failed: [],
+                skipped: [],
             });
 
             // Nested {sync: SyncDone} shape (the second `done` event server sends).
@@ -2391,9 +2425,16 @@ describe("LilbeePlugin", () => {
                     copied: [],
                     skipped: [],
                     errors: [],
-                    sync: { added: ["y"], updated: [], removed: [], unchanged: 1, failed: [] },
+                    sync: { added: ["y"], updated: [], removed: [], unchanged: 1, failed: [], skipped: ["z.pdf"] },
                 }),
-            ).toEqual({ added: ["y"], updated: [], removed: [], unchanged: 1, failed: [] });
+            ).toEqual({
+                added: ["y"],
+                updated: [],
+                removed: [],
+                unchanged: 1,
+                failed: [],
+                skipped: ["z.pdf"],
+            });
 
             // Malformed inputs return null.
             expect(parseAddDoneEvent(null)).toBeNull();

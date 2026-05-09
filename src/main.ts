@@ -80,6 +80,7 @@ function summarizeSyncResult(done: SyncDone): string {
     if (done.updated.length > 0) parts.push(`${done.updated.length} updated`);
     if (done.removed.length > 0) parts.push(`${done.removed.length} removed`);
     if (done.failed.length > 0) parts.push(`${done.failed.length} failed`);
+    if (done.skipped.length > 0) parts.push(`${done.skipped.length} skipped`);
     return parts.join(", ");
 }
 
@@ -166,6 +167,7 @@ function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
         removed: Array.isArray(obj.removed) ? (obj.removed as string[]) : [],
         unchanged: typeof obj.unchanged === "number" ? obj.unchanged : 0,
         failed: Array.isArray(obj.failed) ? (obj.failed as string[]) : [],
+        skipped: Array.isArray(obj.skipped) ? (obj.skipped as string[]) : [],
     };
 }
 
