@@ -1854,4 +1854,259 @@ describe("CatalogModal", () => {
             expect(content.find("lilbee-catalog-list")).not.toBeNull();
         });
     });
+
+    describe("detail drawer", () => {
+        beforeEach(() => {
+            vi.stubGlobal("window", { innerWidth: 1200 } as unknown as Window);
+        });
+        afterEach(() => {
+            vi.unstubAllGlobals();
+        });
+
+        const waitForDebounce = () => new Promise((r) => setTimeout(r, 50));
+
+        it("renders a placeholder before any model has focus", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            const content = contentEl(modal);
+            expect(content.find("lilbee-catalog-drawer")).not.toBeNull();
+            expect(content.find("lilbee-catalog-drawer-empty")?.textContent).toBe(MESSAGES.LABEL_DRAWER_NO_SELECTION);
+        });
+
+        it("populates the drawer when a card receives focus", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            const content = contentEl(modal);
+            const card = content.find("lilbee-model-card")!;
+            const body = content.find("lilbee-catalog-body-with-drawer")!;
+            body.trigger("focusin", { target: card });
+            await waitForDebounce();
+            expect(content.find("lilbee-detail-name")?.textContent).toBe("Qwen3 8B");
+        });
+
+        it("debounces rapid focus changes onto the most recent card", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeEntry({ hf_repo: "a/one", display_name: "One", installed: true }),
+                        makeEntry({ hf_repo: "b/two", display_name: "Two", installed: true }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            const content = contentEl(modal);
+            const cards = content.findAll("lilbee-model-card");
+            const body = content.find("lilbee-catalog-body-with-drawer")!;
+            body.trigger("focusin", { target: cards[0] });
+            body.trigger("pointerover", { target: cards[1] });
+            await waitForDebounce();
+            expect(content.find("lilbee-detail-name")?.textContent).toBe("Two");
+        });
+
+        it("ignores focus events on elements outside any card", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            const content = contentEl(modal);
+            const body = content.find("lilbee-catalog-body-with-drawer")!;
+            body.trigger("focusin", { target: new MockElement("div") });
+            await waitForDebounce();
+            // Placeholder still in the drawer because no card was focused.
+            expect(content.find("lilbee-catalog-drawer-empty")).not.toBeNull();
+        });
+
+        it("re-focusing the same card does not re-render the drawer", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            const content = contentEl(modal);
+            const card = content.find("lilbee-model-card")!;
+            const body = content.find("lilbee-catalog-body-with-drawer")!;
+            body.trigger("focusin", { target: card });
+            await waitForDebounce();
+            const firstName = content.find("lilbee-detail-name");
+            body.trigger("focusin", { target: card });
+            await waitForDebounce();
+            // Same node reference because the second focusin short-circuited.
+            expect(content.find("lilbee-detail-name")).toBe(firstName);
+        });
+
+        it("toggle button collapses and re-expands the drawer", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            const content = contentEl(modal);
+            const drawer = content.find("lilbee-catalog-drawer")!;
+            expect(drawer.classList.contains("lilbee-catalog-drawer-collapsed")).toBe(false);
+            content.find("lilbee-catalog-drawer-toggle")!.trigger("click");
+            expect(drawer.classList.contains("lilbee-catalog-drawer-collapsed")).toBe(true);
+            content.find("lilbee-catalog-drawer-toggle")!.trigger("click");
+            expect(drawer.classList.contains("lilbee-catalog-drawer-collapsed")).toBe(false);
+        });
+
+        it("collapses the drawer when the viewport is narrower than 800px", async () => {
+            vi.stubGlobal("window", { innerWidth: 600 } as unknown as Window);
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            const content = contentEl(modal);
+            const drawer = content.find("lilbee-catalog-drawer")!;
+            expect(drawer.classList.contains("lilbee-catalog-drawer-collapsed")).toBe(true);
+        });
+
+        it("clears any pending focus debounce on close", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            const content = contentEl(modal);
+            const card = content.find("lilbee-model-card")!;
+            const body = content.find("lilbee-catalog-body-with-drawer")!;
+            body.trigger("focusin", { target: card });
+            modal.close();
+            expect((modal as unknown as { focusDebounceTimeout: unknown }).focusDebounceTimeout).toBeNull();
+        });
+
+        it("updateDrawerForRepo bails when the repo is no longer in entries", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            (modal as unknown as { entries: unknown[] }).entries = [];
+            (modal as unknown as { updateDrawerForRepo(r: string): void }).updateDrawerForRepo("ghost/repo");
+            // Drawer keeps the placeholder.
+            expect(contentEl(modal).find("lilbee-catalog-drawer-empty")).not.toBeNull();
+        });
+    });
+
+    describe("`i` key opens model info", () => {
+        beforeEach(() => {
+            vi.stubGlobal("window", { innerWidth: 1200 } as unknown as Window);
+        });
+        afterEach(() => {
+            vi.unstubAllGlobals();
+        });
+
+        const waitForDebounce = () => new Promise((r) => setTimeout(r, 50));
+
+        async function focusFirstCard(modal: CatalogModal): Promise<void> {
+            const content = contentEl(modal);
+            const card = content.find("lilbee-model-card")!;
+            const body = content.find("lilbee-catalog-body-with-drawer")!;
+            body.trigger("focusin", { target: card });
+            await waitForDebounce();
+        }
+
+        it("opens ModelInfoModal when `i` is pressed with a focused card", async () => {
+            const { ModelInfoModal } = await import("../../src/views/model-info-modal");
+            const openSpy = vi.spyOn(ModelInfoModal.prototype, "open").mockImplementation(() => {});
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            await focusFirstCard(modal);
+            const content = contentEl(modal);
+            content.trigger("keydown", {
+                key: "i",
+                target: new MockElement("div"),
+                preventDefault: vi.fn(),
+                stopPropagation: vi.fn(),
+            } as unknown as KeyboardEvent);
+            expect(openSpy).toHaveBeenCalled();
+            openSpy.mockRestore();
+        });
+
+        it("ignores `i` when nothing is focused", async () => {
+            const { ModelInfoModal } = await import("../../src/views/model-info-modal");
+            const openSpy = vi.spyOn(ModelInfoModal.prototype, "open").mockImplementation(() => {});
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            const content = contentEl(modal);
+            content.trigger("keydown", {
+                key: "i",
+                target: new MockElement("div"),
+                preventDefault: vi.fn(),
+                stopPropagation: vi.fn(),
+            } as unknown as KeyboardEvent);
+            expect(openSpy).not.toHaveBeenCalled();
+            openSpy.mockRestore();
+        });
+
+        it("ignores `i` when the event target is an input element", async () => {
+            const { ModelInfoModal } = await import("../../src/views/model-info-modal");
+            const openSpy = vi.spyOn(ModelInfoModal.prototype, "open").mockImplementation(() => {});
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            await focusFirstCard(modal);
+            const content = contentEl(modal);
+            const input = new MockElement("input");
+            content.trigger("keydown", {
+                key: "i",
+                target: input,
+                preventDefault: vi.fn(),
+                stopPropagation: vi.fn(),
+            } as unknown as KeyboardEvent);
+            expect(openSpy).not.toHaveBeenCalled();
+            openSpy.mockRestore();
+        });
+
+        it("ignores `i` when the event target is a textarea", async () => {
+            const { ModelInfoModal } = await import("../../src/views/model-info-modal");
+            const openSpy = vi.spyOn(ModelInfoModal.prototype, "open").mockImplementation(() => {});
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            await focusFirstCard(modal);
+            const content = contentEl(modal);
+            const textarea = new MockElement("textarea");
+            content.trigger("keydown", {
+                key: "i",
+                target: textarea,
+                preventDefault: vi.fn(),
+                stopPropagation: vi.fn(),
+            } as unknown as KeyboardEvent);
+            expect(openSpy).not.toHaveBeenCalled();
+            openSpy.mockRestore();
+        });
+
+        it("ignores `i` when the focused repo is no longer in entries", async () => {
+            const { ModelInfoModal } = await import("../../src/views/model-info-modal");
+            const openSpy = vi.spyOn(ModelInfoModal.prototype, "open").mockImplementation(() => {});
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            await focusFirstCard(modal);
+            // Stale focus: cached repo is gone after a refetch.
+            (modal as unknown as { entries: unknown[] }).entries = [];
+            const content = contentEl(modal);
+            content.trigger("keydown", {
+                key: "i",
+                target: new MockElement("div"),
+                preventDefault: vi.fn(),
+                stopPropagation: vi.fn(),
+            } as unknown as KeyboardEvent);
+            expect(openSpy).not.toHaveBeenCalled();
+            openSpy.mockRestore();
+        });
+
+        it("treats targets with no tagName as non-input", async () => {
+            const { ModelInfoModal } = await import("../../src/views/model-info-modal");
+            const openSpy = vi.spyOn(ModelInfoModal.prototype, "open").mockImplementation(() => {});
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            await focusFirstCard(modal);
+            const content = contentEl(modal);
+            content.trigger("keydown", {
+                key: "i",
+                target: null,
+                preventDefault: vi.fn(),
+                stopPropagation: vi.fn(),
+            } as unknown as KeyboardEvent);
+            expect(openSpy).toHaveBeenCalled();
+            openSpy.mockRestore();
+        });
+    });
 });

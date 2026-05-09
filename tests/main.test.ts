@@ -58,6 +58,10 @@ vi.mock("../src/views/model-picker-modal", () => ({
     ModelPickerModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
 }));
 
+vi.mock("../src/views/model-info-modal", () => ({
+    ModelInfoModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
+}));
+
 vi.mock("../src/views/crawl-modal", () => ({
     CrawlModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
 }));
@@ -216,14 +220,16 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerView).toHaveBeenCalled();
         });
 
-        it("adds all seventeen commands", async () => {
+        it("adds all nineteen commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(17);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(19);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("lilbee:model-picker-chat");
             expect(allIds).toContain("lilbee:model-picker-embedding");
+            expect(allIds).toContain("lilbee:model-info-active-chat");
+            expect(allIds).toContain("lilbee:model-info-active-embedding");
             const ids = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(ids).toContain("lilbee:search");
             expect(ids).toContain("lilbee:chat");
@@ -737,6 +743,136 @@ describe("LilbeePlugin", () => {
             const cb = await getCommandCallback(plugin, "lilbee:model-picker-embedding");
             cb?.();
             expect(ModelPickerModal).toHaveBeenCalledWith(expect.anything(), plugin, "embedding");
+        });
+
+        it("lilbee:model-info-active-chat opens ModelInfoModal when chat_model is set", async () => {
+            const { ModelInfoModal } = await import("../src/views/model-info-modal");
+            const { ok } = await import("neverthrow");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: "qwen/qwen3-8b" });
+            (plugin.api as { catalog?: ReturnType<typeof vi.fn> }).catalog = vi.fn().mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    has_more: false,
+                    models: [
+                        {
+                            hf_repo: "qwen/qwen3-8b",
+                            gguf_filename: "",
+                            display_name: "Qwen3 8B",
+                            size_gb: 5,
+                            min_ram_gb: 8,
+                            description: "x",
+                            quality_tier: "balanced",
+                            installed: true,
+                            source: "native",
+                            task: "chat",
+                            featured: false,
+                            downloads: 100,
+                            param_count: "8B",
+                        },
+                    ],
+                }),
+            );
+            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-chat");
+            await cb?.();
+            expect(ModelInfoModal).toHaveBeenCalled();
+        });
+
+        it("lilbee:model-info-active-chat shows a Notice when no chat_model is configured", async () => {
+            const { ModelInfoModal } = await import("../src/views/model-info-modal");
+            (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-chat");
+            await cb?.();
+            expect(ModelInfoModal).not.toHaveBeenCalled();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_ACTIVE_MODEL("chat"));
+        });
+
+        it("lilbee:model-info-active-chat shows a Notice when api.config() throws", async () => {
+            const { ModelInfoModal } = await import("../src/views/model-info-modal");
+            (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
+            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-chat");
+            await cb?.();
+            expect(ModelInfoModal).not.toHaveBeenCalled();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_ACTIVE_MODEL("chat"));
+        });
+
+        it("lilbee:model-info-active-chat shows a Notice when catalog lookup errors", async () => {
+            const { ModelInfoModal } = await import("../src/views/model-info-modal");
+            (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
+            const { err } = await import("neverthrow");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: "qwen/qwen3-8b" });
+            (plugin.api as { catalog?: ReturnType<typeof vi.fn> }).catalog = vi
+                .fn()
+                .mockResolvedValue(err(new Error("nope")));
+            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-chat");
+            await cb?.();
+            expect(ModelInfoModal).not.toHaveBeenCalled();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_ACTIVE_MODEL("chat"));
+        });
+
+        it("lilbee:model-info-active-chat shows a Notice when catalog returns no rows", async () => {
+            const { ModelInfoModal } = await import("../src/views/model-info-modal");
+            (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
+            const { ok } = await import("neverthrow");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: "qwen/qwen3-8b" });
+            (plugin.api as { catalog?: ReturnType<typeof vi.fn> }).catalog = vi
+                .fn()
+                .mockResolvedValue(ok({ total: 0, limit: 20, offset: 0, has_more: false, models: [] }));
+            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-chat");
+            await cb?.();
+            expect(ModelInfoModal).not.toHaveBeenCalled();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_ACTIVE_MODEL("chat"));
+        });
+
+        it("lilbee:model-info-active-embedding resolves embedding_model and falls back to first catalog row", async () => {
+            const { ModelInfoModal } = await import("../src/views/model-info-modal");
+            (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
+            const { ok } = await import("neverthrow");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ embedding_model: "BAAI/bge-m3" });
+            // The repo doesn't match exactly — fall back to first row in the response.
+            (plugin.api as { catalog?: ReturnType<typeof vi.fn> }).catalog = vi.fn().mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    has_more: false,
+                    models: [
+                        {
+                            hf_repo: "BAAI/bge-m3-other",
+                            gguf_filename: "",
+                            display_name: "BGE M3 Other",
+                            size_gb: 1,
+                            min_ram_gb: 2,
+                            description: "x",
+                            quality_tier: "balanced",
+                            installed: false,
+                            source: "native",
+                            task: "embedding",
+                            featured: false,
+                            downloads: 0,
+                            param_count: "",
+                        },
+                    ],
+                }),
+            );
+            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-embedding");
+            await cb?.();
+            expect(ModelInfoModal).toHaveBeenCalled();
         });
 
         it("lilbee:tasks calls activateTaskView", async () => {

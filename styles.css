@@ -3140,3 +3140,128 @@
     opacity: 0.6;
     cursor: wait;
 }
+
+.lilbee-catalog-body {
+    display: block;
+}
+
+.lilbee-catalog-body-with-drawer {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: var(--size-4-3, 12px);
+}
+
+.lilbee-catalog-drawer {
+    width: 320px;
+    padding: var(--size-4-3, 12px);
+    border-left: 1px solid var(--background-modifier-border);
+    overflow-y: auto;
+    max-height: 50vh;
+}
+
+.lilbee-catalog-drawer-collapsed {
+    display: none;
+}
+
+.lilbee-catalog-drawer-header {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-catalog-drawer-toggle {
+    padding: 4px 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    cursor: pointer;
+    font-size: var(--font-smallest, 10px);
+}
+
+.lilbee-catalog-drawer-empty {
+    color: var(--text-muted);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-detail-name {
+    margin: 0 0 var(--size-4-2, 8px) 0;
+    font-size: var(--font-ui-medium, 14px);
+}
+
+.lilbee-detail-section {
+    margin-top: var(--size-4-3, 12px);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.lilbee-detail-section-label {
+    font-size: var(--font-smallest, 10px);
+    text-transform: uppercase;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+}
+
+.lilbee-detail-variants {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.lilbee-detail-variant {
+    padding: 2px 8px;
+    border-radius: 8px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: var(--font-smallest, 10px);
+}
+
+.lilbee-detail-description {
+    margin: 0;
+    color: var(--text-normal);
+    font-size: var(--font-small, 13px);
+    line-height: 1.4;
+}
+
+.lilbee-detail-install-status,
+.lilbee-detail-downloads-value {
+    color: var(--text-normal);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-model-info-modal {
+    padding: var(--size-4-3, 12px);
+}
+
+.lilbee-model-info-section {
+    margin-top: var(--size-4-3, 12px);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.lilbee-model-info-row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--size-4-3, 12px);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-model-info-label {
+    color: var(--text-muted);
+}
+
+.lilbee-model-info-value {
+    color: var(--text-normal);
+}
+
+.lilbee-model-info-link-row {
+    margin-top: var(--size-4-3, 12px);
+}
+
+.lilbee-hf-link {
+    color: var(--interactive-accent);
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: var(--font-small, 13px);
+}

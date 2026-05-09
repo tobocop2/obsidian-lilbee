@@ -28,7 +28,7 @@ import {
     type VaultAdapter,
 } from "./types";
 import { MESSAGES } from "./locales/en";
-import { displayLabelForRef } from "./utils/model-ref";
+import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import {
     errorMessage,
     extractSseErrorMessage,
@@ -41,6 +41,7 @@ import {
     withIdleTimeout,
 } from "./utils";
 import { CatalogModal } from "./views/catalog-modal";
+import { ModelInfoModal } from "./views/model-info-modal";
 import { ModelPickerModal } from "./views/model-picker-modal";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
 import { CrawlModal } from "./views/crawl-modal";
@@ -591,6 +592,18 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "lilbee:model-info-active-chat",
+            name: MESSAGES.COMMAND_MODEL_INFO_CHAT,
+            callback: () => this.openModelInfoForActiveTask("chat"),
+        });
+
+        this.addCommand({
+            id: "lilbee:model-info-active-embedding",
+            name: MESSAGES.COMMAND_MODEL_INFO_EMBED,
+            callback: () => this.openModelInfoForActiveTask("embedding"),
+        });
+
+        this.addCommand({
             id: "lilbee:crawl",
             name: "Crawl web page",
             callback: () => new CrawlModal(this.app, this).open(),
@@ -870,6 +883,35 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         this.setStatusReady();
+    }
+
+    async openModelInfoForActiveTask(task: "chat" | "embedding"): Promise<void> {
+        let cfg: Record<string, unknown>;
+        try {
+            cfg = await this.api.config();
+        } catch {
+            new Notice(MESSAGES.NOTICE_NO_ACTIVE_MODEL(task));
+            return;
+        }
+        const key = task === "chat" ? "chat_model" : "embedding_model";
+        const ref = typeof cfg[key] === "string" ? (cfg[key] as string) : "";
+        if (!ref) {
+            new Notice(MESSAGES.NOTICE_NO_ACTIVE_MODEL(task));
+            return;
+        }
+
+        const repo = extractHfRepo(ref);
+        const result = await this.api.catalog({ task, search: repo });
+        if (result.isErr()) {
+            new Notice(MESSAGES.NOTICE_NO_ACTIVE_MODEL(task));
+            return;
+        }
+        const entry = result.value.models.find((e) => e.hf_repo === repo) ?? result.value.models[0];
+        if (!entry) {
+            new Notice(MESSAGES.NOTICE_NO_ACTIVE_MODEL(task));
+            return;
+        }
+        new ModelInfoModal(this.app, this, entry).open();
     }
 
     async fetchActiveModel(): Promise<void> {

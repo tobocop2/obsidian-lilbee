@@ -34,6 +34,8 @@ import {
     getRelevantSystemMemoryGB,
 } from "../utils";
 import { renderModelCard } from "../components/model-card";
+import { renderModelDetail } from "../components/model-detail";
+import { ModelInfoModal } from "./model-info-modal";
 import {
     deepLinkToApiKeySettings,
     forYouRail,
@@ -51,6 +53,8 @@ import {
 
 const PAGE_SIZE = 20;
 const SCROLL_BOTTOM_THRESHOLD_PX = 200;
+const DRAWER_BREAKPOINT_PX = 800;
+const DRAWER_FOCUS_DEBOUNCE_MS = 30;
 
 type TaskFilter = (typeof FILTERS.TASK)[keyof typeof FILTERS.TASK];
 type SizeFilter = "" | typeof FILTERS.SIZE.SMALL | typeof FILTERS.SIZE.MEDIUM | typeof FILTERS.SIZE.LARGE;
@@ -105,6 +109,13 @@ export class CatalogModal extends Modal {
     private frontierTabBtn: HTMLElement | null = null;
     private activeTab: CatalogTab;
     private mainTabBarEl: HTMLElement | null = null;
+    private bodyEl: HTMLElement | null = null;
+    private drawerEl: HTMLElement | null = null;
+    private drawerContentEl: HTMLElement | null = null;
+    private drawerToggleBtn: HTMLElement | null = null;
+    private drawerCollapsedByUser = false;
+    private focusedRepo: string | null = null;
+    private focusDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
 
     /**
      * @param initialTaskFilter Pre-select a task tab when opening (e.g.
@@ -136,12 +147,71 @@ export class CatalogModal extends Modal {
         this.renderSubTabBar(contentEl);
         this.renderFilterBar(contentEl);
 
-        this.resultsEl = contentEl.createDiv({ cls: "lilbee-catalog-results lilbee-catalog-tab-content" });
+        this.bodyEl = contentEl.createDiv({ cls: "lilbee-catalog-body lilbee-catalog-body-with-drawer" });
+        this.resultsEl = this.bodyEl.createDiv({ cls: "lilbee-catalog-results lilbee-catalog-tab-content" });
         this.resultsEl.addEventListener("scroll", this.onScroll);
+        this.renderDrawer(this.bodyEl);
+        this.bodyEl.addEventListener("focusin", this.onCardFocus);
+        this.bodyEl.addEventListener("pointerover", this.onCardFocus);
         contentEl.addEventListener("keydown", this.onKeyDown);
+        this.applyDrawerVisibility();
 
         this.applyTabToFilter();
         this.resetAndFetch();
+    }
+
+    private renderDrawer(parent: HTMLElement): void {
+        this.drawerEl = parent.createDiv({ cls: "lilbee-catalog-drawer" });
+        const header = this.drawerEl.createDiv({ cls: "lilbee-catalog-drawer-header" });
+        this.drawerToggleBtn = header.createEl("button", {
+            cls: "lilbee-catalog-drawer-toggle",
+            text: MESSAGES.BUTTON_DRAWER_TOGGLE,
+        });
+        this.drawerToggleBtn.addEventListener("click", () => this.toggleDrawer());
+        this.drawerContentEl = this.drawerEl.createDiv({ cls: "lilbee-catalog-drawer-content" });
+        this.drawerContentEl.createEl("p", {
+            cls: "lilbee-catalog-drawer-empty",
+            text: MESSAGES.LABEL_DRAWER_NO_SELECTION,
+        });
+    }
+
+    private toggleDrawer(): void {
+        this.drawerCollapsedByUser = !this.drawerCollapsedByUser;
+        this.applyDrawerVisibility();
+    }
+
+    private applyDrawerVisibility(): void {
+        /* v8 ignore next 2 */
+        if (!this.drawerEl || !this.bodyEl) return;
+        const narrow = typeof window !== "undefined" && window.innerWidth < DRAWER_BREAKPOINT_PX;
+        const collapsed = narrow || this.drawerCollapsedByUser;
+        this.drawerEl.toggleClass("lilbee-catalog-drawer-collapsed", collapsed);
+        this.bodyEl.toggleClass("lilbee-catalog-body-with-drawer", !collapsed);
+    }
+
+    private onCardFocus = (e: Event): void => {
+        const card = findCardElement(e.target);
+        if (!card) return;
+        const repo = card.dataset.repo;
+        if (!repo || repo === this.focusedRepo) return;
+        if (this.focusDebounceTimeout !== null) clearTimeout(this.focusDebounceTimeout);
+        this.focusDebounceTimeout = setTimeout(() => {
+            this.focusedRepo = repo;
+            this.updateDrawerForRepo(repo);
+        }, DRAWER_FOCUS_DEBOUNCE_MS);
+    };
+
+    private updateDrawerForRepo(repo: string): void {
+        /* v8 ignore next 2 */
+        if (!this.drawerContentEl) return;
+        const entry = this.entries.find((e) => e.hf_repo === repo);
+        if (!entry) return;
+        renderModelDetail(entry, this.drawerContentEl);
+    }
+
+    private focusedEntry(): CatalogEntry | null {
+        if (this.focusedRepo === null) return null;
+        return this.entries.find((e) => e.hf_repo === this.focusedRepo) ?? null;
     }
 
     private renderMainTabBar(parent: HTMLElement): void {
@@ -239,7 +309,13 @@ export class CatalogModal extends Modal {
     onClose(): void {
         this.cancelDebouncedSearch();
         this.resultsEl?.removeEventListener("scroll", this.onScroll);
+        this.bodyEl?.removeEventListener("focusin", this.onCardFocus);
+        this.bodyEl?.removeEventListener("pointerover", this.onCardFocus);
         this.contentEl.removeEventListener("keydown", this.onKeyDown);
+        if (this.focusDebounceTimeout !== null) {
+            clearTimeout(this.focusDebounceTimeout);
+            this.focusDebounceTimeout = null;
+        }
     }
 
     private onScroll = (): void => {
@@ -251,6 +327,15 @@ export class CatalogModal extends Modal {
     };
 
     private onKeyDown = (e: KeyboardEvent): void => {
+        if (e.key === "i" && !isTextInputTarget(e.target)) {
+            const entry = this.focusedEntry();
+            if (entry) {
+                e.preventDefault();
+                e.stopPropagation();
+                new ModelInfoModal(this.app, this.plugin, entry).open();
+            }
+            return;
+        }
         const idx = Number(e.key) - 1;
         if (!Number.isInteger(idx) || idx < 0 || idx >= TAB_SPECS.length) return;
         e.preventDefault();
@@ -811,4 +896,20 @@ export class CatalogModal extends Modal {
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(this.activatedRefFor(entry)));
         this.resetAndFetch();
     }
+}
+
+function findCardElement(target: EventTarget | null): HTMLElement | null {
+    let el = target as (HTMLElement & { dataset?: Record<string, string> }) | null;
+    while (el) {
+        if (el.dataset?.repo) return el;
+        el = (el.parentElement ?? null) as (HTMLElement & { dataset?: Record<string, string> }) | null;
+    }
+    return null;
+}
+
+function isTextInputTarget(target: EventTarget | null): boolean {
+    const el = target as { tagName?: string } | null;
+    if (!el?.tagName) return false;
+    const tag = el.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA";
 }
