@@ -426,18 +426,8 @@ describe("LilbeeSettingTab", () => {
             expect(container).not.toBeNull();
         });
 
-        it("shows sync-debounce setting when syncMode is 'auto'", () => {
-            const plugin = makePlugin({ syncMode: "auto" });
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + 9 generation + 5 retrieval-advanced + 4 ingest + 2 worker-pool
-            // + syncDebounce + 10 crawling + wikiVaultFolder + rerank_candidates + hfToken + litellm = 36
-            expect(textOnChanges.length).toBe(36);
-        });
-
-        it("does NOT show sync-debounce when syncMode is 'manual'", () => {
-            const plugin = makePlugin({ syncMode: "manual" });
+        it("renders the expected total number of text inputs (no sync-mode rows)", () => {
+            const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
@@ -571,81 +561,6 @@ describe("LilbeeSettingTab", () => {
 
             const rows = tab.containerEl.querySelectorAll(".lilbee-setting-disabled");
             expect(rows.length).toBeGreaterThan(0);
-        });
-    });
-
-    describe("syncMode dropdown onChange", () => {
-        it("updates syncMode, saves, and re-renders display", async () => {
-            const plugin = makePlugin({ serverMode: "external", syncMode: "manual" });
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
-            const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
-
-            // Dropdown index shifted from 1 to 2 with the addition of the chat_mode
-            // dropdown in renderGenerationSettings. Order: 0=serverMode, 1=chat_mode,
-            // 2=syncMode (the test target).
-            await dropdownOnChanges[2]("auto");
-
-            expect(plugin.settings.syncMode).toBe("auto");
-            expect(plugin.saveSettings).toHaveBeenCalled();
-            expect(displaySpy).toHaveBeenCalled();
-        });
-    });
-
-    describe("syncDebounce text onChange", () => {
-        // With syncMode=auto, text fields are rendered in order: connection -> models -> search ->
-        // generation -> retrieval-advanced -> ingest -> worker-pool -> sync. Indices:
-        // [0] port, [1-9] generation, [10-14] retrieval-advanced, [15-18] ingest,
-        // [19-20] worker-pool, [21] syncDebounce
-        const DEBOUNCE_IDX = 21;
-
-        it("updates syncDebounceMs for valid positive number", async () => {
-            const plugin = makePlugin({ syncMode: "auto" });
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-
-            await textOnChanges[DEBOUNCE_IDX]("3000");
-            expect(plugin.settings.syncDebounceMs).toBe(3000);
-            expect(plugin.saveSettings).toHaveBeenCalled();
-        });
-
-        it("accepts zero as a valid debounce value", async () => {
-            const plugin = makePlugin({ syncMode: "auto" });
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-
-            plugin.settings.syncDebounceMs = 999;
-            await textOnChanges[DEBOUNCE_IDX]("0");
-            expect(plugin.settings.syncDebounceMs).toBe(0);
-            expect(plugin.saveSettings).toHaveBeenCalled();
-        });
-
-        it("does NOT save for NaN input", async () => {
-            const plugin = makePlugin({ syncMode: "auto" });
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-
-            const original = plugin.settings.syncDebounceMs;
-            await textOnChanges[DEBOUNCE_IDX]("not-a-number");
-            expect(plugin.settings.syncDebounceMs).toBe(original);
-            expect(plugin.saveSettings).not.toHaveBeenCalled();
-        });
-
-        it("does NOT save for negative number input", async () => {
-            const plugin = makePlugin({ syncMode: "auto" });
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-
-            const original = plugin.settings.syncDebounceMs;
-            await textOnChanges[DEBOUNCE_IDX]("-100");
-            expect(plugin.settings.syncDebounceMs).toBe(original);
-            expect(plugin.saveSettings).not.toHaveBeenCalled();
         });
     });
 
@@ -3205,10 +3120,10 @@ describe("managed mode settings", () => {
     });
 
     describe("per-row reset-to-default affordance", () => {
-        // Reset button order (managed + manual-sync defaults):
+        // Reset button order:
         // 0=serverMode(local) 1=serverPort(local) 2=topK 3=maxDistance 4=adaptiveThreshold
         // 5=ragSystemPrompt(local) 6=generalSystemPrompt(local) 7=temperature 8=top_p
-        // 9=top_k_sampling 10=repeat_penalty 11=num_ctx 12=seed 13=syncMode(local) ...
+        // 9=top_k_sampling 10=repeat_penalty 11=num_ctx 12=seed ...
         const TEMPERATURE_RESET = 7;
 
         it("server-backed reset PATCHes the cached default", async () => {

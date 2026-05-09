@@ -103,8 +103,9 @@ describe("MESSAGES", () => {
             expect(MESSAGES.DESC_MODELS_HELP).toBe(
                 "Browse the catalog for available models. Requires the lilbee server.",
             );
-            expect(MESSAGES.DESC_SYNC_MANUAL).toBe("Manual (command only)");
-            expect(MESSAGES.DESC_SYNC_AUTO).toBe("Auto (watch for changes)");
+            expect(MESSAGES.STATUS_DOCS_PENDING_SYNC(3)).toBe("lilbee: 3 to sync");
+            expect(MESSAGES.STATUS_SYNC_IN_PROGRESS).toBe("lilbee: syncing…");
+            expect(MESSAGES.TOOLTIP_PENDING_SYNC_HINT).toBe("Click to sync new documents");
             expect(MESSAGES.DESC_RESULTS_COUNT).toBe(
                 "How many matching passages to return when you search or ask a question",
             );

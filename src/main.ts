@@ -1,4 +1,4 @@
-import { type EventRef, type Menu, type MenuItem, Notice, Plugin, type TAbstractFile } from "obsidian";
+import { type Menu, type MenuItem, Notice, Plugin, type TAbstractFile } from "obsidian";
 import { LilbeeClient, SessionTokenError } from "./api";
 import type { RequestOutcome } from "./api";
 import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
@@ -13,7 +13,6 @@ import {
     SERVER_MODE,
     SERVER_STATE,
     SSE_EVENT,
-    SYNC_MODE,
     TASK_STATUS,
     TASK_TYPE,
     type BatchProgressPayload,
@@ -65,6 +64,10 @@ interface PruneData {
 }
 
 const BYTES_PER_MB = 1_000_000;
+
+const PENDING_SYNC_HINT_DEBOUNCE_MS = 1000;
+
+const SUPPORTED_SYNC_EXTENSIONS = new Set(["md", "pdf", "txt", "html"]);
 
 function formatSetupDetail(downloaded: number, total: number | null): string {
     const dlMB = (downloaded / BYTES_PER_MB).toFixed(1);
@@ -184,12 +187,12 @@ export default class LilbeePlugin extends Plugin {
     api: LilbeeClient = new LilbeeClient("");
     activeModel = "";
     statusBarEl: HTMLElement | null = null;
+    syncHintEl: HTMLElement | null = null;
     ribbonIconEl: HTMLElement | null = null;
     binaryManager: BinaryManager | null = null;
     serverManager: ServerManager | null = null;
     syncController: AbortController | null = null;
-    private syncTimeout: ReturnType<typeof setTimeout> | null = null;
-    private autoSyncRefs: EventRef[] = [];
+    private pendingHintTimeout: ReturnType<typeof setTimeout> | null = null;
     private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
     private startingServer = false;
     private serverStartFailed = false;
@@ -211,6 +214,12 @@ export default class LilbeePlugin extends Plugin {
         this.statusBarEl.style.cursor = "pointer";
         this.statusBarEl.setAttribute("aria-label", MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);
         this.statusBarEl.addEventListener("click", () => this.openPluginSettings());
+
+        this.syncHintEl = this.addStatusBarItem();
+        this.syncHintEl.addClass("lilbee-sync-hint");
+        this.syncHintEl.style.display = "none";
+        this.syncHintEl.setAttribute("aria-label", MESSAGES.TOOLTIP_PENDING_SYNC_HINT);
+        this.syncHintEl.addEventListener("click", () => void this.triggerSync());
         this.ribbonIconEl = this.addRibbonIcon("list-checks", MESSAGES.LABEL_RIBBON_OPEN_TASK_CENTER, () =>
             this.activateTaskView(),
         );
@@ -253,9 +262,8 @@ export default class LilbeePlugin extends Plugin {
             new SetupWizard(this.app, this).open();
         }
 
-        if (this.settings.syncMode === SYNC_MODE.AUTO) {
-            this.registerAutoSync();
-        }
+        this.registerPendingSyncHintWatchers();
+        this.schedulePendingSyncHint();
 
         this.startHealthProbe();
     }
@@ -662,8 +670,8 @@ export default class LilbeePlugin extends Plugin {
     }
 
     onunload(): void {
-        if (this.syncTimeout) {
-            clearTimeout(this.syncTimeout);
+        if (this.pendingHintTimeout) {
+            clearTimeout(this.pendingHintTimeout);
         }
         this.taskQueue.dispose();
         void this.serverManager?.stop();
@@ -733,8 +741,6 @@ export default class LilbeePlugin extends Plugin {
             this.setStatusReady();
             void this.fetchActiveModel();
         }
-
-        this.updateAutoSync();
     }
 
     private updateStatusBar(text: string, dotState: DotState | null = null): void {
@@ -1184,21 +1190,6 @@ export default class LilbeePlugin extends Plugin {
         for (const p of paths) this.failedAddPaths.add(p);
     }
 
-    private updateAutoSync(): void {
-        if (this.settings.syncMode === SYNC_MODE.AUTO && this.autoSyncRefs.length === 0) {
-            this.registerAutoSync();
-        } else if (this.settings.syncMode === SYNC_MODE.MANUAL && this.autoSyncRefs.length > 0) {
-            this.unregisterAutoSync();
-        }
-    }
-
-    private unregisterAutoSync(): void {
-        for (const ref of this.autoSyncRefs) {
-            this.app.vault.offref(ref);
-        }
-        this.autoSyncRefs = [];
-    }
-
     async activateTaskView(): Promise<void> {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_TASKS);
         if (existing.length > 0) {
@@ -1268,36 +1259,64 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    private registerAutoSync(): void {
+    private registerPendingSyncHintWatchers(): void {
         const handler = (file: TAbstractFile) => {
             if (this.wikiSync?.isWikiPath(file.path)) return;
-            // Skip everything the server itself writes into the vault
-            // (crawled/, imported/, documents/, wiki/). Once server PR 3 lands
-            // this prevents the vault watcher from re-triggering sync on
-            // files lilbee just materialized.
+            // Skip paths the server itself writes into the vault — they're
+            // already known sources, not work to sync.
             if (file.path.startsWith("lilbee/")) return;
-            this.debouncedSync();
+            this.schedulePendingSyncHint();
         };
         const vault = this.app.vault;
-        const refs = [
-            vault.on("create", handler),
-            vault.on("modify", handler),
-            vault.on("delete", handler),
-            vault.on("rename", handler),
-        ];
-        for (const ref of refs) {
-            this.autoSyncRefs.push(ref);
-            this.registerEvent(ref);
-        }
+        this.registerEvent(vault.on("create", handler));
+        this.registerEvent(vault.on("modify", handler));
+        this.registerEvent(vault.on("delete", handler));
+        this.registerEvent(vault.on("rename", handler));
     }
 
-    private debouncedSync(): void {
-        if (this.syncTimeout) {
-            clearTimeout(this.syncTimeout);
+    private schedulePendingSyncHint(): void {
+        if (this.pendingHintTimeout) {
+            clearTimeout(this.pendingHintTimeout);
         }
-        this.syncTimeout = setTimeout(() => {
-            this.triggerSync();
-        }, this.settings.syncDebounceMs);
+        this.pendingHintTimeout = setTimeout(() => {
+            this.pendingHintTimeout = null;
+            void this.updatePendingSyncHint();
+        }, PENDING_SYNC_HINT_DEBOUNCE_MS);
+    }
+
+    private async countPendingSync(): Promise<number> {
+        const vaultFiles = this.app.vault
+            .getFiles()
+            .filter((f) => SUPPORTED_SYNC_EXTENSIONS.has(f.extension.toLowerCase()))
+            .filter((f) => !this.wikiSync?.isWikiPath(f.path) && !f.path.startsWith("lilbee/"));
+        const known = new Set<string>();
+        try {
+            // Page through the documents endpoint so we count every known
+            // source, not just the first page.
+            let offset = 0;
+            const limit = 100;
+            while (true) {
+                const page = await this.api.listDocuments(undefined, limit, offset);
+                for (const d of page.documents) known.add(d.filename);
+                if (!page.has_more || page.documents.length === 0) break;
+                offset += page.documents.length;
+            }
+        } catch {
+            // Server offline — leave the hint hidden rather than guessing.
+            return 0;
+        }
+        return vaultFiles.filter((f) => !known.has(f.name)).length;
+    }
+
+    async updatePendingSyncHint(): Promise<void> {
+        if (!this.syncHintEl) return;
+        const count = await this.countPendingSync();
+        if (count > 0) {
+            this.syncHintEl.setText(MESSAGES.STATUS_DOCS_PENDING_SYNC(count));
+            this.syncHintEl.style.display = "";
+        } else {
+            this.syncHintEl.style.display = "none";
+        }
     }
 
     async runWikiLint(): Promise<void> {
@@ -1482,6 +1501,7 @@ export default class LilbeePlugin extends Plugin {
         }
         this.syncController = new AbortController();
         this.taskQueue.registerAbort(taskId, this.syncController);
+        this.markSyncHintRunning(true);
 
         try {
             const progress = new FileProgressTracker();
@@ -1568,6 +1588,19 @@ export default class LilbeePlugin extends Plugin {
             }
         } finally {
             this.syncController = null;
+            this.markSyncHintRunning(false);
+            this.schedulePendingSyncHint();
+        }
+    }
+
+    private markSyncHintRunning(running: boolean): void {
+        if (!this.syncHintEl) return;
+        if (running) {
+            this.syncHintEl.setAttribute("data-running", "true");
+            this.syncHintEl.setText(MESSAGES.STATUS_SYNC_IN_PROGRESS);
+            this.syncHintEl.style.display = "";
+        } else {
+            this.syncHintEl.removeAttribute("data-running");
         }
     }
 }

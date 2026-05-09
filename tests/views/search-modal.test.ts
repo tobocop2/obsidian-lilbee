@@ -19,8 +19,6 @@ function makePlugin(): LilbeePlugin {
         settings: {
             serverUrl: "http://localhost:7433",
             topK: 5,
-            syncMode: "manual" as const,
-            syncDebounceMs: 5000,
             searchChunkType: "all" as const,
             wikiEnabled: true,
         },

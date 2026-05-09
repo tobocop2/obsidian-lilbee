@@ -11,7 +11,6 @@ import {
     SERVER_MODE,
     SERVER_STATE,
     SSE_EVENT,
-    SYNC_MODE,
     TASK_TYPE,
     ERROR_NAME,
 } from "./types";
@@ -104,7 +103,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderRetrievalAdvanced(containerEl);
         this.renderIngestSettings(containerEl);
         this.renderWorkerPoolSettings(containerEl);
-        this.renderSyncSettings(containerEl);
         this.crawlingContainerEl = containerEl.createDiv();
         this.renderCrawlingSettings(this.crawlingContainerEl);
         this.wikiContainerEl = containerEl.createDiv();
@@ -1331,43 +1329,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     });
                 this.serverConfigInputs.set("embedding_model", text.inputEl as unknown as HTMLInputElement);
             });
-    }
-
-    private renderSyncSettings(containerEl: HTMLElement): void {
-        const syncModeSetting = new Setting(containerEl)
-            .setName(MESSAGES.LABEL_SYNC_MODE)
-            .setDesc(MESSAGES.DESC_SYNC_MODE)
-            .addDropdown((dropdown) =>
-                dropdown
-                    .addOption("manual", MESSAGES.DESC_SYNC_MANUAL)
-                    .addOption("auto", MESSAGES.DESC_SYNC_AUTO)
-                    .setValue(this.plugin.settings.syncMode)
-                    .onChange(async (value) => {
-                        this.plugin.settings.syncMode = value as "manual" | "auto";
-                        await this.plugin.saveSettings();
-                        this.display();
-                    }),
-            );
-        this.appendLocalResetAffordance(syncModeSetting, "syncMode", MESSAGES.LABEL_SYNC_MODE);
-
-        if (this.plugin.settings.syncMode === SYNC_MODE.AUTO) {
-            const debounceSetting = new Setting(containerEl)
-                .setName(MESSAGES.LABEL_SYNC_DEBOUNCE)
-                .setDesc(MESSAGES.DESC_SYNC_DEBOUNCE)
-                .addText((text) =>
-                    text
-                        .setPlaceholder(MESSAGES.PLACEHOLDER_5000)
-                        .setValue(String(this.plugin.settings.syncDebounceMs))
-                        .onChange(async (value) => {
-                            const num = parseInt(value, 10);
-                            if (!isNaN(num) && num >= 0) {
-                                this.plugin.settings.syncDebounceMs = num;
-                                await this.plugin.saveSettings();
-                            }
-                        }),
-                );
-            this.appendLocalResetAffordance(debounceSetting, "syncDebounceMs", MESSAGES.LABEL_SYNC_DEBOUNCE);
-        }
     }
 
     private renderCrawlingSettings(containerEl: HTMLElement): void {

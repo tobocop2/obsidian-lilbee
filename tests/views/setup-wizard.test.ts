@@ -52,7 +52,6 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
             serverUrl: "http://127.0.0.1:7433",
             serverMode: "managed",
             setupCompleted: false,
-            syncMode: "manual",
             wikiEnabled: false,
             enableOcr: null,
             ...((overrides.settings as Record<string, unknown>) || {}),

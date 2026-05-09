@@ -245,8 +245,6 @@ export interface LilbeeSettings {
     topK: number;
     maxDistance: number;
     adaptiveThreshold: boolean;
-    syncMode: "manual" | "auto";
-    syncDebounceMs: number;
     serverMode: ServerMode;
     serverPort: number | null;
     lilbeeVersion: string;
@@ -276,8 +274,6 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     topK: 5,
     maxDistance: 0.9,
     adaptiveThreshold: false,
-    syncMode: "manual",
-    syncDebounceMs: 5000,
     serverMode: "managed",
     serverPort: null,
     lilbeeVersion: "",
@@ -578,13 +574,6 @@ export const TASK_TYPE = {
     DELETE: "delete",
     SETUP: "setup",
 } as const satisfies Record<string, TaskType>;
-
-export type SyncMode = "manual" | "auto";
-
-export const SYNC_MODE = {
-    MANUAL: "manual",
-    AUTO: "auto",
-} as const satisfies Record<string, SyncMode>;
 
 export type ModelTask = "chat" | "vision" | "embedding" | "rerank";
 

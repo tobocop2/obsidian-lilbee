@@ -36,6 +36,7 @@ vi.mock("../src/api", () => ({
         wikiLint: vi.fn(),
         wikiGenerate: vi.fn(),
         wikiPrune: vi.fn(),
+        listDocuments: vi.fn(),
     })),
 }));
 
@@ -312,20 +313,17 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
         });
 
-        it("with manual sync mode: registers only file-menu event (no vault events)", async () => {
+        it("registers vault watchers for the pending-sync hint plus the file-menu listener", async () => {
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "manual" });
             await plugin.onload();
-            // 1 for file-menu
-            expect(plugin.registerEvent).toHaveBeenCalledTimes(1);
+            // 4 vault events (create/modify/delete/rename) + 1 file-menu = 5
+            expect(plugin.registerEvent).toHaveBeenCalledTimes(5);
         });
 
-        it("with auto sync mode: registers vault events + file-menu", async () => {
+        it("does not carry an autoSyncRefs field on the plugin instance", async () => {
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
             await plugin.onload();
-            // 4 vault events + 1 file-menu = 5
-            expect(plugin.registerEvent).toHaveBeenCalledTimes(5);
+            expect((plugin as unknown as Record<string, unknown>).autoSyncRefs).toBeUndefined();
         });
 
         it("recreates API client with loaded serverUrl", async () => {
@@ -393,15 +391,18 @@ describe("LilbeePlugin", () => {
     });
 
     describe("onunload()", () => {
-        it("clears sync timeout if one is active", async () => {
+        it("clears the pending-sync hint timeout if one is active", async () => {
             vi.useFakeTimers();
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).debouncedSync();
-            expect((plugin as any).syncTimeout).not.toBeNull();
-            const clearSpy = vi.spyOn(globalThis, "clearTimeout");
+            (plugin as any).schedulePendingSyncHint();
+            expect((plugin as any).pendingHintTimeout).not.toBeNull();
             plugin.onunload();
-            expect(clearSpy).toHaveBeenCalled();
+            // After unload the scheduled callback must not run.
+            const updateSpy = vi.spyOn(plugin, "updatePendingSyncHint");
+            vi.advanceTimersByTime(5000);
+            expect(updateSpy).not.toHaveBeenCalled();
+            vi.useRealTimers();
         });
 
         it("does not throw when no timeout is active", async () => {
@@ -414,10 +415,9 @@ describe("LilbeePlugin", () => {
     describe("loadSettings()", () => {
         it("merges saved data over defaults", async () => {
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", topK: 15, syncMode: "auto" });
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", topK: 15 });
             await plugin.loadSettings();
             expect(plugin.settings.topK).toBe(15);
-            expect(plugin.settings.syncMode).toBe("auto");
             expect(plugin.settings.serverUrl).toBe("http://127.0.0.1:7433");
         });
 
@@ -426,7 +426,7 @@ describe("LilbeePlugin", () => {
             plugin.loadData = vi.fn().mockResolvedValue(null);
             await plugin.loadSettings();
             expect(plugin.settings.topK).toBe(5);
-            expect(plugin.settings.syncMode).toBe("manual");
+            expect(plugin.settings.serverMode).toBe("managed");
         });
 
         it("migrates legacy systemPrompt key to ragSystemPrompt and persists the rewritten blob", async () => {
@@ -489,58 +489,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.saveData).toHaveBeenCalledWith(expect.objectContaining({ ...plugin.settings }));
             const callsAfter = (LilbeeClient as ReturnType<typeof vi.fn>).mock.calls.length;
             expect(callsAfter).toBeGreaterThan(callsBefore);
-        });
-
-        it("calls updateAutoSync after saving", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-
-            const updateSpy = vi.spyOn(plugin as any, "updateAutoSync");
-            await plugin.saveSettings();
-
-            expect(updateSpy).toHaveBeenCalled();
-        });
-    });
-
-    describe("updateAutoSync()", () => {
-        it("registers vault events when switching from manual to auto", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "manual" });
-            await plugin.onload();
-
-            expect(plugin.registerEvent).toHaveBeenCalledTimes(1);
-
-            plugin.settings.syncMode = "auto";
-            await plugin.saveSettings();
-
-            // 1 file-menu + 4 vault events = 5
-            expect(plugin.registerEvent).toHaveBeenCalledTimes(5);
-        });
-
-        it("clears autoSyncRefs and calls offref when switching from auto to manual", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
-            await plugin.onload();
-
-            expect((plugin as any).autoSyncRefs.length).toBe(4);
-
-            plugin.settings.syncMode = "manual";
-            await plugin.saveSettings();
-
-            expect((plugin as any).autoSyncRefs.length).toBe(0);
-            expect(plugin.app.vault.offref).toHaveBeenCalledTimes(4);
-        });
-
-        it("does not re-register events when already in auto mode", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
-            await plugin.onload();
-
-            const callsBefore = (plugin.registerEvent as ReturnType<typeof vi.fn>).mock.calls.length;
-
-            await plugin.saveSettings();
-
-            expect((plugin.registerEvent as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsBefore);
         });
     });
 
@@ -640,37 +588,6 @@ describe("LilbeePlugin", () => {
             plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
 
             await expect((plugin as any).activateTaskView()).resolves.not.toThrow();
-        });
-    });
-
-    describe("debouncedSync()", () => {
-        it("schedules triggerSync after debounce delay", async () => {
-            vi.useFakeTimers();
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncDebounceMs: 1000 });
-            await plugin.onload();
-
-            const triggerSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
-            (plugin as any).debouncedSync();
-
-            expect(triggerSpy).not.toHaveBeenCalled();
-            vi.advanceTimersByTime(1000);
-            expect(triggerSpy).toHaveBeenCalledTimes(1);
-        });
-
-        it("cancels previous timer when called again", async () => {
-            vi.useFakeTimers();
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncDebounceMs: 500 });
-            await plugin.onload();
-
-            const triggerSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
-            (plugin as any).debouncedSync();
-            vi.advanceTimersByTime(200);
-            (plugin as any).debouncedSync();
-            vi.advanceTimersByTime(500);
-
-            expect(triggerSpy).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -912,12 +829,11 @@ describe("LilbeePlugin", () => {
         });
     });
 
-    describe("registerAutoSync()", () => {
-        it("vault event callbacks call debouncedSync for ordinary paths", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
+    describe("pending-sync hint vault watchers", () => {
+        it("vault event callbacks schedule the pending-sync hint for ordinary paths", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
 
-            const debouncedSpy = vi.spyOn(plugin as any, "debouncedSync").mockImplementation(() => {});
+            const scheduleSpy = vi.spyOn(plugin as any, "schedulePendingSyncHint").mockImplementation(() => {});
 
             await plugin.onload();
 
@@ -926,15 +842,15 @@ describe("LilbeePlugin", () => {
             >;
             expect(vaultOnCalls.length).toBe(4);
 
+            scheduleSpy.mockClear();
             vaultOnCalls[0][1]({ path: "notes/foo.md" });
-            expect(debouncedSpy).toHaveBeenCalledTimes(1);
+            expect(scheduleSpy).toHaveBeenCalledTimes(1);
         });
 
         it("skips paths under lilbee/ — these are managed by the server and re-syncing would loop", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
+            const plugin = await createPlugin({ serverMode: "external" });
 
-            const debouncedSpy = vi.spyOn(plugin as any, "debouncedSync").mockImplementation(() => {});
+            const scheduleSpy = vi.spyOn(plugin as any, "schedulePendingSyncHint").mockImplementation(() => {});
 
             await plugin.onload();
 
@@ -942,10 +858,183 @@ describe("LilbeePlugin", () => {
                 [string, (file: { path: string }) => void]
             >;
 
+            scheduleSpy.mockClear();
             vaultOnCalls[0][1]({ path: "lilbee/crawled/example.com/page.md" });
             vaultOnCalls[0][1]({ path: "lilbee/imported/book.pdf" });
             vaultOnCalls[0][1]({ path: "lilbee/wiki/foo.md" });
-            expect(debouncedSpy).not.toHaveBeenCalled();
+            expect(scheduleSpy).not.toHaveBeenCalled();
+        });
+
+        it("schedulePendingSyncHint debounces by 1000ms and cancels prior schedules", async () => {
+            vi.useFakeTimers();
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const updateSpy = vi.spyOn(plugin, "updatePendingSyncHint").mockResolvedValue(undefined);
+
+            (plugin as any).schedulePendingSyncHint();
+            vi.advanceTimersByTime(500);
+            (plugin as any).schedulePendingSyncHint();
+            vi.advanceTimersByTime(500);
+            expect(updateSpy).not.toHaveBeenCalled();
+            vi.advanceTimersByTime(500);
+            expect(updateSpy).toHaveBeenCalledTimes(1);
+            vi.useRealTimers();
+        });
+    });
+
+    describe("updatePendingSyncHint()", () => {
+        it("shows the hint with the count when vault has files the server doesn't know", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+                { path: "notes/a.md", name: "a.md", extension: "md" },
+                { path: "notes/b.pdf", name: "b.pdf", extension: "pdf" },
+                { path: "notes/c.txt", name: "c.txt", extension: "txt" },
+            ]);
+            (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
+                documents: [{ filename: "a.md", chunk_count: 1, ingested_at: "" }],
+                total: 1,
+                limit: 100,
+                offset: 0,
+                has_more: false,
+            });
+
+            await plugin.updatePendingSyncHint();
+
+            expect(plugin.syncHintEl?.textContent).toBe("lilbee: 2 to sync");
+            expect(plugin.syncHintEl?.style.display).toBe("");
+        });
+
+        it("hides the hint when count is zero", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+                { path: "notes/a.md", name: "a.md", extension: "md" },
+            ]);
+            (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
+                documents: [{ filename: "a.md", chunk_count: 1, ingested_at: "" }],
+                total: 1,
+                limit: 100,
+                offset: 0,
+                has_more: false,
+            });
+            plugin.syncHintEl!.style.display = "";
+
+            await plugin.updatePendingSyncHint();
+
+            expect(plugin.syncHintEl?.style.display).toBe("none");
+        });
+
+        it("filters out unsupported extensions, wiki paths, and lilbee/ paths", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.wikiSync = {
+                isWikiPath: (p: string) => p.startsWith("lilbee-wiki/"),
+                reconcile: vi.fn(),
+            } as any;
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+                { path: "notes/a.md", name: "a.md", extension: "md" },
+                { path: "img/b.png", name: "b.png", extension: "png" }, // unsupported
+                { path: "lilbee/c.md", name: "c.md", extension: "md" }, // server-managed
+                { path: "lilbee-wiki/d.md", name: "d.md", extension: "md" }, // wiki
+            ]);
+            (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
+                documents: [],
+                total: 0,
+                limit: 100,
+                offset: 0,
+                has_more: false,
+            });
+
+            await plugin.updatePendingSyncHint();
+
+            expect(plugin.syncHintEl?.textContent).toBe("lilbee: 1 to sync");
+        });
+
+        it("pages through listDocuments when has_more is true", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+                { path: "notes/a.md", name: "a.md", extension: "md" },
+                { path: "notes/b.md", name: "b.md", extension: "md" },
+            ]);
+            const mock = plugin.api.listDocuments as ReturnType<typeof vi.fn>;
+            mock.mockResolvedValueOnce({
+                documents: [{ filename: "a.md", chunk_count: 1, ingested_at: "" }],
+                total: 2,
+                limit: 100,
+                offset: 0,
+                has_more: true,
+            }).mockResolvedValueOnce({
+                documents: [{ filename: "b.md", chunk_count: 1, ingested_at: "" }],
+                total: 2,
+                limit: 100,
+                offset: 1,
+                has_more: false,
+            });
+
+            await plugin.updatePendingSyncHint();
+
+            expect(mock).toHaveBeenCalledTimes(2);
+            expect(plugin.syncHintEl?.style.display).toBe("none");
+        });
+
+        it("hides the hint silently when listDocuments rejects (server offline)", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+                { path: "notes/a.md", name: "a.md", extension: "md" },
+            ]);
+            (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
+
+            await plugin.updatePendingSyncHint();
+
+            expect(plugin.syncHintEl?.style.display).toBe("none");
+        });
+
+        it("no-ops if syncHintEl is null", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.syncHintEl = null;
+            await expect(plugin.updatePendingSyncHint()).resolves.toBeUndefined();
+        });
+
+        it("hint click triggers sync", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const triggerSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            (plugin.syncHintEl as any).trigger("click");
+
+            expect(triggerSpy).toHaveBeenCalled();
+        });
+    });
+
+    describe("markSyncHintRunning", () => {
+        it("sets data-running and shows in-progress text while sync runs, clears it after", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+
+            async function* noEvents() {}
+            plugin.api.syncStream = vi.fn().mockReturnValue(noEvents());
+
+            const seen: Array<string | null> = [];
+            const observer = setInterval(() => {
+                seen.push(plugin.syncHintEl?.getAttribute("data-running") ?? null);
+            }, 0);
+
+            await plugin.triggerSync();
+            clearInterval(observer);
+
+            expect(plugin.syncHintEl?.getAttribute("data-running")).toBeNull();
+        });
+
+        it("no-ops if syncHintEl is null", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.syncHintEl = null;
+            expect(() => (plugin as any).markSyncHintRunning(true)).not.toThrow();
+            expect(() => (plugin as any).markSyncHintRunning(false)).not.toThrow();
         });
     });
 
@@ -4719,37 +4808,27 @@ describe("LilbeePlugin", () => {
             expect(plugin.wikiSync!.reconcile as ReturnType<typeof vi.fn>).toHaveBeenCalled();
         });
 
-        it("auto-sync excludes wiki folder paths", async () => {
-            vi.useFakeTimers();
+        it("pending-sync hint excludes wiki folder paths", async () => {
             const plugin = await createPlugin({
                 serverMode: "external",
-                syncMode: "auto",
-                syncDebounceMs: 100,
                 wikiSyncToVault: true,
                 wikiVaultFolder: "lilbee-wiki",
             });
             await plugin.onload();
-            // Finite advance — runAllTimersAsync would spin forever on the 30s health probe interval.
-            await vi.advanceTimersByTimeAsync(10);
 
             plugin.wikiSync = { isWikiPath: (p: string) => p.startsWith("lilbee-wiki/"), reconcile: vi.fn() } as any;
-            const syncSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue();
+            const scheduleSpy = vi.spyOn(plugin as any, "schedulePendingSyncHint").mockImplementation(() => {});
 
-            // Simulate a vault event for a wiki file
             const vaultHandlers = (plugin.app.vault.on as ReturnType<typeof vi.fn>).mock.calls;
             const createHandler = vaultHandlers.find((c: unknown[]) => c[0] === "create");
             expect(createHandler).toBeDefined();
 
+            scheduleSpy.mockClear();
             createHandler![1]({ path: "lilbee-wiki/summaries/test.md" });
-            await vi.advanceTimersByTimeAsync(200);
-            expect(syncSpy).not.toHaveBeenCalled();
+            expect(scheduleSpy).not.toHaveBeenCalled();
 
-            // Simulate a vault event for a normal file
             createHandler![1]({ path: "notes/my-note.md" });
-            await vi.advanceTimersByTimeAsync(200);
-            expect(syncSpy).toHaveBeenCalled();
-
-            vi.useRealTimers();
+            expect(scheduleSpy).toHaveBeenCalledTimes(1);
         });
     });
 
