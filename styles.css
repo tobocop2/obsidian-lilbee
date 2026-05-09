@@ -894,6 +894,34 @@
     font-size: 11px;
 }
 
+.lilbee-fit-chip {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 500;
+    padding: 1px 6px;
+    border-radius: 8px;
+    margin-left: 4px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-fit-fits {
+    color: var(--text-on-accent, white);
+    background: var(--color-green, #2da458);
+    border-color: var(--color-green, #2da458);
+}
+
+.lilbee-fit-tight {
+    color: var(--text-on-accent, white);
+    background: var(--color-yellow, #d4a017);
+    border-color: var(--color-yellow, #d4a017);
+}
+
+.lilbee-fit-wont_run {
+    color: var(--text-on-accent, white);
+    background: var(--color-red, #c8392f);
+    border-color: var(--color-red, #c8392f);
+}
+
 .lilbee-model-card-downloads {
     color: var(--text-muted);
     font-size: 11px;

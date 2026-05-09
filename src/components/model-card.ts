@@ -1,6 +1,7 @@
-import type { CatalogEntry, ModelCardOptions } from "../types";
+import { HARDWARE_FIT, type CatalogEntry, type HardwareFit, type ModelCardOptions } from "../types";
 import { MESSAGES } from "../locales/en";
-import { formatAbbreviatedCount } from "../utils";
+import { formatAbbreviatedCount, getSystemMemoryGB } from "../utils";
+import { computeFit } from "../utils/hardware-fit";
 import { renderPill, renderTaskPill, renderPickPill, renderProviderPill, PILL_CLS } from "./pill";
 
 export function renderModelCard(container: HTMLElement, entry: CatalogEntry, options: ModelCardOptions): HTMLElement {
@@ -38,6 +39,31 @@ function renderCardHeader(card: HTMLElement, entry: CatalogEntry): void {
 function renderCardSpecs(card: HTMLElement, entry: CatalogEntry): void {
     const parts = [entry.quality_tier, `${entry.size_gb} GB`].filter(Boolean);
     card.createDiv({ cls: "lilbee-model-card-specs", text: parts.join(" \u00B7 ") });
+    renderFitChip(card, entry);
+}
+
+function renderFitChip(card: HTMLElement, entry: CatalogEntry): void {
+    const fit = resolveFit(entry);
+    if (!fit) return;
+    const cls = `lilbee-fit-chip lilbee-fit-${fit}`;
+    card.createEl("span", { text: fitLabel(fit), cls });
+}
+
+function resolveFit(entry: CatalogEntry): HardwareFit | null {
+    if (entry.fit === HARDWARE_FIT.FITS || entry.fit === HARDWARE_FIT.TIGHT || entry.fit === HARDWARE_FIT.WONT_RUN) {
+        return entry.fit;
+    }
+    if (entry.source === "frontier") return null;
+    if (typeof entry.min_ram_gb !== "number" || entry.min_ram_gb <= 0) return null;
+    const available = getSystemMemoryGB();
+    if (available === null) return null;
+    return computeFit(entry.min_ram_gb, available);
+}
+
+function fitLabel(fit: HardwareFit): string {
+    if (fit === HARDWARE_FIT.FITS) return MESSAGES.LABEL_FIT_FITS;
+    if (fit === HARDWARE_FIT.TIGHT) return MESSAGES.LABEL_FIT_TIGHT;
+    return MESSAGES.LABEL_FIT_WONT_RUN;
 }
 
 function renderCardStatus(card: HTMLElement, entry: CatalogEntry): void {

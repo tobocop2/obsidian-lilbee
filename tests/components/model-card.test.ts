@@ -4,6 +4,7 @@ import { renderModelCard } from "../../src/components/model-card";
 import { PILL_CLS } from "../../src/components/pill";
 import type { CatalogEntry } from "../../src/types";
 import { MESSAGES } from "../../src/locales/en";
+import * as utils from "../../src/utils";
 
 function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     return {
@@ -124,6 +125,72 @@ describe("renderModelCard", () => {
         const c = container();
         const card = renderModelCard(c, makeEntry({ source: "local" }), {}) as unknown as MockElement;
         expect(card.find(PILL_CLS.PROVIDER)).toBeNull();
+    });
+
+    describe("hardware-fit chip", () => {
+        it("renders the green fits chip when entry.fit is 'fits'", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry({ fit: "fits" }), {}) as unknown as MockElement;
+            const chip = card.find("lilbee-fit-fits");
+            expect(chip).not.toBeNull();
+            expect(chip?.textContent).toBe(MESSAGES.LABEL_FIT_FITS);
+        });
+
+        it("renders the amber tight chip when entry.fit is 'tight'", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry({ fit: "tight" }), {}) as unknown as MockElement;
+            const chip = card.find("lilbee-fit-tight");
+            expect(chip).not.toBeNull();
+            expect(chip?.textContent).toBe(MESSAGES.LABEL_FIT_TIGHT);
+        });
+
+        it("renders the red won't-run chip when entry.fit is 'wont_run'", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry({ fit: "wont_run" }), {}) as unknown as MockElement;
+            const chip = card.find("lilbee-fit-wont_run");
+            expect(chip).not.toBeNull();
+            expect(chip?.textContent).toBe(MESSAGES.LABEL_FIT_WONT_RUN);
+        });
+
+        it("computes fit client-side when entry.fit is missing and min_ram_gb is set", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry({ min_ram_gb: 1 }), {}) as unknown as MockElement;
+            // System memory probe returns the host's RAM; whichever bucket the
+            // system lands in, exactly one of the three chips must render.
+            const chips = ["lilbee-fit-fits", "lilbee-fit-tight", "lilbee-fit-wont_run"]
+                .map((cls) => card.find(cls))
+                .filter((el) => el !== null);
+            expect(chips.length).toBe(1);
+        });
+
+        it("omits the chip for frontier rows", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry({ source: "frontier" }), {}) as unknown as MockElement;
+            expect(card.find("lilbee-fit-fits")).toBeNull();
+            expect(card.find("lilbee-fit-tight")).toBeNull();
+            expect(card.find("lilbee-fit-wont_run")).toBeNull();
+        });
+
+        it("omits the chip when min_ram_gb is missing or zero", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry({ min_ram_gb: 0 }), {}) as unknown as MockElement;
+            expect(card.find("lilbee-fit-fits")).toBeNull();
+            expect(card.find("lilbee-fit-tight")).toBeNull();
+            expect(card.find("lilbee-fit-wont_run")).toBeNull();
+        });
+
+        it("omits the chip when system memory cannot be probed", () => {
+            const spy = vi.spyOn(utils, "getSystemMemoryGB").mockReturnValue(null);
+            try {
+                const c = container();
+                const card = renderModelCard(c, makeEntry({ min_ram_gb: 4 }), {}) as unknown as MockElement;
+                expect(card.find("lilbee-fit-fits")).toBeNull();
+                expect(card.find("lilbee-fit-tight")).toBeNull();
+                expect(card.find("lilbee-fit-wont_run")).toBeNull();
+            } finally {
+                spy.mockRestore();
+            }
+        });
     });
 
     describe("actions", () => {
