@@ -86,6 +86,31 @@ export interface ConfigResponse {
     chat_mode?: ChatMode;
     embedding_model?: string;
     wiki?: boolean;
+    /** Worker-pool lifecycle settings (lilbee >= 2026-05-09; absent on older servers). */
+    worker_pool_call_timeout_s?: number;
+    worker_pool_eager_start?: boolean;
+    worker_pool_max_idle_s?: number;
+    /**
+     * Vision OCR pool drain budget (s). Replaces vision_concurrency and
+     * vision_per_page_budget_s on lilbee >= 2026-05-06; semantics now cover
+     * outer wall-clock budget = load grace + per_page * pages.
+     */
+    vision_load_budget_s?: number;
+    /** Ingest knobs surfaced via settings_map.py (lilbee >= 2026-05-06). */
+    chunk_size?: number;
+    chunk_overlap?: number;
+    tesseract_timeout?: number;
+    /** Generation knobs surfaced via settings_map.py (lilbee >= 2026-05-06). */
+    max_tokens?: number;
+    model_keep_alive?: string;
+    gpu_memory_fraction?: number;
+    /** Retrieval knobs surfaced via settings_map.py (lilbee >= 2026-05-06). */
+    candidate_multiplier?: number;
+    max_distance?: number;
+    min_relevance_score?: number;
+    max_context_sources?: number;
+    diversity_max_per_source?: number;
+    mmr_lambda?: number;
     [key: string]: unknown;
 }
 
@@ -124,6 +149,44 @@ export const CAPABILITY = {
     WIKI: "wiki",
 } as const satisfies Record<string, Capability>;
 
+/** Tabs in the Browse Catalog modal. Mirrors lilbee TUI's 6-tab catalog redesign (PR #212). */
+export type CatalogTab = "discover" | "chat" | "embed" | "vision" | "rerank" | "library";
+
+export const CATALOG_TAB = {
+    DISCOVER: "discover",
+    CHAT: "chat",
+    EMBED: "embed",
+    VISION: "vision",
+    RERANK: "rerank",
+    LIBRARY: "library",
+} as const satisfies Record<string, CatalogTab>;
+
+/** Per-card hardware-fit chip for the catalog. Mirrors lilbee's compute_fit semantics. */
+export type HardwareFit = "fits" | "tight" | "wont_run";
+
+export const HARDWARE_FIT = {
+    FITS: "fits",
+    TIGHT: "tight",
+    WONT_RUN: "wont_run",
+} as const satisfies Record<string, HardwareFit>;
+
+/** Curated rails on the Discover tab. */
+export type DiscoverRail = "for_you" | "your_collection" | "fresh";
+
+export const DISCOVER_RAIL = {
+    FOR_YOU: "for_you",
+    YOUR_COLLECTION: "your_collection",
+    FRESH: "fresh",
+} as const satisfies Record<string, DiscoverRail>;
+
+/** OCR backend selector — mirrors lilbee `OcrBackend` wire enum. */
+export type OcrBackend = "vision" | "tesseract";
+
+export const OCR_BACKEND = {
+    VISION: "vision",
+    TESSERACT: "tesseract",
+} as const satisfies Record<string, OcrBackend>;
+
 export interface StatusResponse {
     config: Record<string, string>;
     sources: { filename: string; chunk_count: number }[];
@@ -142,6 +205,7 @@ export interface SyncDone {
     removed: string[];
     unchanged: number;
     failed: string[];
+    skipped: string[];
 }
 
 export interface GenerationOptions {
@@ -270,6 +334,7 @@ export const SSE_EVENT = {
     SETUP_PROGRESS: "setup_progress",
     SETUP_DONE: "setup_done",
     ALREADY_INGESTING: "already_ingesting",
+    BATCH_PROGRESS: "batch_progress",
 } as const;
 
 export interface SetupStartPayload {
@@ -290,6 +355,14 @@ export interface SetupDonePayload {
     error: string | null;
 }
 
+/** Per-file completion event during batch ingest. Mirrors lilbee `BatchProgressEvent`. */
+export interface BatchProgressPayload {
+    file: string;
+    status: string;
+    current: number;
+    total: number;
+}
+
 export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
 /** MIME content types referenced across click dispatch + preview rendering. */
@@ -298,6 +371,18 @@ export const CONTENT_TYPE = {
     MARKDOWN: "text/markdown",
     HTML: "text/html",
 } as const;
+
+/**
+ * One size variant of a model family (e.g. "0.6B" / "8B" / "32B" of Qwen3).
+ * Computed client-side via family-aggregation; lilbee TUI carries the same
+ * shape on `LocalCatalogRow.size_variants` for the inline chip strip.
+ */
+export interface SizeVariant {
+    size_label: string;
+    params: string;
+    size_gb: number;
+    ref: string;
+}
 
 export interface CatalogEntry {
     hf_repo: string;
@@ -313,6 +398,10 @@ export interface CatalogEntry {
     featured: boolean;
     downloads: number;
     param_count: string;
+    /** Hardware-fit chip — computed client-side; absent on responses that predate the catalog redesign. */
+    fit?: HardwareFit | null;
+    /** Inline size-variant chips for family-aggregated cards. Absent when not aggregated. */
+    size_variants?: SizeVariant[] | null;
 }
 
 export interface LocalCatalogRow extends CatalogEntry {
