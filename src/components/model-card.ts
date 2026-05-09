@@ -1,7 +1,6 @@
 import { HARDWARE_FIT, type CatalogEntry, type HardwareFit, type ModelCardOptions } from "../types";
 import { MESSAGES } from "../locales/en";
-import { formatAbbreviatedCount, getSystemMemoryGB } from "../utils";
-import { computeFit } from "../utils/hardware-fit";
+import { formatAbbreviatedCount } from "../utils";
 import { renderPill, renderTaskPill, renderPickPill, renderProviderPill, PILL_CLS } from "./pill";
 
 export function renderModelCard(container: HTMLElement, entry: CatalogEntry, options: ModelCardOptions): HTMLElement {
@@ -43,21 +42,10 @@ function renderCardSpecs(card: HTMLElement, entry: CatalogEntry): void {
 }
 
 function renderFitChip(card: HTMLElement, entry: CatalogEntry): void {
-    const fit = resolveFit(entry);
-    if (!fit) return;
-    const cls = `lilbee-fit-chip lilbee-fit-${fit}`;
-    card.createEl("span", { text: fitLabel(fit), cls });
-}
-
-function resolveFit(entry: CatalogEntry): HardwareFit | null {
-    if (entry.fit === HARDWARE_FIT.FITS || entry.fit === HARDWARE_FIT.TIGHT || entry.fit === HARDWARE_FIT.WONT_RUN) {
-        return entry.fit;
+    if (entry.fit !== HARDWARE_FIT.FITS && entry.fit !== HARDWARE_FIT.TIGHT && entry.fit !== HARDWARE_FIT.WONT_RUN) {
+        return;
     }
-    if (entry.source === "frontier") return null;
-    if (typeof entry.min_ram_gb !== "number" || entry.min_ram_gb <= 0) return null;
-    const available = getSystemMemoryGB();
-    if (available === null) return null;
-    return computeFit(entry.min_ram_gb, available);
+    card.createEl("span", { text: fitLabel(entry.fit), cls: `lilbee-fit-chip lilbee-fit-${entry.fit}` });
 }
 
 function fitLabel(fit: HardwareFit): string {

@@ -558,9 +558,6 @@ export class CatalogModal extends Modal {
     }
 
     private isActiveEntry(entry: CatalogEntry): boolean {
-        // After PR #183 the canonical chat ref is the full HF path
-        // (`<org>/<repo>/<filename>.gguf`). Strip the trailing filename
-        // before comparing to the catalog's bare `hf_repo`.
         return extractHfRepo(this.plugin.activeModel) === entry.hf_repo;
     }
 

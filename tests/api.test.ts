@@ -430,47 +430,7 @@ describe("pullModel()", () => {
     });
 
     describe("catalog()", () => {
-        it("calls GET /api/models/catalog and normalizes legacy source values to local/frontier", async () => {
-            const data = {
-                total: 2,
-                limit: 20,
-                offset: 0,
-                models: [
-                    {
-                        name: "qwen3:8b",
-                        display_name: "Qwen3 8B",
-                        size_gb: 5,
-                        min_ram_gb: 8,
-                        description: "medium",
-                        quality_tier: "balanced",
-                        installed: true,
-                        source: "litellm",
-                    },
-                    {
-                        name: "phi4:14b",
-                        display_name: "Phi 4 14B",
-                        size_gb: 9,
-                        min_ram_gb: 16,
-                        description: "large",
-                        quality_tier: "balanced",
-                        installed: false,
-                        source: "native",
-                    },
-                ],
-            };
-            fetchMock.mockResolvedValue(jsonResponse(data));
-
-            const result = await client.catalog();
-
-            expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/catalog`, expect.objectContaining({}));
-            expect(result.isOk()).toBe(true);
-            const unwrapped = result._unsafeUnwrap();
-            expect(unwrapped.models[0].source).toBe("frontier");
-            expect(unwrapped.models[1].source).toBe("local");
-            expect(unwrapped.total).toBe(2);
-        });
-
-        it("passes through new server values (local, frontier) untouched", async () => {
+        it("calls GET /api/models/catalog and returns the response unchanged", async () => {
             fetchMock.mockResolvedValue(
                 jsonResponse({
                     total: 1,
@@ -479,7 +439,11 @@ describe("pullModel()", () => {
                     models: [{ name: "x", display_name: "X", source: "frontier" }],
                 }),
             );
+
             const result = await client.catalog();
+
+            expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/catalog`, expect.objectContaining({}));
+            expect(result.isOk()).toBe(true);
             expect(result._unsafeUnwrap().models[0].source).toBe("frontier");
         });
 
@@ -605,13 +569,6 @@ describe("pullModel()", () => {
                 const result = await client.listDocuments(undefined, 20, 40);
                 expect(result.has_more).toBe(false);
                 expect(result).toEqual(data);
-            });
-
-            it("legacy response without has_more leaves the field undefined", async () => {
-                const data = { documents: [], total: 0, limit: 20, offset: 0 };
-                fetchMock.mockResolvedValue(jsonResponse(data));
-                const result = await client.listDocuments();
-                expect(result.has_more).toBeUndefined();
             });
         });
     });

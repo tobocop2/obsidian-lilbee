@@ -4,8 +4,9 @@
 
 ### Breaking changes
 
-- Renamed the local plugin setting `systemPrompt` to `ragSystemPrompt` to match the lilbee server's `system_prompt` → `rag_system_prompt` rename. Existing settings auto-migrate on first launch.
+- Renamed the local plugin setting `systemPrompt` to `ragSystemPrompt` to match the lilbee server's `system_prompt` → `rag_system_prompt` rename. Any prompt set under the old key resets to the default.
 - The `LILBEE_SYSTEM_PROMPT` env var passed to managed servers is now `LILBEE_RAG_SYSTEM_PROMPT`. A second env var `LILBEE_GENERAL_SYSTEM_PROMPT` is set when the new sibling field is configured.
+- Auto-sync mode is gone. The status bar shows a clickable "lilbee: N to sync" hint when the vault has files the server hasn't indexed; click to sync. The `syncMode` and `syncDebounceMs` plugin settings are no longer used.
 
 ### Added
 

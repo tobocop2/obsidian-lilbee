@@ -103,10 +103,7 @@ export class DocumentsModal extends Modal {
             this.total = response.total;
             this.documents.push(...response.documents);
             this.offset += response.documents.length;
-            this.hasMore =
-                response.has_more !== undefined
-                    ? response.has_more
-                    : response.documents.length > 0 && this.offset < response.total;
+            this.hasMore = response.has_more;
 
             for (const doc of response.documents) {
                 this.renderRow(doc);

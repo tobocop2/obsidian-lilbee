@@ -60,12 +60,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private serverConfigInputs: Map<string, HTMLInputElement> = new Map();
     private serverConfigToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private serverConfigTextAreas: Map<string, HTMLTextAreaElement> = new Map();
-    // Setting rows that should be hidden when the corresponding cfg key is undefined
-    // (older server compatibility). Revealed by loadServerDefaults when the key is present.
+    // Rows hidden until loadServerDefaults sees a defined value for the matching cfg key.
     private serverConfigHideableEls: Map<string, HTMLElement> = new Map();
     private configDefaults: Record<string, unknown> = {};
-    // Set to true while loadServerDefaults is programmatically syncing toggles to the server
-    // value so their onChange doesn't round-trip the same value back to the server.
+    // Guards programmatic toggle.setValue() calls from echoing back to the server.
     private suppressToggleChanges = false;
     private chatModeSettingEl: HTMLElement | null = null;
     private chatModeDropdown: { setValue: (v: string) => unknown } | null = null;

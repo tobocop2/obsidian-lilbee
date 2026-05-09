@@ -1,4 +1,4 @@
-import { CAPABILITY, CATALOG_SOURCE, JSON_HEADERS, SEARCH_CHUNK_TYPE, SSE_EVENT, ERROR_NAME } from "./types";
+import { CAPABILITY, JSON_HEADERS, SEARCH_CHUNK_TYPE, SSE_EVENT, ERROR_NAME } from "./types";
 import { ok, err, Result } from "neverthrow";
 
 import type {
@@ -76,15 +76,7 @@ export class RateLimitedError extends Error {
     }
 }
 
-/** Coarse outcome of a single ``fetchWithRetry`` call, reported to subscribers. */
 export type RequestOutcome = "ok" | "auth_error" | "server_error" | "unreachable" | "starting";
-
-/** Map legacy `"native"` / `"litellm"` to `"local"` / `"frontier"`; pass through unknown values. */
-export function normalizeCatalogSource(raw: string): string {
-    if (raw === "litellm") return CATALOG_SOURCE.FRONTIER;
-    if (raw === "native") return CATALOG_SOURCE.LOCAL;
-    return raw;
-}
 
 export class LilbeeClient {
     private token: string | null = null;
@@ -427,11 +419,7 @@ export class LilbeeClient {
         if (params?.limit !== undefined) qs.set("limit", String(params.limit));
         if (params?.offset !== undefined) qs.set("offset", String(params.offset));
         const suffix = qs.toString() ? `?${qs}` : "";
-        const result = await this.fetchResult<CatalogResponse>(`${this.baseUrl}/api/models/catalog${suffix}`);
-        return result.map((response) => ({
-            ...response,
-            models: response.models.map((row) => ({ ...row, source: normalizeCatalogSource(row.source) })),
-        }));
+        return this.fetchResult<CatalogResponse>(`${this.baseUrl}/api/models/catalog${suffix}`);
     }
 
     async installedModels(params?: { task?: ModelTask }): Promise<InstalledResponse> {

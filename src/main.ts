@@ -155,12 +155,6 @@ export class FileProgressTracker {
     }
 }
 
-/**
- * Parse the `done` event emitted by `/api/add`. The payload contains
- * `{copied, skipped, errors, sync: SyncDone}`. Extract the nested
- * sync result; fall back to treating the whole object as SyncDone
- * for backwards compatibility.
- */
 export function parseAddDoneEvent(data: unknown): SyncDone | null {
     if (!data || typeof data !== "object") return null;
     const obj = data as Record<string, unknown>;
@@ -263,7 +257,7 @@ export default class LilbeePlugin extends Plugin {
         }
 
         this.registerPendingSyncHintWatchers();
-        this.schedulePendingSyncHint();
+        void this.updatePendingSyncHint();
 
         this.startHealthProbe();
     }
@@ -678,32 +672,10 @@ export default class LilbeePlugin extends Plugin {
     }
 
     async loadSettings(): Promise<void> {
-        const raw = (await this.loadData()) as
-            | (LilbeeSettings & {
-                  taskHistory?: { history?: unknown[] };
-                  systemPrompt?: string;
-              })
-            | null;
-        const migrated = this.migrateLegacySystemPrompt(raw);
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, migrated ?? {});
+        const raw = (await this.loadData()) as (LilbeeSettings & { taskHistory?: { history?: unknown[] } }) | null;
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, raw ?? {});
         this.previousServerMode = this.settings.serverMode;
-        this.taskQueue.loadFromJSON(migrated?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
-        if (migrated && migrated !== raw) {
-            await this.persistAll();
-        }
-    }
-
-    /** Mirrors the server's `system_prompt` → `rag_system_prompt` rename for the local plugin setting. */
-    private migrateLegacySystemPrompt<T extends { systemPrompt?: string; ragSystemPrompt?: string }>(
-        blob: T | null,
-    ): T | null {
-        if (blob === null || blob.systemPrompt === undefined) return blob;
-        const { systemPrompt, ...rest } = blob;
-        const next = { ...rest } as T;
-        if (next.ragSystemPrompt === undefined && systemPrompt !== "") {
-            next.ragSystemPrompt = systemPrompt;
-        }
-        return next;
+        this.taskQueue.loadFromJSON(raw?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
     }
 
     private async persistAll(): Promise<void> {
@@ -1311,6 +1283,7 @@ export default class LilbeePlugin extends Plugin {
     async updatePendingSyncHint(): Promise<void> {
         if (!this.syncHintEl) return;
         const count = await this.countPendingSync();
+        if (!this.syncHintEl) return;
         if (count > 0) {
             this.syncHintEl.setText(MESSAGES.STATUS_DOCS_PENDING_SYNC(count));
             this.syncHintEl.style.display = "";

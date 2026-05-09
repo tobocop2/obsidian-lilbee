@@ -1,10 +1,7 @@
-// Helpers for the canonical model ref shape that lilbee server speaks (PR #183).
-// Refs come in three flavours:
-//   1. native HF refs  — "<org>/<repo>/<filename>.gguf"
-//   2. provider refs   — "ollama/qwen3:8b", "openai/gpt-4o", "anthropic/...", etc.
-//   3. opaque strings  — anything else; passed through unchanged
-// All three are valid identifiers on the wire; the helpers below convert them
-// for display or unwrap them for catalog comparison.
+// Helpers for the canonical model ref shape lilbee speaks. Refs come in three
+// flavours: native HF refs ("<org>/<repo>/<filename>.gguf"), provider refs
+// ("ollama/qwen3:8b", "openai/gpt-4o", …), and opaque strings. The helpers
+// below convert them for display or unwrap them for catalog comparison.
 
 const PROVIDER_PREFIXES = ["ollama/", "openai/", "anthropic/", "gemini/", "cohere/"];
 
@@ -47,8 +44,6 @@ export function displayLabelForRef(ref: string): string {
     for (const prefix of PROVIDER_PREFIXES) {
         if (ref.startsWith(prefix)) return ref.slice(prefix.length);
     }
-    // Bare HF repo (e.g. plugin.activeModel after a dropdown change, before
-    // fetchActiveModel re-syncs from /api/models) — strip the org and tidy.
     if (ref.includes("/")) {
         return cleanDisplayName(ref);
     }

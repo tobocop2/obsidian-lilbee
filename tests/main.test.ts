@@ -320,12 +320,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerEvent).toHaveBeenCalledTimes(5);
         });
 
-        it("does not carry an autoSyncRefs field on the plugin instance", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            expect((plugin as unknown as Record<string, unknown>).autoSyncRefs).toBeUndefined();
-        });
-
         it("recreates API client with loaded serverUrl", async () => {
             const { LilbeeClient } = await import("../src/api");
             const plugin = await createPlugin();
@@ -427,52 +421,6 @@ describe("LilbeePlugin", () => {
             await plugin.loadSettings();
             expect(plugin.settings.topK).toBe(5);
             expect(plugin.settings.serverMode).toBe("managed");
-        });
-
-        it("migrates legacy systemPrompt key to ragSystemPrompt and persists the rewritten blob", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({
-                serverMode: "external",
-                systemPrompt: "Pirate persona",
-            });
-            const saveSpy = vi.fn();
-            plugin.saveData = saveSpy;
-            await plugin.loadSettings();
-            expect(plugin.settings.ragSystemPrompt).toBe("Pirate persona");
-            expect((plugin.settings as Record<string, unknown>).systemPrompt).toBeUndefined();
-            expect(saveSpy).toHaveBeenCalledTimes(1);
-            const persisted = saveSpy.mock.calls[0][0] as Record<string, unknown>;
-            expect(persisted.systemPrompt).toBeUndefined();
-            expect(persisted.ragSystemPrompt).toBe("Pirate persona");
-        });
-
-        it("does not overwrite a pre-existing ragSystemPrompt during migration", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({
-                systemPrompt: "Legacy",
-                ragSystemPrompt: "Already migrated",
-            });
-            await plugin.loadSettings();
-            expect(plugin.settings.ragSystemPrompt).toBe("Already migrated");
-            expect((plugin.settings as Record<string, unknown>).systemPrompt).toBeUndefined();
-        });
-
-        it("does not migrate when the legacy key is empty string (treats as already absent)", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ systemPrompt: "" });
-            await plugin.loadSettings();
-            expect(plugin.settings.ragSystemPrompt).toBe("");
-            expect((plugin.settings as Record<string, unknown>).systemPrompt).toBeUndefined();
-        });
-
-        it("leaves blob untouched when no legacy systemPrompt key is present", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ ragSystemPrompt: "Already there" });
-            const saveSpy = vi.fn();
-            plugin.saveData = saveSpy;
-            await plugin.loadSettings();
-            expect(plugin.settings.ragSystemPrompt).toBe("Already there");
-            expect(saveSpy).not.toHaveBeenCalled();
         });
     });
 
@@ -959,6 +907,7 @@ describe("LilbeePlugin", () => {
                 { path: "notes/b.md", name: "b.md", extension: "md" },
             ]);
             const mock = plugin.api.listDocuments as ReturnType<typeof vi.fn>;
+            mock.mockClear();
             mock.mockResolvedValueOnce({
                 documents: [{ filename: "a.md", chunk_count: 1, ingested_at: "" }],
                 total: 2,
@@ -5053,7 +5002,6 @@ describe("LilbeePlugin", () => {
         });
 
         it("treats non-string documents_dir/vault_base from server as needing update", async () => {
-            // Older server may not return these fields at all (undefined).
             const updateConfig = vi.fn().mockResolvedValue({ updated: ["documents_dir", "vault_base"] });
             const plugin = await setupConfiguredPlugin(
                 {},

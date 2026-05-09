@@ -33,9 +33,7 @@ export interface Source {
     /**
      * Relative path within the vault when the server is managed and
      * `documents_dir` is inside the user's vault. `null` for external servers
-     * where the file is not accessible as a vault-relative path. Optional for
-     * forward compatibility with servers that predate PR 4 of the vault-native
-     * storage work.
+     * where the file is not accessible as a vault-relative path.
      */
     vault_path?: string | null;
 }
@@ -76,7 +74,6 @@ export interface ModelsResponse {
     reranker?: ModelCatalog;
 }
 
-/** Optional fields are absent on pre-tui-quality-sweep servers. */
 export interface ConfigResponse {
     reranker_model: string | null;
     rerank_candidates: number;
@@ -428,7 +425,7 @@ export interface DocumentsResponse {
     total: number;
     limit: number;
     offset: number;
-    has_more?: boolean;
+    has_more: boolean;
 }
 
 export interface ConfigUpdateResponse {

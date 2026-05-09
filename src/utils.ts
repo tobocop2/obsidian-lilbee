@@ -194,12 +194,9 @@ export function extractServerErrorDetail(message: string): string | null {
 }
 
 /**
- * Detect the server's role-mismatch error shape. Server PR #156 returns 422 with
- * a detail like `"Model 'X' is a vision model, not chat. Set it via PUT /api/models/vision instead."`
- * when a task-validation check fails. Distinguished from an auth-shaped 422
- * (missing LiteLLM key) by the `Set it via PUT /api/models/` remedy phrase.
- * The exact remedy prefix — not a bare `PUT /api/models/` substring — is used so unrelated
- * 422s that happen to mention the endpoint (e.g. future docs-link errors) aren't misclassified.
+ * Distinguishes the role-mismatch 422 (e.g. setting a vision model as chat) from an
+ * auth-shaped 422 by the `Set it via PUT /api/models/` remedy phrase. The full prefix
+ * keeps unrelated 422s that just happen to mention the endpoint from being misclassified.
  */
 export function isRoleMismatchDetail(detail: string): boolean {
     return detail.includes("Set it via PUT /api/models/");

@@ -591,7 +591,7 @@ describe("LilbeeSettingTab", () => {
     });
 
     describe("chat_mode dropdown", () => {
-        it("hides the row when /api/config does not include chat_mode (older server)", async () => {
+        it("hides the row when /api/config does not include chat_mode", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 rag_system_prompt: "x",
@@ -4100,7 +4100,7 @@ describe("managed mode settings", () => {
             Setting.prototype.addDropdown = origAddDropdown;
         });
 
-        it("always renders the reranker dropdown regardless of legacy reranker_available field", async () => {
+        it("always renders the reranker dropdown when the catalog has chat models", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",

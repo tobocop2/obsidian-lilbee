@@ -91,7 +91,7 @@ describe("isManagedFile", () => {
         expect(isManagedFile(`<!-- ${MANAGED_MARKER} -->\n---\ntext`)).toBe(true);
     });
 
-    it("returns true for legacy frontmatter marker format", () => {
+    it("returns true when MANAGED_MARKER lives inside the YAML frontmatter", () => {
         expect(isManagedFile(`---\n${MANAGED_MARKER}\n---\ntext`)).toBe(true);
     });
 

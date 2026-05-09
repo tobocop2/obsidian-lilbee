@@ -232,7 +232,6 @@ export class TaskQueue {
         this.flashTimers.add(handle);
     }
 
-    /** Returns the first active task found (backward compat). */
     get active(): TaskEntry | null {
         for (const id of this.activeIds.values()) {
             if (id) {

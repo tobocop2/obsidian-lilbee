@@ -4,7 +4,6 @@ import { renderModelCard } from "../../src/components/model-card";
 import { PILL_CLS } from "../../src/components/pill";
 import type { CatalogEntry } from "../../src/types";
 import { MESSAGES } from "../../src/locales/en";
-import * as utils from "../../src/utils";
 
 function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     return {
@@ -152,44 +151,12 @@ describe("renderModelCard", () => {
             expect(chip?.textContent).toBe(MESSAGES.LABEL_FIT_WONT_RUN);
         });
 
-        it("computes fit client-side when entry.fit is missing and min_ram_gb is set", () => {
+        it("omits the chip when the server response carries no fit value", () => {
             const c = container();
-            const card = renderModelCard(c, makeEntry({ min_ram_gb: 1 }), {}) as unknown as MockElement;
-            // System memory probe returns the host's RAM; whichever bucket the
-            // system lands in, exactly one of the three chips must render.
-            const chips = ["lilbee-fit-fits", "lilbee-fit-tight", "lilbee-fit-wont_run"]
-                .map((cls) => card.find(cls))
-                .filter((el) => el !== null);
-            expect(chips.length).toBe(1);
-        });
-
-        it("omits the chip for frontier rows", () => {
-            const c = container();
-            const card = renderModelCard(c, makeEntry({ source: "frontier" }), {}) as unknown as MockElement;
+            const card = renderModelCard(c, makeEntry({ fit: null }), {}) as unknown as MockElement;
             expect(card.find("lilbee-fit-fits")).toBeNull();
             expect(card.find("lilbee-fit-tight")).toBeNull();
             expect(card.find("lilbee-fit-wont_run")).toBeNull();
-        });
-
-        it("omits the chip when min_ram_gb is missing or zero", () => {
-            const c = container();
-            const card = renderModelCard(c, makeEntry({ min_ram_gb: 0 }), {}) as unknown as MockElement;
-            expect(card.find("lilbee-fit-fits")).toBeNull();
-            expect(card.find("lilbee-fit-tight")).toBeNull();
-            expect(card.find("lilbee-fit-wont_run")).toBeNull();
-        });
-
-        it("omits the chip when system memory cannot be probed", () => {
-            const spy = vi.spyOn(utils, "getSystemMemoryGB").mockReturnValue(null);
-            try {
-                const c = container();
-                const card = renderModelCard(c, makeEntry({ min_ram_gb: 4 }), {}) as unknown as MockElement;
-                expect(card.find("lilbee-fit-fits")).toBeNull();
-                expect(card.find("lilbee-fit-tight")).toBeNull();
-                expect(card.find("lilbee-fit-wont_run")).toBeNull();
-            } finally {
-                spy.mockRestore();
-            }
         });
     });
 

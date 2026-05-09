@@ -122,8 +122,7 @@ function makePlugin(): LilbeePlugin {
                     // Empty featured chat catalog — installed refs go under the "Other" group.
                     return Promise.resolve(ok({ total: 0, limit: 50, offset: 0, models: [], has_more: false }));
                 }
-                // Embedding picker keeps the legacy nomic-embed entry for the
-                // separate embedding-selector flow.
+                // The embedding picker has its own catalog list keyed off the embedding task.
                 return Promise.resolve(
                     ok({
                         total: 1,
@@ -171,10 +170,9 @@ function makePlugin(): LilbeePlugin {
 }
 
 /**
- * Map the legacy `chat: { active, installed, catalog }` test fixture into the
- * three endpoints the post-PR-#183 chat picker actually calls. Catalog entries
- * are stamped with the minimum CatalogEntry shape; we keep the legacy short
- * names as `hf_repo` so existing dropdown-value assertions still hold.
+ * Wire a single `{ active, installed, catalog }` test fixture into the three endpoints
+ * the chat picker calls (active model, installed list, catalog). Catalog entries are
+ * stamped with the minimum CatalogEntry shape using their short names as `hf_repo`.
  */
 function mockChatPicker(
     plugin: LilbeePlugin,
@@ -214,9 +212,6 @@ function mockChatPicker(
                         min_ram_gb: m.min_ram_gb,
                         description: m.description,
                         installed: m.installed,
-                        // Catalog rows pass through api.catalog() which normalizes
-                        // legacy "native"/"litellm" to "local"/"frontier"; the mock
-                        // shortcuts that and emits the post-normalization shape.
                         source: m.source ?? "local",
                         task: "chat",
                         featured: true,
@@ -784,7 +779,7 @@ describe("ChatView.sendMessage — banner rendering", () => {
 });
 
 describe("ChatView — chat_mode toolbar toggle", () => {
-    it("does not render the toggle when /api/config omits chat_mode (older server)", async () => {
+    it("does not render the toggle when /api/config omits chat_mode", async () => {
         const plugin = makePlugin();
         // Default makePlugin's config omits chat_mode -> toggle should be absent.
         const view = new ChatView(makeLeaf(), plugin);
