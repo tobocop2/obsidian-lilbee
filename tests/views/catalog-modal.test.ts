@@ -2,8 +2,8 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { CatalogModal } from "../../src/views/catalog-modal";
-import { SSE_EVENT } from "../../src/types";
-import type { CatalogEntry, CatalogResponse } from "../../src/types";
+import { CATALOG_TAB, SSE_EVENT } from "../../src/types";
+import type { CatalogEntry, CatalogResponse, CatalogTab } from "../../src/types";
 import { TaskQueue } from "../../src/task-queue";
 import { ok, err } from "neverthrow";
 import { MESSAGES } from "../../src/locales/en";
@@ -68,7 +68,8 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
             deleteModel: vi.fn().mockResolvedValue(ok({ deleted: true, model: "", freed_gb: 2.5 })),
         },
         activeModel: "",
-        settings: { serverMode: "managed" },
+        settings: { serverMode: "managed", lastCatalogTab: CATALOG_TAB.DISCOVER },
+        saveSettings: vi.fn().mockResolvedValue(undefined),
         fetchActiveModel: vi.fn(),
         refreshSettingsTab: vi.fn(),
         taskQueue: new TaskQueue(),
@@ -96,8 +97,11 @@ function findButtons(el: MockElement): MockElement[] {
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-async function openModal(plugin: ReturnType<typeof makePlugin>): Promise<CatalogModal> {
-    const modal = new CatalogModal(new App() as any, plugin as any);
+async function openModal(
+    plugin: ReturnType<typeof makePlugin>,
+    initialTab: CatalogTab = CATALOG_TAB.CHAT,
+): Promise<CatalogModal> {
+    const modal = new CatalogModal(new App() as any, plugin as any, "", initialTab);
     modal.open();
     await tick();
     await tick();
@@ -127,7 +131,7 @@ describe("CatalogModal", () => {
             const allTexts = collectTexts(content);
             expect(allTexts).toContain(MESSAGES.TITLE_MODEL_CATALOG);
             expect(content.find("lilbee-catalog-filters")).not.toBeNull();
-            expect(content.find("lilbee-catalog-filter-task")).not.toBeNull();
+            // Task is now driven by the top-level catalog tabs, not a dropdown.
             expect(content.find("lilbee-catalog-filter-size")).not.toBeNull();
             expect(content.find("lilbee-catalog-filter-sort")).not.toBeNull();
             expect(content.find("lilbee-catalog-search")).not.toBeNull();
@@ -149,15 +153,13 @@ describe("CatalogModal", () => {
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.ERROR_LOAD_CATALOG);
         });
 
-        it("honors initialTaskFilter by pre-selecting the dropdown and fetching with task param", async () => {
+        it("honors initialTaskFilter by routing to the matching tab and fetching with task param", async () => {
             const plugin = makePlugin();
             const modal = new CatalogModal(new App() as any, plugin as any, "vision");
             modal.open();
             await tick();
             await tick();
-            const content = contentEl(modal);
-            const taskSelect = content.find("lilbee-catalog-filter-task")! as unknown as { value: string };
-            expect(taskSelect.value).toBe("vision");
+            expect((modal as any).activeTab).toBe(CATALOG_TAB.VISION);
             expect(plugin.api.catalog).toHaveBeenCalledWith(expect.objectContaining({ task: "vision" }));
         });
     });
@@ -476,16 +478,15 @@ describe("CatalogModal", () => {
     });
 
     describe("filters and search", () => {
-        it("re-fetches with task filter when task dropdown changes", async () => {
+        it("re-fetches with task filter when switching to a task tab", async () => {
             const plugin = makePlugin();
-            const modal = await openModal(plugin);
+            // Open in Discover first so switching to Chat actually changes tabs and refetches.
+            const modal = await openModal(plugin, CATALOG_TAB.DISCOVER);
             const content = contentEl(modal);
-            const taskSelect = content.find("lilbee-catalog-filter-task")! as unknown as {
-                value: string;
-                trigger(event: string): void;
-            };
-            taskSelect.value = "chat";
-            taskSelect.trigger("change");
+            plugin.api.catalog.mockClear();
+            const chatTab = findButtons(content).find((b) => b.dataset?.tabId === CATALOG_TAB.CHAT)!;
+            chatTab.trigger("click");
+            await tick();
             await tick();
             expect(plugin.api.catalog).toHaveBeenLastCalledWith(expect.objectContaining({ task: "chat", offset: 0 }));
         });
@@ -1547,6 +1548,310 @@ describe("CatalogModal", () => {
             await tick();
             // Sanity: no frontier rows surfaced from a stray render.
             expect(content.findAll("lilbee-frontier-row").length).toBe(0);
+        });
+    });
+
+    describe("six-tab top bar", () => {
+        function tabButtons(content: MockElement): MockElement[] {
+            const bar = content.find("lilbee-catalog-main-tab-bar");
+            if (!bar) return [];
+            return bar.children;
+        }
+
+        it("renders the six tabs in order", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const ids = tabButtons(content).map((b) => b.dataset.tabId);
+            expect(ids).toEqual([
+                CATALOG_TAB.DISCOVER,
+                CATALOG_TAB.CHAT,
+                CATALOG_TAB.EMBED,
+                CATALOG_TAB.VISION,
+                CATALOG_TAB.RERANK,
+                CATALOG_TAB.LIBRARY,
+            ]);
+        });
+
+        it("hides the Local|Frontier sub-toggle on Discover and Library", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin, CATALOG_TAB.DISCOVER);
+            const content = contentEl(modal);
+            const subBar = content.find("lilbee-catalog-sub-tab-bar")!;
+            expect(subBar.style.display).toBe("none");
+            findButtons(content)
+                .find((b) => b.dataset?.tabId === CATALOG_TAB.LIBRARY)!
+                .trigger("click");
+            await tick();
+            await tick();
+            expect(content.find("lilbee-catalog-sub-tab-bar")!.style.display).toBe("none");
+        });
+
+        it("shows the Local|Frontier sub-toggle on each task tab", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
+            const content = contentEl(modal);
+            expect(content.find("lilbee-catalog-sub-tab-bar")!.style.display).toBe("");
+        });
+
+        it("clicking a task tab re-fetches with that task and resets sub-toggle to Local", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin, CATALOG_TAB.DISCOVER);
+            const content = contentEl(modal);
+            // Force into Frontier on Chat first.
+            findButtons(content)
+                .find((b) => b.dataset?.tabId === CATALOG_TAB.CHAT)!
+                .trigger("click");
+            await tick();
+            await tick();
+            (modal as any).currentTab = "frontier";
+            // Now click Embed — sub-toggle should reset to local.
+            plugin.api.catalog.mockClear();
+            findButtons(content)
+                .find((b) => b.dataset?.tabId === CATALOG_TAB.EMBED)!
+                .trigger("click");
+            await tick();
+            await tick();
+            expect((modal as any).currentTab).toBe("local");
+            expect(plugin.api.catalog).toHaveBeenLastCalledWith(expect.objectContaining({ task: "embedding" }));
+        });
+
+        it("clicking the active main tab is a no-op", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
+            const content = contentEl(modal);
+            plugin.api.catalog.mockClear();
+            findButtons(content)
+                .find((b) => b.dataset?.tabId === CATALOG_TAB.CHAT)!
+                .trigger("click");
+            await tick();
+            expect(plugin.api.catalog).not.toHaveBeenCalled();
+        });
+
+        it("persists the active tab to plugin settings on switch", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin, CATALOG_TAB.DISCOVER);
+            const content = contentEl(modal);
+            findButtons(content)
+                .find((b) => b.dataset?.tabId === CATALOG_TAB.LIBRARY)!
+                .trigger("click");
+            await tick();
+            expect(plugin.settings.lastCatalogTab).toBe(CATALOG_TAB.LIBRARY);
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+
+        it("restores the persisted tab when no initialTab arg is given", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "managed", lastCatalogTab: CATALOG_TAB.RERANK } });
+            const modal = new CatalogModal(new App() as any, plugin as any);
+            modal.open();
+            await tick();
+            await tick();
+            expect((modal as any).activeTab).toBe(CATALOG_TAB.RERANK);
+        });
+
+        it("falls back to Discover when settings have no persisted tab", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "managed" } });
+            const modal = new CatalogModal(new App() as any, plugin as any);
+            modal.open();
+            await tick();
+            await tick();
+            expect((modal as any).activeTab).toBe(CATALOG_TAB.DISCOVER);
+        });
+
+        it("explicit initialTab arg overrides the persisted setting", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "managed", lastCatalogTab: CATALOG_TAB.LIBRARY } });
+            const modal = new CatalogModal(new App() as any, plugin as any, "", CATALOG_TAB.VISION);
+            modal.open();
+            await tick();
+            await tick();
+            expect((modal as any).activeTab).toBe(CATALOG_TAB.VISION);
+        });
+
+        it("keys 1-6 jump to the matching tab", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin, CATALOG_TAB.DISCOVER);
+            const content = contentEl(modal);
+            const fakeEvent = (key: string) => {
+                const evt = { key, preventDefault: vi.fn() } as unknown as KeyboardEvent;
+                content.trigger("keydown", evt);
+                return evt;
+            };
+            fakeEvent("2");
+            await tick();
+            expect((modal as any).activeTab).toBe(CATALOG_TAB.CHAT);
+            fakeEvent("6");
+            await tick();
+            expect((modal as any).activeTab).toBe(CATALOG_TAB.LIBRARY);
+            fakeEvent("1");
+            await tick();
+            expect((modal as any).activeTab).toBe(CATALOG_TAB.DISCOVER);
+        });
+
+        it("non-numeric keys do not change the tab", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
+            const content = contentEl(modal);
+            content.trigger("keydown", { key: "x", preventDefault: vi.fn() } as unknown as KeyboardEvent);
+            await tick();
+            expect((modal as any).activeTab).toBe(CATALOG_TAB.CHAT);
+        });
+
+        it("number keys outside 1-6 do not change the tab", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
+            const content = contentEl(modal);
+            content.trigger("keydown", { key: "9", preventDefault: vi.fn() } as unknown as KeyboardEvent);
+            await tick();
+            expect((modal as any).activeTab).toBe(CATALOG_TAB.CHAT);
+        });
+
+        it("removes the keydown listener on close", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const removeSpy = vi.spyOn(content as any, "removeEventListener");
+            modal.close();
+            expect(removeSpy).toHaveBeenCalledWith("keydown", expect.any(Function));
+        });
+    });
+
+    describe("Discover tab", () => {
+        function makeDiscoverEntries(): CatalogEntry[] {
+            return [
+                makeEntry({
+                    hf_repo: "feat/chat",
+                    display_name: "Featured Chat",
+                    featured: true,
+                    task: "chat",
+                    downloads: 1000,
+                }),
+                makeEntry({
+                    hf_repo: "feat/embed",
+                    display_name: "Featured Embed",
+                    featured: true,
+                    task: "embedding",
+                    downloads: 500,
+                }),
+                makeEntry({
+                    hf_repo: "owned/one",
+                    display_name: "Owned One",
+                    installed: true,
+                    downloads: 200,
+                }),
+                makeEntry({
+                    hf_repo: "fresh/top",
+                    display_name: "Fresh Top",
+                    downloads: 9999,
+                }),
+            ];
+        }
+
+        it("renders three rails with the expected headings", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(makeDiscoverEntries())));
+            const modal = await openModal(plugin, CATALOG_TAB.DISCOVER);
+            const content = contentEl(modal);
+            const rails = content.findAll("lilbee-discover-rail");
+            expect(rails.length).toBe(3);
+            const headings = content.findAll("lilbee-discover-rail-heading").map((h) => h.children[0].textContent);
+            expect(headings).toEqual([MESSAGES.RAIL_FOR_YOU, MESSAGES.RAIL_YOUR_COLLECTION, MESSAGES.RAIL_FRESH]);
+        });
+
+        it("For You rail prefers chat-task entries when an active chat model is set", async () => {
+            const plugin = makePlugin({ activeModel: "any/chat-active/file.gguf" });
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(makeDiscoverEntries())));
+            const modal = await openModal(plugin, CATALOG_TAB.DISCOVER);
+            const content = contentEl(modal);
+            const rails = content.findAll("lilbee-discover-rail");
+            const forYouCards = rails[0].find("lilbee-discover-rail-cards")!.findAll("lilbee-model-card");
+            // Featured chat first, then featured embed.
+            expect(forYouCards[0].dataset.repo).toBe("feat/chat");
+        });
+
+        it("Fresh rail sorts by downloads descending and caps at 12", async () => {
+            const plugin = makePlugin();
+            const many: CatalogEntry[] = Array.from({ length: 15 }, (_, i) =>
+                makeEntry({ hf_repo: `m/${i}`, display_name: `M${i}`, downloads: i * 10 }),
+            );
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(many)));
+            const modal = await openModal(plugin, CATALOG_TAB.DISCOVER);
+            const content = contentEl(modal);
+            const rails = content.findAll("lilbee-discover-rail");
+            const freshCards = rails[2].find("lilbee-discover-rail-cards")!.findAll("lilbee-model-card");
+            expect(freshCards.length).toBe(12);
+            // First card has the highest download count.
+            expect(freshCards[0].dataset.repo).toBe("m/14");
+        });
+
+        it("Your Collection rail shows installed entries only", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(makeDiscoverEntries())));
+            const modal = await openModal(plugin, CATALOG_TAB.DISCOVER);
+            const content = contentEl(modal);
+            const rails = content.findAll("lilbee-discover-rail");
+            const collectionCards = rails[1].find("lilbee-discover-rail-cards")!.findAll("lilbee-model-card");
+            expect(collectionCards.length).toBe(1);
+            expect(collectionCards[0].dataset.repo).toBe("owned/one");
+        });
+
+        it("renders the empty placeholder when a rail has no rows", async () => {
+            const plugin = makePlugin();
+            // No installed and no featured entries — For You and Your Collection both empty.
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ hf_repo: "lonely", display_name: "Lonely" })])),
+            );
+            const modal = await openModal(plugin, CATALOG_TAB.DISCOVER);
+            const content = contentEl(modal);
+            const empties = content.findAll("lilbee-discover-rail-empty");
+            expect(empties.length).toBe(2);
+            expect(empties[0].textContent).toBe(MESSAGES.RAIL_NO_ITEMS);
+        });
+    });
+
+    describe("Library tab", () => {
+        it("shows only installed entries across tasks", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeEntry({ hf_repo: "in/chat", display_name: "ChatModel", installed: true }),
+                        makeEntry({
+                            hf_repo: "in/embed",
+                            display_name: "EmbedModel",
+                            installed: true,
+                            task: "embedding",
+                        }),
+                        makeEntry({ hf_repo: "out/none", display_name: "NotInstalled", installed: false }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            const content = contentEl(modal);
+            const cards = content.findAll("lilbee-model-card");
+            const repos = cards.map((c) => c.dataset.repo).sort();
+            expect(repos).toEqual(["in/chat", "in/embed"]);
+        });
+
+        it("renders the empty state when nothing is installed", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ hf_repo: "out/none", installed: false })])),
+            );
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            const content = contentEl(modal);
+            expect(content.find("lilbee-catalog-empty")?.textContent).toBe(MESSAGES.LABEL_NO_MODELS_FOUND);
+        });
+
+        it("supports list view when toggled", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ hf_repo: "in/lib", installed: true })])),
+            );
+            const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
+            const content = contentEl(modal);
+            content.find("lilbee-catalog-view-toggle")!.trigger("click");
+            await tick();
+            expect(content.find("lilbee-catalog-list")).not.toBeNull();
         });
     });
 });

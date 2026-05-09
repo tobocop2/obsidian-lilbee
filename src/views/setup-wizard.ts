@@ -2,7 +2,7 @@ import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import { SessionTokenError } from "../api";
 import type { BatchProgressPayload, CatalogEntry, SSEEvent, SyncDone } from "../types";
-import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK } from "../types";
+import { CATALOG_TAB, SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK } from "../types";
 import { CatalogModal } from "./catalog-modal";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
@@ -485,7 +485,7 @@ export class SetupWizard extends Modal {
 
         const catalogBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BROWSE_FULL_CATALOG });
         catalogBtn.addEventListener("click", () => {
-            new CatalogModal(this.app, this.plugin).open();
+            new CatalogModal(this.app, this.plugin, MODEL_TASK.CHAT, CATALOG_TAB.CHAT).open();
         });
 
         const downloadBtn = actions.createEl("button", { text: MESSAGES.BUTTON_DOWNLOAD_CONTINUE, cls: "mod-cta" });

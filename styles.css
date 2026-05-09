@@ -2977,6 +2977,58 @@
     border-bottom-color: var(--interactive-accent);
 }
 
+.lilbee-catalog-tab-num {
+    margin-right: 4px;
+    font-size: 10px;
+    color: var(--text-faint);
+}
+
+.lilbee-catalog-tab-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-3, 12px);
+}
+
+.lilbee-discover-rail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2-2, 4px);
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-discover-rail-heading {
+    display: flex;
+    align-items: baseline;
+    gap: var(--size-4-2, 8px);
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+.lilbee-discover-rail-heading-help {
+    font-weight: normal;
+    font-size: var(--font-ui-smaller, 11px);
+    color: var(--text-muted);
+}
+
+.lilbee-discover-rail-cards {
+    display: flex;
+    gap: var(--size-4-2, 8px);
+    overflow-x: auto;
+    padding-bottom: var(--size-2-2, 4px);
+}
+
+.lilbee-discover-rail-cards .lilbee-model-card {
+    flex: 0 0 auto;
+    min-width: 220px;
+    max-width: 280px;
+}
+
+.lilbee-discover-rail-empty {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small, 12px);
+    padding: var(--size-4-2, 8px) 0;
+}
+
 .lilbee-frontier-row {
     display: flex;
     align-items: center;

@@ -1,7 +1,24 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { CatalogEntry, CatalogSource, CatalogViewMode, KeyStatus, ModelTask, ModelSize } from "../types";
-import { CATALOG_SOURCE, KEY_STATUS, MODEL_TASK, SSE_EVENT, TASK_TYPE, CATALOG_VIEW_MODE, ERROR_NAME } from "../types";
+import type {
+    CatalogEntry,
+    CatalogSource,
+    CatalogTab,
+    CatalogViewMode,
+    KeyStatus,
+    ModelTask,
+    ModelSize,
+} from "../types";
+import {
+    CATALOG_SOURCE,
+    CATALOG_TAB,
+    KEY_STATUS,
+    MODEL_TASK,
+    SSE_EVENT,
+    TASK_TYPE,
+    CATALOG_VIEW_MODE,
+    ERROR_NAME,
+} from "../types";
 import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
 import { extractHfRepo } from "../utils/model-ref";
 import { ConfirmModal } from "./confirm-modal";
@@ -19,12 +36,17 @@ import {
 import { renderModelCard } from "../components/model-card";
 import {
     deepLinkToApiKeySettings,
+    forYouRail,
+    freshRail,
     frontierRowsOnly,
     groupByProvider,
     hasReadyFrontierRow,
     localRowsOnly,
     renderKeyStatusPill,
     renderProviderPill,
+    tabIdToTask,
+    taskToTabId,
+    yourCollectionRail,
 } from "./catalog-helpers";
 
 const PAGE_SIZE = 20;
@@ -40,6 +62,26 @@ const TASK_SECTION_LABEL: Record<ModelTask, string> = {
     [MODEL_TASK.EMBEDDING]: MESSAGES.LABEL_SECTION_EMBEDDING,
     [MODEL_TASK.RERANK]: MESSAGES.LABEL_SECTION_RERANK,
 };
+
+interface TabSpec {
+    id: CatalogTab;
+    label: string;
+}
+
+const TAB_SPECS: readonly TabSpec[] = [
+    { id: CATALOG_TAB.DISCOVER, label: MESSAGES.TAB_DISCOVER },
+    { id: CATALOG_TAB.CHAT, label: MESSAGES.TAB_CHAT_MODELS },
+    { id: CATALOG_TAB.EMBED, label: MESSAGES.TAB_EMBED_MODELS },
+    { id: CATALOG_TAB.VISION, label: MESSAGES.TAB_VISION_MODELS },
+    { id: CATALOG_TAB.RERANK, label: MESSAGES.TAB_RERANK_MODELS },
+    { id: CATALOG_TAB.LIBRARY, label: MESSAGES.TAB_LIBRARY },
+];
+
+interface RailSpec {
+    heading: string;
+    help: string;
+    rows: CatalogEntry[];
+}
 
 export class CatalogModal extends Modal {
     private plugin: LilbeePlugin;
@@ -59,18 +101,26 @@ export class CatalogModal extends Modal {
     private debouncedSearch: () => void;
     private cancelDebouncedSearch: () => void;
     private currentTab: CatalogSource = CATALOG_SOURCE.LOCAL;
-    private tabBarEl: HTMLElement | null = null;
+    private subTabBarEl: HTMLElement | null = null;
     private frontierTabBtn: HTMLElement | null = null;
+    private activeTab: CatalogTab;
+    private mainTabBarEl: HTMLElement | null = null;
 
     /**
      * @param initialTaskFilter Pre-select a task tab when opening (e.g.
      * from the wizard's Vision step so users land on vision-only results).
      * Defaults to "" which shows all tasks.
+     * @param initialTab Pre-select one of the top-level catalog tabs. When
+     * omitted, the modal restores the user's last-used tab from settings.
      */
-    constructor(app: App, plugin: LilbeePlugin, initialTaskFilter: TaskFilter = "") {
+    constructor(app: App, plugin: LilbeePlugin, initialTaskFilter: TaskFilter = "", initialTab?: CatalogTab) {
         super(app);
         this.plugin = plugin;
         this.filterTask = initialTaskFilter;
+        this.activeTab = initialTab ?? plugin.settings.lastCatalogTab ?? CATALOG_TAB.DISCOVER;
+        if (initialTab === undefined && initialTaskFilter !== "") {
+            this.activeTab = taskToTabId(initialTaskFilter as ModelTask);
+        }
         const searchDebounced = debounce(() => this.resetAndFetch(), DEBOUNCE_MS);
         this.debouncedSearch = searchDebounced.run;
         this.cancelDebouncedSearch = searchDebounced.cancel;
@@ -82,39 +132,88 @@ export class CatalogModal extends Modal {
         contentEl.addClass("lilbee-catalog-modal");
 
         contentEl.createEl("h2", { text: MESSAGES.TITLE_MODEL_CATALOG });
-        this.renderTabBar(contentEl);
+        this.renderMainTabBar(contentEl);
+        this.renderSubTabBar(contentEl);
         this.renderFilterBar(contentEl);
 
-        this.resultsEl = contentEl.createDiv({ cls: "lilbee-catalog-results" });
+        this.resultsEl = contentEl.createDiv({ cls: "lilbee-catalog-results lilbee-catalog-tab-content" });
         this.resultsEl.addEventListener("scroll", this.onScroll);
+        contentEl.addEventListener("keydown", this.onKeyDown);
 
+        this.applyTabToFilter();
         this.resetAndFetch();
     }
 
-    private renderTabBar(parent: HTMLElement): void {
-        this.tabBarEl = parent.createDiv({ cls: "lilbee-catalog-tab-bar" });
-        const localBtn = this.tabBarEl.createEl("button", {
+    private renderMainTabBar(parent: HTMLElement): void {
+        this.mainTabBarEl = parent.createDiv({ cls: "lilbee-catalog-tab-bar lilbee-catalog-main-tab-bar" });
+        for (let i = 0; i < TAB_SPECS.length; i++) {
+            const spec = TAB_SPECS[i];
+            const btn = this.mainTabBarEl.createEl("button", { cls: "lilbee-catalog-tab" });
+            btn.dataset.tabId = spec.id;
+            btn.createSpan({ cls: "lilbee-catalog-tab-num", text: String(i + 1) });
+            btn.createSpan({ text: spec.label });
+            btn.setAttribute("aria-selected", spec.id === this.activeTab ? "true" : "false");
+            if (spec.id === this.activeTab) btn.addClass("lilbee-catalog-tab-active");
+            btn.addEventListener("click", () => this.switchMainTab(spec.id));
+        }
+    }
+
+    private switchMainTab(tab: CatalogTab): void {
+        if (this.activeTab === tab) return;
+        this.activeTab = tab;
+        if (this.mainTabBarEl) {
+            for (const btn of Array.from(this.mainTabBarEl.children) as HTMLElement[]) {
+                const isActive = btn.dataset.tabId === tab;
+                btn.toggleClass("lilbee-catalog-tab-active", isActive);
+                btn.setAttribute("aria-selected", isActive ? "true" : "false");
+            }
+        }
+        this.plugin.settings.lastCatalogTab = tab;
+        void this.plugin.saveSettings();
+        // Reset to the local sub-tab when leaving a task tab — frontier state shouldn't persist.
+        this.currentTab = CATALOG_SOURCE.LOCAL;
+        this.applyTabToFilter();
+        this.updateSubTabBarVisibility();
+        this.resetAndFetch();
+    }
+
+    private applyTabToFilter(): void {
+        const task = tabIdToTask(this.activeTab);
+        this.filterTask = task ?? "";
+    }
+
+    private renderSubTabBar(parent: HTMLElement): void {
+        this.subTabBarEl = parent.createDiv({ cls: "lilbee-catalog-tab-bar lilbee-catalog-sub-tab-bar" });
+        const localBtn = this.subTabBarEl.createEl("button", {
             text: MESSAGES.TAB_LOCAL,
             cls: "lilbee-catalog-tab lilbee-catalog-tab-active",
         });
         localBtn.setAttribute("aria-selected", "true");
-        localBtn.addEventListener("click", () => this.switchTab(CATALOG_SOURCE.LOCAL));
+        localBtn.addEventListener("click", () => this.switchSubTab(CATALOG_SOURCE.LOCAL));
 
-        this.frontierTabBtn = this.tabBarEl.createEl("button", {
+        this.frontierTabBtn = this.subTabBarEl.createEl("button", {
             text: MESSAGES.TAB_FRONTIER,
             cls: "lilbee-catalog-tab",
         });
         this.frontierTabBtn.setAttribute("aria-selected", "false");
         this.frontierTabBtn.style.display = "none";
-        this.frontierTabBtn.addEventListener("click", () => this.switchTab(CATALOG_SOURCE.FRONTIER));
+        this.frontierTabBtn.addEventListener("click", () => this.switchSubTab(CATALOG_SOURCE.FRONTIER));
+        this.updateSubTabBarVisibility();
     }
 
-    private switchTab(tab: CatalogSource): void {
+    private updateSubTabBarVisibility(): void {
+        /* v8 ignore next 2 */
+        if (!this.subTabBarEl) return;
+        const showSubTabs = tabIdToTask(this.activeTab) !== null;
+        this.subTabBarEl.style.display = showSubTabs ? "" : "none";
+    }
+
+    private switchSubTab(tab: CatalogSource): void {
         if (this.currentTab === tab) return;
         this.currentTab = tab;
         /* v8 ignore next 2 */
-        if (!this.tabBarEl) return;
-        for (const btn of Array.from(this.tabBarEl.children) as HTMLElement[]) {
+        if (!this.subTabBarEl) return;
+        for (const btn of Array.from(this.subTabBarEl.children) as HTMLElement[]) {
             const isActive =
                 (tab === CATALOG_SOURCE.LOCAL && btn.textContent === MESSAGES.TAB_LOCAL) ||
                 (tab === CATALOG_SOURCE.FRONTIER && btn.textContent === MESSAGES.TAB_FRONTIER);
@@ -127,18 +226,20 @@ export class CatalogModal extends Modal {
     private updateFrontierTabVisibility(): void {
         /* v8 ignore next 2 */
         if (!this.frontierTabBtn) return;
-        if (hasReadyFrontierRow(this.entries)) {
+        const showFrontier = tabIdToTask(this.activeTab) !== null && hasReadyFrontierRow(this.entries);
+        if (showFrontier) {
             this.frontierTabBtn.style.display = "";
             return;
         }
         this.frontierTabBtn.style.display = "none";
         // Bounce the user home if a refetch revoked the only ready frontier row.
-        if (this.currentTab === CATALOG_SOURCE.FRONTIER) this.switchTab(CATALOG_SOURCE.LOCAL);
+        if (this.currentTab === CATALOG_SOURCE.FRONTIER) this.switchSubTab(CATALOG_SOURCE.LOCAL);
     }
 
     onClose(): void {
         this.cancelDebouncedSearch();
         this.resultsEl?.removeEventListener("scroll", this.onScroll);
+        this.contentEl.removeEventListener("keydown", this.onKeyDown);
     }
 
     private onScroll = (): void => {
@@ -149,19 +250,15 @@ export class CatalogModal extends Modal {
         }
     };
 
+    private onKeyDown = (e: KeyboardEvent): void => {
+        const idx = Number(e.key) - 1;
+        if (!Number.isInteger(idx) || idx < 0 || idx >= TAB_SPECS.length) return;
+        e.preventDefault();
+        this.switchMainTab(TAB_SPECS[idx].id);
+    };
+
     private renderFilterBar(parent: HTMLElement): void {
         const filters = parent.createDiv({ cls: "lilbee-catalog-filters" });
-
-        this.renderSelect(
-            filters,
-            "lilbee-catalog-filter-task",
-            CATALOG_FILTERS.TASK,
-            (v) => {
-                this.filterTask = v as TaskFilter;
-                this.resetAndFetch();
-            },
-            this.filterTask,
-        );
 
         this.renderSelect(filters, "lilbee-catalog-filter-size", CATALOG_FILTERS.SIZE, (v) => {
             this.filterSize = v as SizeFilter;
@@ -195,14 +292,12 @@ export class CatalogModal extends Modal {
         cls: string,
         options: ReadonlyArray<readonly [string, string]>,
         onChange: (value: string) => void,
-        initialValue?: string,
     ): void {
         const select = parent.createEl("select", { cls }) as HTMLSelectElement;
         for (const [value, label] of options) {
             const opt = select.createEl("option", { text: label });
             opt.value = value;
         }
-        if (initialValue !== undefined && initialValue !== "") select.value = initialValue;
         select.addEventListener("change", () => onChange(select.value));
     }
 
@@ -260,11 +355,25 @@ export class CatalogModal extends Modal {
         if (!this.resultsEl) return;
         this.resultsEl.empty();
 
+        if (this.activeTab === CATALOG_TAB.DISCOVER) {
+            this.renderDiscoverTab();
+            return;
+        }
+        if (this.activeTab === CATALOG_TAB.LIBRARY) {
+            this.renderLibraryTab();
+            return;
+        }
+
         if (this.currentTab === CATALOG_SOURCE.FRONTIER) {
             this.renderFrontierResults();
             return;
         }
+        this.renderTaskTabLocal();
+    }
 
+    private renderTaskTabLocal(): void {
+        /* v8 ignore next 2 */
+        if (!this.resultsEl) return;
         const localEntries = localRowsOnly(this.entries);
         if (localEntries.length === 0) {
             this.resultsEl.createDiv({
@@ -273,7 +382,6 @@ export class CatalogModal extends Modal {
             });
             return;
         }
-
         if (this.viewMode === CATALOG_VIEW_MODE.GRID) {
             this.renderGridView(localEntries);
         } else {
@@ -281,10 +389,75 @@ export class CatalogModal extends Modal {
         }
     }
 
+    private renderDiscoverTab(): void {
+        /* v8 ignore next 2 */
+        if (!this.resultsEl) return;
+        const activeChatRef = extractHfRepo(this.plugin.activeModel);
+        const rails: RailSpec[] = [
+            {
+                heading: MESSAGES.RAIL_FOR_YOU,
+                help: MESSAGES.RAIL_FOR_YOU_HELP,
+                rows: forYouRail(this.entries, activeChatRef),
+            },
+            {
+                heading: MESSAGES.RAIL_YOUR_COLLECTION,
+                help: MESSAGES.RAIL_YOUR_COLLECTION_HELP,
+                rows: yourCollectionRail(this.entries),
+            },
+            {
+                heading: MESSAGES.RAIL_FRESH,
+                help: MESSAGES.RAIL_FRESH_HELP,
+                rows: freshRail(this.entries),
+            },
+        ];
+        for (const rail of rails) {
+            this.renderRail(rail);
+        }
+    }
+
+    private renderRail(rail: RailSpec): void {
+        /* v8 ignore next 2 */
+        if (!this.resultsEl) return;
+        const railEl = this.resultsEl.createDiv({ cls: "lilbee-discover-rail" });
+        const heading = railEl.createDiv({ cls: "lilbee-discover-rail-heading" });
+        heading.createSpan({ text: rail.heading });
+        heading.createSpan({ cls: "lilbee-discover-rail-heading-help", text: rail.help });
+        const cards = railEl.createDiv({ cls: "lilbee-discover-rail-cards" });
+        if (rail.rows.length === 0) {
+            cards.createDiv({ cls: "lilbee-discover-rail-empty", text: MESSAGES.RAIL_NO_ITEMS });
+            return;
+        }
+        for (const entry of rail.rows) {
+            this.renderCard(cards, entry);
+        }
+    }
+
+    private renderLibraryTab(): void {
+        /* v8 ignore next 2 */
+        if (!this.resultsEl) return;
+        const installed = this.entries.filter((e) => e.installed);
+        if (installed.length === 0) {
+            this.resultsEl.createDiv({
+                cls: "lilbee-catalog-empty",
+                text: MESSAGES.LABEL_NO_MODELS_FOUND,
+            });
+            return;
+        }
+        if (this.viewMode === CATALOG_VIEW_MODE.GRID) {
+            this.renderGridView(installed);
+        } else {
+            this.renderListView(installed);
+        }
+    }
+
     private renderFrontierResults(): void {
         /* v8 ignore next 2 */
         if (!this.resultsEl) return;
-        const rows = frontierRowsOnly(this.entries);
+        // Sub-toggle is only visible on task tabs, so taskForTab is always non-null here.
+        const taskForTab = tabIdToTask(this.activeTab);
+        const allFrontier = frontierRowsOnly(this.entries);
+        /* v8 ignore next 2 */
+        const rows = taskForTab === null ? allFrontier : allFrontier.filter((r) => r.task === taskForTab);
         if (rows.length === 0) {
             this.resultsEl.createDiv({
                 cls: "lilbee-catalog-empty",
@@ -430,7 +603,7 @@ export class CatalogModal extends Modal {
 
     private renderListRow(listEl: HTMLElement, entry: CatalogEntry): void {
         const row = listEl.createDiv({ cls: "lilbee-catalog-list-row" });
-        const nameText = entry.featured ? `\u2605 ${entry.display_name}` : entry.display_name;
+        const nameText = entry.featured ? `★ ${entry.display_name}` : entry.display_name;
         row.createEl("span", { text: nameText, cls: "lilbee-catalog-list-col-name" });
         row.createEl("span", { text: entry.task, cls: "lilbee-catalog-list-col-task" });
         row.createEl("span", { text: `${entry.size_gb} GB`, cls: "lilbee-catalog-list-col-size" });

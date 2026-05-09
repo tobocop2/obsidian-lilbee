@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { App, MockElement } from "../__mocks__/obsidian";
 import {
     deepLinkToApiKeySettings,
+    forYouRail,
+    freshRail,
     frontierRowsOnly,
     groupByProvider,
     hasReadyFrontierRow,
@@ -9,7 +11,11 @@ import {
     localRowsOnly,
     renderKeyStatusPill,
     renderProviderPill,
+    tabIdToTask,
+    taskToTabId,
+    yourCollectionRail,
 } from "../../src/views/catalog-helpers";
+import { CATALOG_TAB } from "../../src/types";
 import type { CatalogEntry } from "../../src/types";
 
 function row(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
@@ -178,6 +184,56 @@ describe("catalog-helpers", () => {
             // Let the inner setTimeout fire — must not throw.
             await new Promise((r) => setTimeout(r, 60));
             (globalThis as any).document = originalDocument;
+        });
+
+        it("Discover rail helpers cover task↔tab routing and ranking", () => {
+            // taskToTabId / tabIdToTask round-trip.
+            expect(taskToTabId("chat")).toBe(CATALOG_TAB.CHAT);
+            expect(taskToTabId("embedding")).toBe(CATALOG_TAB.EMBED);
+            expect(taskToTabId("vision")).toBe(CATALOG_TAB.VISION);
+            expect(taskToTabId("rerank")).toBe(CATALOG_TAB.RERANK);
+            expect(tabIdToTask(CATALOG_TAB.CHAT)).toBe("chat");
+            expect(tabIdToTask(CATALOG_TAB.DISCOVER)).toBeNull();
+            expect(tabIdToTask(CATALOG_TAB.LIBRARY)).toBeNull();
+        });
+
+        it("forYouRail prefers chat-task entries when active chat ref is set", () => {
+            const rows = [
+                row({ hf_repo: "f/embed", featured: true, task: "embedding", downloads: 100 }),
+                row({ hf_repo: "f/chat", featured: true, task: "chat", downloads: 10 }),
+                row({ hf_repo: "p/plain", featured: false }),
+            ];
+            const result = forYouRail(rows, "some/active/file.gguf");
+            // Featured chat ranks above featured embed even though embed has more downloads.
+            expect(result[0].hf_repo).toBe("f/chat");
+            expect(result.length).toBe(2);
+        });
+
+        it("forYouRail falls back to download order when no active chat ref", () => {
+            const rows = [
+                row({ hf_repo: "f/low", featured: true, task: "embedding", downloads: 5 }),
+                row({ hf_repo: "f/high", featured: true, task: "chat", downloads: 500 }),
+            ];
+            const result = forYouRail(rows, "");
+            expect(result[0].hf_repo).toBe("f/high");
+        });
+
+        it("forYouRail caps at 12 entries", () => {
+            const rows = Array.from({ length: 20 }, (_, i) => row({ hf_repo: `f/${i}`, featured: true, downloads: i }));
+            expect(forYouRail(rows, "").length).toBe(12);
+        });
+
+        it("yourCollectionRail returns only installed entries", () => {
+            const rows = [row({ hf_repo: "y/in", installed: true }), row({ hf_repo: "y/out", installed: false })];
+            expect(yourCollectionRail(rows).map((r) => r.hf_repo)).toEqual(["y/in"]);
+        });
+
+        it("freshRail sorts by downloads desc and caps at 12", () => {
+            const rows = Array.from({ length: 15 }, (_, i) => row({ hf_repo: `n/${i}`, downloads: i }));
+            const result = freshRail(rows);
+            expect(result.length).toBe(12);
+            expect(result[0].hf_repo).toBe("n/14");
+            expect(result[11].hf_repo).toBe("n/3");
         });
 
         it("safely handles a query that finds nothing", async () => {

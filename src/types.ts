@@ -268,6 +268,7 @@ export interface LilbeeSettings {
      * external servers keep their own documents_dir.
      */
     storeContentInVault: boolean;
+    lastCatalogTab: CatalogTab;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -293,6 +294,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     enableOcr: null,
     manualToken: "",
     storeContentInVault: true,
+    lastCatalogTab: "discover",
 };
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */

@@ -64,6 +64,7 @@ describe("DEFAULT_SETTINGS", () => {
             "serverUrl",
             "setupCompleted",
             "storeContentInVault",
+            "lastCatalogTab",
             "generalSystemPrompt",
             "ragSystemPrompt",
             "syncDebounceMs",

@@ -1,7 +1,21 @@
 import type { App } from "obsidian";
-import type { CatalogEntry, KeyStatus } from "../types";
-import { CATALOG_SOURCE, KEY_STATUS } from "../types";
+import type { CatalogEntry, CatalogTab, KeyStatus, ModelTask } from "../types";
+import { CATALOG_SOURCE, CATALOG_TAB, KEY_STATUS, MODEL_TASK } from "../types";
 import { MESSAGES } from "../locales/en";
+
+const DISCOVER_RAIL_LIMIT = 12;
+const TASK_TO_TAB: Record<ModelTask, CatalogTab> = {
+    [MODEL_TASK.CHAT]: CATALOG_TAB.CHAT,
+    [MODEL_TASK.EMBEDDING]: CATALOG_TAB.EMBED,
+    [MODEL_TASK.VISION]: CATALOG_TAB.VISION,
+    [MODEL_TASK.RERANK]: CATALOG_TAB.RERANK,
+};
+const TAB_TO_TASK: Partial<Record<CatalogTab, ModelTask>> = {
+    [CATALOG_TAB.CHAT]: MODEL_TASK.CHAT,
+    [CATALOG_TAB.EMBED]: MODEL_TASK.EMBEDDING,
+    [CATALOG_TAB.VISION]: MODEL_TASK.VISION,
+    [CATALOG_TAB.RERANK]: MODEL_TASK.RERANK,
+};
 
 export const KEY_STATUS_PILL_CLASS = {
     READY: "lilbee-key-status-pill-ready",
@@ -58,6 +72,41 @@ export function renderKeyStatusPill(parent: HTMLElement, status: KeyStatus): HTM
         cls: `lilbee-key-status-pill ${KEY_STATUS_PILL_CLASS.NEEDS_KEY}`,
         text: MESSAGES.PILL_KEY_NEEDS_KEY,
     });
+}
+
+export function taskToTabId(task: ModelTask): CatalogTab {
+    return TASK_TO_TAB[task];
+}
+
+export function tabIdToTask(tab: CatalogTab): ModelTask | null {
+    return TAB_TO_TASK[tab] ?? null;
+}
+
+/**
+ * Featured-first ordering, capped at 12. When the user has an active chat
+ * model the chat-task entries float to the top so the rail leads with rows
+ * matching what they're already using.
+ */
+export function forYouRail(entries: CatalogEntry[], activeChatModelRef: string): CatalogEntry[] {
+    const featured = entries.filter((e) => e.featured);
+    const preferChat = activeChatModelRef !== "";
+    const sorted = [...featured].sort((a, b) => {
+        if (preferChat) {
+            const aChat = a.task === MODEL_TASK.CHAT ? 0 : 1;
+            const bChat = b.task === MODEL_TASK.CHAT ? 0 : 1;
+            if (aChat !== bChat) return aChat - bChat;
+        }
+        return b.downloads - a.downloads;
+    });
+    return sorted.slice(0, DISCOVER_RAIL_LIMIT);
+}
+
+export function yourCollectionRail(entries: CatalogEntry[]): CatalogEntry[] {
+    return entries.filter((e) => e.installed);
+}
+
+export function freshRail(entries: CatalogEntry[]): CatalogEntry[] {
+    return [...entries].sort((a, b) => b.downloads - a.downloads).slice(0, DISCOVER_RAIL_LIMIT);
 }
 
 export function deepLinkToApiKeySettings(app: App, provider: string): void {
