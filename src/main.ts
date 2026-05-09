@@ -16,6 +16,7 @@ import {
     SYNC_MODE,
     TASK_STATUS,
     TASK_TYPE,
+    type BatchProgressPayload,
     type DotState,
     type LilbeeSettings,
     type ServerMode,
@@ -121,6 +122,13 @@ export class FileProgressTracker {
 
     startFile(current: number, total: number): void {
         this.currentFile = current;
+        this.totalFiles = Math.max(1, total);
+        this.extractFraction = 0;
+        this.embedFraction = 0;
+    }
+
+    completeFile(current: number, total: number): void {
+        this.currentFile = current + 1;
         this.totalFiles = Math.max(1, total);
         this.extractFraction = 0;
         this.embedFraction = 0;
@@ -1115,6 +1123,14 @@ export default class LilbeePlugin extends Plugin {
                             String(d.total_chunks),
                         ),
                     );
+                } else if (event.event === SSE_EVENT.BATCH_PROGRESS) {
+                    const d = event.data as BatchProgressPayload;
+                    progress.completeFile(d.current, d.total);
+                    this.taskQueue.update(
+                        taskId,
+                        progress.percent(),
+                        MESSAGES.STATUS_TASK_BATCH(d.current, d.total, d.file, d.status),
+                    );
                 } else if (event.event === SSE_EVENT.DONE) {
                     const parsed = parseAddDoneEvent(event.data);
                     if (parsed) syncResult = parsed;
@@ -1504,6 +1520,14 @@ export default class LilbeePlugin extends Plugin {
                             "{total}",
                             String(d.total_chunks),
                         ),
+                    );
+                } else if (event.event === SSE_EVENT.BATCH_PROGRESS) {
+                    const d = event.data as BatchProgressPayload;
+                    progress.completeFile(d.current, d.total);
+                    this.taskQueue.update(
+                        taskId,
+                        progress.percent(),
+                        MESSAGES.STATUS_TASK_BATCH(d.current, d.total, d.file, d.status),
                     );
                 } else if (event.event === SSE_EVENT.DONE) {
                     const parsed = parseAddDoneEvent(event.data);

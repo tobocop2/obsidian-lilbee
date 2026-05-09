@@ -1871,6 +1871,28 @@ describe("LilbeePlugin", () => {
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
+        it("handles BATCH_PROGRESS events by advancing the task percent", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const updateSpy = vi.spyOn(plugin.taskQueue, "update");
+            async function* withBatchProgress() {
+                yield {
+                    event: SSE_EVENT.BATCH_PROGRESS,
+                    data: { file: "paper.pdf", status: "ingested", current: 1, total: 4 },
+                };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(withBatchProgress());
+
+            await plugin.triggerSync();
+
+            const batchUpdate = updateSpy.mock.calls.find((call) => String(call[2] ?? "").includes("paper.pdf"));
+            expect(batchUpdate).toBeDefined();
+            expect(batchUpdate?.[1]).toBe(25); // 1/4 = 25%
+            expect(batchUpdate?.[2]).toContain("ingested");
+            expect(batchUpdate?.[2]).toContain("1/4");
+        });
+
         it("SSE_EVENT.ERROR shows notice and fails the task", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -2335,6 +2357,28 @@ describe("LilbeePlugin", () => {
             await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
 
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
+        });
+
+        it("handles BATCH_PROGRESS events on add and surfaces the file status", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            const updateSpy = vi.spyOn(plugin.taskQueue, "update");
+            async function* withBatch() {
+                yield {
+                    event: SSE_EVENT.BATCH_PROGRESS,
+                    data: { file: "corrupt.pdf", status: "skipped", current: 2, total: 5 },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withBatch());
+
+            await (plugin as any).addToLilbee({ path: "corrupt.pdf", name: "corrupt.pdf" });
+
+            const batchUpdate = updateSpy.mock.calls.find((call) => String(call[2] ?? "").includes("corrupt.pdf"));
+            expect(batchUpdate).toBeDefined();
+            expect(batchUpdate?.[1]).toBe(40); // 2/5 = 40%
+            expect(batchUpdate?.[2]).toContain("skipped");
         });
 
         it("parses a nested {sync: SyncDone} done payload", async () => {

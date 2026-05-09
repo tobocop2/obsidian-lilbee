@@ -363,6 +363,8 @@ export const MESSAGES = {
     STATUS_TASK_SYNCING_FILE: "syncing {current}/{total}",
     STATUS_TASK_EXTRACTING: "extracting {file} p{page}/{total}",
     STATUS_TASK_EMBEDDING: "embedding chunk {chunk}/{total}",
+    STATUS_TASK_BATCH: (current: number, total: number, file: string, status: string) =>
+        `${status} ${current}/${total} ${file}`,
     STATUS_TASK_CRAWLER_PREPARING: "Preparing crawler…",
     STATUS_TASK_SETUP_PROGRESS: "chromium: {downloaded}/{total} MB",
     STATUS_TASK_SETUP_PROGRESS_INDETERMINATE: "chromium: {downloaded} MB",

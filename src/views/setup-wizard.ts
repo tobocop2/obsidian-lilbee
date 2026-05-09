@@ -1,7 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import { SessionTokenError } from "../api";
-import type { CatalogEntry, SSEEvent, SyncDone } from "../types";
+import type { BatchProgressPayload, CatalogEntry, SSEEvent, SyncDone } from "../types";
 import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK } from "../types";
 import { CatalogModal } from "./catalog-modal";
 import { MESSAGES, FILTERS } from "../locales/en";
@@ -826,6 +826,10 @@ export class SetupWizard extends Modal {
                         "{current}",
                         String(d.current_file),
                     ).replace("{total}", String(d.total_files));
+                } else if (event.event === SSE_EVENT.BATCH_PROGRESS) {
+                    const d = event.data as BatchProgressPayload;
+                    this.updateProgress(step, progressFill, Math.round((d.current / d.total) * 100));
+                    progressLabel.textContent = MESSAGES.STATUS_TASK_BATCH(d.current, d.total, d.file, d.status);
                 }
                 if (event.event === SSE_EVENT.EMBED) {
                     const d = event.data as { file?: string };

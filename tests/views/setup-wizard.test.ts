@@ -1147,6 +1147,35 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("Wiki (optional, experimental)"))).toBe(true);
         });
 
+        it("renders BATCH_PROGRESS percent and per-file status during initial sync", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            let labelAtBatch = "";
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 4 } };
+                    yield {
+                        event: SSE_EVENT.BATCH_PROGRESS,
+                        data: { file: "a.md", status: "ingested", current: 2, total: 4 },
+                    };
+                    // Capture the label state before DONE advances to the wiki step.
+                    const labelEl = (wizard.contentEl as unknown as MockElement).find("lilbee-wizard-progress-label");
+                    labelAtBatch = labelEl?.textContent ?? "";
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: { added: ["a.md"], updated: [], removed: [], unchanged: 0, failed: [] },
+                    };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+
+            expect(labelAtBatch).toContain("ingested 2/4 a.md");
+        });
+
         it("sync abort shows notice", async () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const abortErr = new Error("aborted");
