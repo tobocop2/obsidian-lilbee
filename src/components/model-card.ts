@@ -1,7 +1,8 @@
-import { HARDWARE_FIT, type CatalogEntry, type HardwareFit, type ModelCardOptions } from "../types";
+import type { CatalogEntry, ModelCardOptions } from "../types";
 import { MESSAGES } from "../locales/en";
 import { formatAbbreviatedCount } from "../utils";
 import { renderPill, renderTaskPill, renderPickPill, renderProviderPill, PILL_CLS } from "./pill";
+import { renderFitChip } from "./fit-chip";
 
 export function renderModelCard(container: HTMLElement, entry: CatalogEntry, options: ModelCardOptions): HTMLElement {
     const card = container.createDiv({ cls: "lilbee-model-card" });
@@ -38,20 +39,7 @@ function renderCardHeader(card: HTMLElement, entry: CatalogEntry): void {
 function renderCardSpecs(card: HTMLElement, entry: CatalogEntry): void {
     const parts = [entry.quality_tier, `${entry.size_gb} GB`].filter(Boolean);
     card.createDiv({ cls: "lilbee-model-card-specs", text: parts.join(" \u00B7 ") });
-    renderFitChip(card, entry);
-}
-
-function renderFitChip(card: HTMLElement, entry: CatalogEntry): void {
-    if (entry.fit !== HARDWARE_FIT.FITS && entry.fit !== HARDWARE_FIT.TIGHT && entry.fit !== HARDWARE_FIT.WONT_RUN) {
-        return;
-    }
-    card.createEl("span", { text: fitLabel(entry.fit), cls: `lilbee-fit-chip lilbee-fit-${entry.fit}` });
-}
-
-function fitLabel(fit: HardwareFit): string {
-    if (fit === HARDWARE_FIT.FITS) return MESSAGES.LABEL_FIT_FITS;
-    if (fit === HARDWARE_FIT.TIGHT) return MESSAGES.LABEL_FIT_TIGHT;
-    return MESSAGES.LABEL_FIT_WONT_RUN;
+    renderFitChip(card, entry.fit);
 }
 
 function renderCardStatus(card: HTMLElement, entry: CatalogEntry): void {

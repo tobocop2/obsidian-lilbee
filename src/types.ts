@@ -67,8 +67,6 @@ export interface ModelCatalog {
 
 export interface ModelsResponse {
     chat: ModelCatalog;
-    // Older servers (pre-role-separation) may only return `chat`. The plugin tolerates
-    // those responses by treating sibling sections as optional; only `chat` is required.
     embedding?: ModelCatalog;
     vision?: ModelCatalog;
     reranker?: ModelCatalog;
@@ -163,13 +161,6 @@ export const DISCOVER_RAIL = {
     YOUR_COLLECTION: "your_collection",
     FRESH: "fresh",
 } as const satisfies Record<string, DiscoverRail>;
-
-export type OcrBackend = "vision" | "tesseract";
-
-export const OCR_BACKEND = {
-    VISION: "vision",
-    TESSERACT: "tesseract",
-} as const satisfies Record<string, OcrBackend>;
 
 export interface StatusResponse {
     config: Record<string, string>;

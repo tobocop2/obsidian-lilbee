@@ -282,7 +282,6 @@ export const MESSAGES = {
     MODEL_INFO_DOWNLOADS: "Downloads",
     MODEL_INFO_INSTALL_STATUS: "Status",
     MODEL_INFO_HF_LINK_LABEL: "View on Hugging Face",
-    MODEL_INFO_NO_ACTIVE: "No active model is set.",
     COMMAND_MODEL_INFO_CHAT: "Show info for active chat model",
     COMMAND_MODEL_INFO_EMBED: "Show info for active embedding model",
     NOTICE_NO_ACTIVE_MODEL: (task: string): string => `No active ${task} model is set.`,

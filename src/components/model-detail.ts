@@ -1,7 +1,7 @@
-import type { CatalogEntry, HardwareFit, SizeVariant } from "../types";
-import { HARDWARE_FIT } from "../types";
+import type { CatalogEntry, SizeVariant } from "../types";
 import { MESSAGES } from "../locales/en";
 import { formatAbbreviatedCount } from "../utils";
+import { renderFitChip } from "./fit-chip";
 
 const MAX_DESCRIPTION_CHARS = 200;
 
@@ -9,23 +9,11 @@ export function renderModelDetail(entry: CatalogEntry, container: HTMLElement): 
     container.empty();
 
     container.createEl("h3", { cls: "lilbee-detail-name", text: entry.display_name });
-    renderFitChip(container, entry);
+    renderFitChip(container, entry.fit);
     renderVariants(container, entry.size_variants ?? null);
     renderDescription(container, entry.description);
     renderInstallStatus(container, entry);
     renderDownloads(container, entry.downloads);
-}
-
-function renderFitChip(container: HTMLElement, entry: CatalogEntry): void {
-    const fit = entry.fit;
-    if (fit !== HARDWARE_FIT.FITS && fit !== HARDWARE_FIT.TIGHT && fit !== HARDWARE_FIT.WONT_RUN) return;
-    container.createEl("span", { text: fitLabel(fit), cls: `lilbee-fit-chip lilbee-fit-${fit}` });
-}
-
-function fitLabel(fit: HardwareFit): string {
-    if (fit === HARDWARE_FIT.FITS) return MESSAGES.LABEL_FIT_FITS;
-    if (fit === HARDWARE_FIT.TIGHT) return MESSAGES.LABEL_FIT_TIGHT;
-    return MESSAGES.LABEL_FIT_WONT_RUN;
 }
 
 function renderVariants(container: HTMLElement, variants: SizeVariant[] | null): void {

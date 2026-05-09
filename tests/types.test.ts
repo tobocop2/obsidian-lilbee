@@ -37,16 +37,6 @@ describe("DEFAULT_SETTINGS", () => {
         expect(DEFAULT_SETTINGS.wikiEnabled).toBe(false);
     });
 
-    it("does not expose syncMode or syncDebounceMs", () => {
-        expect((DEFAULT_SETTINGS as Record<string, unknown>).syncMode).toBeUndefined();
-        expect((DEFAULT_SETTINGS as Record<string, unknown>).syncDebounceMs).toBeUndefined();
-    });
-
-    it("does not export SYNC_MODE", async () => {
-        const mod = (await import("../src/types")) as Record<string, unknown>;
-        expect(mod.SYNC_MODE).toBeUndefined();
-    });
-
     it("has searchChunkType defaulting to raw", () => {
         expect(DEFAULT_SETTINGS.searchChunkType).toBe("raw");
     });
