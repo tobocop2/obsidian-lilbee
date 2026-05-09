@@ -117,11 +117,9 @@ describe("MESSAGES", () => {
             expect(MESSAGES.DESC_CRAWL_MAX_DEPTH).toBe("Optional ceiling on crawl depth. Leave blank for no cap.");
             expect(MESSAGES.DESC_CRAWL_MAX_PAGES).toBe("Optional ceiling on pages per crawl. Leave blank for no cap.");
             expect(MESSAGES.DESC_CRAWL_TIMEOUT).toBe("How long to wait for each page to load before giving up");
-            expect(MESSAGES.DESC_CHUNK_SIZE).toBe(
-                "How many tokens per text segment. Most users should not change this.",
-            );
+            expect(MESSAGES.DESC_CHUNK_SIZE).toBe("Document chunk size in tokens (changes invalidate the index)");
             expect(MESSAGES.DESC_CHUNK_OVERLAP).toBe(
-                "Token overlap between segments. Most users should not change this.",
+                "Tokens of overlap between adjacent chunks (preserves context across boundaries)",
             );
             expect(MESSAGES.DESC_EMBEDDING_MODEL).toBe(
                 "The AI model used to understand your documents. Changing requires re-indexing.",

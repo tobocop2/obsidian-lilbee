@@ -431,8 +431,9 @@ describe("LilbeeSettingTab", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + 6 generation + syncDebounce + 10 crawling + wikiVaultFolder + 2 chunks + rerank_candidates + hfToken + litellm = 24
-            expect(textOnChanges.length).toBe(24);
+            // serverPort + 9 generation + 5 retrieval-advanced + 4 ingest + 2 worker-pool
+            // + syncDebounce + 10 crawling + wikiVaultFolder + rerank_candidates + hfToken + litellm = 36
+            expect(textOnChanges.length).toBe(36);
         });
 
         it("does NOT show sync-debounce when syncMode is 'manual'", () => {
@@ -440,8 +441,9 @@ describe("LilbeeSettingTab", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + 6 generation + 10 crawling + wikiVaultFolder + 2 chunks + rerank_candidates + hfToken + litellm = 23
-            expect(textOnChanges.length).toBe(23);
+            // serverPort + 9 generation + 5 retrieval-advanced + 4 ingest + 2 worker-pool
+            // + 10 crawling + wikiVaultFolder + rerank_candidates + hfToken + litellm = 35
+            expect(textOnChanges.length).toBe(35);
         });
     });
 
@@ -593,9 +595,11 @@ describe("LilbeeSettingTab", () => {
     });
 
     describe("syncDebounce text onChange", () => {
-        // With syncMode=auto, text fields are (render order: connection → models → search → generation → sync):
-        // [0] port, [1-6] generation, [7] syncDebounce
-        const DEBOUNCE_IDX = 7;
+        // With syncMode=auto, text fields are rendered in order: connection -> models -> search ->
+        // generation -> retrieval-advanced -> ingest -> worker-pool -> sync. Indices:
+        // [0] port, [1-9] generation, [10-14] retrieval-advanced, [15-18] ingest,
+        // [19-20] worker-pool, [21] syncDebounce
+        const DEBOUNCE_IDX = 21;
 
         it("updates syncDebounceMs for valid positive number", async () => {
             const plugin = makePlugin({ syncMode: "auto" });
@@ -2375,15 +2379,19 @@ describe("managed mode settings", () => {
         expect(displaySpy).toHaveBeenCalled();
     });
 
-    describe("Advanced chunk fields onChange", () => {
+    describe("Ingest chunk fields onChange", () => {
+        // Ingest section text inputs sit at: [15] chunk_size, [16] chunk_overlap,
+        // [17] tesseract_timeout, [18] vision_load_budget_s.
+        const CHUNK_SIZE_IDX = 15;
+        const CHUNK_OVERLAP_IDX = 16;
+
         it("chunk_size calls updateConfig after confirm", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 18: chunk_size (0=port, 1-6=gen, 7-16=crawl (10 text), 17=wikiVaultFolder, 18=chunk_size)
-            await textOnChanges[18]("512");
+            await textOnChanges[CHUNK_SIZE_IDX]("512");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512 });
         });
 
@@ -2393,8 +2401,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 19: chunk_overlap
-            await textOnChanges[19]("64");
+            await textOnChanges[CHUNK_OVERLAP_IDX]("64");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_overlap: 64 });
         });
 
@@ -2404,7 +2411,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[18]("");
+            await textOnChanges[CHUNK_SIZE_IDX]("");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2414,7 +2421,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[18]("abc");
+            await textOnChanges[CHUNK_SIZE_IDX]("abc");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2424,7 +2431,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[18]("-1");
+            await textOnChanges[CHUNK_SIZE_IDX]("-1");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2435,7 +2442,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[18]("512");
+            await textOnChanges[CHUNK_SIZE_IDX]("512");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
             mockGenericConfirmResult = true;
         });
@@ -2450,7 +2457,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[18]("512");
+            await textOnChanges[CHUNK_SIZE_IDX]("512");
             expect(plugin.triggerSync).toHaveBeenCalled();
         });
 
@@ -2461,7 +2468,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[18]("512");
+            await textOnChanges[CHUNK_SIZE_IDX]("512");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
     });
@@ -2791,14 +2798,25 @@ describe("managed mode settings", () => {
     });
 
     describe("Crawling fields onChange", () => {
+        // Crawling section sits after generation (1-9), retrieval-advanced (10-14),
+        // ingest (15-18), worker-pool (19-20). With manual sync (no debounce text),
+        // crawling indices are 21-30: [21] crawl_max_depth, [22] crawl_max_pages,
+        // [23] crawl_timeout, [24] crawl_mean_delay, [25] crawl_max_delay_range,
+        // [26] crawl_concurrent_requests, [27-29] retry base/backoff floats, [30] retry attempts.
+        const CRAWL_DEPTH = 21;
+        const CRAWL_PAGES = 22;
+        const CRAWL_TIMEOUT = 23;
+        const CRAWL_MEAN_DELAY = 24;
+        const CRAWL_CONCURRENT = 26;
+        const CRAWL_RETRY_MAX_BACKOFF = 29;
+
         it("calls updateConfig with valid crawl_max_depth", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Indices 7-9: crawl_max_depth, crawl_max_pages, crawl_timeout
-            await textOnChanges[7]("3");
+            await textOnChanges[CRAWL_DEPTH]("3");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_depth: 3 });
         });
 
@@ -2808,7 +2826,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[8]("100");
+            await textOnChanges[CRAWL_PAGES]("100");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_pages: 100 });
         });
 
@@ -2818,7 +2836,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[7]("");
+            await textOnChanges[CRAWL_DEPTH]("");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_depth: null });
         });
 
@@ -2828,7 +2846,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[7]("abc");
+            await textOnChanges[CRAWL_DEPTH]("abc");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2838,57 +2856,57 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[7]("-5");
+            await textOnChanges[CRAWL_DEPTH]("-5");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
-        it("skips blank on non-nullable crawl_timeout (index 9)", async () => {
+        it("skips blank on non-nullable crawl_timeout", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[9]("");
+            await textOnChanges[CRAWL_TIMEOUT]("");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
-        it("accepts float for crawl_mean_delay (index 10)", async () => {
+        it("accepts float for crawl_mean_delay", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[10]("0.75");
+            await textOnChanges[CRAWL_MEAN_DELAY]("0.75");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_mean_delay: 0.75 });
         });
 
-        it("accepts int for crawl_concurrent_requests (index 12)", async () => {
+        it("accepts int for crawl_concurrent_requests", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[12]("5");
+            await textOnChanges[CRAWL_CONCURRENT]("5");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_concurrent_requests: 5 });
         });
 
-        it("rejects non-integer for crawl_concurrent_requests (index 12)", async () => {
+        it("rejects non-integer for crawl_concurrent_requests", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[12]("5.5");
+            await textOnChanges[CRAWL_CONCURRENT]("5.5");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
-        it("accepts float for crawl_retry_max_backoff (index 15)", async () => {
+        it("accepts float for crawl_retry_max_backoff", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[15]("45.0");
+            await textOnChanges[CRAWL_RETRY_MAX_BACKOFF]("45.0");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_max_backoff: 45 });
         });
 
@@ -2898,8 +2916,10 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // toggleOnChanges[0] = adaptiveThreshold (search/retrieval), [1] = crawl_retry_on_rate_limit (crawling), [2+] = wiki toggles
-            await toggleOnChanges[1](false);
+            // Toggle order: [0] adaptiveThreshold (search/retrieval),
+            // [1] worker_pool_eager_start (worker-pool),
+            // [2] crawl_retry_on_rate_limit (crawling), [3+] wiki toggles.
+            await toggleOnChanges[2](false);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: false });
         });
 
@@ -2910,7 +2930,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[1](false);
+            await toggleOnChanges[2](false);
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -2921,7 +2941,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[7](""); // clear crawl_max_depth (nullable)
+            await textOnChanges[CRAWL_DEPTH](""); // clear crawl_max_depth (nullable)
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -2932,7 +2952,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[7]("3");
+            await textOnChanges[CRAWL_DEPTH]("3");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
     });
@@ -3028,7 +3048,9 @@ describe("managed mode settings", () => {
             // load-bearing (if the flag failed to set, updateConfig WOULD be called).
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = false;
-            await toggleOnChanges[1](true);
+            // toggleOnChanges[2] is crawl_retry_on_rate_limit; [0]=adaptiveThreshold,
+            // [1]=worker_pool_eager_start.
+            await toggleOnChanges[2](true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: true });
         });
 
@@ -3040,7 +3062,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = true;
-            await toggleOnChanges[1](true);
+            await toggleOnChanges[2](true);
             (tab as any).suppressToggleChanges = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
@@ -3423,14 +3445,18 @@ describe("managed mode settings", () => {
     });
 
     describe("HuggingFace token onChange", () => {
+        // After connection (1) + generation (9) + retrieval-advanced (5) + ingest (4)
+        // + worker-pool (2) + crawling (10) + wikiVaultFolder (1) + rerank_candidates (1) = 33,
+        // hfToken is at index 33.
+        const HF_TOKEN_IDX = 33;
+
         it("calls updateConfig and saves settings on non-empty value", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 21: HF token (0=port, 1-6=gen, 7-16=crawl, 17=wikiVaultFolder, 18-19=chunks, 20=rerank_candidates, 21=hfToken)
-            await textOnChanges[21]("hf_test123");
+            await textOnChanges[HF_TOKEN_IDX]("hf_test123");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ hf_token: "hf_test123" });
             expect(plugin.settings.hfToken).toBe("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("HuggingFace token saved"))).toBe(true);
@@ -3442,7 +3468,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[21]("");
+            await textOnChanges[HF_TOKEN_IDX]("");
             expect(plugin.settings.hfToken).toBe("");
         });
 
@@ -3453,7 +3479,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[21]("hf_test123");
+            await textOnChanges[HF_TOKEN_IDX]("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to save HuggingFace token"))).toBe(
                 true,
             );
@@ -3645,14 +3671,15 @@ describe("managed mode settings", () => {
     });
 
     describe("LiteLLM base URL onChange", () => {
+        const LITELLM_IDX = 34;
+
         it("calls updateConfig on non-empty value", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 14: LiteLLM base URL (after hfToken at 13)
-            await textOnChanges[22]("http://localhost:4000");
+            await textOnChanges[LITELLM_IDX]("http://localhost:4000");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ litellm_base_url: "http://localhost:4000" });
         });
 
@@ -3662,7 +3689,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[22]("  ");
+            await textOnChanges[LITELLM_IDX]("  ");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -3673,7 +3700,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[22]("http://localhost:4000");
+            await textOnChanges[LITELLM_IDX]("http://localhost:4000");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update LiteLLM URL"))).toBe(true);
         });
     });
@@ -4084,10 +4111,12 @@ describe("managed mode settings", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // 3 API keys at indices 21-23 (0=port, 1-6=gen, 7-16=crawl, 17=wikiVaultFolder, 18-19=chunks, 20=rerank_candidates, 21-23=apiKeys)
-            expect(inputs[21].type).toBe("password");
-            expect(inputs[22].type).toBe("password");
-            expect(inputs[23].type).toBe("password");
+            // Layout (text-input order via addText): 0=port, 1-9=gen, 10-14=retrieval-advanced,
+            // 15-18=ingest, 19-20=worker-pool, 21-30=crawling, 31=wikiVaultFolder,
+            // 32=rerank_candidates, 33-35=apiKeys (openai, anthropic, gemini), 36=hfToken, 37=litellm.
+            expect(inputs[33].type).toBe("password");
+            expect(inputs[34].type).toBe("password");
+            expect(inputs[35].type).toBe("password");
         });
 
         it("sets HF token input type to password", () => {
@@ -4110,8 +4139,8 @@ describe("managed mode settings", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // HF token is index 24 (after rerank_candidates at 20 and 3 API keys at 21-23)
-            expect(inputs[24].type).toBe("password");
+            // HF token sits at index 36 in the new layout (see comment in the prior test).
+            expect(inputs[36].type).toBe("password");
         });
     });
 
@@ -5875,8 +5904,10 @@ describe("managed mode settings", () => {
     });
 
     describe("rerank_candidates advanced field", () => {
-        // In manual mode: [0]=port, [1-6]=gen, [7-9]=crawl, [10]=wikiVaultFolder, [11-12]=chunks, [13]=rerank_candidates
-        const RERANK_IDX = 20;
+        // Manual mode text-input layout: [0]=port, [1-9]=gen, [10-14]=retrieval-advanced,
+        // [15-18]=ingest, [19-20]=worker-pool, [21-30]=crawling, [31]=wikiVaultFolder,
+        // [32]=rerank_candidates.
+        const RERANK_IDX = 32;
 
         beforeEach(() => {
             vi.useFakeTimers();
@@ -5967,6 +5998,391 @@ describe("managed mode settings", () => {
             await textOnChanges[RERANK_IDX]("40");
             await vi.advanceTimersByTimeAsync(400);
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+        });
+    });
+
+    describe("worker pool settings", () => {
+        // Manual mode worker-pool text inputs: [19] worker_pool_call_timeout_s,
+        // [20] worker_pool_max_idle_s. Toggle [1] is worker_pool_eager_start
+        // ([0]=adaptiveThreshold).
+        const POOL_CALL_TIMEOUT_IDX = 19;
+        const POOL_MAX_IDLE_IDX = 20;
+        const POOL_EAGER_TOGGLE_IDX = 1;
+
+        it("hides each worker-pool row when cfg keys are undefined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            expect(hideable.get("worker_pool_call_timeout_s")?.style.display).toBe("none");
+            expect(hideable.get("worker_pool_eager_start")?.style.display).toBe("none");
+            expect(hideable.get("worker_pool_max_idle_s")?.style.display).toBe("none");
+        });
+
+        it("reveals each worker-pool row when cfg keys are defined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                worker_pool_call_timeout_s: 30,
+                worker_pool_eager_start: true,
+                worker_pool_max_idle_s: 120,
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            expect(hideable.get("worker_pool_call_timeout_s")?.style.display).toBe("");
+            expect(hideable.get("worker_pool_eager_start")?.style.display).toBe("");
+            expect(hideable.get("worker_pool_max_idle_s")?.style.display).toBe("");
+        });
+
+        it("PATCHes worker_pool_call_timeout_s with a parsed float", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[POOL_CALL_TIMEOUT_IDX]("12.5");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ worker_pool_call_timeout_s: 12.5 });
+        });
+
+        it("PATCHes worker_pool_max_idle_s with a parsed float", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[POOL_MAX_IDLE_IDX]("90");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ worker_pool_max_idle_s: 90 });
+        });
+
+        it("PATCHes worker_pool_eager_start when the toggle flips", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await toggleOnChanges[POOL_EAGER_TOGGLE_IDX](true);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ worker_pool_eager_start: true });
+        });
+
+        it("surfaces a notice when the worker_pool_eager_start PATCH fails", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await toggleOnChanges[POOL_EAGER_TOGGLE_IDX](true);
+            expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+        });
+
+        it("suppresses worker_pool_eager_start echo-patches while the suppress flag is set", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            (tab as any).suppressToggleChanges = true;
+            await toggleOnChanges[POOL_EAGER_TOGGLE_IDX](true);
+            (tab as any).suppressToggleChanges = false;
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("ingest settings", () => {
+        const TESSERACT_IDX = 17;
+        const VISION_BUDGET_IDX = 18;
+
+        it("hides each ingest row when cfg keys are undefined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            for (const key of ["chunk_size", "chunk_overlap", "tesseract_timeout", "vision_load_budget_s"]) {
+                expect(hideable.get(key)?.style.display).toBe("none");
+            }
+        });
+
+        it("reveals each ingest row when cfg keys are defined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                chunk_size: 512,
+                chunk_overlap: 64,
+                tesseract_timeout: 30,
+                vision_load_budget_s: 90,
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            for (const key of ["chunk_size", "chunk_overlap", "tesseract_timeout", "vision_load_budget_s"]) {
+                expect(hideable.get(key)?.style.display).toBe("");
+            }
+        });
+
+        it("PATCHes tesseract_timeout with a parsed float", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[TESSERACT_IDX]("45.5");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ tesseract_timeout: 45.5 });
+        });
+
+        it("PATCHes vision_load_budget_s with a parsed float", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[VISION_BUDGET_IDX]("120");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ vision_load_budget_s: 120 });
+        });
+
+        it("does not PATCH when the user cancels the chunk-size reindex confirm", async () => {
+            mockGenericConfirmResult = false;
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[15]("256");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            mockGenericConfirmResult = true;
+        });
+
+        it("triggers a sync when chunk_overlap reindex_required comes back true", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+                updated: ["chunk_overlap"],
+                reindex_required: true,
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[16]("32");
+            expect(plugin.triggerSync).toHaveBeenCalled();
+        });
+
+        it("rejects vision_load_budget_s below the minimum", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[VISION_BUDGET_IDX]("-1");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("rejects tesseract_timeout when input is not a number", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[TESSERACT_IDX]("nope");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("surfaces a notice when the tesseract_timeout PATCH fails", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[TESSERACT_IDX]("30");
+            expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+        });
+    });
+
+    describe("retrieval advanced settings", () => {
+        const CANDIDATE_IDX = 10;
+        const MIN_RELEVANCE_IDX = 11;
+        const MAX_SOURCES_IDX = 12;
+        const DIVERSITY_IDX = 13;
+        const MMR_IDX = 14;
+
+        it("hides each retrieval-advanced row when cfg keys are undefined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            for (const key of [
+                "candidate_multiplier",
+                "min_relevance_score",
+                "max_context_sources",
+                "diversity_max_per_source",
+                "mmr_lambda",
+            ]) {
+                expect(hideable.get(key)?.style.display).toBe("none");
+            }
+        });
+
+        it("reveals each retrieval-advanced row when cfg keys are defined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                candidate_multiplier: 5,
+                min_relevance_score: 0.2,
+                max_context_sources: 8,
+                diversity_max_per_source: 3,
+                mmr_lambda: 0.5,
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            for (const key of [
+                "candidate_multiplier",
+                "min_relevance_score",
+                "max_context_sources",
+                "diversity_max_per_source",
+                "mmr_lambda",
+            ]) {
+                expect(hideable.get(key)?.style.display).toBe("");
+            }
+        });
+
+        it("PATCHes candidate_multiplier as an integer", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[CANDIDATE_IDX]("4");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ candidate_multiplier: 4 });
+        });
+
+        it("PATCHes min_relevance_score as a float", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[MIN_RELEVANCE_IDX]("0.35");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ min_relevance_score: 0.35 });
+        });
+
+        it("PATCHes max_context_sources as an integer", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[MAX_SOURCES_IDX]("12");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_context_sources: 12 });
+        });
+
+        it("PATCHes diversity_max_per_source as an integer", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[DIVERSITY_IDX]("4");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ diversity_max_per_source: 4 });
+        });
+
+        it("PATCHes mmr_lambda as a float", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[MMR_IDX]("0.6");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ mmr_lambda: 0.6 });
+        });
+    });
+
+    describe("generation new fields", () => {
+        const MAX_TOKENS_IDX = 7;
+        const MODEL_KEEP_ALIVE_IDX = 8;
+        const GPU_FRACTION_IDX = 9;
+
+        it("hides each new generation row when cfg keys are undefined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            for (const key of ["max_tokens", "model_keep_alive", "gpu_memory_fraction"]) {
+                expect(hideable.get(key)?.style.display).toBe("none");
+            }
+        });
+
+        it("reveals each new generation row when cfg keys are defined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                max_tokens: 1024,
+                model_keep_alive: 60,
+                gpu_memory_fraction: 0.8,
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            for (const key of ["max_tokens", "model_keep_alive", "gpu_memory_fraction"]) {
+                expect(hideable.get(key)?.style.display).toBe("");
+            }
+        });
+
+        it("PATCHes max_tokens with a parsed integer", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[MAX_TOKENS_IDX]("2048");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_tokens: 2048 });
+        });
+
+        it("PATCHes max_tokens to null when cleared (blank = no cap)", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[MAX_TOKENS_IDX]("");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_tokens: null });
+        });
+
+        it("PATCHes model_keep_alive with a parsed integer", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[MODEL_KEEP_ALIVE_IDX]("30");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ model_keep_alive: 30 });
+        });
+
+        it("PATCHes gpu_memory_fraction with a parsed float", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[GPU_FRACTION_IDX]("0.5");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ gpu_memory_fraction: 0.5 });
         });
     });
 });

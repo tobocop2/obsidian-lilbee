@@ -56,13 +56,14 @@ const CREDENTIAL_FIELDS = new Set([
 
 export { SEPARATOR_KEY, SEPARATOR_LABEL };
 
-type GenKey = "temperature" | "top_p" | "top_k_sampling" | "repeat_penalty" | "num_ctx" | "seed";
-
 export class LilbeeSettingTab extends PluginSettingTab {
     plugin: LilbeePlugin;
     private serverConfigInputs: Map<string, HTMLInputElement> = new Map();
     private serverConfigToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private serverConfigTextAreas: Map<string, HTMLTextAreaElement> = new Map();
+    // Setting rows that should be hidden when the corresponding cfg key is undefined
+    // (older server compatibility). Revealed by loadServerDefaults when the key is present.
+    private serverConfigHideableEls: Map<string, HTMLElement> = new Map();
     private configDefaults: Record<string, unknown> = {};
     // Set to true while loadServerDefaults is programmatically syncing toggles to the server
     // value so their onChange doesn't round-trip the same value back to the server.
@@ -85,6 +86,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.serverConfigInputs.clear();
         this.serverConfigToggles.clear();
         this.serverConfigTextAreas.clear();
+        this.serverConfigHideableEls.clear();
 
         const filterInput = containerEl.createEl("input", {
             cls: "lilbee-settings-filter",
@@ -99,6 +101,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderModelsSection(containerEl);
         this.renderSearchRetrievalSettings(containerEl);
         this.renderGenerationSettings(containerEl);
+        this.renderRetrievalAdvanced(containerEl);
+        this.renderIngestSettings(containerEl);
+        this.renderWorkerPoolSettings(containerEl);
         this.renderSyncSettings(containerEl);
         this.crawlingContainerEl = containerEl.createDiv();
         this.renderCrawlingSettings(this.crawlingContainerEl);
@@ -472,10 +477,22 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }
                 }
                 this.applyChatModeFromConfig(cfg);
+                this.applyHideableConfigFields(cfg);
             })
             .catch(() => {
                 // Connection status is shown via the Test button — no duplicate warning needed
             });
+    }
+
+    private applyHideableConfigFields(cfg: ConfigResponse): void {
+        // The initial render leaves each row's settingEl with display = "none". When the server
+        // reports a value for a key, reveal the row. Older servers omit unknown keys entirely,
+        // in which case the row stays hidden via its initial style.
+        for (const [key, settingEl] of this.serverConfigHideableEls) {
+            if (cfg[key] !== undefined) {
+                settingEl.style.display = "";
+            }
+        }
     }
 
     private applyChatModeFromConfig(cfg: ConfigResponse): void {
@@ -638,7 +655,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.chatModeSettingEl = chatModeSetting.settingEl;
         this.chatModeSettingEl.style.display = "none";
 
-        const fields: { key: GenKey; name: string; desc: string; integer: boolean }[] = [
+        const fields: { key: string; name: string; desc: string; integer: boolean; hideable?: boolean }[] = [
             {
                 key: "temperature",
                 name: MESSAGES.LABEL_GEN_TEMPERATURE,
@@ -675,6 +692,27 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 desc: MESSAGES.DESC_GEN_SEED,
                 integer: true,
             },
+            {
+                key: "max_tokens",
+                name: MESSAGES.LABEL_GEN_MAX_TOKENS,
+                desc: MESSAGES.DESC_GEN_MAX_TOKENS,
+                integer: true,
+                hideable: true,
+            },
+            {
+                key: "model_keep_alive",
+                name: MESSAGES.LABEL_GEN_MODEL_KEEP_ALIVE,
+                desc: MESSAGES.DESC_GEN_MODEL_KEEP_ALIVE,
+                integer: true,
+                hideable: true,
+            },
+            {
+                key: "gpu_memory_fraction",
+                name: MESSAGES.LABEL_GEN_GPU_MEMORY_FRACTION,
+                desc: MESSAGES.DESC_GEN_GPU_MEMORY_FRACTION,
+                integer: false,
+                hideable: true,
+            },
         ];
 
         for (const field of fields) {
@@ -707,6 +745,225 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.serverConfigInputs.set(field.key, text.inputEl);
                 });
             this.appendResetAffordance(genSetting, field.key, field.name);
+            if (field.hideable) {
+                genSetting.settingEl.style.display = "none";
+                this.serverConfigHideableEls.set(field.key, genSetting.settingEl);
+            }
+        }
+    }
+
+    private renderWorkerPoolSettings(containerEl: HTMLElement): void {
+        const details = containerEl.createEl("details", {
+            cls: "lilbee-worker-pool-details lilbee-settings-section",
+        });
+        details.createEl("summary", { text: MESSAGES.LABEL_WORKER_POOL });
+        details.createEl("p", {
+            text: MESSAGES.LABEL_WORKER_POOL_HELP,
+            cls: "setting-item-description",
+        });
+
+        const callTimeoutSetting = this.renderHideableNumberField(
+            details,
+            "worker_pool_call_timeout_s",
+            MESSAGES.LABEL_WORKER_POOL_CALL_TIMEOUT,
+            MESSAGES.DESC_WORKER_POOL_CALL_TIMEOUT,
+            { integer: false, min: 0 },
+        );
+        this.appendResetAffordance(
+            callTimeoutSetting,
+            "worker_pool_call_timeout_s",
+            MESSAGES.LABEL_WORKER_POOL_CALL_TIMEOUT,
+        );
+
+        const eagerStartSetting = new Setting(details)
+            .setName(MESSAGES.LABEL_WORKER_POOL_EAGER_START)
+            .setDesc(MESSAGES.DESC_WORKER_POOL_EAGER_START)
+            .addToggle((toggle) => {
+                toggle.onChange(async (value) => {
+                    if (this.suppressToggleChanges) return;
+                    try {
+                        await this.plugin.api.updateConfig({ worker_pool_eager_start: value });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WORKER_POOL_EAGER_START));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_WORKER_POOL_EAGER_START));
+                    }
+                });
+                this.serverConfigToggles.set("worker_pool_eager_start", toggle);
+            });
+        this.appendResetAffordance(
+            eagerStartSetting,
+            "worker_pool_eager_start",
+            MESSAGES.LABEL_WORKER_POOL_EAGER_START,
+        );
+        eagerStartSetting.settingEl.style.display = "none";
+        this.serverConfigHideableEls.set("worker_pool_eager_start", eagerStartSetting.settingEl);
+
+        const maxIdleSetting = this.renderHideableNumberField(
+            details,
+            "worker_pool_max_idle_s",
+            MESSAGES.LABEL_WORKER_POOL_MAX_IDLE,
+            MESSAGES.DESC_WORKER_POOL_MAX_IDLE,
+            { integer: false, min: 0 },
+        );
+        this.appendResetAffordance(maxIdleSetting, "worker_pool_max_idle_s", MESSAGES.LABEL_WORKER_POOL_MAX_IDLE);
+    }
+
+    private renderIngestSettings(containerEl: HTMLElement): void {
+        const details = containerEl.createEl("details", {
+            cls: "lilbee-ingest-details lilbee-settings-section",
+        });
+        details.createEl("summary", { text: MESSAGES.LABEL_INGEST });
+        details.createEl("p", {
+            text: MESSAGES.LABEL_INGEST_HELP,
+            cls: "setting-item-description",
+        });
+
+        const chunkSizeSetting = this.renderHideableNumberField(
+            details,
+            "chunk_size",
+            MESSAGES.LABEL_CHUNK_SIZE,
+            MESSAGES.DESC_CHUNK_SIZE,
+            { integer: true, min: 1, reindex: true },
+        );
+        this.appendResetAffordance(chunkSizeSetting, "chunk_size", MESSAGES.LABEL_CHUNK_SIZE);
+
+        const chunkOverlapSetting = this.renderHideableNumberField(
+            details,
+            "chunk_overlap",
+            MESSAGES.LABEL_CHUNK_OVERLAP,
+            MESSAGES.DESC_CHUNK_OVERLAP,
+            { integer: true, min: 0, reindex: true },
+        );
+        this.appendResetAffordance(chunkOverlapSetting, "chunk_overlap", MESSAGES.LABEL_CHUNK_OVERLAP);
+
+        const tesseractSetting = this.renderHideableNumberField(
+            details,
+            "tesseract_timeout",
+            MESSAGES.LABEL_TESSERACT_TIMEOUT,
+            MESSAGES.DESC_TESSERACT_TIMEOUT,
+            { integer: false, min: 0 },
+        );
+        this.appendResetAffordance(tesseractSetting, "tesseract_timeout", MESSAGES.LABEL_TESSERACT_TIMEOUT);
+
+        const visionBudgetSetting = this.renderHideableNumberField(
+            details,
+            "vision_load_budget_s",
+            MESSAGES.LABEL_VISION_LOAD_BUDGET,
+            MESSAGES.DESC_VISION_LOAD_BUDGET,
+            { integer: false, min: 0 },
+        );
+        this.appendResetAffordance(visionBudgetSetting, "vision_load_budget_s", MESSAGES.LABEL_VISION_LOAD_BUDGET);
+    }
+
+    private renderRetrievalAdvanced(containerEl: HTMLElement): void {
+        const details = containerEl.createEl("details", {
+            cls: "lilbee-retrieval-advanced-details lilbee-settings-section",
+        });
+        details.createEl("summary", { text: MESSAGES.LABEL_RETRIEVAL_ADVANCED });
+        details.createEl("p", {
+            text: MESSAGES.LABEL_RETRIEVAL_ADVANCED_HELP,
+            cls: "setting-item-description",
+        });
+
+        const candidateSetting = this.renderHideableNumberField(
+            details,
+            "candidate_multiplier",
+            MESSAGES.LABEL_CANDIDATE_MULTIPLIER,
+            MESSAGES.DESC_CANDIDATE_MULTIPLIER,
+            { integer: true, min: 1 },
+        );
+        this.appendResetAffordance(candidateSetting, "candidate_multiplier", MESSAGES.LABEL_CANDIDATE_MULTIPLIER);
+
+        const minRelevanceSetting = this.renderHideableNumberField(
+            details,
+            "min_relevance_score",
+            MESSAGES.LABEL_MIN_RELEVANCE_SCORE,
+            MESSAGES.DESC_MIN_RELEVANCE_SCORE,
+            { integer: false, min: 0 },
+        );
+        this.appendResetAffordance(minRelevanceSetting, "min_relevance_score", MESSAGES.LABEL_MIN_RELEVANCE_SCORE);
+
+        const maxSourcesSetting = this.renderHideableNumberField(
+            details,
+            "max_context_sources",
+            MESSAGES.LABEL_MAX_CONTEXT_SOURCES,
+            MESSAGES.DESC_MAX_CONTEXT_SOURCES,
+            { integer: true, min: 1 },
+        );
+        this.appendResetAffordance(maxSourcesSetting, "max_context_sources", MESSAGES.LABEL_MAX_CONTEXT_SOURCES);
+
+        const diversitySetting = this.renderHideableNumberField(
+            details,
+            "diversity_max_per_source",
+            MESSAGES.LABEL_DIVERSITY_MAX_PER_SOURCE,
+            MESSAGES.DESC_DIVERSITY_MAX_PER_SOURCE,
+            { integer: true, min: 1 },
+        );
+        this.appendResetAffordance(
+            diversitySetting,
+            "diversity_max_per_source",
+            MESSAGES.LABEL_DIVERSITY_MAX_PER_SOURCE,
+        );
+
+        const mmrSetting = this.renderHideableNumberField(
+            details,
+            "mmr_lambda",
+            MESSAGES.LABEL_MMR_LAMBDA,
+            MESSAGES.DESC_MMR_LAMBDA,
+            { integer: false, min: 0 },
+        );
+        this.appendResetAffordance(mmrSetting, "mmr_lambda", MESSAGES.LABEL_MMR_LAMBDA);
+    }
+
+    private renderHideableNumberField(
+        container: HTMLElement,
+        key: string,
+        name: string,
+        desc: string,
+        opts: { integer: boolean; min?: number; reindex?: boolean },
+    ): Setting {
+        const setting = new Setting(container)
+            .setName(name)
+            .setDesc(desc)
+            .addText((text) => {
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_NOT_SET)
+                    .setValue("")
+                    .onChange(async (value) => {
+                        await this.handleHideableNumberChange(value, key, name, opts);
+                    });
+                this.serverConfigInputs.set(key, text.inputEl as unknown as HTMLInputElement);
+            });
+        setting.settingEl.style.display = "none";
+        this.serverConfigHideableEls.set(key, setting.settingEl);
+        return setting;
+    }
+
+    private async handleHideableNumberChange(
+        value: string,
+        key: string,
+        name: string,
+        opts: { integer: boolean; min?: number; reindex?: boolean },
+    ): Promise<void> {
+        const trimmed = value.trim();
+        if (trimmed === "") return;
+        const num = opts.integer ? parseInt(trimmed, 10) : parseFloat(trimmed);
+        if (isNaN(num)) return;
+        if (opts.min !== undefined && num < opts.min) return;
+        if (opts.reindex) {
+            const confirmModal = new ConfirmModal(this.app, MESSAGES.DESC_REINDEX_WARNING.replace("{field}", name));
+            confirmModal.open();
+            const confirmed = await confirmModal.result;
+            if (!confirmed) return;
+        }
+        try {
+            const result = await this.plugin.api.updateConfig({ [key]: num });
+            new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
+            if (opts.reindex && result.reindex_required) {
+                new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
+                void this.plugin.triggerSync();
+            }
+        } catch {
+            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
         }
     }
 
@@ -1485,53 +1742,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
         if (this.plugin.settings.serverMode !== SERVER_MODE.MANAGED) {
             storeSetting.settingEl.addClass("lilbee-setting-disabled");
-        }
-
-        const advancedFields: { key: string; name: string; desc: string; reindex: boolean }[] = [
-            { key: "chunk_size", name: MESSAGES.DESC_CHUNK_SIZE, desc: MESSAGES.DESC_CHUNK_SIZE, reindex: true },
-            {
-                key: "chunk_overlap",
-                name: MESSAGES.DESC_CHUNK_OVERLAP,
-                desc: MESSAGES.DESC_CHUNK_OVERLAP,
-                reindex: true,
-            },
-        ];
-
-        for (const field of advancedFields) {
-            const advancedSetting = new Setting(details)
-                .setName(field.name)
-                .setDesc(field.desc)
-                .addText((text) => {
-                    text.setPlaceholder(MESSAGES.PLACEHOLDER_DEFAULT)
-                        .setValue("")
-                        .onChange(async (value) => {
-                            const trimmed = value.trim();
-                            if (trimmed === "") return;
-                            const num = parseInt(trimmed, 10);
-                            if (isNaN(num) || num < 0) return;
-                            if (field.reindex) {
-                                const confirmModal = new ConfirmModal(
-                                    this.app,
-                                    MESSAGES.DESC_REINDEX_WARNING.replace("{field}", field.name),
-                                );
-                                confirmModal.open();
-                                const confirmed = await confirmModal.result;
-                                if (!confirmed) return;
-                            }
-                            try {
-                                const result = await this.plugin.api.updateConfig({ [field.key]: num });
-                                new Notice(MESSAGES.NOTICE_FIELD_UPDATED(field.name));
-                                if (result.reindex_required) {
-                                    new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-                                    void this.plugin.triggerSync();
-                                }
-                            } catch {
-                                new Notice(MESSAGES.NOTICE_FAILED_UPDATE(field.name));
-                            }
-                        });
-                    this.serverConfigInputs.set(field.key, text.inputEl as unknown as HTMLInputElement);
-                });
-            this.appendResetAffordance(advancedSetting, field.key, field.name);
         }
 
         this.renderRerankCandidatesField(details);
