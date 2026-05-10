@@ -125,7 +125,11 @@ export class ModelPickerModal extends Modal {
             new Notice(MESSAGES.ERROR_LOAD_CATALOG);
             return;
         }
-        this.allRows = result.value.models;
+        // Defensive client-side filter: if the server returns rows whose
+        // declared task doesn't match what we asked for (older builds, or
+        // frontier providers tagged loosely), drop them so the chat picker
+        // never shows embedding/vision/rerank models and vice versa.
+        this.allRows = result.value.models.filter((m) => m.task === taskFilter);
         this.applyFilterAndRender();
     }
 

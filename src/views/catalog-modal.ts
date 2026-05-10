@@ -421,7 +421,13 @@ export class CatalogModal extends Modal {
 
             const response = result.value;
             this.hasMore = response.has_more;
-            this.entries.push(...response.models);
+            // Defensive client-side task filter — older server builds and some
+            // frontier providers tag rows loosely, leaking embedding/vision
+            // models into the chat tab and vice versa.
+            const filtered = this.filterTask
+                ? response.models.filter((m) => m.task === this.filterTask)
+                : response.models;
+            this.entries.push(...filtered);
             this.offset += response.models.length;
 
             this.updateFrontierTabVisibility();

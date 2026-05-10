@@ -87,8 +87,8 @@ export const MESSAGES = {
     LABEL_MAX_DISTANCE: "Search strictness",
     LABEL_ADAPTIVE_THRESHOLD: "Adaptive threshold",
     LABEL_GENERATION: "Advanced settings",
-    LABEL_RAG_SYSTEM_PROMPT: "When answering with documents",
-    LABEL_GENERAL_SYSTEM_PROMPT: "When answering without documents",
+    LABEL_RAG_SYSTEM_PROMPT: "RAG system prompt (when answering with documents)",
+    LABEL_GENERAL_SYSTEM_PROMPT: "Chat system prompt (when answering without documents)",
     LABEL_CHAT_MODE: "Chat mode",
     LABEL_CHAT_MODE_SEARCH: "Search",
     LABEL_CHAT_MODE_CHAT: "Chat",
@@ -306,7 +306,7 @@ export const MESSAGES = {
         "Read automatically from the lilbee data directory on every request. Works when the server runs on the same machine as Obsidian. Set LILBEE_DATA if you use a non-default data directory.",
     LABEL_MANUAL_TOKEN: "Session token",
     DESC_MANUAL_TOKEN:
-        "Paste a session token for remote servers. Leave blank for automatic discovery (local servers only).",
+        "Paste the server's session token (required for remote servers). When the lilbee server runs on this machine the plugin discovers the token automatically — leave this blank.",
     DESC_SWITCH_MANAGED: "Stop using an external server and start the built-in one",
     DESC_MODELS_HELP: "Browse the catalog for available models. Requires the lilbee server.",
     DESC_REFRESH_MODELS: "Fetch available models from the server",
@@ -315,9 +315,9 @@ export const MESSAGES = {
         "How closely results must match your query. Lower = only very close matches, higher = broader results",
     DESC_ADAPTIVE_THRESHOLD: "Automatically broaden the search if too few results are found",
     DESC_RAG_SYSTEM_PROMPT:
-        "Instructions sent when the answer is grounded in retrieved documents (Search mode with at least one match). Leave blank for the default.",
+        "System prompt sent to the chat model when the answer is grounded in retrieved documents (Search mode with at least one match). Leave blank for the default.",
     DESC_GENERAL_SYSTEM_PROMPT:
-        "Instructions sent in Chat mode and when Search returns zero results. Leave blank for the default.",
+        "System prompt sent to the chat model in Chat mode and when Search returns zero results. Leave blank for the default.",
     DESC_GEN_TEMPERATURE: "Higher = more creative and varied responses, lower = more focused and predictable",
     DESC_GEN_TOP_P: "Controls response diversity. Most users should leave this at the default.",
     DESC_GEN_TOP_K: "Limits which words the AI considers. Most users should leave this at the default.",
@@ -330,7 +330,7 @@ export const MESSAGES = {
     DESC_WORKER_POOL_CALL_TIMEOUT:
         "Per-call deadline for one worker-pool round-trip in seconds. Raise this for very large embed batches on slow machines",
     DESC_WORKER_POOL_EAGER_START:
-        "Spawn every registered worker at TUI startup instead of on first use. Trades 1-3 seconds of cold-start per role for first-call latency",
+        "Spawn every worker process when the lilbee server starts instead of on first use. Trades 1–3 seconds of cold-start per role for first-call latency.",
     DESC_WORKER_POOL_MAX_IDLE:
         "Shut a worker down after this many seconds idle to free RAM/VRAM. 0 disables idle reaping",
     DESC_TESSERACT_TIMEOUT: "Per-page Tesseract timeout in seconds (used when no vision model is set)",
@@ -684,12 +684,14 @@ export const MESSAGES = {
     COMMAND_WIKI_LINT: "Run wiki lint",
     COMMAND_WIKI_GENERATE: "Generate wiki for current file",
 
-    WIZARD_INTRO_DESC:
-        "lilbee turns your Obsidian vault into a searchable knowledge base powered by AI running on your machine.",
+    WIZARD_INTRO_DESC: "lilbee turns your Obsidian vault into a searchable knowledge base powered by AI.",
     WIZARD_INTRO_STEPS: "This wizard will help you:",
-    WIZARD_STEP_CHOOSE_MODEL: "Choose an AI model that fits your computer",
+    WIZARD_STEP_CHOOSE_SERVER: "Choose where lilbee runs (this machine, or an existing server)",
+    WIZARD_STEP_CHOOSE_MODEL: "Choose an AI model that fits the host's RAM",
     WIZARD_STEP_INDEX: "Index your vault so you can search and chat",
-    WIZARD_LOCAL_ONLY: "Everything runs locally — your notes never leave your machine.",
+    WIZARD_LOCAL_ONLY_MANAGED: "Managed mode runs on this machine — your notes never leave your laptop.",
+    WIZARD_LOCAL_ONLY_EXTERNAL:
+        "External mode talks to your existing lilbee server. Your notes stay on whichever host runs it.",
     WIZARD_MODEL_HELP:
         "This is the AI that answers your questions about your notes. Bigger models are smarter but need more RAM and disk space.",
     WIZARD_SYSTEM_RAM: "Your system: {ram} GB RAM",

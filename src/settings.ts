@@ -334,8 +334,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         void this.checkEndpoint(`${this.plugin.settings.serverUrl}/api/health`, serverStatusEl);
 
-        new Setting(containerEl).setName(MESSAGES.LABEL_SESSION_TOKEN).setDesc(MESSAGES.DESC_SESSION_TOKEN_AUTO);
-
         const manualTokenSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_MANUAL_TOKEN)
             .setDesc(MESSAGES.DESC_MANUAL_TOKEN)
@@ -437,11 +435,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.plugin.api
             .config()
             .then((cfg: ConfigResponse) => {
-                // Populate editable server-config inputs with the current server values.
+                // Populate editable server-config inputs with the current server values
+                // and surface them as placeholders so users see what's effective when
+                // they clear an override.
                 for (const [key, inputEl] of this.serverConfigInputs) {
                     const v = cfg[key];
                     if (v === undefined) continue;
-                    inputEl.value = v === null ? "" : String(v);
+                    const formatted = v === null ? "" : String(v);
+                    inputEl.value = formatted;
+                    if (formatted !== "") {
+                        inputEl.placeholder = formatted;
+                    }
                 }
                 for (const [key, toggle] of this.serverConfigToggles) {
                     const v = cfg[key];
@@ -676,12 +680,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 desc: MESSAGES.DESC_GEN_REPEAT_PENALTY,
                 integer: false,
             },
-            {
-                key: "num_ctx",
-                name: MESSAGES.LABEL_GEN_NUM_CTX,
-                desc: MESSAGES.DESC_GEN_NUM_CTX,
-                integer: true,
-            },
+            // num_ctx is intentionally not surfaced — it's a model-side
+            // property. The server picks a context window appropriate to the
+            // active model; exposing it as a user knob invites mismatches
+            // (asking for more than the model supports, or over-allocating
+            // RAM for no benefit).
             {
                 key: "seed",
                 name: MESSAGES.LABEL_GEN_SEED,
@@ -971,14 +974,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.renderEmbeddingFallback(container);
                     return;
                 }
-                const models = result.value.models;
+                // Settings dropdown lists installed embedding models only — discovery
+                // and downloads happen via Browse catalog, which the button on the
+                // right of this row opens.
+                const models = result.value.models.filter((m) => m.task === MODEL_TASK.EMBEDDING && m.installed);
                 new Setting(container)
                     .setName(MESSAGES.LABEL_EMBEDDING_MODEL)
                     .setDesc(MESSAGES.DESC_EMBEDDING_MODEL)
                     .addDropdown((dropdown) => {
                         for (const model of models) {
-                            const suffix = model.installed ? "" : MESSAGES.LABEL_NOT_INSTALLED;
-                            dropdown.addOption(model.hf_repo, `${model.display_name}${suffix}`);
+                            dropdown.addOption(model.hf_repo, model.display_name);
                         }
                         dropdown.onChange(async (value) => {
                             if (!value) return;
@@ -1015,7 +1020,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         ])
             .then(([cfg, catalogResult, installedResp]) => {
                 const active = typeof cfg.reranker_model === "string" ? cfg.reranker_model : RERANKER_DISABLED_KEY;
-                const catalogEntries = catalogResult.isOk() ? catalogResult.value.models : [];
+                const catalogEntries = catalogResult.isOk()
+                    ? catalogResult.value.models.filter((m) => m.task === MODEL_TASK.RERANK)
+                    : [];
                 this.renderRerankerDropdown(container, active, catalogEntries, installedResp.models);
             })
             .catch((err) => {
@@ -1053,16 +1060,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private buildRerankerOptions(catalogEntries: CatalogEntry[], installed: InstalledModel[]): Array<[string, string]> {
         // `installed[].name` is the server's canonical ref (full HF path, or `provider/name`).
         // For HF refs we strip the trailing `/<filename>.gguf` so it matches `entry.hf_repo`;
-        // provider refs pass through unchanged, so a hosted reranker isn't mislabelled
-        // `(not installed)`.
+        // provider refs pass through unchanged so hosted rerankers aren't mislabelled.
         const installedRepos = new Set(installed.map((m) => extractHfRepo(m.name)));
         const isInstalled = (e: CatalogEntry): boolean => installedRepos.has(e.hf_repo);
         const opts: Array<[string, string]> = [[RERANKER_DISABLED_KEY, MESSAGES.LABEL_RERANKER_DISABLED]];
+        // Settings dropdown lists installed local rerankers + always-on hosted rerankers.
+        // Discovery and downloads happen via the Browse catalog button.
         const localInstalled = catalogEntries.filter((e) => e.source !== CATALOG_SOURCE.FRONTIER && isInstalled(e));
-        const localNotInstalled = catalogEntries.filter((e) => e.source !== CATALOG_SOURCE.FRONTIER && !isInstalled(e));
         const hosted = catalogEntries.filter((e) => e.source === CATALOG_SOURCE.FRONTIER);
         for (const e of localInstalled) opts.push([e.hf_repo, e.display_name]);
-        for (const e of localNotInstalled) opts.push([e.hf_repo, `${e.display_name}${MESSAGES.LABEL_NOT_INSTALLED}`]);
         if (hosted.length > 0) {
             for (const e of hosted)
                 opts.push([e.hf_repo, `${e.display_name} — ${MESSAGES.LABEL_RERANKER_HOSTED_GROUP}`]);
@@ -1163,7 +1169,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         ])
             .then(([cfg, catalogResult, installedResp]) => {
                 const active = typeof cfg.vision_model === "string" ? cfg.vision_model : VISION_DISABLED_KEY;
-                const catalogEntries = catalogResult.isOk() ? catalogResult.value.models : [];
+                const catalogEntries = catalogResult.isOk()
+                    ? catalogResult.value.models.filter((m) => m.task === MODEL_TASK.VISION)
+                    : [];
                 this.renderVisionDropdown(container, active, catalogEntries, installedResp.models);
             })
             .catch((err) => {
@@ -1202,15 +1210,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
         // Strip the trailing `/<filename>.gguf` from installed refs so they match the catalog's bare `hf_repo`.
         const installedRepos = new Set(installed.map((m) => extractHfRepo(m.name)));
         const opts: Array<[string, string]> = [[VISION_DISABLED_KEY, MESSAGES.LABEL_VISION_DISABLED]];
+        // Settings dropdown lists installed local vision models + hosted ones.
+        // Discovery and downloads happen via the Browse catalog button.
         const localInstalled = catalogEntries.filter(
             (e) => e.source !== CATALOG_SOURCE.FRONTIER && installedRepos.has(e.hf_repo),
         );
-        const localNotInstalled = catalogEntries.filter(
-            (e) => e.source !== CATALOG_SOURCE.FRONTIER && !installedRepos.has(e.hf_repo),
-        );
         const hosted = catalogEntries.filter((e) => e.source === CATALOG_SOURCE.FRONTIER);
         for (const e of localInstalled) opts.push([e.hf_repo, e.display_name]);
-        for (const e of localNotInstalled) opts.push([e.hf_repo, `${e.display_name}${MESSAGES.LABEL_NOT_INSTALLED}`]);
         if (hosted.length > 0) {
             for (const e of hosted) opts.push([e.hf_repo, `${e.display_name} — ${MESSAGES.LABEL_VISION_HOSTED_GROUP}`]);
         }
@@ -1880,7 +1886,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
         ])
             .then(([cfg, catalogResult, installedResp]) => {
                 const active = typeof cfg.chat_model === "string" ? cfg.chat_model : "";
-                const catalogEntries = catalogResult.isOk() ? catalogResult.value.models : [];
+                // Defensive client-side task filter: older server builds and
+                // some frontier providers return rows tagged with a different
+                // task than requested, which would surface embedding/vision
+                // models in the chat dropdown.
+                const catalogEntries = catalogResult.isOk()
+                    ? catalogResult.value.models.filter((m) => m.task === MODEL_TASK.CHAT)
+                    : [];
                 this.renderChatPicker(container, active, catalogEntries, installedResp.models);
             })
             .catch(() => {
@@ -1926,13 +1938,15 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     private buildChatOptions(catalogEntries: CatalogEntry[], installed: InstalledModel[]): Array<[string, string]> {
+        // Settings is a quick-pick of what's already on disk; downloads happen
+        // in Browse Catalog. Showing 30 "(not installed)" entries here is
+        // noise that pushes installed models off-screen.
         const installedRepos = new Set(installed.map((m) => extractHfRepo(m.name)));
         const opts: Array<[string, string]> = [];
-        for (const entry of catalogEntries) {
+        const featuredInstalled = catalogEntries.filter((e) => installedRepos.has(e.hf_repo));
+        for (const entry of featuredInstalled) {
             const sourceTag = entry.source && entry.source !== CATALOG_SOURCE.LOCAL ? ` [${entry.source}]` : "";
-            const installedFlag = installedRepos.has(entry.hf_repo);
-            const suffix = installedFlag ? "" : MESSAGES.LABEL_NOT_INSTALLED;
-            opts.push([entry.hf_repo, `${entry.display_name}${sourceTag}${suffix}`]);
+            opts.push([entry.hf_repo, `${entry.display_name}${sourceTag}`]);
         }
         const featuredRepos = new Set(catalogEntries.map((e) => e.hf_repo));
         const otherInstalled = installed

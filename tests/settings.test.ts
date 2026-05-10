@@ -433,7 +433,7 @@ describe("LilbeeSettingTab", () => {
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
             // serverPort + 9 generation + 5 retrieval-advanced + 4 ingest + 2 worker-pool
             // + 10 crawling + wikiVaultFolder + rerank_candidates + hfToken + litellm = 35
-            expect(textOnChanges.length).toBe(35);
+            expect(textOnChanges.length).toBe(34);
         });
     });
 
@@ -674,13 +674,13 @@ describe("LilbeeSettingTab", () => {
     });
 
     describe("generation settings", () => {
+        // num_ctx is intentionally not surfaced — it's a model-side property.
         const GEN_FIELDS = [
             { idx: 1, key: "temperature", value: "0.7", expected: 0.7 },
             { idx: 2, key: "top_p", value: "0.9", expected: 0.9 },
             { idx: 3, key: "top_k_sampling", value: "40", expected: 40 },
             { idx: 4, key: "repeat_penalty", value: "1.1", expected: 1.1 },
-            { idx: 5, key: "num_ctx", value: "4096", expected: 4096 },
-            { idx: 6, key: "seed", value: "42", expected: 42 },
+            { idx: 5, key: "seed", value: "42", expected: 42 },
         ] as const;
 
         for (const { idx, key, value, expected } of GEN_FIELDS) {
@@ -2297,8 +2297,8 @@ describe("managed mode settings", () => {
     describe("Ingest chunk fields onChange", () => {
         // Ingest section text inputs sit at: [15] chunk_size, [16] chunk_overlap,
         // [17] tesseract_timeout, [18] vision_load_budget_s.
-        const CHUNK_SIZE_IDX = 15;
-        const CHUNK_OVERLAP_IDX = 16;
+        const CHUNK_SIZE_IDX = 14;
+        const CHUNK_OVERLAP_IDX = 15;
 
         it("chunk_size calls updateConfig after confirm", async () => {
             const plugin = makePlugin();
@@ -2718,12 +2718,12 @@ describe("managed mode settings", () => {
         // crawling indices are 21-30: [21] crawl_max_depth, [22] crawl_max_pages,
         // [23] crawl_timeout, [24] crawl_mean_delay, [25] crawl_max_delay_range,
         // [26] crawl_concurrent_requests, [27-29] retry base/backoff floats, [30] retry attempts.
-        const CRAWL_DEPTH = 21;
-        const CRAWL_PAGES = 22;
-        const CRAWL_TIMEOUT = 23;
-        const CRAWL_MEAN_DELAY = 24;
-        const CRAWL_CONCURRENT = 26;
-        const CRAWL_RETRY_MAX_BACKOFF = 29;
+        const CRAWL_DEPTH = 20;
+        const CRAWL_PAGES = 21;
+        const CRAWL_TIMEOUT = 22;
+        const CRAWL_MEAN_DELAY = 23;
+        const CRAWL_CONCURRENT = 25;
+        const CRAWL_RETRY_MAX_BACKOFF = 28;
 
         it("calls updateConfig with valid crawl_max_depth", async () => {
             const plugin = makePlugin();
@@ -3363,7 +3363,7 @@ describe("managed mode settings", () => {
         // After connection (1) + generation (9) + retrieval-advanced (5) + ingest (4)
         // + worker-pool (2) + crawling (10) + wikiVaultFolder (1) + rerank_candidates (1) = 33,
         // hfToken is at index 33.
-        const HF_TOKEN_IDX = 33;
+        const HF_TOKEN_IDX = 32;
 
         it("calls updateConfig and saves settings on non-empty value", async () => {
             const plugin = makePlugin();
@@ -3586,7 +3586,7 @@ describe("managed mode settings", () => {
     });
 
     describe("LiteLLM base URL onChange", () => {
-        const LITELLM_IDX = 34;
+        const LITELLM_IDX = 33;
 
         it("calls updateConfig on non-empty value", async () => {
             const plugin = makePlugin();
@@ -4054,8 +4054,8 @@ describe("managed mode settings", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // HF token sits at index 36 in the new layout (see comment in the prior test).
-            expect(inputs[36].type).toBe("password");
+            // HF token sits at index 35 in the new layout (num_ctx removed shifted earlier indices).
+            expect(inputs[35].type).toBe("password");
         });
     });
 
@@ -4807,7 +4807,7 @@ describe("managed mode settings", () => {
             expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("BAAI/bge");
         });
 
-        it("buildRerankerOptions: installed first, then not-installed, then hosted", async () => {
+        it("buildRerankerOptions: installed first, then hosted (not-installed locals are hidden)", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
@@ -4880,9 +4880,8 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             const keys = Object.keys(options[0]);
-            expect(keys).toEqual(["", "BAAI/bge-installed", "BAAI/bge-not-installed", "cohere/rerank"]);
+            expect(keys).toEqual(["", "BAAI/bge-installed", "cohere/rerank"]);
             expect(options[0]["BAAI/bge-installed"]).toBe("BGE Installed");
-            expect(options[0]["BAAI/bge-not-installed"]).toContain(MESSAGES.LABEL_NOT_INSTALLED);
             expect(options[0]["cohere/rerank"]).toContain(MESSAGES.LABEL_RERANKER_HOSTED_GROUP);
         });
 
@@ -5615,7 +5614,7 @@ describe("managed mode settings", () => {
             expect(plugin.api.setVisionModel).toHaveBeenCalledWith("Qwen/qwen-vl");
         });
 
-        it("buildVisionOptions includes installed-first then not-installed then hosted", async () => {
+        it("buildVisionOptions includes installed-first then hosted (not-installed locals are hidden)", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
@@ -5676,8 +5675,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             const keys = Object.keys(options[0]);
-            expect(keys).toEqual(["", "Qwen/qwen-installed", "Qwen/qwen-not-installed", "openai/gpt-4o"]);
-            expect(options[0]["Qwen/qwen-not-installed"]).toContain(MESSAGES.LABEL_NOT_INSTALLED);
+            expect(keys).toEqual(["", "Qwen/qwen-installed", "openai/gpt-4o"]);
             expect(options[0]["openai/gpt-4o"]).toContain(MESSAGES.LABEL_VISION_HOSTED_GROUP);
         });
 
@@ -5822,7 +5820,7 @@ describe("managed mode settings", () => {
         // Manual mode text-input layout: [0]=port, [1-9]=gen, [10-14]=retrieval-advanced,
         // [15-18]=ingest, [19-20]=worker-pool, [21-30]=crawling, [31]=wikiVaultFolder,
         // [32]=rerank_candidates.
-        const RERANK_IDX = 32;
+        const RERANK_IDX = 31;
 
         beforeEach(() => {
             vi.useFakeTimers();
@@ -5920,8 +5918,8 @@ describe("managed mode settings", () => {
         // Manual mode worker-pool text inputs: [19] worker_pool_call_timeout_s,
         // [20] worker_pool_max_idle_s. Toggle [1] is worker_pool_eager_start
         // ([0]=adaptiveThreshold).
-        const POOL_CALL_TIMEOUT_IDX = 19;
-        const POOL_MAX_IDLE_IDX = 20;
+        const POOL_CALL_TIMEOUT_IDX = 18;
+        const POOL_MAX_IDLE_IDX = 19;
         const POOL_EAGER_TOGGLE_IDX = 1;
 
         it("hides each worker-pool row when cfg keys are undefined", async () => {
@@ -6010,8 +6008,8 @@ describe("managed mode settings", () => {
     });
 
     describe("ingest settings", () => {
-        const TESSERACT_IDX = 17;
-        const VISION_BUDGET_IDX = 18;
+        const TESSERACT_IDX = 16;
+        const VISION_BUDGET_IDX = 17;
 
         it("hides each ingest row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
@@ -6086,7 +6084,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[16]("32");
+            // chunk_overlap idx — same value as CHUNK_OVERLAP_IDX in the chunk-fields describe.
+            await textOnChanges[15]("32");
             expect(plugin.triggerSync).toHaveBeenCalled();
         });
 
@@ -6124,11 +6123,11 @@ describe("managed mode settings", () => {
     });
 
     describe("retrieval advanced settings", () => {
-        const CANDIDATE_IDX = 10;
-        const MIN_RELEVANCE_IDX = 11;
-        const MAX_SOURCES_IDX = 12;
-        const DIVERSITY_IDX = 13;
-        const MMR_IDX = 14;
+        const CANDIDATE_IDX = 9;
+        const MIN_RELEVANCE_IDX = 10;
+        const MAX_SOURCES_IDX = 11;
+        const DIVERSITY_IDX = 12;
+        const MMR_IDX = 13;
 
         it("hides each retrieval-advanced row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
@@ -6226,9 +6225,9 @@ describe("managed mode settings", () => {
     });
 
     describe("generation new fields", () => {
-        const MAX_TOKENS_IDX = 7;
-        const MODEL_KEEP_ALIVE_IDX = 8;
-        const GPU_FRACTION_IDX = 9;
+        const MAX_TOKENS_IDX = 6;
+        const MODEL_KEEP_ALIVE_IDX = 7;
+        const GPU_FRACTION_IDX = 8;
 
         it("hides each new generation row when cfg keys are undefined", async () => {
             const plugin = makePlugin();

@@ -141,7 +141,7 @@ describe("MESSAGES", () => {
             expect(MESSAGES.DESC_GEMINI_API_KEY).toBe("For Gemini models via litellm");
             expect(MESSAGES.LABEL_MANUAL_TOKEN).toBe("Session token");
             expect(MESSAGES.DESC_MANUAL_TOKEN).toBe(
-                "Paste a session token for remote servers. Leave blank for automatic discovery (local servers only).",
+                "Paste the server's session token (required for remote servers). When the lilbee server runs on this machine the plugin discovers the token automatically — leave this blank.",
             );
             expect(MESSAGES.LABEL_WIKI_SECTION).toBe("Wiki (beta)");
             expect(MESSAGES.DESC_WIKI_ENABLE_TOGGLE).toBe(
@@ -364,9 +364,10 @@ describe("MESSAGES", () => {
         it("has all wizard strings", () => {
             expect(MESSAGES.WIZARD_INTRO_DESC).toContain("lilbee turns your Obsidian vault");
             expect(MESSAGES.WIZARD_INTRO_STEPS).toBe("This wizard will help you:");
-            expect(MESSAGES.WIZARD_STEP_CHOOSE_MODEL).toBe("Choose an AI model that fits your computer");
+            expect(MESSAGES.WIZARD_STEP_CHOOSE_MODEL).toBe("Choose an AI model that fits the host's RAM");
             expect(MESSAGES.WIZARD_STEP_INDEX).toBe("Index your vault so you can search and chat");
-            expect(MESSAGES.WIZARD_LOCAL_ONLY).toContain("Everything runs locally");
+            expect(MESSAGES.WIZARD_LOCAL_ONLY_MANAGED).toContain("Managed mode runs on this machine");
+            expect(MESSAGES.WIZARD_LOCAL_ONLY_EXTERNAL).toContain("External mode talks to your existing");
             expect(MESSAGES.WIZARD_MODEL_HELP).toContain("This is the AI that answers your questions");
             expect(MESSAGES.WIZARD_SUMMARY_FILES).toBe("{count} files indexed");
         });

@@ -1210,7 +1210,8 @@
     font-family: var(--font-monospace);
     font-size: var(--font-smaller, 12px);
     min-height: 10em;
-    resize: vertical;
+    /* Match the system-prompt textareas: drag from the corner to grow either way. */
+    resize: both;
     width: 100%;
     box-sizing: border-box;
 }

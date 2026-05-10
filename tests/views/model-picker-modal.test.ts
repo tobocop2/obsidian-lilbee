@@ -232,6 +232,29 @@ describe("ModelPickerModal", () => {
         expect(empty?.textContent).toBe(MESSAGES.MODEL_PICKER_EMPTY);
     });
 
+    it("drops rows whose task does not match the picker scope (defensive)", async () => {
+        const plugin = makePlugin([
+            localRow({ display_name: "Real-Chat", task: "chat" }),
+            localRow({ display_name: "Embed-Misclassified", task: "embedding" }),
+            localRow({ display_name: "Vision-Misclassified", task: "vision" }),
+        ]);
+        const modal = await openPicker(plugin, "chat");
+        const rows = contentEl(modal).findAll("lilbee-model-picker-row");
+        const labels = rows.map((r) => r.find("lilbee-model-picker-row-display")?.textContent);
+        expect(labels).toEqual(["Real-Chat"]);
+    });
+
+    it("scope=embedding filters out chat models even if the server returns them", async () => {
+        const plugin = makePlugin([
+            localRow({ display_name: "Chat-X", task: "chat" }),
+            localRow({ display_name: "Embed-Y", task: "embedding" }),
+        ]);
+        const modal = await openPicker(plugin, "embedding");
+        const rows = contentEl(modal).findAll("lilbee-model-picker-row");
+        const labels = rows.map((r) => r.find("lilbee-model-picker-row-display")?.textContent);
+        expect(labels).toEqual(["Embed-Y"]);
+    });
+
     it("renders an installed pill, fit chip, and meta line when the row carries that data", async () => {
         const plugin = makePlugin([
             localRow({

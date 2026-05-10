@@ -218,7 +218,19 @@ describe("SetupWizard", () => {
             const texts = collectTexts(el);
             expect(texts.some((t) => t.includes("Welcome to lilbee"))).toBe(true);
             expect(texts.some((t) => t.includes("knowledge base"))).toBe(true);
-            expect(texts.some((t) => t.includes("never leave your machine"))).toBe(true);
+            // Default is managed mode, so the locality hint mentions "this machine"
+            expect(texts.some((t) => t.includes("this machine"))).toBe(true);
+        });
+
+        it("welcome locality hint reflects external mode when chosen", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const texts = collectTexts(el);
+            expect(texts.some((t) => t.includes("existing lilbee server"))).toBe(true);
+            expect(texts.some((t) => t.includes("never leave your laptop"))).toBe(false);
         });
 
         it("has Skip setup and Get started buttons", () => {
@@ -1014,7 +1026,7 @@ describe("SetupWizard", () => {
             expect(Notice.instances.some((n) => n.message.includes("download cancelled"))).toBe(true);
         });
 
-        it("Back from model picker returns to welcome (external mode)", async () => {
+        it("Back from model picker always returns to server mode (gives users a way to switch)", async () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue(makeCatalogResponse([]));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
@@ -1027,7 +1039,8 @@ describe("SetupWizard", () => {
             backBtn.trigger("click");
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            expect(texts.some((t) => t.includes("Welcome to lilbee"))).toBe(true);
+            // Goes to server-mode step, not welcome — user can revisit choice.
+            expect(texts.some((t) => t.includes("How do you want to run lilbee"))).toBe(true);
         });
 
         it("Back from model picker returns to server mode when no server manager", async () => {
@@ -1908,7 +1921,7 @@ describe("SetupWizard", () => {
     });
 
     describe("recommendedIndex", () => {
-        it("returns 0 when memGB is null", () => {
+        it("returns 0 when memGB is null and no model is installed", () => {
             const models = [
                 { name: "small", size_gb: 0.5, min_ram_gb: 4, description: "", source: "native" as const },
                 { name: "large", size_gb: 5, min_ram_gb: 16, description: "", source: "native" as const },
@@ -1920,7 +1933,7 @@ describe("SetupWizard", () => {
             expect(recommendedIndex([], 16)).toBe(0);
         });
 
-        it("selects largest model that fits in memory", () => {
+        it("selects the largest model that fits in memory when none are installed", () => {
             const models = [
                 { name: "small", size_gb: 0.5, min_ram_gb: 4, description: "", source: "native" as const },
                 { name: "medium", size_gb: 2.5, min_ram_gb: 8, description: "", source: "native" as const },
@@ -1929,6 +1942,104 @@ describe("SetupWizard", () => {
             expect(recommendedIndex(models, 10)).toBe(1);
             expect(recommendedIndex(models, 16)).toBe(2);
             expect(recommendedIndex(models, 3)).toBe(0);
+        });
+
+        it("prefers an already-installed model that fits over a larger uninstalled one", () => {
+            const models = [
+                {
+                    name: "tiny-installed",
+                    size_gb: 0.5,
+                    min_ram_gb: 4,
+                    description: "",
+                    source: "native" as const,
+                    installed: true,
+                },
+                {
+                    name: "huge-uninstalled",
+                    size_gb: 18,
+                    min_ram_gb: 32,
+                    description: "",
+                    source: "native" as const,
+                    installed: false,
+                },
+            ];
+            expect(recommendedIndex(models, 32)).toBe(0);
+        });
+
+        it("picks the largest installed-and-fits when multiple are installed", () => {
+            const models = [
+                {
+                    name: "small-installed",
+                    size_gb: 0.5,
+                    min_ram_gb: 4,
+                    description: "",
+                    source: "native" as const,
+                    installed: true,
+                },
+                {
+                    name: "medium-installed",
+                    size_gb: 2,
+                    min_ram_gb: 8,
+                    description: "",
+                    source: "native" as const,
+                    installed: true,
+                },
+                {
+                    name: "huge-uninstalled",
+                    size_gb: 18,
+                    min_ram_gb: 32,
+                    description: "",
+                    source: "native" as const,
+                    installed: false,
+                },
+            ];
+            expect(recommendedIndex(models, 32)).toBe(1);
+        });
+
+        it("falls through to largest-fit when no installed model fits", () => {
+            const models = [
+                {
+                    name: "huge-installed",
+                    size_gb: 18,
+                    min_ram_gb: 32,
+                    description: "",
+                    source: "native" as const,
+                    installed: true,
+                },
+                {
+                    name: "medium-uninstalled",
+                    size_gb: 2,
+                    min_ram_gb: 8,
+                    description: "",
+                    source: "native" as const,
+                    installed: false,
+                },
+            ];
+            // Host has 16 GB so the 32 GB installed one doesn't fit; pick the
+            // medium uninstalled one as the largest that does.
+            expect(recommendedIndex(models, 16)).toBe(1);
+        });
+
+        it("returns the first installed model when memGB is null", () => {
+            const models = [
+                {
+                    name: "uninstalled",
+                    size_gb: 0.5,
+                    min_ram_gb: 4,
+                    description: "",
+                    source: "native" as const,
+                    installed: false,
+                },
+                {
+                    name: "installed",
+                    size_gb: 2,
+                    min_ram_gb: 8,
+                    description: "",
+                    source: "native" as const,
+                    installed: true,
+                },
+            ];
+            expect(recommendedIndex(models, null)).toBe(1);
         });
     });
 
@@ -2498,8 +2609,8 @@ describe("SetupWizard", () => {
         });
     });
 
-    describe("back from step 2 with ready server manager", () => {
-        it("goes to step 0 when serverManager is ready", () => {
+    describe("back from step 2", () => {
+        it("always returns to the SERVER_MODE step so users can switch managed/external", () => {
             const plugin = makePlugin({
                 settings: { serverMode: "managed" },
                 serverManager: { state: "ready" },
@@ -2511,7 +2622,7 @@ describe("SetupWizard", () => {
             wizard.back();
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            expect(texts.some((t) => t.includes("Welcome to lilbee"))).toBe(true);
+            expect(texts.some((t) => t.includes("How do you want to run lilbee"))).toBe(true);
         });
     });
 

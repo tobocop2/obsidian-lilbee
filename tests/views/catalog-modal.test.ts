@@ -208,32 +208,27 @@ describe("CatalogModal", () => {
             expect(featuredHeading?.textContent).toBe(MESSAGES.LABEL_OUR_PICKS);
         });
 
-        it("groups non-featured entries by task", async () => {
+        it("renders the per-task heading for non-featured non-installed entries", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(
-                ok(
-                    makeCatalogResponse([
-                        makeEntry({ hf_repo: "a", display_name: "Chat A", task: "chat" }),
-                        makeEntry({ hf_repo: "b", display_name: "Vision B", task: "vision" }),
-                        makeEntry({ hf_repo: "c", display_name: "Embed C", task: "embedding" }),
-                    ]),
-                ),
+                ok(makeCatalogResponse([makeEntry({ hf_repo: "a", display_name: "Chat A", task: "chat" })])),
             );
-            const modal = await openModal(plugin);
+            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
             const content = contentEl(modal);
             const headings = content.findAll("lilbee-catalog-section-heading").map((el) => el.textContent);
             expect(headings).toContain(MESSAGES.LABEL_SECTION_CHAT);
-            expect(headings).toContain(MESSAGES.LABEL_SECTION_VISION);
-            expect(headings).toContain(MESSAGES.LABEL_SECTION_EMBEDDING);
         });
 
-        it("uses the raw task string when an unknown task appears", async () => {
+        it("renderGridView falls back to the raw task string when TASK_SECTION_LABEL has no entry", async () => {
             const plugin = makePlugin();
-            plugin.api.catalog.mockResolvedValue(
-                ok(makeCatalogResponse([makeEntry({ hf_repo: "x", display_name: "X", task: "custom" as any })])),
-            );
-            const modal = await openModal(plugin);
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([])));
+            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
             const content = contentEl(modal);
+            content.empty();
+            (modal as any).resultsEl = content.createDiv({ cls: "lilbee-catalog-results" });
+            (modal as any).renderGridView([
+                makeEntry({ hf_repo: "x", display_name: "X", task: "custom" as any, installed: false }),
+            ]);
             const headings = content.findAll("lilbee-catalog-section-heading").map((el) => el.textContent);
             expect(headings).toContain("custom");
         });
@@ -729,7 +724,7 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(
                 ok(makeCatalogResponse([makeEntry({ installed: true, task: "embedding" })])),
             );
-            const modal = await openModal(plugin);
+            const modal = await openModal(plugin, CATALOG_TAB.EMBED);
             const content = contentEl(modal);
             const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
             useBtn.trigger("click");
@@ -782,7 +777,7 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(
                 ok(makeCatalogResponse([makeEntry({ installed: true, task: "rerank" })])),
             );
-            const modal = await openModal(plugin);
+            const modal = await openModal(plugin, CATALOG_TAB.RERANK);
             const content = contentEl(modal);
             const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
             useBtn.trigger("click");
@@ -799,7 +794,7 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(
                 ok(makeCatalogResponse([makeEntry({ installed: true, task: "vision" })])),
             );
-            const modal = await openModal(plugin);
+            const modal = await openModal(plugin, CATALOG_TAB.VISION);
             const content = contentEl(modal);
             const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
             useBtn.trigger("click");
@@ -842,7 +837,7 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(
                 ok(makeCatalogResponse([makeEntry({ installed: true, task: "embedding" })])),
             );
-            const modal = await openModal(plugin);
+            const modal = await openModal(plugin, CATALOG_TAB.EMBED);
             const content = contentEl(modal);
             const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
             useBtn.trigger("click");
@@ -876,7 +871,7 @@ describe("CatalogModal", () => {
             plugin.api.setVisionModel = vi
                 .fn()
                 .mockResolvedValue(err(new Error(`Server responded 422: {"detail": "${detail}"}`)));
-            const modal = await openModal(plugin);
+            const modal = await openModal(plugin, CATALOG_TAB.VISION);
             const content = contentEl(modal);
             const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
             useBtn.trigger("click");
@@ -901,7 +896,7 @@ describe("CatalogModal", () => {
             plugin.api.setRerankerModel = vi
                 .fn()
                 .mockResolvedValue(err(new Error(`Server responded 422: {"detail": "${detail}"}`)));
-            const modal = await openModal(plugin);
+            const modal = await openModal(plugin, CATALOG_TAB.RERANK);
             const content = contentEl(modal);
             const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
             useBtn.trigger("click");

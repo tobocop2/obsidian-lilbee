@@ -41,7 +41,32 @@ const STEP_KEY: Record<number, string> = {
 };
 
 export function recommendedIndex(models: FeaturedModel[], memGB: number | null): number {
-    if (memGB === null || models.length === 0) return 0;
+    if (models.length === 0) return 0;
+    // Prefer an already-installed model that fits the host — first-time
+    // setup against an established server should not push the user to
+    // download a fresh 18 GB family when a smaller installed one works.
+    const installedFitIdx = bestInstalledFitIndex(models, memGB);
+    if (installedFitIdx >= 0) return installedFitIdx;
+    if (memGB === null) return 0;
+    return largestFitIndex(models, memGB);
+}
+
+function bestInstalledFitIndex(models: FeaturedModel[], memGB: number | null): number {
+    let best = -1;
+    let bestRam = -1;
+    for (let i = 0; i < models.length; i++) {
+        const m = models[i];
+        if (!m.installed) continue;
+        if (memGB !== null && m.min_ram_gb > memGB) continue;
+        if (m.min_ram_gb >= bestRam) {
+            best = i;
+            bestRam = m.min_ram_gb;
+        }
+    }
+    return best;
+}
+
+function largestFitIndex(models: FeaturedModel[], memGB: number): number {
     let best = 0;
     let bestRam = 0;
     for (let i = 0; i < models.length; i++) {
@@ -240,10 +265,15 @@ export class SetupWizard extends Modal {
 
         this.renderSectionHeading(step, MESSAGES.WIZARD_INTRO_STEPS);
         const ul = step.createEl("ul", { cls: "lilbee-wizard-intro-list" });
+        ul.createEl("li", { text: MESSAGES.WIZARD_STEP_CHOOSE_SERVER });
         ul.createEl("li", { text: MESSAGES.WIZARD_STEP_CHOOSE_MODEL });
         ul.createEl("li", { text: MESSAGES.WIZARD_STEP_INDEX });
 
-        step.createEl("p", { text: MESSAGES.WIZARD_LOCAL_ONLY, cls: "lilbee-wizard-hint" });
+        const localityHint =
+            this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL
+                ? MESSAGES.WIZARD_LOCAL_ONLY_EXTERNAL
+                : MESSAGES.WIZARD_LOCAL_ONLY_MANAGED;
+        step.createEl("p", { text: localityHint, cls: "lilbee-wizard-hint" });
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
         const skipBtn = actions.createEl("button", { text: MESSAGES.BUTTON_SKIP_SETUP });
@@ -486,6 +516,11 @@ export class SetupWizard extends Modal {
 
         const catalogBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BROWSE_FULL_CATALOG });
         catalogBtn.addEventListener("click", () => {
+            // Close the wizard first so the catalog modal isn't stacked on top
+            // of two close-X buttons. Users can re-open the wizard from the
+            // settings tab if they want to come back; their model selection is
+            // saved on the catalog side via the regular Use button.
+            this.close();
             new CatalogModal(this.app, this.plugin, MODEL_TASK.CHAT, CATALOG_TAB.CHAT).open();
         });
 
@@ -1012,11 +1047,11 @@ export class SetupWizard extends Modal {
     }
 
     back(): void {
+        // Welcome may fast-forward over SERVER_MODE when the server is
+        // already up, but back() always honors it so users can revisit and
+        // switch managed/external without restarting the wizard.
         if (this.step === WIZARD_STEP.MODEL_PICKER) {
-            const serverReady =
-                this.plugin.serverManager?.state === SERVER_STATE.READY ||
-                this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL;
-            this.step = serverReady ? WIZARD_STEP.WELCOME : WIZARD_STEP.SERVER_MODE;
+            this.step = WIZARD_STEP.SERVER_MODE;
         } else if (this.step === WIZARD_STEP.EMBEDDING_PICKER) {
             this.step = WIZARD_STEP.MODEL_PICKER;
         } else {
