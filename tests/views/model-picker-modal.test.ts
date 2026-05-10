@@ -281,6 +281,14 @@ describe("ModelPickerModal", () => {
         expect(row.find("lilbee-model-picker-row-meta")).toBeNull();
     });
 
+    it("renders the meta line without a quality-tier suffix when the row has no tier", async () => {
+        const plugin = makePlugin([localRow({ display_name: "Local-NoTier", size_gb: 4, quality_tier: "" })]);
+        const modal = await openPicker(plugin);
+        const row = contentEl(modal).find("lilbee-model-picker-row")!;
+        const meta = row.find("lilbee-model-picker-row-meta");
+        expect(meta?.textContent).toBe("4 GB");
+    });
+
     it("filterRowsByText filters case-insensitively and returns all rows when text is empty", () => {
         const rows = [localRow({ display_name: "Qwen 3 8B" }), localRow({ display_name: "Llama" })];
         expect(filterRowsByText(rows, "")).toEqual(rows);

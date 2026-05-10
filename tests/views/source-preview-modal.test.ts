@@ -511,3 +511,127 @@ describe("SourcePreviewModal — onClose", () => {
         expect(el.children.length).toBe(0);
     });
 });
+
+describe("SourcePreviewModal — drag handle", () => {
+    function withWindowStub(addSpy: ReturnType<typeof vi.fn>, removeSpy: ReturnType<typeof vi.fn>): () => void {
+        const prev = (globalThis as { window?: unknown }).window;
+        const had = "window" in globalThis;
+        const stub = { addEventListener: addSpy, removeEventListener: removeSpy };
+        Object.defineProperty(globalThis, "window", { value: stub, writable: true, configurable: true });
+        return () => {
+            if (had) {
+                Object.defineProperty(globalThis, "window", { value: prev, writable: true, configurable: true });
+            } else {
+                delete (globalThis as { window?: unknown }).window;
+            }
+        };
+    }
+
+    it("converts the modal to absolute coordinates and tracks pointer movement", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({ markdown: "body", content_type: CONTENT_TYPE.MARKDOWN }),
+        });
+        const modal = new SourcePreviewModal(app as never, api, makeSource());
+        modal.open();
+        await tick();
+        const frame = modal.modalEl as unknown as MockElement;
+        (frame as unknown as { getBoundingClientRect: () => DOMRect }).getBoundingClientRect = () => ({
+            left: 100,
+            top: 200,
+            width: 800,
+            height: 600,
+            right: 900,
+            bottom: 800,
+            x: 100,
+            y: 200,
+            toJSON() {
+                return {};
+            },
+        });
+        const addSpy = vi.fn();
+        const removeSpy = vi.fn();
+        const restoreWindow = withWindowStub(addSpy, removeSpy);
+        try {
+            const content = modal.contentEl as unknown as MockElement;
+            const handle = content.find("lilbee-preview-drag-handle");
+            expect(handle).not.toBeNull();
+            handle!.trigger("pointerdown", { button: 0, clientX: 150, clientY: 250, preventDefault: () => {} });
+            expect(frame.style.margin).toBe("0");
+            expect(frame.style.left).toBe("100px");
+            expect(frame.style.top).toBe("200px");
+            expect(addSpy).toHaveBeenCalledWith("pointermove", expect.any(Function));
+            expect(addSpy).toHaveBeenCalledWith("pointerup", expect.any(Function));
+            const moveCall = addSpy.mock.calls.find((c) => c[0] === "pointermove")!;
+            const upCall = addSpy.mock.calls.find((c) => c[0] === "pointerup")!;
+            (moveCall[1] as (e: PointerEvent) => void)({ clientX: 200, clientY: 320 } as PointerEvent);
+            expect(frame.style.left).toBe("150px");
+            expect(frame.style.top).toBe("270px");
+            (upCall[1] as () => void)();
+            expect(removeSpy).toHaveBeenCalledWith("pointermove", expect.any(Function));
+            expect(removeSpy).toHaveBeenCalledWith("pointerup", expect.any(Function));
+        } finally {
+            restoreWindow();
+        }
+    });
+
+    it("ignores non-left-button drags", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({ markdown: "body", content_type: CONTENT_TYPE.MARKDOWN }),
+        });
+        const modal = new SourcePreviewModal(app as never, api, makeSource());
+        modal.open();
+        await tick();
+        const frame = modal.modalEl as unknown as MockElement;
+        const before = frame.style.margin;
+        const addSpy = vi.fn();
+        const removeSpy = vi.fn();
+        const restoreWindow = withWindowStub(addSpy, removeSpy);
+        try {
+            const handle = (modal.contentEl as unknown as MockElement).find("lilbee-preview-drag-handle");
+            handle!.trigger("pointerdown", { button: 2, clientX: 50, clientY: 50, preventDefault: () => {} });
+            expect(addSpy).not.toHaveBeenCalled();
+            expect(frame.style.margin).toBe(before);
+        } finally {
+            restoreWindow();
+        }
+    });
+
+    it("removes window listeners on modal close after a drag has started", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({ markdown: "body", content_type: CONTENT_TYPE.MARKDOWN }),
+        });
+        const modal = new SourcePreviewModal(app as never, api, makeSource());
+        modal.open();
+        await tick();
+        const frame = modal.modalEl as unknown as MockElement;
+        (frame as unknown as { getBoundingClientRect: () => DOMRect }).getBoundingClientRect = () => ({
+            left: 0,
+            top: 0,
+            width: 0,
+            height: 0,
+            right: 0,
+            bottom: 0,
+            x: 0,
+            y: 0,
+            toJSON() {
+                return {};
+            },
+        });
+        const addSpy = vi.fn();
+        const removeSpy = vi.fn();
+        const restoreWindow = withWindowStub(addSpy, removeSpy);
+        try {
+            const handle = (modal.contentEl as unknown as MockElement).find("lilbee-preview-drag-handle");
+            handle!.trigger("pointerdown", { button: 0, clientX: 0, clientY: 0, preventDefault: () => {} });
+            removeSpy.mockClear();
+            modal.close();
+            expect(removeSpy).toHaveBeenCalledWith("pointermove", expect.any(Function));
+            expect(removeSpy).toHaveBeenCalledWith("pointerup", expect.any(Function));
+        } finally {
+            restoreWindow();
+        }
+    });
+});

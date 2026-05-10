@@ -56,9 +56,10 @@ export class SourcePreviewModal extends Modal {
         modalEl.style.height = "min(640px, 85vh)";
         modalEl.style.resize = "both";
         modalEl.style.overflow = "hidden";
-        modalEl.style.position = "relative";
+        modalEl.style.position = "fixed";
 
-        contentEl.createEl("h2", { text: MESSAGES.TITLE_SOURCE_PREVIEW });
+        const titleEl = contentEl.createEl("h2", { text: MESSAGES.TITLE_SOURCE_PREVIEW });
+        this.makeDraggable(titleEl);
 
         this.renderHeader(contentEl);
 
@@ -78,6 +79,48 @@ export class SourcePreviewModal extends Modal {
 
     onClose(): void {
         this.contentEl.empty();
+        if (this.dragMoveHandler) {
+            window.removeEventListener("pointermove", this.dragMoveHandler);
+            this.dragMoveHandler = null;
+        }
+        if (this.dragUpHandler) {
+            window.removeEventListener("pointerup", this.dragUpHandler);
+            this.dragUpHandler = null;
+        }
+    }
+
+    private dragMoveHandler: ((e: PointerEvent) => void) | null = null;
+    private dragUpHandler: ((e: PointerEvent) => void) | null = null;
+
+    // Promotes Obsidian's auto-centered modal to explicit top/left on the
+    // first drag so the modal stays where the user puts it across resize.
+    private makeDraggable(handle: HTMLElement): void {
+        handle.addClass("lilbee-preview-drag-handle");
+        handle.addEventListener("pointerdown", (down: PointerEvent) => {
+            if (down.button !== 0) return;
+            down.preventDefault();
+            const rect = this.modalEl.getBoundingClientRect();
+            const offsetX = down.clientX - rect.left;
+            const offsetY = down.clientY - rect.top;
+            this.modalEl.style.margin = "0";
+            this.modalEl.style.left = `${rect.left}px`;
+            this.modalEl.style.top = `${rect.top}px`;
+
+            const move = (e: PointerEvent): void => {
+                this.modalEl.style.left = `${e.clientX - offsetX}px`;
+                this.modalEl.style.top = `${e.clientY - offsetY}px`;
+            };
+            const up = (): void => {
+                window.removeEventListener("pointermove", move);
+                window.removeEventListener("pointerup", up);
+                this.dragMoveHandler = null;
+                this.dragUpHandler = null;
+            };
+            this.dragMoveHandler = move;
+            this.dragUpHandler = up;
+            window.addEventListener("pointermove", move);
+            window.addEventListener("pointerup", up);
+        });
     }
 
     private renderHeader(container: HTMLElement): void {

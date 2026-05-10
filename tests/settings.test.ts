@@ -565,6 +565,19 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
+    describe("auto-open cockpit toggle", () => {
+        it("persists the new value through saveSettings when the toggle is flipped", async () => {
+            const plugin = makePlugin({ autoOpenCockpit: true });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            // The cockpit toggle is the last toggle in Advanced.
+            await toggleOnChanges[toggleOnChanges.length - 1](false);
+            expect(plugin.settings.autoOpenCockpit).toBe(false);
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+    });
+
     describe("system prompt settings", () => {
         it("saves ragSystemPrompt when the cited-answer textarea changes", async () => {
             const plugin = makePlugin();

@@ -1,4 +1,4 @@
-import { CATALOG_SOURCE, MODEL_TASK } from "../types";
+import { MODEL_TASK } from "../types";
 import { MESSAGES } from "../locales/en";
 
 export const PILL_CLS = {
@@ -9,7 +9,6 @@ export const PILL_CLS = {
     TASK_RERANK: "lilbee-pill-task-rerank",
     INSTALLED: "lilbee-pill-installed",
     ACTIVE: "lilbee-pill-active",
-    PROVIDER: "lilbee-pill-provider",
 } as const;
 
 const TASK_PILL_MAP: Record<string, string> = {
@@ -33,9 +32,4 @@ export function renderTaskPill(container: HTMLElement, task: string): HTMLElemen
 
 export function renderPickPill(container: HTMLElement): HTMLElement {
     return renderPill(container, MESSAGES.LABEL_PICK, PILL_CLS.PICK);
-}
-
-export function renderProviderPill(container: HTMLElement, source: string): HTMLElement | null {
-    if (source === CATALOG_SOURCE.LOCAL) return null;
-    return renderPill(container, source, PILL_CLS.PROVIDER);
 }

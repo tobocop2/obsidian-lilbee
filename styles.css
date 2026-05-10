@@ -3070,7 +3070,9 @@
    the preview as large as they need. Applying resize to the inner contentEl
    gets clipped by Obsidian's default ``overflow: hidden`` on the frame. */
 .lilbee-preview-modal-frame {
-    position: relative;
+    /* position is set inline (fixed) so the modal can be dragged anywhere on
+     * screen; centering happens via Obsidian's auto margins until the user
+     * grabs the title bar. */
     width: min(880px, 92vw);
     height: min(640px, 85vh);
     min-width: 360px;
@@ -3079,6 +3081,12 @@
     max-height: 95vh;
     resize: both;
     overflow: hidden;
+}
+
+/* The title bar doubles as a drag handle — give users a clear cursor cue. */
+.lilbee-preview-drag-handle {
+    cursor: move;
+    user-select: none;
 }
 
 .lilbee-preview-modal {
