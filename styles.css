@@ -2135,6 +2135,36 @@
     background-color: var(--text-error, #ef4444);
 }
 
+.lilbee-statusbar-dot.is-muted {
+    background-color: var(--text-faint, #888);
+    animation: none;
+    opacity: 0.7;
+}
+
+/* Make Obsidian's built-in close-X button reliably visible on lilbee modals
+ * even when a theme has dimmed it. Sized for a click target and positioned
+ * at the same top-right corner Obsidian's default uses. */
+.lilbee-modal-chrome .modal-close-button {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    top: 12px;
+    right: 12px;
+    color: var(--text-muted);
+    opacity: 0.85;
+    cursor: pointer;
+    z-index: 2;
+}
+
+.lilbee-modal-chrome .modal-close-button:hover {
+    color: var(--text-normal);
+    opacity: 1;
+    background-color: var(--background-modifier-hover);
+    border-radius: 4px;
+}
+
 @keyframes lilbee-dot-pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.5; transform: scale(0.85); }

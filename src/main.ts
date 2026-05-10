@@ -472,7 +472,7 @@ export default class LilbeePlugin extends Plugin {
                 this.setStatusClass("lilbee-status-error");
                 break;
             case SERVER_STATE.STOPPED:
-                this.updateStatusBar(MESSAGES.STATUS_STOPPED);
+                this.updateStatusBar(MESSAGES.STATUS_STOPPED, DOT_STATE.MUTED);
                 this.setStatusClass(null);
                 break;
         }

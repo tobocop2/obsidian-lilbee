@@ -3,7 +3,7 @@ import type { LilbeeClient } from "../api";
 import type { Source, SourceContent } from "../types";
 import { CONTENT_TYPE } from "../types";
 import { MESSAGES } from "../locales/en";
-import { errorMessage } from "../utils";
+import { bindEscapeToClose, errorMessage } from "../utils";
 import { formatLocation } from "./results";
 
 // Text/* mime types that should NOT render inline through MarkdownRenderer
@@ -38,6 +38,7 @@ export class SourcePreviewModal extends Modal {
         super(app);
         this.api = api;
         this.source = source;
+        bindEscapeToClose(this);
     }
 
     onOpen(): void {

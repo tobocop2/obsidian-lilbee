@@ -12,6 +12,7 @@ import {
     renderKeyStatusPill,
     renderProviderPill,
 } from "./catalog-helpers";
+import { tagModalChrome } from "../utils";
 
 const SEARCH_DEBOUNCE_MS = 100;
 const PAGE_SIZE = 50;
@@ -33,6 +34,7 @@ export class ModelPickerModal extends Modal {
         super(app);
         this.plugin = plugin;
         this.pickerScope = pickerScope;
+        tagModalChrome(this);
     }
 
     onOpen(): void {

@@ -3,6 +3,7 @@ import type LilbeePlugin from "../main";
 import { DRAFT_PENDING_KIND, type DraftInfoResponse, type DraftPendingKind } from "../types";
 import { MESSAGES } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
+import { bindEscapeToClose } from "../utils";
 
 const NOTICE_DURATION_MS = 4000;
 
@@ -21,6 +22,7 @@ export class DraftModal extends Modal {
     constructor(app: App, plugin: LilbeePlugin) {
         super(app);
         this.plugin = plugin;
+        bindEscapeToClose(this);
     }
 
     onOpen(): void {

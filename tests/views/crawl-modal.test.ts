@@ -40,6 +40,12 @@ function setUrl(el: MockElement, value: string): void {
     (el.find("lilbee-crawl-url") as any).value = value;
 }
 
+function enableRecursive(el: MockElement): void {
+    const recursive = el.find("lilbee-crawl-recursive-input") as any;
+    recursive.checked = true;
+    recursive.trigger("change");
+}
+
 function clickCrawl(el: MockElement): void {
     findButtons(el)
         .find((b) => b.textContent === "Crawl")!
@@ -58,7 +64,7 @@ describe("CrawlModal", () => {
         expect(el.find("lilbee-crawl-url")).not.toBeNull();
         const recursive = el.find("lilbee-crawl-recursive-input") as any;
         expect(recursive).not.toBeNull();
-        expect(recursive.checked).toBe(true);
+        expect(recursive.checked).toBe(false);
         const row = el.find("lilbee-crawl-recursive-row");
         expect(row).not.toBeNull();
         const info = el.find("lilbee-crawl-info-btn")!;
@@ -93,6 +99,7 @@ describe("CrawlModal", () => {
 
     it("hides the info button and disclaimer when Recursive is off", () => {
         const { el } = openModal();
+        enableRecursive(el);
         const recursive = el.find("lilbee-crawl-recursive-input") as any;
         const info = el.find("lilbee-crawl-info-btn")!;
         const notice = el.find("lilbee-crawl-notice")!;
@@ -131,6 +138,7 @@ describe("CrawlModal", () => {
 
     it("disables depth and max-pages when Recursive is unchecked, re-enables when re-checked", () => {
         const { el } = openModal();
+        enableRecursive(el);
         const recursive = el.find("lilbee-crawl-recursive-input") as any;
         const depth = el.find("lilbee-crawl-depth") as any;
         const maxPages = el.find("lilbee-crawl-max-pages") as any;
@@ -166,6 +174,7 @@ describe("CrawlModal", () => {
 
     it("Recursive on + Advanced blank → sends (null, null)", () => {
         const { plugin, modal, el } = openModal();
+        enableRecursive(el);
         const closeSpy = vi.spyOn(modal, "close");
         setUrl(el, "https://example.com");
         clickCrawl(el);
@@ -173,11 +182,8 @@ describe("CrawlModal", () => {
         expect(closeSpy).toHaveBeenCalled();
     });
 
-    it("Recursive off → sends (0, null) regardless of Advanced", () => {
+    it("Recursive off (default) → sends (0, null) regardless of Advanced", () => {
         const { plugin, el } = openModal();
-        const recursive = el.find("lilbee-crawl-recursive-input") as any;
-        recursive.checked = false;
-        recursive.trigger("change");
         setUrl(el, "https://example.com");
         clickCrawl(el);
         expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null);
@@ -185,6 +191,7 @@ describe("CrawlModal", () => {
 
     it("Recursive on + Advanced filled → sends the parsed numbers", () => {
         const { plugin, el } = openModal();
+        enableRecursive(el);
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-depth") as any).value = "2";
         (el.find("lilbee-crawl-max-pages") as any).value = "20";
@@ -194,6 +201,7 @@ describe("CrawlModal", () => {
 
     it("Recursive on + depth only → sends (n, null)", () => {
         const { plugin, el } = openModal();
+        enableRecursive(el);
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-depth") as any).value = "3";
         clickCrawl(el);
@@ -202,6 +210,7 @@ describe("CrawlModal", () => {
 
     it("Recursive on + max only → sends (null, n)", () => {
         const { plugin, el } = openModal();
+        enableRecursive(el);
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-max-pages") as any).value = "100";
         clickCrawl(el);
@@ -210,6 +219,7 @@ describe("CrawlModal", () => {
 
     it("max_pages=0 blocks submit with inline error", () => {
         const { plugin, el } = openModal();
+        enableRecursive(el);
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-max-pages") as any).value = "0";
         clickCrawl(el);
@@ -221,6 +231,7 @@ describe("CrawlModal", () => {
 
     it("negative depth blocks submit with inline error", () => {
         const { plugin, el } = openModal();
+        enableRecursive(el);
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-depth") as any).value = "-5";
         clickCrawl(el);
@@ -231,6 +242,7 @@ describe("CrawlModal", () => {
 
     it("negative max_pages blocks submit with inline error", () => {
         const { plugin, el } = openModal();
+        enableRecursive(el);
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-max-pages") as any).value = "-1";
         clickCrawl(el);
@@ -241,6 +253,7 @@ describe("CrawlModal", () => {
 
     it("non-numeric max_pages blocks submit with inline error", () => {
         const { plugin, el } = openModal();
+        enableRecursive(el);
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-max-pages") as any).value = "abc";
         clickCrawl(el);
@@ -251,6 +264,7 @@ describe("CrawlModal", () => {
 
     it("non-numeric depth blocks submit with inline error", () => {
         const { plugin, el } = openModal();
+        enableRecursive(el);
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-depth") as any).value = "abc";
         clickCrawl(el);
@@ -270,6 +284,7 @@ describe("CrawlModal", () => {
 
     it("force-opens Advanced when a validation error fires", () => {
         const { el } = openModal();
+        enableRecursive(el);
         const advanced = el.find("lilbee-crawl-advanced") as any;
         advanced.open = false;
         setUrl(el, "https://example.com");
@@ -278,24 +293,25 @@ describe("CrawlModal", () => {
         expect(advanced.open).toBe(true);
     });
 
-    it("hides Advanced section when Recursive is unchecked, re-shows when re-checked", () => {
+    it("hides Advanced section when Recursive is off, shows when toggled on", () => {
         const { el } = openModal();
         const recursive = el.find("lilbee-crawl-recursive-input") as any;
         const advanced = el.find("lilbee-crawl-advanced") as any;
-        // default: recursive ON, advanced visible
-        expect(advanced.style.display).toBe("");
-
-        recursive.checked = false;
-        recursive.trigger("change");
+        // default: recursive OFF, advanced hidden
         expect(advanced.style.display).toBe("none");
 
         recursive.checked = true;
         recursive.trigger("change");
         expect(advanced.style.display).toBe("");
+
+        recursive.checked = false;
+        recursive.trigger("change");
+        expect(advanced.style.display).toBe("none");
     });
 
     it("inline error clears after a successful submit", () => {
         const { plugin, el } = openModal();
+        enableRecursive(el);
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-max-pages") as any).value = "0";
         clickCrawl(el);
@@ -312,18 +328,19 @@ describe("CrawlModal", () => {
         const { plugin, el } = openModal();
         setUrl(el, "example.com");
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", null, null);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null);
     });
 
     it("preserves http:// when already present", () => {
         const { plugin, el } = openModal();
         setUrl(el, "http://example.com");
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("http://example.com", null, null);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("http://example.com", 0, null);
     });
 
     it("Recursive on + depth=0 → sends (0, null) (seed-only with recursive on is still valid)", () => {
         const { plugin, el } = openModal();
+        enableRecursive(el);
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-depth") as any).value = "0";
         clickCrawl(el);

@@ -3,7 +3,7 @@ import type LilbeePlugin from "../main";
 import type { CatalogEntry } from "../types";
 import { MESSAGES } from "../locales/en";
 import { renderModelDetail } from "../components/model-detail";
-import { formatAbbreviatedCount } from "../utils";
+import { bindEscapeToClose, formatAbbreviatedCount } from "../utils";
 
 interface ContextWindowField {
     context_window?: number;
@@ -19,6 +19,7 @@ export class ModelInfoModal extends Modal {
     constructor(app: App, _plugin: LilbeePlugin, entry: CatalogEntry) {
         super(app);
         this.entry = entry;
+        bindEscapeToClose(this);
     }
 
     onOpen(): void {

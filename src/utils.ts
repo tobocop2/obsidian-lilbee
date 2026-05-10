@@ -1,8 +1,30 @@
-import { Notice } from "obsidian";
+import { Notice, type Modal } from "obsidian";
 import { ServerStartingError, SessionTokenError } from "./api";
 import { MESSAGES } from "./locales/en";
 import { SERVER_MODE } from "./types";
 import type { ServerMode } from "./types";
+
+/**
+ * Tag the modal's outer wrapper so the stylesheet keeps the close-X button
+ * consistently visible. Call from every lilbee modal so users never have to
+ * fall back to Escape to dismiss.
+ */
+export function tagModalChrome(modal: Modal): void {
+    modal.modalEl.addClass("lilbee-modal-chrome");
+}
+
+/**
+ * Bind Escape on the modal's own scope so dismissal works even when an inner
+ * input (search box, textarea) holds focus, plus apply the chrome tag so the
+ * close-X stays visible.
+ */
+export function bindEscapeToClose(modal: Modal): void {
+    modal.scope.register([], "Escape", () => {
+        modal.close();
+        return false;
+    });
+    tagModalChrome(modal);
+}
 
 export function debounce<T extends (...args: unknown[]) => unknown>(
     fn: T,

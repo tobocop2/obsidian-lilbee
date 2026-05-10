@@ -6,7 +6,7 @@ import { CATALOG_TAB, SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_N
 import { CatalogModal } from "./catalog-modal";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
-import { percentFromSse, extractSseErrorMessage, getSystemMemoryGB } from "../utils";
+import { bindEscapeToClose, percentFromSse, extractSseErrorMessage, getSystemMemoryGB } from "../utils";
 
 type FeaturedModel = CatalogEntry;
 type EmbeddingModel = CatalogEntry;
@@ -130,6 +130,7 @@ export class SetupWizard extends Modal {
     constructor(app: App, plugin: LilbeePlugin) {
         super(app);
         this.plugin = plugin;
+        bindEscapeToClose(this);
     }
 
     onOpen(): void {

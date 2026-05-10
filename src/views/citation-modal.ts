@@ -5,6 +5,7 @@ import { CONTENT_TYPE } from "../types";
 import { MESSAGES } from "../locales/en";
 import { formatLocation } from "./results";
 import { executeSourceClick, sourceClickAction } from "../utils/source-click";
+import { bindEscapeToClose } from "../utils";
 
 export class CitationModal extends Modal {
     private plugin: LilbeePlugin;
@@ -14,6 +15,7 @@ export class CitationModal extends Modal {
         super(app);
         this.plugin = plugin;
         this.slug = slug;
+        bindEscapeToClose(this);
     }
 
     onOpen(): void {

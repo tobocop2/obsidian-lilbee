@@ -77,7 +77,39 @@ describe("StatusModal", () => {
         const texts = values.map((v: MockElement) => v.textContent);
         expect(texts).toContain("llama");
         expect(texts).toContain("4096");
-        expect(texts).toContain("Q4_K_M");
+        // file_type is not surfaced — server returns a raw GGUF code that is
+        // meaningless to users (e.g. "1" for F16). Drop it until the server
+        // ships humanized quant labels.
+        expect(texts).not.toContain("Q4_K_M");
+    });
+
+    it("renders chat model as basename with full path in tooltip", async () => {
+        const plugin = makePlugin();
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(
+            ok(
+                makeStatus({
+                    config: {
+                        chat_model: "Smoffyy/Gemma4-E4B-Instruct-Pure-GGUF/Gemma4-E4B-F16.gguf",
+                        embedding_model: "nomic-embed-text",
+                    },
+                }),
+            ),
+        );
+        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
+
+        const modal = new StatusModal(new App(), plugin);
+        modal.open();
+        await vi.waitFor(() => {
+            const content = (modal as any).contentEl as MockElement;
+            expect(content.findAll("lilbee-status-table").length).toBeGreaterThanOrEqual(2);
+        });
+
+        const content = (modal as any).contentEl as MockElement;
+        const values = content.findAll("lilbee-status-value");
+        const texts = values.map((v: MockElement) => v.textContent);
+        expect(texts).toContain("Gemma4-E4B-F16.gguf");
+        const cell = values.find((v: MockElement) => v.textContent === "Gemma4-E4B-F16.gguf");
+        expect(cell?.attributes["title"]).toBe("Smoffyy/Gemma4-E4B-Instruct-Pure-GGUF/Gemma4-E4B-F16.gguf");
     });
 
     it("renders wiki section when wiki is present", async () => {
@@ -163,7 +195,7 @@ describe("StatusModal", () => {
         const content = (modal as any).contentEl as MockElement;
         const values = content.findAll("lilbee-status-value");
         const texts = values.map((v: MockElement) => v.textContent);
-        expect(texts).toContain("OCR: Auto");
+        expect(texts).toContain("Auto");
     });
 
     it("shows OCR: On when enable_ocr is true", async () => {
@@ -183,7 +215,7 @@ describe("StatusModal", () => {
         const content = (modal as any).contentEl as MockElement;
         const values = content.findAll("lilbee-status-value");
         const texts = values.map((v: MockElement) => v.textContent);
-        expect(texts).toContain("OCR: On");
+        expect(texts).toContain("On");
     });
 
     it("shows OCR: Off when enable_ocr is false", async () => {
@@ -203,7 +235,7 @@ describe("StatusModal", () => {
         const content = (modal as any).contentEl as MockElement;
         const values = content.findAll("lilbee-status-value");
         const texts = values.map((v: MockElement) => v.textContent);
-        expect(texts).toContain("OCR: Off");
+        expect(texts).toContain("Off");
     });
 
     it("handles showModel failure gracefully", async () => {

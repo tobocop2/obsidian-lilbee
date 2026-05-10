@@ -24,6 +24,7 @@ import { extractHfRepo } from "../utils/model-ref";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import {
+    bindEscapeToClose,
     debounce,
     DEBOUNCE_MS,
     formatAbbreviatedCount,
@@ -135,6 +136,7 @@ export class CatalogModal extends Modal {
         const searchDebounced = debounce(() => this.resetAndFetch(), DEBOUNCE_MS);
         this.debouncedSearch = searchDebounced.run;
         this.cancelDebouncedSearch = searchDebounced.cancel;
+        bindEscapeToClose(this);
     }
 
     onOpen(): void {

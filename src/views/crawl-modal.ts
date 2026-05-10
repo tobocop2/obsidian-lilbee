@@ -1,7 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import { MESSAGES } from "../locales/en";
-import { ensureUrlScheme } from "../utils";
+import { bindEscapeToClose, ensureUrlScheme } from "../utils";
 
 type ParseResult = { value: number | null; error: string | null };
 
@@ -27,6 +27,7 @@ export class CrawlModal extends Modal {
     constructor(app: App, plugin: LilbeePlugin) {
         super(app);
         this.plugin = plugin;
+        bindEscapeToClose(this);
     }
 
     onOpen(): void {
@@ -48,7 +49,7 @@ export class CrawlModal extends Modal {
             cls: "lilbee-crawl-recursive-input",
             attr: { type: "checkbox" },
         });
-        asInput(recursiveInput).checked = true;
+        asInput(recursiveInput).checked = false;
         recursiveLabel.createSpan({ text: MESSAGES.LABEL_CRAWL_RECURSIVE });
 
         const infoBtn = recursiveRow.createEl("button", {
@@ -58,7 +59,6 @@ export class CrawlModal extends Modal {
                 type: "button",
                 "aria-label": MESSAGES.LABEL_CRAWL_RECURSIVE_INFO,
                 "aria-expanded": "false",
-                title: MESSAGES.LABEL_CRAWL_RECURSIVE_INFO,
             },
         });
 

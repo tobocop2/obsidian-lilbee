@@ -542,12 +542,13 @@ export const TASK_STATUS = {
     WAITING: "waiting",
 } as const satisfies Record<string, TaskStatus>;
 
-export type DotState = "primary" | "success" | "error";
+export type DotState = "primary" | "success" | "error" | "muted";
 
 export const DOT_STATE = {
     PRIMARY: "primary",
     SUCCESS: "success",
     ERROR: "error",
+    MUTED: "muted",
 } as const satisfies Record<string, DotState>;
 
 export type TaskType = "sync" | "add" | "pull" | "crawl" | "download" | "wiki" | "delete" | "setup";

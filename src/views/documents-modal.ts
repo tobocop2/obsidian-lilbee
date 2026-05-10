@@ -3,7 +3,7 @@ import type LilbeePlugin from "../main";
 import type { DocumentEntry, DocumentsResponse } from "../types";
 import { ConfirmModal } from "./confirm-modal";
 import { MESSAGES } from "../locales/en";
-import { debounce, DEBOUNCE_MS } from "../utils";
+import { bindEscapeToClose, debounce, DEBOUNCE_MS } from "../utils";
 
 const PAGE_SIZE = 20;
 const SCROLL_BOTTOM_THRESHOLD_PX = 200;
@@ -28,14 +28,7 @@ export class DocumentsModal extends Modal {
         const searchDebounced = debounce(() => this.resetAndFetch(), DEBOUNCE_MS);
         this.debouncedSearch = searchDebounced.run;
         this.cancelDebouncedSearch = searchDebounced.cancel;
-        // Modal's default scope handles ESC, but in QA the search input held
-        // focus and the keypress never reached the close path. Register an
-        // explicit ESC binding on the modal's scope so dismissal works
-        // regardless of which inner element has focus.
-        this.scope.register([], "Escape", () => {
-            this.close();
-            return false;
-        });
+        bindEscapeToClose(this);
     }
 
     onOpen(): void {
