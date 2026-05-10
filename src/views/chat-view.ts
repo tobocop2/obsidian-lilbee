@@ -601,6 +601,7 @@ export class ChatView extends ItemView {
         if (!this.messagesEl || this.sending) return;
         this.sending = true;
         this.streamController = new AbortController();
+        this.plugin.notifyChatStart();
         if (this.sendBtn) this.sendBtn.textContent = MESSAGES.BUTTON_STOP;
         if (this.textareaEl) this.textareaEl.disabled = true;
 
@@ -673,6 +674,7 @@ export class ChatView extends ItemView {
         } finally {
             this.sending = false;
             this.streamController = null;
+            this.plugin.notifyChatEnd();
             if (this.sendBtn) {
                 this.sendBtn.textContent = MESSAGES.BUTTON_SEND;
             }

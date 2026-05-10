@@ -200,6 +200,13 @@ export default class LilbeePlugin extends Plugin {
     wikiSync: WikiSync | null = null;
     private healthProbeHandle: number | null = null;
     private serverUnreachable = false;
+    // While > 0, probeServerHealth() bails: llama.cpp serializes requests,
+    // so /api/health stalls behind the active stream and would falsely flip
+    // the status bar to error.
+    private chatInFlight = 0;
+    // Two consecutive failures required before the bar flips, so a single
+    // transient blip doesn't paint the icon red.
+    private healthFailureStreak = 0;
 
     async onload(): Promise<void> {
         await this.loadSettings();
@@ -779,21 +786,34 @@ export default class LilbeePlugin extends Plugin {
     private async probeServerHealth(): Promise<void> {
         if (this.taskQueue.activeAll.length > 0) return;
         if (this.startingServer) return;
+        if (this.chatInFlight > 0) return;
         // Re-read the token before probing — the server writes a fresh one on
         // every restart, and this is the cheapest way to stay in sync.
         this.api.setToken(this.readCurrentToken());
         const ok = (await this.api.health().catch(() => null))?.isOk() ?? false;
         if (ok) {
+            this.healthFailureStreak = 0;
             if (this.serverUnreachable) {
                 this.serverUnreachable = false;
                 void this.fetchActiveModel();
             }
-        } else if (!this.serverUnreachable) {
-            this.serverUnreachable = true;
-            this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
-            this.setStatusClass("lilbee-status-error");
-            this.maybeWarnMissingToken();
+            return;
         }
+        this.healthFailureStreak += 1;
+        if (this.healthFailureStreak < 2) return;
+        if (this.serverUnreachable) return;
+        this.serverUnreachable = true;
+        this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
+        this.setStatusClass("lilbee-status-error");
+        this.maybeWarnMissingToken();
+    }
+
+    notifyChatStart(): void {
+        this.chatInFlight += 1;
+    }
+
+    notifyChatEnd(): void {
+        if (this.chatInFlight > 0) this.chatInFlight -= 1;
     }
 
     private missingTokenNoticeFired = false;

@@ -158,6 +158,8 @@ function makePlugin(): LilbeePlugin {
         saveSettings: vi.fn().mockResolvedValue(undefined),
         cancelSync: vi.fn(),
         triggerSync: vi.fn().mockResolvedValue(undefined),
+        notifyChatStart: vi.fn(),
+        notifyChatEnd: vi.fn(),
         taskQueue: new TaskQueue(),
         app: {
             vault: {

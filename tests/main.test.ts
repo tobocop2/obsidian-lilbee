@@ -2701,10 +2701,13 @@ describe("LilbeePlugin", () => {
             // Health probe is skipped while tasks are active — make sure none are.
             expect(plugin.taskQueue.activeAll.length).toBe(0);
 
-            // Simulate a broken server: health() returns err Result.
+            // Simulate a broken server: health() returns err Result. Two
+            // consecutive failures are needed before the status flips, since
+            // a single blip is tolerated.
             plugin.api.health = vi
                 .fn()
                 .mockResolvedValue({ isErr: () => true, isOk: () => false, error: new Error("down") });
+            await (plugin as any).probeServerHealth();
             await (plugin as any).probeServerHealth();
             expect((plugin.statusBarEl as any)?.textContent).toContain("error");
 
@@ -2758,7 +2761,32 @@ describe("LilbeePlugin", () => {
             // rejection.
             plugin.api.health = vi.fn().mockRejectedValue(new Error("network disconnect"));
             await (plugin as any).probeServerHealth();
+            await (plugin as any).probeServerHealth();
             expect((plugin.statusBarEl as any)?.textContent).toContain("error");
+        });
+
+        it("tolerates a single failed probe without flipping to error", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).not.toContain("error");
+        });
+
+        it("resets the failure streak on a successful probe between failures", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            await (plugin as any).probeServerHealth();
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} });
+            plugin.api.listModels = vi
+                .fn()
+                .mockResolvedValue({ chat: { active: "qwen3:4b", catalog: [], installed: [] } });
+            plugin.api.status = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            await (plugin as any).probeServerHealth();
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).not.toContain("error");
         });
 
         it("fires external-mode no-token notice when health fails and token is null", async () => {
@@ -2767,6 +2795,7 @@ describe("LilbeePlugin", () => {
             (plugin as any).readCurrentToken = vi.fn(() => null);
             plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
             Notice.clear();
+            await (plugin as any).probeServerHealth();
             await (plugin as any).probeServerHealth();
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_TOKEN_EXTERNAL);
         });
@@ -2778,9 +2807,35 @@ describe("LilbeePlugin", () => {
             (plugin as any).serverUnreachable = false;
             (plugin as any).readCurrentToken = vi.fn(() => null);
             plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            (plugin as any).missingTokenNoticeFired = false;
+            (plugin as any).healthFailureStreak = 1;
             Notice.clear();
             await (plugin as any).probeServerHealth();
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_TOKEN_MANAGED);
+        });
+
+        it("skips probing while a chat stream is in flight", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} });
+            plugin.api.listModels = vi
+                .fn()
+                .mockResolvedValue({ chat: { active: "qwen3:4b", catalog: [], installed: [] } });
+            plugin.api.status = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            plugin.notifyChatStart();
+            await (plugin as any).probeServerHealth();
+            expect(plugin.api.health).not.toHaveBeenCalled();
+            plugin.notifyChatEnd();
+            await (plugin as any).probeServerHealth();
+            expect(plugin.api.health).toHaveBeenCalled();
+        });
+
+        it("notifyChatEnd never drops chatInFlight below zero", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.notifyChatEnd();
+            plugin.notifyChatEnd();
+            expect((plugin as any).chatInFlight).toBe(0);
         });
 
         it("fires the no-token notice at most once per plugin load", async () => {
@@ -2789,7 +2844,12 @@ describe("LilbeePlugin", () => {
             (plugin as any).readCurrentToken = vi.fn(() => null);
             plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
             Notice.clear();
+            // Two failed probes to cross the streak threshold and fire once.
             await (plugin as any).probeServerHealth();
+            await (plugin as any).probeServerHealth();
+            // Force a re-fire path: clear serverUnreachable so the unreachable
+            // transition runs again, then probe again — the notice must still
+            // fire only once for the lifetime of this plugin instance.
             (plugin as any).serverUnreachable = false;
             await (plugin as any).probeServerHealth();
             const count = Notice.instances.filter((n) => n.message === MESSAGES.NOTICE_NO_TOKEN_EXTERNAL).length;
@@ -2801,13 +2861,82 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             (plugin as any).readCurrentToken = vi.fn(() => "token");
             plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            (plugin as any).missingTokenNoticeFired = false;
             Notice.clear();
+            await (plugin as any).probeServerHealth();
             await (plugin as any).probeServerHealth();
             const fired = Notice.instances.some(
                 (n) =>
                     n.message === MESSAGES.NOTICE_NO_TOKEN_MANAGED || n.message === MESSAGES.NOTICE_NO_TOKEN_EXTERNAL,
             );
             expect(fired).toBe(false);
+        });
+    });
+
+    describe("openCockpit()", () => {
+        it("opens chat in the right sidebar and stacks the task center below it", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const chatLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
+            const tasksLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(chatLeaf);
+            plugin.app.workspace.createLeafBySplit = vi.fn().mockReturnValue(tasksLeaf);
+            plugin.app.workspace.revealLeaf = vi.fn();
+            await plugin.openCockpit();
+            expect(plugin.app.workspace.getRightLeaf).toHaveBeenCalled();
+            expect(chatLeaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-chat", active: true });
+            expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledWith(chatLeaf, "horizontal", false);
+            expect(tasksLeaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-tasks", active: true });
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(tasksLeaf);
+        });
+
+        it("reveals existing leaves without creating new ones", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const existingChat = { setViewState: vi.fn() };
+            const existingTasks = { setViewState: vi.fn() };
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockImplementation((type: string) => {
+                if (type === "lilbee-chat") return [existingChat];
+                if (type === "lilbee-tasks") return [existingTasks];
+                return [];
+            });
+            plugin.app.workspace.getRightLeaf = vi.fn();
+            plugin.app.workspace.createLeafBySplit = vi.fn();
+            plugin.app.workspace.revealLeaf = vi.fn();
+            await plugin.openCockpit();
+            expect(plugin.app.workspace.getRightLeaf).not.toHaveBeenCalled();
+            expect(plugin.app.workspace.createLeafBySplit).not.toHaveBeenCalled();
+            expect(existingChat.setViewState).not.toHaveBeenCalled();
+            expect(existingTasks.setViewState).not.toHaveBeenCalled();
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(existingChat);
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(existingTasks);
+        });
+
+        it("bails when getRightLeaf returns null and no chat leaf exists", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
+            plugin.app.workspace.createLeafBySplit = vi.fn();
+            plugin.app.workspace.revealLeaf = vi.fn();
+            await plugin.openCockpit();
+            expect(plugin.app.workspace.createLeafBySplit).not.toHaveBeenCalled();
+            expect(plugin.app.workspace.revealLeaf).not.toHaveBeenCalled();
+        });
+
+        it("opens chat alone when createLeafBySplit returns null", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const chatLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(chatLeaf);
+            plugin.app.workspace.createLeafBySplit = vi.fn().mockReturnValue(null);
+            plugin.app.workspace.revealLeaf = vi.fn();
+            await plugin.openCockpit();
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(1);
         });
     });
 
