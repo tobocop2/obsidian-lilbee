@@ -1821,6 +1821,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
         this.appendResetAffordance(litellmSetting, "litellm_base_url", MESSAGES.LABEL_LITELLM_BASE_URL);
 
+        const cockpitSetting = new Setting(details)
+            .setName(MESSAGES.LABEL_AUTO_OPEN_COCKPIT)
+            .setDesc(MESSAGES.DESC_AUTO_OPEN_COCKPIT)
+            .addToggle((toggle) =>
+                toggle.setValue(this.plugin.settings.autoOpenCockpit).onChange(async (value) => {
+                    this.plugin.settings.autoOpenCockpit = value;
+                    await this.plugin.saveSettings();
+                }),
+            );
+        this.appendLocalResetAffordance(cockpitSetting, "autoOpenCockpit", MESSAGES.LABEL_AUTO_OPEN_COCKPIT);
+
         new Setting(details)
             .setName(MESSAGES.LABEL_RESET_ALL_SETTINGS)
             .setDesc(MESSAGES.DESC_RESET_ALL_SETTINGS)

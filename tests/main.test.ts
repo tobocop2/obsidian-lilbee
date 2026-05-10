@@ -190,10 +190,21 @@ async function createPlugin(overrideData?: Record<string, unknown>) {
     // Also treat setup as complete so the onload server-start path runs —
     // otherwise the wizard-gated first-run branch silences behaviour tests that
     // aren't about the wizard.
+    // autoOpenCockpit defaults to true in production, but in tests it would
+    // call getRightLeaf during onload and pollute mock-call assertions in
+    // every other test. Default off; tests that exercise it pass an override.
     if (overrideData) {
-        plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: true, ...overrideData });
+        plugin.loadData = vi.fn().mockResolvedValue({
+            setupCompleted: true,
+            autoOpenCockpit: false,
+            ...overrideData,
+        });
     } else {
-        plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: true, serverMode: "external" });
+        plugin.loadData = vi.fn().mockResolvedValue({
+            setupCompleted: true,
+            serverMode: "external",
+            autoOpenCockpit: false,
+        });
     }
     return plugin;
 }

@@ -264,9 +264,13 @@ export class App {
         openLinkText: vi.fn(),
         getLeavesOfType: vi.fn().mockReturnValue([]),
         getRightLeaf: vi.fn().mockReturnValue(null),
+        createLeafBySplit: vi.fn().mockReturnValue(null),
         revealLeaf: vi.fn(),
         on: vi.fn().mockReturnValue({ id: "mock-event" }),
         getActiveFile: vi.fn().mockReturnValue(null),
+        // Obsidian's real workspace fires this once layout is up. Tests run
+        // synchronously, so invoke immediately to keep onload paths exercised.
+        onLayoutReady: vi.fn().mockImplementation((cb: () => void) => cb()),
     };
     // Undocumented-but-stable Obsidian API used by plugins to open their
     // own Settings tab. Tests may replace this with `undefined` to exercise

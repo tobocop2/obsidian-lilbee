@@ -255,6 +255,13 @@ export interface LilbeeSettings {
      */
     storeContentInVault: boolean;
     lastCatalogTab: CatalogTab;
+    /**
+     * When true (default), the chat view and task center auto-open in the
+     * right sidebar on plugin load and right after the setup wizard finishes.
+     * Users who keep their right sidebar busy with other plugins can disable
+     * this in Settings → Connection.
+     */
+    autoOpenCockpit: boolean;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -279,6 +286,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     manualToken: "",
     storeContentInVault: true,
     lastCatalogTab: "discover",
+    autoOpenCockpit: true,
 };
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */

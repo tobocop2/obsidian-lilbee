@@ -79,6 +79,7 @@ export const MESSAGES = {
     LABEL_SERVER_URL: "Server URL",
     LABEL_SESSION_TOKEN: "Session token",
     LABEL_SETUP_WIZARD: "Setup wizard",
+    LABEL_AUTO_OPEN_COCKPIT: "Auto-open chat & task center",
     LABEL_SWITCH_MANAGED: "Switch to managed server",
     LABEL_MODELS: "Models",
     LABEL_REFRESH_MODELS: "Refresh models",
@@ -297,6 +298,8 @@ export const MESSAGES = {
     DESC_MANAGED_BUILTIN: "Managed (built-in)",
     DESC_EXTERNAL_MANUAL: "External (manual)",
     DESC_SETUP_WIZARD: "Walk through initial setup again",
+    DESC_AUTO_OPEN_COCKPIT:
+        "When the plugin loads, open the chat view and task center side by side in the right sidebar. Disable if your right sidebar is busy with other plugins.",
     DESC_SERVER_STATUS_CURRENT: "Current state of the managed lilbee server",
     DESC_SERVER_CONTROLS_START_STOP: "Start, stop, or restart the managed server",
     DESC_SERVER_PORT_HELP: "Port for the managed server. Leave blank for automatic.",

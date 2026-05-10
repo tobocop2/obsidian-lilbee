@@ -261,6 +261,16 @@ export default class LilbeePlugin extends Plugin {
         void this.updatePendingSyncHint();
 
         this.startHealthProbe();
+
+        // Auto-open chat + task center for returning users so the workspace
+        // is immediately usable. Defer until the workspace layout is up so
+        // sidebar splits land in the right place. New users go through the
+        // wizard, which calls openCockpit on completion.
+        if (this.settings.setupCompleted && this.settings.autoOpenCockpit) {
+            this.app.workspace.onLayoutReady(() => {
+                void this.openCockpit();
+            });
+        }
     }
 
     async startManagedServer(onProgress?: ManagedServerProgressHandler): Promise<void> {
@@ -1271,6 +1281,41 @@ export default class LilbeePlugin extends Plugin {
             await leaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
             this.app.workspace.revealLeaf(leaf);
         }
+    }
+
+    /**
+     * Open the chat view and the task center as adjacent leaves in the right
+     * sidebar so a fresh-install user lands on a usable workspace without
+     * having to discover the ribbon icon and the slash command. Idempotent —
+     * if either view is already open, just reveal it; no duplicates.
+     */
+    async openCockpit(): Promise<void> {
+        const workspace = this.app.workspace;
+        const existingChat = workspace.getLeavesOfType(VIEW_TYPE_CHAT);
+        const existingTasks = workspace.getLeavesOfType(VIEW_TYPE_TASKS);
+
+        let chatLeaf = existingChat[0] ?? null;
+        if (!chatLeaf) {
+            const leaf = workspace.getRightLeaf(false);
+            if (!leaf) return;
+            chatLeaf = leaf;
+            await chatLeaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
+        }
+
+        let tasksLeaf = existingTasks[0] ?? null;
+        if (!tasksLeaf) {
+            // Stack the task center below chat in the right sidebar so both
+            // are visible at once. createLeafBySplit on a sidebar leaf splits
+            // within the sidebar itself.
+            const split = workspace.createLeafBySplit(chatLeaf, "horizontal", false);
+            if (split) {
+                tasksLeaf = split;
+                await tasksLeaf.setViewState({ type: VIEW_TYPE_TASKS, active: true });
+            }
+        }
+
+        workspace.revealLeaf(chatLeaf);
+        if (tasksLeaf) workspace.revealLeaf(tasksLeaf);
     }
 
     private registerPendingSyncHintWatchers(): void {
