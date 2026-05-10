@@ -32,6 +32,7 @@ import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import {
     errorMessage,
     extractSseErrorMessage,
+    HEALTH_FAILURE_STREAK_THRESHOLD,
     HEALTH_PROBE_INTERVAL_MS,
     NOTICE_DURATION_MS,
     NOTICE_ERROR_DURATION_MS,
@@ -204,8 +205,7 @@ export default class LilbeePlugin extends Plugin {
     // so /api/health stalls behind the active stream and would falsely flip
     // the status bar to error.
     private chatInFlight = 0;
-    // Two consecutive failures required before the bar flips, so a single
-    // transient blip doesn't paint the icon red.
+    // Counts consecutive failed probes against HEALTH_FAILURE_STREAK_THRESHOLD.
     private healthFailureStreak = 0;
 
     async onload(): Promise<void> {
@@ -800,7 +800,7 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         this.healthFailureStreak += 1;
-        if (this.healthFailureStreak < 2) return;
+        if (this.healthFailureStreak < HEALTH_FAILURE_STREAK_THRESHOLD) return;
         if (this.serverUnreachable) return;
         this.serverUnreachable = true;
         this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);

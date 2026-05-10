@@ -52,6 +52,9 @@ export const NOTICE_ERROR_DURATION_MS = 8000;
 export const NOTICE_PERMANENT = 0;
 export const TIME_REFRESH_INTERVAL_MS = 30000;
 export const HEALTH_PROBE_INTERVAL_MS = 30_000;
+// Number of consecutive failed health probes required before flipping the
+// status bar to error. One blip every 30s should not announce a problem.
+export const HEALTH_FAILURE_STREAK_THRESHOLD = 2;
 export const SPINNER_MIN_DISPLAY_MS = 800;
 // 2 minutes without a single SSE event is long enough to mean "server is wedged" —
 // legitimate OCR/embed pauses are shorter. Larger than this and users think the
