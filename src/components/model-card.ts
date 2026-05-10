@@ -10,7 +10,7 @@ export function renderModelCard(container: HTMLElement, entry: CatalogEntry, opt
     if (options.isActive) card.addClass("is-selected");
     if (entry.featured) card.addClass("is-featured");
 
-    renderCardHeader(card, entry);
+    renderCardHeader(card, entry, options);
     renderCardSpecs(card, entry);
     renderCardStatus(card, entry);
     if (options.showActions) {
@@ -28,12 +28,28 @@ export function renderModelCard(container: HTMLElement, entry: CatalogEntry, opt
     return card;
 }
 
-function renderCardHeader(card: HTMLElement, entry: CatalogEntry): void {
+function renderCardHeader(card: HTMLElement, entry: CatalogEntry, options: ModelCardOptions): void {
     const header = card.createDiv({ cls: "lilbee-model-card-header" });
     header.createEl("span", { text: entry.display_name, cls: "lilbee-model-card-name" });
     renderTaskPill(header, entry.task);
     if (entry.featured) renderPickPill(header);
     renderProviderPill(header, entry.source);
+    if (options.onInfo) {
+        const onInfo = options.onInfo;
+        const infoBtn = header.createEl("button", {
+            cls: "lilbee-model-card-info-btn",
+            text: "i",
+            attr: {
+                type: "button",
+                "aria-label": MESSAGES.LABEL_MODEL_INFO_BTN,
+                title: MESSAGES.LABEL_MODEL_INFO_BTN,
+            },
+        });
+        infoBtn.addEventListener("click", (e: Event) => {
+            e.stopPropagation();
+            onInfo(entry);
+        });
+    }
 }
 
 function renderCardSpecs(card: HTMLElement, entry: CatalogEntry): void {

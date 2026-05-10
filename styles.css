@@ -851,15 +851,19 @@
 }
 
 .lilbee-model-card:hover {
-    border-color: var(--interactive-accent);
+    border-color: color-mix(in srgb, var(--interactive-accent) 35%, var(--background-modifier-border));
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 .lilbee-model-card.is-selected {
     border-color: var(--interactive-accent);
-    background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
-    box-shadow: 0 0 0 1px var(--interactive-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+    box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+
+.lilbee-model-card.is-selected:hover {
+    transform: none;
 }
 
 .lilbee-model-card.is-featured {
@@ -877,11 +881,38 @@
     gap: 6px;
     flex-wrap: wrap;
     margin-bottom: 6px;
+    min-width: 0;
 }
 
 .lilbee-model-card-name {
     font-weight: 600;
     font-size: 14px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lilbee-model-card-info-btn {
+    margin-left: auto;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+.lilbee-model-card-info-btn:hover {
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
 }
 
 .lilbee-model-card-specs {
@@ -905,21 +936,21 @@
 }
 
 .lilbee-fit-fits {
-    color: var(--text-on-accent, white);
-    background: var(--color-green, #2da458);
-    border-color: var(--color-green, #2da458);
+    color: var(--color-green, #2da458);
+    background: color-mix(in srgb, var(--color-green, #2da458) 14%, transparent);
+    border-color: color-mix(in srgb, var(--color-green, #2da458) 40%, transparent);
 }
 
 .lilbee-fit-tight {
-    color: var(--text-on-accent, white);
-    background: var(--color-yellow, #d4a017);
-    border-color: var(--color-yellow, #d4a017);
+    color: color-mix(in srgb, var(--color-orange, #d4830f) 90%, var(--text-normal));
+    background: color-mix(in srgb, var(--color-orange, #d4830f) 12%, transparent);
+    border-color: color-mix(in srgb, var(--color-orange, #d4830f) 35%, transparent);
 }
 
 .lilbee-fit-wont_run {
-    color: var(--text-on-accent, white);
-    background: var(--color-red, #c8392f);
-    border-color: var(--color-red, #c8392f);
+    color: var(--color-red, #c8392f);
+    background: color-mix(in srgb, var(--color-red, #c8392f) 14%, transparent);
+    border-color: color-mix(in srgb, var(--color-red, #c8392f) 40%, transparent);
 }
 
 .lilbee-model-card-downloads {
@@ -3049,8 +3080,14 @@
 
 .lilbee-discover-rail-cards .lilbee-model-card {
     flex: 0 0 auto;
-    min-width: 220px;
-    max-width: 280px;
+    min-width: 260px;
+    max-width: 320px;
+}
+
+.lilbee-discover-rail-cards .lilbee-model-card-name {
+    /* Names breathe when given the full card width on the rails. */
+    white-space: normal;
+    word-break: break-word;
 }
 
 .lilbee-discover-rail-empty {
@@ -3144,9 +3181,14 @@
     border-bottom: 1px solid var(--background-modifier-border);
 }
 
-.lilbee-model-picker-row:hover,
-.lilbee-model-picker-row-highlighted {
+.lilbee-model-picker-row:hover {
     background-color: var(--background-modifier-hover);
+}
+
+.lilbee-model-picker-row-highlighted {
+    background-color: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+    border-left: 2px solid var(--interactive-accent);
+    padding-left: 10px;
 }
 
 .lilbee-model-picker-row-name {

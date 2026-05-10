@@ -293,4 +293,35 @@ describe("renderModelCard", () => {
             expect(onClick).not.toHaveBeenCalled();
         });
     });
+
+    describe("info button", () => {
+        it("omits the info button when onInfo is not provided", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry(), {}) as unknown as MockElement;
+            expect(card.find("lilbee-model-card-info-btn")).toBeNull();
+        });
+
+        it("renders an info button when onInfo is provided", () => {
+            const c = container();
+            const onInfo = vi.fn();
+            const entry = makeEntry();
+            const card = renderModelCard(c, entry, { onInfo }) as unknown as MockElement;
+            const btn = card.find("lilbee-model-card-info-btn");
+            expect(btn).not.toBeNull();
+            expect(btn!.attributes["aria-label"]).toBe(MESSAGES.LABEL_MODEL_INFO_BTN);
+        });
+
+        it("invokes onInfo and stops the click from bubbling to the card", () => {
+            const c = container();
+            const onInfo = vi.fn();
+            const onClick = vi.fn();
+            const entry = makeEntry();
+            const card = renderModelCard(c, entry, { onInfo, onClick }) as unknown as MockElement;
+            const btn = card.find("lilbee-model-card-info-btn")!;
+            const stopPropagation = vi.fn();
+            btn.trigger("click", { stopPropagation, target: { tagName: "BUTTON" } });
+            expect(onInfo).toHaveBeenCalledWith(entry);
+            expect(stopPropagation).toHaveBeenCalled();
+        });
+    });
 });

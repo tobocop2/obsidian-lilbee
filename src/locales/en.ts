@@ -274,6 +274,7 @@ export const MESSAGES = {
     BUTTON_DRAWER_TOGGLE: "Toggle details",
     LABEL_DRAWER_NO_SELECTION: "Focus a model to see its details.",
     MODEL_INFO_TITLE: "Model info",
+    LABEL_MODEL_INFO_BTN: "Show details",
     MODEL_INFO_TASK: "Task",
     MODEL_INFO_PARAMS: "Parameters",
     MODEL_INFO_CONTEXT: "Context window",

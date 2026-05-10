@@ -634,6 +634,7 @@ export class CatalogModal extends Modal {
             onPull: (e) => this.handlePull(e),
             onUse: (e, btn) => this.handleUse(e, btn),
             onRemove: (e, btn) => this.handleRemove(e, btn),
+            onInfo: (e) => new ModelInfoModal(this.app, this.plugin, e).open(),
         });
     }
 

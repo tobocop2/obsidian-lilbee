@@ -664,6 +664,7 @@ export interface ModelCardOptions {
     onPull?: (entry: CatalogEntry, btn: HTMLElement) => void;
     onUse?: (entry: CatalogEntry, btn: HTMLElement) => void;
     onRemove?: (entry: CatalogEntry, btn: HTMLElement) => void;
+    onInfo?: (entry: CatalogEntry) => void;
     showActions?: boolean;
     isActive?: boolean;
 }
