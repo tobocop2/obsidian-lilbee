@@ -120,8 +120,14 @@ describe("DocumentsModal", () => {
         expect(rows.length).toBe(2);
     });
 
-    it("renders filename, chunks, and date in each row", async () => {
-        const docs = [makeDoc({ filename: "notes.md", chunk_count: 10, ingested_at: "2024-06-15" })];
+    it("renders filename, chunks, and a relative-time date in each row", async () => {
+        const docs = [
+            makeDoc({
+                filename: "notes.md",
+                chunk_count: 10,
+                ingested_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+            }),
+        ];
         const plugin = makePlugin();
         plugin.api.listDocuments.mockResolvedValue(makeDocsResponse(docs));
         const app = new App();
@@ -133,7 +139,11 @@ describe("DocumentsModal", () => {
         const texts = collectTexts(el);
         expect(texts.some((t) => t.includes("notes.md"))).toBe(true);
         expect(texts.some((t) => t.includes("10 chunks"))).toBe(true);
-        expect(texts.some((t) => t.includes("2024-06-15"))).toBe(true);
+        expect(texts.some((t) => t.includes("m ago"))).toBe(true);
+        const dateCell = el.find("lilbee-documents-row-date")!;
+        expect(dateCell.attributes["title"]).toBe(docs[0].ingested_at);
+        const nameCell = el.find("lilbee-documents-row-name")!;
+        expect(nameCell.attributes["title"]).toBe("notes.md");
     });
 
     it("renders checkboxes in each row", async () => {

@@ -119,6 +119,18 @@ export function relativeTime(timestamp: number): string {
     return `${days}d ago`;
 }
 
+/**
+ * Render the server's ISO-8601 timestamp ("2026-05-09T05:49:38.800771+00:00")
+ * as a human "5m ago" / "3d ago" string. Returns the raw value when parsing
+ * fails so callers never lose the data.
+ */
+export function relativeTimeFromIso(iso: string): string {
+    if (!iso) return "";
+    const t = Date.parse(iso);
+    if (Number.isNaN(t)) return iso;
+    return relativeTime(t);
+}
+
 const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 
 export function formatBytes(bytes: number): string {

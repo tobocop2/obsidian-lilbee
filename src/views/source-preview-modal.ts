@@ -86,7 +86,7 @@ export class SourcePreviewModal extends Modal {
             text: this.source.vault_path ?? this.source.source,
             cls: "lilbee-preview-path",
         });
-        const loc = formatLocation(this.source, this.source.content_type);
+        const loc = formatLocation(this.source);
         if (loc) {
             container.createEl("span", { text: loc, cls: "lilbee-preview-meta" });
         }

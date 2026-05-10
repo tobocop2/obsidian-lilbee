@@ -218,11 +218,9 @@ export class CatalogModal extends Modal {
 
     private renderMainTabBar(parent: HTMLElement): void {
         this.mainTabBarEl = parent.createDiv({ cls: "lilbee-catalog-tab-bar lilbee-catalog-main-tab-bar" });
-        for (let i = 0; i < TAB_SPECS.length; i++) {
-            const spec = TAB_SPECS[i];
+        for (const spec of TAB_SPECS) {
             const btn = this.mainTabBarEl.createEl("button", { cls: "lilbee-catalog-tab" });
             btn.dataset.tabId = spec.id;
-            btn.createSpan({ cls: "lilbee-catalog-tab-num", text: String(i + 1) });
             btn.createSpan({ text: spec.label });
             btn.setAttribute("aria-selected", spec.id === this.activeTab ? "true" : "false");
             if (spec.id === this.activeTab) btn.addClass("lilbee-catalog-tab-active");
@@ -336,12 +334,7 @@ export class CatalogModal extends Modal {
                 e.stopPropagation();
                 new ModelInfoModal(this.app, this.plugin, entry).open();
             }
-            return;
         }
-        const idx = Number(e.key) - 1;
-        if (!Number.isInteger(idx) || idx < 0 || idx >= TAB_SPECS.length) return;
-        e.preventDefault();
-        this.switchMainTab(TAB_SPECS[idx].id);
     };
 
     private renderFilterBar(parent: HTMLElement): void {

@@ -158,7 +158,7 @@ describe("SourcePreviewModal — loading + success (markdown)", () => {
         expect(meta!.textContent).toContain("p. 5");
     });
 
-    it("omits page metadata on markdown sources even when page_start is set (1mu regression)", async () => {
+    it("shows page metadata whenever page_start > 0, regardless of content_type", async () => {
         const app = new App();
         const api = makeApi({
             getSource: vi.fn().mockResolvedValue({
@@ -174,7 +174,9 @@ describe("SourcePreviewModal — loading + success (markdown)", () => {
         modal.open();
         await tick();
         const el = modal.contentEl as unknown as MockElement;
-        expect(el.find("lilbee-preview-meta")).toBeNull();
+        const meta = el.find("lilbee-preview-meta");
+        expect(meta).not.toBeNull();
+        expect(meta!.textContent).toContain("p. 5");
     });
 
     it("shows line metadata when line_start is set", async () => {

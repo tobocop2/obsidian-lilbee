@@ -1296,7 +1296,8 @@
 }
 
 .lilbee-documents-row-name {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
     font-weight: var(--font-medium, 500);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1304,14 +1305,19 @@
 }
 
 .lilbee-documents-row-chunks {
+    flex: 0 0 auto;
     color: var(--text-muted);
-    min-width: 70px;
+    min-width: 60px;
+    text-align: right;
 }
 
 .lilbee-documents-row-date {
+    flex: 0 0 auto;
     color: var(--text-faint);
-    min-width: 100px;
+    min-width: 80px;
     font-size: var(--font-smallest, 10px);
+    text-align: right;
+    white-space: nowrap;
 }
 
 .lilbee-documents-sentinel {
@@ -3005,12 +3011,6 @@
 .lilbee-catalog-tab-active {
     color: var(--text-normal);
     border-bottom-color: var(--interactive-accent);
-}
-
-.lilbee-catalog-tab-num {
-    margin-right: 4px;
-    font-size: 10px;
-    color: var(--text-faint);
 }
 
 .lilbee-catalog-tab-content {

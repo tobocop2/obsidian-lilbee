@@ -3,7 +3,7 @@ import type LilbeePlugin from "../main";
 import type { DocumentEntry, DocumentsResponse } from "../types";
 import { ConfirmModal } from "./confirm-modal";
 import { MESSAGES } from "../locales/en";
-import { bindEscapeToClose, debounce, DEBOUNCE_MS } from "../utils";
+import { bindEscapeToClose, debounce, DEBOUNCE_MS, relativeTimeFromIso } from "../utils";
 
 const PAGE_SIZE = 20;
 const SCROLL_BOTTOM_THRESHOLD_PX = 200;
@@ -131,9 +131,11 @@ export class DocumentsModal extends Modal {
             this.updateRemoveBtn();
         });
 
-        row.createDiv({ cls: "lilbee-documents-row-name", text: doc.filename });
+        const nameEl = row.createDiv({ cls: "lilbee-documents-row-name", text: doc.filename });
+        nameEl.setAttribute("title", doc.filename);
         row.createDiv({ cls: "lilbee-documents-row-chunks", text: `${doc.chunk_count} chunks` });
-        row.createDiv({ cls: "lilbee-documents-row-date", text: doc.ingested_at });
+        const dateEl = row.createDiv({ cls: "lilbee-documents-row-date", text: relativeTimeFromIso(doc.ingested_at) });
+        if (doc.ingested_at) dateEl.setAttribute("title", doc.ingested_at);
     }
 
     private async removeSelected(): Promise<void> {

@@ -1667,24 +1667,15 @@ describe("CatalogModal", () => {
             expect((modal as any).activeTab).toBe(CATALOG_TAB.VISION);
         });
 
-        it("keys 1-6 jump to the matching tab", async () => {
+        it("number keys 1-9 do not change the tab (mouse-only navigation)", async () => {
             const plugin = makePlugin();
-            const modal = await openModal(plugin, CATALOG_TAB.DISCOVER);
+            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
             const content = contentEl(modal);
-            const fakeEvent = (key: string) => {
-                const evt = { key, preventDefault: vi.fn() } as unknown as KeyboardEvent;
-                content.trigger("keydown", evt);
-                return evt;
-            };
-            fakeEvent("2");
-            await tick();
-            expect((modal as any).activeTab).toBe(CATALOG_TAB.CHAT);
-            fakeEvent("6");
-            await tick();
-            expect((modal as any).activeTab).toBe(CATALOG_TAB.LIBRARY);
-            fakeEvent("1");
-            await tick();
-            expect((modal as any).activeTab).toBe(CATALOG_TAB.DISCOVER);
+            for (const key of ["1", "2", "3", "4", "5", "6", "9"]) {
+                content.trigger("keydown", { key, preventDefault: vi.fn() } as unknown as KeyboardEvent);
+                await tick();
+                expect((modal as any).activeTab).toBe(CATALOG_TAB.CHAT);
+            }
         });
 
         it("non-numeric keys do not change the tab", async () => {
@@ -1692,15 +1683,6 @@ describe("CatalogModal", () => {
             const modal = await openModal(plugin, CATALOG_TAB.CHAT);
             const content = contentEl(modal);
             content.trigger("keydown", { key: "x", preventDefault: vi.fn() } as unknown as KeyboardEvent);
-            await tick();
-            expect((modal as any).activeTab).toBe(CATALOG_TAB.CHAT);
-        });
-
-        it("number keys outside 1-6 do not change the tab", async () => {
-            const plugin = makePlugin();
-            const modal = await openModal(plugin, CATALOG_TAB.CHAT);
-            const content = contentEl(modal);
-            content.trigger("keydown", { key: "9", preventDefault: vi.fn() } as unknown as KeyboardEvent);
             await tick();
             expect((modal as any).activeTab).toBe(CATALOG_TAB.CHAT);
         });

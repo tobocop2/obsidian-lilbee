@@ -13,6 +13,7 @@ import {
     noticeForResultError,
     noticeServerUnreachableIfApplicable,
     percentFromSse,
+    relativeTimeFromIso,
     StreamIdleError,
     withIdleTimeout,
 } from "../src/utils";
@@ -109,6 +110,21 @@ describe("formatElapsed", () => {
     it("formats h:mm:ss over an hour", () => {
         expect(formatElapsed(3600_000)).toBe("1:00:00");
         expect(formatElapsed(3725_000)).toBe("1:02:05");
+    });
+});
+
+describe("relativeTimeFromIso", () => {
+    it("returns empty string for empty input", () => {
+        expect(relativeTimeFromIso("")).toBe("");
+    });
+
+    it("returns the raw string when parsing fails", () => {
+        expect(relativeTimeFromIso("not a date")).toBe("not a date");
+    });
+
+    it("parses an ISO timestamp into a relative-time string", () => {
+        const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+        expect(relativeTimeFromIso(fiveMinAgo)).toBe("5m ago");
     });
 });
 
