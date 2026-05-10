@@ -101,7 +101,7 @@ export class SourcePreviewModal extends Modal {
         handle.addClass("lilbee-preview-drag-handle");
         handle.addEventListener("pointerdown", (down: PointerEvent) => {
             if (down.button !== 0) return;
-            const target = down.target as Element | null;
+            const target = down.target as HTMLElement | null;
             if (target?.closest(".lilbee-preview-host, button, input, textarea, select, a")) return;
             down.preventDefault();
             const rect = this.modalEl.getBoundingClientRect();
