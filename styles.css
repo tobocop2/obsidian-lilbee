@@ -902,6 +902,17 @@
     flex-wrap: wrap;
     margin-bottom: 6px;
     min-width: 0;
+    /* Reserve room on the right for the always-visible info button so pills
+     * never push it off the card. */
+    padding-right: 28px;
+    position: relative;
+}
+
+.lilbee-model-card-header > .lilbee-model-card-info-btn {
+    position: absolute;
+    top: 0;
+    right: 0;
+    margin: 0;
 }
 
 .lilbee-model-card-name {

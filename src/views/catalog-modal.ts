@@ -114,7 +114,11 @@ export class CatalogModal extends Modal {
     private drawerEl: HTMLElement | null = null;
     private drawerContentEl: HTMLElement | null = null;
     private drawerToggleBtn: HTMLElement | null = null;
-    private drawerCollapsedByUser = false;
+    // Drawer starts collapsed: the cards are too cramped at the default modal
+    // width when the 320px drawer eats half the row. Users discover details via
+    // the per-card 'i' info button (Model Info modal); the drawer toggle in
+    // the modal header lets them switch to the passive-panel layout.
+    private drawerCollapsedByUser = true;
     private focusedRepo: string | null = null;
     private focusDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
 

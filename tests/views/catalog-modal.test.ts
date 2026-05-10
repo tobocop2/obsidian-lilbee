@@ -1857,7 +1857,7 @@ describe("CatalogModal", () => {
             const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
             const content = contentEl(modal);
             const card = content.find("lilbee-model-card")!;
-            const body = content.find("lilbee-catalog-body-with-drawer")!;
+            const body = content.find("lilbee-catalog-body")!;
             body.trigger("focusin", { target: card });
             await waitForDebounce();
             expect(content.find("lilbee-detail-name")?.textContent).toBe("Qwen3 8B");
@@ -1876,7 +1876,7 @@ describe("CatalogModal", () => {
             const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
             const content = contentEl(modal);
             const cards = content.findAll("lilbee-model-card");
-            const body = content.find("lilbee-catalog-body-with-drawer")!;
+            const body = content.find("lilbee-catalog-body")!;
             body.trigger("focusin", { target: cards[0] });
             body.trigger("pointerover", { target: cards[1] });
             await waitForDebounce();
@@ -1888,7 +1888,7 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
             const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
             const content = contentEl(modal);
-            const body = content.find("lilbee-catalog-body-with-drawer")!;
+            const body = content.find("lilbee-catalog-body")!;
             body.trigger("focusin", { target: new MockElement("div") });
             await waitForDebounce();
             // Placeholder still in the drawer because no card was focused.
@@ -1901,7 +1901,7 @@ describe("CatalogModal", () => {
             const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
             const content = contentEl(modal);
             const card = content.find("lilbee-model-card")!;
-            const body = content.find("lilbee-catalog-body-with-drawer")!;
+            const body = content.find("lilbee-catalog-body")!;
             body.trigger("focusin", { target: card });
             await waitForDebounce();
             const firstName = content.find("lilbee-detail-name");
@@ -1911,17 +1911,17 @@ describe("CatalogModal", () => {
             expect(content.find("lilbee-detail-name")).toBe(firstName);
         });
 
-        it("toggle button collapses and re-expands the drawer", async () => {
+        it("toggle button expands and re-collapses the drawer (drawer starts collapsed)", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
             const content = contentEl(modal);
             const drawer = content.find("lilbee-catalog-drawer")!;
-            expect(drawer.classList.contains("lilbee-catalog-drawer-collapsed")).toBe(false);
-            content.find("lilbee-catalog-drawer-toggle")!.trigger("click");
             expect(drawer.classList.contains("lilbee-catalog-drawer-collapsed")).toBe(true);
             content.find("lilbee-catalog-drawer-toggle")!.trigger("click");
             expect(drawer.classList.contains("lilbee-catalog-drawer-collapsed")).toBe(false);
+            content.find("lilbee-catalog-drawer-toggle")!.trigger("click");
+            expect(drawer.classList.contains("lilbee-catalog-drawer-collapsed")).toBe(true);
         });
 
         it("collapses the drawer when the viewport is narrower than 800px", async () => {
@@ -1940,7 +1940,7 @@ describe("CatalogModal", () => {
             const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
             const content = contentEl(modal);
             const card = content.find("lilbee-model-card")!;
-            const body = content.find("lilbee-catalog-body-with-drawer")!;
+            const body = content.find("lilbee-catalog-body")!;
             body.trigger("focusin", { target: card });
             modal.close();
             expect((modal as unknown as { focusDebounceTimeout: unknown }).focusDebounceTimeout).toBeNull();
@@ -1970,7 +1970,7 @@ describe("CatalogModal", () => {
         async function focusFirstCard(modal: CatalogModal): Promise<void> {
             const content = contentEl(modal);
             const card = content.find("lilbee-model-card")!;
-            const body = content.find("lilbee-catalog-body-with-drawer")!;
+            const body = content.find("lilbee-catalog-body")!;
             body.trigger("focusin", { target: card });
             await waitForDebounce();
         }
