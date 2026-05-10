@@ -527,6 +527,62 @@ describe("SourcePreviewModal — drag handle", () => {
         };
     }
 
+    it("does not start a drag when pointerdown lands inside the body host", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({ markdown: "body", content_type: CONTENT_TYPE.MARKDOWN }),
+        });
+        const modal = new SourcePreviewModal(app as never, api, makeSource());
+        modal.open();
+        await tick();
+        const addSpy = vi.fn();
+        const removeSpy = vi.fn();
+        const restoreWindow = withWindowStub(addSpy, removeSpy);
+        try {
+            const handle = (modal.contentEl as unknown as MockElement).find("lilbee-preview-drag-handle");
+            const target = { closest: (sel: string) => (sel.includes("lilbee-preview-host") ? {} : null) };
+            handle!.trigger("pointerdown", {
+                button: 0,
+                clientX: 50,
+                clientY: 50,
+                target,
+                preventDefault: () => {},
+            });
+            expect(addSpy).not.toHaveBeenCalled();
+        } finally {
+            restoreWindow();
+        }
+    });
+
+    it("does not start a drag when pointerdown lands on a button", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({ markdown: "body", content_type: CONTENT_TYPE.MARKDOWN }),
+        });
+        const modal = new SourcePreviewModal(app as never, api, makeSource());
+        modal.open();
+        await tick();
+        const addSpy = vi.fn();
+        const removeSpy = vi.fn();
+        const restoreWindow = withWindowStub(addSpy, removeSpy);
+        try {
+            const handle = (modal.contentEl as unknown as MockElement).find("lilbee-preview-drag-handle");
+            const target = {
+                closest: (sel: string) => (sel.split(",").some((s) => s.trim() === "button") ? {} : null),
+            };
+            handle!.trigger("pointerdown", {
+                button: 0,
+                clientX: 50,
+                clientY: 50,
+                target,
+                preventDefault: () => {},
+            });
+            expect(addSpy).not.toHaveBeenCalled();
+        } finally {
+            restoreWindow();
+        }
+    });
+
     it("converts the modal to absolute coordinates and tracks pointer movement", async () => {
         const app = new App();
         const api = makeApi({

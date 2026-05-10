@@ -304,14 +304,14 @@
 
 .lilbee-chat-message-error {
     align-self: flex-start;
-    background-color: var(--background-modifier-error, rgba(200, 60, 60, 0.4));
-    color: var(--text-on-accent, var(--text-normal));
+    background-color: color-mix(in srgb, var(--text-error) 10%, transparent);
+    color: var(--text-normal);
+    border-radius: 4px 16px 16px 16px;
     border-left: 3px solid var(--text-error);
 }
 
 .lilbee-chat-error-text {
-    font-style: italic;
-    color: var(--text-on-accent, var(--text-normal));
+    color: var(--text-normal);
 }
 
 .lilbee-chat-content {
@@ -3083,10 +3083,19 @@
     overflow: hidden;
 }
 
-/* The title bar doubles as a drag handle — give users a clear cursor cue. */
+/* The whole modal chrome doubles as a drag handle. Override back to default
+   on the body host and interactive controls so they stay clickable. */
 .lilbee-preview-drag-handle {
     cursor: move;
     user-select: none;
+}
+.lilbee-preview-drag-handle .lilbee-preview-host,
+.lilbee-preview-drag-handle button,
+.lilbee-preview-drag-handle input,
+.lilbee-preview-drag-handle textarea,
+.lilbee-preview-drag-handle a {
+    cursor: auto;
+    user-select: text;
 }
 
 .lilbee-preview-modal {

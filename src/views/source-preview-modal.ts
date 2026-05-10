@@ -58,8 +58,8 @@ export class SourcePreviewModal extends Modal {
         modalEl.style.overflow = "hidden";
         modalEl.style.position = "fixed";
 
-        const titleEl = contentEl.createEl("h2", { text: MESSAGES.TITLE_SOURCE_PREVIEW });
-        this.makeDraggable(titleEl);
+        contentEl.createEl("h2", { text: MESSAGES.TITLE_SOURCE_PREVIEW });
+        this.makeDraggable(contentEl);
 
         this.renderHeader(contentEl);
 
@@ -94,10 +94,15 @@ export class SourcePreviewModal extends Modal {
 
     // Promotes Obsidian's auto-centered modal to explicit top/left on the
     // first drag so the modal stays where the user puts it across resize.
+    // The whole chrome (title, header, footer, padding) is the drag surface,
+    // but pointer events that land inside the embedded body or on an
+    // interactive element (button/input/link) pass through.
     private makeDraggable(handle: HTMLElement): void {
         handle.addClass("lilbee-preview-drag-handle");
         handle.addEventListener("pointerdown", (down: PointerEvent) => {
             if (down.button !== 0) return;
+            const target = down.target as Element | null;
+            if (target?.closest(".lilbee-preview-host, button, input, textarea, select, a")) return;
             down.preventDefault();
             const rect = this.modalEl.getBoundingClientRect();
             const offsetX = down.clientX - rect.left;
