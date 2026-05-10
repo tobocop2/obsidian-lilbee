@@ -248,7 +248,15 @@ export class CatalogModal extends Modal {
         this.currentTab = CATALOG_SOURCE.LOCAL;
         this.applyTabToFilter();
         this.updateSubTabBarVisibility();
+        this.updateViewToggleVisibility();
         this.resetAndFetch();
+    }
+
+    private updateViewToggleVisibility(): void {
+        if (!this.viewToggleBtn) return;
+        // Discover renders horizontal rails — list/grid doesn't apply.
+        const showToggle = this.activeTab !== CATALOG_TAB.DISCOVER;
+        this.viewToggleBtn.style.display = showToggle ? "" : "none";
     }
 
     private applyTabToFilter(): void {
@@ -369,6 +377,7 @@ export class CatalogModal extends Modal {
             cls: "lilbee-catalog-view-toggle",
         });
         this.viewToggleBtn.addEventListener("click", () => this.toggleView());
+        this.updateViewToggleVisibility();
     }
 
     private renderSelect(
@@ -679,11 +688,12 @@ export class CatalogModal extends Modal {
             { key: "task", label: MESSAGES.LABEL_TASK, cls: "lilbee-catalog-list-col-task" },
             { key: "size", label: MESSAGES.LABEL_SIZE, cls: "lilbee-catalog-list-col-size" },
             { key: "downloads", label: MESSAGES.LABEL_DOWNLOADS, cls: "lilbee-catalog-list-col-downloads" },
+            { key: "info", label: "", cls: "lilbee-catalog-list-col-info" },
             { key: "action", label: "", cls: "lilbee-catalog-list-col-action" },
         ];
         for (const col of cols) {
             const el = header.createEl("span", { text: col.label, cls: col.cls });
-            if (col.key !== "action") {
+            if (col.key !== "action" && col.key !== "info") {
                 el.addEventListener("click", () => this.handleSort(col.key));
             }
         }
@@ -692,12 +702,28 @@ export class CatalogModal extends Modal {
     private renderListRow(listEl: HTMLElement, entry: CatalogEntry): void {
         const row = listEl.createDiv({ cls: "lilbee-catalog-list-row" });
         const nameText = entry.featured ? `★ ${entry.display_name}` : entry.display_name;
-        row.createEl("span", { text: nameText, cls: "lilbee-catalog-list-col-name" });
+        const nameEl = row.createEl("span", { text: nameText, cls: "lilbee-catalog-list-col-name" });
+        nameEl.setAttribute("title", entry.display_name);
         row.createEl("span", { text: entry.task, cls: "lilbee-catalog-list-col-task" });
         row.createEl("span", { text: `${entry.size_gb} GB`, cls: "lilbee-catalog-list-col-size" });
         row.createEl("span", {
             text: formatAbbreviatedCount(entry.downloads),
             cls: "lilbee-catalog-list-col-downloads",
+        });
+
+        const infoEl = row.createDiv({ cls: "lilbee-catalog-list-col-info" });
+        const infoBtn = infoEl.createEl("button", {
+            text: "i",
+            cls: "lilbee-model-card-info",
+            attr: {
+                type: "button",
+                "aria-label": MESSAGES.LABEL_MODEL_INFO_BTN,
+                title: MESSAGES.LABEL_MODEL_INFO_BTN,
+            },
+        });
+        infoBtn.addEventListener("click", (e: Event) => {
+            e.stopPropagation();
+            new ModelInfoModal(this.app, this.plugin, entry).open();
         });
 
         const actionEl = row.createDiv({ cls: "lilbee-catalog-list-col-action" });

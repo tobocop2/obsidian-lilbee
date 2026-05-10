@@ -1260,31 +1260,51 @@
 }
 
 .lilbee-catalog-list-col-name {
-    flex: 2;
+    /* min-width:0 lets the column shrink so ellipsis kicks in instead of
+     * the name pushing other columns off their gridlines. */
+    flex: 2 1 0;
+    min-width: 0;
     font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .lilbee-catalog-list-col-task {
-    flex: 0.8;
+    flex: 0 0 80px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.04em;
 }
 
 .lilbee-catalog-list-col-size {
-    flex: 0.6;
+    flex: 0 0 64px;
     text-align: right;
+    font-variant-numeric: tabular-nums;
 }
 
 .lilbee-catalog-list-col-quant {
-    flex: 0.8;
+    flex: 0 0 80px;
 }
 
 .lilbee-catalog-list-col-downloads {
-    flex: 0.8;
+    flex: 0 0 72px;
     text-align: right;
     color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.lilbee-catalog-list-col-info {
+    flex: 0 0 28px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .lilbee-catalog-list-col-action {
-    flex: 0.8;
+    flex: 0 0 auto;
+    min-width: 96px;
     display: flex;
     gap: 4px;
     justify-content: flex-end;
