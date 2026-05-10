@@ -447,12 +447,19 @@ describe("TaskQueue", () => {
             expect(queue.hasPending(TASK_TYPE.SYNC)).toBe(true);
         });
 
-        it("returns true when a task is queued behind an active one", () => {
+        it("returns true when one task is active and another is queued behind it", () => {
+            queue.enqueue("Sync 1", TASK_TYPE.SYNC);
+            queue.enqueue("Sync 2", TASK_TYPE.SYNC);
+            expect(queue.activeAll).toHaveLength(1);
+            expect(queue.queued).toHaveLength(1);
+            expect(queue.hasPending(TASK_TYPE.SYNC)).toBe(true);
+        });
+
+        it("stays true after cancelling the active task promotes the queued one", () => {
             queue.enqueue("Sync 1", TASK_TYPE.SYNC);
             queue.enqueue("Sync 2", TASK_TYPE.SYNC);
             queue.cancel(queue.activeAll[0]!.id);
-            // After cancel of active, the queued one promotes to active.
-            // hasPending should remain true throughout.
+            expect(queue.activeAll).toHaveLength(1);
             expect(queue.hasPending(TASK_TYPE.SYNC)).toBe(true);
         });
 
