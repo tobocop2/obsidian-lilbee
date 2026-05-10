@@ -577,6 +577,49 @@ describe("ChatView.sendMessage — reasoning tokens", () => {
         const details = assistantBubble.find("lilbee-reasoning");
         expect(details).toBeNull();
     });
+
+    // Cap-fire seam (max_reasoning_chars): when the server caps reasoning, it emits a marker
+    // reasoning event then re-issues the chat; the second wave streams as TOKEN events.
+    // The renderer must keep both waves in the same assistant bubble — no second turn spawned.
+    it("keeps marker reasoning event + continuation TOKEN events in the same bubble", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.REASONING, data: { token: "Thinking out loud..." } },
+            {
+                event: SSE_EVENT.REASONING,
+                data: { token: "[reasoning capped at 256 chars, asking for direct answer]" },
+            },
+            { event: SSE_EVENT.TOKEN, data: { token: "Short answer: 42." } },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "cap me";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+
+        // Two bubbles total: user + one assistant. No second assistant bubble for the continuation.
+        expect(messagesEl.children.length).toBe(2);
+        const assistantBubbles = messagesEl.findAll("assistant");
+        expect(assistantBubbles.length).toBe(1);
+
+        const assistantBubble = messagesEl.children[1];
+        const textEl = assistantBubble.find("lilbee-chat-content");
+        expect(textEl!.textContent).toBe("Short answer: 42.");
+
+        // Marker text lives inside the reasoning collapsible, not in the answer body.
+        const details = assistantBubble.find("lilbee-reasoning");
+        expect(details).toBeTruthy();
+        const reasoningContent = assistantBubble.find("lilbee-reasoning-content");
+        expect(reasoningContent!.textContent).toContain("[reasoning capped at 256 chars");
+    });
 });
 
 describe("ChatView.sendMessage — sources", () => {
