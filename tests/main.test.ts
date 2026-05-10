@@ -2896,13 +2896,13 @@ describe("LilbeePlugin", () => {
             const chatLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
             const tasksLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
-            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(chatLeaf);
-            plugin.app.workspace.createLeafBySplit = vi.fn().mockReturnValue(tasksLeaf);
+            const getRightLeaf = vi.fn().mockImplementation((split: boolean) => (split ? tasksLeaf : chatLeaf));
+            plugin.app.workspace.getRightLeaf = getRightLeaf;
             plugin.app.workspace.revealLeaf = vi.fn();
             await plugin.openCockpit();
-            expect(plugin.app.workspace.getRightLeaf).toHaveBeenCalled();
+            expect(getRightLeaf).toHaveBeenNthCalledWith(1, false);
+            expect(getRightLeaf).toHaveBeenNthCalledWith(2, true);
             expect(chatLeaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-chat", active: true });
-            expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledWith(chatLeaf, "horizontal", false);
             expect(tasksLeaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-tasks", active: true });
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(tasksLeaf);
@@ -2919,11 +2919,9 @@ describe("LilbeePlugin", () => {
                 return [];
             });
             plugin.app.workspace.getRightLeaf = vi.fn();
-            plugin.app.workspace.createLeafBySplit = vi.fn();
             plugin.app.workspace.revealLeaf = vi.fn();
             await plugin.openCockpit();
             expect(plugin.app.workspace.getRightLeaf).not.toHaveBeenCalled();
-            expect(plugin.app.workspace.createLeafBySplit).not.toHaveBeenCalled();
             expect(existingChat.setViewState).not.toHaveBeenCalled();
             expect(existingTasks.setViewState).not.toHaveBeenCalled();
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(existingChat);
@@ -2935,20 +2933,19 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
             plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
-            plugin.app.workspace.createLeafBySplit = vi.fn();
             plugin.app.workspace.revealLeaf = vi.fn();
             await plugin.openCockpit();
-            expect(plugin.app.workspace.createLeafBySplit).not.toHaveBeenCalled();
             expect(plugin.app.workspace.revealLeaf).not.toHaveBeenCalled();
         });
 
-        it("opens chat alone when createLeafBySplit returns null", async () => {
+        it("opens chat alone when the split call returns null", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             const chatLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
-            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(chatLeaf);
-            plugin.app.workspace.createLeafBySplit = vi.fn().mockReturnValue(null);
+            plugin.app.workspace.getRightLeaf = vi
+                .fn()
+                .mockImplementation((split: boolean) => (split ? null : chatLeaf));
             plugin.app.workspace.revealLeaf = vi.fn();
             await plugin.openCockpit();
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
@@ -3255,7 +3252,8 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             const spy = vi.spyOn(plugin, "activateTaskView").mockResolvedValue(undefined);
             const calls = (plugin.addRibbonIcon as ReturnType<typeof vi.fn>).mock.calls;
-            const callback = calls[0]?.[2] as () => void;
+            const taskCenterCall = calls.find((c) => c[0] === "list-checks")!;
+            const callback = taskCenterCall[2] as () => void;
             callback();
             expect(spy).toHaveBeenCalledTimes(1);
         });
@@ -3379,6 +3377,26 @@ describe("LilbeePlugin", () => {
             expect(ribbon.classList.contains("lilbee-ribbon-success")).toBe(false);
             expect(ribbon.classList.contains("lilbee-ribbon-error")).toBe(false);
             expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
+        });
+
+        it("registers a chat ribbon icon distinct from the task ribbon", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const chatRibbon = (plugin as any).chatRibbonIconEl as any;
+            const taskRibbon = (plugin as any).ribbonIconEl as any;
+            expect(chatRibbon).toBeTruthy();
+            expect(chatRibbon).not.toBe(taskRibbon);
+            expect(chatRibbon.classList.contains("lilbee-ribbon-chat")).toBe(true);
+        });
+
+        it("chat ribbon click activates the chat view", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const chatRibbon = (plugin as any).chatRibbonIconEl as any;
+            const spy = vi.spyOn(plugin, "activateChatView").mockResolvedValue(undefined);
+            chatRibbon.trigger("click");
+            expect(spy).toHaveBeenCalled();
+            spy.mockRestore();
         });
     });
 

@@ -185,6 +185,7 @@ export default class LilbeePlugin extends Plugin {
     statusBarEl: HTMLElement | null = null;
     syncHintEl: HTMLElement | null = null;
     ribbonIconEl: HTMLElement | null = null;
+    chatRibbonIconEl: HTMLElement | null = null;
     binaryManager: BinaryManager | null = null;
     serverManager: ServerManager | null = null;
     syncController: AbortController | null = null;
@@ -222,6 +223,10 @@ export default class LilbeePlugin extends Plugin {
         this.syncHintEl.style.display = "none";
         this.syncHintEl.setAttribute("aria-label", MESSAGES.TOOLTIP_PENDING_SYNC_HINT);
         this.syncHintEl.addEventListener("click", () => void this.triggerSync());
+        this.chatRibbonIconEl = this.addRibbonIcon("messages-square", MESSAGES.LABEL_RIBBON_OPEN_CHAT, () =>
+            this.activateChatView(),
+        );
+        this.chatRibbonIconEl.addClass("lilbee-ribbon-icon", "lilbee-ribbon-chat");
         this.ribbonIconEl = this.addRibbonIcon("list-checks", MESSAGES.LABEL_RIBBON_OPEN_TASK_CENTER, () =>
             this.activateTaskView(),
         );
@@ -1324,10 +1329,11 @@ export default class LilbeePlugin extends Plugin {
 
         let tasksLeaf = existingTasks[0] ?? null;
         if (!tasksLeaf) {
-            // Stack the task center below chat in the right sidebar so both
-            // are visible at once. createLeafBySplit on a sidebar leaf splits
-            // within the sidebar itself.
-            const split = workspace.createLeafBySplit(chatLeaf, "horizontal", false);
+            // getRightLeaf(true) splits the existing right sidebar leaf so the
+            // new leaf stacks underneath rather than becoming a tab. Without
+            // this, both views land in the same sidebar slot and only one is
+            // visible at a time.
+            const split = workspace.getRightLeaf(true);
             if (split) {
                 tasksLeaf = split;
                 await tasksLeaf.setViewState({ type: VIEW_TYPE_TASKS, active: true });

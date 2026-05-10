@@ -145,8 +145,10 @@ export class MockElement {
         node.parentElement = null;
     }
 
-    addClass(cls: string): void {
-        cls.split(" ").forEach((c) => this.classList.add(c));
+    addClass(...classes: string[]): void {
+        for (const arg of classes) {
+            arg.split(" ").forEach((c) => c && this.classList.add(c));
+        }
     }
 
     removeClass(...classes: string[]): void {
@@ -488,8 +490,9 @@ export class Plugin {
         return el;
     });
 
-    addRibbonIcon = vi.fn((_icon: string, _title: string, _callback: () => void) => {
+    addRibbonIcon = vi.fn((_icon: string, _title: string, callback: () => void) => {
         const el = new MockElement("div");
+        el.addEventListener("click", callback);
         return el;
     });
 

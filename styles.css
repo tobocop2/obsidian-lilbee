@@ -2599,10 +2599,10 @@
 .side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-error::after {
     content: "";
     position: absolute;
-    top: 4px;
-    right: 4px;
-    width: 8px;
-    height: 8px;
+    top: 3px;
+    right: 3px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     border: 1.5px solid var(--background-primary);
     pointer-events: none;
@@ -2610,7 +2610,18 @@
 
 .side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-active::after {
     background-color: var(--interactive-accent);
-    animation: lilbee-dot-pulse 1s ease-in-out infinite;
+    animation: lilbee-ribbon-glow 1.4s ease-in-out infinite;
+}
+
+@keyframes lilbee-ribbon-glow {
+    0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--interactive-accent) 70%, transparent);
+    }
+    50% {
+        transform: scale(1.18);
+        box-shadow: 0 0 0 5px color-mix(in srgb, var(--interactive-accent) 0%, transparent);
+    }
 }
 
 .side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-success::after {
