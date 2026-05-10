@@ -1327,13 +1327,14 @@ export default class LilbeePlugin extends Plugin {
             await chatLeaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
         }
 
+        // Task center lives as a bottom panel under the editor — not a right
+        // sidebar tab, because the right sidebar collapses sibling leaves into
+        // tabs and only one would be visible at a time. getLeaf("split",
+        // "horizontal") splits the active root leaf in the main editor area
+        // along the horizontal axis (editor on top, task center beneath).
         let tasksLeaf = existingTasks[0] ?? null;
         if (!tasksLeaf) {
-            // getRightLeaf(true) splits the existing right sidebar leaf so the
-            // new leaf stacks underneath rather than becoming a tab. Without
-            // this, both views land in the same sidebar slot and only one is
-            // visible at a time.
-            const split = workspace.getRightLeaf(true);
+            const split = workspace.getLeaf("split", "horizontal");
             if (split) {
                 tasksLeaf = split;
                 await tasksLeaf.setViewState({ type: VIEW_TYPE_TASKS, active: true });

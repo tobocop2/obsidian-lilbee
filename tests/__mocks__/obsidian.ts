@@ -267,6 +267,7 @@ export class App {
         getLeavesOfType: vi.fn().mockReturnValue([]),
         getRightLeaf: vi.fn().mockReturnValue(null),
         createLeafBySplit: vi.fn().mockReturnValue(null),
+        getLeaf: vi.fn().mockReturnValue(null),
         revealLeaf: vi.fn(),
         on: vi.fn().mockReturnValue({ id: "mock-event" }),
         getActiveFile: vi.fn().mockReturnValue(null),

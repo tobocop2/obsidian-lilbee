@@ -2890,19 +2890,18 @@ describe("LilbeePlugin", () => {
     });
 
     describe("openCockpit()", () => {
-        it("opens chat in the right sidebar and stacks the task center below it", async () => {
+        it("opens chat in the right sidebar and splits the task center under the editor", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             const chatLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
             const tasksLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
-            const getRightLeaf = vi.fn().mockImplementation((split: boolean) => (split ? tasksLeaf : chatLeaf));
-            plugin.app.workspace.getRightLeaf = getRightLeaf;
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(chatLeaf);
+            plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(tasksLeaf);
             plugin.app.workspace.revealLeaf = vi.fn();
             await plugin.openCockpit();
-            expect(getRightLeaf).toHaveBeenNthCalledWith(1, false);
-            expect(getRightLeaf).toHaveBeenNthCalledWith(2, true);
             expect(chatLeaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-chat", active: true });
+            expect(plugin.app.workspace.getLeaf).toHaveBeenCalledWith("split", "horizontal");
             expect(tasksLeaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-tasks", active: true });
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(tasksLeaf);
@@ -2938,14 +2937,13 @@ describe("LilbeePlugin", () => {
             expect(plugin.app.workspace.revealLeaf).not.toHaveBeenCalled();
         });
 
-        it("opens chat alone when the split call returns null", async () => {
+        it("opens chat alone when the editor-split call returns null", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             const chatLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
-            plugin.app.workspace.getRightLeaf = vi
-                .fn()
-                .mockImplementation((split: boolean) => (split ? null : chatLeaf));
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(chatLeaf);
+            plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(null);
             plugin.app.workspace.revealLeaf = vi.fn();
             await plugin.openCockpit();
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
