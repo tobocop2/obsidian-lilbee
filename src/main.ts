@@ -185,6 +185,7 @@ export default class LilbeePlugin extends Plugin {
     statusBarEl: HTMLElement | null = null;
     syncHintEl: HTMLElement | null = null;
     ribbonIconEl: HTMLElement | null = null;
+    chatRibbonIconEl: HTMLElement | null = null;
     binaryManager: BinaryManager | null = null;
     serverManager: ServerManager | null = null;
     syncController: AbortController | null = null;
@@ -222,6 +223,10 @@ export default class LilbeePlugin extends Plugin {
         this.syncHintEl.style.display = "none";
         this.syncHintEl.setAttribute("aria-label", MESSAGES.TOOLTIP_PENDING_SYNC_HINT);
         this.syncHintEl.addEventListener("click", () => void this.triggerSync());
+        this.chatRibbonIconEl = this.addRibbonIcon("messages-square", MESSAGES.LABEL_RIBBON_OPEN_CHAT, () =>
+            this.activateChatView(),
+        );
+        this.chatRibbonIconEl.addClass("lilbee-ribbon-icon", "lilbee-ribbon-chat");
         this.ribbonIconEl = this.addRibbonIcon("list-checks", MESSAGES.LABEL_RIBBON_OPEN_TASK_CENTER, () =>
             this.activateTaskView(),
         );
@@ -696,7 +701,9 @@ export default class LilbeePlugin extends Plugin {
     onunload(): void {
         if (this.pendingHintTimeout) {
             clearTimeout(this.pendingHintTimeout);
+            this.pendingHintTimeout = null;
         }
+        this.syncHintEl = null;
         this.taskQueue.dispose();
         void this.serverManager?.stop();
     }
@@ -1322,12 +1329,14 @@ export default class LilbeePlugin extends Plugin {
             await chatLeaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
         }
 
+        // Task center lives as a bottom panel under the editor — not a right
+        // sidebar tab, because the right sidebar collapses sibling leaves into
+        // tabs and only one would be visible at a time. getLeaf("split",
+        // "horizontal") splits the active root leaf in the main editor area
+        // along the horizontal axis (editor on top, task center beneath).
         let tasksLeaf = existingTasks[0] ?? null;
         if (!tasksLeaf) {
-            // Stack the task center below chat in the right sidebar so both
-            // are visible at once. createLeafBySplit on a sidebar leaf splits
-            // within the sidebar itself.
-            const split = workspace.createLeafBySplit(chatLeaf, "horizontal", false);
+            const split = workspace.getLeaf("split", "horizontal");
             if (split) {
                 tasksLeaf = split;
                 await tasksLeaf.setViewState({ type: VIEW_TYPE_TASKS, active: true });
@@ -1359,13 +1368,21 @@ export default class LilbeePlugin extends Plugin {
         }
         this.pendingHintTimeout = setTimeout(() => {
             this.pendingHintTimeout = null;
+            // Bail if the plugin was unloaded between scheduling and firing.
+            // The syncHintEl guard inside updatePendingSyncHint covers this,
+            // but the explicit check here keeps the contract local.
+            if (!this.syncHintEl) return;
             void this.updatePendingSyncHint();
         }, PENDING_SYNC_HINT_DEBOUNCE_MS);
     }
 
     private async countPendingSync(): Promise<number> {
-        const vaultFiles = this.app.vault
-            .getFiles()
+        // The vault adapter can be gone if the timer fires after the host
+        // environment teared down (vitest end-of-file cleanup while a real
+        // setTimeout was still pending). Bail cleanly instead of crashing.
+        const files = this.app?.vault?.getFiles?.();
+        if (!Array.isArray(files)) return 0;
+        const vaultFiles = files
             .filter((f) => SUPPORTED_SYNC_EXTENSIONS.has(f.extension.toLowerCase()))
             .filter((f) => !this.wikiSync?.isWikiPath(f.path) && !f.path.startsWith("lilbee/"));
         const known = new Set<string>();
