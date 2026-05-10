@@ -991,6 +991,18 @@ describe("LilbeePlugin", () => {
             expect(updateSpy).toHaveBeenCalledTimes(1);
             vi.useRealTimers();
         });
+
+        it("timer callback bails when the plugin was disposed mid-debounce", async () => {
+            vi.useFakeTimers();
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const updateSpy = vi.spyOn(plugin, "updatePendingSyncHint").mockResolvedValue(undefined);
+            (plugin as any).schedulePendingSyncHint();
+            plugin.syncHintEl = null;
+            vi.advanceTimersByTime(2000);
+            expect(updateSpy).not.toHaveBeenCalled();
+            vi.useRealTimers();
+        });
     });
 
     describe("updatePendingSyncHint()", () => {
@@ -1109,6 +1121,14 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             plugin.syncHintEl = null;
             await expect(plugin.updatePendingSyncHint()).resolves.toBeUndefined();
+        });
+
+        it("returns 0 silently when the vault adapter is gone (timer fired post-teardown)", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
+            await expect(plugin.updatePendingSyncHint()).resolves.toBeUndefined();
+            expect(plugin.syncHintEl?.style.display).toBe("none");
         });
 
         it("hint click triggers sync", async () => {

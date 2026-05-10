@@ -701,7 +701,9 @@ export default class LilbeePlugin extends Plugin {
     onunload(): void {
         if (this.pendingHintTimeout) {
             clearTimeout(this.pendingHintTimeout);
+            this.pendingHintTimeout = null;
         }
+        this.syncHintEl = null;
         this.taskQueue.dispose();
         void this.serverManager?.stop();
     }
@@ -1366,13 +1368,21 @@ export default class LilbeePlugin extends Plugin {
         }
         this.pendingHintTimeout = setTimeout(() => {
             this.pendingHintTimeout = null;
+            // Bail if the plugin was unloaded between scheduling and firing.
+            // The syncHintEl guard inside updatePendingSyncHint covers this,
+            // but the explicit check here keeps the contract local.
+            if (!this.syncHintEl) return;
             void this.updatePendingSyncHint();
         }, PENDING_SYNC_HINT_DEBOUNCE_MS);
     }
 
     private async countPendingSync(): Promise<number> {
-        const vaultFiles = this.app.vault
-            .getFiles()
+        // The vault adapter can be gone if the timer fires after the host
+        // environment teared down (vitest end-of-file cleanup while a real
+        // setTimeout was still pending). Bail cleanly instead of crashing.
+        const files = this.app?.vault?.getFiles?.();
+        if (!Array.isArray(files)) return 0;
+        const vaultFiles = files
             .filter((f) => SUPPORTED_SYNC_EXTENSIONS.has(f.extension.toLowerCase()))
             .filter((f) => !this.wikiSync?.isWikiPath(f.path) && !f.path.startsWith("lilbee/"));
         const known = new Set<string>();
