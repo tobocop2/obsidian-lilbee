@@ -3,7 +3,7 @@ import type { LilbeeClient } from "../api";
 import type { Source, SourceContent } from "../types";
 import { CONTENT_TYPE } from "../types";
 import { MESSAGES } from "../locales/en";
-import { errorMessage } from "../utils";
+import { bindEscapeToClose, errorMessage } from "../utils";
 import { formatLocation } from "./results";
 
 // Text/* mime types that should NOT render inline through MarkdownRenderer
@@ -38,6 +38,7 @@ export class SourcePreviewModal extends Modal {
         super(app);
         this.api = api;
         this.source = source;
+        bindEscapeToClose(this);
     }
 
     onOpen(): void {
@@ -55,9 +56,10 @@ export class SourcePreviewModal extends Modal {
         modalEl.style.height = "min(640px, 85vh)";
         modalEl.style.resize = "both";
         modalEl.style.overflow = "hidden";
-        modalEl.style.position = "relative";
+        modalEl.style.position = "fixed";
 
         contentEl.createEl("h2", { text: MESSAGES.TITLE_SOURCE_PREVIEW });
+        this.makeDraggable(contentEl);
 
         this.renderHeader(contentEl);
 
@@ -77,6 +79,53 @@ export class SourcePreviewModal extends Modal {
 
     onClose(): void {
         this.contentEl.empty();
+        if (this.dragMoveHandler) {
+            window.removeEventListener("pointermove", this.dragMoveHandler);
+            this.dragMoveHandler = null;
+        }
+        if (this.dragUpHandler) {
+            window.removeEventListener("pointerup", this.dragUpHandler);
+            this.dragUpHandler = null;
+        }
+    }
+
+    private dragMoveHandler: ((e: PointerEvent) => void) | null = null;
+    private dragUpHandler: ((e: PointerEvent) => void) | null = null;
+
+    // Promotes Obsidian's auto-centered modal to explicit top/left on the
+    // first drag so the modal stays where the user puts it across resize.
+    // The whole chrome (title, header, footer, padding) is the drag surface,
+    // but pointer events that land inside the embedded body or on an
+    // interactive element (button/input/link) pass through.
+    private makeDraggable(handle: HTMLElement): void {
+        handle.addClass("lilbee-preview-drag-handle");
+        handle.addEventListener("pointerdown", (down: PointerEvent) => {
+            if (down.button !== 0) return;
+            const target = down.target as HTMLElement | null;
+            if (target?.closest(".lilbee-preview-host, button, input, textarea, select, a")) return;
+            down.preventDefault();
+            const rect = this.modalEl.getBoundingClientRect();
+            const offsetX = down.clientX - rect.left;
+            const offsetY = down.clientY - rect.top;
+            this.modalEl.style.margin = "0";
+            this.modalEl.style.left = `${rect.left}px`;
+            this.modalEl.style.top = `${rect.top}px`;
+
+            const move = (e: PointerEvent): void => {
+                this.modalEl.style.left = `${e.clientX - offsetX}px`;
+                this.modalEl.style.top = `${e.clientY - offsetY}px`;
+            };
+            const up = (): void => {
+                window.removeEventListener("pointermove", move);
+                window.removeEventListener("pointerup", up);
+                this.dragMoveHandler = null;
+                this.dragUpHandler = null;
+            };
+            this.dragMoveHandler = move;
+            this.dragUpHandler = up;
+            window.addEventListener("pointermove", move);
+            window.addEventListener("pointerup", up);
+        });
     }
 
     private renderHeader(container: HTMLElement): void {
@@ -85,7 +134,7 @@ export class SourcePreviewModal extends Modal {
             text: this.source.vault_path ?? this.source.source,
             cls: "lilbee-preview-path",
         });
-        const loc = formatLocation(this.source, this.source.content_type);
+        const loc = formatLocation(this.source);
         if (loc) {
             container.createEl("span", { text: loc, cls: "lilbee-preview-meta" });
         }

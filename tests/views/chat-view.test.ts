@@ -122,8 +122,7 @@ function makePlugin(): LilbeePlugin {
                     // Empty featured chat catalog — installed refs go under the "Other" group.
                     return Promise.resolve(ok({ total: 0, limit: 50, offset: 0, models: [], has_more: false }));
                 }
-                // Embedding picker keeps the legacy nomic-embed entry for the
-                // separate embedding-selector flow.
+                // The embedding picker has its own catalog list keyed off the embedding task.
                 return Promise.resolve(
                     ok({
                         total: 1,
@@ -159,6 +158,8 @@ function makePlugin(): LilbeePlugin {
         saveSettings: vi.fn().mockResolvedValue(undefined),
         cancelSync: vi.fn(),
         triggerSync: vi.fn().mockResolvedValue(undefined),
+        notifyChatStart: vi.fn(),
+        notifyChatEnd: vi.fn(),
         taskQueue: new TaskQueue(),
         app: {
             vault: {
@@ -171,10 +172,9 @@ function makePlugin(): LilbeePlugin {
 }
 
 /**
- * Map the legacy `chat: { active, installed, catalog }` test fixture into the
- * three endpoints the post-PR-#183 chat picker actually calls. Catalog entries
- * are stamped with the minimum CatalogEntry shape; we keep the legacy short
- * names as `hf_repo` so existing dropdown-value assertions still hold.
+ * Wire a single `{ active, installed, catalog }` test fixture into the three endpoints
+ * the chat picker calls (active model, installed list, catalog). Catalog entries are
+ * stamped with the minimum CatalogEntry shape using their short names as `hf_repo`.
  */
 function mockChatPicker(
     plugin: LilbeePlugin,
@@ -214,7 +214,7 @@ function mockChatPicker(
                         min_ram_gb: m.min_ram_gb,
                         description: m.description,
                         installed: m.installed,
-                        source: m.source ?? "native",
+                        source: m.source ?? "local",
                         task: "chat",
                         featured: true,
                         downloads: 0,
@@ -632,7 +632,7 @@ describe("ChatView.sendMessage — sources", () => {
         expect(summary!.textContent).toBe("Sources");
     });
 
-    it("renders source chips inside details element", async () => {
+    it("renders source chips inside details element with grouped layout", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const { mockFn, done } = makeStream([
@@ -654,7 +654,7 @@ describe("ChatView.sendMessage — sources", () => {
         const assistantBubble = messagesEl.children[1];
         const chip = assistantBubble.find("lilbee-source-chip");
         expect(chip).not.toBeNull();
-        expect(chip!.textContent).toBe("chip-doc.md");
+        expect(chip!.find("lilbee-source-chip-file")?.textContent).toBe("chip-doc.md");
     });
 
     it("does NOT render sources section when done has no prior sources", async () => {
@@ -712,6 +712,238 @@ describe("ChatView.sendMessage — sources", () => {
         }>;
         expect(historyArg.some((m) => m.role === "user" && m.content === "first question")).toBe(true);
         expect(historyArg.some((m) => m.role === "assistant" && m.content === "Reply")).toBe(true);
+    });
+});
+
+describe("ChatView — extractBanner helper", () => {
+    it("returns the string banner field when present", async () => {
+        const { extractBanner } = await import("../../src/views/chat-view");
+        expect(extractBanner({ banner: "watch out" })).toBe("watch out");
+    });
+
+    it("returns null for null / non-object data", async () => {
+        const { extractBanner } = await import("../../src/views/chat-view");
+        expect(extractBanner(null)).toBeNull();
+        expect(extractBanner("just a string")).toBeNull();
+        expect(extractBanner(42)).toBeNull();
+    });
+
+    it("returns null when the banner field is empty / missing / non-string", async () => {
+        const { extractBanner } = await import("../../src/views/chat-view");
+        expect(extractBanner({})).toBeNull();
+        expect(extractBanner({ banner: "" })).toBeNull();
+        expect(extractBanner({ banner: 42 })).toBeNull();
+    });
+});
+
+describe("ChatView.sendMessage — banner rendering", () => {
+    it("renders a lilbee-chat-banner div above the assistant bubble when DONE.data.banner is set", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: "Reply text" },
+            { event: SSE_EVENT.DONE, data: { banner: "Search needs an embedding model." } },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "what?";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+
+        const banners = container.findAll("lilbee-chat-banner");
+        expect(banners.length).toBe(1);
+        expect(banners[0].textContent).toContain("Search needs an embedding model.");
+    });
+
+    it("does not render a banner element when DONE has no banner field", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: "Reply" },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "what?";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+
+        expect(container.findAll("lilbee-chat-banner").length).toBe(0);
+    });
+});
+
+describe("ChatView — chat_mode toolbar toggle", () => {
+    it("does not render the toggle when /api/config omits chat_mode", async () => {
+        const plugin = makePlugin();
+        // Default makePlugin's config omits chat_mode -> toggle should be absent.
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        expect(container.findAll("lilbee-chat-mode-btn").length).toBe(0);
+    });
+
+    it("renders Search/Chat segments and marks the active one when chat_mode is present", async () => {
+        const plugin = makePlugin();
+        (plugin.api as any).config = vi.fn().mockResolvedValue({
+            chat_model: "llama3",
+            embedding_model: "nomic-embed-text",
+            chat_mode: "search",
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const buttons = container.findAll("lilbee-chat-mode-btn");
+        expect(buttons.length).toBe(2);
+        expect(buttons[0].textContent).toBe("Search");
+        expect(buttons[1].textContent).toBe("Chat");
+        expect(buttons[0].classList.contains("active")).toBe(true);
+        expect(buttons[1].classList.contains("active")).toBe(false);
+    });
+
+    it("disables both segments with a tooltip when no embedding model is configured", async () => {
+        const plugin = makePlugin();
+        (plugin.api as any).config = vi.fn().mockResolvedValue({
+            chat_model: "llama3",
+            embedding_model: "",
+            chat_mode: "chat",
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const buttons = container.findAll("lilbee-chat-mode-btn");
+        expect(buttons.length).toBe(2);
+        for (const btn of buttons) {
+            expect((btn as any).disabled).toBe(true);
+            expect(btn.getAttribute("title")).toBe("Configure an embedding model to enable Search.");
+        }
+    });
+
+    it("treats absent embedding_model field (undefined) as no-embedding state", async () => {
+        const plugin = makePlugin();
+        (plugin.api as any).config = vi.fn().mockResolvedValue({
+            chat_model: "llama3",
+            // embedding_model intentionally absent to exercise the typeof guard
+            chat_mode: "search",
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const buttons = container.findAll("lilbee-chat-mode-btn");
+        for (const btn of buttons) {
+            expect((btn as any).disabled).toBe(true);
+        }
+    });
+
+    it("flips active class when switching from chat back to search", async () => {
+        const plugin = makePlugin();
+        (plugin.api as any).config = vi.fn().mockResolvedValue({
+            chat_model: "llama3",
+            embedding_model: "nomic-embed-text",
+            chat_mode: "chat",
+        });
+        (plugin.api as any).updateConfig = vi
+            .fn()
+            .mockResolvedValue({ updated: ["chat_mode"], reindex_required: false });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const buttons = container.findAll("lilbee-chat-mode-btn");
+        // Initially chat (index 1) is active.
+        expect(buttons[1].classList.contains("active")).toBe(true);
+        // Click search.
+        buttons[0].trigger("click");
+        await tick();
+        expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chat_mode: "search" });
+        expect(buttons[0].classList.contains("active")).toBe(true);
+        expect(buttons[1].classList.contains("active")).toBe(false);
+    });
+
+    it("PATCHes /api/config with the new mode when a segment is clicked", async () => {
+        const plugin = makePlugin();
+        (plugin.api as any).config = vi.fn().mockResolvedValue({
+            chat_model: "llama3",
+            embedding_model: "nomic-embed-text",
+            chat_mode: "search",
+        });
+        (plugin.api as any).updateConfig = vi
+            .fn()
+            .mockResolvedValue({ updated: ["chat_mode"], reindex_required: false });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const buttons = container.findAll("lilbee-chat-mode-btn");
+        buttons[1].trigger("click");
+        await tick();
+        expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chat_mode: "chat" });
+    });
+
+    it("does not PATCH when clicking the already-active segment", async () => {
+        const plugin = makePlugin();
+        (plugin.api as any).config = vi.fn().mockResolvedValue({
+            chat_model: "llama3",
+            embedding_model: "nomic-embed-text",
+            chat_mode: "search",
+        });
+        (plugin.api as any).updateConfig = vi.fn();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const buttons = container.findAll("lilbee-chat-mode-btn");
+        buttons[0].trigger("click");
+        await tick();
+        expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+    });
+
+    it("ignores clicks on disabled segments (no embedding configured)", async () => {
+        const plugin = makePlugin();
+        (plugin.api as any).config = vi.fn().mockResolvedValue({
+            chat_model: "llama3",
+            embedding_model: "",
+            chat_mode: "chat",
+        });
+        (plugin.api as any).updateConfig = vi.fn();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const buttons = container.findAll("lilbee-chat-mode-btn");
+        buttons[0].trigger("click");
+        await tick();
+        expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+    });
+
+    it("surfaces a Notice when the PATCH fails", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        (plugin.api as any).config = vi.fn().mockResolvedValue({
+            chat_model: "llama3",
+            embedding_model: "nomic-embed-text",
+            chat_mode: "search",
+        });
+        (plugin.api as any).updateConfig = vi.fn().mockRejectedValue(new Error("server down"));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const buttons = container.findAll("lilbee-chat-mode-btn");
+        buttons[1].trigger("click");
+        await tick();
+        expect(Notice.instances.some((n) => n.message.includes("Chat mode"))).toBe(true);
     });
 });
 
@@ -3407,5 +3639,142 @@ describe("ChatView — role separation on main-screen selectors", () => {
         // server scopes to embedding models. If the plugin were reading from listModels
         // or a broader catalog call, vision/reranker names could leak here.
         expect(embedOptionValues).toEqual(["nomic-embed-text"]);
+    });
+});
+
+describe("ChatView — textarea disabled while a chat stream is in flight", () => {
+    it("disables the textarea synchronously when a message is sent", async () => {
+        const plugin = makePlugin();
+        let resolveStream!: () => void;
+        plugin.api.chatStream = vi.fn().mockImplementation(async function* () {
+            await new Promise<void>((r) => {
+                resolveStream = r;
+            });
+            yield { event: SSE_EVENT.DONE, data: null };
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")! as MockElement;
+        (textarea as any).value = "in-flight";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        expect((textarea as any).disabled).toBe(true);
+
+        resolveStream();
+        await tick();
+    });
+
+    it("re-enables the textarea after the stream completes normally", async () => {
+        const plugin = makePlugin();
+        plugin.api.chatStream = vi.fn().mockReturnValue(
+            (async function* () {
+                yield { event: SSE_EVENT.DONE, data: null };
+            })(),
+        );
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")! as MockElement;
+        (textarea as any).value = "complete";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        expect((textarea as any).disabled).toBe(false);
+    });
+
+    it("re-enables the textarea after the stream is aborted", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const abortError = new Error("Aborted");
+        abortError.name = "AbortError";
+        plugin.api.chatStream = vi.fn().mockReturnValue(
+            (async function* () {
+                throw abortError;
+            })(),
+        );
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")! as MockElement;
+        (textarea as any).value = "abort";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        expect((textarea as any).disabled).toBe(false);
+    });
+
+    it("re-enables the textarea after a generic stream error", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.chatStream = vi.fn().mockReturnValue(
+            (async function* () {
+                throw new Error("server returned 500");
+            })(),
+        );
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")! as MockElement;
+        (textarea as any).value = "boom";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        expect((textarea as any).disabled).toBe(false);
+    });
+});
+
+describe("ChatView.sendMessage — RateLimitedError", () => {
+    it("renders an inline error bubble with rate-limit copy and shows a busy Notice when retry-after is present", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { RateLimitedError } = await import("../../src/api");
+        plugin.api.chatStream = vi.fn().mockReturnValue(
+            (async function* () {
+                throw new RateLimitedError(7);
+            })(),
+        );
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "rate limited q";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        const errBubble = messagesEl.children[1];
+        expect(errBubble.classList.contains("lilbee-chat-message-error")).toBe(true);
+        expect(errBubble.attributes["role"]).toBe("alert");
+        expect(errBubble.find("lilbee-chat-error-text")!.textContent).toContain("Try again in 7 seconds");
+        expect(Notice.instances.some((n) => n.message.includes("Try again in 7 seconds"))).toBe(true);
+        expect(Notice.instances.some((n) => n.message.startsWith("Chat failed:"))).toBe(false);
+        expect((view as any).history.length).toBe(0);
+    });
+
+    it("falls back to a generic 'try again in a moment' notice when retry-after is null", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { RateLimitedError } = await import("../../src/api");
+        plugin.api.chatStream = vi.fn().mockReturnValue(
+            (async function* () {
+                throw new RateLimitedError(null);
+            })(),
+        );
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        container.find("lilbee-chat-textarea")!.value = "no retry-after";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        expect(Notice.instances.some((n) => n.message.includes("Try again in a moment"))).toBe(true);
     });
 });

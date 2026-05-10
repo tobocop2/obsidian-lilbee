@@ -232,7 +232,6 @@ export class TaskQueue {
         this.flashTimers.add(handle);
     }
 
-    /** Returns the first active task found (backward compat). */
     get active(): TaskEntry | null {
         for (const id of this.activeIds.values()) {
             if (id) {
@@ -244,6 +243,13 @@ export class TaskQueue {
     }
 
     /** Returns all currently active tasks across all types. */
+    /** Returns true if a task of the given type is active or queued. */
+    hasPending(type: TaskType): boolean {
+        if (this.activeIds.get(type)) return true;
+        const q = this.queues.get(type);
+        return q !== undefined && q.length > 0;
+    }
+
     get activeAll(): TaskEntry[] {
         const result: TaskEntry[] = [];
         for (const id of this.activeIds.values()) {

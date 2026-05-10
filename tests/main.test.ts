@@ -36,6 +36,7 @@ vi.mock("../src/api", () => ({
         wikiLint: vi.fn(),
         wikiGenerate: vi.fn(),
         wikiPrune: vi.fn(),
+        listDocuments: vi.fn(),
     })),
 }));
 
@@ -51,6 +52,14 @@ vi.mock("../src/views/search-modal", () => ({
 
 vi.mock("../src/views/catalog-modal", () => ({
     CatalogModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
+}));
+
+vi.mock("../src/views/model-picker-modal", () => ({
+    ModelPickerModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
+}));
+
+vi.mock("../src/views/model-info-modal", () => ({
+    ModelInfoModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
 }));
 
 vi.mock("../src/views/crawl-modal", () => ({
@@ -181,10 +190,21 @@ async function createPlugin(overrideData?: Record<string, unknown>) {
     // Also treat setup as complete so the onload server-start path runs —
     // otherwise the wizard-gated first-run branch silences behaviour tests that
     // aren't about the wizard.
+    // autoOpenCockpit defaults to true in production, but in tests it would
+    // call getRightLeaf during onload and pollute mock-call assertions in
+    // every other test. Default off; tests that exercise it pass an override.
     if (overrideData) {
-        plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: true, ...overrideData });
+        plugin.loadData = vi.fn().mockResolvedValue({
+            setupCompleted: true,
+            autoOpenCockpit: false,
+            ...overrideData,
+        });
     } else {
-        plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: true, serverMode: "external" });
+        plugin.loadData = vi.fn().mockResolvedValue({
+            setupCompleted: true,
+            serverMode: "external",
+            autoOpenCockpit: false,
+        });
     }
     return plugin;
 }
@@ -211,11 +231,16 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerView).toHaveBeenCalled();
         });
 
-        it("adds all fifteen commands", async () => {
+        it("adds all nineteen commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(15);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(19);
+            const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
+            expect(allIds).toContain("lilbee:model-picker-chat");
+            expect(allIds).toContain("lilbee:model-picker-embedding");
+            expect(allIds).toContain("lilbee:model-info-active-chat");
+            expect(allIds).toContain("lilbee:model-info-active-embedding");
             const ids = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(ids).toContain("lilbee:search");
             expect(ids).toContain("lilbee:chat");
@@ -305,19 +330,10 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
         });
 
-        it("with manual sync mode: registers only file-menu event (no vault events)", async () => {
+        it("registers vault watchers for the pending-sync hint plus the file-menu listener", async () => {
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "manual" });
             await plugin.onload();
-            // 1 for file-menu
-            expect(plugin.registerEvent).toHaveBeenCalledTimes(1);
-        });
-
-        it("with auto sync mode: registers vault events + file-menu", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
-            await plugin.onload();
-            // 4 vault events + 1 file-menu = 5
+            // 4 vault events (create/modify/delete/rename) + 1 file-menu = 5
             expect(plugin.registerEvent).toHaveBeenCalledTimes(5);
         });
 
@@ -386,15 +402,18 @@ describe("LilbeePlugin", () => {
     });
 
     describe("onunload()", () => {
-        it("clears sync timeout if one is active", async () => {
+        it("clears the pending-sync hint timeout if one is active", async () => {
             vi.useFakeTimers();
             const plugin = await createPlugin();
             await plugin.onload();
-            (plugin as any).debouncedSync();
-            expect((plugin as any).syncTimeout).not.toBeNull();
-            const clearSpy = vi.spyOn(globalThis, "clearTimeout");
+            (plugin as any).schedulePendingSyncHint();
+            expect((plugin as any).pendingHintTimeout).not.toBeNull();
             plugin.onunload();
-            expect(clearSpy).toHaveBeenCalled();
+            // After unload the scheduled callback must not run.
+            const updateSpy = vi.spyOn(plugin, "updatePendingSyncHint");
+            vi.advanceTimersByTime(5000);
+            expect(updateSpy).not.toHaveBeenCalled();
+            vi.useRealTimers();
         });
 
         it("does not throw when no timeout is active", async () => {
@@ -407,10 +426,9 @@ describe("LilbeePlugin", () => {
     describe("loadSettings()", () => {
         it("merges saved data over defaults", async () => {
             const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", topK: 15, syncMode: "auto" });
+            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", topK: 15 });
             await plugin.loadSettings();
             expect(plugin.settings.topK).toBe(15);
-            expect(plugin.settings.syncMode).toBe("auto");
             expect(plugin.settings.serverUrl).toBe("http://127.0.0.1:7433");
         });
 
@@ -419,7 +437,7 @@ describe("LilbeePlugin", () => {
             plugin.loadData = vi.fn().mockResolvedValue(null);
             await plugin.loadSettings();
             expect(plugin.settings.topK).toBe(5);
-            expect(plugin.settings.syncMode).toBe("manual");
+            expect(plugin.settings.serverMode).toBe("managed");
         });
     });
 
@@ -436,58 +454,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.saveData).toHaveBeenCalledWith(expect.objectContaining({ ...plugin.settings }));
             const callsAfter = (LilbeeClient as ReturnType<typeof vi.fn>).mock.calls.length;
             expect(callsAfter).toBeGreaterThan(callsBefore);
-        });
-
-        it("calls updateAutoSync after saving", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-
-            const updateSpy = vi.spyOn(plugin as any, "updateAutoSync");
-            await plugin.saveSettings();
-
-            expect(updateSpy).toHaveBeenCalled();
-        });
-    });
-
-    describe("updateAutoSync()", () => {
-        it("registers vault events when switching from manual to auto", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "manual" });
-            await plugin.onload();
-
-            expect(plugin.registerEvent).toHaveBeenCalledTimes(1);
-
-            plugin.settings.syncMode = "auto";
-            await plugin.saveSettings();
-
-            // 1 file-menu + 4 vault events = 5
-            expect(plugin.registerEvent).toHaveBeenCalledTimes(5);
-        });
-
-        it("clears autoSyncRefs and calls offref when switching from auto to manual", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
-            await plugin.onload();
-
-            expect((plugin as any).autoSyncRefs.length).toBe(4);
-
-            plugin.settings.syncMode = "manual";
-            await plugin.saveSettings();
-
-            expect((plugin as any).autoSyncRefs.length).toBe(0);
-            expect(plugin.app.vault.offref).toHaveBeenCalledTimes(4);
-        });
-
-        it("does not re-register events when already in auto mode", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
-            await plugin.onload();
-
-            const callsBefore = (plugin.registerEvent as ReturnType<typeof vi.fn>).mock.calls.length;
-
-            await plugin.saveSettings();
-
-            expect((plugin.registerEvent as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsBefore);
         });
     });
 
@@ -590,37 +556,6 @@ describe("LilbeePlugin", () => {
         });
     });
 
-    describe("debouncedSync()", () => {
-        it("schedules triggerSync after debounce delay", async () => {
-            vi.useFakeTimers();
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncDebounceMs: 1000 });
-            await plugin.onload();
-
-            const triggerSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
-            (plugin as any).debouncedSync();
-
-            expect(triggerSpy).not.toHaveBeenCalled();
-            vi.advanceTimersByTime(1000);
-            expect(triggerSpy).toHaveBeenCalledTimes(1);
-        });
-
-        it("cancels previous timer when called again", async () => {
-            vi.useFakeTimers();
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncDebounceMs: 500 });
-            await plugin.onload();
-
-            const triggerSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
-            (plugin as any).debouncedSync();
-            vi.advanceTimersByTime(200);
-            (plugin as any).debouncedSync();
-            vi.advanceTimersByTime(500);
-
-            expect(triggerSpy).toHaveBeenCalledTimes(1);
-        });
-    });
-
     describe("triggerSync()", () => {
         it("updates status bar during sync and flashes done on completion", async () => {
             const plugin = await createPlugin();
@@ -632,6 +567,22 @@ describe("LilbeePlugin", () => {
             await plugin.triggerSync();
 
             expect((plugin as any).statusBarEl?.textContent).toContain("Done");
+        });
+
+        it("is a no-op when a sync is already pending", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            // Block the first sync mid-stream so the second call fires while
+            // the first is still active.
+            async function* hangs() {
+                await new Promise<void>(() => {});
+            }
+            plugin.api.syncStream = vi.fn().mockImplementation(() => hangs());
+            void plugin.triggerSync();
+            await new Promise((r) => setTimeout(r, 0));
+            expect(plugin.api.syncStream).toHaveBeenCalledTimes(1);
+            await plugin.triggerSync();
+            expect(plugin.api.syncStream).toHaveBeenCalledTimes(1);
         });
 
         it("shows Notice with all stats when done event has populated arrays", async () => {
@@ -801,6 +752,156 @@ describe("LilbeePlugin", () => {
             expect(instance.open).toHaveBeenCalled();
         });
 
+        it("lilbee:model-picker-chat opens ModelPickerModal scoped to chat", async () => {
+            const { ModelPickerModal } = await import("../src/views/model-picker-modal");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const cb = await getCommandCallback(plugin, "lilbee:model-picker-chat");
+            cb?.();
+            expect(ModelPickerModal).toHaveBeenCalledWith(expect.anything(), plugin, "chat");
+            const inst = (ModelPickerModal as ReturnType<typeof vi.fn>).mock.results.at(-1)!.value;
+            expect(inst.open).toHaveBeenCalled();
+        });
+
+        it("lilbee:model-picker-embedding opens ModelPickerModal scoped to embedding", async () => {
+            const { ModelPickerModal } = await import("../src/views/model-picker-modal");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const cb = await getCommandCallback(plugin, "lilbee:model-picker-embedding");
+            cb?.();
+            expect(ModelPickerModal).toHaveBeenCalledWith(expect.anything(), plugin, "embedding");
+        });
+
+        it("lilbee:model-info-active-chat opens ModelInfoModal when chat_model is set", async () => {
+            const { ModelInfoModal } = await import("../src/views/model-info-modal");
+            const { ok } = await import("neverthrow");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: "qwen/qwen3-8b" });
+            (plugin.api as { catalog?: ReturnType<typeof vi.fn> }).catalog = vi.fn().mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    has_more: false,
+                    models: [
+                        {
+                            hf_repo: "qwen/qwen3-8b",
+                            gguf_filename: "",
+                            display_name: "Qwen3 8B",
+                            size_gb: 5,
+                            min_ram_gb: 8,
+                            description: "x",
+                            quality_tier: "balanced",
+                            installed: true,
+                            source: "native",
+                            task: "chat",
+                            featured: false,
+                            downloads: 100,
+                            param_count: "8B",
+                        },
+                    ],
+                }),
+            );
+            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-chat");
+            await cb?.();
+            expect(ModelInfoModal).toHaveBeenCalled();
+        });
+
+        it("lilbee:model-info-active-chat shows a Notice when no chat_model is configured", async () => {
+            const { ModelInfoModal } = await import("../src/views/model-info-modal");
+            (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-chat");
+            await cb?.();
+            expect(ModelInfoModal).not.toHaveBeenCalled();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_ACTIVE_MODEL("chat"));
+        });
+
+        it("lilbee:model-info-active-chat shows a Notice when api.config() throws", async () => {
+            const { ModelInfoModal } = await import("../src/views/model-info-modal");
+            (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
+            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-chat");
+            await cb?.();
+            expect(ModelInfoModal).not.toHaveBeenCalled();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_ACTIVE_MODEL("chat"));
+        });
+
+        it("lilbee:model-info-active-chat shows a Notice when catalog lookup errors", async () => {
+            const { ModelInfoModal } = await import("../src/views/model-info-modal");
+            (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
+            const { err } = await import("neverthrow");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: "qwen/qwen3-8b" });
+            (plugin.api as { catalog?: ReturnType<typeof vi.fn> }).catalog = vi
+                .fn()
+                .mockResolvedValue(err(new Error("nope")));
+            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-chat");
+            await cb?.();
+            expect(ModelInfoModal).not.toHaveBeenCalled();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_ACTIVE_MODEL("chat"));
+        });
+
+        it("lilbee:model-info-active-chat shows a Notice when catalog returns no rows", async () => {
+            const { ModelInfoModal } = await import("../src/views/model-info-modal");
+            (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
+            const { ok } = await import("neverthrow");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: "qwen/qwen3-8b" });
+            (plugin.api as { catalog?: ReturnType<typeof vi.fn> }).catalog = vi
+                .fn()
+                .mockResolvedValue(ok({ total: 0, limit: 20, offset: 0, has_more: false, models: [] }));
+            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-chat");
+            await cb?.();
+            expect(ModelInfoModal).not.toHaveBeenCalled();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_ACTIVE_MODEL("chat"));
+        });
+
+        it("lilbee:model-info-active-embedding resolves embedding_model and falls back to first catalog row", async () => {
+            const { ModelInfoModal } = await import("../src/views/model-info-modal");
+            (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
+            const { ok } = await import("neverthrow");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ embedding_model: "BAAI/bge-m3" });
+            // The repo doesn't match exactly — fall back to first row in the response.
+            (plugin.api as { catalog?: ReturnType<typeof vi.fn> }).catalog = vi.fn().mockResolvedValue(
+                ok({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    has_more: false,
+                    models: [
+                        {
+                            hf_repo: "BAAI/bge-m3-other",
+                            gguf_filename: "",
+                            display_name: "BGE M3 Other",
+                            size_gb: 1,
+                            min_ram_gb: 2,
+                            description: "x",
+                            quality_tier: "balanced",
+                            installed: false,
+                            source: "native",
+                            task: "embedding",
+                            featured: false,
+                            downloads: 0,
+                            param_count: "",
+                        },
+                    ],
+                }),
+            );
+            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-embedding");
+            await cb?.();
+            expect(ModelInfoModal).toHaveBeenCalled();
+        });
+
         it("lilbee:tasks calls activateTaskView", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -839,12 +940,11 @@ describe("LilbeePlugin", () => {
         });
     });
 
-    describe("registerAutoSync()", () => {
-        it("vault event callbacks call debouncedSync for ordinary paths", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
+    describe("pending-sync hint vault watchers", () => {
+        it("vault event callbacks schedule the pending-sync hint for ordinary paths", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
 
-            const debouncedSpy = vi.spyOn(plugin as any, "debouncedSync").mockImplementation(() => {});
+            const scheduleSpy = vi.spyOn(plugin as any, "schedulePendingSyncHint").mockImplementation(() => {});
 
             await plugin.onload();
 
@@ -853,15 +953,15 @@ describe("LilbeePlugin", () => {
             >;
             expect(vaultOnCalls.length).toBe(4);
 
+            scheduleSpy.mockClear();
             vaultOnCalls[0][1]({ path: "notes/foo.md" });
-            expect(debouncedSpy).toHaveBeenCalledTimes(1);
+            expect(scheduleSpy).toHaveBeenCalledTimes(1);
         });
 
         it("skips paths under lilbee/ — these are managed by the server and re-syncing would loop", async () => {
-            const plugin = await createPlugin();
-            plugin.loadData = vi.fn().mockResolvedValue({ serverMode: "external", syncMode: "auto" });
+            const plugin = await createPlugin({ serverMode: "external" });
 
-            const debouncedSpy = vi.spyOn(plugin as any, "debouncedSync").mockImplementation(() => {});
+            const scheduleSpy = vi.spyOn(plugin as any, "schedulePendingSyncHint").mockImplementation(() => {});
 
             await plugin.onload();
 
@@ -869,10 +969,184 @@ describe("LilbeePlugin", () => {
                 [string, (file: { path: string }) => void]
             >;
 
+            scheduleSpy.mockClear();
             vaultOnCalls[0][1]({ path: "lilbee/crawled/example.com/page.md" });
             vaultOnCalls[0][1]({ path: "lilbee/imported/book.pdf" });
             vaultOnCalls[0][1]({ path: "lilbee/wiki/foo.md" });
-            expect(debouncedSpy).not.toHaveBeenCalled();
+            expect(scheduleSpy).not.toHaveBeenCalled();
+        });
+
+        it("schedulePendingSyncHint debounces by 1000ms and cancels prior schedules", async () => {
+            vi.useFakeTimers();
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const updateSpy = vi.spyOn(plugin, "updatePendingSyncHint").mockResolvedValue(undefined);
+
+            (plugin as any).schedulePendingSyncHint();
+            vi.advanceTimersByTime(500);
+            (plugin as any).schedulePendingSyncHint();
+            vi.advanceTimersByTime(500);
+            expect(updateSpy).not.toHaveBeenCalled();
+            vi.advanceTimersByTime(500);
+            expect(updateSpy).toHaveBeenCalledTimes(1);
+            vi.useRealTimers();
+        });
+    });
+
+    describe("updatePendingSyncHint()", () => {
+        it("shows the hint with the count when vault has files the server doesn't know", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+                { path: "notes/a.md", name: "a.md", extension: "md" },
+                { path: "notes/b.pdf", name: "b.pdf", extension: "pdf" },
+                { path: "notes/c.txt", name: "c.txt", extension: "txt" },
+            ]);
+            (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
+                documents: [{ filename: "a.md", chunk_count: 1, ingested_at: "" }],
+                total: 1,
+                limit: 100,
+                offset: 0,
+                has_more: false,
+            });
+
+            await plugin.updatePendingSyncHint();
+
+            expect(plugin.syncHintEl?.textContent).toBe("lilbee: 2 to sync");
+            expect(plugin.syncHintEl?.style.display).toBe("");
+        });
+
+        it("hides the hint when count is zero", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+                { path: "notes/a.md", name: "a.md", extension: "md" },
+            ]);
+            (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
+                documents: [{ filename: "a.md", chunk_count: 1, ingested_at: "" }],
+                total: 1,
+                limit: 100,
+                offset: 0,
+                has_more: false,
+            });
+            plugin.syncHintEl!.style.display = "";
+
+            await plugin.updatePendingSyncHint();
+
+            expect(plugin.syncHintEl?.style.display).toBe("none");
+        });
+
+        it("filters out unsupported extensions, wiki paths, and lilbee/ paths", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.wikiSync = {
+                isWikiPath: (p: string) => p.startsWith("lilbee-wiki/"),
+                reconcile: vi.fn(),
+            } as any;
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+                { path: "notes/a.md", name: "a.md", extension: "md" },
+                { path: "img/b.png", name: "b.png", extension: "png" }, // unsupported
+                { path: "lilbee/c.md", name: "c.md", extension: "md" }, // server-managed
+                { path: "lilbee-wiki/d.md", name: "d.md", extension: "md" }, // wiki
+            ]);
+            (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
+                documents: [],
+                total: 0,
+                limit: 100,
+                offset: 0,
+                has_more: false,
+            });
+
+            await plugin.updatePendingSyncHint();
+
+            expect(plugin.syncHintEl?.textContent).toBe("lilbee: 1 to sync");
+        });
+
+        it("pages through listDocuments when has_more is true", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+                { path: "notes/a.md", name: "a.md", extension: "md" },
+                { path: "notes/b.md", name: "b.md", extension: "md" },
+            ]);
+            const mock = plugin.api.listDocuments as ReturnType<typeof vi.fn>;
+            mock.mockClear();
+            mock.mockResolvedValueOnce({
+                documents: [{ filename: "a.md", chunk_count: 1, ingested_at: "" }],
+                total: 2,
+                limit: 100,
+                offset: 0,
+                has_more: true,
+            }).mockResolvedValueOnce({
+                documents: [{ filename: "b.md", chunk_count: 1, ingested_at: "" }],
+                total: 2,
+                limit: 100,
+                offset: 1,
+                has_more: false,
+            });
+
+            await plugin.updatePendingSyncHint();
+
+            expect(mock).toHaveBeenCalledTimes(2);
+            expect(plugin.syncHintEl?.style.display).toBe("none");
+        });
+
+        it("hides the hint silently when listDocuments rejects (server offline)", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+                { path: "notes/a.md", name: "a.md", extension: "md" },
+            ]);
+            (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
+
+            await plugin.updatePendingSyncHint();
+
+            expect(plugin.syncHintEl?.style.display).toBe("none");
+        });
+
+        it("no-ops if syncHintEl is null", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.syncHintEl = null;
+            await expect(plugin.updatePendingSyncHint()).resolves.toBeUndefined();
+        });
+
+        it("hint click triggers sync", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const triggerSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            (plugin.syncHintEl as any).trigger("click");
+
+            expect(triggerSpy).toHaveBeenCalled();
+        });
+    });
+
+    describe("markSyncHintRunning", () => {
+        it("sets data-running and shows in-progress text while sync runs, clears it after", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+
+            async function* noEvents() {}
+            plugin.api.syncStream = vi.fn().mockReturnValue(noEvents());
+
+            const seen: Array<string | null> = [];
+            const observer = setInterval(() => {
+                seen.push(plugin.syncHintEl?.getAttribute("data-running") ?? null);
+            }, 0);
+
+            await plugin.triggerSync();
+            clearInterval(observer);
+
+            expect(plugin.syncHintEl?.getAttribute("data-running")).toBeNull();
+        });
+
+        it("no-ops if syncHintEl is null", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.syncHintEl = null;
+            expect(() => (plugin as any).markSyncHintRunning(true)).not.toThrow();
+            expect(() => (plugin as any).markSyncHintRunning(false)).not.toThrow();
         });
     });
 
@@ -1350,6 +1624,32 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("1 added"))).toBe(true);
         });
 
+        it("includes skipped count in summary Notice when server reports skipped files", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            async function* withSkipped() {
+                yield {
+                    event: SSE_EVENT.DONE,
+                    data: {
+                        added: ["good.pdf"],
+                        updated: [],
+                        removed: [],
+                        failed: [],
+                        unchanged: 0,
+                        skipped: ["corrupt.pdf"],
+                    },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withSkipped());
+
+            await plugin.addExternalFiles(["/home/user/good.pdf", "/home/user/corrupt.pdf"]);
+
+            expect(Notice.instances.some((n) => n.message.includes("1 added"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message.includes("1 skipped"))).toBe(true);
+        });
+
         it("updates status bar on FILE_START during addExternalFiles", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -1770,6 +2070,28 @@ describe("LilbeePlugin", () => {
             await plugin.triggerSync();
 
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
+        });
+
+        it("handles BATCH_PROGRESS events by advancing the task percent", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const updateSpy = vi.spyOn(plugin.taskQueue, "update");
+            async function* withBatchProgress() {
+                yield {
+                    event: SSE_EVENT.BATCH_PROGRESS,
+                    data: { file: "paper.pdf", status: "ingested", current: 1, total: 4 },
+                };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(withBatchProgress());
+
+            await plugin.triggerSync();
+
+            const batchUpdate = updateSpy.mock.calls.find((call) => String(call[2] ?? "").includes("paper.pdf"));
+            expect(batchUpdate).toBeDefined();
+            expect(batchUpdate?.[1]).toBe(25); // 1/4 = 25%
+            expect(batchUpdate?.[2]).toContain("ingested");
+            expect(batchUpdate?.[2]).toContain("1/4");
         });
 
         it("SSE_EVENT.ERROR shows notice and fails the task", async () => {
@@ -2238,6 +2560,28 @@ describe("LilbeePlugin", () => {
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
+        it("handles BATCH_PROGRESS events on add and surfaces the file status", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+
+            const updateSpy = vi.spyOn(plugin.taskQueue, "update");
+            async function* withBatch() {
+                yield {
+                    event: SSE_EVENT.BATCH_PROGRESS,
+                    data: { file: "corrupt.pdf", status: "skipped", current: 2, total: 5 },
+                };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withBatch());
+
+            await (plugin as any).addToLilbee({ path: "corrupt.pdf", name: "corrupt.pdf" });
+
+            const batchUpdate = updateSpy.mock.calls.find((call) => String(call[2] ?? "").includes("corrupt.pdf"));
+            expect(batchUpdate).toBeDefined();
+            expect(batchUpdate?.[1]).toBe(40); // 2/5 = 40%
+            expect(batchUpdate?.[2]).toContain("skipped");
+        });
+
         it("parses a nested {sync: SyncDone} done payload", async () => {
             Notice.clear();
             const plugin = await createPlugin();
@@ -2292,15 +2636,22 @@ describe("LilbeePlugin", () => {
         it("parseAddDoneEvent decodes every input shape with stable defaults", async () => {
             const { parseAddDoneEvent } = await import("../src/main");
 
-            // Plain SyncDone shape with all fields present.
             expect(
-                parseAddDoneEvent({ added: ["a"], updated: ["b"], removed: ["c"], unchanged: 2, failed: ["d"] }),
+                parseAddDoneEvent({
+                    added: ["a"],
+                    updated: ["b"],
+                    removed: ["c"],
+                    unchanged: 2,
+                    failed: ["d"],
+                    skipped: ["e"],
+                }),
             ).toEqual({
                 added: ["a"],
                 updated: ["b"],
                 removed: ["c"],
                 unchanged: 2,
                 failed: ["d"],
+                skipped: ["e"],
             });
 
             // Partial SyncDone shape — missing fields get sensible defaults.
@@ -2310,6 +2661,7 @@ describe("LilbeePlugin", () => {
                 removed: [],
                 unchanged: 0,
                 failed: [],
+                skipped: [],
             });
 
             // Nested {sync: SyncDone} shape (the second `done` event server sends).
@@ -2318,9 +2670,16 @@ describe("LilbeePlugin", () => {
                     copied: [],
                     skipped: [],
                     errors: [],
-                    sync: { added: ["y"], updated: [], removed: [], unchanged: 1, failed: [] },
+                    sync: { added: ["y"], updated: [], removed: [], unchanged: 1, failed: [], skipped: ["z.pdf"] },
                 }),
-            ).toEqual({ added: ["y"], updated: [], removed: [], unchanged: 1, failed: [] });
+            ).toEqual({
+                added: ["y"],
+                updated: [],
+                removed: [],
+                unchanged: 1,
+                failed: [],
+                skipped: ["z.pdf"],
+            });
 
             // Malformed inputs return null.
             expect(parseAddDoneEvent(null)).toBeNull();
@@ -2358,10 +2717,13 @@ describe("LilbeePlugin", () => {
             // Health probe is skipped while tasks are active — make sure none are.
             expect(plugin.taskQueue.activeAll.length).toBe(0);
 
-            // Simulate a broken server: health() returns err Result.
+            // Simulate a broken server: health() returns err Result. Two
+            // consecutive failures are needed before the status flips, since
+            // a single blip is tolerated.
             plugin.api.health = vi
                 .fn()
                 .mockResolvedValue({ isErr: () => true, isOk: () => false, error: new Error("down") });
+            await (plugin as any).probeServerHealth();
             await (plugin as any).probeServerHealth();
             expect((plugin.statusBarEl as any)?.textContent).toContain("error");
 
@@ -2415,7 +2777,32 @@ describe("LilbeePlugin", () => {
             // rejection.
             plugin.api.health = vi.fn().mockRejectedValue(new Error("network disconnect"));
             await (plugin as any).probeServerHealth();
+            await (plugin as any).probeServerHealth();
             expect((plugin.statusBarEl as any)?.textContent).toContain("error");
+        });
+
+        it("tolerates a single failed probe without flipping to error", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).not.toContain("error");
+        });
+
+        it("resets the failure streak on a successful probe between failures", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            await (plugin as any).probeServerHealth();
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} });
+            plugin.api.listModels = vi
+                .fn()
+                .mockResolvedValue({ chat: { active: "qwen3:4b", catalog: [], installed: [] } });
+            plugin.api.status = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            await (plugin as any).probeServerHealth();
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent).not.toContain("error");
         });
 
         it("fires external-mode no-token notice when health fails and token is null", async () => {
@@ -2424,6 +2811,7 @@ describe("LilbeePlugin", () => {
             (plugin as any).readCurrentToken = vi.fn(() => null);
             plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
             Notice.clear();
+            await (plugin as any).probeServerHealth();
             await (plugin as any).probeServerHealth();
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_TOKEN_EXTERNAL);
         });
@@ -2435,9 +2823,35 @@ describe("LilbeePlugin", () => {
             (plugin as any).serverUnreachable = false;
             (plugin as any).readCurrentToken = vi.fn(() => null);
             plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            (plugin as any).missingTokenNoticeFired = false;
+            (plugin as any).healthFailureStreak = 1;
             Notice.clear();
             await (plugin as any).probeServerHealth();
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_TOKEN_MANAGED);
+        });
+
+        it("skips probing while a chat stream is in flight", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} });
+            plugin.api.listModels = vi
+                .fn()
+                .mockResolvedValue({ chat: { active: "qwen3:4b", catalog: [], installed: [] } });
+            plugin.api.status = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            plugin.notifyChatStart();
+            await (plugin as any).probeServerHealth();
+            expect(plugin.api.health).not.toHaveBeenCalled();
+            plugin.notifyChatEnd();
+            await (plugin as any).probeServerHealth();
+            expect(plugin.api.health).toHaveBeenCalled();
+        });
+
+        it("notifyChatEnd never drops chatInFlight below zero", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.notifyChatEnd();
+            plugin.notifyChatEnd();
+            expect((plugin as any).chatInFlight).toBe(0);
         });
 
         it("fires the no-token notice at most once per plugin load", async () => {
@@ -2446,7 +2860,12 @@ describe("LilbeePlugin", () => {
             (plugin as any).readCurrentToken = vi.fn(() => null);
             plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
             Notice.clear();
+            // Two failed probes to cross the streak threshold and fire once.
             await (plugin as any).probeServerHealth();
+            await (plugin as any).probeServerHealth();
+            // Force a re-fire path: clear serverUnreachable so the unreachable
+            // transition runs again, then probe again — the notice must still
+            // fire only once for the lifetime of this plugin instance.
             (plugin as any).serverUnreachable = false;
             await (plugin as any).probeServerHealth();
             const count = Notice.instances.filter((n) => n.message === MESSAGES.NOTICE_NO_TOKEN_EXTERNAL).length;
@@ -2458,13 +2877,82 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             (plugin as any).readCurrentToken = vi.fn(() => "token");
             plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            (plugin as any).missingTokenNoticeFired = false;
             Notice.clear();
+            await (plugin as any).probeServerHealth();
             await (plugin as any).probeServerHealth();
             const fired = Notice.instances.some(
                 (n) =>
                     n.message === MESSAGES.NOTICE_NO_TOKEN_MANAGED || n.message === MESSAGES.NOTICE_NO_TOKEN_EXTERNAL,
             );
             expect(fired).toBe(false);
+        });
+    });
+
+    describe("openCockpit()", () => {
+        it("opens chat in the right sidebar and stacks the task center below it", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const chatLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
+            const tasksLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(chatLeaf);
+            plugin.app.workspace.createLeafBySplit = vi.fn().mockReturnValue(tasksLeaf);
+            plugin.app.workspace.revealLeaf = vi.fn();
+            await plugin.openCockpit();
+            expect(plugin.app.workspace.getRightLeaf).toHaveBeenCalled();
+            expect(chatLeaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-chat", active: true });
+            expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledWith(chatLeaf, "horizontal", false);
+            expect(tasksLeaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-tasks", active: true });
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(tasksLeaf);
+        });
+
+        it("reveals existing leaves without creating new ones", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const existingChat = { setViewState: vi.fn() };
+            const existingTasks = { setViewState: vi.fn() };
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockImplementation((type: string) => {
+                if (type === "lilbee-chat") return [existingChat];
+                if (type === "lilbee-tasks") return [existingTasks];
+                return [];
+            });
+            plugin.app.workspace.getRightLeaf = vi.fn();
+            plugin.app.workspace.createLeafBySplit = vi.fn();
+            plugin.app.workspace.revealLeaf = vi.fn();
+            await plugin.openCockpit();
+            expect(plugin.app.workspace.getRightLeaf).not.toHaveBeenCalled();
+            expect(plugin.app.workspace.createLeafBySplit).not.toHaveBeenCalled();
+            expect(existingChat.setViewState).not.toHaveBeenCalled();
+            expect(existingTasks.setViewState).not.toHaveBeenCalled();
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(existingChat);
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(existingTasks);
+        });
+
+        it("bails when getRightLeaf returns null and no chat leaf exists", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
+            plugin.app.workspace.createLeafBySplit = vi.fn();
+            plugin.app.workspace.revealLeaf = vi.fn();
+            await plugin.openCockpit();
+            expect(plugin.app.workspace.createLeafBySplit).not.toHaveBeenCalled();
+            expect(plugin.app.workspace.revealLeaf).not.toHaveBeenCalled();
+        });
+
+        it("opens chat alone when createLeafBySplit returns null", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const chatLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(chatLeaf);
+            plugin.app.workspace.createLeafBySplit = vi.fn().mockReturnValue(null);
+            plugin.app.workspace.revealLeaf = vi.fn();
+            await plugin.openCockpit();
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -4561,37 +5049,27 @@ describe("LilbeePlugin", () => {
             expect(plugin.wikiSync!.reconcile as ReturnType<typeof vi.fn>).toHaveBeenCalled();
         });
 
-        it("auto-sync excludes wiki folder paths", async () => {
-            vi.useFakeTimers();
+        it("pending-sync hint excludes wiki folder paths", async () => {
             const plugin = await createPlugin({
                 serverMode: "external",
-                syncMode: "auto",
-                syncDebounceMs: 100,
                 wikiSyncToVault: true,
                 wikiVaultFolder: "lilbee-wiki",
             });
             await plugin.onload();
-            // Finite advance — runAllTimersAsync would spin forever on the 30s health probe interval.
-            await vi.advanceTimersByTimeAsync(10);
 
             plugin.wikiSync = { isWikiPath: (p: string) => p.startsWith("lilbee-wiki/"), reconcile: vi.fn() } as any;
-            const syncSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue();
+            const scheduleSpy = vi.spyOn(plugin as any, "schedulePendingSyncHint").mockImplementation(() => {});
 
-            // Simulate a vault event for a wiki file
             const vaultHandlers = (plugin.app.vault.on as ReturnType<typeof vi.fn>).mock.calls;
             const createHandler = vaultHandlers.find((c: unknown[]) => c[0] === "create");
             expect(createHandler).toBeDefined();
 
+            scheduleSpy.mockClear();
             createHandler![1]({ path: "lilbee-wiki/summaries/test.md" });
-            await vi.advanceTimersByTimeAsync(200);
-            expect(syncSpy).not.toHaveBeenCalled();
+            expect(scheduleSpy).not.toHaveBeenCalled();
 
-            // Simulate a vault event for a normal file
             createHandler![1]({ path: "notes/my-note.md" });
-            await vi.advanceTimersByTimeAsync(200);
-            expect(syncSpy).toHaveBeenCalled();
-
-            vi.useRealTimers();
+            expect(scheduleSpy).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -4816,7 +5294,6 @@ describe("LilbeePlugin", () => {
         });
 
         it("treats non-string documents_dir/vault_base from server as needing update", async () => {
-            // Older server may not return these fields at all (undefined).
             const updateConfig = vi.fn().mockResolvedValue({ updated: ["documents_dir", "vault_base"] });
             const plugin = await setupConfiguredPlugin(
                 {},

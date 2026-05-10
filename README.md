@@ -1,8 +1,8 @@
-# lilbee for Obsidian — local-first RAG with click-to-source citations
+# lilbee for Obsidian — Obsidian's interface to a local search engine for your vault
 
 [Project site](https://tobocop2.github.io/obsidian-lilbee/) · [Releases](https://github.com/tobocop2/obsidian-lilbee/releases) · [lilbee engine](https://tobocop2.github.io/lilbee/)
 
-Local-first RAG for your Obsidian vault. Chat with your notes, PDFs, code, and 150+ formats — and verify every answer at the source. Every citation in chat or wiki opens a Source Preview that scrolls to the exact passage in the original document. Private, offline, self-hosted.
+Obsidian's interface to **[lilbee](https://tobocop2.github.io/lilbee/)**, a terminal-first local search engine for your files, code, the web, and scanned documents. The plugin bundles the lilbee server, points it at your vault, and gives you chat, an auto-generated wiki, click-to-source citations, and a Model Catalog inside Obsidian. Fully offline by default; cloud models are opt-in per role.
 
 [![CI](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml/badge.svg)](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml)
 [![Coverage](https://tobocop2.github.io/obsidian-lilbee/coverage/badge.svg)](https://tobocop2.github.io/obsidian-lilbee/coverage/)
@@ -29,11 +29,11 @@ Local-first RAG for your Obsidian vault. Chat with your notes, PDFs, code, and 1
 
 ---
 
-## Why a local-first RAG plugin for Obsidian
+## Why a local search engine for Obsidian
 
 Local AI tools have gotten great at getting you to a chat window fast. The first evening with a local model is genuinely fun. What makes it more than a novelty is grounding: the model needs context from your notes, your files, your codebase. Without that, the local AI tool runs out of places to go.
 
-Local AI can be made more substantial than a chatbot. A vault is already a curated set of documents — notes you've taken, PDFs you've collected, scans you've filed away — and that's exactly the corpus a real local search engine wants. lilbee for Obsidian pairs your vault with the [lilbee](https://tobocop2.github.io/lilbee/) search engine, so a local model can reason over your own library and answer with citations you can click back to the source.
+A vault is already a curated set of documents — notes you've taken, PDFs you've collected, scans you've filed away — and that's exactly the corpus a real local search engine wants. The plugin runs lilbee against your vault so a local model can reason over your own library and answer with citations you can click back to the source. lilbee itself is a terminal-first search engine that ships a TUI, MCP server, REST API, and Python library; this plugin is the Obsidian frontend, sharing the same index, the same models, the same wiki.
 
 **The verification loop is one click.** When the answer matters and you want to read what the model read, every citation in chat or wiki opens a **Source Preview** that scrolls to the exact passage in the original document, with the surrounding paragraphs visible. No "open the file, find the page, scroll to the line."
 
@@ -43,12 +43,12 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
 
 > Real recordings coming soon. Previews below give the shape of each screen.
 
-**Chat sidebar.** Streaming replies with `[¹]` citations. Click a citation to open the source preview.
+**Chat sidebar.** Streaming replies with `[¹]` citations. Click a citation to open the source preview. The header shows the active chat and embedding models as buttons that open the model picker, plus a Search / Chat mode toggle.
 
 ```
  ┌─ Chat ─────────────────────────────────────┐
- │ [Chat: qwen3 8B v]   [Embed: nomic v]      │
- │ [OCR]  [All | Wiki | Raw]  [Save] [Clear]  │
+ │ [qwen3:8b ▾]  [nomic-embed ▾]  Search|Chat │
+ │ [OCR: Auto]  [All | Wiki | Raw]  [Save] [×]│
  ├────────────────────────────────────────────┤
  │                                            │
  │ You:  what does the oil pressure warning   │
@@ -67,6 +67,23 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
  │                                            │
  ├────────────────────────────────────────────┤
  │ [Attach]  Ask anything...          [Send]  │
+ └────────────────────────────────────────────┘
+```
+
+**Server-emitted banner.** When the server has something to say about why an answer wasn't grounded — e.g. Search mode with no embedding model configured — it surfaces a banner above the assistant bubble. The plugin renders the server's text verbatim.
+
+```
+ ┌─ Chat ─────────────────────────────────────┐
+ │ [qwen3:8b ▾]  [no embedding ▾]  Search|Chat│ <- toggle disabled
+ │                                            │
+ │ You:  what's in my notes about cycling?    │
+ │                                            │
+ │ ⚠ Search needs an embedding model — answered without retrieval.│
+ │                                            │
+ │ Lilbee: Cycling typically refers to riding │
+ │         a bicycle for transport, exercise, │
+ │         or sport. Without access to your   │
+ │         notes I can offer a general...     │
  └────────────────────────────────────────────┘
 ```
 
@@ -91,10 +108,11 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
  └───────────────────────────────────────────────────┘
 ```
 
-**Model Catalog.** Browse, search, and install models without leaving Obsidian. Featured picks for each role; full HuggingFace catalog one toggle away. `*` marks the developer's recommendation.
+**Model Catalog.** Browse, search, and install models without leaving Obsidian. Two tabs: Local (installed and pullable GGUFs) and Frontier (cloud models via litellm). The Frontier tab is hidden until at least one provider API key is configured in Settings; once it appears, rows are grouped by provider with a Ready / Needs-key pill — clicking a Needs-key row deep-links to that provider's API-key input.
 
 ```
- ┌─ Model Catalog ─────────────────────────┐
+ ┌─ Browse model catalog ──────────────────┐
+ │ [Local] [Frontier]                      │
  │ [All tasks v] [All sizes v] [Featured v]│
  │ search...                  [Grid | List]│
  │                                         │
@@ -109,6 +127,36 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
  │                                         │
  │             [Load more]                 │
  └─────────────────────────────────────────┘
+```
+
+```
+ ┌─ Browse model catalog ──────────────────────┐
+ │ [Local] [Frontier]                          │
+ │ search...                                   │
+ │ ── OpenAI ──────────────────────────────    │
+ │   gpt-4o          [OpenAI] [Ready]   128k   │
+ │   o3-mini         [OpenAI] [Ready]   128k   │
+ │ ── Anthropic ───────────────────────────    │
+ │   claude-opus-4-7 [Anthropic] [Needs key] 1M│ <- click to deep-link
+ │ ── Google ──────────────────────────────    │
+ │   gemini-2.5-pro  [Google] [Needs key]   2M │
+ └─────────────────────────────────────────────┘
+```
+
+**Model picker.** A separate, faster affordance for switching the active chat or embedding model from inside the chat sidebar — just a search input and a virtualized list grouped by provider. Open via the model buttons in the chat header or the **Pick chat model** / **Pick embedding model** commands.
+
+```
+ ┌─ Pick chat model ───────────────────────────┐
+ │ search models...                            │
+ │ ── Local ───────────────────────────────    │
+ │   ★ Qwen3-8B-Instruct.Q4_K_M.gguf  installed│
+ │ ── Anthropic ───────────────────────────    │
+ │   claude-opus-4-7  [Anthropic] [Needs key]  │
+ │   claude-sonnet-4-6 [Anthropic] [Needs key] │
+ │   claude-haiku-4-5 [Anthropic] [Needs key]  │
+ │                                             │
+ │ ↑↓ navigate · Enter select · Esc close      │
+ └─────────────────────────────────────────────┘
 ```
 
 **Task Center.** Every background job (sync, crawl, wiki build, model pull) in one place. Per-type concurrent queues with a global cap.

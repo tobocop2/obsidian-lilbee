@@ -70,6 +70,8 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
         setVisionModel: vi.fn().mockResolvedValue(ok(undefined)),
         installedModels: vi.fn().mockResolvedValue({ models: [] }),
         catalog: vi.fn().mockResolvedValue(err(new Error("unreachable"))),
+        getCapability: vi.fn().mockResolvedValue(true),
+        invalidateCapability: vi.fn(),
     };
     const saveSettings = vi.fn().mockResolvedValue(undefined);
     const statusBarEl = { setText: vi.fn(), textContent: "" };
@@ -220,6 +222,13 @@ function captureSettingCallbacks(fn: () => void): Captured {
                 value: "",
                 addClass: vi.fn(),
                 classList: { add: vi.fn(), remove: vi.fn() },
+                attributes: {} as Record<string, string>,
+                setAttribute(name: string, value: string): void {
+                    this.attributes[name] = value;
+                },
+                getAttribute(name: string): string | null {
+                    return this.attributes[name] ?? null;
+                },
                 addEventListener: (event: string, handler: BlurHandler) => {
                     if (event === "blur") blurHandlers.push({ handler, inputEl: fakeText.inputEl });
                 },
@@ -417,22 +426,14 @@ describe("LilbeeSettingTab", () => {
             expect(container).not.toBeNull();
         });
 
-        it("shows sync-debounce setting when syncMode is 'auto'", () => {
-            const plugin = makePlugin({ syncMode: "auto" });
+        it("renders the expected total number of text inputs (no sync-mode rows)", () => {
+            const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + 6 generation + syncDebounce + 10 crawling + wikiVaultFolder + 2 chunks + rerank_candidates + hfToken + litellm = 24
-            expect(textOnChanges.length).toBe(24);
-        });
-
-        it("does NOT show sync-debounce when syncMode is 'manual'", () => {
-            const plugin = makePlugin({ syncMode: "manual" });
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-            // serverPort + 6 generation + 10 crawling + wikiVaultFolder + 2 chunks + rerank_candidates + hfToken + litellm = 23
-            expect(textOnChanges.length).toBe(23);
+            // serverPort + 9 generation + 5 retrieval-advanced + 4 ingest + 2 worker-pool
+            // + 10 crawling + wikiVaultFolder + rerank_candidates + hfToken + litellm = 35
+            expect(textOnChanges.length).toBe(34);
         });
     });
 
@@ -524,9 +525,10 @@ describe("LilbeeSettingTab", () => {
 
     describe("storeContentInVault toggle", () => {
         function storeToggleIdx(toggleOnChanges: unknown[]): number {
-            // Store-content toggle is rendered first inside the Advanced section, which runs
-            // after the Wiki section. It lands right after the last wiki toggle.
-            return toggleOnChanges.length - 1;
+            // Store-content toggle is rendered first inside the Advanced section,
+            // which runs after the Wiki section. The auto-open-cockpit toggle is
+            // the last toggle in Advanced; storeContentInVault sits one before it.
+            return toggleOnChanges.length - 2;
         }
 
         it("onChange true persists and triggers configureManagedStorage", async () => {
@@ -563,98 +565,136 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
-    describe("syncMode dropdown onChange", () => {
-        it("updates syncMode, saves, and re-renders display", async () => {
-            const plugin = makePlugin({ serverMode: "external", syncMode: "manual" });
+    describe("auto-open cockpit toggle", () => {
+        it("persists the new value through saveSettings when the toggle is flipped", async () => {
+            const plugin = makePlugin({ autoOpenCockpit: true });
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-
-            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
-            const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
-
-            await dropdownOnChanges[1]("auto");
-
-            expect(plugin.settings.syncMode).toBe("auto");
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            // The cockpit toggle is the last toggle in Advanced.
+            await toggleOnChanges[toggleOnChanges.length - 1](false);
+            expect(plugin.settings.autoOpenCockpit).toBe(false);
             expect(plugin.saveSettings).toHaveBeenCalled();
-            expect(displaySpy).toHaveBeenCalled();
         });
     });
 
-    describe("syncDebounce text onChange", () => {
-        // With syncMode=auto, text fields are (render order: connection → models → search → generation → sync):
-        // [0] port, [1-6] generation, [7] syncDebounce
-        const DEBOUNCE_IDX = 7;
-
-        it("updates syncDebounceMs for valid positive number", async () => {
-            const plugin = makePlugin({ syncMode: "auto" });
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-
-            await textOnChanges[DEBOUNCE_IDX]("3000");
-            expect(plugin.settings.syncDebounceMs).toBe(3000);
-            expect(plugin.saveSettings).toHaveBeenCalled();
-        });
-
-        it("accepts zero as a valid debounce value", async () => {
-            const plugin = makePlugin({ syncMode: "auto" });
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-
-            plugin.settings.syncDebounceMs = 999;
-            await textOnChanges[DEBOUNCE_IDX]("0");
-            expect(plugin.settings.syncDebounceMs).toBe(0);
-            expect(plugin.saveSettings).toHaveBeenCalled();
-        });
-
-        it("does NOT save for NaN input", async () => {
-            const plugin = makePlugin({ syncMode: "auto" });
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-
-            const original = plugin.settings.syncDebounceMs;
-            await textOnChanges[DEBOUNCE_IDX]("not-a-number");
-            expect(plugin.settings.syncDebounceMs).toBe(original);
-            expect(plugin.saveSettings).not.toHaveBeenCalled();
-        });
-
-        it("does NOT save for negative number input", async () => {
-            const plugin = makePlugin({ syncMode: "auto" });
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
-
-            const original = plugin.settings.syncDebounceMs;
-            await textOnChanges[DEBOUNCE_IDX]("-100");
-            expect(plugin.settings.syncDebounceMs).toBe(original);
-            expect(plugin.saveSettings).not.toHaveBeenCalled();
-        });
-    });
-
-    describe("system prompt setting", () => {
-        it("saves systemPrompt when changed", async () => {
+    describe("system prompt settings", () => {
+        it("saves ragSystemPrompt when the cited-answer textarea changes", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // System prompt is now a textarea — textAreaOnChanges[0]
+            // The cited-answer textarea is the first textarea in Generation settings.
             await textAreaOnChanges[0]("You are a pirate.");
-            expect(plugin.settings.systemPrompt).toBe("You are a pirate.");
+            expect(plugin.settings.ragSystemPrompt).toBe("You are a pirate.");
+            expect(plugin.saveSettings).toHaveBeenCalled();
+        });
+
+        it("saves generalSystemPrompt when the no-document textarea changes", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // The no-document textarea is the second textarea in Generation settings.
+            await textAreaOnChanges[1]("You are a friendly tutor.");
+            expect(plugin.settings.generalSystemPrompt).toBe("You are a friendly tutor.");
             expect(plugin.saveSettings).toHaveBeenCalled();
         });
     });
 
+    describe("chat_mode dropdown", () => {
+        it("hides the row when /api/config does not include chat_mode", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                rag_system_prompt: "x",
+                embedding_model: "nomic",
+                // no chat_mode
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            expect((tab as any).chatModeSettingEl?.style.display).toBe("none");
+        });
+
+        it("shows the row and seeds the value when chat_mode is present", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                rag_system_prompt: "x",
+                embedding_model: "nomic",
+                chat_mode: "chat",
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            expect((tab as any).chatModeSettingEl?.style.display).toBe("");
+            expect((tab as any).chatModeDropdown?.getValue()).toBe("chat");
+        });
+
+        it("disables the dropdown with a tooltip when no embedding model is configured", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                rag_system_prompt: "x",
+                embedding_model: "",
+                chat_mode: "search",
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            expect((tab as any).chatModeSelectEl?.disabled).toBe(true);
+            expect((tab as any).chatModeSelectEl?.title).toBe("Configure an embedding model to enable Search.");
+        });
+
+        it("enables the dropdown when an embedding model is configured", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                rag_system_prompt: "x",
+                embedding_model: "nomic-embed",
+                chat_mode: "search",
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            expect((tab as any).chatModeSelectEl?.disabled).toBe(false);
+            expect((tab as any).chatModeSelectEl?.title).toBe("");
+        });
+
+        it("PATCHes /api/config when the user changes the dropdown", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
+            // Generation-section chat_mode is the first dropdown rendered there;
+            // 0=serverMode (in connection), 1=chat_mode (in generation).
+            await dropdownOnChanges[1]("chat");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chat_mode: "chat" });
+        });
+
+        it("surfaces a notice when the PATCH fails", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
+            await dropdownOnChanges[1]("chat");
+            expect(Notice.instances.some((n) => n.message.includes("Chat mode"))).toBe(true);
+        });
+    });
+
     describe("generation settings", () => {
+        // num_ctx is intentionally not surfaced — it's a model-side property.
         const GEN_FIELDS = [
             { idx: 1, key: "temperature", value: "0.7", expected: 0.7 },
             { idx: 2, key: "top_p", value: "0.9", expected: 0.9 },
             { idx: 3, key: "top_k_sampling", value: "40", expected: 40 },
             { idx: 4, key: "repeat_penalty", value: "1.1", expected: 1.1 },
-            { idx: 5, key: "num_ctx", value: "4096", expected: 4096 },
-            { idx: 6, key: "seed", value: "42", expected: 42 },
+            { idx: 5, key: "seed", value: "42", expected: 42 },
         ] as const;
 
         for (const { idx, key, value, expected } of GEN_FIELDS) {
@@ -764,7 +804,7 @@ describe("LilbeeSettingTab", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // Indices 1-6 are the 6 generation fields (0=port, systemPrompt is textarea).
+            // Indices 1-6 are the 6 generation fields (0=port, system prompts are textareas).
             for (let i = 1; i <= 6; i++) {
                 expect(placeholders[i]).toBe("Not set");
             }
@@ -967,13 +1007,22 @@ describe("LilbeeSettingTab", () => {
             (tab as any).renderChatPicker(container, LLAMA_REF, entries, installed);
         });
 
-        it("appends provider source tag for non-native featured entries", () => {
+        it("appends provider source tag for non-local featured entries", () => {
             const plugin = makePlugin();
             const tab = makeTab(plugin);
-            const entries = [chatEntry({ installed: true, source: "ollama" })];
-            const installed: InstalledModel[] = [{ name: LLAMA_REF, source: "ollama" }];
+            const entries = [chatEntry({ installed: true, source: "frontier" })];
+            const installed: InstalledModel[] = [{ name: LLAMA_REF, source: "litellm" }];
             const opts: Array<[string, string]> = (tab as any).buildChatOptions(entries, installed);
-            expect(opts[0][1]).toContain("[ollama]");
+            expect(opts[0][1]).toContain("[frontier]");
+        });
+
+        it("omits the source tag when entry.source is empty", () => {
+            const plugin = makePlugin();
+            const tab = makeTab(plugin);
+            const entries = [chatEntry({ installed: true, source: "" })];
+            const installed: InstalledModel[] = [{ name: LLAMA_REF, source: "native" }];
+            const opts: Array<[string, string]> = (tab as any).buildChatOptions(entries, installed);
+            expect(opts[0][1]).not.toContain("[");
         });
 
         it("falls back to empty active when catalog fetch errors", async () => {
@@ -2259,15 +2308,19 @@ describe("managed mode settings", () => {
         expect(displaySpy).toHaveBeenCalled();
     });
 
-    describe("Advanced chunk fields onChange", () => {
+    describe("Ingest chunk fields onChange", () => {
+        // Ingest section text inputs sit at: [15] chunk_size, [16] chunk_overlap,
+        // [17] tesseract_timeout, [18] vision_load_budget_s.
+        const CHUNK_SIZE_IDX = 14;
+        const CHUNK_OVERLAP_IDX = 15;
+
         it("chunk_size calls updateConfig after confirm", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 18: chunk_size (0=port, 1-6=gen, 7-16=crawl (10 text), 17=wikiVaultFolder, 18=chunk_size)
-            await textOnChanges[18]("512");
+            await textOnChanges[CHUNK_SIZE_IDX]("512");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512 });
         });
 
@@ -2277,8 +2330,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 19: chunk_overlap
-            await textOnChanges[19]("64");
+            await textOnChanges[CHUNK_OVERLAP_IDX]("64");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_overlap: 64 });
         });
 
@@ -2288,7 +2340,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[18]("");
+            await textOnChanges[CHUNK_SIZE_IDX]("");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2298,7 +2350,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[18]("abc");
+            await textOnChanges[CHUNK_SIZE_IDX]("abc");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2308,7 +2360,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[18]("-1");
+            await textOnChanges[CHUNK_SIZE_IDX]("-1");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2319,7 +2371,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[18]("512");
+            await textOnChanges[CHUNK_SIZE_IDX]("512");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
             mockGenericConfirmResult = true;
         });
@@ -2334,7 +2386,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[18]("512");
+            await textOnChanges[CHUNK_SIZE_IDX]("512");
             expect(plugin.triggerSync).toHaveBeenCalled();
         });
 
@@ -2345,7 +2397,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[18]("512");
+            await textOnChanges[CHUNK_SIZE_IDX]("512");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
     });
@@ -2675,14 +2727,25 @@ describe("managed mode settings", () => {
     });
 
     describe("Crawling fields onChange", () => {
+        // Crawling section sits after generation (1-9), retrieval-advanced (10-14),
+        // ingest (15-18), worker-pool (19-20). With manual sync (no debounce text),
+        // crawling indices are 21-30: [21] crawl_max_depth, [22] crawl_max_pages,
+        // [23] crawl_timeout, [24] crawl_mean_delay, [25] crawl_max_delay_range,
+        // [26] crawl_concurrent_requests, [27-29] retry base/backoff floats, [30] retry attempts.
+        const CRAWL_DEPTH = 20;
+        const CRAWL_PAGES = 21;
+        const CRAWL_TIMEOUT = 22;
+        const CRAWL_MEAN_DELAY = 23;
+        const CRAWL_CONCURRENT = 25;
+        const CRAWL_RETRY_MAX_BACKOFF = 28;
+
         it("calls updateConfig with valid crawl_max_depth", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Indices 7-9: crawl_max_depth, crawl_max_pages, crawl_timeout
-            await textOnChanges[7]("3");
+            await textOnChanges[CRAWL_DEPTH]("3");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_depth: 3 });
         });
 
@@ -2692,7 +2755,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[8]("100");
+            await textOnChanges[CRAWL_PAGES]("100");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_pages: 100 });
         });
 
@@ -2702,7 +2765,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[7]("");
+            await textOnChanges[CRAWL_DEPTH]("");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_depth: null });
         });
 
@@ -2712,7 +2775,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[7]("abc");
+            await textOnChanges[CRAWL_DEPTH]("abc");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2722,57 +2785,57 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[7]("-5");
+            await textOnChanges[CRAWL_DEPTH]("-5");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
-        it("skips blank on non-nullable crawl_timeout (index 9)", async () => {
+        it("skips blank on non-nullable crawl_timeout", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[9]("");
+            await textOnChanges[CRAWL_TIMEOUT]("");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
-        it("accepts float for crawl_mean_delay (index 10)", async () => {
+        it("accepts float for crawl_mean_delay", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[10]("0.75");
+            await textOnChanges[CRAWL_MEAN_DELAY]("0.75");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_mean_delay: 0.75 });
         });
 
-        it("accepts int for crawl_concurrent_requests (index 12)", async () => {
+        it("accepts int for crawl_concurrent_requests", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[12]("5");
+            await textOnChanges[CRAWL_CONCURRENT]("5");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_concurrent_requests: 5 });
         });
 
-        it("rejects non-integer for crawl_concurrent_requests (index 12)", async () => {
+        it("rejects non-integer for crawl_concurrent_requests", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[12]("5.5");
+            await textOnChanges[CRAWL_CONCURRENT]("5.5");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
-        it("accepts float for crawl_retry_max_backoff (index 15)", async () => {
+        it("accepts float for crawl_retry_max_backoff", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[15]("45.0");
+            await textOnChanges[CRAWL_RETRY_MAX_BACKOFF]("45.0");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_max_backoff: 45 });
         });
 
@@ -2782,8 +2845,10 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // toggleOnChanges[0] = adaptiveThreshold (search/retrieval), [1] = crawl_retry_on_rate_limit (crawling), [2+] = wiki toggles
-            await toggleOnChanges[1](false);
+            // Toggle order: [0] adaptiveThreshold (search/retrieval),
+            // [1] worker_pool_eager_start (worker-pool),
+            // [2] crawl_retry_on_rate_limit (crawling), [3+] wiki toggles.
+            await toggleOnChanges[2](false);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: false });
         });
 
@@ -2794,7 +2859,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[1](false);
+            await toggleOnChanges[2](false);
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -2805,7 +2870,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[7](""); // clear crawl_max_depth (nullable)
+            await textOnChanges[CRAWL_DEPTH](""); // clear crawl_max_depth (nullable)
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -2816,7 +2881,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[7]("3");
+            await textOnChanges[CRAWL_DEPTH]("3");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
     });
@@ -2912,7 +2977,9 @@ describe("managed mode settings", () => {
             // load-bearing (if the flag failed to set, updateConfig WOULD be called).
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = false;
-            await toggleOnChanges[1](true);
+            // toggleOnChanges[2] is crawl_retry_on_rate_limit; [0]=adaptiveThreshold,
+            // [1]=worker_pool_eager_start.
+            await toggleOnChanges[2](true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: true });
         });
 
@@ -2924,7 +2991,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = true;
-            await toggleOnChanges[1](true);
+            await toggleOnChanges[2](true);
             (tab as any).suppressToggleChanges = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
@@ -2938,7 +3005,8 @@ describe("managed mode settings", () => {
                 repeat_penalty: 1.1,
                 num_ctx: 4096,
                 seed: 42,
-                system_prompt: "You are helpful.",
+                rag_system_prompt: "You are helpful.",
+                general_system_prompt: "You answer plainly.",
             });
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
@@ -2982,8 +3050,10 @@ describe("managed mode settings", () => {
             expect(inputs[1].value).toBe("0.7");
             expect(inputs[2].value).toBe("0.9");
 
-            // System prompt textarea placeholder is still populated from server defaults.
+            // Rag-system-prompt textarea is the first; general-system-prompt is the second.
+            // Both placeholders are populated from server defaults.
             expect(textAreas[0].placeholder).toBe("You are helpful.");
+            expect(textAreas[1].placeholder).toBe("You answer plainly.");
         });
 
         it("populates crawl_exclude_patterns textarea from server config array", async () => {
@@ -3009,7 +3079,7 @@ describe("managed mode settings", () => {
             tab.display();
             (Setting.prototype as any).addTextArea = origAddTextArea;
             await new Promise((r) => setTimeout(r, 0));
-            // Last textarea is crawl_exclude_patterns (systemPrompt is first).
+            // Last textarea is crawl_exclude_patterns; the two system-prompt textareas precede it.
             expect(textAreas[textAreas.length - 1].value).toBe("/page/\\d+/?$\n/tag/");
         });
     });
@@ -3044,8 +3114,8 @@ describe("managed mode settings", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
-            // textAreaOnChanges[0] = systemPrompt, textAreaOnChanges[1] = crawl_exclude_patterns.
-            await textAreaOnChanges[1]("  /page/\\d+/?$  \n\n/tag/\n  \n/author/");
+            // textAreaOnChanges[0]=ragSystemPrompt, [1]=generalSystemPrompt, [2]=crawl_exclude_patterns.
+            await textAreaOnChanges[2]("  /page/\\d+/?$  \n\n/tag/\n  \n/author/");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({
                 crawl_exclude_patterns: ["/page/\\d+/?$", "/tag/", "/author/"],
             });
@@ -3058,17 +3128,17 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             const tab = makeTab(plugin);
             const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
-            await textAreaOnChanges[1]("/page/");
+            await textAreaOnChanges[2]("/page/");
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
         });
     });
 
     describe("per-row reset-to-default affordance", () => {
-        // Reset button order (managed + manual-sync defaults):
+        // Reset button order:
         // 0=serverMode(local) 1=serverPort(local) 2=topK 3=maxDistance 4=adaptiveThreshold
-        // 5=systemPrompt(local) 6=temperature 7=top_p 8=top_k_sampling 9=repeat_penalty
-        // 10=num_ctx 11=seed 12=syncMode(local) 13=crawl_max_depth ...
-        const TEMPERATURE_RESET = 6;
+        // 5=ragSystemPrompt(local) 6=generalSystemPrompt(local) 7=temperature 8=top_p
+        // 9=top_k_sampling 10=repeat_penalty 11=num_ctx 12=seed ...
+        const TEMPERATURE_RESET = 7;
 
         it("server-backed reset PATCHes the cached default", async () => {
             Notice.clear();
@@ -3304,14 +3374,18 @@ describe("managed mode settings", () => {
     });
 
     describe("HuggingFace token onChange", () => {
+        // After connection (1) + generation (9) + retrieval-advanced (5) + ingest (4)
+        // + worker-pool (2) + crawling (10) + wikiVaultFolder (1) + rerank_candidates (1) = 33,
+        // hfToken is at index 33.
+        const HF_TOKEN_IDX = 32;
+
         it("calls updateConfig and saves settings on non-empty value", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 21: HF token (0=port, 1-6=gen, 7-16=crawl, 17=wikiVaultFolder, 18-19=chunks, 20=rerank_candidates, 21=hfToken)
-            await textOnChanges[21]("hf_test123");
+            await textOnChanges[HF_TOKEN_IDX]("hf_test123");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ hf_token: "hf_test123" });
             expect(plugin.settings.hfToken).toBe("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("HuggingFace token saved"))).toBe(true);
@@ -3323,7 +3397,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[21]("");
+            await textOnChanges[HF_TOKEN_IDX]("");
             expect(plugin.settings.hfToken).toBe("");
         });
 
@@ -3334,7 +3408,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[21]("hf_test123");
+            await textOnChanges[HF_TOKEN_IDX]("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to save HuggingFace token"))).toBe(
                 true,
             );
@@ -3526,14 +3600,15 @@ describe("managed mode settings", () => {
     });
 
     describe("LiteLLM base URL onChange", () => {
+        const LITELLM_IDX = 33;
+
         it("calls updateConfig on non-empty value", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Index 14: LiteLLM base URL (after hfToken at 13)
-            await textOnChanges[22]("http://localhost:4000");
+            await textOnChanges[LITELLM_IDX]("http://localhost:4000");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ litellm_base_url: "http://localhost:4000" });
         });
 
@@ -3543,7 +3618,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[22]("  ");
+            await textOnChanges[LITELLM_IDX]("  ");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -3554,23 +3629,73 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[22]("http://localhost:4000");
+            await textOnChanges[LITELLM_IDX]("http://localhost:4000");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update LiteLLM URL"))).toBe(true);
         });
     });
 
+    describe("capability-gated section visibility", () => {
+        it("hides the Crawling, Wiki, and API Keys sections when their capability probes return false", async () => {
+            const plugin = makePlugin();
+            (plugin.api as any).getCapability = vi.fn().mockResolvedValue(false);
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            // Crawling and Wiki are wrapped in dedicated container divs.
+            expect((tab as any).crawlingContainerEl?.style.display).toBe("none");
+            expect((tab as any).wikiContainerEl?.style.display).toBe("none");
+            expect((tab as any).apiKeysContainerEl?.style.display).toBe("none");
+        });
+
+        it("leaves all three sections visible when probes return true", async () => {
+            const plugin = makePlugin();
+            (plugin.api as any).getCapability = vi.fn().mockResolvedValue(true);
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            // Default style.display is "" / undefined for visible elements; "none" only when hidden.
+            expect((tab as any).crawlingContainerEl?.style.display).not.toBe("none");
+            expect((tab as any).wikiContainerEl?.style.display).not.toBe("none");
+            expect((tab as any).apiKeysContainerEl?.style.display).not.toBe("none");
+        });
+
+        it("calls invalidateCapability(API_KEYS) after a key save so the catalog refresh can pick up the new state", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { blurHandlers } = captureSettingCallbacks(() => tab.display());
+            // The API-key fields are the last three text inputs registered; trigger
+            // the blur on the first one (OpenAI) with a non-empty value.
+            const apiKeyHandler = blurHandlers.find((h) => h.inputEl.type === "password");
+            expect(apiKeyHandler).toBeDefined();
+            apiKeyHandler!.inputEl.value = "sk-test";
+            await apiKeyHandler!.handler();
+            expect(plugin.api.invalidateCapability).toHaveBeenCalledWith("api_keys");
+        });
+    });
+
     describe("renderWikiSettings", () => {
+        // Wiki section now lives inside a capability-gated wrapper div, so the
+        // DETAILS element is a grandchild of containerEl. This walker traverses
+        // one level deeper to keep the existing assertions readable.
+        const findWikiDetails = (tab: any): any =>
+            tab.containerEl.children
+                .flatMap((c: any) => [c, ...(c.children ?? [])])
+                .find(
+                    (c: any) =>
+                        c.tagName === "DETAILS" &&
+                        c.children?.some((s: any) => s.tagName === "SUMMARY" && s.textContent.includes("Wiki (beta)")),
+                );
+
         it("always renders wiki section heading even when wikiEnabled is false", () => {
             const plugin = makePlugin({ wikiEnabled: false });
             (plugin as any).wikiEnabled = false;
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
-            const details = tab.containerEl.children.find(
-                (c) =>
-                    c.tagName === "DETAILS" &&
-                    c.children.some((s: any) => s.tagName === "SUMMARY" && s.textContent.includes("Wiki (beta)")),
-            );
+            const details = findWikiDetails(tab);
             expect(details).toBeDefined();
             // Sub-settings should be hidden when wikiEnabled is false
             const subContainer = details!.children.find(
@@ -3645,11 +3770,7 @@ describe("managed mode settings", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
-            const details = tab.containerEl.children.find(
-                (c) =>
-                    c.tagName === "DETAILS" &&
-                    c.children.some((s: any) => s.tagName === "SUMMARY" && s.textContent.includes("Wiki")),
-            );
+            const details = findWikiDetails(tab);
             expect(details).toBeDefined();
             const subContainer = details!.children.find(
                 (c: any) => c.classList && c.classList.contains("lilbee-wiki-sub-settings"),
@@ -3664,11 +3785,7 @@ describe("managed mode settings", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
-            const details = tab.containerEl.children.find(
-                (c) =>
-                    c.tagName === "DETAILS" &&
-                    c.children.some((s: any) => s.tagName === "SUMMARY" && s.textContent.includes("Wiki")),
-            );
+            const details = findWikiDetails(tab);
             expect(details).toBeDefined();
             const subContainer = details!.children.find(
                 (c: any) => c.classList && c.classList.contains("lilbee-wiki-sub-settings"),
@@ -3685,7 +3802,7 @@ describe("managed mode settings", () => {
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
             // wiki prune toggle is before the sync-to-vault toggle
-            const wikiPruneToggleIdx = toggleOnChanges.length - 3;
+            const wikiPruneToggleIdx = toggleOnChanges.length - 4;
             await toggleOnChanges[wikiPruneToggleIdx](true);
             expect(plugin.settings.wikiPruneRaw).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -3758,7 +3875,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const wikiPruneToggleIdx = toggleOnChanges.length - 3;
+            const wikiPruneToggleIdx = toggleOnChanges.length - 4;
             await toggleOnChanges[wikiPruneToggleIdx](true);
             expect(
                 Notice.instances.some((n: any) => n.message.includes("failed to update Remove source duplicates")),
@@ -3772,7 +3889,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const syncToggleIdx = toggleOnChanges.length - 2;
+            const syncToggleIdx = toggleOnChanges.length - 3;
             await toggleOnChanges[syncToggleIdx](true);
             expect(plugin.settings.wikiSyncToVault).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -3787,7 +3904,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const syncToggleIdx = toggleOnChanges.length - 2;
+            const syncToggleIdx = toggleOnChanges.length - 3;
             await toggleOnChanges[syncToggleIdx](false);
             expect(plugin.settings.wikiSyncToVault).toBe(false);
             expect(plugin.wikiSync).toBeNull();
@@ -3923,10 +4040,12 @@ describe("managed mode settings", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // 3 API keys at indices 21-23 (0=port, 1-6=gen, 7-16=crawl, 17=wikiVaultFolder, 18-19=chunks, 20=rerank_candidates, 21-23=apiKeys)
-            expect(inputs[21].type).toBe("password");
-            expect(inputs[22].type).toBe("password");
-            expect(inputs[23].type).toBe("password");
+            // Layout (text-input order via addText): 0=port, 1-9=gen, 10-14=retrieval-advanced,
+            // 15-18=ingest, 19-20=worker-pool, 21-30=crawling, 31=wikiVaultFolder,
+            // 32=rerank_candidates, 33-35=apiKeys (openai, anthropic, gemini), 36=hfToken, 37=litellm.
+            expect(inputs[33].type).toBe("password");
+            expect(inputs[34].type).toBe("password");
+            expect(inputs[35].type).toBe("password");
         });
 
         it("sets HF token input type to password", () => {
@@ -3949,8 +4068,8 @@ describe("managed mode settings", () => {
             tab.display();
             Setting.prototype.addText = origAddText;
 
-            // HF token is index 24 (after rerank_candidates at 20 and 3 API keys at 21-23)
-            expect(inputs[24].type).toBe("password");
+            // HF token sits at index 35 in the new layout (num_ctx removed shifted earlier indices).
+            expect(inputs[35].type).toBe("password");
         });
     });
 
@@ -3995,7 +4114,7 @@ describe("managed mode settings", () => {
             Setting.prototype.addDropdown = origAddDropdown;
         });
 
-        it("always renders the reranker dropdown regardless of legacy reranker_available field", async () => {
+        it("always renders the reranker dropdown when the catalog has chat models", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
@@ -4254,7 +4373,7 @@ describe("managed mode settings", () => {
                             description: "",
                             quality_tier: "",
                             installed: false,
-                            source: "litellm",
+                            source: "frontier",
                             task: "rerank",
                             featured: false,
                             downloads: 0,
@@ -4302,7 +4421,7 @@ describe("managed mode settings", () => {
                             description: "",
                             quality_tier: "",
                             installed: false,
-                            source: "litellm",
+                            source: "frontier",
                             task: "rerank",
                             featured: false,
                             downloads: 0,
@@ -4702,7 +4821,7 @@ describe("managed mode settings", () => {
             expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("BAAI/bge");
         });
 
-        it("buildRerankerOptions: installed first, then not-installed, then hosted", async () => {
+        it("buildRerankerOptions: installed first, then hosted (not-installed locals are hidden)", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 reranker_model: "",
@@ -4753,7 +4872,7 @@ describe("managed mode settings", () => {
                             description: "",
                             quality_tier: "",
                             installed: false,
-                            source: "litellm",
+                            source: "frontier",
                             task: "rerank",
                             featured: false,
                             downloads: 0,
@@ -4775,9 +4894,8 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             const keys = Object.keys(options[0]);
-            expect(keys).toEqual(["", "BAAI/bge-installed", "BAAI/bge-not-installed", "cohere/rerank"]);
+            expect(keys).toEqual(["", "BAAI/bge-installed", "cohere/rerank"]);
             expect(options[0]["BAAI/bge-installed"]).toBe("BGE Installed");
-            expect(options[0]["BAAI/bge-not-installed"]).toContain(MESSAGES.LABEL_NOT_INSTALLED);
             expect(options[0]["cohere/rerank"]).toContain(MESSAGES.LABEL_RERANKER_HOSTED_GROUP);
         });
 
@@ -5110,7 +5228,7 @@ describe("managed mode settings", () => {
                             description: "",
                             quality_tier: "",
                             installed: false,
-                            source: "litellm",
+                            source: "frontier",
                             task: "vision",
                         },
                     ],
@@ -5152,7 +5270,7 @@ describe("managed mode settings", () => {
                             description: "",
                             quality_tier: "",
                             installed: false,
-                            source: "litellm",
+                            source: "frontier",
                             task: "vision",
                             featured: false,
                             downloads: 0,
@@ -5510,7 +5628,7 @@ describe("managed mode settings", () => {
             expect(plugin.api.setVisionModel).toHaveBeenCalledWith("Qwen/qwen-vl");
         });
 
-        it("buildVisionOptions includes installed-first then not-installed then hosted", async () => {
+        it("buildVisionOptions includes installed-first then hosted (not-installed locals are hidden)", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ vision_model: "" });
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
@@ -5552,7 +5670,7 @@ describe("managed mode settings", () => {
                             description: "",
                             quality_tier: "",
                             installed: false,
-                            source: "litellm",
+                            source: "frontier",
                             task: "vision",
                         },
                     ],
@@ -5571,8 +5689,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             const keys = Object.keys(options[0]);
-            expect(keys).toEqual(["", "Qwen/qwen-installed", "Qwen/qwen-not-installed", "openai/gpt-4o"]);
-            expect(options[0]["Qwen/qwen-not-installed"]).toContain(MESSAGES.LABEL_NOT_INSTALLED);
+            expect(keys).toEqual(["", "Qwen/qwen-installed", "openai/gpt-4o"]);
             expect(options[0]["openai/gpt-4o"]).toContain(MESSAGES.LABEL_VISION_HOSTED_GROUP);
         });
 
@@ -5714,8 +5831,10 @@ describe("managed mode settings", () => {
     });
 
     describe("rerank_candidates advanced field", () => {
-        // In manual mode: [0]=port, [1-6]=gen, [7-9]=crawl, [10]=wikiVaultFolder, [11-12]=chunks, [13]=rerank_candidates
-        const RERANK_IDX = 20;
+        // Manual mode text-input layout: [0]=port, [1-9]=gen, [10-14]=retrieval-advanced,
+        // [15-18]=ingest, [19-20]=worker-pool, [21-30]=crawling, [31]=wikiVaultFolder,
+        // [32]=rerank_candidates.
+        const RERANK_IDX = 31;
 
         beforeEach(() => {
             vi.useFakeTimers();
@@ -5806,6 +5925,392 @@ describe("managed mode settings", () => {
             await textOnChanges[RERANK_IDX]("40");
             await vi.advanceTimersByTimeAsync(400);
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+        });
+    });
+
+    describe("worker pool settings", () => {
+        // Manual mode worker-pool text inputs: [19] worker_pool_call_timeout_s,
+        // [20] worker_pool_max_idle_s. Toggle [1] is worker_pool_eager_start
+        // ([0]=adaptiveThreshold).
+        const POOL_CALL_TIMEOUT_IDX = 18;
+        const POOL_MAX_IDLE_IDX = 19;
+        const POOL_EAGER_TOGGLE_IDX = 1;
+
+        it("hides each worker-pool row when cfg keys are undefined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            expect(hideable.get("worker_pool_call_timeout_s")?.style.display).toBe("none");
+            expect(hideable.get("worker_pool_eager_start")?.style.display).toBe("none");
+            expect(hideable.get("worker_pool_max_idle_s")?.style.display).toBe("none");
+        });
+
+        it("reveals each worker-pool row when cfg keys are defined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                worker_pool_call_timeout_s: 30,
+                worker_pool_eager_start: true,
+                worker_pool_max_idle_s: 120,
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            expect(hideable.get("worker_pool_call_timeout_s")?.style.display).toBe("");
+            expect(hideable.get("worker_pool_eager_start")?.style.display).toBe("");
+            expect(hideable.get("worker_pool_max_idle_s")?.style.display).toBe("");
+        });
+
+        it("PATCHes worker_pool_call_timeout_s with a parsed float", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[POOL_CALL_TIMEOUT_IDX]("12.5");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ worker_pool_call_timeout_s: 12.5 });
+        });
+
+        it("PATCHes worker_pool_max_idle_s with a parsed float", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[POOL_MAX_IDLE_IDX]("90");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ worker_pool_max_idle_s: 90 });
+        });
+
+        it("PATCHes worker_pool_eager_start when the toggle flips", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await toggleOnChanges[POOL_EAGER_TOGGLE_IDX](true);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ worker_pool_eager_start: true });
+        });
+
+        it("surfaces a notice when the worker_pool_eager_start PATCH fails", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await toggleOnChanges[POOL_EAGER_TOGGLE_IDX](true);
+            expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+        });
+
+        it("suppresses worker_pool_eager_start echo-patches while the suppress flag is set", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            (tab as any).suppressToggleChanges = true;
+            await toggleOnChanges[POOL_EAGER_TOGGLE_IDX](true);
+            (tab as any).suppressToggleChanges = false;
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("ingest settings", () => {
+        const TESSERACT_IDX = 16;
+        const VISION_BUDGET_IDX = 17;
+
+        it("hides each ingest row when cfg keys are undefined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            for (const key of ["chunk_size", "chunk_overlap", "tesseract_timeout", "vision_load_budget_s"]) {
+                expect(hideable.get(key)?.style.display).toBe("none");
+            }
+        });
+
+        it("reveals each ingest row when cfg keys are defined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                chunk_size: 512,
+                chunk_overlap: 64,
+                tesseract_timeout: 30,
+                vision_load_budget_s: 90,
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            for (const key of ["chunk_size", "chunk_overlap", "tesseract_timeout", "vision_load_budget_s"]) {
+                expect(hideable.get(key)?.style.display).toBe("");
+            }
+        });
+
+        it("PATCHes tesseract_timeout with a parsed float", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[TESSERACT_IDX]("45.5");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ tesseract_timeout: 45.5 });
+        });
+
+        it("PATCHes vision_load_budget_s with a parsed float", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[VISION_BUDGET_IDX]("120");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ vision_load_budget_s: 120 });
+        });
+
+        it("does not PATCH when the user cancels the chunk-size reindex confirm", async () => {
+            mockGenericConfirmResult = false;
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[15]("256");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+            mockGenericConfirmResult = true;
+        });
+
+        it("triggers a sync when chunk_overlap reindex_required comes back true", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+                updated: ["chunk_overlap"],
+                reindex_required: true,
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            // chunk_overlap idx — same value as CHUNK_OVERLAP_IDX in the chunk-fields describe.
+            await textOnChanges[15]("32");
+            expect(plugin.triggerSync).toHaveBeenCalled();
+        });
+
+        it("rejects vision_load_budget_s below the minimum", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[VISION_BUDGET_IDX]("-1");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("rejects tesseract_timeout when input is not a number", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[TESSERACT_IDX]("nope");
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("surfaces a notice when the tesseract_timeout PATCH fails", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[TESSERACT_IDX]("30");
+            expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+        });
+    });
+
+    describe("retrieval advanced settings", () => {
+        const CANDIDATE_IDX = 9;
+        const MIN_RELEVANCE_IDX = 10;
+        const MAX_SOURCES_IDX = 11;
+        const DIVERSITY_IDX = 12;
+        const MMR_IDX = 13;
+
+        it("hides each retrieval-advanced row when cfg keys are undefined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            for (const key of [
+                "candidate_multiplier",
+                "min_relevance_score",
+                "max_context_sources",
+                "diversity_max_per_source",
+                "mmr_lambda",
+            ]) {
+                expect(hideable.get(key)?.style.display).toBe("none");
+            }
+        });
+
+        it("reveals each retrieval-advanced row when cfg keys are defined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                candidate_multiplier: 5,
+                min_relevance_score: 0.2,
+                max_context_sources: 8,
+                diversity_max_per_source: 3,
+                mmr_lambda: 0.5,
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            for (const key of [
+                "candidate_multiplier",
+                "min_relevance_score",
+                "max_context_sources",
+                "diversity_max_per_source",
+                "mmr_lambda",
+            ]) {
+                expect(hideable.get(key)?.style.display).toBe("");
+            }
+        });
+
+        it("PATCHes candidate_multiplier as an integer", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[CANDIDATE_IDX]("4");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ candidate_multiplier: 4 });
+        });
+
+        it("PATCHes min_relevance_score as a float", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[MIN_RELEVANCE_IDX]("0.35");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ min_relevance_score: 0.35 });
+        });
+
+        it("PATCHes max_context_sources as an integer", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[MAX_SOURCES_IDX]("12");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_context_sources: 12 });
+        });
+
+        it("PATCHes diversity_max_per_source as an integer", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[DIVERSITY_IDX]("4");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ diversity_max_per_source: 4 });
+        });
+
+        it("PATCHes mmr_lambda as a float", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[MMR_IDX]("0.6");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ mmr_lambda: 0.6 });
+        });
+    });
+
+    describe("generation new fields", () => {
+        const MAX_TOKENS_IDX = 6;
+        const MODEL_KEEP_ALIVE_IDX = 7;
+        const GPU_FRACTION_IDX = 8;
+
+        it("hides each new generation row when cfg keys are undefined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            for (const key of ["max_tokens", "model_keep_alive", "gpu_memory_fraction"]) {
+                expect(hideable.get(key)?.style.display).toBe("none");
+            }
+        });
+
+        it("reveals each new generation row when cfg keys are defined", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                max_tokens: 1024,
+                model_keep_alive: 60,
+                gpu_memory_fraction: 0.8,
+            });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+            await new Promise((r) => setTimeout(r, 0));
+            const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
+            for (const key of ["max_tokens", "model_keep_alive", "gpu_memory_fraction"]) {
+                expect(hideable.get(key)?.style.display).toBe("");
+            }
+        });
+
+        it("PATCHes max_tokens with a parsed integer", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[MAX_TOKENS_IDX]("2048");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_tokens: 2048 });
+        });
+
+        it("PATCHes max_tokens to null when cleared (blank = no cap)", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[MAX_TOKENS_IDX]("");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_tokens: null });
+        });
+
+        it("PATCHes model_keep_alive with a parsed integer", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[MODEL_KEEP_ALIVE_IDX]("30");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ model_keep_alive: 30 });
+        });
+
+        it("PATCHes gpu_memory_fraction with a parsed float", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[GPU_FRACTION_IDX]("0.5");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ gpu_memory_fraction: 0.5 });
         });
     });
 });

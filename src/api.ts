@@ -1,8 +1,9 @@
-import { JSON_HEADERS, SEARCH_CHUNK_TYPE, SSE_EVENT, ERROR_NAME } from "./types";
+import { CAPABILITY, JSON_HEADERS, SEARCH_CHUNK_TYPE, SSE_EVENT, ERROR_NAME } from "./types";
 import { ok, err, Result } from "neverthrow";
 
 import type {
     AskResponse,
+    Capability,
     CatalogResponse,
     ConfigResponse,
     ConfigUpdateResponse,
@@ -60,13 +61,28 @@ export class ServerStartingError extends Error {
     }
 }
 
-/** Coarse outcome of a single ``fetchWithRetry`` call, reported to subscribers. */
+/**
+ * Thrown when the server returns HTTP 429 (e.g. a streaming endpoint already
+ * has a stream in flight from another client). Carries the optional Retry-After
+ * value in seconds so callers can include it in user copy. Never auto-retried —
+ * the bead contract is "surface gracefully, do not silently retry-loop".
+ */
+export class RateLimitedError extends Error {
+    readonly retryAfterSeconds: number | null;
+    constructor(retryAfterSeconds: number | null = null) {
+        super("lilbee is busy with another request");
+        this.name = ERROR_NAME.RATE_LIMITED;
+        this.retryAfterSeconds = retryAfterSeconds;
+    }
+}
+
 export type RequestOutcome = "ok" | "auth_error" | "server_error" | "unreachable" | "starting";
 
 export class LilbeeClient {
     private token: string | null = null;
     private tokenProvider: (() => string | null) | null = null;
     private outcomeCb: ((o: RequestOutcome) => void) | null = null;
+    private capabilityCache: Map<Capability, boolean> = new Map();
 
     constructor(
         private baseUrl: string,
@@ -121,6 +137,11 @@ export class LilbeeClient {
     }
 
     private async assertOk(res: Response): Promise<Response> {
+        if (res.status === 429) {
+            const header = res.headers.get("Retry-After");
+            const seconds = header ? parseInt(header, 10) : NaN;
+            throw new RateLimitedError(Number.isFinite(seconds) ? seconds : null);
+        }
         if (!res.ok) {
             const text = await res.text().catch(() => "");
             throw new Error(`Server responded ${res.status}: ${text}`);
@@ -200,6 +221,10 @@ export class LilbeeClient {
                 if (err instanceof SessionTokenError) {
                     throw err;
                 }
+                if (err instanceof RateLimitedError) {
+                    this.recordOutcome("server_error");
+                    throw err;
+                }
                 if (err instanceof Error && err.message.startsWith("Server responded")) {
                     this.recordOutcome("server_error");
                     throw err;
@@ -219,6 +244,56 @@ export class LilbeeClient {
 
     async status(): Promise<Result<StatusResponse, Error>> {
         return this.fetchResult(`${this.baseUrl}/api/status`);
+    }
+
+    /** Cached per session; fail-open on probe error (showing a section that won't work degrades better than hiding one the user needs). */
+    async getCapability(cap: Capability): Promise<boolean> {
+        const cached = this.capabilityCache.get(cap);
+        if (cached !== undefined) return cached;
+        let value: boolean;
+        try {
+            value = await this.probeCapability(cap);
+        } catch {
+            value = true;
+        }
+        this.capabilityCache.set(cap, value);
+        return value;
+    }
+
+    invalidateCapability(cap?: Capability): void {
+        if (cap === undefined) {
+            this.capabilityCache.clear();
+            return;
+        }
+        this.capabilityCache.delete(cap);
+    }
+
+    private async probeCapability(cap: Capability): Promise<boolean> {
+        switch (cap) {
+            case CAPABILITY.API_KEYS:
+                return this.probeLitellmInstalled();
+            case CAPABILITY.CRAWLING:
+                return this.probeCrawlerInstalled();
+            case CAPABILITY.WIKI:
+                return this.probeWikiEnabled();
+        }
+    }
+
+    private async probeLitellmInstalled(): Promise<boolean> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/external`);
+        const body = (await res.json()) as { models?: unknown; error?: unknown };
+        return body.error === null || body.error === undefined;
+    }
+
+    private async probeCrawlerInstalled(): Promise<boolean> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/setup/crawler/status`);
+        const body = (await res.json()) as { package_installed?: boolean };
+        return body.package_installed === true;
+    }
+
+    private async probeWikiEnabled(): Promise<boolean> {
+        const cfg = await this.config();
+        return cfg.wiki === true;
     }
 
     async search(query: string, topK?: number, chunkType?: SearchChunkType): Promise<DocumentResult[]> {

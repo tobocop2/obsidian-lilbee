@@ -17,7 +17,8 @@ export interface ServerManagerOptions {
     binaryPath: string;
     dataDir: string;
     port: number | null;
-    systemPrompt: string;
+    ragSystemPrompt: string;
+    generalSystemPrompt: string;
     onStateChange?: (state: ServerState) => void;
     onRestartsExhausted?: (stderr: string) => void;
     onShutdownFailure?: (error: Error) => void;
@@ -99,8 +100,11 @@ export class ServerManager {
             LILBEE_CORS_ORIGINS: "app://obsidian.md",
             LILBEE_PARENT_PID: String(process.pid),
         };
-        if (this.opts.systemPrompt) {
-            env.LILBEE_SYSTEM_PROMPT = this.opts.systemPrompt;
+        if (this.opts.ragSystemPrompt) {
+            env.LILBEE_RAG_SYSTEM_PROMPT = this.opts.ragSystemPrompt;
+        }
+        if (this.opts.generalSystemPrompt) {
+            env.LILBEE_GENERAL_SYSTEM_PROMPT = this.opts.generalSystemPrompt;
         }
 
         this._stderrLines = [];

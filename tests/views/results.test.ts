@@ -14,7 +14,7 @@ vi.mock("../../src/views/source-preview-modal", () => ({
     })),
 }));
 
-import { renderDocumentResult, renderSourceChip } from "../../src/views/results";
+import { renderAggregatedSourceChips, renderDocumentResult, renderSourceChip } from "../../src/views/results";
 
 function makeContainer(): MockElement {
     return new MockElement("div");
@@ -792,5 +792,104 @@ describe("renderSourceChip — wiki chunk_type", () => {
         expect(previewOpens).toHaveLength(1);
         expect(previewOpens[0].source.source).toBe("book.pdf");
         expect(previewOpens[0].source.page_start).toBe(5);
+    });
+});
+
+describe("renderAggregatedSourceChips", () => {
+    function source(overrides: Partial<Source>): Source {
+        return {
+            source: "doc.md",
+            content_type: "text/markdown",
+            distance: 0.1,
+            chunk: "x",
+            page_start: 0,
+            page_end: 0,
+            line_start: 0,
+            line_end: 0,
+            ...overrides,
+        };
+    }
+
+    it("groups multiple chunks from the same file under one chip with per-page sub-tags", () => {
+        const container = makeContainer();
+        renderAggregatedSourceChips(
+            container as unknown as HTMLElement,
+            [
+                source({ source: "cv-manual.pdf", page_start: 5, page_end: 5 }),
+                source({ source: "cv-manual.pdf", page_start: 7, page_end: 7 }),
+                source({ source: "cv-manual.pdf", page_start: 12, page_end: 12 }),
+            ],
+            makeApp(),
+            makeApi(),
+        );
+        const chips = container.findAll("lilbee-source-chip-grouped");
+        expect(chips.length).toBe(1);
+        const file = chips[0].find("lilbee-source-chip-file");
+        expect(file?.textContent).toBe("cv-manual.pdf");
+        const locs = chips[0].findAll("lilbee-source-chip-loc");
+        expect(locs.map((l) => l.textContent)).toEqual(["p. 5", "p. 7", "p. 12"]);
+    });
+
+    it("renders one grouped chip per source filename in input order", () => {
+        const container = makeContainer();
+        renderAggregatedSourceChips(
+            container as unknown as HTMLElement,
+            [
+                source({ source: "a.pdf", page_start: 1, page_end: 1 }),
+                source({ source: "b.md", line_start: 4, line_end: 4 }),
+                source({ source: "a.pdf", page_start: 9, page_end: 9 }),
+            ],
+            makeApp(),
+            makeApi(),
+        );
+        const chips = container.findAll("lilbee-source-chip-grouped");
+        expect(chips.length).toBe(2);
+        expect(chips[0].find("lilbee-source-chip-file")?.textContent).toBe("a.pdf");
+        expect(chips[0].findAll("lilbee-source-chip-loc").map((l) => l.textContent)).toEqual(["p. 1", "p. 9"]);
+        expect(chips[1].find("lilbee-source-chip-file")?.textContent).toBe("b.md");
+    });
+
+    it("falls back to 'open' when a chunk has no resolvable location", () => {
+        const container = makeContainer();
+        renderAggregatedSourceChips(
+            container as unknown as HTMLElement,
+            [source({ source: "no-loc.md" })],
+            makeApp(),
+            makeApi(),
+        );
+        const loc = container.find("lilbee-source-chip-loc");
+        expect(loc?.textContent).toBe("open");
+    });
+
+    it("clicking a sub-tag dispatches the click for that chunk's specific page", () => {
+        previewOpens.length = 0;
+        const container = makeContainer();
+        const app = makeApp();
+        app.vault.getAbstractFileByPath = vi.fn(() => null);
+        renderAggregatedSourceChips(
+            container as unknown as HTMLElement,
+            [
+                source({ source: "cv-manual.pdf", content_type: "application/pdf", page_start: 5, page_end: 5 }),
+                source({ source: "cv-manual.pdf", content_type: "application/pdf", page_start: 12, page_end: 12 }),
+            ],
+            app,
+            makeApi(),
+        );
+        const tags = container.findAll("lilbee-source-chip-loc");
+        tags[1].trigger("click", { stopPropagation: vi.fn() });
+        expect(previewOpens).toHaveLength(1);
+        expect(previewOpens[0].source.page_start).toBe(12);
+    });
+
+    it("delegates wiki sources to per-chip rendering (preserves slug click semantics)", () => {
+        const container = makeContainer();
+        renderAggregatedSourceChips(
+            container as unknown as HTMLElement,
+            [source({ source: "Concept", chunk_type: "wiki" }), source({ source: "Concept", chunk_type: "wiki" })],
+            makeApp(),
+            makeApi(),
+        );
+        expect(container.findAll("lilbee-source-chip-wiki").length).toBe(2);
+        expect(container.findAll("lilbee-source-chip-grouped").length).toBe(0);
     });
 });

@@ -42,7 +42,8 @@ function defaultOpts(overrides?: Partial<ServerManagerOptions>): ServerManagerOp
         binaryPath: "/usr/local/bin/lilbee",
         dataDir: "/tmp/data",
         port: 7433,
-        systemPrompt: "",
+        ragSystemPrompt: "",
+        generalSystemPrompt: "",
         ...overrides,
     };
 }
@@ -126,7 +127,8 @@ describe("ServerManager", () => {
             expect(args).toEqual(["serve", "--host", "127.0.0.1", "--port", "7433", "--data-dir", "/tmp/data"]);
             expect(opts.env.LILBEE_CORS_ORIGINS).toBe("app://obsidian.md");
             expect(opts.env.LILBEE_PARENT_PID).toBe(String(process.pid));
-            expect(opts.env.LILBEE_SYSTEM_PROMPT).toBeUndefined();
+            expect(opts.env.LILBEE_RAG_SYSTEM_PROMPT).toBeUndefined();
+            expect(opts.env.LILBEE_GENERAL_SYSTEM_PROMPT).toBeUndefined();
             expect(opts.stdio).toEqual(["ignore", "ignore", "pipe"]);
             expect(opts.detached).toBe(false);
 
@@ -135,15 +137,28 @@ describe("ServerManager", () => {
             expect(stateChanges).toContain("ready");
         });
 
-        it("passes LILBEE_SYSTEM_PROMPT env when systemPrompt is set", async () => {
-            const mgr = new ServerManager(defaultOpts({ systemPrompt: "You are a pirate." }));
+        it("passes LILBEE_RAG_SYSTEM_PROMPT env when ragSystemPrompt is set", async () => {
+            const mgr = new ServerManager(defaultOpts({ ragSystemPrompt: "You are a pirate." }));
 
             const startPromise = mgr.start();
             await vi.advanceTimersByTimeAsync(1000);
             await startPromise;
 
             const [, , opts] = spawnSpy.mock.calls[0] as any[];
-            expect(opts.env.LILBEE_SYSTEM_PROMPT).toBe("You are a pirate.");
+            expect(opts.env.LILBEE_RAG_SYSTEM_PROMPT).toBe("You are a pirate.");
+            expect(opts.env.LILBEE_GENERAL_SYSTEM_PROMPT).toBeUndefined();
+        });
+
+        it("passes LILBEE_GENERAL_SYSTEM_PROMPT env when generalSystemPrompt is set", async () => {
+            const mgr = new ServerManager(defaultOpts({ generalSystemPrompt: "You are a friendly tutor." }));
+
+            const startPromise = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await startPromise;
+
+            const [, , opts] = spawnSpy.mock.calls[0] as any[];
+            expect(opts.env.LILBEE_GENERAL_SYSTEM_PROMPT).toBe("You are a friendly tutor.");
+            expect(opts.env.LILBEE_RAG_SYSTEM_PROMPT).toBeUndefined();
         });
 
         it("in dynamic port mode (port: null), reads port from file and sets state to ready", async () => {

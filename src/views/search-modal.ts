@@ -3,7 +3,7 @@ import type LilbeePlugin from "../main";
 import type { DocumentResult, SearchChunkType } from "../types";
 import { renderDocumentResult } from "./results";
 import { MESSAGES } from "../locales/en";
-import { debounce, DEBOUNCE_MS } from "../utils";
+import { bindEscapeToClose, debounce, DEBOUNCE_MS } from "../utils";
 
 export class SearchModal extends Modal {
     private plugin: LilbeePlugin;
@@ -21,6 +21,7 @@ export class SearchModal extends Modal {
         this.debouncedSearch = debounced.run;
         this.cancelDebouncedSearch = debounced.cancel;
         this.lastSearchQuery = "";
+        bindEscapeToClose(this);
     }
 
     private lastSearchQuery = "";

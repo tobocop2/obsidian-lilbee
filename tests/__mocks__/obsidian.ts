@@ -105,10 +105,44 @@ export class MockElement {
 
     setAttribute(name: string, value: string): void {
         this.attributes[name] = value;
+        if (name === "title") this.title = value;
+    }
+
+    getAttribute(name: string): string | null {
+        if (name === "title" && this.title) return this.title;
+        return this.attributes[name] ?? null;
     }
 
     removeAttribute(name: string): void {
         delete this.attributes[name];
+    }
+
+    /**
+     * Insert `node` before `reference` in this element's children, mirroring
+     * DOM `Node.insertBefore`. Maintains parentElement linkage. Used by chat-view
+     * to place a server-emitted banner above an existing assistant bubble.
+     */
+    insertBefore(node: MockElement, reference: MockElement | null): MockElement {
+        // If node is already a child elsewhere, detach first.
+        node.parentElement?.removeChild(node);
+        if (reference === null) {
+            this.children.push(node);
+        } else {
+            const idx = this.children.indexOf(reference);
+            if (idx < 0) {
+                this.children.push(node);
+            } else {
+                this.children.splice(idx, 0, node);
+            }
+        }
+        node.parentElement = this;
+        return node;
+    }
+
+    private removeChild(node: MockElement): void {
+        const idx = this.children.indexOf(node);
+        if (idx >= 0) this.children.splice(idx, 1);
+        node.parentElement = null;
     }
 
     addClass(cls: string): void {
@@ -119,6 +153,13 @@ export class MockElement {
         for (const cls of classes) {
             this.classList.remove(cls);
         }
+    }
+
+    toggleClass(cls: string, force?: boolean): void {
+        const present = this.classList.contains(cls);
+        const target = force ?? !present;
+        if (target && !present) this.classList.add(cls);
+        else if (!target && present) this.classList.remove(cls);
     }
 
     addEventListener(event: string, handler: Function, _options?: unknown): void {
@@ -223,9 +264,13 @@ export class App {
         openLinkText: vi.fn(),
         getLeavesOfType: vi.fn().mockReturnValue([]),
         getRightLeaf: vi.fn().mockReturnValue(null),
+        createLeafBySplit: vi.fn().mockReturnValue(null),
         revealLeaf: vi.fn(),
         on: vi.fn().mockReturnValue({ id: "mock-event" }),
         getActiveFile: vi.fn().mockReturnValue(null),
+        // Obsidian's real workspace fires this once layout is up. Tests run
+        // synchronously, so invoke immediately to keep onload paths exercised.
+        onLayoutReady: vi.fn().mockImplementation((cb: () => void) => cb()),
     };
     // Undocumented-but-stable Obsidian API used by plugins to open their
     // own Settings tab. Tests may replace this with `undefined` to exercise
@@ -569,17 +614,28 @@ function mockInputEl(): {
     placeholder: string;
     type: string;
     value: string;
+    attributes: Record<string, string>;
     addEventListener: ReturnType<typeof vi.fn>;
     addClass: ReturnType<typeof vi.fn>;
     classList: { add: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn> };
+    setAttribute: (name: string, value: string) => void;
+    getAttribute: (name: string) => string | null;
 } {
+    const attributes: Record<string, string> = {};
     return {
         placeholder: "",
         type: "text",
         value: "",
+        attributes,
         addEventListener: vi.fn(),
         addClass: vi.fn(),
         classList: { add: vi.fn(), remove: vi.fn() },
+        setAttribute(name: string, value: string): void {
+            attributes[name] = value;
+        },
+        getAttribute(name: string): string | null {
+            return attributes[name] ?? null;
+        },
     };
 }
 
@@ -643,14 +699,20 @@ class MockSliderComponent {
 
 class MockDropdownComponent {
     private _onChange: ((v: string) => void) | null = null;
+    private _value = "";
+    selectEl = { disabled: false, title: "" };
     addOption(_value: string, _label: string): this {
         return this;
     }
     addOptions(_opts: Record<string, string>): this {
         return this;
     }
-    setValue(_v: string): this {
+    setValue(v: string): this {
+        this._value = v;
         return this;
+    }
+    getValue(): string {
+        return this._value;
     }
     onChange(cb: (v: string) => void): this {
         this._onChange = cb;

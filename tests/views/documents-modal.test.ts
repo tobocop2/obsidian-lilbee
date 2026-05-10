@@ -24,12 +24,13 @@ function makeDoc(overrides: Partial<DocumentEntry> = {}): DocumentEntry {
     };
 }
 
-function makeDocsResponse(docs: DocumentEntry[] = [], total?: number): DocumentsResponse {
+function makeDocsResponse(docs: DocumentEntry[] = [], total?: number, hasMore = false): DocumentsResponse {
     return {
         documents: docs,
         total: total ?? docs.length,
         limit: 20,
         offset: 0,
+        has_more: hasMore,
     };
 }
 
@@ -119,8 +120,14 @@ describe("DocumentsModal", () => {
         expect(rows.length).toBe(2);
     });
 
-    it("renders filename, chunks, and date in each row", async () => {
-        const docs = [makeDoc({ filename: "notes.md", chunk_count: 10, ingested_at: "2024-06-15" })];
+    it("renders filename, chunks, and a relative-time date in each row", async () => {
+        const docs = [
+            makeDoc({
+                filename: "notes.md",
+                chunk_count: 10,
+                ingested_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+            }),
+        ];
         const plugin = makePlugin();
         plugin.api.listDocuments.mockResolvedValue(makeDocsResponse(docs));
         const app = new App();
@@ -132,7 +139,11 @@ describe("DocumentsModal", () => {
         const texts = collectTexts(el);
         expect(texts.some((t) => t.includes("notes.md"))).toBe(true);
         expect(texts.some((t) => t.includes("10 chunks"))).toBe(true);
-        expect(texts.some((t) => t.includes("2024-06-15"))).toBe(true);
+        expect(texts.some((t) => t.includes("m ago"))).toBe(true);
+        const dateCell = el.find("lilbee-documents-row-date")!;
+        expect(dateCell.attributes["title"]).toBe(docs[0].ingested_at);
+        const nameCell = el.find("lilbee-documents-row-name")!;
+        expect(nameCell.attributes["title"]).toBe("notes.md");
     });
 
     it("renders checkboxes in each row", async () => {
@@ -287,7 +298,7 @@ describe("DocumentsModal", () => {
         const page2 = [makeDoc({ filename: "f20.md" })];
         const plugin = makePlugin();
         plugin.api.listDocuments
-            .mockResolvedValueOnce(makeDocsResponse(page1, 21))
+            .mockResolvedValueOnce(makeDocsResponse(page1, 21, true))
             .mockResolvedValueOnce(makeDocsResponse(page2, 21));
         const app = new App();
         const modal = new DocumentsModal(app as any, plugin as any);
@@ -551,46 +562,6 @@ describe("DocumentsModal", () => {
 
         expect(plugin.api.listDocuments).toHaveBeenCalledTimes(2);
         expect(plugin.api.listDocuments).toHaveBeenLastCalledWith(undefined, 20, 20);
-    });
-
-    it("falls back to offset>=total when has_more is absent (legacy server)", async () => {
-        const docs = [makeDoc({ filename: "only.md" })];
-        const plugin = makePlugin();
-        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse(docs, 1));
-        const app = new App();
-        const modal = new DocumentsModal(app as any, plugin as any);
-        modal.open();
-        await vi.runAllTimersAsync();
-        plugin.api.listDocuments.mockClear();
-
-        const el = (modal as any).resultsEl as MockElement;
-        Object.assign(el, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
-        (modal as any).onScroll();
-        await vi.runAllTimersAsync();
-
-        expect(plugin.api.listDocuments).not.toHaveBeenCalled();
-    });
-
-    it("legacy server: stops when response returns zero rows", async () => {
-        const page1 = Array.from({ length: 20 }, (_, i) => makeDoc({ filename: `f${i}.md` }));
-        const plugin = makePlugin();
-        plugin.api.listDocuments
-            .mockResolvedValueOnce(makeDocsResponse(page1, 999))
-            .mockResolvedValueOnce(makeDocsResponse([], 999));
-        const app = new App();
-        const modal = new DocumentsModal(app as any, plugin as any);
-        modal.open();
-        await vi.runAllTimersAsync();
-
-        const el = (modal as any).resultsEl as MockElement;
-        Object.assign(el, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
-        (modal as any).onScroll();
-        await vi.runAllTimersAsync();
-        plugin.api.listDocuments.mockClear();
-        (modal as any).onScroll();
-        await vi.runAllTimersAsync();
-
-        expect(plugin.api.listDocuments).not.toHaveBeenCalled();
     });
 
     it("resetAndFetch re-enables pagination after a terminal page", async () => {

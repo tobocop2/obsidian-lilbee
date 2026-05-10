@@ -329,8 +329,7 @@ describe("TaskCenterView rendering", () => {
     it("metaForRow falls back to the waiting label when completedAt is null", () => {
         const id = plugin.taskQueue.enqueue("Adding files", TASK_TYPE.ADD)!;
         plugin.taskQueue.markWaiting(id, "Waiting on server");
-        // Simulate a persisted/legacy row with no completedAt — metaForRow
-        // must fall back to the label instead of rendering "null ago".
+        // A persisted row with no completedAt must surface the waiting label, not "null ago".
         const completed = plugin.taskQueue.completed;
         (completed[0] as any).completedAt = null;
 

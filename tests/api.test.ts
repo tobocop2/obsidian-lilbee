@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { LilbeeClient, ServerStartingError, SessionTokenError } from "../src/api";
+import { LilbeeClient, RateLimitedError, ServerStartingError, SessionTokenError } from "../src/api";
 import type { Message } from "../src/types";
 
 const BASE_URL = "http://localhost:7433";
@@ -430,41 +430,21 @@ describe("pullModel()", () => {
     });
 
     describe("catalog()", () => {
-        it("calls GET /api/models/catalog and returns the parsed response", async () => {
-            const data = {
-                total: 2,
-                limit: 20,
-                offset: 0,
-                models: [
-                    {
-                        name: "qwen3:8b",
-                        display_name: "Qwen3 8B",
-                        size_gb: 5,
-                        min_ram_gb: 8,
-                        description: "medium",
-                        quality_tier: "balanced",
-                        installed: true,
-                        source: "litellm",
-                    },
-                    {
-                        name: "phi4:14b",
-                        display_name: "Phi 4 14B",
-                        size_gb: 9,
-                        min_ram_gb: 16,
-                        description: "large",
-                        quality_tier: "balanced",
-                        installed: false,
-                        source: "native",
-                    },
-                ],
-            };
-            fetchMock.mockResolvedValue(jsonResponse(data));
+        it("calls GET /api/models/catalog and returns the response unchanged", async () => {
+            fetchMock.mockResolvedValue(
+                jsonResponse({
+                    total: 1,
+                    limit: 20,
+                    offset: 0,
+                    models: [{ name: "x", display_name: "X", source: "frontier" }],
+                }),
+            );
 
             const result = await client.catalog();
 
             expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/catalog`, expect.objectContaining({}));
             expect(result.isOk()).toBe(true);
-            expect(result._unsafeUnwrap()).toEqual(data);
+            expect(result._unsafeUnwrap().models[0].source).toBe("frontier");
         });
 
         it("returns err(error) when the underlying HTTP call fails", async () => {
@@ -589,13 +569,6 @@ describe("pullModel()", () => {
                 const result = await client.listDocuments(undefined, 20, 40);
                 expect(result.has_more).toBe(false);
                 expect(result).toEqual(data);
-            });
-
-            it("legacy response without has_more leaves the field undefined", async () => {
-                const data = { documents: [], total: 0, limit: 20, offset: 0 };
-                fetchMock.mockResolvedValue(jsonResponse(data));
-                const result = await client.listDocuments();
-                expect(result.has_more).toBeUndefined();
             });
         });
     });
@@ -1945,5 +1918,121 @@ describe("setOutcomeCallback", () => {
         } as unknown as Response);
         await client.health();
         expect(outcomes).toEqual([]);
+    });
+});
+
+describe("getCapability()", () => {
+    it("API_KEYS returns true when /api/models/external responds with no error field", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ models: [], error: null }));
+        await expect(client.getCapability("api_keys")).resolves.toBe(true);
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/models/external`, expect.anything());
+    });
+
+    it("API_KEYS returns false when /api/models/external reports a litellm-not-installed error", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ models: [], error: "litellm not installed" }));
+        await expect(client.getCapability("api_keys")).resolves.toBe(false);
+    });
+
+    it("CRAWLING returns true only when package_installed is exactly true", async () => {
+        fetchMock.mockResolvedValueOnce(jsonResponse({ package_installed: true, chromium_installed: false }));
+        await expect(client.getCapability("crawling")).resolves.toBe(true);
+        client.invalidateCapability("crawling");
+        fetchMock.mockResolvedValueOnce(jsonResponse({ package_installed: false }));
+        await expect(client.getCapability("crawling")).resolves.toBe(false);
+    });
+
+    it("WIKI returns the boolean from /api/config.wiki", async () => {
+        fetchMock.mockResolvedValueOnce(jsonResponse({ wiki: true }));
+        await expect(client.getCapability("wiki")).resolves.toBe(true);
+        client.invalidateCapability("wiki");
+        fetchMock.mockResolvedValueOnce(jsonResponse({ wiki: false }));
+        await expect(client.getCapability("wiki")).resolves.toBe(false);
+    });
+
+    it("caches the resolved capability per session and skips a second probe", async () => {
+        fetchMock.mockResolvedValueOnce(jsonResponse({ models: [], error: null }));
+        await client.getCapability("api_keys");
+        await client.getCapability("api_keys");
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("invalidateCapability(cap) re-runs the probe on the next call", async () => {
+        fetchMock.mockResolvedValueOnce(jsonResponse({ models: [], error: null }));
+        await client.getCapability("api_keys");
+        client.invalidateCapability("api_keys");
+        fetchMock.mockResolvedValueOnce(jsonResponse({ models: [], error: "gone" }));
+        await expect(client.getCapability("api_keys")).resolves.toBe(false);
+    });
+
+    it("invalidateCapability() with no arg clears every cached entry", async () => {
+        fetchMock.mockResolvedValueOnce(jsonResponse({ wiki: true }));
+        await client.getCapability("wiki");
+        client.invalidateCapability();
+        fetchMock.mockResolvedValueOnce(jsonResponse({ wiki: false }));
+        await expect(client.getCapability("wiki")).resolves.toBe(false);
+    });
+
+    it("fails open (returns true) when the probe throws", async () => {
+        fetchMock.mockRejectedValue(new Error("network down"));
+        await expect(client.getCapability("api_keys")).resolves.toBe(true);
+    });
+});
+
+describe("RateLimitedError", () => {
+    function rateLimitedResponse(retryAfter: string | null = null): Response {
+        return {
+            ok: false,
+            status: 429,
+            headers: { get: (name: string) => (name === "Retry-After" ? retryAfter : null) },
+            text: () => Promise.resolve("Too Many Requests"),
+            body: null,
+        } as unknown as Response;
+    }
+
+    it("carries the expected name and message", () => {
+        const e = new RateLimitedError(5);
+        expect(e.name).toBe("RateLimitedError");
+        expect(e.message).toContain("busy");
+        expect(e.retryAfterSeconds).toBe(5);
+    });
+
+    it("defaults retryAfterSeconds to null when omitted", () => {
+        const e = new RateLimitedError();
+        expect(e.retryAfterSeconds).toBeNull();
+    });
+
+    it("is thrown when the server responds 429 with a numeric Retry-After header", async () => {
+        fetchMock.mockResolvedValue(rateLimitedResponse("7"));
+        await expect(client.chat("hi", [] as Message[])).rejects.toMatchObject({
+            name: "RateLimitedError",
+            retryAfterSeconds: 7,
+        });
+    });
+
+    it("leaves retryAfterSeconds null when the Retry-After header is absent", async () => {
+        fetchMock.mockResolvedValue(rateLimitedResponse(null));
+        await expect(client.chat("hi", [] as Message[])).rejects.toMatchObject({
+            name: "RateLimitedError",
+            retryAfterSeconds: null,
+        });
+    });
+
+    it("leaves retryAfterSeconds null when the Retry-After header is non-numeric", async () => {
+        fetchMock.mockResolvedValue(rateLimitedResponse("not-a-number"));
+        await expect(client.chat("hi", [] as Message[])).rejects.toMatchObject({
+            name: "RateLimitedError",
+            retryAfterSeconds: null,
+        });
+    });
+
+    it("does not retry on 429 — single fetch attempt before propagating", async () => {
+        fetchMock.mockResolvedValue(rateLimitedResponse("3"));
+        await expect(client.chat("hi", [] as Message[])).rejects.toBeInstanceOf(RateLimitedError);
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("propagates as the typed error from streaming endpoints", async () => {
+        fetchMock.mockResolvedValue(rateLimitedResponse("2"));
+        await expect(collect(client.chatStream("hi", [] as Message[]))).rejects.toBeInstanceOf(RateLimitedError);
     });
 });

@@ -103,8 +103,9 @@ describe("MESSAGES", () => {
             expect(MESSAGES.DESC_MODELS_HELP).toBe(
                 "Browse the catalog for available models. Requires the lilbee server.",
             );
-            expect(MESSAGES.DESC_SYNC_MANUAL).toBe("Manual (command only)");
-            expect(MESSAGES.DESC_SYNC_AUTO).toBe("Auto (watch for changes)");
+            expect(MESSAGES.STATUS_DOCS_PENDING_SYNC(3)).toBe("lilbee: 3 to sync");
+            expect(MESSAGES.STATUS_SYNC_IN_PROGRESS).toBe("lilbee: syncing…");
+            expect(MESSAGES.TOOLTIP_PENDING_SYNC_HINT).toBe("Click to sync new documents");
             expect(MESSAGES.DESC_RESULTS_COUNT).toBe(
                 "How many matching passages to return when you search or ask a question",
             );
@@ -117,11 +118,9 @@ describe("MESSAGES", () => {
             expect(MESSAGES.DESC_CRAWL_MAX_DEPTH).toBe("Optional ceiling on crawl depth. Leave blank for no cap.");
             expect(MESSAGES.DESC_CRAWL_MAX_PAGES).toBe("Optional ceiling on pages per crawl. Leave blank for no cap.");
             expect(MESSAGES.DESC_CRAWL_TIMEOUT).toBe("How long to wait for each page to load before giving up");
-            expect(MESSAGES.DESC_CHUNK_SIZE).toBe(
-                "How many tokens per text segment. Most users should not change this.",
-            );
+            expect(MESSAGES.DESC_CHUNK_SIZE).toBe("Document chunk size in tokens (changes invalidate the index)");
             expect(MESSAGES.DESC_CHUNK_OVERLAP).toBe(
-                "Token overlap between segments. Most users should not change this.",
+                "Tokens of overlap between adjacent chunks (preserves context across boundaries)",
             );
             expect(MESSAGES.DESC_EMBEDDING_MODEL).toBe(
                 "The AI model used to understand your documents. Changing requires re-indexing.",
@@ -142,7 +141,7 @@ describe("MESSAGES", () => {
             expect(MESSAGES.DESC_GEMINI_API_KEY).toBe("For Gemini models via litellm");
             expect(MESSAGES.LABEL_MANUAL_TOKEN).toBe("Session token");
             expect(MESSAGES.DESC_MANUAL_TOKEN).toBe(
-                "Paste a session token for remote servers. Leave blank for automatic discovery (local servers only).",
+                "Paste the server's session token (required for remote servers). When the lilbee server runs on this machine the plugin discovers the token automatically — leave this blank.",
             );
             expect(MESSAGES.LABEL_WIKI_SECTION).toBe("Wiki (beta)");
             expect(MESSAGES.DESC_WIKI_ENABLE_TOGGLE).toBe(
@@ -365,9 +364,10 @@ describe("MESSAGES", () => {
         it("has all wizard strings", () => {
             expect(MESSAGES.WIZARD_INTRO_DESC).toContain("lilbee turns your Obsidian vault");
             expect(MESSAGES.WIZARD_INTRO_STEPS).toBe("This wizard will help you:");
-            expect(MESSAGES.WIZARD_STEP_CHOOSE_MODEL).toBe("Choose an AI model that fits your computer");
+            expect(MESSAGES.WIZARD_STEP_CHOOSE_MODEL).toBe("Choose an AI model that fits the host's RAM");
             expect(MESSAGES.WIZARD_STEP_INDEX).toBe("Index your vault so you can search and chat");
-            expect(MESSAGES.WIZARD_LOCAL_ONLY).toContain("Everything runs locally");
+            expect(MESSAGES.WIZARD_LOCAL_ONLY_MANAGED).toContain("Managed mode runs on this machine");
+            expect(MESSAGES.WIZARD_LOCAL_ONLY_EXTERNAL).toContain("External mode talks to your existing");
             expect(MESSAGES.WIZARD_MODEL_HELP).toContain("This is the AI that answers your questions");
             expect(MESSAGES.WIZARD_SUMMARY_FILES).toBe("{count} files indexed");
         });

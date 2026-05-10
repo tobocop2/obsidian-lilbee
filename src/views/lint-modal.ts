@@ -1,6 +1,7 @@
 import { App, Modal } from "obsidian";
 import type { LintIssue } from "../types";
 import { MESSAGES } from "../locales/en";
+import { bindEscapeToClose } from "../utils";
 
 const STATUS_CLASSES: Record<LintIssue["status"], string> = {
     valid: "lilbee-lint-valid",
@@ -24,6 +25,7 @@ export class LintModal extends Modal {
     constructor(app: App, issues: LintIssue[]) {
         super(app);
         this.issues = issues;
+        bindEscapeToClose(this);
     }
 
     onOpen(): void {

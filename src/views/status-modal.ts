@@ -2,7 +2,7 @@ import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { ModelShowResponse, StatusResponse } from "../types";
 import { MESSAGES } from "../locales/en";
-import { noticeForResultError } from "../utils";
+import { bindEscapeToClose, noticeForResultError } from "../utils";
 
 export class StatusModal extends Modal {
     private plugin: LilbeePlugin;
@@ -10,6 +10,7 @@ export class StatusModal extends Modal {
     constructor(app: App, plugin: LilbeePlugin) {
         super(app);
         this.plugin = plugin;
+        bindEscapeToClose(this);
     }
 
     onOpen(): void {
@@ -53,20 +54,20 @@ export class StatusModal extends Modal {
 
         const table = section.createEl("table", { cls: "lilbee-status-table" });
 
-        const chatModel = status.config.chat_model || MESSAGES.LABEL_STATUS_NONE;
-        this.addRow(table, MESSAGES.LABEL_STATUS_CHAT_MODEL, chatModel);
+        const chatModel = status.config.chat_model;
+        this.addModelRow(table, MESSAGES.LABEL_STATUS_CHAT_MODEL, chatModel);
 
-        if (status.config.chat_model) {
-            await this.renderModelDetails(table, status.config.chat_model);
+        if (chatModel) {
+            await this.renderModelDetails(table, chatModel);
         }
 
         const ocrValue = status.config.enable_ocr;
         const ocrLabel =
             ocrValue === "true"
-                ? MESSAGES.LABEL_OCR_ON
+                ? MESSAGES.STATUS_VALUE_OCR_ON
                 : ocrValue === "false"
-                  ? MESSAGES.LABEL_OCR_OFF
-                  : MESSAGES.LABEL_OCR_AUTO;
+                  ? MESSAGES.STATUS_VALUE_OCR_OFF
+                  : MESSAGES.STATUS_VALUE_OCR_AUTO;
         this.addRow(table, MESSAGES.LABEL_STATUS_OCR, ocrLabel);
     }
 
@@ -78,9 +79,6 @@ export class StatusModal extends Modal {
             }
             if (info.context_length) {
                 this.addRow(table, MESSAGES.LABEL_STATUS_CONTEXT_LENGTH, info.context_length);
-            }
-            if (info.file_type) {
-                this.addRow(table, MESSAGES.LABEL_STATUS_FILE_TYPE, info.file_type);
             }
         } catch {
             // Model details not available — not critical
@@ -113,4 +111,21 @@ export class StatusModal extends Modal {
         row.createEl("td", { text: label, cls: "lilbee-status-label" });
         row.createEl("td", { text: value, cls: "lilbee-status-value" });
     }
+
+    private addModelRow(table: HTMLTableElement, label: string, model: string): void {
+        const row = table.createEl("tr");
+        row.createEl("td", { text: label, cls: "lilbee-status-label" });
+        const cell = row.createEl("td", { cls: "lilbee-status-value" });
+        if (!model) {
+            cell.setText(MESSAGES.LABEL_STATUS_NONE);
+            return;
+        }
+        cell.setText(shortModelLabel(model));
+        cell.setAttribute("title", model);
+    }
+}
+
+function shortModelLabel(model: string): string {
+    const slash = model.lastIndexOf("/");
+    return slash === -1 ? model : model.slice(slash + 1);
 }

@@ -33,9 +33,7 @@ export interface Source {
     /**
      * Relative path within the vault when the server is managed and
      * `documents_dir` is inside the user's vault. `null` for external servers
-     * where the file is not accessible as a vault-relative path. Optional for
-     * forward compatibility with servers that predate PR 4 of the vault-native
-     * storage work.
+     * where the file is not accessible as a vault-relative path.
      */
     vault_path?: string | null;
 }
@@ -69,8 +67,6 @@ export interface ModelCatalog {
 
 export interface ModelsResponse {
     chat: ModelCatalog;
-    // Older servers (pre-role-separation) may only return `chat`. The plugin tolerates
-    // those responses by treating sibling sections as optional; only `chat` is required.
     embedding?: ModelCatalog;
     vision?: ModelCatalog;
     reranker?: ModelCatalog;
@@ -80,8 +76,91 @@ export interface ConfigResponse {
     reranker_model: string | null;
     rerank_candidates: number;
     vision_model: string | null;
+    rag_system_prompt?: string;
+    general_system_prompt?: string;
+    chat_mode?: ChatMode;
+    embedding_model?: string;
+    wiki?: boolean;
+    worker_pool_call_timeout_s?: number;
+    worker_pool_eager_start?: boolean;
+    worker_pool_max_idle_s?: number;
+    vision_load_budget_s?: number;
+    chunk_size?: number;
+    chunk_overlap?: number;
+    tesseract_timeout?: number;
+    max_tokens?: number;
+    model_keep_alive?: string;
+    gpu_memory_fraction?: number;
+    candidate_multiplier?: number;
+    max_distance?: number;
+    min_relevance_score?: number;
+    max_context_sources?: number;
+    diversity_max_per_source?: number;
+    mmr_lambda?: number;
     [key: string]: unknown;
 }
+
+export const CONFIG_KEY = {
+    RAG_SYSTEM_PROMPT: "rag_system_prompt",
+    GENERAL_SYSTEM_PROMPT: "general_system_prompt",
+    CHAT_MODE: "chat_mode",
+} as const;
+
+export type ChatMode = "search" | "chat";
+
+export const CHAT_MODE = {
+    SEARCH: "search",
+    CHAT: "chat",
+} as const satisfies Record<string, ChatMode>;
+
+export type CatalogSource = "local" | "frontier";
+
+export const CATALOG_SOURCE = {
+    LOCAL: "local",
+    FRONTIER: "frontier",
+} as const satisfies Record<string, CatalogSource>;
+
+export type KeyStatus = "ready" | "missing_key";
+
+export const KEY_STATUS = {
+    READY: "ready",
+    MISSING_KEY: "missing_key",
+} as const satisfies Record<string, KeyStatus>;
+
+export type Capability = "api_keys" | "crawling" | "wiki";
+
+export const CAPABILITY = {
+    API_KEYS: "api_keys",
+    CRAWLING: "crawling",
+    WIKI: "wiki",
+} as const satisfies Record<string, Capability>;
+
+export type CatalogTab = "discover" | "chat" | "embed" | "vision" | "rerank" | "library";
+
+export const CATALOG_TAB = {
+    DISCOVER: "discover",
+    CHAT: "chat",
+    EMBED: "embed",
+    VISION: "vision",
+    RERANK: "rerank",
+    LIBRARY: "library",
+} as const satisfies Record<string, CatalogTab>;
+
+export type HardwareFit = "fits" | "tight" | "wont_run";
+
+export const HARDWARE_FIT = {
+    FITS: "fits",
+    TIGHT: "tight",
+    WONT_RUN: "wont_run",
+} as const satisfies Record<string, HardwareFit>;
+
+export type DiscoverRail = "for_you" | "your_collection" | "fresh";
+
+export const DISCOVER_RAIL = {
+    FOR_YOU: "for_you",
+    YOUR_COLLECTION: "your_collection",
+    FRESH: "fresh",
+} as const satisfies Record<string, DiscoverRail>;
 
 export interface StatusResponse {
     config: Record<string, string>;
@@ -101,6 +180,7 @@ export interface SyncDone {
     removed: string[];
     unchanged: number;
     failed: string[];
+    skipped: string[];
 }
 
 export interface GenerationOptions {
@@ -112,6 +192,7 @@ export interface GenerationOptions {
     seed?: number;
 }
 
+/** Object-shaped `data` may carry an optional `banner` string the chat view renders above the answer bubble. */
 export interface SSEEvent {
     event: string;
     data: unknown;
@@ -152,12 +233,11 @@ export interface LilbeeSettings {
     topK: number;
     maxDistance: number;
     adaptiveThreshold: boolean;
-    syncMode: "manual" | "auto";
-    syncDebounceMs: number;
     serverMode: ServerMode;
     serverPort: number | null;
     lilbeeVersion: string;
-    systemPrompt: string;
+    ragSystemPrompt: string;
+    generalSystemPrompt: string;
     setupCompleted: boolean;
     wikiEnabled: boolean;
     wikiPruneRaw: boolean;
@@ -174,6 +254,14 @@ export interface LilbeeSettings {
      * external servers keep their own documents_dir.
      */
     storeContentInVault: boolean;
+    lastCatalogTab: CatalogTab;
+    /**
+     * When true (default), the chat view and task center auto-open in the
+     * right sidebar on plugin load and right after the setup wizard finishes.
+     * Users who keep their right sidebar busy with other plugins can disable
+     * this in Settings → Connection.
+     */
+    autoOpenCockpit: boolean;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -181,12 +269,11 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     topK: 5,
     maxDistance: 0.9,
     adaptiveThreshold: false,
-    syncMode: "manual",
-    syncDebounceMs: 5000,
     serverMode: "managed",
     serverPort: null,
     lilbeeVersion: "",
-    systemPrompt: "",
+    ragSystemPrompt: "",
+    generalSystemPrompt: "",
     setupCompleted: false,
     wikiEnabled: false,
     wikiPruneRaw: false,
@@ -198,6 +285,8 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     enableOcr: null,
     manualToken: "",
     storeContentInVault: true,
+    lastCatalogTab: "discover",
+    autoOpenCockpit: true,
 };
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */
@@ -226,6 +315,7 @@ export const SSE_EVENT = {
     SETUP_PROGRESS: "setup_progress",
     SETUP_DONE: "setup_done",
     ALREADY_INGESTING: "already_ingesting",
+    BATCH_PROGRESS: "batch_progress",
 } as const;
 
 export interface SetupStartPayload {
@@ -246,6 +336,13 @@ export interface SetupDonePayload {
     error: string | null;
 }
 
+export interface BatchProgressPayload {
+    file: string;
+    status: string;
+    current: number;
+    total: number;
+}
+
 export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
 /** MIME content types referenced across click dispatch + preview rendering. */
@@ -254,6 +351,13 @@ export const CONTENT_TYPE = {
     MARKDOWN: "text/markdown",
     HTML: "text/html",
 } as const;
+
+export interface SizeVariant {
+    size_label: string;
+    params: string;
+    size_gb: number;
+    ref: string;
+}
 
 export interface CatalogEntry {
     hf_repo: string;
@@ -269,7 +373,28 @@ export interface CatalogEntry {
     featured: boolean;
     downloads: number;
     param_count: string;
+    fit?: HardwareFit | null;
+    size_variants?: SizeVariant[] | null;
 }
+
+export interface LocalCatalogRow extends CatalogEntry {
+    source: "local";
+}
+
+export interface FrontierCatalogRow {
+    hf_repo: string;
+    display_name: string;
+    description: string;
+    task: ModelTask;
+    source: "frontier";
+    provider: string;
+    key_status: KeyStatus;
+    is_curated: boolean;
+    context_window: number;
+    modality: string;
+}
+
+export type CatalogRow = LocalCatalogRow | FrontierCatalogRow;
 
 export interface CatalogResponse {
     total: number;
@@ -299,7 +424,7 @@ export interface DocumentsResponse {
     total: number;
     limit: number;
     offset: number;
-    has_more?: boolean;
+    has_more: boolean;
 }
 
 export interface ConfigUpdateResponse {
@@ -425,12 +550,13 @@ export const TASK_STATUS = {
     WAITING: "waiting",
 } as const satisfies Record<string, TaskStatus>;
 
-export type DotState = "primary" | "success" | "error";
+export type DotState = "primary" | "success" | "error" | "muted";
 
 export const DOT_STATE = {
     PRIMARY: "primary",
     SUCCESS: "success",
     ERROR: "error",
+    MUTED: "muted",
 } as const satisfies Record<string, DotState>;
 
 export type TaskType = "sync" | "add" | "pull" | "crawl" | "download" | "wiki" | "delete" | "setup";
@@ -446,13 +572,6 @@ export const TASK_TYPE = {
     SETUP: "setup",
 } as const satisfies Record<string, TaskType>;
 
-export type SyncMode = "manual" | "auto";
-
-export const SYNC_MODE = {
-    MANUAL: "manual",
-    AUTO: "auto",
-} as const satisfies Record<string, SyncMode>;
-
 export type ModelTask = "chat" | "vision" | "embedding" | "rerank";
 
 export const MODEL_TASK = {
@@ -462,15 +581,11 @@ export const MODEL_TASK = {
     RERANK: "rerank",
 } as const satisfies Record<string, ModelTask>;
 
-export const MODEL_SOURCE = {
-    NATIVE: "native",
-    LITELLM: "litellm",
-} as const;
-
 export const ERROR_NAME = {
     ABORT_ERROR: "AbortError",
     SESSION_TOKEN: "SessionTokenError",
     SERVER_STARTING: "ServerStartingError",
+    RATE_LIMITED: "RateLimitedError",
 } as const;
 
 export const WIZARD_STEP = {
@@ -557,6 +672,7 @@ export interface ModelCardOptions {
     onPull?: (entry: CatalogEntry, btn: HTMLElement) => void;
     onUse?: (entry: CatalogEntry, btn: HTMLElement) => void;
     onRemove?: (entry: CatalogEntry, btn: HTMLElement) => void;
+    onInfo?: (entry: CatalogEntry) => void;
     showActions?: boolean;
     isActive?: boolean;
 }

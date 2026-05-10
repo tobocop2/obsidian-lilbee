@@ -1,8 +1,30 @@
-import { Notice } from "obsidian";
+import { Notice, type Modal } from "obsidian";
 import { ServerStartingError, SessionTokenError } from "./api";
 import { MESSAGES } from "./locales/en";
 import { SERVER_MODE } from "./types";
 import type { ServerMode } from "./types";
+
+/**
+ * Tag the modal's outer wrapper so the stylesheet keeps the close-X button
+ * consistently visible. Call from every lilbee modal so users never have to
+ * fall back to Escape to dismiss.
+ */
+export function tagModalChrome(modal: Modal): void {
+    modal.modalEl.addClass("lilbee-modal-chrome");
+}
+
+/**
+ * Bind Escape on the modal's own scope so dismissal works even when an inner
+ * input (search box, textarea) holds focus, plus apply the chrome tag so the
+ * close-X stays visible.
+ */
+export function bindEscapeToClose(modal: Modal): void {
+    modal.scope.register([], "Escape", () => {
+        modal.close();
+        return false;
+    });
+    tagModalChrome(modal);
+}
 
 export function debounce<T extends (...args: unknown[]) => unknown>(
     fn: T,
@@ -30,6 +52,9 @@ export const NOTICE_ERROR_DURATION_MS = 8000;
 export const NOTICE_PERMANENT = 0;
 export const TIME_REFRESH_INTERVAL_MS = 30000;
 export const HEALTH_PROBE_INTERVAL_MS = 30_000;
+// Number of consecutive failed health probes required before flipping the
+// status bar to error. One blip every 30s should not announce a problem.
+export const HEALTH_FAILURE_STREAK_THRESHOLD = 2;
 export const SPINNER_MIN_DISPLAY_MS = 800;
 // 2 minutes without a single SSE event is long enough to mean "server is wedged" —
 // legitimate OCR/embed pauses are shorter. Larger than this and users think the
@@ -95,6 +120,18 @@ export function relativeTime(timestamp: number): string {
     if (hours < 24) return `${hours}h ago`;
     const days = Math.floor(hours / 24);
     return `${days}d ago`;
+}
+
+/**
+ * Render the server's ISO-8601 timestamp ("2026-05-09T05:49:38.800771+00:00")
+ * as a human "5m ago" / "3d ago" string. Returns the raw value when parsing
+ * fails so callers never lose the data.
+ */
+export function relativeTimeFromIso(iso: string): string {
+    if (!iso) return "";
+    const t = Date.parse(iso);
+    if (Number.isNaN(t)) return iso;
+    return relativeTime(t);
 }
 
 const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
@@ -194,12 +231,9 @@ export function extractServerErrorDetail(message: string): string | null {
 }
 
 /**
- * Detect the server's role-mismatch error shape. Server PR #156 returns 422 with
- * a detail like `"Model 'X' is a vision model, not chat. Set it via PUT /api/models/vision instead."`
- * when a task-validation check fails. Distinguished from an auth-shaped 422
- * (missing LiteLLM key) by the `Set it via PUT /api/models/` remedy phrase.
- * The exact remedy prefix — not a bare `PUT /api/models/` substring — is used so unrelated
- * 422s that happen to mention the endpoint (e.g. future docs-link errors) aren't misclassified.
+ * Distinguishes the role-mismatch 422 (e.g. setting a vision model as chat) from an
+ * auth-shaped 422 by the `Set it via PUT /api/models/` remedy phrase. The full prefix
+ * keeps unrelated 422s that just happen to mention the endpoint from being misclassified.
  */
 export function isRoleMismatchDetail(detail: string): boolean {
     return detail.includes("Set it via PUT /api/models/");

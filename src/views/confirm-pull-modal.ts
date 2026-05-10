@@ -1,5 +1,6 @@
 import { App, Modal } from "obsidian";
 import { MESSAGES } from "../locales/en";
+import { bindEscapeToClose } from "../utils";
 
 export interface ConfirmPullInfo {
     displayName: string;
@@ -21,6 +22,7 @@ export class ConfirmPullModal extends Modal {
         this.result = new Promise<boolean>((resolve) => {
             this._resolve = resolve;
         });
+        bindEscapeToClose(this);
     }
 
     onOpen(): void {

@@ -1,5 +1,6 @@
 import { App, Modal } from "obsidian";
 import { MESSAGES } from "../locales/en";
+import { bindEscapeToClose } from "../utils";
 
 export class ConfirmModal extends Modal {
     private message: string;
@@ -13,6 +14,7 @@ export class ConfirmModal extends Modal {
         this.result = new Promise<boolean>((resolve) => {
             this._resolve = resolve;
         });
+        bindEscapeToClose(this);
     }
 
     onOpen(): void {

@@ -1,4 +1,4 @@
-import { type EventRef, type Menu, type MenuItem, Notice, Plugin, type TAbstractFile } from "obsidian";
+import { type Menu, type MenuItem, Notice, Plugin, type TAbstractFile } from "obsidian";
 import { LilbeeClient, SessionTokenError } from "./api";
 import type { RequestOutcome } from "./api";
 import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
@@ -13,9 +13,9 @@ import {
     SERVER_MODE,
     SERVER_STATE,
     SSE_EVENT,
-    SYNC_MODE,
     TASK_STATUS,
     TASK_TYPE,
+    type BatchProgressPayload,
     type DotState,
     type LilbeeSettings,
     type ServerMode,
@@ -28,10 +28,11 @@ import {
     type VaultAdapter,
 } from "./types";
 import { MESSAGES } from "./locales/en";
-import { displayLabelForRef } from "./utils/model-ref";
+import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import {
     errorMessage,
     extractSseErrorMessage,
+    HEALTH_FAILURE_STREAK_THRESHOLD,
     HEALTH_PROBE_INTERVAL_MS,
     NOTICE_DURATION_MS,
     NOTICE_ERROR_DURATION_MS,
@@ -41,6 +42,8 @@ import {
     withIdleTimeout,
 } from "./utils";
 import { CatalogModal } from "./views/catalog-modal";
+import { ModelInfoModal } from "./views/model-info-modal";
+import { ModelPickerModal } from "./views/model-picker-modal";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
 import { CrawlModal } from "./views/crawl-modal";
 import { DocumentsModal } from "./views/documents-modal";
@@ -64,6 +67,10 @@ interface PruneData {
 
 const BYTES_PER_MB = 1_000_000;
 
+const PENDING_SYNC_HINT_DEBOUNCE_MS = 1000;
+
+const SUPPORTED_SYNC_EXTENSIONS = new Set(["md", "pdf", "txt", "html"]);
+
 function formatSetupDetail(downloaded: number, total: number | null): string {
     const dlMB = (downloaded / BYTES_PER_MB).toFixed(1);
     if (total === null) {
@@ -79,6 +86,7 @@ function summarizeSyncResult(done: SyncDone): string {
     if (done.updated.length > 0) parts.push(`${done.updated.length} updated`);
     if (done.removed.length > 0) parts.push(`${done.removed.length} removed`);
     if (done.failed.length > 0) parts.push(`${done.failed.length} failed`);
+    if (done.skipped.length > 0) parts.push(`${done.skipped.length} skipped`);
     return parts.join(", ");
 }
 
@@ -124,6 +132,13 @@ export class FileProgressTracker {
         this.embedFraction = 0;
     }
 
+    completeFile(current: number, total: number): void {
+        this.currentFile = current + 1;
+        this.totalFiles = Math.max(1, total);
+        this.extractFraction = 0;
+        this.embedFraction = 0;
+    }
+
     setExtractFraction(page: number, totalPages: number): void {
         if (totalPages <= 0) return;
         this.extractFraction = Math.max(0, Math.min(1, page / totalPages));
@@ -142,12 +157,6 @@ export class FileProgressTracker {
     }
 }
 
-/**
- * Parse the `done` event emitted by `/api/add`. The payload contains
- * `{copied, skipped, errors, sync: SyncDone}`. Extract the nested
- * sync result; fall back to treating the whole object as SyncDone
- * for backwards compatibility.
- */
 export function parseAddDoneEvent(data: unknown): SyncDone | null {
     if (!data || typeof data !== "object") return null;
     const obj = data as Record<string, unknown>;
@@ -165,6 +174,7 @@ function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
         removed: Array.isArray(obj.removed) ? (obj.removed as string[]) : [],
         unchanged: typeof obj.unchanged === "number" ? obj.unchanged : 0,
         failed: Array.isArray(obj.failed) ? (obj.failed as string[]) : [],
+        skipped: Array.isArray(obj.skipped) ? (obj.skipped as string[]) : [],
     };
 }
 
@@ -173,12 +183,12 @@ export default class LilbeePlugin extends Plugin {
     api: LilbeeClient = new LilbeeClient("");
     activeModel = "";
     statusBarEl: HTMLElement | null = null;
+    syncHintEl: HTMLElement | null = null;
     ribbonIconEl: HTMLElement | null = null;
     binaryManager: BinaryManager | null = null;
     serverManager: ServerManager | null = null;
     syncController: AbortController | null = null;
-    private syncTimeout: ReturnType<typeof setTimeout> | null = null;
-    private autoSyncRefs: EventRef[] = [];
+    private pendingHintTimeout: ReturnType<typeof setTimeout> | null = null;
     private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
     private startingServer = false;
     private serverStartFailed = false;
@@ -191,6 +201,12 @@ export default class LilbeePlugin extends Plugin {
     wikiSync: WikiSync | null = null;
     private healthProbeHandle: number | null = null;
     private serverUnreachable = false;
+    // While > 0, probeServerHealth() bails: llama.cpp serializes requests,
+    // so /api/health stalls behind the active stream and would falsely flip
+    // the status bar to error.
+    private chatInFlight = 0;
+    // Counts consecutive failed probes against HEALTH_FAILURE_STREAK_THRESHOLD.
+    private healthFailureStreak = 0;
 
     async onload(): Promise<void> {
         await this.loadSettings();
@@ -200,6 +216,12 @@ export default class LilbeePlugin extends Plugin {
         this.statusBarEl.style.cursor = "pointer";
         this.statusBarEl.setAttribute("aria-label", MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);
         this.statusBarEl.addEventListener("click", () => this.openPluginSettings());
+
+        this.syncHintEl = this.addStatusBarItem();
+        this.syncHintEl.addClass("lilbee-sync-hint");
+        this.syncHintEl.style.display = "none";
+        this.syncHintEl.setAttribute("aria-label", MESSAGES.TOOLTIP_PENDING_SYNC_HINT);
+        this.syncHintEl.addEventListener("click", () => void this.triggerSync());
         this.ribbonIconEl = this.addRibbonIcon("list-checks", MESSAGES.LABEL_RIBBON_OPEN_TASK_CENTER, () =>
             this.activateTaskView(),
         );
@@ -242,11 +264,20 @@ export default class LilbeePlugin extends Plugin {
             new SetupWizard(this.app, this).open();
         }
 
-        if (this.settings.syncMode === SYNC_MODE.AUTO) {
-            this.registerAutoSync();
-        }
+        this.registerPendingSyncHintWatchers();
+        void this.updatePendingSyncHint();
 
         this.startHealthProbe();
+
+        // Auto-open chat + task center for returning users so the workspace
+        // is immediately usable. Defer until the workspace layout is up so
+        // sidebar splits land in the right place. New users go through the
+        // wizard, which calls openCockpit on completion.
+        if (this.settings.setupCompleted && this.settings.autoOpenCockpit) {
+            this.app.workspace.onLayoutReady(() => {
+                void this.openCockpit();
+            });
+        }
     }
 
     async startManagedServer(onProgress?: ManagedServerProgressHandler): Promise<void> {
@@ -304,7 +335,8 @@ export default class LilbeePlugin extends Plugin {
                     binaryPath,
                     dataDir: `${pluginDir}/server-data`,
                     port: this.settings.serverPort,
-                    systemPrompt: this.settings.systemPrompt,
+                    ragSystemPrompt: this.settings.ragSystemPrompt,
+                    generalSystemPrompt: this.settings.generalSystemPrompt,
                     onStateChange: (state) => this.handleServerStateChange(state),
                     onRestartsExhausted: (stderr: string) => {
                         if (this.serverStartFailed) return;
@@ -457,7 +489,7 @@ export default class LilbeePlugin extends Plugin {
                 this.setStatusClass("lilbee-status-error");
                 break;
             case SERVER_STATE.STOPPED:
-                this.updateStatusBar(MESSAGES.STATUS_STOPPED);
+                this.updateStatusBar(MESSAGES.STATUS_STOPPED, DOT_STATE.MUTED);
                 this.setStatusClass(null);
                 break;
         }
@@ -565,6 +597,30 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "lilbee:model-picker-chat",
+            name: MESSAGES.COMMAND_MODEL_PICKER_CHAT,
+            callback: () => new ModelPickerModal(this.app, this, "chat").open(),
+        });
+
+        this.addCommand({
+            id: "lilbee:model-picker-embedding",
+            name: MESSAGES.COMMAND_MODEL_PICKER_EMBED,
+            callback: () => new ModelPickerModal(this.app, this, "embedding").open(),
+        });
+
+        this.addCommand({
+            id: "lilbee:model-info-active-chat",
+            name: MESSAGES.COMMAND_MODEL_INFO_CHAT,
+            callback: () => this.openModelInfoForActiveTask("chat"),
+        });
+
+        this.addCommand({
+            id: "lilbee:model-info-active-embedding",
+            name: MESSAGES.COMMAND_MODEL_INFO_EMBED,
+            callback: () => this.openModelInfoForActiveTask("embedding"),
+        });
+
+        this.addCommand({
             id: "lilbee:crawl",
             name: "Crawl web page",
             callback: () => new CrawlModal(this.app, this).open(),
@@ -638,18 +694,18 @@ export default class LilbeePlugin extends Plugin {
     }
 
     onunload(): void {
-        if (this.syncTimeout) {
-            clearTimeout(this.syncTimeout);
+        if (this.pendingHintTimeout) {
+            clearTimeout(this.pendingHintTimeout);
         }
         this.taskQueue.dispose();
         void this.serverManager?.stop();
     }
 
     async loadSettings(): Promise<void> {
-        const blob = (await this.loadData()) as (LilbeeSettings & { taskHistory?: { history?: unknown[] } }) | null;
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, blob ?? {});
+        const raw = (await this.loadData()) as (LilbeeSettings & { taskHistory?: { history?: unknown[] } }) | null;
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, raw ?? {});
         this.previousServerMode = this.settings.serverMode;
-        this.taskQueue.loadFromJSON(blob?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
+        this.taskQueue.loadFromJSON(raw?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
     }
 
     private async persistAll(): Promise<void> {
@@ -687,8 +743,6 @@ export default class LilbeePlugin extends Plugin {
             this.setStatusReady();
             void this.fetchActiveModel();
         }
-
-        this.updateAutoSync();
     }
 
     private updateStatusBar(text: string, dotState: DotState | null = null): void {
@@ -732,21 +786,34 @@ export default class LilbeePlugin extends Plugin {
     private async probeServerHealth(): Promise<void> {
         if (this.taskQueue.activeAll.length > 0) return;
         if (this.startingServer) return;
+        if (this.chatInFlight > 0) return;
         // Re-read the token before probing — the server writes a fresh one on
         // every restart, and this is the cheapest way to stay in sync.
         this.api.setToken(this.readCurrentToken());
         const ok = (await this.api.health().catch(() => null))?.isOk() ?? false;
         if (ok) {
+            this.healthFailureStreak = 0;
             if (this.serverUnreachable) {
                 this.serverUnreachable = false;
                 void this.fetchActiveModel();
             }
-        } else if (!this.serverUnreachable) {
-            this.serverUnreachable = true;
-            this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
-            this.setStatusClass("lilbee-status-error");
-            this.maybeWarnMissingToken();
+            return;
         }
+        this.healthFailureStreak += 1;
+        if (this.healthFailureStreak < HEALTH_FAILURE_STREAK_THRESHOLD) return;
+        if (this.serverUnreachable) return;
+        this.serverUnreachable = true;
+        this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
+        this.setStatusClass("lilbee-status-error");
+        this.maybeWarnMissingToken();
+    }
+
+    notifyChatStart(): void {
+        this.chatInFlight += 1;
+    }
+
+    notifyChatEnd(): void {
+        if (this.chatInFlight > 0) this.chatInFlight -= 1;
     }
 
     private missingTokenNoticeFired = false;
@@ -846,6 +913,35 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         this.setStatusReady();
+    }
+
+    async openModelInfoForActiveTask(task: "chat" | "embedding"): Promise<void> {
+        let cfg: Record<string, unknown>;
+        try {
+            cfg = await this.api.config();
+        } catch {
+            new Notice(MESSAGES.NOTICE_NO_ACTIVE_MODEL(task));
+            return;
+        }
+        const key = task === "chat" ? "chat_model" : "embedding_model";
+        const ref = typeof cfg[key] === "string" ? (cfg[key] as string) : "";
+        if (!ref) {
+            new Notice(MESSAGES.NOTICE_NO_ACTIVE_MODEL(task));
+            return;
+        }
+
+        const repo = extractHfRepo(ref);
+        const result = await this.api.catalog({ task, search: repo });
+        if (result.isErr()) {
+            new Notice(MESSAGES.NOTICE_NO_ACTIVE_MODEL(task));
+            return;
+        }
+        const entry = result.value.models.find((e) => e.hf_repo === repo) ?? result.value.models[0];
+        if (!entry) {
+            new Notice(MESSAGES.NOTICE_NO_ACTIVE_MODEL(task));
+            return;
+        }
+        new ModelInfoModal(this.app, this, entry).open();
     }
 
     async fetchActiveModel(): Promise<void> {
@@ -1077,6 +1173,14 @@ export default class LilbeePlugin extends Plugin {
                             String(d.total_chunks),
                         ),
                     );
+                } else if (event.event === SSE_EVENT.BATCH_PROGRESS) {
+                    const d = event.data as BatchProgressPayload;
+                    progress.completeFile(d.current, d.total);
+                    this.taskQueue.update(
+                        taskId,
+                        progress.percent(),
+                        MESSAGES.STATUS_TASK_BATCH(d.current, d.total, d.file, d.status),
+                    );
                 } else if (event.event === SSE_EVENT.DONE) {
                     const parsed = parseAddDoneEvent(event.data);
                     if (parsed) syncResult = parsed;
@@ -1128,21 +1232,6 @@ export default class LilbeePlugin extends Plugin {
 
     private markAddFailed(paths: string[]): void {
         for (const p of paths) this.failedAddPaths.add(p);
-    }
-
-    private updateAutoSync(): void {
-        if (this.settings.syncMode === SYNC_MODE.AUTO && this.autoSyncRefs.length === 0) {
-            this.registerAutoSync();
-        } else if (this.settings.syncMode === SYNC_MODE.MANUAL && this.autoSyncRefs.length > 0) {
-            this.unregisterAutoSync();
-        }
-    }
-
-    private unregisterAutoSync(): void {
-        for (const ref of this.autoSyncRefs) {
-            this.app.vault.offref(ref);
-        }
-        this.autoSyncRefs = [];
     }
 
     async activateTaskView(): Promise<void> {
@@ -1214,36 +1303,100 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    private registerAutoSync(): void {
-        const handler = (file: TAbstractFile) => {
-            if (this.wikiSync?.isWikiPath(file.path)) return;
-            // Skip everything the server itself writes into the vault
-            // (crawled/, imported/, documents/, wiki/). Once server PR 3 lands
-            // this prevents the vault watcher from re-triggering sync on
-            // files lilbee just materialized.
-            if (file.path.startsWith("lilbee/")) return;
-            this.debouncedSync();
-        };
-        const vault = this.app.vault;
-        const refs = [
-            vault.on("create", handler),
-            vault.on("modify", handler),
-            vault.on("delete", handler),
-            vault.on("rename", handler),
-        ];
-        for (const ref of refs) {
-            this.autoSyncRefs.push(ref);
-            this.registerEvent(ref);
+    /**
+     * Open the chat view and the task center as adjacent leaves in the right
+     * sidebar so a fresh-install user lands on a usable workspace without
+     * having to discover the ribbon icon and the slash command. Idempotent —
+     * if either view is already open, just reveal it; no duplicates.
+     */
+    async openCockpit(): Promise<void> {
+        const workspace = this.app.workspace;
+        const existingChat = workspace.getLeavesOfType(VIEW_TYPE_CHAT);
+        const existingTasks = workspace.getLeavesOfType(VIEW_TYPE_TASKS);
+
+        let chatLeaf = existingChat[0] ?? null;
+        if (!chatLeaf) {
+            const leaf = workspace.getRightLeaf(false);
+            if (!leaf) return;
+            chatLeaf = leaf;
+            await chatLeaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
         }
+
+        let tasksLeaf = existingTasks[0] ?? null;
+        if (!tasksLeaf) {
+            // Stack the task center below chat in the right sidebar so both
+            // are visible at once. createLeafBySplit on a sidebar leaf splits
+            // within the sidebar itself.
+            const split = workspace.createLeafBySplit(chatLeaf, "horizontal", false);
+            if (split) {
+                tasksLeaf = split;
+                await tasksLeaf.setViewState({ type: VIEW_TYPE_TASKS, active: true });
+            }
+        }
+
+        workspace.revealLeaf(chatLeaf);
+        if (tasksLeaf) workspace.revealLeaf(tasksLeaf);
     }
 
-    private debouncedSync(): void {
-        if (this.syncTimeout) {
-            clearTimeout(this.syncTimeout);
+    private registerPendingSyncHintWatchers(): void {
+        const handler = (file: TAbstractFile) => {
+            if (this.wikiSync?.isWikiPath(file.path)) return;
+            // Skip paths the server itself writes into the vault — they're
+            // already known sources, not work to sync.
+            if (file.path.startsWith("lilbee/")) return;
+            this.schedulePendingSyncHint();
+        };
+        const vault = this.app.vault;
+        this.registerEvent(vault.on("create", handler));
+        this.registerEvent(vault.on("modify", handler));
+        this.registerEvent(vault.on("delete", handler));
+        this.registerEvent(vault.on("rename", handler));
+    }
+
+    private schedulePendingSyncHint(): void {
+        if (this.pendingHintTimeout) {
+            clearTimeout(this.pendingHintTimeout);
         }
-        this.syncTimeout = setTimeout(() => {
-            this.triggerSync();
-        }, this.settings.syncDebounceMs);
+        this.pendingHintTimeout = setTimeout(() => {
+            this.pendingHintTimeout = null;
+            void this.updatePendingSyncHint();
+        }, PENDING_SYNC_HINT_DEBOUNCE_MS);
+    }
+
+    private async countPendingSync(): Promise<number> {
+        const vaultFiles = this.app.vault
+            .getFiles()
+            .filter((f) => SUPPORTED_SYNC_EXTENSIONS.has(f.extension.toLowerCase()))
+            .filter((f) => !this.wikiSync?.isWikiPath(f.path) && !f.path.startsWith("lilbee/"));
+        const known = new Set<string>();
+        try {
+            // Page through the documents endpoint so we count every known
+            // source, not just the first page.
+            let offset = 0;
+            const limit = 100;
+            while (true) {
+                const page = await this.api.listDocuments(undefined, limit, offset);
+                for (const d of page.documents) known.add(d.filename);
+                if (!page.has_more || page.documents.length === 0) break;
+                offset += page.documents.length;
+            }
+        } catch {
+            // Server offline — leave the hint hidden rather than guessing.
+            return 0;
+        }
+        return vaultFiles.filter((f) => !known.has(f.name)).length;
+    }
+
+    async updatePendingSyncHint(): Promise<void> {
+        if (!this.syncHintEl) return;
+        const count = await this.countPendingSync();
+        if (!this.syncHintEl) return;
+        if (count > 0) {
+            this.syncHintEl.setText(MESSAGES.STATUS_DOCS_PENDING_SYNC(count));
+            this.syncHintEl.style.display = "";
+        } else {
+            this.syncHintEl.style.display = "none";
+        }
     }
 
     async runWikiLint(): Promise<void> {
@@ -1421,6 +1574,11 @@ export default class LilbeePlugin extends Plugin {
 
     async triggerSync(): Promise<void> {
         if (!this.statusBarEl) return;
+        // Re-entry guard: if a sync is already active or queued, this trigger
+        // is a no-op. Without it, repeated clicks (sync hint, command palette,
+        // crawler-finished auto-trigger) stack up — and cancelling the active
+        // task just promotes the next queued sync, making cancel feel broken.
+        if (this.taskQueue.hasPending(TASK_TYPE.SYNC)) return;
         const taskId = this.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
@@ -1428,6 +1586,7 @@ export default class LilbeePlugin extends Plugin {
         }
         this.syncController = new AbortController();
         this.taskQueue.registerAbort(taskId, this.syncController);
+        this.markSyncHintRunning(true);
 
         try {
             const progress = new FileProgressTracker();
@@ -1466,6 +1625,14 @@ export default class LilbeePlugin extends Plugin {
                             "{total}",
                             String(d.total_chunks),
                         ),
+                    );
+                } else if (event.event === SSE_EVENT.BATCH_PROGRESS) {
+                    const d = event.data as BatchProgressPayload;
+                    progress.completeFile(d.current, d.total);
+                    this.taskQueue.update(
+                        taskId,
+                        progress.percent(),
+                        MESSAGES.STATUS_TASK_BATCH(d.current, d.total, d.file, d.status),
                     );
                 } else if (event.event === SSE_EVENT.DONE) {
                     const parsed = parseAddDoneEvent(event.data);
@@ -1506,6 +1673,19 @@ export default class LilbeePlugin extends Plugin {
             }
         } finally {
             this.syncController = null;
+            this.markSyncHintRunning(false);
+            this.schedulePendingSyncHint();
+        }
+    }
+
+    private markSyncHintRunning(running: boolean): void {
+        if (!this.syncHintEl) return;
+        if (running) {
+            this.syncHintEl.setAttribute("data-running", "true");
+            this.syncHintEl.setText(MESSAGES.STATUS_SYNC_IN_PROGRESS);
+            this.syncHintEl.style.display = "";
+        } else {
+            this.syncHintEl.removeAttribute("data-running");
         }
     }
 }

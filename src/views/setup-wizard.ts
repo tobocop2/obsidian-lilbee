@@ -1,12 +1,12 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import { SessionTokenError } from "../api";
-import type { CatalogEntry, SSEEvent, SyncDone } from "../types";
-import { SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK, MODEL_SOURCE } from "../types";
+import type { BatchProgressPayload, CatalogEntry, SSEEvent, SyncDone } from "../types";
+import { CATALOG_TAB, SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK } from "../types";
 import { CatalogModal } from "./catalog-modal";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
-import { percentFromSse, extractSseErrorMessage, getSystemMemoryGB } from "../utils";
+import { bindEscapeToClose, percentFromSse, extractSseErrorMessage, getSystemMemoryGB } from "../utils";
 
 type FeaturedModel = CatalogEntry;
 type EmbeddingModel = CatalogEntry;
@@ -41,7 +41,32 @@ const STEP_KEY: Record<number, string> = {
 };
 
 export function recommendedIndex(models: FeaturedModel[], memGB: number | null): number {
-    if (memGB === null || models.length === 0) return 0;
+    if (models.length === 0) return 0;
+    // Prefer an already-installed model that fits the host — first-time
+    // setup against an established server should not push the user to
+    // download a fresh 18 GB family when a smaller installed one works.
+    const installedFitIdx = bestInstalledFitIndex(models, memGB);
+    if (installedFitIdx >= 0) return installedFitIdx;
+    if (memGB === null) return 0;
+    return largestFitIndex(models, memGB);
+}
+
+function bestInstalledFitIndex(models: FeaturedModel[], memGB: number | null): number {
+    let best = -1;
+    let bestRam = -1;
+    for (let i = 0; i < models.length; i++) {
+        const m = models[i];
+        if (!m.installed) continue;
+        if (memGB !== null && m.min_ram_gb > memGB) continue;
+        if (m.min_ram_gb >= bestRam) {
+            best = i;
+            bestRam = m.min_ram_gb;
+        }
+    }
+    return best;
+}
+
+function largestFitIndex(models: FeaturedModel[], memGB: number): number {
     let best = 0;
     let bestRam = 0;
     for (let i = 0; i < models.length; i++) {
@@ -130,6 +155,7 @@ export class SetupWizard extends Modal {
     constructor(app: App, plugin: LilbeePlugin) {
         super(app);
         this.plugin = plugin;
+        bindEscapeToClose(this);
     }
 
     onOpen(): void {
@@ -239,10 +265,15 @@ export class SetupWizard extends Modal {
 
         this.renderSectionHeading(step, MESSAGES.WIZARD_INTRO_STEPS);
         const ul = step.createEl("ul", { cls: "lilbee-wizard-intro-list" });
+        ul.createEl("li", { text: MESSAGES.WIZARD_STEP_CHOOSE_SERVER });
         ul.createEl("li", { text: MESSAGES.WIZARD_STEP_CHOOSE_MODEL });
         ul.createEl("li", { text: MESSAGES.WIZARD_STEP_INDEX });
 
-        step.createEl("p", { text: MESSAGES.WIZARD_LOCAL_ONLY, cls: "lilbee-wizard-hint" });
+        const localityHint =
+            this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL
+                ? MESSAGES.WIZARD_LOCAL_ONLY_EXTERNAL
+                : MESSAGES.WIZARD_LOCAL_ONLY_MANAGED;
+        step.createEl("p", { text: localityHint, cls: "lilbee-wizard-hint" });
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
         const skipBtn = actions.createEl("button", { text: MESSAGES.BUTTON_SKIP_SETUP });
@@ -485,7 +516,12 @@ export class SetupWizard extends Modal {
 
         const catalogBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BROWSE_FULL_CATALOG });
         catalogBtn.addEventListener("click", () => {
-            new CatalogModal(this.app, this.plugin).open();
+            // Close the wizard first so the catalog modal isn't stacked on top
+            // of two close-X buttons. Users can re-open the wizard from the
+            // settings tab if they want to come back; their model selection is
+            // saved on the catalog side via the regular Use button.
+            this.close();
+            new CatalogModal(this.app, this.plugin, MODEL_TASK.CHAT, CATALOG_TAB.CHAT).open();
         });
 
         const downloadBtn = actions.createEl("button", { text: MESSAGES.BUTTON_DOWNLOAD_CONTINUE, cls: "mod-cta" });
@@ -574,11 +610,7 @@ export class SetupWizard extends Modal {
         this.updateProgress(step, progressFill, undefined);
 
         try {
-            for await (const event of this.plugin.api.pullModel(
-                model.hf_repo,
-                MODEL_SOURCE.NATIVE,
-                this.pullController.signal,
-            )) {
+            for await (const event of this.plugin.api.pullModel(model.hf_repo, "native", this.pullController.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = percentFromSse(d);
@@ -743,11 +775,7 @@ export class SetupWizard extends Modal {
         this.updateProgress(step, progressFill, undefined);
 
         try {
-            for await (const event of this.plugin.api.pullModel(
-                model.hf_repo,
-                MODEL_SOURCE.NATIVE,
-                this.pullController.signal,
-            )) {
+            for await (const event of this.plugin.api.pullModel(model.hf_repo, "native", this.pullController.signal)) {
                 if (event.event === SSE_EVENT.PROGRESS) {
                     const d = event.data as { percent?: number; current?: number; total?: number };
                     const pct = percentFromSse(d);
@@ -834,6 +862,10 @@ export class SetupWizard extends Modal {
                         "{current}",
                         String(d.current_file),
                     ).replace("{total}", String(d.total_files));
+                } else if (event.event === SSE_EVENT.BATCH_PROGRESS) {
+                    const d = event.data as BatchProgressPayload;
+                    this.updateProgress(step, progressFill, Math.round((d.current / d.total) * 100));
+                    progressLabel.textContent = MESSAGES.STATUS_TASK_BATCH(d.current, d.total, d.file, d.status);
                 }
                 if (event.event === SSE_EVENT.EMBED) {
                     const d = event.data as { file?: string };
@@ -1015,11 +1047,11 @@ export class SetupWizard extends Modal {
     }
 
     back(): void {
+        // Welcome may fast-forward over SERVER_MODE when the server is
+        // already up, but back() always honors it so users can revisit and
+        // switch managed/external without restarting the wizard.
         if (this.step === WIZARD_STEP.MODEL_PICKER) {
-            const serverReady =
-                this.plugin.serverManager?.state === SERVER_STATE.READY ||
-                this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL;
-            this.step = serverReady ? WIZARD_STEP.WELCOME : WIZARD_STEP.SERVER_MODE;
+            this.step = WIZARD_STEP.SERVER_MODE;
         } else if (this.step === WIZARD_STEP.EMBEDDING_PICKER) {
             this.step = WIZARD_STEP.MODEL_PICKER;
         } else {
@@ -1036,6 +1068,13 @@ export class SetupWizard extends Modal {
         this.plugin.settings.setupCompleted = true;
         await this.plugin.saveSettings();
         this.close();
-        void this.plugin.activateChatView();
+        // Open chat and task center side by side so the user lands on a
+        // workspace that's ready to use, not an empty editor. Honors the
+        // autoOpenCockpit setting in case a power user has disabled it.
+        if (this.plugin.settings.autoOpenCockpit) {
+            void this.plugin.openCockpit();
+        } else {
+            void this.plugin.activateChatView();
+        }
     }
 }

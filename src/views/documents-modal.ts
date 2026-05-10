@@ -3,7 +3,7 @@ import type LilbeePlugin from "../main";
 import type { DocumentEntry, DocumentsResponse } from "../types";
 import { ConfirmModal } from "./confirm-modal";
 import { MESSAGES } from "../locales/en";
-import { debounce, DEBOUNCE_MS } from "../utils";
+import { bindEscapeToClose, debounce, DEBOUNCE_MS, relativeTimeFromIso } from "../utils";
 
 const PAGE_SIZE = 20;
 const SCROLL_BOTTOM_THRESHOLD_PX = 200;
@@ -28,14 +28,7 @@ export class DocumentsModal extends Modal {
         const searchDebounced = debounce(() => this.resetAndFetch(), DEBOUNCE_MS);
         this.debouncedSearch = searchDebounced.run;
         this.cancelDebouncedSearch = searchDebounced.cancel;
-        // Modal's default scope handles ESC, but in QA the search input held
-        // focus and the keypress never reached the close path. Register an
-        // explicit ESC binding on the modal's scope so dismissal works
-        // regardless of which inner element has focus.
-        this.scope.register([], "Escape", () => {
-            this.close();
-            return false;
-        });
+        bindEscapeToClose(this);
     }
 
     onOpen(): void {
@@ -103,10 +96,7 @@ export class DocumentsModal extends Modal {
             this.total = response.total;
             this.documents.push(...response.documents);
             this.offset += response.documents.length;
-            this.hasMore =
-                response.has_more !== undefined
-                    ? response.has_more
-                    : response.documents.length > 0 && this.offset < response.total;
+            this.hasMore = response.has_more;
 
             for (const doc of response.documents) {
                 this.renderRow(doc);
@@ -141,9 +131,11 @@ export class DocumentsModal extends Modal {
             this.updateRemoveBtn();
         });
 
-        row.createDiv({ cls: "lilbee-documents-row-name", text: doc.filename });
+        const nameEl = row.createDiv({ cls: "lilbee-documents-row-name", text: doc.filename });
+        nameEl.setAttribute("title", doc.filename);
         row.createDiv({ cls: "lilbee-documents-row-chunks", text: `${doc.chunk_count} chunks` });
-        row.createDiv({ cls: "lilbee-documents-row-date", text: doc.ingested_at });
+        const dateEl = row.createDiv({ cls: "lilbee-documents-row-date", text: relativeTimeFromIso(doc.ingested_at) });
+        if (doc.ingested_at) dateEl.setAttribute("title", doc.ingested_at);
     }
 
     private async removeSelected(): Promise<void> {

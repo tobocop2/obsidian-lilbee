@@ -33,14 +33,6 @@ describe("DEFAULT_SETTINGS", () => {
         expect(DEFAULT_SETTINGS.topK).toBe(5);
     });
 
-    it("has syncMode set to manual", () => {
-        expect(DEFAULT_SETTINGS.syncMode).toBe("manual");
-    });
-
-    it("has syncDebounceMs of 5000", () => {
-        expect(DEFAULT_SETTINGS.syncDebounceMs).toBe(5000);
-    });
-
     it("has wikiEnabled defaulting to false", () => {
         expect(DEFAULT_SETTINGS.wikiEnabled).toBe(false);
     });
@@ -53,6 +45,7 @@ describe("DEFAULT_SETTINGS", () => {
         const keys = Object.keys(DEFAULT_SETTINGS).sort();
         const expected = [
             "adaptiveThreshold",
+            "autoOpenCockpit",
             "hfToken",
             "lilbeeVersion",
             "manualToken",
@@ -64,9 +57,9 @@ describe("DEFAULT_SETTINGS", () => {
             "serverUrl",
             "setupCompleted",
             "storeContentInVault",
-            "syncDebounceMs",
-            "syncMode",
-            "systemPrompt",
+            "lastCatalogTab",
+            "generalSystemPrompt",
+            "ragSystemPrompt",
             "topK",
             "wikiEnabled",
             "wikiFaithfulnessThreshold",
@@ -265,50 +258,20 @@ describe("Message interface", () => {
 });
 
 describe("LilbeeSettings interface", () => {
-    it("accepts manual syncMode", () => {
+    it("accepts a fully-specified settings object", () => {
         const s: LilbeeSettings = {
             serverUrl: "http://localhost:7433",
             maxDistance: 0.9,
             adaptiveThreshold: false,
             topK: 3,
-            syncMode: "manual",
-            syncDebounceMs: 2000,
-            temperature: null,
-            top_p: null,
-            top_k_sampling: null,
-            repeat_penalty: null,
-            num_ctx: null,
-            seed: null,
             serverMode: "managed",
             serverPort: null,
             lilbeeVersion: "",
-            systemPrompt: "",
+            ragSystemPrompt: "",
+            generalSystemPrompt: "",
             setupCompleted: false,
-        };
-        expect(s.syncMode).toBe("manual");
-    });
-
-    it("accepts auto syncMode", () => {
-        const s: LilbeeSettings = {
-            serverUrl: "http://localhost:7433",
-            maxDistance: 0.9,
-            adaptiveThreshold: false,
-            topK: 3,
-            syncMode: "auto",
-            syncDebounceMs: 2000,
-            temperature: null,
-            top_p: null,
-            top_k_sampling: null,
-            repeat_penalty: null,
-            num_ctx: null,
-            seed: null,
-            serverMode: "managed",
-            serverPort: null,
-            lilbeeVersion: "",
-            systemPrompt: "",
-            setupCompleted: true,
-        };
-        expect(s.syncMode).toBe("auto");
+        } as unknown as LilbeeSettings;
+        expect(s.topK).toBe(3);
     });
 });
 

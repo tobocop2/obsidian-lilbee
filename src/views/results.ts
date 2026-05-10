@@ -1,7 +1,6 @@
 import { App } from "obsidian";
 import type { LilbeeClient } from "../api";
 import type { DocumentResult, Source } from "../types";
-import { CONTENT_TYPE } from "../types";
 import { executeSourceClick, sourceClickAction } from "../utils/source-click";
 
 const MAX_EXCERPT_CHARS = 200;
@@ -23,31 +22,26 @@ function documentResultToSource(result: DocumentResult): Source {
 }
 
 /**
- * Format a citation suffix. PDFs get a `(p. N)` / `(pp. N–M)` page label;
- * non-PDFs prefer `(lines N–M)` when line bounds are present (markdown is
- * the common case) and otherwise return null. The `content_type` gate
- * silences the `(p. 0)` artefact that the server emits for some markdown
- * sources whose `page_start` is a placeholder rather than a real page —
- * which means it must be threaded by every caller, not optional.
+ * Format a citation suffix. Prefer `(p. N)` / `(pp. N–M)` when the server
+ * reports a real page (>0) — the chat path can deliver PDF sources with an
+ * empty content_type, so we don't gate on it. Fall back to `(lines N–M)`
+ * for line bounds; treat 0 as the server's null-sentinel and skip it.
  */
-export function formatLocation(
-    excerpt: {
-        page_start: number | null;
-        page_end: number | null;
-        line_start: number | null;
-        line_end: number | null;
-    },
-    content_type: string,
-): string | null {
-    if (content_type === CONTENT_TYPE.PDF && excerpt.page_start !== null) {
-        return excerpt.page_end !== null && excerpt.page_end !== excerpt.page_start
-            ? `pp. ${excerpt.page_start}–${excerpt.page_end}`
-            : `p. ${excerpt.page_start}`;
+export function formatLocation(excerpt: {
+    page_start: number | null;
+    page_end: number | null;
+    line_start: number | null;
+    line_end: number | null;
+}): string | null {
+    const pageStart = excerpt.page_start ?? 0;
+    if (pageStart > 0) {
+        const pageEnd = excerpt.page_end ?? 0;
+        return pageEnd > 0 && pageEnd !== pageStart ? `pp. ${pageStart}–${pageEnd}` : `p. ${pageStart}`;
     }
-    if (excerpt.line_start !== null) {
-        return excerpt.line_end !== null && excerpt.line_end !== excerpt.line_start
-            ? `lines ${excerpt.line_start}–${excerpt.line_end}`
-            : `line ${excerpt.line_start}`;
+    const lineStart = excerpt.line_start ?? 0;
+    if (lineStart > 0) {
+        const lineEnd = excerpt.line_end ?? 0;
+        return lineEnd > 0 && lineEnd !== lineStart ? `lines ${lineStart}–${lineEnd}` : `line ${lineStart}`;
     }
     return null;
 }
@@ -93,7 +87,7 @@ export function renderDocumentResult(
     for (const excerpt of excerpts) {
         const excerptEl = card.createDiv({ cls: "lilbee-excerpt" });
         excerptEl.createEl("p", { text: truncate(excerpt.content, MAX_EXCERPT_CHARS) });
-        const loc = formatLocation(excerpt, result.content_type);
+        const loc = formatLocation(excerpt);
         if (loc) {
             excerptEl.createEl("span", { text: loc, cls: "lilbee-location" });
         }
@@ -125,7 +119,7 @@ export function renderSourceChip(
     }
 
     let label = source.source;
-    const loc = formatLocation(source, source.content_type);
+    const loc = formatLocation(source);
     if (loc) {
         label += ` (${loc})`;
     }
@@ -145,4 +139,53 @@ export function renderSourceChip(
             void executeSourceClick(app, api, sourceClickAction(source, app.vault));
         });
     }
+}
+
+/**
+ * Render a chip that groups multiple chunks from the same source under one
+ * filename, with each chunk's location surfaced as a small clickable badge.
+ * Avoids the "cv-manual.pdf (line 0) × 3" repetition the per-chunk chip path
+ * produces when several adjacent chunks share a file. Wiki sources fall
+ * through to the per-chip renderer because their click target is per-slug.
+ */
+export function renderAggregatedSourceChips(
+    container: HTMLElement,
+    sources: Source[],
+    app: App,
+    api: LilbeeClient,
+): void {
+    const groups = groupSourcesByFile(sources);
+    for (const group of groups) {
+        const first = group[0];
+        if (first.chunk_type === "wiki") {
+            for (const s of group) renderSourceChip(container, s, app, api);
+            continue;
+        }
+        const chip = container.createEl("span", { cls: "lilbee-source-chip lilbee-source-chip-grouped" });
+        chip.createEl("span", { text: first.source, cls: "lilbee-source-chip-file" });
+        for (const source of group) {
+            const loc = formatLocation(source);
+            const label = loc ?? "open";
+            const tag = chip.createEl("span", { text: label, cls: "lilbee-source-chip-loc" });
+            tag.style.cursor = "pointer";
+            tag.addEventListener("click", (e: Event) => {
+                e.stopPropagation();
+                void executeSourceClick(app, api, sourceClickAction(source, app.vault));
+            });
+        }
+    }
+}
+
+function groupSourcesByFile(sources: Source[]): Source[][] {
+    const order: string[] = [];
+    const buckets = new Map<string, Source[]>();
+    for (const source of sources) {
+        const key = `${source.chunk_type ?? "raw"}::${source.source}`;
+        if (!buckets.has(key)) {
+            buckets.set(key, []);
+            order.push(key);
+        }
+        buckets.get(key)!.push(source);
+    }
+    return order.map((k) => buckets.get(k)!);
 }

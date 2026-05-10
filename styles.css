@@ -107,6 +107,26 @@
     cursor: default;
 }
 
+.lilbee-source-chip-grouped {
+    padding: 2px 6px 2px 10px;
+}
+
+.lilbee-source-chip-file {
+    margin-right: 4px;
+}
+
+.lilbee-source-chip-loc {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 0 6px;
+    border-radius: 8px;
+    background-color: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+}
+
+.lilbee-source-chip-loc:hover {
+    background-color: color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+}
+
 .lilbee-chat-container {
     display: flex;
     flex-direction: column;
@@ -284,14 +304,14 @@
 
 .lilbee-chat-message-error {
     align-self: flex-start;
-    background-color: var(--background-modifier-error, rgba(200, 60, 60, 0.4));
-    color: var(--text-on-accent, var(--text-normal));
+    background-color: color-mix(in srgb, var(--text-error) 10%, transparent);
+    color: var(--text-normal);
+    border-radius: 4px 16px 16px 16px;
     border-left: 3px solid var(--text-error);
 }
 
 .lilbee-chat-error-text {
-    font-style: italic;
-    color: var(--text-on-accent, var(--text-normal));
+    color: var(--text-normal);
 }
 
 .lilbee-chat-content {
@@ -345,6 +365,11 @@
 
 .lilbee-chat-input textarea:focus {
     border-color: var(--interactive-accent);
+}
+
+.lilbee-chat-input textarea:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 .lilbee-chat-add-file {
@@ -828,7 +853,12 @@
 }
 
 
-/* Card Grid Layout */
+/* Card Grid Layout — Editorial Spec
+ * Cards present a model the way a magazine specimen sheet would: a left rail
+ * (3px) signals hardware fit, the name owns the top, monospace specs read as
+ * data, and one primary action wins. The rail also doubles as the active
+ * indicator (interactive-accent) so the card itself signals "this is current."
+ */
 
 .lilbee-catalog-grid {
     display: grid;
@@ -837,67 +867,290 @@
 }
 
 .lilbee-model-card {
+    --rail: var(--background-modifier-border);
+    position: relative;
+    background: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
-    border-radius: 10px;
-    padding: 14px;
+    border-left: 3px solid var(--rail);
+    border-radius: 8px;
+    padding: 14px 14px 12px 16px;
     cursor: pointer;
-    transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
-    background-color: var(--background-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color 160ms ease, transform 160ms ease, background-color 160ms ease;
 }
 
 .lilbee-model-card:hover {
-    border-color: var(--interactive-accent);
+    background: color-mix(in srgb, var(--background-secondary) 70%, var(--background-modifier-hover));
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
+
+.lilbee-model-card.is-fits { --rail: var(--color-green, #4cb37b); }
+.lilbee-model-card.is-tight { --rail: var(--color-orange, #d49340); }
+.lilbee-model-card.is-wont-run { --rail: var(--color-red, #c8392f); }
 
 .lilbee-model-card.is-selected {
-    border-color: var(--interactive-accent);
-    background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
-    box-shadow: 0 0 0 1px var(--interactive-accent);
+    --rail: var(--interactive-accent);
+    background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-secondary));
+    border-color: color-mix(in srgb, var(--interactive-accent) 40%, var(--background-modifier-border));
 }
 
-.lilbee-model-card.is-featured {
-    background-color: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
-    border-color: color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+.lilbee-model-card.is-selected:hover {
+    transform: none;
 }
 
-.lilbee-model-card.is-featured:hover {
-    border-color: color-mix(in srgb, var(--interactive-accent) 40%, transparent);
-}
-
-.lilbee-model-card-header {
+/* Head: name dominates, info button hugs the corner. */
+.lilbee-model-card-head {
     display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-    margin-bottom: 6px;
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 0;
 }
 
 .lilbee-model-card-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 15px;
     font-weight: 600;
-    font-size: 14px;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
 }
 
-.lilbee-model-card-specs {
-    color: var(--text-muted);
+.lilbee-model-card-info {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-top: 2px;
+    border-radius: 50%;
+    border: 0;
+    background: transparent;
+    color: var(--text-faint);
+    cursor: pointer;
     font-size: 12px;
-    margin-bottom: 4px;
+    font-style: italic;
+    line-height: 1;
+    padding: 0;
+    transition: color 120ms ease, background-color 120ms ease;
 }
 
-.lilbee-model-card-status {
-    font-size: 11px;
+.lilbee-model-card-info:hover {
+    color: var(--text-normal);
+    background: var(--background-modifier-hover);
 }
 
-.lilbee-model-card-downloads {
+/* Tags row: small all-caps chips. Task gets a tinted tone, featured uses the
+ * accent fill, provider stays as a dashed-outline footnote. */
+.lilbee-model-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    align-items: center;
+}
+
+.lilbee-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: color-mix(in srgb, var(--text-normal) 8%, transparent);
     color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.lilbee-tag-task.is-chat { color: color-mix(in srgb, var(--interactive-accent) 80%, white); background: color-mix(in srgb, var(--interactive-accent) 14%, transparent); }
+.lilbee-tag-task.is-embed { color: color-mix(in srgb, var(--color-green, #4cb37b) 90%, white); background: color-mix(in srgb, var(--color-green, #4cb37b) 14%, transparent); }
+.lilbee-tag-task.is-vision { color: color-mix(in srgb, var(--color-orange, #d49340) 90%, white); background: color-mix(in srgb, var(--color-orange, #d49340) 14%, transparent); }
+.lilbee-tag-task.is-rerank { color: rgb(136, 200, 231); background: color-mix(in srgb, rgb(56, 160, 212) 14%, transparent); }
+
+.lilbee-tag-featured {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    text-transform: none;
+    letter-spacing: 0.02em;
+    font-weight: 700;
+}
+
+.lilbee-tag-provider {
+    font-style: italic;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text-faint);
+    background: transparent;
+    border: 1px dashed color-mix(in srgb, var(--text-faint) 40%, transparent);
+}
+
+/* Specs row: monospace data line, bold size leads, dot separators. */
+.lilbee-model-card-specs {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-family: var(--font-monospace);
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: -0.01em;
+}
+
+.lilbee-model-card-specs strong {
+    color: var(--text-normal);
+    font-weight: 600;
+}
+
+.lilbee-model-card-specs-sep {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    display: inline-block;
+}
+
+/* Status row: dot+label on the left, fit text aligned right in rail color. */
+.lilbee-model-card-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.lilbee-model-card-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    display: inline-block;
+    flex: 0 0 auto;
+}
+
+.lilbee-model-card-status-dot.is-installed {
+    background: var(--color-green, #4cb37b);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-green, #4cb37b) 18%, transparent);
+}
+
+.lilbee-model-card-status-dot.is-active {
+    background: var(--interactive-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+}
+
+.lilbee-model-card-status-label {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 10px;
+    color: var(--text-normal);
+}
+
+.lilbee-model-card-status-label.is-muted {
+    color: var(--text-muted);
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 500;
     font-size: 11px;
 }
 
+.lilbee-model-card-fit-text {
+    margin-left: auto;
+    text-transform: uppercase;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--rail);
+    flex: 0 0 auto;
+}
+
+/* Action row: dashed top divider, ghost buttons, primary gets the accent. */
 .lilbee-model-card-actions {
-    margin-top: 8px;
     display: flex;
     gap: 6px;
+    margin-top: 2px;
+    padding-top: 10px;
+    border-top: 1px dashed color-mix(in srgb, var(--background-modifier-border) 60%, transparent);
+}
+
+.lilbee-btn {
+    flex: 1 1 auto;
+    appearance: none;
+    border: 1px solid var(--background-modifier-border);
+    background: transparent;
+    color: var(--text-normal);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.lilbee-btn:hover { background: var(--background-modifier-hover); }
+
+.lilbee-btn-primary {
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.lilbee-btn-primary:hover {
+    background: color-mix(in srgb, var(--interactive-accent) 88%, white 12%);
+}
+
+.lilbee-btn-danger:hover {
+    background: color-mix(in srgb, var(--color-red, #c8392f) 16%, transparent);
+    border-color: color-mix(in srgb, var(--color-red, #c8392f) 60%, transparent);
+    color: var(--color-red, #c8392f);
+}
+
+.lilbee-btn-active[disabled] {
+    opacity: 1;
+    cursor: default;
+    background: transparent;
+    color: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+}
+
+/* Fit chip used in the detail drawer and the slash-command picker rows.
+ * Cards use the `is-fits` rail instead. */
+.lilbee-fit-chip {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: 4px;
+    border: 1px solid transparent;
+}
+
+.lilbee-fit-fits {
+    color: var(--color-green, #4cb37b);
+    background: color-mix(in srgb, var(--color-green, #4cb37b) 14%, transparent);
+    border-color: color-mix(in srgb, var(--color-green, #4cb37b) 40%, transparent);
+}
+
+.lilbee-fit-tight {
+    color: color-mix(in srgb, var(--color-orange, #d49340) 90%, var(--text-normal));
+    background: color-mix(in srgb, var(--color-orange, #d49340) 12%, transparent);
+    border-color: color-mix(in srgb, var(--color-orange, #d49340) 35%, transparent);
+}
+
+.lilbee-fit-wont_run {
+    color: var(--color-red, #c8392f);
+    background: color-mix(in srgb, var(--color-red, #c8392f) 14%, transparent);
+    border-color: color-mix(in srgb, var(--color-red, #c8392f) 40%, transparent);
 }
 
 /* Pill/Badge */
@@ -1007,31 +1260,51 @@
 }
 
 .lilbee-catalog-list-col-name {
-    flex: 2;
+    /* min-width:0 lets the column shrink so ellipsis kicks in instead of
+     * the name pushing other columns off their gridlines. */
+    flex: 2 1 0;
+    min-width: 0;
     font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .lilbee-catalog-list-col-task {
-    flex: 0.8;
+    flex: 0 0 80px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.04em;
 }
 
 .lilbee-catalog-list-col-size {
-    flex: 0.6;
+    flex: 0 0 64px;
     text-align: right;
+    font-variant-numeric: tabular-nums;
 }
 
 .lilbee-catalog-list-col-quant {
-    flex: 0.8;
+    flex: 0 0 80px;
 }
 
 .lilbee-catalog-list-col-downloads {
-    flex: 0.8;
+    flex: 0 0 72px;
     text-align: right;
     color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.lilbee-catalog-list-col-info {
+    flex: 0 0 28px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .lilbee-catalog-list-col-action {
-    flex: 0.8;
+    flex: 0 0 auto;
+    min-width: 96px;
     display: flex;
     gap: 4px;
     justify-content: flex-end;
@@ -1126,7 +1399,8 @@
     font-family: var(--font-monospace);
     font-size: var(--font-smaller, 12px);
     min-height: 10em;
-    resize: vertical;
+    /* Match the system-prompt textareas: drag from the corner to grow either way. */
+    resize: both;
     width: 100%;
     box-sizing: border-box;
 }
@@ -1263,7 +1537,8 @@
 }
 
 .lilbee-documents-row-name {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
     font-weight: var(--font-medium, 500);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1271,14 +1546,19 @@
 }
 
 .lilbee-documents-row-chunks {
+    flex: 0 0 auto;
     color: var(--text-muted);
-    min-width: 70px;
+    min-width: 60px;
+    text-align: right;
 }
 
 .lilbee-documents-row-date {
+    flex: 0 0 auto;
     color: var(--text-faint);
-    min-width: 100px;
+    min-width: 80px;
     font-size: var(--font-smallest, 10px);
+    text-align: right;
+    white-space: nowrap;
 }
 
 .lilbee-documents-sentinel {
@@ -2102,6 +2382,36 @@
     background-color: var(--text-error, #ef4444);
 }
 
+.lilbee-statusbar-dot.is-muted {
+    background-color: var(--text-faint, #888);
+    animation: none;
+    opacity: 0.7;
+}
+
+/* Make Obsidian's built-in close-X button reliably visible on lilbee modals
+ * even when a theme has dimmed it. Sized for a click target and positioned
+ * at the same top-right corner Obsidian's default uses. */
+.lilbee-modal-chrome .modal-close-button {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    top: 12px;
+    right: 12px;
+    color: var(--text-muted);
+    opacity: 0.85;
+    cursor: pointer;
+    z-index: 2;
+}
+
+.lilbee-modal-chrome .modal-close-button:hover {
+    color: var(--text-normal);
+    opacity: 1;
+    background-color: var(--background-modifier-hover);
+    border-radius: 4px;
+}
+
 @keyframes lilbee-dot-pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.5; transform: scale(0.85); }
@@ -2760,7 +3070,9 @@
    the preview as large as they need. Applying resize to the inner contentEl
    gets clipped by Obsidian's default ``overflow: hidden`` on the frame. */
 .lilbee-preview-modal-frame {
-    position: relative;
+    /* position is set inline (fixed) so the modal can be dragged anywhere on
+     * screen; centering happens via Obsidian's auto margins until the user
+     * grabs the title bar. */
     width: min(880px, 92vw);
     height: min(640px, 85vh);
     min-width: 360px;
@@ -2769,6 +3081,21 @@
     max-height: 95vh;
     resize: both;
     overflow: hidden;
+}
+
+/* The whole modal chrome doubles as a drag handle. Override back to default
+   on the body host and interactive controls so they stay clickable. */
+.lilbee-preview-drag-handle {
+    cursor: move;
+    user-select: none;
+}
+.lilbee-preview-drag-handle .lilbee-preview-host,
+.lilbee-preview-drag-handle button,
+.lilbee-preview-drag-handle input,
+.lilbee-preview-drag-handle textarea,
+.lilbee-preview-drag-handle a {
+    cursor: auto;
+    user-select: text;
 }
 
 .lilbee-preview-modal {
@@ -2882,3 +3209,370 @@
     border-left: 3px solid var(--text-error);
 }
 
+
+/* tui-quality-sweep additions —
+   Banner, Local|Frontier tabs, frontier rows, key-status pills, model picker. */
+
+.lilbee-chat-banner {
+    margin: 4px 0 6px;
+    padding: 6px 10px;
+    border-left: 3px solid var(--color-yellow, #d4a841);
+    background-color: var(--background-modifier-border-hover, rgba(212, 168, 65, 0.12));
+    color: var(--text-muted);
+    font-size: var(--font-ui-small, 12px);
+    border-radius: var(--radius-s, 4px);
+}
+
+.lilbee-chat-mode-container {
+    display: flex;
+    gap: 2px;
+    align-items: center;
+    margin-left: auto;
+}
+
+.lilbee-chat-mode-btn {
+    background-color: var(--background-secondary);
+    color: var(--text-muted);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    padding: 2px 8px;
+    font-size: var(--font-ui-small, 12px);
+    cursor: pointer;
+}
+
+.lilbee-chat-mode-btn.active {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.lilbee-chat-mode-btn.lilbee-disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.lilbee-catalog-tab-bar {
+    display: flex;
+    border-bottom: 1px solid var(--background-modifier-border);
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-catalog-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    padding: 6px 16px;
+    font-size: var(--font-ui-small, 12px);
+    cursor: pointer;
+}
+
+.lilbee-catalog-tab-active {
+    color: var(--text-normal);
+    border-bottom-color: var(--interactive-accent);
+}
+
+.lilbee-catalog-tab-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-3, 12px);
+}
+
+.lilbee-discover-rail {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2-2, 4px);
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-discover-rail-heading {
+    display: flex;
+    align-items: baseline;
+    gap: var(--size-4-2, 8px);
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+.lilbee-discover-rail-heading-help {
+    font-weight: normal;
+    font-size: var(--font-ui-smaller, 11px);
+    color: var(--text-muted);
+}
+
+.lilbee-discover-rail-cards {
+    display: flex;
+    gap: var(--size-4-2, 8px);
+    overflow-x: auto;
+    padding-bottom: var(--size-2-2, 4px);
+}
+
+.lilbee-discover-rail-cards .lilbee-model-card {
+    flex: 0 0 auto;
+    min-width: 260px;
+    max-width: 320px;
+}
+
+.lilbee-discover-rail-cards .lilbee-model-card-name {
+    /* Names breathe when given the full card width on the rails. */
+    white-space: normal;
+    word-break: break-word;
+}
+
+.lilbee-discover-rail-empty {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small, 12px);
+    padding: var(--size-4-2, 8px) 0;
+}
+
+.lilbee-frontier-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+}
+
+.lilbee-frontier-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-frontier-row-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+}
+
+.lilbee-provider-pill,
+.lilbee-key-status-pill {
+    display: inline-block;
+    font-size: var(--font-ui-smaller, 10px);
+    padding: 2px 7px;
+    border-radius: 10px;
+    border: 1px solid;
+    font-weight: 500;
+}
+
+.lilbee-provider-pill {
+    background-color: var(--background-modifier-border);
+    border-color: var(--background-modifier-border);
+    color: var(--text-muted);
+}
+
+.lilbee-key-status-pill-ready {
+    background-color: rgba(72, 180, 97, 0.15);
+    border-color: var(--color-green, #48b461);
+    color: var(--color-green, #7cd498);
+}
+
+.lilbee-key-status-pill-needs-key {
+    background-color: rgba(212, 168, 65, 0.15);
+    border-color: var(--color-yellow, #d4a841);
+    color: var(--color-yellow, #e8c878);
+}
+
+.lilbee-model-picker-modal .lilbee-model-picker-search {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-model-picker-search-input {
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: var(--radius-s, 4px);
+    border: 1px solid var(--background-modifier-border);
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    font-size: var(--font-ui-small, 12px);
+}
+
+.lilbee-model-picker-list {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.lilbee-model-picker-section-header {
+    padding: 6px 12px;
+    font-size: var(--font-ui-smaller, 11px);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    background-color: var(--background-secondary);
+    border-top: 1px solid var(--background-modifier-border);
+    font-weight: 600;
+}
+
+.lilbee-model-picker-row {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-model-picker-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-model-picker-row-highlighted {
+    background-color: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+    border-left: 2px solid var(--interactive-accent);
+    padding-left: 10px;
+}
+
+.lilbee-model-picker-row-name {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.lilbee-model-picker-row-display {
+    font-weight: var(--font-medium, 500);
+}
+
+.lilbee-model-picker-row-meta {
+    margin-top: 2px;
+    color: var(--text-muted);
+    font-size: var(--font-smallest, 10px);
+}
+
+.lilbee-model-picker-empty {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.lilbee-sync-hint {
+    cursor: pointer;
+    padding: 0 4px;
+}
+
+.lilbee-sync-hint[data-running="true"] {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.lilbee-catalog-body {
+    display: block;
+}
+
+.lilbee-catalog-body-with-drawer {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: var(--size-4-3, 12px);
+}
+
+.lilbee-catalog-drawer {
+    width: 320px;
+    padding: var(--size-4-3, 12px);
+    border-left: 1px solid var(--background-modifier-border);
+    overflow-y: auto;
+    max-height: 50vh;
+}
+
+.lilbee-catalog-drawer-collapsed {
+    display: none;
+}
+
+.lilbee-catalog-drawer-header {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-catalog-drawer-toggle {
+    padding: 4px 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    cursor: pointer;
+    font-size: var(--font-smallest, 10px);
+}
+
+.lilbee-catalog-drawer-empty {
+    color: var(--text-muted);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-detail-name {
+    margin: 0 0 var(--size-4-2, 8px) 0;
+    font-size: var(--font-ui-medium, 14px);
+}
+
+.lilbee-detail-section {
+    margin-top: var(--size-4-3, 12px);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.lilbee-detail-section-label {
+    font-size: var(--font-smallest, 10px);
+    text-transform: uppercase;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+}
+
+.lilbee-detail-variants {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.lilbee-detail-variant {
+    padding: 2px 8px;
+    border-radius: 8px;
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: var(--font-smallest, 10px);
+}
+
+.lilbee-detail-description {
+    margin: 0;
+    color: var(--text-normal);
+    font-size: var(--font-small, 13px);
+    line-height: 1.4;
+}
+
+.lilbee-detail-install-status,
+.lilbee-detail-downloads-value {
+    color: var(--text-normal);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-model-info-modal {
+    padding: var(--size-4-3, 12px);
+}
+
+.lilbee-model-info-section {
+    margin-top: var(--size-4-3, 12px);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.lilbee-model-info-row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--size-4-3, 12px);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-model-info-label {
+    color: var(--text-muted);
+}
+
+.lilbee-model-info-value {
+    color: var(--text-normal);
+}
+
+.lilbee-model-info-link-row {
+    margin-top: var(--size-4-3, 12px);
+}
+
+.lilbee-hf-link {
+    color: var(--interactive-accent);
+    text-decoration: underline;
+    cursor: pointer;
+    font-size: var(--font-small, 13px);
+}
