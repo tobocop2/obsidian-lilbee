@@ -1574,6 +1574,11 @@ export default class LilbeePlugin extends Plugin {
 
     async triggerSync(): Promise<void> {
         if (!this.statusBarEl) return;
+        // Re-entry guard: if a sync is already active or queued, this trigger
+        // is a no-op. Without it, repeated clicks (sync hint, command palette,
+        // crawler-finished auto-trigger) stack up — and cancelling the active
+        // task just promotes the next queued sync, making cancel feel broken.
+        if (this.taskQueue.hasPending(TASK_TYPE.SYNC)) return;
         const taskId = this.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);

@@ -437,6 +437,37 @@ describe("TaskQueue", () => {
         });
     });
 
+    describe("hasPending()", () => {
+        it("returns false on an empty queue", () => {
+            expect(queue.hasPending(TASK_TYPE.SYNC)).toBe(false);
+        });
+
+        it("returns true while a task is active", () => {
+            queue.enqueue("Sync", TASK_TYPE.SYNC);
+            expect(queue.hasPending(TASK_TYPE.SYNC)).toBe(true);
+        });
+
+        it("returns true when a task is queued behind an active one", () => {
+            queue.enqueue("Sync 1", TASK_TYPE.SYNC);
+            queue.enqueue("Sync 2", TASK_TYPE.SYNC);
+            queue.cancel(queue.activeAll[0]!.id);
+            // After cancel of active, the queued one promotes to active.
+            // hasPending should remain true throughout.
+            expect(queue.hasPending(TASK_TYPE.SYNC)).toBe(true);
+        });
+
+        it("returns false again once all tasks of that type complete", () => {
+            const id = queue.enqueue("Sync", TASK_TYPE.SYNC)!;
+            queue.complete(id);
+            expect(queue.hasPending(TASK_TYPE.SYNC)).toBe(false);
+        });
+
+        it("isolates per-type — pending sync does not mark add as pending", () => {
+            queue.enqueue("Sync", TASK_TYPE.SYNC);
+            expect(queue.hasPending(TASK_TYPE.ADD)).toBe(false);
+        });
+    });
+
     describe("edge cases", () => {
         it("handles update for non-existent task", () => {
             queue.enqueue("Task", TASK_TYPE.SYNC);

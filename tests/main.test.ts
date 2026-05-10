@@ -569,6 +569,22 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).statusBarEl?.textContent).toContain("Done");
         });
 
+        it("is a no-op when a sync is already pending", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            // Block the first sync mid-stream so the second call fires while
+            // the first is still active.
+            async function* hangs() {
+                await new Promise<void>(() => {});
+            }
+            plugin.api.syncStream = vi.fn().mockImplementation(() => hangs());
+            void plugin.triggerSync();
+            await new Promise((r) => setTimeout(r, 0));
+            expect(plugin.api.syncStream).toHaveBeenCalledTimes(1);
+            await plugin.triggerSync();
+            expect(plugin.api.syncStream).toHaveBeenCalledTimes(1);
+        });
+
         it("shows Notice with all stats when done event has populated arrays", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
