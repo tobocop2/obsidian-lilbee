@@ -232,6 +232,32 @@ describe("ModelPickerModal", () => {
         expect(empty?.textContent).toBe(MESSAGES.MODEL_PICKER_EMPTY);
     });
 
+    it("renders an installed pill, fit chip, and meta line when the row carries that data", async () => {
+        const plugin = makePlugin([
+            localRow({
+                display_name: "Local-FitsBig",
+                installed: true,
+                size_gb: 4,
+                quality_tier: "balanced",
+                ...({ fit: "fits" } as Partial<CatalogEntry>),
+            }),
+        ]);
+        const modal = await openPicker(plugin);
+        const el = contentEl(modal);
+        const row = el.find("lilbee-model-picker-row")!;
+        expect(row.find("lilbee-pill-installed")).not.toBeNull();
+        expect(row.find("lilbee-fit-fits")).not.toBeNull();
+        const meta = row.find("lilbee-model-picker-row-meta");
+        expect(meta?.textContent).toBe("4 GB · balanced");
+    });
+
+    it("omits the meta line when size_gb is zero", async () => {
+        const plugin = makePlugin([localRow({ display_name: "Local-NoSize", size_gb: 0 })]);
+        const modal = await openPicker(plugin);
+        const row = contentEl(modal).find("lilbee-model-picker-row")!;
+        expect(row.find("lilbee-model-picker-row-meta")).toBeNull();
+    });
+
     it("filterRowsByText filters case-insensitively and returns all rows when text is empty", () => {
         const rows = [localRow({ display_name: "Qwen 3 8B" }), localRow({ display_name: "Llama" })];
         expect(filterRowsByText(rows, "")).toEqual(rows);

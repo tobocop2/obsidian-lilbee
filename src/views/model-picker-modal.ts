@@ -12,6 +12,8 @@ import {
     renderKeyStatusPill,
     renderProviderPill,
 } from "./catalog-helpers";
+import { renderPill, PILL_CLS } from "../components/pill";
+import { renderFitChip } from "../components/fit-chip";
 import { tagModalChrome } from "../utils";
 
 const SEARCH_DEBOUNCE_MS = 100;
@@ -162,14 +164,25 @@ export class ModelPickerModal extends Modal {
 
     private renderRow(parent: HTMLElement, row: CatalogEntry): void {
         const rowEl = parent.createDiv({ cls: "lilbee-model-picker-row" });
-        const name = rowEl.createSpan({ cls: "lilbee-model-picker-row-name", text: row.display_name });
+        const nameRow = rowEl.createDiv({ cls: "lilbee-model-picker-row-name" });
+        nameRow.createSpan({ text: row.display_name, cls: "lilbee-model-picker-row-display" });
+        if (row.installed) {
+            renderPill(nameRow, MESSAGES.LABEL_INSTALLED, PILL_CLS.INSTALLED);
+        }
+        renderFitChip(nameRow, row.fit);
         if (row.source === CATALOG_SOURCE.FRONTIER) {
             const frontier = row as CatalogEntry & { provider?: string; key_status?: KeyStatus };
             /* v8 ignore next 2 */
             const provider = frontier.provider ?? "";
             const keyStatus = frontier.key_status ?? KEY_STATUS.MISSING_KEY;
-            renderProviderPill(name, provider);
-            renderKeyStatusPill(name, keyStatus);
+            renderProviderPill(nameRow, provider);
+            renderKeyStatusPill(nameRow, keyStatus);
+        }
+        if (row.size_gb > 0) {
+            rowEl.createDiv({
+                cls: "lilbee-model-picker-row-meta",
+                text: `${row.size_gb} GB${row.quality_tier ? ` · ${row.quality_tier}` : ""}`,
+            });
         }
         rowEl.addEventListener("click", () => {
             void this.activateRow(row);

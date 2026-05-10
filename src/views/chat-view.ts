@@ -13,7 +13,7 @@ import { CATALOG_SOURCE, CHAT_MODE, CONFIG_KEY, MODEL_TASK, SSE_EVENT, TASK_TYPE
 import type { CatalogEntry, ChatMode, InstalledModel, Message, SearchChunkType, Source, SSEEvent } from "../types";
 import { RateLimitedError } from "../api";
 
-import { renderSourceChip } from "./results";
+import { renderAggregatedSourceChips } from "./results";
 import { SEPARATOR_KEY, SEPARATOR_LABEL } from "../settings";
 import { displayLabelForRef, extractHfRepo } from "../utils/model-ref";
 import { ConfirmPullModal } from "./confirm-pull-modal";
@@ -868,9 +868,7 @@ export class ChatView extends ItemView {
         const details = sourcesEl.createEl("details");
         details.createEl("summary", { text: MESSAGES.LABEL_SOURCES });
         const chipsEl = details.createDiv({ cls: "lilbee-chat-source-chips" });
-        for (const source of sources) {
-            renderSourceChip(chipsEl, source, this.app, this.plugin.api);
-        }
+        renderAggregatedSourceChips(chipsEl, sources, this.app, this.plugin.api);
     }
 
     private renderBannerIfPresent(data: unknown, assistantBubble: HTMLElement): void {

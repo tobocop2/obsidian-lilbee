@@ -140,3 +140,52 @@ export function renderSourceChip(
         });
     }
 }
+
+/**
+ * Render a chip that groups multiple chunks from the same source under one
+ * filename, with each chunk's location surfaced as a small clickable badge.
+ * Avoids the "cv-manual.pdf (line 0) × 3" repetition the per-chunk chip path
+ * produces when several adjacent chunks share a file. Wiki sources fall
+ * through to the per-chip renderer because their click target is per-slug.
+ */
+export function renderAggregatedSourceChips(
+    container: HTMLElement,
+    sources: Source[],
+    app: App,
+    api: LilbeeClient,
+): void {
+    const groups = groupSourcesByFile(sources);
+    for (const group of groups) {
+        const first = group[0];
+        if (first.chunk_type === "wiki") {
+            for (const s of group) renderSourceChip(container, s, app, api);
+            continue;
+        }
+        const chip = container.createEl("span", { cls: "lilbee-source-chip lilbee-source-chip-grouped" });
+        chip.createEl("span", { text: first.source, cls: "lilbee-source-chip-file" });
+        for (const source of group) {
+            const loc = formatLocation(source);
+            const label = loc ?? "open";
+            const tag = chip.createEl("span", { text: label, cls: "lilbee-source-chip-loc" });
+            tag.style.cursor = "pointer";
+            tag.addEventListener("click", (e: Event) => {
+                e.stopPropagation();
+                void executeSourceClick(app, api, sourceClickAction(source, app.vault));
+            });
+        }
+    }
+}
+
+function groupSourcesByFile(sources: Source[]): Source[][] {
+    const order: string[] = [];
+    const buckets = new Map<string, Source[]>();
+    for (const source of sources) {
+        const key = `${source.chunk_type ?? "raw"}::${source.source}`;
+        if (!buckets.has(key)) {
+            buckets.set(key, []);
+            order.push(key);
+        }
+        buckets.get(key)!.push(source);
+    }
+    return order.map((k) => buckets.get(k)!);
+}

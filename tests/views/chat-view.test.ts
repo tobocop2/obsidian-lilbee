@@ -630,7 +630,7 @@ describe("ChatView.sendMessage — sources", () => {
         expect(summary!.textContent).toBe("Sources");
     });
 
-    it("renders source chips inside details element", async () => {
+    it("renders source chips inside details element with grouped layout", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const { mockFn, done } = makeStream([
@@ -652,7 +652,7 @@ describe("ChatView.sendMessage — sources", () => {
         const assistantBubble = messagesEl.children[1];
         const chip = assistantBubble.find("lilbee-source-chip");
         expect(chip).not.toBeNull();
-        expect(chip!.textContent).toBe("chip-doc.md");
+        expect(chip!.find("lilbee-source-chip-file")?.textContent).toBe("chip-doc.md");
     });
 
     it("does NOT render sources section when done has no prior sources", async () => {
