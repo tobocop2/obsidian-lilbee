@@ -89,6 +89,7 @@ export interface ConfigResponse {
     chunk_overlap?: number;
     tesseract_timeout?: number;
     max_tokens?: number;
+    max_reasoning_chars?: number;
     model_keep_alive?: string;
     gpu_memory_fraction?: number;
     candidate_multiplier?: number;

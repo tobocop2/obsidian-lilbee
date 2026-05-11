@@ -699,6 +699,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 hideable: true,
             },
             {
+                key: "max_reasoning_chars",
+                name: MESSAGES.LABEL_GEN_MAX_REASONING_CHARS,
+                desc: MESSAGES.DESC_GEN_MAX_REASONING_CHARS,
+                integer: true,
+                hideable: true,
+            },
+            {
                 key: "model_keep_alive",
                 name: MESSAGES.LABEL_GEN_MODEL_KEEP_ALIVE,
                 desc: MESSAGES.DESC_GEN_MODEL_KEEP_ALIVE,

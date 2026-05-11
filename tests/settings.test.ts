@@ -433,7 +433,7 @@ describe("LilbeeSettingTab", () => {
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
             // serverPort + 9 generation + 5 retrieval-advanced + 4 ingest + 2 worker-pool
             // + 10 crawling + wikiVaultFolder + rerank_candidates + hfToken + litellm = 35
-            expect(textOnChanges.length).toBe(34);
+            expect(textOnChanges.length).toBe(35);
         });
     });
 
@@ -2311,8 +2311,8 @@ describe("managed mode settings", () => {
     describe("Ingest chunk fields onChange", () => {
         // Ingest section text inputs sit at: [15] chunk_size, [16] chunk_overlap,
         // [17] tesseract_timeout, [18] vision_load_budget_s.
-        const CHUNK_SIZE_IDX = 14;
-        const CHUNK_OVERLAP_IDX = 15;
+        const CHUNK_SIZE_IDX = 15;
+        const CHUNK_OVERLAP_IDX = 16;
 
         it("chunk_size calls updateConfig after confirm", async () => {
             const plugin = makePlugin();
@@ -2732,12 +2732,12 @@ describe("managed mode settings", () => {
         // crawling indices are 21-30: [21] crawl_max_depth, [22] crawl_max_pages,
         // [23] crawl_timeout, [24] crawl_mean_delay, [25] crawl_max_delay_range,
         // [26] crawl_concurrent_requests, [27-29] retry base/backoff floats, [30] retry attempts.
-        const CRAWL_DEPTH = 20;
-        const CRAWL_PAGES = 21;
-        const CRAWL_TIMEOUT = 22;
-        const CRAWL_MEAN_DELAY = 23;
-        const CRAWL_CONCURRENT = 25;
-        const CRAWL_RETRY_MAX_BACKOFF = 28;
+        const CRAWL_DEPTH = 21;
+        const CRAWL_PAGES = 22;
+        const CRAWL_TIMEOUT = 23;
+        const CRAWL_MEAN_DELAY = 24;
+        const CRAWL_CONCURRENT = 26;
+        const CRAWL_RETRY_MAX_BACKOFF = 29;
 
         it("calls updateConfig with valid crawl_max_depth", async () => {
             const plugin = makePlugin();
@@ -3377,7 +3377,7 @@ describe("managed mode settings", () => {
         // After connection (1) + generation (9) + retrieval-advanced (5) + ingest (4)
         // + worker-pool (2) + crawling (10) + wikiVaultFolder (1) + rerank_candidates (1) = 33,
         // hfToken is at index 33.
-        const HF_TOKEN_IDX = 32;
+        const HF_TOKEN_IDX = 33;
 
         it("calls updateConfig and saves settings on non-empty value", async () => {
             const plugin = makePlugin();
@@ -3600,7 +3600,7 @@ describe("managed mode settings", () => {
     });
 
     describe("LiteLLM base URL onChange", () => {
-        const LITELLM_IDX = 33;
+        const LITELLM_IDX = 34;
 
         it("calls updateConfig on non-empty value", async () => {
             const plugin = makePlugin();
@@ -5834,7 +5834,7 @@ describe("managed mode settings", () => {
         // Manual mode text-input layout: [0]=port, [1-9]=gen, [10-14]=retrieval-advanced,
         // [15-18]=ingest, [19-20]=worker-pool, [21-30]=crawling, [31]=wikiVaultFolder,
         // [32]=rerank_candidates.
-        const RERANK_IDX = 31;
+        const RERANK_IDX = 32;
 
         beforeEach(() => {
             vi.useFakeTimers();
@@ -5932,8 +5932,8 @@ describe("managed mode settings", () => {
         // Manual mode worker-pool text inputs: [19] worker_pool_call_timeout_s,
         // [20] worker_pool_max_idle_s. Toggle [1] is worker_pool_eager_start
         // ([0]=adaptiveThreshold).
-        const POOL_CALL_TIMEOUT_IDX = 18;
-        const POOL_MAX_IDLE_IDX = 19;
+        const POOL_CALL_TIMEOUT_IDX = 19;
+        const POOL_MAX_IDLE_IDX = 20;
         const POOL_EAGER_TOGGLE_IDX = 1;
 
         it("hides each worker-pool row when cfg keys are undefined", async () => {
@@ -6022,8 +6022,8 @@ describe("managed mode settings", () => {
     });
 
     describe("ingest settings", () => {
-        const TESSERACT_IDX = 16;
-        const VISION_BUDGET_IDX = 17;
+        const TESSERACT_IDX = 17;
+        const VISION_BUDGET_IDX = 18;
 
         it("hides each ingest row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
@@ -6137,11 +6137,11 @@ describe("managed mode settings", () => {
     });
 
     describe("retrieval advanced settings", () => {
-        const CANDIDATE_IDX = 9;
-        const MIN_RELEVANCE_IDX = 10;
-        const MAX_SOURCES_IDX = 11;
-        const DIVERSITY_IDX = 12;
-        const MMR_IDX = 13;
+        const CANDIDATE_IDX = 10;
+        const MIN_RELEVANCE_IDX = 11;
+        const MAX_SOURCES_IDX = 12;
+        const DIVERSITY_IDX = 13;
+        const MMR_IDX = 14;
 
         it("hides each retrieval-advanced row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
@@ -6240,8 +6240,9 @@ describe("managed mode settings", () => {
 
     describe("generation new fields", () => {
         const MAX_TOKENS_IDX = 6;
-        const MODEL_KEEP_ALIVE_IDX = 7;
-        const GPU_FRACTION_IDX = 8;
+        const MAX_REASONING_CHARS_IDX = 7;
+        const MODEL_KEEP_ALIVE_IDX = 8;
+        const GPU_FRACTION_IDX = 9;
 
         it("hides each new generation row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
@@ -6251,7 +6252,7 @@ describe("managed mode settings", () => {
             tab.display();
             await new Promise((r) => setTimeout(r, 0));
             const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
-            for (const key of ["max_tokens", "model_keep_alive", "gpu_memory_fraction"]) {
+            for (const key of ["max_tokens", "max_reasoning_chars", "model_keep_alive", "gpu_memory_fraction"]) {
                 expect(hideable.get(key)?.style.display).toBe("none");
             }
         });
@@ -6260,6 +6261,7 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
                 max_tokens: 1024,
+                max_reasoning_chars: 64000,
                 model_keep_alive: 60,
                 gpu_memory_fraction: 0.8,
             });
@@ -6268,7 +6270,7 @@ describe("managed mode settings", () => {
             tab.display();
             await new Promise((r) => setTimeout(r, 0));
             const hideable = (tab as any).serverConfigHideableEls as Map<string, { style: { display: string } }>;
-            for (const key of ["max_tokens", "model_keep_alive", "gpu_memory_fraction"]) {
+            for (const key of ["max_tokens", "max_reasoning_chars", "model_keep_alive", "gpu_memory_fraction"]) {
                 expect(hideable.get(key)?.style.display).toBe("");
             }
         });
@@ -6291,6 +6293,26 @@ describe("managed mode settings", () => {
 
             await textOnChanges[MAX_TOKENS_IDX]("");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_tokens: null });
+        });
+
+        it("PATCHes max_reasoning_chars with a parsed integer", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[MAX_REASONING_CHARS_IDX]("80000");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_reasoning_chars: 80000 });
+        });
+
+        it("PATCHes max_reasoning_chars to null when cleared", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[MAX_REASONING_CHARS_IDX]("");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_reasoning_chars: null });
         });
 
         it("PATCHes model_keep_alive with a parsed integer", async () => {
