@@ -24,6 +24,7 @@ import {
     type SetupProgressPayload,
     type SetupStartPayload,
     type SyncDone,
+    type SyncOptions,
     type TaskEntry,
     type VaultAdapter,
 } from "./types";
@@ -88,6 +89,13 @@ function summarizeSyncResult(done: SyncDone): string {
     if (done.failed.length > 0) parts.push(`${done.failed.length} failed`);
     if (done.skipped.length > 0) parts.push(`${done.skipped.length} skipped`);
     return parts.join(", ");
+}
+
+/** Task-center label for a sync, distinguishing the recovery variants. */
+function syncTaskLabel(options?: SyncOptions): string {
+    if (options?.forceRebuild) return MESSAGES.COMMAND_SYNC_REBUILD;
+    if (options?.retrySkipped) return MESSAGES.COMMAND_SYNC_RETRY_SKIPPED;
+    return MESSAGES.COMMAND_SYNC;
 }
 
 function countRecentByStatus(completed: readonly TaskEntry[], status: TaskEntry["status"]): number {
@@ -591,8 +599,24 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "lilbee:sync",
-            name: "Sync vault",
+            name: MESSAGES.COMMAND_SYNC,
             callback: () => this.triggerSync(),
+        });
+
+        this.addCommand({
+            id: "lilbee:sync-retry-skipped",
+            name: MESSAGES.COMMAND_SYNC_RETRY_SKIPPED,
+            callback: () => this.triggerSync({ retrySkipped: true }),
+        });
+
+        this.addCommand({
+            id: "lilbee:sync-rebuild",
+            name: MESSAGES.COMMAND_SYNC_REBUILD,
+            callback: async () => {
+                const confirmModal = new ConfirmModal(this.app, MESSAGES.CONFIRM_SYNC_REBUILD);
+                confirmModal.open();
+                if (await confirmModal.result) void this.triggerSync({ forceRebuild: true });
+            },
         });
 
         this.addCommand({
@@ -1589,14 +1613,14 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    async triggerSync(): Promise<void> {
+    async triggerSync(options?: SyncOptions): Promise<void> {
         if (!this.statusBarEl) return;
         // Re-entry guard: if a sync is already active or queued, this trigger
         // is a no-op. Without it, repeated clicks (sync hint, command palette,
         // crawler-finished auto-trigger) stack up — and cancelling the active
         // task just promotes the next queued sync, making cancel feel broken.
         if (this.taskQueue.hasPending(TASK_TYPE.SYNC)) return;
-        const taskId = this.taskQueue.enqueue("Sync vault", TASK_TYPE.SYNC);
+        const taskId = this.taskQueue.enqueue(syncTaskLabel(options), TASK_TYPE.SYNC);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
@@ -1609,7 +1633,7 @@ export default class LilbeePlugin extends Plugin {
             const progress = new FileProgressTracker();
             let syncResult: SyncDone | null = null;
             const controller = this.syncController;
-            const rawStream = this.api.syncStream(this.settings.enableOcr, controller.signal);
+            const rawStream = this.api.syncStream(this.settings.enableOcr, controller.signal, options);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };

@@ -2,6 +2,8 @@ import { MODEL_TASK } from "../types";
 
 export const MESSAGES = {
     CONFIRM_REINDEX: (name: string): string => `"${name}" is already indexed. Re-add it?`,
+    CONFIRM_SYNC_REBUILD:
+        "Rebuilding the index drops every stored document and re-embeds your whole vault from scratch. This can take a while. Continue?",
     BUTTON_SKIP_SETUP: "Skip setup",
     BUTTON_GET_STARTED: "Get started",
     BUTTON_BACK: "Back",
@@ -553,6 +555,8 @@ export const MESSAGES = {
     COMMAND_ADD_FILE: "Add current file to lilbee",
     COMMAND_ADD_FOLDER: "Add current folder to lilbee",
     COMMAND_SYNC: "Sync vault",
+    COMMAND_SYNC_RETRY_SKIPPED: "Retry skipped documents",
+    COMMAND_SYNC_REBUILD: "Rebuild index",
     COMMAND_CATALOG: "Browse model catalog",
     COMMAND_CRAWL: "Crawl web page",
     COMMAND_DOCUMENTS: "Browse documents",

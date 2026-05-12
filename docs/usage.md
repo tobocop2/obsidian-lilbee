@@ -54,6 +54,8 @@ All commands are available via `Cmd/Ctrl + P` → "lilbee":
 | Command | What it does |
 |---------|-------------|
 | **Sync vault** | Index new/changed files, remove deleted ones |
+| **Retry skipped documents** | Re-attempt files that produced no content on a previous sync |
+| **Rebuild index** | Drop the whole index and re-embed every document from scratch |
 | **Open chat** | Open the chat sidebar |
 | **Search knowledge base** | Semantic search with live results |
 | **Ask a question** | One-off answer with source citations |
