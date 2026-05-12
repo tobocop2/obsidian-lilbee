@@ -350,6 +350,9 @@ describe("MESSAGES", () => {
             expect(MESSAGES.COMMAND_ADD_FILE).toBe("Add current file to lilbee");
             expect(MESSAGES.COMMAND_ADD_FOLDER).toBe("Add current folder to lilbee");
             expect(MESSAGES.COMMAND_SYNC).toBe("Sync vault");
+            expect(MESSAGES.COMMAND_SYNC_RETRY_SKIPPED).toBe("Retry skipped documents");
+            expect(MESSAGES.COMMAND_SYNC_REBUILD).toBe("Rebuild index");
+            expect(MESSAGES.CONFIRM_SYNC_REBUILD).toContain("re-embeds");
             expect(MESSAGES.COMMAND_CATALOG).toBe("Browse model catalog");
             expect(MESSAGES.COMMAND_CRAWL).toBe("Crawl web page");
             expect(MESSAGES.COMMAND_DOCUMENTS).toBe("Browse documents");

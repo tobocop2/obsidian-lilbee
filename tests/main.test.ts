@@ -215,6 +215,7 @@ describe("LilbeePlugin", () => {
         vi.clearAllMocks();
         vi.useRealTimers();
         mockLastStderr = "";
+        mockConfirmModalResult = true;
     });
 
     afterEach(() => {
@@ -231,11 +232,11 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerView).toHaveBeenCalled();
         });
 
-        it("adds all nineteen commands", async () => {
+        it("adds all twenty-one commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(19);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(21);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("lilbee:model-picker-chat");
             expect(allIds).toContain("lilbee:model-picker-embedding");
@@ -247,6 +248,8 @@ describe("LilbeePlugin", () => {
             expect(ids).toContain("lilbee:add-file");
             expect(ids).toContain("lilbee:add-folder");
             expect(ids).toContain("lilbee:sync");
+            expect(ids).toContain("lilbee:sync-retry-skipped");
+            expect(ids).toContain("lilbee:sync-rebuild");
             expect(ids).toContain("lilbee:catalog");
             expect(ids).toContain("lilbee:crawl");
             expect(ids).toContain("lilbee:documents");
@@ -569,6 +572,34 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).statusBarEl?.textContent).toContain("Done");
         });
 
+        it("threads retry-skipped through to syncStream and labels the task 'Retry skipped documents'", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* noEvents() {}
+            plugin.api.syncStream = vi.fn().mockReturnValue(noEvents());
+
+            await plugin.triggerSync({ retrySkipped: true });
+
+            const opts = (plugin.api.syncStream as ReturnType<typeof vi.fn>).mock.calls[0][2];
+            expect(opts).toEqual({ retrySkipped: true });
+            expect(plugin.taskQueue.completed[0]!.name).toBe(MESSAGES.COMMAND_SYNC_RETRY_SKIPPED);
+        });
+
+        it("threads force-rebuild through to syncStream and labels the task 'Rebuild index'", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            async function* noEvents() {}
+            plugin.api.syncStream = vi.fn().mockReturnValue(noEvents());
+
+            await plugin.triggerSync({ forceRebuild: true });
+
+            const opts = (plugin.api.syncStream as ReturnType<typeof vi.fn>).mock.calls[0][2];
+            expect(opts).toEqual({ forceRebuild: true });
+            expect(plugin.taskQueue.completed[0]!.name).toBe(MESSAGES.COMMAND_SYNC_REBUILD);
+        });
+
         it("is a no-op when a sync is already pending", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -726,6 +757,40 @@ describe("LilbeePlugin", () => {
             cb?.();
 
             expect(syncSpy).toHaveBeenCalled();
+        });
+
+        it("lilbee:sync-retry-skipped triggers a retry-skipped sync", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const syncSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+            const cb = await getCommandCallback(plugin, "lilbee:sync-retry-skipped");
+            cb?.();
+
+            expect(syncSpy).toHaveBeenCalledWith({ retrySkipped: true });
+        });
+
+        it("lilbee:sync-rebuild triggers a force-rebuild sync after confirmation", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const syncSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+            const cb = await getCommandCallback(plugin, "lilbee:sync-rebuild");
+            await cb?.();
+
+            expect(syncSpy).toHaveBeenCalledWith({ forceRebuild: true });
+        });
+
+        it("lilbee:sync-rebuild does nothing when the rebuild is not confirmed", async () => {
+            mockConfirmModalResult = false;
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const syncSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+            const cb = await getCommandCallback(plugin, "lilbee:sync-rebuild");
+            await cb?.();
+
+            expect(syncSpy).not.toHaveBeenCalled();
         });
 
         it("lilbee:status opens StatusModal", async () => {

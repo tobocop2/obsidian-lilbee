@@ -184,6 +184,14 @@ export interface SyncDone {
     skipped: string[];
 }
 
+/** Recovery options for a sync. Both default off (a plain incremental sync). */
+export interface SyncOptions {
+    /** Drop the whole index and re-embed every document from scratch. */
+    forceRebuild?: boolean;
+    /** Clear skip markers so files skipped on a previous sync are retried. */
+    retrySkipped?: boolean;
+}
+
 export interface GenerationOptions {
     temperature?: number;
     top_p?: number;

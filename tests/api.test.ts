@@ -336,6 +336,43 @@ describe("syncStream()", () => {
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
         expect(body.enable_ocr).toBeUndefined();
     });
+
+    it("sends force_rebuild true when the forceRebuild option is set", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.syncStream(undefined, undefined, { forceRebuild: true }));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.force_rebuild).toBe(true);
+    });
+
+    it("sends retry_skipped true when the retrySkipped option is set", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.syncStream(undefined, undefined, { retrySkipped: true }));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.retry_skipped).toBe(true);
+    });
+
+    it("can send both recovery flags alongside enable_ocr", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.syncStream(true, undefined, { forceRebuild: true, retrySkipped: true }));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body).toEqual({ enable_ocr: true, force_rebuild: true, retry_skipped: true });
+    });
+
+    it("omits the recovery flags when they are false", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.syncStream(undefined, undefined, { forceRebuild: false, retrySkipped: false }));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.force_rebuild).toBeUndefined();
+        expect(body.retry_skipped).toBeUndefined();
+    });
 });
 
 describe("listModels()", () => {

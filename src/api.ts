@@ -19,6 +19,7 @@ import type {
     SourceContent,
     SSEEvent,
     StatusResponse,
+    SyncOptions,
     LintResult,
     DraftAcceptResponse,
     DraftInfoResponse,
@@ -359,9 +360,15 @@ export class LilbeeClient {
         yield* this.parseSSE(res);
     }
 
-    async *syncStream(enableOcr?: boolean | null, signal?: AbortSignal): AsyncGenerator<SSEEvent> {
+    async *syncStream(
+        enableOcr?: boolean | null,
+        signal?: AbortSignal,
+        options?: SyncOptions,
+    ): AsyncGenerator<SSEEvent> {
         const body: Record<string, unknown> = {};
         if (enableOcr !== undefined && enableOcr !== null) body.enable_ocr = enableOcr;
+        if (options?.forceRebuild) body.force_rebuild = true;
+        if (options?.retrySkipped) body.retry_skipped = true;
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/sync`,
             {
