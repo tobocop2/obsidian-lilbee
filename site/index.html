@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>lilbee for Obsidian: local RAG with click-to-source citations</title>
-<meta name="description" content="A private research assistant for everything in your Obsidian vault — notes, PDFs, ebooks, code, scans, and 150+ formats in all. Ask anything; every answer is cited and one click previews the exact passage. Runs offline on your machine.">
+<title>lilbee for Obsidian — a local search engine for your vault</title>
+<meta name="description" content="Obsidian's interface to lilbee. Ask questions about anything in your vault — notes, PDFs, ebooks, code, scans, 150+ file types — and get answers with the source one click away. Everything runs on your computer; cloud models are optional.">
 <link rel="stylesheet" href="style.css">
+<script src="main.js" defer></script>
 </head>
 <body>
 <h1 class="sr">lilbee for Obsidian</h1>
@@ -13,11 +14,11 @@
   <main class="main">
 
     <div class="topstrip">
-      <div><span class="badge">lilbee for Obsidian</span> <span>v0.6.66b422</span></div>
+      <div><span class="badge">lilbee for Obsidian</span> <span>v0.6.66b</span></div>
       <div>
         <span class="pill">Runs offline</span>
-        <span class="pill">Open source</span>
-        <span class="pill">MIT licensed</span>
+        <span class="pill">100% coverage</span>
+        <span class="pill">MIT</span>
       </div>
     </div>
 
@@ -34,25 +35,53 @@
  / _|___ _ _   / _ \| |__ __(_)__| (_)__ _ _ _
 |  _/ _ \ '_| | (_) | '_ (_-&lt; / _` | / _` | ' \
 |_| \___/_|    \___/|_.__/__/_\__,_|_\__,_|_||_|</pre>
-      <p class="tagline">A <strong>private research assistant</strong> for everything in your vault.</p>
-      <p class="sub">Ask anything across your notes, PDFs, ebooks, code, scans — <strong>150+ formats</strong> in all. Every answer cites its sources; click any citation to read the original passage in place. Everything stays on your machine.</p>
+      <p class="tagline">Obsidian's interface to <strong><a href="https://tobocop2.github.io/lilbee/">lilbee</a></strong> — a local search engine for your vault.</p>
+      <p class="sub">Ask questions about anything in your vault — notes, PDFs, ebooks, code, scans, <strong>150+ file types</strong> in all — and get answers with the source one click away.</p>
+      <p class="trust"><strong>Everything runs on your computer.</strong> Your notes stay in your vault — nothing leaves unless you ask it to. Cloud models are optional, and only when you choose one.</p>
     </section>
 
     <section>
-      <div class="label">preview</div>
-      <div class="demo" role="figure" aria-label="terminal preview">
+      <div class="label">try it</div>
+      <div class="demo" role="figure" aria-label="chat preview">
         <div class="titlebar">
-          <span class="title">lilbee chat . vault</span>
-          <span>[gemma3:12b]</span>
+          <span class="title">lilbee — chat</span>
+          <span>[qwen3:8b]</span>
         </div>
         <div class="body">
           <div class="line"><span class="prompt">&gt;</span><span class="answer">what does the oil pressure warning mean?</span></div>
           <div class="line"><span class="answer">the oil pressure warning indicates low oil pressure.<sup>[1]</sup></span></div>
           <div class="line"><span class="answer">when the light stays on, stop the engine immediately.<sup>[2]</sup></span></div>
           <div class="rule">─── sources ─────────────────────────────────</div>
-          <div class="cite"><span class="cite-link">[1] owners-manual.pdf:42</span> &nbsp;<span class="hint">← click to preview the source</span></div>
-          <div class="cite"><span class="cite-link">[2] owners-manual.pdf:43</span></div>
+          <div class="cite"><span class="cite-link">[1] owners-manual.pdf, p.42</span> &nbsp;<span class="hint">&larr; click to open the page</span></div>
+          <div class="cite"><span class="cite-link">[2] owners-manual.pdf, p.43</span></div>
           <div class="line" style="margin-top:0.6rem"><span class="prompt">&gt;</span><span class="cursor"></span></div>
+        </div>
+      </div>
+      <p class="demo-cap">Ask in plain English. The answer comes back with footnotes — click one to jump to the exact page it came from.</p>
+    </section>
+
+    <section>
+      <div class="label">the difference</div>
+      <div class="shape">
+        <div class="shape-box many">
+          <div class="shape-h">without it</div>
+          <ul>
+            <li>a chatbot in a browser tab doesn't know what's in your vault</li>
+            <li>Obsidian's search finds the word — not the answer</li>
+            <li>when something matters, you open the document and read it yourself</li>
+            <li>your notes and your AI live in separate apps</li>
+          </ul>
+          <div class="shape-note">a chatbot here, a search box there, you in the middle.</div>
+        </div>
+        <div class="shape-box one">
+          <div class="shape-h">with lilbee</div>
+          <ul>
+            <li>ask in plain English; get a real answer</li>
+            <li>every answer points to the exact line it came from — one click to see it</li>
+            <li>it works offline, on your computer</li>
+            <li>it's right there in Obsidian, next to your notes</li>
+          </ul>
+          <div class="shape-note">one plugin. pick a model, ask.</div>
         </div>
       </div>
     </section>
@@ -61,20 +90,28 @@
       <div class="label">what it does</div>
       <div class="caps">
         <div class="cap">
-          <h3>encyclopedia of your vault</h3>
-          <p>Index every note, PDF, ebook, and code file in your vault. Every answer points back to the line it came from — your own private <a href="https://en.wikipedia.org/wiki/Encarta">Encarta</a>, built from documents you already have.</p>
+          <h3>ask your vault anything</h3>
+          <p>Type a question in plain English; lilbee reads your notes and files and answers it — like having your own private <a href="https://en.wikipedia.org/wiki/Encarta">Encarta</a>, built from everything you've collected.</p>
         </div>
         <div class="cap">
-          <h3>verify at the source</h3>
-          <p>Every citation in chat or wiki opens the source document scrolled to the exact passage, with the cited lines highlighted. One click, every time. Useful anywhere a confident-sounding answer needs proof.</p>
+          <h3>every answer shows its work</h3>
+          <p>Each reply comes with footnotes. Click one and the exact passage opens, right where it came from — so you can trust the answer or check it for yourself.</p>
         </div>
         <div class="cap">
-          <h3>auto-generated wiki</h3>
-          <p>Concept and entity pages, written automatically from your documents and verified against the sources they cite. Drafts queue for review. Pages plug into Obsidian's graph view alongside your notes.</p>
+          <h3>it reads more than notes</h3>
+          <p>PDFs, ebooks, spreadsheets, code, even scanned pages and photos — over 150 file types. If it's in your vault, lilbee can search it.</p>
         </div>
         <div class="cap">
-          <h3>scans and photos</h3>
-          <p>Scanned PDFs and photographed pages are converted into searchable text — tables, columns, and layout preserved.</p>
+          <h3>pick your AI, no account needed</h3>
+          <p>Browse a built-in catalog — featured picks like Llama&nbsp;3, Qwen, Gemma, Mistral and DeepSeek, or search the full list — and download one with a click. It runs on your computer. Plenty of settings if you like to tinker; good ones already chosen if you don't.</p>
+        </div>
+        <div class="cap">
+          <h3>private by default</h3>
+          <p>Your files, the models, the search — it all stays on your machine and works offline. Want a cloud model for one job? Plug one in, and the plugin tells you whenever it's in use.</p>
+        </div>
+        <div class="cap">
+          <h3>writes a wiki of your knowledge <span class="exp">experimental</span></h3>
+          <p>lilbee can draft linked wiki pages from what you've indexed — they land in your vault as ordinary notes and show up in the graph view, alongside your own.</p>
         </div>
       </div>
     </section>
@@ -82,24 +119,28 @@
     <section>
       <div class="label">install</div>
       <div class="install">
-        <span class="prompt">install:</span>
-        <span class="cmd" id="install-cmd">tobocop2/obsidian-lilbee</span>
-        <button type="button" class="copy" id="copy-btn" aria-label="Copy install slug">[ COPY ]</button>
+        <span class="prompt">slug:</span>
+        <span class="cmd">tobocop2/obsidian-lilbee</span>
+        <button type="button" class="copy" aria-label="Copy install slug">[ COPY ]</button>
       </div>
-      <p class="extras">lilbee is in beta, so it ships through <a href="https://github.com/TfTHacker/obsidian42-brat">BRAT</a> — the standard helper Obsidian users install for beta plugins. Install BRAT from <em>Settings → Community plugins → Browse</em>, then run <em>BRAT: Add a beta plugin</em> and paste the slug above.</p>
-      <p class="extras">The plugin downloads the lilbee engine on first launch — there's nothing to install separately. New release every few days; you'll get them automatically.</p>
-      <p class="extras"><a href="https://github.com/tobocop2/obsidian-lilbee/releases">latest release on GitHub →</a></p>
+      <div class="steps">
+        <div class="step"><span class="n">1</span><span>In Obsidian, install <a href="https://github.com/TfTHacker/obsidian42-brat">BRAT</a> from <em>Settings → Community plugins → Browse</em>. It's the standard helper for plugins still in beta.</span></div>
+        <div class="step"><span class="n">2</span><span>Run <em>BRAT: Add a beta plugin</em> and paste the slug above. Then enable <em>lilbee</em> in Community plugins.</span></div>
+        <div class="step"><span class="n">3</span><span>A setup wizard opens — pick a chat model and run the first sync. That's it; lilbee brings its own engine, nothing else to install.</span></div>
+      </div>
+      <p class="extras">lilbee is in active development, with frequent releases; BRAT updates you automatically. <a href="https://github.com/tobocop2/obsidian-lilbee/releases">latest release on GitHub &rarr;</a></p>
+      <p class="extras">It's early days — if it's useful to you, a <a href="https://github.com/tobocop2/obsidian-lilbee">&#9733; on GitHub</a> helps other Obsidian users find it, and bug reports are very welcome.</p>
     </section>
 
     <section>
       <div class="label">go deeper</div>
       <div class="links">
         <a href="https://github.com/tobocop2/obsidian-lilbee"><span class="num">[1]</span><span>GitHub</span><span class="dots">·······································</span><span class="desc">source &amp; readme</span></a>
-        <a href="https://github.com/tobocop2/obsidian-lilbee#quick-start"><span class="num">[2]</span><span>Quick start</span><span class="dots">·······································</span><span class="desc">install in 4 steps</span></a>
+        <a href="https://github.com/tobocop2/obsidian-lilbee#quick-start"><span class="num">[2]</span><span>Quick start</span><span class="dots">·······································</span><span class="desc">BRAT setup</span></a>
         <a href="https://github.com/tobocop2/obsidian-lilbee/blob/main/docs/usage.md"><span class="num">[3]</span><span>Usage guide</span><span class="dots">·······································</span><span class="desc">commands &amp; settings</span></a>
-        <a href="coverage/"><span class="num">[4]</span><span>Coverage</span><span class="dots">·······································</span><span class="desc">100%</span></a>
+        <a href="https://tobocop2.github.io/lilbee/"><span class="num">[4]</span><span>lilbee</span><span class="dots">·······································</span><span class="desc">the engine</span></a>
         <a href="https://github.com/tobocop2/obsidian-lilbee/releases"><span class="num">[5]</span><span>Releases</span><span class="dots">·······································</span><span class="desc">changelog</span></a>
-        <a href="https://tobocop2.github.io/lilbee/"><span class="num">[6]</span><span>lilbee</span><span class="dots">·······································</span><span class="desc">the engine</span></a>
+        <a href="coverage/"><span class="num">[6]</span><span>Coverage</span><span class="dots">·······································</span><span class="desc">100%</span></a>
         <a href="https://obsidian.md"><span class="num">[7]</span><span>Obsidian</span><span class="dots">·······································</span><span class="desc">obsidian.md</span></a>
       </div>
     </section>
@@ -156,31 +197,5 @@
                              ZZ
                             Z</pre></aside>
 </div>
-<script>
-(function () {
-  var btn = document.getElementById('copy-btn');
-  if (!btn) return;
-  var cmd = document.getElementById('install-cmd');
-  btn.addEventListener('click', function () {
-    var text = cmd ? cmd.textContent : 'tobocop2/obsidian-lilbee';
-    var done = function () {
-      var original = btn.textContent;
-      btn.textContent = '[ COPIED ]';
-      setTimeout(function () { btn.textContent = original; }, 1200);
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done, done);
-    } else {
-      var ta = document.createElement('textarea');
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand('copy'); } catch (e) {}
-      document.body.removeChild(ta);
-      done();
-    }
-  });
-})();
-</script>
 </body>
 </html>

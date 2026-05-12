@@ -127,22 +127,36 @@ h1.sr {
 }
 
 .tagline {
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 400;
   line-height: 1.55;
   color: var(--ink);
-  max-width: 36ch;
+  max-width: 40ch;
   margin-bottom: 0.9rem;
 }
 .tagline strong {
   color: var(--purple);
   font-weight: 500;
 }
+.tagline strong a { color: inherit; }
 .tagline + .sub {
   color: var(--ink-2);
-  font-size: 14.5px;
+  font-size: 15px;
   max-width: 56ch;
+  line-height: 1.65;
 }
+.tagline + .sub strong { color: var(--ink); font-weight: 500; }
+
+.trust {
+  margin-top: 1rem;
+  padding-left: 0.95rem;
+  border-left: 2px solid var(--green);
+  color: var(--ink);
+  font-size: 14.5px;
+  line-height: 1.6;
+  max-width: 54ch;
+}
+.trust strong { color: var(--green); font-weight: 500; }
 
 /* section labels ----------------------------------------------------- */
 .label {
@@ -154,7 +168,7 @@ h1.sr {
   letter-spacing: 0.28em;
   color: var(--ink-3);
   text-transform: uppercase;
-  margin: 2.6rem 0 1rem;
+  margin: 3rem 0 1.1rem;
 }
 .label::before { content: ""; width: 12px; height: 1px; background: var(--rule-2); }
 .label::after  { content: ""; flex: 1; height: 1px; background: var(--rule); }
@@ -205,41 +219,78 @@ h1.sr {
   animation: blink 1.05s steps(2, end) infinite;
 }
 @keyframes blink { 50% { opacity: 0; } }
+.demo-cap { font-size: 12.5px; color: var(--ink-3); margin-top: 0.6rem; }
 
-/* features grid ------------------------------------------------------ */
-.caps {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+/* the difference — two-column comparison ----------------------------- */
+.shape { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.shape-box {
+  background: var(--bg-card);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 1rem 1.1rem;
 }
+.shape-box.one { border-left: 2px solid var(--purple); }
+.shape-h {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 0.7rem;
+}
+.shape-box.many .shape-h { color: var(--ink-3); }
+.shape-box.one .shape-h { color: var(--purple); }
+.shape-box ul { list-style: none; }
+.shape-box li {
+  font-size: 13.5px;
+  color: var(--ink-2);
+  line-height: 1.5;
+  padding-left: 1.1em;
+  position: relative;
+  margin: 0.4rem 0;
+}
+.shape-box li::before { content: "·"; position: absolute; left: 0; color: var(--ink-3); }
+.shape-box.one li::before { content: "→"; color: var(--purple); font-size: 0.85em; }
+.shape-note {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-top: 0.8rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+}
+
+/* features grid — light cards ---------------------------------------- */
+.caps { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .cap {
   background: var(--bg-card);
   border: 1px solid var(--rule);
   border-left: 2px solid var(--purple);
   border-radius: 3px;
-  padding: 1rem 1.1rem;
+  padding: 1.1rem 1.2rem;
   transition: border-color 160ms, transform 160ms;
 }
 .cap:hover { border-color: var(--rule-2); border-left-color: var(--purple-hot); transform: translateY(-1px); }
 .cap h3 {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--purple);
-  letter-spacing: 0.02em;
-  margin-bottom: 0.45rem;
+  letter-spacing: 0.01em;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.55em;
 }
-.cap p {
-  font-size: 14px;
-  color: var(--ink-2);
-  line-height: 1.6;
-}
-.cap p code {
-  background: var(--bg);
-  border: 1px solid var(--rule);
-  padding: 0 0.35rem;
+.cap h3 .exp {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  border: 1px solid var(--rule-2);
   border-radius: 3px;
-  color: var(--ink);
+  padding: 0 0.4em;
 }
+.cap p { font-size: 14px; color: var(--ink-2); line-height: 1.65; }
+.cap p code { background: var(--bg); border: 1px solid var(--rule); padding: 0 0.35rem; border-radius: 3px; color: var(--ink); }
 
 /* install ------------------------------------------------------------ */
 .install {
@@ -270,33 +321,31 @@ h1.sr {
   color: var(--ink-2);
   padding: 0 1.1rem;
   cursor: pointer;
+  white-space: nowrap;
 }
 .install .copy:hover { color: var(--purple-hot); background: rgba(196, 181, 253, 0.07); }
 
-.extras {
-  font-size: 13px;
-  margin-top: 0.55rem;
-  color: var(--ink-2);
-}
-.extras code {
-  background: var(--bg-card);
-  border: 1px solid var(--rule);
-  padding: 0 0.35rem;
+.steps { margin-top: 1rem; display: grid; gap: 0.55rem; }
+.step { display: flex; gap: 0.8rem; font-size: 14px; color: var(--ink-2); line-height: 1.6; }
+.step .n {
+  flex: none;
+  width: 1.5em; height: 1.5em;
+  border: 1px solid var(--rule-2);
   border-radius: 3px;
-  color: var(--ink);
+  color: var(--purple);
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.1rem;
 }
-.extras .k {
-  color: var(--ink-3);
-  margin-right: 0.3em;
-}
+.step em { color: var(--ink); font-style: normal; }
+
+.extras { font-size: 13px; margin-top: 0.9rem; color: var(--ink-3); }
+.extras a { color: var(--ink-2); }
 
 /* go-deeper links ---------------------------------------------------- */
-.links {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px 2.5rem;
-  font-size: 14px;
-}
+.links { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 2.5rem; font-size: 14px; }
 .links a {
   display: flex;
   align-items: baseline;
@@ -365,6 +414,6 @@ footer .meta { text-align: right; font-size: 12px; }
 @media (max-width: 720px) {
   body { padding: 1.4rem 1.1rem 3rem; font-size: 14.5px; }
   .wordmark, .wordmark-sub { font-size: 9px; }
-  .caps, .links { grid-template-columns: 1fr; }
-  .tagline { font-size: 17px; }
+  .caps, .links, .shape { grid-template-columns: 1fr; }
+  .tagline { font-size: 18px; }
 }

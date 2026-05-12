@@ -17,7 +17,8 @@ Obsidian's interface to **[lilbee](https://tobocop2.github.io/lilbee/)**, a term
 
 ---
 
-- [Why a local-first RAG plugin for Obsidian](#why-a-local-first-rag-plugin-for-obsidian)
+- [Highlights](#highlights)
+- [Why a local search engine for Obsidian](#why-a-local-search-engine-for-obsidian)
 - [Previews](#previews)
 - [What you can do with it](#what-you-can-do-with-it)
 - [Quick start](#quick-start)
@@ -28,6 +29,15 @@ Obsidian's interface to **[lilbee](https://tobocop2.github.io/lilbee/)**, a term
 - [Documentation](#documentation)
 
 ---
+
+## Highlights
+
+- **Ask your vault in plain English.** Type a question; get an answer with citations that click straight back to the source line.
+- **Verify in one click.** Every citation opens a Source Preview scrolled to the exact passage — surrounding paragraphs visible, cited lines highlighted.
+- **Reads more than markdown.** PDFs, Office files, ebooks, CSV / TSV / JSON / YAML, and 150+ programming languages — plus OCR for scans and photographed pages.
+- **Your models, your machine.** Browse a built-in catalog (Llama 3, Qwen, Gemma, Mistral, DeepSeek, and the rest of HuggingFace), pull one with a click, run it locally — no account needed.
+- **Local-first, frontier-capable.** Server, models, index, and vault all stay on your machine; cloud models are opt-in per role, with a persistent indicator when one is active.
+- **An auto-generated wiki** *(experimental)* — linked markdown pages written from what you've indexed, citation-checked before publish, landing in your vault's graph alongside your own notes.
 
 ## Why a local search engine for Obsidian
 
@@ -41,7 +51,7 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
 
 ## Previews
 
-> Real recordings coming soon. Previews below give the shape of each screen.
+> ASCII sketches of each screen — the shape, not the pixels.
 
 **Chat sidebar.** Streaming replies with `[¹]` citations. Click a citation to open the source preview. The header shows the active chat and embedding models as buttons that open the model picker, plus a Search / Chat mode toggle.
 

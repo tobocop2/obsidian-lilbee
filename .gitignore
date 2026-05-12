@@ -1,5 +1,7 @@
 node_modules/
-main.js
+/main.js
 dist/
 coverage/
 .worktrees/
+.superpowers/
+docs/superpowers/
