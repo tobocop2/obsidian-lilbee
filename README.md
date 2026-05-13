@@ -1,8 +1,10 @@
-# lilbee for Obsidian — Obsidian's interface to a local search engine for your vault
+# [lilbee for Obsidian](https://tobocop2.github.io/obsidian-lilbee/)
+
+A local search engine for your vault, inside Obsidian.
 
 [Project site](https://tobocop2.github.io/obsidian-lilbee/) · [Releases](https://github.com/tobocop2/obsidian-lilbee/releases) · [lilbee engine](https://tobocop2.github.io/lilbee/)
 
-Obsidian's interface to **[lilbee](https://tobocop2.github.io/lilbee/)**, a terminal-first local search engine for your files, code, the web, and scanned documents. The plugin bundles the lilbee server, points it at your vault, and gives you chat, an auto-generated wiki, click-to-source citations, and a Model Catalog inside Obsidian. Fully offline by default; cloud models are opt-in per role.
+This plugin runs **[lilbee](https://tobocop2.github.io/lilbee/)** against your vault and gives you chat, an auto-generated wiki, click-to-source citations, and a model catalog, all inside Obsidian. It bundles the lilbee server and manages it for you; nothing to install separately. Everything runs on your computer; cloud models are opt-in, per role.
 
 [![CI](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml/badge.svg)](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml)
 [![Coverage](https://tobocop2.github.io/obsidian-lilbee/coverage/badge.svg)](https://tobocop2.github.io/obsidian-lilbee/coverage/)
@@ -13,7 +15,7 @@ Obsidian's interface to **[lilbee](https://tobocop2.github.io/lilbee/)**, a term
 
 > ## ⚠️ Beta software
 >
-> The plugin is in **active beta**. Installation goes through [BRAT](https://github.com/TfTHacker/obsidian42-brat) so you always get the latest pre-release. Interfaces, settings layout, and on-disk formats may shift between betas. Feedback, bug reports, and issues are very welcome — that's the whole point of the beta.
+> The plugin is in **active beta**. Installation goes through [BRAT](https://github.com/TfTHacker/obsidian42-brat) so you always get the latest pre-release. Interfaces, settings layout, and on-disk formats may shift between betas. Feedback, bug reports, and issues are very welcome; that's the whole point of the beta.
 
 ---
 
@@ -33,17 +35,15 @@ Obsidian's interface to **[lilbee](https://tobocop2.github.io/lilbee/)**, a term
 ## Highlights
 
 - **Ask your vault in plain English.** Type a question; get an answer with citations that click straight back to the source line.
-- **Verify in one click.** Every citation opens a Source Preview scrolled to the exact passage — surrounding paragraphs visible, cited lines highlighted.
-- **Reads more than markdown.** PDFs, Office files, ebooks, CSV / TSV / JSON / YAML, and 150+ programming languages — plus OCR for scans and photographed pages.
-- **Your models, your machine.** Browse a built-in catalog (Llama 3, Qwen, Gemma, Mistral, DeepSeek, and the rest of HuggingFace), pull one with a click, run it locally — no account needed.
-- **Local-first, frontier-capable.** Server, models, index, and vault all stay on your machine; cloud models are opt-in per role, with a persistent indicator when one is active.
-- **An auto-generated wiki** *(experimental)* — linked markdown pages written from what you've indexed, citation-checked before publish, landing in your vault's graph alongside your own notes.
+- **Verify in one click.** Every citation opens a Source Preview scrolled to the exact passage: surrounding paragraphs visible, cited lines highlighted.
+- **Reads more than markdown.** PDFs, Office files, ebooks, CSV / TSV / JSON / YAML, 150+ programming languages, plus OCR for scans and photographed pages.
+- **Your models, your machine.** Browse a built-in model catalog straight from Hugging Face Hub, pull one with a click, run it locally. No account needed.
+- **Runs on your computer.** Server, models, index, and vault all stay local; cloud models are opt-in per role, with a persistent indicator when one is active.
+- **An auto-generated wiki** *(experimental)*: linked markdown pages written from what you've indexed, citation-checked before publish, landing in your vault's graph alongside your own notes.
 
 ## Why a local search engine for Obsidian
 
-Local AI tools have gotten great at getting you to a chat window fast. The first evening with a local model is genuinely fun. What makes it more than a novelty is grounding: the model needs context from your notes, your files, your codebase. Without that, the local AI tool runs out of places to go.
-
-A vault is already a curated set of documents — notes you've taken, PDFs you've collected, scans you've filed away — and that's exactly the corpus a real local search engine wants. The plugin runs lilbee against your vault so a local model can reason over your own library and answer with citations you can click back to the source. lilbee itself is a terminal-first search engine that ships a TUI, MCP server, REST API, and Python library; this plugin is the Obsidian frontend, sharing the same index, the same models, the same wiki.
+A vault is already a curated set of documents: notes you've taken, PDFs you've collected, scans you've filed away. That's exactly the corpus a local search engine wants. This plugin runs lilbee against your vault so a local model can reason over your own library and answer with citations you can click back to the source. lilbee itself is a terminal-first search engine that ships a TUI, an MCP server, a REST API, and a Python library; the plugin is the Obsidian frontend, sharing the same index, the same models, the same wiki.
 
 **The verification loop is one click.** When the answer matters and you want to read what the model read, every citation in chat or wiki opens a **Source Preview** that scrolls to the exact passage in the original document, with the surrounding paragraphs visible. No "open the file, find the page, scroll to the line."
 
@@ -51,7 +51,7 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
 
 ## Previews
 
-> ASCII sketches of each screen — the shape, not the pixels.
+> ASCII sketches of each screen: the shape, not the pixels.
 
 **Chat sidebar.** Streaming replies with `[¹]` citations. Click a citation to open the source preview. The header shows the active chat and embedding models as buttons that open the model picker, plus a Search / Chat mode toggle.
 
@@ -80,7 +80,7 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
  └────────────────────────────────────────────┘
 ```
 
-**Server-emitted banner.** When the server has something to say about why an answer wasn't grounded — e.g. Search mode with no embedding model configured — it surfaces a banner above the assistant bubble. The plugin renders the server's text verbatim.
+**Server-emitted banner.** When the server has something to say about why an answer wasn't grounded (e.g. Search mode with no embedding model configured), it surfaces a banner above the assistant bubble. The plugin renders the server's text verbatim.
 
 ```
  ┌─ Chat ─────────────────────────────────────┐
@@ -118,7 +118,7 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
  └───────────────────────────────────────────────────┘
 ```
 
-**Model Catalog.** Browse, search, and install models without leaving Obsidian. Two tabs: Local (installed and pullable GGUFs) and Frontier (cloud models via litellm). The Frontier tab is hidden until at least one provider API key is configured in Settings; once it appears, rows are grouped by provider with a Ready / Needs-key pill — clicking a Needs-key row deep-links to that provider's API-key input.
+**Model Catalog.** Browse, search, and install models without leaving Obsidian. Two tabs: Local (installed and pullable GGUFs) and Frontier (cloud models via litellm). The Frontier tab is hidden until at least one provider API key is configured in Settings; once it appears, rows are grouped by provider with a Ready / Needs-key pill, and clicking a Needs-key row deep-links to that provider's API-key input.
 
 ```
  ┌─ Browse model catalog ──────────────────┐
@@ -153,7 +153,7 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
  └─────────────────────────────────────────────┘
 ```
 
-**Model picker.** A separate, faster affordance for switching the active chat or embedding model from inside the chat sidebar — just a search input and a virtualized list grouped by provider. Open via the model buttons in the chat header or the **Pick chat model** / **Pick embedding model** commands.
+**Model picker.** A separate, faster affordance for switching the active chat or embedding model from inside the chat sidebar: just a search input and a virtualized list. Open via the model buttons in the chat header or the **Pick chat model** / **Pick embedding model** commands.
 
 ```
  ┌─ Pick chat model ───────────────────────────┐
@@ -226,37 +226,33 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
 
 ## What you can do with it
 
-### A personal encyclopedia of your vault
+### A library of your vault
 
-Point lilbee at your vault and it indexes every note, PDF, ebook, and code file into a searchable archive with citations that click back to the source line. The same pattern works for any vault you've curated: a medical textbook collection, a guitar theory library, a field's research papers, a car's service manuals, your company's internal wiki. Whatever corpus your vault holds becomes a searchable, talkable version of exactly what you have.
+Point lilbee at your vault and it builds a searchable library from every note, PDF, ebook, and code file, with citations that click back to the source line. The pattern works for any vault you've curated: a medical-textbook collection, a field's research papers, a car's service manuals, your company's internal wiki. Whatever your vault holds becomes searchable, and you can talk to it.
 
 ### Verify every answer at the source
 
-Every citation in a chat reply or wiki page is a live link. Click it and a Source Preview modal opens scrolled to the exact passage in the source document, with the surrounding paragraphs visible and the cited lines highlighted. From there you can open the full document or copy a deep link back to the citation.
-
-This matters for the things you'd actually want a private knowledge base for — medical references, legal documents, manuals, internal docs. A confident-sounding answer with a footnote is only as good as the footnote. Treating verification as a one-click action, not a separate workflow, is the difference between trusting the system and double-checking everything by hand.
+Every citation in a chat reply or wiki page is a live link. Click it and a Source Preview opens, scrolled to the exact passage in the source document, surrounding paragraphs visible, cited lines highlighted. From there you can open the full document or copy a deep link back to the citation. A confident-sounding answer with a footnote is only as good as the footnote; making the check one click instead of a separate chore is the difference between trusting the system and re-reading everything by hand.
 
 ### An auto-generated wiki of your knowledge
 
-The plugin reads everything you've indexed and writes a wiki about it. Pages compound across sources instead of being one-per-document, so concepts and entities that show up repeatedly get their own page with citations from every source that mentions them. Pages live in a configurable vault folder (default `lilbee/`) as ordinary markdown with `[[wiki links]]`, so Obsidian's graph view picks them up.
-
-Every section is citation-verified against the source chunks and scored for embedding faithfulness before publish. Low-confidence pages land in a drafts queue with a review modal — accept, reject, or edit them inline. A lint command surfaces stale or broken citations grouped by page.
+The plugin reads everything you've indexed and writes a wiki about it. Pages compound across sources instead of one-per-document, so concepts and entities that recur get their own page with citations from every source that mentions them. They live in a configurable vault folder (default `lilbee/`) as ordinary markdown with `[[wiki links]]`, so Obsidian's graph view picks them up. Every section is citation-verified and scored for embedding faithfulness before publish; low-confidence pages land in a drafts queue with a review modal (accept, reject, or edit inline), and a lint command surfaces stale or broken citations by page.
 
 ### Documents, code, and scanned images
 
-Your vault is full of more than markdown. lilbee indexes PDFs, Office files (`.docx`, `.xlsx`, `.pptx`), ebooks (`.epub`), CSV / TSV / JSON / YAML, and 150+ programming languages. Prose goes through [Kreuzberg](https://github.com/Goldziher/kreuzberg)'s heading-aware extraction so each chunk keeps its section context. Code goes through [tree-sitter](https://tree-sitter.github.io/tree-sitter/)'s AST-aware splitter, so chunks map to real functions, classes, and modules instead of arbitrary line ranges.
+Your vault is full of more than markdown. lilbee handles the rest:
 
-Scanned PDFs and photographed pages go through OCR — Tesseract for plain text, or a local GGUF vision model that preserves tables and layout as markdown. OCR is a per-vault toggle in Settings.
+- **Prose and structured files** (PDFs, `.docx` / `.xlsx` / `.pptx`, `.epub`, CSV / TSV / JSON / YAML) go through [Kreuzberg](https://github.com/Goldziher/kreuzberg)'s heading-aware extraction, so each chunk keeps its section context.
+- **Code** (150+ languages) goes through [tree-sitter](https://tree-sitter.github.io/tree-sitter/)'s AST-aware splitter, so chunks map to real functions, classes, and modules instead of arbitrary line ranges.
+- **Scanned PDFs and photographed pages** go through OCR: Tesseract for plain text, or a local GGUF vision model that keeps tables and layout as markdown. (A per-vault toggle in Settings.)
 
 ### Pick and tune your models
 
-Chat, embedding, vision, and reranker are four separate roles, each picked and managed independently. The Model Catalog (`Open model catalog` from the command palette, or the toolbar dropdown in chat) lets you browse featured picks or search the full HuggingFace catalog, see size and RAM requirements before pulling, and confirm before downloading. Pulls run through the Task Center with progress and cancel.
+Chat, embedding, vision, and reranker are four separate roles, each picked independently. The Model Catalog (`Open model catalog` from the command palette, or the chat toolbar dropdown) browses featured picks or searches Hugging Face Hub, shows size and RAM before you pull, and confirms before downloading; pulls run through the Task Center with progress and cancel. Retrieval and generation are deeply tunable from Settings, 50+ knobs in all: chunk size and overlap, search strictness, query rewriting on/off, a reranker pass with a configurable candidate count, each with reset-to-default. Settings groups them into Search & Retrieval, Generation, Sync, Crawling, Wiki, and Advanced, with a filter on top.
 
-Retrieval and generation are deeply tunable from Settings: chunk size and overlap, search strictness, query rewriting on/off, reranker pass with a configurable candidate count, and per-knob reset-to-default. Search & Retrieval, Generation, Sync, Crawling, Wiki, and Advanced are all separate sections with a filter on top.
+### Cloud models, when you want them
 
-### Local-first, frontier-capable
-
-By default everything stays on your machine — server, models, index, vault. For roles where a frontier model genuinely helps (sometimes vision OCR, sometimes long-context summarization), Settings → Advanced lets you key in OpenAI, Anthropic, Gemini, or any LiteLLM-compatible endpoint and use it for that role only, while keeping the rest local. The plugin shows a persistent indicator whenever a cloud model is the active chat or vision backend so it's clear when chunks are leaving the machine.
+By default everything stays on your machine: server, models, index, vault. For a role where a cloud model genuinely helps (sometimes vision OCR, sometimes long-context summarization), Settings → Advanced lets you key in an API endpoint and use it for that role only, while the rest stay local. The plugin shows a persistent indicator whenever a cloud model is the active chat or vision backend, so it's clear when chunks are leaving the machine.
 
 ## Quick start
 
@@ -265,9 +261,9 @@ By default everything stays on your machine — server, models, index, vault. Fo
 3. Enable **lilbee** in Settings → Community plugins.
 4. The Setup Wizard auto-launches. Pick a chat model and an embedding model from the featured grid, then run the initial sync.
 
-The plugin downloads and manages the [lilbee](https://tobocop2.github.io/lilbee/) server automatically — nothing to install separately. The first launch fetches the right version for your platform and verifies it before starting. Wait for the status bar to show `lilbee: ready`, then open the chat.
+The plugin downloads and manages the [lilbee](https://tobocop2.github.io/lilbee/) server automatically; nothing to install separately. The first launch fetches the right version for your platform and verifies it before starting. Wait for the status bar to show `lilbee: ready`, then open the chat.
 
-> **Hardware note:** the server runs on your CPU or GPU. A Mac with Apple Silicon (M1+) or a PC with an NVIDIA / AMD / Intel Arc GPU gives the best performance. 8 GB of RAM is the minimum; 16–32 GB is recommended. See [lilbee's hardware requirements](https://github.com/tobocop2/lilbee#hardware-requirements) for the full table.
+> **Hardware note:** the server runs on your CPU or GPU. A Mac with Apple Silicon (M1+) or a PC with an NVIDIA / AMD / Intel Arc GPU gives the best performance. 8 GB of RAM is the minimum; 16 to 32 GB is recommended. See [lilbee's hardware requirements](https://github.com/tobocop2/lilbee#hardware-requirements) for the full table.
 
 ### Open the chat
 
@@ -282,9 +278,9 @@ The chat panel opens in the sidebar. From there you can ask questions, attach in
 
 ## How it works
 
-The plugin runs [lilbee](https://tobocop2.github.io/lilbee/) in the background for you — on first launch it downloads the right version for your platform, starts it automatically, and shuts it down when you close Obsidian. Your vault is the corpus. lilbee handles indexing, retrieval, generation, and the wiki; the plugin is the interface on top.
+The plugin runs [lilbee](https://tobocop2.github.io/lilbee/) in the background for you: on first launch it downloads the right version for your platform, starts it automatically, and shuts it down when you close Obsidian. Your vault is the corpus. lilbee handles indexing, retrieval, generation, and the wiki; the plugin is the interface on top.
 
-Everything stays on your machine. The server, the models, the index, and your vault all live locally. Like all Obsidian plugins, lilbee is installed per vault — each vault runs its own server instance with its own index, so there's no shared global store. If you'd rather run your own lilbee server (on a different machine, in a container, or on a port you control), point the plugin at it from Settings → Connection.
+Everything stays on your machine. The server, the models, the index, and your vault all live locally. Like all Obsidian plugins, lilbee is installed per vault: each vault runs its own server instance with its own index, so there's no shared global store. If you'd rather run your own lilbee server (on a different machine, in a container, or on a port you control), point the plugin at it from Settings → Connection.
 
 > **macOS users:** the server binary is unsigned (Apple charges [$99/year](https://developer.apple.com/support/enrollment/) for signing). The plugin clears the quarantine flag automatically. If macOS still blocks it, go to System Settings → Privacy & Security and click **Allow Anyway**. See the [lilbee source](https://github.com/tobocop2/lilbee) if you want to audit the build.
 
@@ -294,11 +290,11 @@ Settings → BRAT → Beta Plugin List → click the edit (pencil) icon next to 
 
 ## Updating the server
 
-The plugin tracks the installed lilbee server version. Go to Settings → lilbee → **Check for updates**. If a newer release is available the button changes to **Update to vX.Y.Z** — one click stops the running server, downloads the new version, verifies it, and restarts.
+The plugin tracks the installed lilbee server version. Go to Settings → lilbee → **Check for updates**. If a newer release is available the button changes to **Update to vX.Y.Z**: one click stops the running server, downloads the new version, verifies it, and restarts.
 
 ## Documentation
 
-See **[Usage Guide](docs/usage.md)** for the full reference — every command, every setting, the chat toolbar, supported formats, troubleshooting, and advanced configuration. For the underlying engine — what it indexes, how retrieval works, model formats, hardware requirements — see [lilbee](https://tobocop2.github.io/lilbee/).
+See **[Usage Guide](docs/usage.md)** for the full reference: every command, every setting, the chat toolbar, supported formats, troubleshooting, and advanced configuration. For the underlying engine (what it indexes, how retrieval works, model formats, hardware requirements), see [lilbee](https://tobocop2.github.io/lilbee/).
 
 ## License
 
