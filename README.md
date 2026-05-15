@@ -1,13 +1,13 @@
-# [lilbee for Obsidian](https://tobocop2.github.io/obsidian-lilbee/)
+# [lilbee for Obsidian](https://obsidian.lilbee.sh/)
 
 A local search engine for your vault, inside Obsidian.
 
-[Project site](https://tobocop2.github.io/obsidian-lilbee/) · [Releases](https://github.com/tobocop2/obsidian-lilbee/releases) · [lilbee engine](https://tobocop2.github.io/lilbee/)
+[Project site](https://obsidian.lilbee.sh/) · [Releases](https://github.com/tobocop2/obsidian-lilbee/releases) · [lilbee engine](https://lilbee.sh/)
 
-This plugin runs **[lilbee](https://tobocop2.github.io/lilbee/)** against your vault and gives you chat, an auto-generated wiki, click-to-source citations, and a model catalog, all inside Obsidian. It bundles the lilbee server and manages it for you; nothing to install separately. Everything runs on your computer; cloud models are opt-in, per role.
+This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives you chat, an auto-generated wiki, click-to-source citations, and a model catalog, all inside Obsidian. It bundles the lilbee server and manages it for you; nothing to install separately. Everything runs on your computer; cloud models are opt-in, per role.
 
 [![CI](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml/badge.svg)](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml)
-[![Coverage](https://tobocop2.github.io/obsidian-lilbee/coverage/badge.svg)](https://tobocop2.github.io/obsidian-lilbee/coverage/)
+[![Coverage](https://obsidian.lilbee.sh/coverage/badge.svg)](https://obsidian.lilbee.sh/coverage/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
@@ -261,7 +261,7 @@ By default everything stays on your machine: server, models, index, vault. For a
 3. Enable **lilbee** in Settings → Community plugins.
 4. The Setup Wizard auto-launches. Pick a chat model and an embedding model from the featured grid, then run the initial sync.
 
-The plugin downloads and manages the [lilbee](https://tobocop2.github.io/lilbee/) server automatically; nothing to install separately. The first launch fetches the right version for your platform and verifies it before starting. Wait for the status bar to show `lilbee: ready`, then open the chat.
+The plugin downloads and manages the [lilbee](https://lilbee.sh/) server automatically; nothing to install separately. The first launch fetches the right version for your platform and verifies it before starting. Wait for the status bar to show `lilbee: ready`, then open the chat.
 
 > **Hardware note:** the server runs on your CPU or GPU. A Mac with Apple Silicon (M1+) or a PC with an NVIDIA / AMD / Intel Arc GPU gives the best performance. 8 GB of RAM is the minimum; 16 to 32 GB is recommended. See [lilbee's hardware requirements](https://github.com/tobocop2/lilbee#hardware-requirements) for the full table.
 
@@ -278,7 +278,7 @@ The chat panel opens in the sidebar. From there you can ask questions, attach in
 
 ## How it works
 
-The plugin runs [lilbee](https://tobocop2.github.io/lilbee/) in the background for you: on first launch it downloads the right version for your platform, starts it automatically, and shuts it down when you close Obsidian. Your vault is the corpus. lilbee handles indexing, retrieval, generation, and the wiki; the plugin is the interface on top.
+The plugin runs [lilbee](https://lilbee.sh/) in the background for you: on first launch it downloads the right version for your platform, starts it automatically, and shuts it down when you close Obsidian. Your vault is the corpus. lilbee handles indexing, retrieval, generation, and the wiki; the plugin is the interface on top.
 
 Everything stays on your machine. The server, the models, the index, and your vault all live locally. Like all Obsidian plugins, lilbee is installed per vault: each vault runs its own server instance with its own index, so there's no shared global store. If you'd rather run your own lilbee server (on a different machine, in a container, or on a port you control), point the plugin at it from Settings → Connection.
 
@@ -294,7 +294,7 @@ The plugin tracks the installed lilbee server version. Go to Settings → lilbee
 
 ## Documentation
 
-See **[Usage Guide](docs/usage.md)** for the full reference: every command, every setting, the chat toolbar, supported formats, troubleshooting, and advanced configuration. For the underlying engine (what it indexes, how retrieval works, model formats, hardware requirements), see [lilbee](https://tobocop2.github.io/lilbee/).
+See **[Usage Guide](docs/usage.md)** for the full reference: every command, every setting, the chat toolbar, supported formats, troubleshooting, and advanced configuration. For the underlying engine (what it indexes, how retrieval works, model formats, hardware requirements), see [lilbee](https://lilbee.sh/).
 
 ## License
 
