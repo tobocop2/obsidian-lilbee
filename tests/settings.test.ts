@@ -3538,6 +3538,55 @@ describe("managed mode settings", () => {
             expect(filterInput.style.display).not.toBe("none");
             expect(item.style.display).toBe("");
         });
+
+        it("matches against the description text when the name doesn't include the term", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const container = new MockElement("div") as any;
+            const item = container.createDiv({ cls: "setting-item" });
+            item.createDiv({ cls: "setting-item-name" }).textContent = "Adaptive threshold";
+            item.createDiv({ cls: "setting-item-description" }).textContent = "Cap on top-k retrieval";
+
+            (tab as any).filterSettings(container, "retrieval");
+            expect(item.style.display).toBe("");
+        });
+
+        it("treats null description textContent the same as missing description", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const container = new MockElement("div") as any;
+            const item = container.createDiv({ cls: "setting-item" });
+            item.createDiv({ cls: "setting-item-name" }).textContent = "Server port";
+            const desc = item.createDiv({ cls: "setting-item-description" });
+            // Simulate the element existing with no text -- exercises the
+            // ?.textContent short-circuit branch.
+            desc.textContent = null;
+
+            (tab as any).filterSettings(container, "anything");
+            expect(item.style.display).toBe("none");
+        });
+
+        it("hides containers whose descendants are all hidden", () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            tab.display();
+
+            const container = new MockElement("div") as any;
+            const wrapper = container.createDiv({ cls: "lilbee-chat-container" });
+            const item = wrapper.createDiv({ cls: "setting-item" });
+            item.createDiv({ cls: "setting-item-name" }).textContent = "Active chat model";
+
+            (tab as any).filterSettings(container, "nomatchanywhere");
+            expect(item.style.display).toBe("none");
+            expect(wrapper.style.display).toBe("none");
+        });
     });
 
     describe("LiteLLM base URL onChange", () => {

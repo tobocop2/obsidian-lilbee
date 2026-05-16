@@ -1,5 +1,6 @@
 import type { DataAdapter } from "obsidian";
 import type { WikiPage, WikiPageDetail } from "./types";
+import { PUBLISHED_WIKI_PAGE_TYPES } from "./types";
 import type { LilbeeClient } from "./api";
 
 const MANAGED_MARKER = "lilbee_managed";
@@ -38,7 +39,7 @@ export class WikiSync {
 
     async reconcile(): Promise<{ written: number; removed: number }> {
         const pages = await this.api.wikiList();
-        const publishedPages = pages.filter((p) => p.page_type === "summary" || p.page_type === "synthesis");
+        const publishedPages = pages.filter((p) => PUBLISHED_WIKI_PAGE_TYPES.has(p.page_type));
 
         await this.ensureFolders();
 

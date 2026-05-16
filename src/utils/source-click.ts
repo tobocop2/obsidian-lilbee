@@ -1,7 +1,7 @@
 import type { App, Vault } from "obsidian";
 import type { LilbeeClient } from "../api";
 import type { Source } from "../types";
-import { CONTENT_TYPE } from "../types";
+import { CONTENT_TYPE, isPdfContentType } from "../types";
 import { SourcePreviewModal } from "../views/source-preview-modal";
 
 /** Discriminator tags for `SourceClickAction`. */
@@ -56,7 +56,7 @@ function vaultAction(source: Source, path: string): SourceClickAction {
  * can be resolved.
  */
 export function sourceClickAction(source: Source, vault: Vault): SourceClickAction {
-    if (source.content_type === CONTENT_TYPE.PDF) {
+    if (isPdfContentType(source.content_type)) {
         return { kind: SOURCE_ACTION.PREVIEW, source };
     }
     const vaultPath = source.vault_path;

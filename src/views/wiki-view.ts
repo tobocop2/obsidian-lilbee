@@ -1,6 +1,7 @@
 import { ItemView, MarkdownRenderer, setIcon, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { WikiPage, WikiPageDetail } from "../types";
+import { CONCEPT_WIKI_PAGE_TYPES, WIKI_PAGE_TYPE } from "../types";
 import { MESSAGES } from "../locales/en";
 import { relativeTime } from "../utils";
 import { CitationModal } from "./citation-modal";
@@ -99,9 +100,8 @@ export class WikiView extends ItemView {
             return;
         }
 
-        // Group by type
-        const summaries = filtered.filter((p) => p.page_type === "summary");
-        const concepts = filtered.filter((p) => p.page_type === "synthesis");
+        const summaries = filtered.filter((p) => p.page_type === WIKI_PAGE_TYPE.SUMMARY);
+        const concepts = filtered.filter((p) => CONCEPT_WIKI_PAGE_TYPES.has(p.page_type));
 
         if (summaries.length > 0) {
             this.renderGroup(this.listEl, MESSAGES.LABEL_WIKI_SUMMARIES, summaries);

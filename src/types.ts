@@ -355,9 +355,14 @@ export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 /** MIME content types referenced across click dispatch + preview rendering. */
 export const CONTENT_TYPE = {
     PDF: "application/pdf",
+    PDF_SHORT: "pdf",
     MARKDOWN: "text/markdown",
     HTML: "text/html",
 } as const;
+
+export function isPdfContentType(value: string | null | undefined): boolean {
+    return value === CONTENT_TYPE.PDF || value === CONTENT_TYPE.PDF_SHORT;
+}
 
 export interface SizeVariant {
     size_label: string;
@@ -443,10 +448,36 @@ export interface EmbeddingModelResponse {
     model: string;
 }
 
+export const WIKI_PAGE_TYPE = {
+    SUMMARY: "summary",
+    SYNTHESIS: "synthesis",
+    CONCEPT: "concept",
+    ENTITY: "entity",
+    DRAFT: "draft",
+    ARCHIVE: "archive",
+} as const;
+
+export type WikiPageType = (typeof WIKI_PAGE_TYPE)[keyof typeof WIKI_PAGE_TYPE];
+
+/** Wiki pages that count as "published" — sidebar lists them, vault sync writes them. */
+export const PUBLISHED_WIKI_PAGE_TYPES: ReadonlySet<WikiPageType> = new Set([
+    WIKI_PAGE_TYPE.SUMMARY,
+    WIKI_PAGE_TYPE.SYNTHESIS,
+    WIKI_PAGE_TYPE.CONCEPT,
+    WIKI_PAGE_TYPE.ENTITY,
+]);
+
+/** Subset of published types grouped under "Concepts" in the sidebar. */
+export const CONCEPT_WIKI_PAGE_TYPES: ReadonlySet<WikiPageType> = new Set([
+    WIKI_PAGE_TYPE.SYNTHESIS,
+    WIKI_PAGE_TYPE.CONCEPT,
+    WIKI_PAGE_TYPE.ENTITY,
+]);
+
 export interface WikiPage {
     slug: string;
     title: string;
-    page_type: "summary" | "synthesis";
+    page_type: WikiPageType;
     source_count: number;
     created_at: string | null;
 }
