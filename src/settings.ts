@@ -130,20 +130,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
             return !term || name.includes(term) || desc.includes(term);
         };
 
-        // Hide / show every setting-item by walking the whole tree, not just
-        // direct children of containerEl. The previous implementation only
-        // touched top-level items + items inside `.lilbee-settings-section`,
-        // missing every row nested in `.lilbee-models-container`,
-        // `.lilbee-chat-container`, `.lilbee-embedding-container`, etc. -- so
-        // typing "results" used to leave Active chat model, Crawl depth,
-        // Page timeout and dozens of unrelated rows visible.
         for (const item of Array.from(containerEl.querySelectorAll(".setting-item"))) {
             (item as HTMLElement).style.display = matches(item) ? "" : "none";
         }
 
-        // Container wrappers (sections + model-task containers) should hide
-        // themselves when they have nothing matching to show, so the filtered
-        // view doesn't end with a row of empty group headings.
         const wrappers = containerEl.querySelectorAll(
             ".lilbee-settings-section, .lilbee-models-container, .lilbee-chat-container, " +
                 ".lilbee-embedding-container, .lilbee-vision-container, .lilbee-reranker-container, " +
@@ -153,7 +143,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
             const items = Array.from(wrapper.querySelectorAll(".setting-item"));
             const anyVisible = items.some((i) => (i as HTMLElement).style.display !== "none");
             (wrapper as HTMLElement).style.display = anyVisible || !term ? "" : "none";
-            // Auto-expand <details> sections when the filter narrows them.
             if (term && anyVisible && wrapper.tagName === "DETAILS") {
                 wrapper.setAttribute("open", "");
             }

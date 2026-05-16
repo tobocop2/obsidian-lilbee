@@ -1,7 +1,7 @@
 import { App, MarkdownRenderer, Modal, Notice } from "obsidian";
 import type { LilbeeClient } from "../api";
 import type { Source, SourceContent } from "../types";
-import { isPdfContentType } from "../types";
+import { CONTENT_TYPE, isPdfContentType } from "../types";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, errorMessage } from "../utils";
 import { formatLocation } from "./results";
@@ -223,7 +223,7 @@ export class SourcePreviewModal extends Modal {
     private renderPdf(host: HTMLElement): void {
         const body = host.createDiv({ cls: "lilbee-preview-body" });
         const frame = body.createEl("object", { cls: "lilbee-preview-pdf-frame" });
-        frame.setAttribute("type", "application/pdf");
+        frame.setAttribute("type", CONTENT_TYPE.PDF);
         frame.setAttribute("data", this.rawSourceUrl(this.source.page_start));
     }
 

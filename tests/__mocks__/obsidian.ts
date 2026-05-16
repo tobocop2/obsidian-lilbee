@@ -215,10 +215,18 @@ export class MockElement {
     }
 
     querySelectorAll(selector: string): MockElement[] {
-        if (selector.startsWith(".")) {
-            return this.findAll(selector.slice(1));
+        const seen = new Set<MockElement>();
+        const results: MockElement[] = [];
+        for (const part of selector.split(",")) {
+            const trimmed = part.trim();
+            if (!trimmed.startsWith(".")) continue;
+            for (const el of this.findAll(trimmed.slice(1))) {
+                if (seen.has(el)) continue;
+                seen.add(el);
+                results.push(el);
+            }
         }
-        return [];
+        return results;
     }
 
     createSpan(opts?: { cls?: string; text?: string }): MockElement {

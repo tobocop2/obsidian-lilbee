@@ -1,5 +1,6 @@
 import type { DataAdapter } from "obsidian";
 import type { WikiPage, WikiPageDetail } from "./types";
+import { PUBLISHED_WIKI_PAGE_TYPES } from "./types";
 import type { LilbeeClient } from "./api";
 
 const MANAGED_MARKER = "lilbee_managed";
@@ -38,16 +39,7 @@ export class WikiSync {
 
     async reconcile(): Promise<{ written: number; removed: number }> {
         const pages = await this.api.wikiList();
-        // Published page types -- everything not in drafts/archive. Keep in
-        // sync with the server-side SUBDIR_TO_TYPE values: summary,
-        // synthesis, concept, entity all represent published wiki content.
-        const publishedPages = pages.filter(
-            (p) =>
-                p.page_type === "summary" ||
-                p.page_type === "synthesis" ||
-                p.page_type === "concept" ||
-                p.page_type === "entity",
-        );
+        const publishedPages = pages.filter((p) => PUBLISHED_WIKI_PAGE_TYPES.has(p.page_type));
 
         await this.ensureFolders();
 

@@ -539,10 +539,7 @@
     border-bottom: none;
 }
 
-/* Catalog action cell: keep "Installed" pill + trash on one row. The td
-   is ~100 px wide so inline layout wraps; flex with justify-end keeps
-   the cluster anchored right and centers the trash button against the
-   pill instead of stacking below it. */
+/* Keep "Installed" pill + trash on one row at narrow column widths. */
 .lilbee-model-catalog td:last-child {
     display: flex;
     align-items: center;
