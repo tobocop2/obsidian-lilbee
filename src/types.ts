@@ -243,7 +243,6 @@ export interface LilbeeSettings {
     maxDistance: number;
     adaptiveThreshold: boolean;
     serverMode: ServerMode;
-    serverPort: number | null;
     lilbeeVersion: string;
     ragSystemPrompt: string;
     generalSystemPrompt: string;
@@ -279,7 +278,6 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     maxDistance: 0.9,
     adaptiveThreshold: false,
     serverMode: "managed",
-    serverPort: null,
     lilbeeVersion: "",
     ragSystemPrompt: "",
     generalSystemPrompt: "",

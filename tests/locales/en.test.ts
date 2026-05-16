@@ -173,7 +173,6 @@ describe("MESSAGES", () => {
 
     describe("PLACEHOLDER_ constants", () => {
         it("has all placeholder constants", () => {
-            expect(MESSAGES.PLACEHOLDER_AUTO).toBe("Auto");
             expect(MESSAGES.PLACEHOLDER_DEFAULT).toBe("Default");
             expect(MESSAGES.PLACEHOLDER_NOT_SET).toBe("Not set");
             expect(MESSAGES.PLACEHOLDER_SEARCH_MODELS).toBe("Search models...");

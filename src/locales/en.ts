@@ -76,7 +76,6 @@ export const MESSAGES = {
     LABEL_SERVER_MODE: "Server mode",
     LABEL_SERVER_STATUS: "Server status",
     LABEL_SERVER_CONTROLS: "Server controls",
-    LABEL_SERVER_PORT: "Server port",
     LABEL_SERVER_VERSION: "Server version",
     LABEL_SERVER_URL: "Server URL",
     LABEL_SESSION_TOKEN: "Session token",
@@ -306,7 +305,6 @@ export const MESSAGES = {
         "When the plugin loads, open the chat view and task center side by side in the right sidebar. Disable if your right sidebar is busy with other plugins.",
     DESC_SERVER_STATUS_CURRENT: "Current state of the managed lilbee server",
     DESC_SERVER_CONTROLS_START_STOP: "Start, stop, or restart the managed server",
-    DESC_SERVER_PORT_HELP: "Port for the managed server. Leave blank for automatic.",
     DESC_SERVER_VERSION_UNKNOWN: "Unknown",
     DESC_SERVER_URL_HELP: "Address of the lilbee HTTP server",
     DESC_SESSION_TOKEN_AUTO:
@@ -374,7 +372,6 @@ export const MESSAGES = {
     DESC_REINDEX_WARNING: "Changing {field} will require re-indexing all documents. Continue?",
     DESC_EMBEDDING_REINDEX_WARNING: "Changing the embedding model will require re-indexing all documents. Continue?",
 
-    PLACEHOLDER_AUTO: "Auto",
     PLACEHOLDER_DEFAULT: "Default",
     PLACEHOLDER_NOT_SET: "Not set",
     PLACEHOLDER_SEARCH_MODELS: "Search models...",

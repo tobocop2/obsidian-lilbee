@@ -347,7 +347,6 @@ export default class LilbeePlugin extends Plugin {
                 this.serverManager = new ServerManager({
                     binaryPath,
                     dataDir: `${pluginDir}/server-data`,
-                    port: this.settings.serverPort,
                     ragSystemPrompt: this.settings.ragSystemPrompt,
                     generalSystemPrompt: this.settings.generalSystemPrompt,
                     onStateChange: (state) => this.handleServerStateChange(state),
@@ -755,9 +754,6 @@ export default class LilbeePlugin extends Plugin {
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
             if (previousMode !== SERVER_MODE.MANAGED) {
                 void this.startManagedServer();
-            } else if (this.serverManager) {
-                this.serverManager.updatePort(this.settings.serverPort);
-                this.configureApi(this.serverManager.serverUrl);
             }
         } else {
             if (previousMode === SERVER_MODE.MANAGED) {

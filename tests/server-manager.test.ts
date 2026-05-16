@@ -35,49 +35,12 @@ function mockChild() {
 
 type MockChild = ReturnType<typeof mockChild>;
 
-// ── Mock net.Server for port pre-flight ─────────────────────────────
-
-interface NetServerMock {
-    listen: (port: number, host: string) => void;
-    close: (cb: () => void) => void;
-    once: (event: string, handler: (...args: unknown[]) => void) => void;
-    address: () => { port: number; address: string; family: string };
-}
-
-/**
- * Fake `net.Server` covering both port-preflight and OS-picked-port paths.
- * Fires `listening` (free) or `error` (occupied) on the next microtask after
- * `listen`. When picking a free port, `address()` reports `pickedPort`.
- */
-function mockNetServer(opts: { available?: boolean; errorCode?: string; pickedPort?: number } = {}): NetServerMock {
-    const handlers: Record<string, ((...args: unknown[]) => void)[]> = {};
-    const available = opts.available ?? true;
-    return {
-        listen: () => {
-            queueMicrotask(() => {
-                if (available) {
-                    handlers.listening?.forEach((h) => h());
-                } else {
-                    const err = Object.assign(new Error("bind failed"), { code: opts.errorCode ?? "EADDRINUSE" });
-                    handlers.error?.forEach((h) => h(err));
-                }
-            });
-        },
-        close: (cb) => cb(),
-        once: (event, handler) => {
-            (handlers[event] ??= []).push(handler);
-        },
-        address: () => ({ port: opts.pickedPort ?? 54321, address: "127.0.0.1", family: "IPv4" }),
-    };
-}
-
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function defaultOpts(overrides?: Partial<ServerManagerOptions>): ServerManagerOptions {
     return {
         binaryPath: "/usr/local/bin/lilbee",
         dataDir: "/tmp/data",
-        port: 7433,
         ragSystemPrompt: "",
         generalSystemPrompt: "",
         ...overrides,
@@ -103,7 +66,6 @@ describe("ServerManager", () => {
     let existsSyncSpy: ReturnType<typeof vi.spyOn>;
     let readFileSyncSpy: ReturnType<typeof vi.spyOn>;
     let unlinkSyncSpy: ReturnType<typeof vi.spyOn>;
-    let createServerSpy: ReturnType<typeof vi.spyOn>;
     let child: MockChild;
 
     beforeEach(() => {
@@ -115,9 +77,6 @@ describe("ServerManager", () => {
         existsSyncSpy = vi.spyOn(node, "existsSync").mockReturnValue(true);
         readFileSyncSpy = vi.spyOn(node, "readFileSync").mockReturnValue("9999");
         unlinkSyncSpy = vi.spyOn(node, "unlinkSync").mockImplementation(() => {});
-        createServerSpy = vi
-            .spyOn(node, "createServer")
-            .mockImplementation(() => mockNetServer({ available: true }) as any);
     });
 
     afterEach(() => {
@@ -133,13 +92,8 @@ describe("ServerManager", () => {
             expect(mgr.state).toBe("stopped");
         });
 
-        it("serverUrl reflects the configured port", () => {
-            const mgr = new ServerManager(defaultOpts({ port: 9999 }));
-            expect(mgr.serverUrl).toBe("http://127.0.0.1:9999");
-        });
-
-        it("serverUrl is empty in dynamic-port mode until start() resolves a port", () => {
-            const mgr = new ServerManager(defaultOpts({ port: null }));
+        it("serverUrl is empty until start() reads the port file", () => {
+            const mgr = new ServerManager(defaultOpts());
             expect(mgr.serverUrl).toBe("");
         });
 
@@ -164,7 +118,8 @@ describe("ServerManager", () => {
             expect(spawnSpy).toHaveBeenCalledOnce();
             const [bin, args, opts] = spawnSpy.mock.calls[0] as any[];
             expect(bin).toBe("/usr/local/bin/lilbee");
-            expect(args).toEqual(["serve", "--host", "127.0.0.1", "--port", "7433", "--data-dir", "/tmp/data"]);
+            expect(args).toEqual(["serve", "--host", "127.0.0.1", "--data-dir", "/tmp/data"]);
+            expect(args).not.toContain("--port");
             expect(opts.env.LILBEE_CORS_ORIGINS).toBe("app://obsidian.md");
             expect(opts.env.LILBEE_PARENT_PID).toBe(String(process.pid));
             expect(opts.env.LILBEE_RAG_SYSTEM_PROMPT).toBeUndefined();
@@ -201,30 +156,22 @@ describe("ServerManager", () => {
             expect(opts.env.LILBEE_RAG_SYSTEM_PROMPT).toBeUndefined();
         });
 
-        it("in dynamic-port mode (port: null), omits --port and reads the actual port from the port file", async () => {
-            const stateChanges: string[] = [];
-            const mgr = new ServerManager(defaultOpts({ port: null, onStateChange: (s) => stateChanges.push(s) }));
+        it("reads the actual port from the port file written by the server", async () => {
+            const mgr = new ServerManager(defaultOpts());
 
             const startPromise = mgr.start();
             await vi.advanceTimersByTimeAsync(1000);
             await startPromise;
 
-            expect(spawnSpy).toHaveBeenCalledOnce();
-            const [bin, args] = spawnSpy.mock.calls[0] as any[];
-            expect(bin).toBe("/usr/local/bin/lilbee");
-            expect(args).toEqual(["serve", "--host", "127.0.0.1", "--data-dir", "/tmp/data"]);
             expect(existsSyncSpy).toHaveBeenCalled();
             expect(readFileSyncSpy).toHaveBeenCalled();
             expect(mgr.serverUrl).toBe("http://127.0.0.1:9999");
-
             expect(mgr.state).toBe("ready");
-            expect(stateChanges).toContain("starting");
-            expect(stateChanges).toContain("ready");
         });
 
-        it("in dynamic-port mode, sets state to error when the port file never appears", async () => {
+        it("sets state to error when the port file never appears", async () => {
             existsSyncSpy.mockReturnValue(false);
-            const mgr = new ServerManager(defaultOpts({ port: null }));
+            const mgr = new ServerManager(defaultOpts());
 
             const startPromise = mgr.start();
             await vi.advanceTimersByTimeAsync(120_000);
@@ -267,41 +214,6 @@ describe("ServerManager", () => {
 
             expect(mgr.state).toBe("error");
         }, 15_000);
-    });
-
-    // ── port resolution ─────────────────────────────────────────────
-
-    describe("port resolution", () => {
-        it("honors the configured port when it is free", async () => {
-            const mgr = new ServerManager(defaultOpts({ port: 7433 }));
-
-            const startPromise = mgr.start();
-            await vi.advanceTimersByTimeAsync(1000);
-            await startPromise;
-
-            const [, args] = spawnSpy.mock.calls[0] as any[];
-            expect(args).toContain("--port");
-            expect(args[args.indexOf("--port") + 1]).toBe("7433");
-            expect(mgr.serverUrl).toBe("http://127.0.0.1:7433");
-            expect(createServerSpy).toHaveBeenCalled();
-        });
-
-        it("omits --port and defers to the server's auto-pick when the configured port is occupied", async () => {
-            createServerSpy.mockImplementation(() => mockNetServer({ available: false }) as any);
-            // Server picks a free port and writes it to the port file.
-            readFileSyncSpy.mockReturnValue("54321");
-
-            const mgr = new ServerManager(defaultOpts({ port: 7433 }));
-
-            const startPromise = mgr.start();
-            await vi.advanceTimersByTimeAsync(1000);
-            await startPromise;
-
-            const [, args] = spawnSpy.mock.calls[0] as any[];
-            expect(args).not.toContain("--port");
-            expect(mgr.serverUrl).toBe("http://127.0.0.1:54321");
-            expect(mgr.state).toBe("ready");
-        });
     });
 
     // ── stop() ──────────────────────────────────────────────────────
@@ -508,6 +420,27 @@ describe("ServerManager", () => {
 
             expect(mgr.state).toBe("stopped");
         });
+
+        it("skips port file cleanup when the file is already gone", async () => {
+            const mgr = new ServerManager(defaultOpts());
+            const p1 = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p1;
+
+            child.kill = vi.fn(() => {
+                setTimeout(() => child._emit("exit", 0, null), 10);
+            });
+            // Port file vanished between start and stop — e.g. the server
+            // unlinked it on shutdown before our stop() ran the check.
+            existsSyncSpy.mockReturnValue(false);
+
+            const stopPromise = mgr.stop();
+            await vi.advanceTimersByTimeAsync(50);
+            await stopPromise;
+
+            expect(unlinkSyncSpy).not.toHaveBeenCalled();
+            expect(mgr.state).toBe("stopped");
+        });
     });
 
     // ── restart() ───────────────────────────────────────────────────
@@ -653,9 +586,7 @@ describe("ServerManager", () => {
             const mgr = new ServerManager(defaultOpts({ onStateChange: (s) => stateChanges.push(s) }));
 
             const p1 = mgr.start();
-            // Flush microtasks so port resolution + spawn complete and the
-            // child has registered its error handler before we emit.
-            await vi.advanceTimersByTimeAsync(0);
+            // Fire error before health check completes
             child._emit("error", new Error("spawn ENOENT"));
             await vi.advanceTimersByTimeAsync(15_000);
             await p1;
@@ -680,6 +611,29 @@ describe("ServerManager", () => {
 
             child.stderr._emit("data", Buffer.from("line one\nline two\n"));
             expect(mgr.lastStderr).toBe("line one\nline two");
+        });
+
+        it("skips empty lines emitted by the server", async () => {
+            const mgr = new ServerManager(defaultOpts());
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+
+            child.stderr._emit("data", Buffer.from("line one\n\nline two\n"));
+            expect(mgr.lastStderr).toBe("line one\nline two");
+        });
+
+        it("no-ops when the spawned child has no stderr stream", async () => {
+            const childNoStderr = { ...mockChild(), stderr: null };
+            spawnSpy.mockReturnValue(childNoStderr as any);
+
+            const mgr = new ServerManager(defaultOpts());
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+
+            expect(mgr.lastStderr).toBe("");
+            expect(mgr.state).toBe("ready");
         });
 
         it("limits to MAX_STDERR_LINES", async () => {
@@ -720,23 +674,6 @@ describe("ServerManager", () => {
             await p2;
 
             expect(mgr.lastStderr).toBe("");
-        });
-    });
-
-    // ── updatePort ──────────────────────────────────────────────
-
-    describe("updatePort", () => {
-        it("updates the port in options", () => {
-            const mgr = new ServerManager(defaultOpts());
-            mgr.updatePort(8080);
-            expect(mgr.serverUrl).toBe("http://127.0.0.1:8080");
-        });
-
-        it("sets _actualPort when given explicit port, allowing serverUrl to work in dynamic mode", () => {
-            const mgr = new ServerManager(defaultOpts());
-            mgr.updatePort(9000);
-            mgr.updatePort(null);
-            expect(mgr.serverUrl).toBe("http://127.0.0.1:9000");
         });
     });
 
