@@ -18,14 +18,12 @@ about the first impression.
 from __future__ import annotations
 
 from _record import jitter_sleep
+from _setup import prepare
 from playwright.sync_api import Page
 
 
 def run(page: Page) -> None:
-    page.evaluate('''() => { if (window.app?.setTheme) window.app.setTheme('obsidian'); }''')
-    for _ in range(4):
-        page.keyboard.press("Escape")
-        page.wait_for_timeout(120)
+    prepare(page)
 
     # Single-pane: detach lilbee leaves so the wizard isn't framed by
     # half-open sidebars.

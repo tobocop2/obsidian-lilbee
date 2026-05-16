@@ -22,6 +22,7 @@ counts in the validated baseline.
 from __future__ import annotations
 
 from _record import jitter_sleep
+from _setup import prepare
 from playwright.sync_api import Page
 
 # Which concept page to drill into. Must exist in the validated recipe
@@ -30,10 +31,7 @@ PAGE_TITLE = "Semantic Chunking"
 
 
 def run(page: Page) -> None:
-    page.evaluate('''() => { if (window.app?.setTheme) window.app.setTheme('obsidian'); }''')
-    for _ in range(4):
-        page.keyboard.press("Escape")
-        page.wait_for_timeout(120)
+    prepare(page)
 
     # Wiki sidebar (lands in the right or left split depending on prior
     # layout; the WikiView itself doesn't care which split it's in).

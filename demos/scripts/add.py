@@ -11,6 +11,7 @@ in one click, with no manual sync step.
 from __future__ import annotations
 
 from _record import jitter_sleep, type_chunked, wait_for_idle
+from _setup import prepare
 from playwright.sync_api import Page
 
 FILE_PATH = "Notes/Quick add demo.md"
@@ -33,18 +34,7 @@ QUESTION = "What does the Algonquin outfitter say about carrying a kayak?"
 
 
 def run(page: Page) -> None:
-    # Dark theme + fresh state. Drain any modal stack before the demo
-    # touches the workspace -- a half-open modal-bg from a prior demo or
-    # from the activate-via-System-Events flash intercepts clicks.
-    page.evaluate('''() => { if (window.app?.setTheme) window.app.setTheme('obsidian'); }''')
-    for _ in range(6):
-        page.keyboard.press("Escape")
-        page.wait_for_timeout(120)
-    page.evaluate('''() => {
-        document.querySelectorAll('.modal-bg').forEach(el => el.click());
-        document.querySelectorAll('.modal-close-button').forEach(el => el.click());
-    }''')
-    jitter_sleep(0.4)
+    prepare(page)
 
     # Layout: file explorer on the left, no chat/wiki/tasks open. Single
     # main-pane file (whichever opens by default) is fine.

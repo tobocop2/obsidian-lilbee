@@ -16,14 +16,12 @@ recording stays short and reproducible. Flow:
 from __future__ import annotations
 
 from _record import jitter_sleep, type_chunked
+from _setup import prepare
 from playwright.sync_api import Page
 
 
 def run(page: Page) -> None:
-    page.evaluate('''() => { if (window.app?.setTheme) window.app.setTheme('obsidian'); }''')
-    for _ in range(4):
-        page.keyboard.press("Escape")
-        page.wait_for_timeout(120)
+    prepare(page)
 
     # Open the catalog.
     page.evaluate('() => window.app.commands.executeCommandById("lilbee:lilbee:catalog")')

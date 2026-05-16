@@ -13,6 +13,7 @@ Center sidebar -> open Chat -> ask the question -> cited answer.
 from __future__ import annotations
 
 from _record import jitter_sleep, type_chunked, wait_for_idle
+from _setup import prepare
 from playwright.sync_api import Page
 
 URL = "https://en.wikipedia.org/wiki/Chevrolet_Caprice"
@@ -20,14 +21,7 @@ QUESTION = "When was the 9C1 police package introduced?"
 
 
 def run(page: Page) -> None:
-    # Dark theme. Don't reset the chat layout yet: open the crawl modal
-    # over whatever's on screen first; we'll switch to chat after the crawl
-    # finishes.
-    page.evaluate('''() => { if (window.app?.setTheme) window.app.setTheme('obsidian'); }''')
-    page.keyboard.press("Escape")
-    jitter_sleep(0.4)
-    page.keyboard.press("Escape")
-    jitter_sleep(0.4)
+    prepare(page)
 
     # Open the crawl modal via the command id directly (cross-platform;
     # the Command Palette flow is slower on camera and not the point).

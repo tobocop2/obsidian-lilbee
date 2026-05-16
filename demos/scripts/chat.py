@@ -6,23 +6,20 @@ interesting + multi-section retrieval against the same Crown Vic PDF).
 from __future__ import annotations
 
 from _record import jitter_sleep, type_chunked, wait_for_idle
+from _setup import prepare
 from playwright.sync_api import Page
 
 PROMPT = "I'm prepping this car to tow my boat. What does the manual say I need to check?"
 
 
 def run(page: Page) -> None:
-    # Make sure no modal is open
-    page.keyboard.press("Escape")
-    jitter_sleep(0.4)
+    prepare(page)
 
-    # Force dark theme + clean single-pane layout: chat fills the whole main
-    # area, no sidebars, no New-tab placeholder, no other tabs.
+    # Clean single-pane layout: chat fills the whole main area, no sidebars,
+    # no New-tab placeholder, no other tabs.
     page.evaluate('''async () => {
         const app = window.app;
         if (!app) return;
-        // Dark theme
-        if (app.setTheme) app.setTheme('obsidian');
         // Detach sidebar lilbee leaves so chat isn't duplicated.
         app.workspace.detachLeavesOfType('lilbee-tasks');
         app.workspace.detachLeavesOfType('lilbee-wiki');

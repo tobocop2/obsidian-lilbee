@@ -14,14 +14,12 @@ narrows the visible setting rows in real time. The demo:
 from __future__ import annotations
 
 from _record import jitter_sleep, type_chunked
+from _setup import prepare
 from playwright.sync_api import Page
 
 
 def run(page: Page) -> None:
-    # Dark theme + fresh state.
-    page.evaluate('''() => { if (window.app?.setTheme) window.app.setTheme('obsidian'); }''')
-    page.keyboard.press("Escape")
-    jitter_sleep(0.3)
+    prepare(page)
 
     # Open Settings via Obsidian's command id (works cross-platform; the
     # Cmd+, hotkey is macOS-only and not always honoured through CDP).

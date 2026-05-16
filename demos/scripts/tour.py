@@ -17,18 +17,14 @@ enough for the surface to be recognisable.
 from __future__ import annotations
 
 from _record import jitter_sleep, type_chunked, wait_for_idle
+from _setup import prepare
 from playwright.sync_api import Page
 
 QUICK_PROMPT = "What is lilbee in one sentence?"
 
 
 def run(page: Page) -> None:
-    # Dark theme + dismiss anything left from a prior demo.
-    page.evaluate('''() => { if (window.app?.setTheme) window.app.setTheme('obsidian'); }''')
-    page.keyboard.press("Escape")
-    jitter_sleep(0.3)
-    page.keyboard.press("Escape")
-    jitter_sleep(0.3)
+    prepare(page)
 
     # ------------------------------------------------------------------
     # Beat 1: collapsed-sidebar baseline + status bar visible

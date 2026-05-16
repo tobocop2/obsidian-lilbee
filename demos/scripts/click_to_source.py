@@ -12,6 +12,7 @@ between server and plugin; fixed in this branch.)
 from __future__ import annotations
 
 from _record import jitter_sleep, type_chunked, wait_for_idle
+from _setup import prepare
 from playwright.sync_api import Page
 
 PROMPT = "I'm prepping this car to tow my boat. What does the manual say I need to check?"
@@ -22,18 +23,13 @@ CHIPS = ["p. 173", "p. 256", "pp. 211–212"]
 
 
 def run(page: Page) -> None:
-    # Dismiss any modal left from a prior demo / verification run.
-    page.keyboard.press("Escape")
-    jitter_sleep(0.4)
-    page.keyboard.press("Escape")
-    jitter_sleep(0.4)
+    prepare(page)
 
-    # Same single-pane chat layout as chat.py (dark theme, sidebars closed,
-    # chat fills the main area, no New-tab placeholder).
+    # Same single-pane chat layout as chat.py (sidebars closed, chat fills
+    # the main area, no New-tab placeholder).
     page.evaluate('''async () => {
         const app = window.app;
         if (!app) return;
-        if (app.setTheme) app.setTheme('obsidian');
         app.workspace.detachLeavesOfType('lilbee-tasks');
         app.workspace.detachLeavesOfType('lilbee-wiki');
         let chatLeaf = app.workspace.getLeavesOfType('lilbee-chat').find(
