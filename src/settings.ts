@@ -125,33 +125,37 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private filterSettings(containerEl: HTMLElement, query: string): void {
         const term = query.trim().toLowerCase();
         const matches = (item: Element): boolean => {
-            const nameEl = item.querySelector(".setting-item-name");
-            const name = nameEl?.textContent?.toLowerCase() ?? "";
-            return !term || name.includes(term);
+            const name = item.querySelector(".setting-item-name")?.textContent?.toLowerCase() ?? "";
+            const desc = item.querySelector(".setting-item-description")?.textContent?.toLowerCase() ?? "";
+            return !term || name.includes(term) || desc.includes(term);
         };
 
-        // Top-level setting-items live as direct children of containerEl,
-        // outside any .lilbee-settings-section wrapper. The original
-        // implementation only walked into sections, so the bulk of the
-        // settings page (server controls, port, models, etc.) stayed
-        // visible regardless of the filter query.
-        for (const child of Array.from(containerEl.children)) {
-            if (!child.classList.contains("setting-item")) continue;
-            (child as HTMLElement).style.display = matches(child) ? "" : "none";
+        // Hide / show every setting-item by walking the whole tree, not just
+        // direct children of containerEl. The previous implementation only
+        // touched top-level items + items inside `.lilbee-settings-section`,
+        // missing every row nested in `.lilbee-models-container`,
+        // `.lilbee-chat-container`, `.lilbee-embedding-container`, etc. -- so
+        // typing "results" used to leave Active chat model, Crawl depth,
+        // Page timeout and dozens of unrelated rows visible.
+        for (const item of Array.from(containerEl.querySelectorAll(".setting-item"))) {
+            (item as HTMLElement).style.display = matches(item) ? "" : "none";
         }
 
-        const sections = containerEl.querySelectorAll(".lilbee-settings-section");
-        for (const section of Array.from(sections)) {
-            const items = section.querySelectorAll(".setting-item");
-            let visibleCount = 0;
-            for (const item of Array.from(items)) {
-                const m = matches(item);
-                (item as HTMLElement).style.display = m ? "" : "none";
-                if (m) visibleCount++;
-            }
-            (section as HTMLElement).style.display = visibleCount > 0 || !term ? "" : "none";
-            if (term && visibleCount > 0) {
-                section.setAttribute("open", "");
+        // Container wrappers (sections + model-task containers) should hide
+        // themselves when they have nothing matching to show, so the filtered
+        // view doesn't end with a row of empty group headings.
+        const wrappers = containerEl.querySelectorAll(
+            ".lilbee-settings-section, .lilbee-models-container, .lilbee-chat-container, " +
+                ".lilbee-embedding-container, .lilbee-vision-container, .lilbee-reranker-container, " +
+                ".lilbee-model-section",
+        );
+        for (const wrapper of Array.from(wrappers)) {
+            const items = Array.from(wrapper.querySelectorAll(".setting-item"));
+            const anyVisible = items.some((i) => (i as HTMLElement).style.display !== "none");
+            (wrapper as HTMLElement).style.display = anyVisible || !term ? "" : "none";
+            // Auto-expand <details> sections when the filter narrows them.
+            if (term && anyVisible && wrapper.tagName === "DETAILS") {
+                wrapper.setAttribute("open", "");
             }
         }
     }
