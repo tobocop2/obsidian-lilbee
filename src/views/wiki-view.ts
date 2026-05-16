@@ -99,9 +99,15 @@ export class WikiView extends ItemView {
             return;
         }
 
-        // Group by type
+        // Group by type. The server emits "summary" + "synthesis" +
+        // "concept" + "entity" (lilbee.wiki.shared.SUBDIR_TO_TYPE);
+        // grouping concept/entity/synthesis together as "concepts" keeps
+        // the sidebar layout simple while still surfacing every published
+        // page the server knows about.
         const summaries = filtered.filter((p) => p.page_type === "summary");
-        const concepts = filtered.filter((p) => p.page_type === "synthesis");
+        const concepts = filtered.filter(
+            (p) => p.page_type === "synthesis" || p.page_type === "concept" || p.page_type === "entity",
+        );
 
         if (summaries.length > 0) {
             this.renderGroup(this.listEl, MESSAGES.LABEL_WIKI_SUMMARIES, summaries);

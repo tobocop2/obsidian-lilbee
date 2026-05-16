@@ -38,7 +38,16 @@ export class WikiSync {
 
     async reconcile(): Promise<{ written: number; removed: number }> {
         const pages = await this.api.wikiList();
-        const publishedPages = pages.filter((p) => p.page_type === "summary" || p.page_type === "synthesis");
+        // Published page types -- everything not in drafts/archive. Keep in
+        // sync with the server-side SUBDIR_TO_TYPE values: summary,
+        // synthesis, concept, entity all represent published wiki content.
+        const publishedPages = pages.filter(
+            (p) =>
+                p.page_type === "summary" ||
+                p.page_type === "synthesis" ||
+                p.page_type === "concept" ||
+                p.page_type === "entity",
+        );
 
         await this.ensureFolders();
 
