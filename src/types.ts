@@ -359,6 +359,17 @@ export const CONTENT_TYPE = {
     HTML: "text/html",
 } as const;
 
+/**
+ * True if `value` denotes a PDF. The server returns both the short form
+ * (``"pdf"`` from ``/api/search``) and the full MIME type
+ * (``"application/pdf"`` from ``/api/source``); the plugin's PDF-routing
+ * code paths must accept both or PDF citations silently fall through to
+ * native-open-without-page-anchor.
+ */
+export function isPdfContentType(value: string | null | undefined): boolean {
+    return value === CONTENT_TYPE.PDF || value === "pdf";
+}
+
 export interface SizeVariant {
     size_label: string;
     params: string;
