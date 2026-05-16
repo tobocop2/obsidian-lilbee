@@ -231,28 +231,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
         }
 
-        const portSetting = new Setting(containerEl)
-            .setName(MESSAGES.LABEL_SERVER_PORT)
-            .setDesc(MESSAGES.DESC_SERVER_PORT_HELP)
-            .addText((text) =>
-                text
-                    .setPlaceholder(MESSAGES.PLACEHOLDER_AUTO)
-                    .setValue(this.plugin.settings.serverPort !== null ? String(this.plugin.settings.serverPort) : "")
-                    .onChange(async (value) => {
-                        const trimmed = value.trim();
-                        if (trimmed === "" || trimmed === "0") {
-                            this.plugin.settings.serverPort = null;
-                        } else {
-                            const num = parseInt(trimmed, 10);
-                            if (!isNaN(num) && num > 0 && num <= 65535) {
-                                this.plugin.settings.serverPort = num;
-                            }
-                        }
-                        await this.plugin.saveSettings();
-                    }),
-            );
-        this.appendLocalResetAffordance(portSetting, "serverPort", MESSAGES.LABEL_SERVER_PORT);
-
         const updateSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_SERVER_VERSION)
             .setDesc(this.plugin.settings.lilbeeVersion || MESSAGES.DESC_SERVER_VERSION_UNKNOWN);

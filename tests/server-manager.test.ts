@@ -41,7 +41,6 @@ function defaultOpts(overrides?: Partial<ServerManagerOptions>): ServerManagerOp
     return {
         binaryPath: "/usr/local/bin/lilbee",
         dataDir: "/tmp/data",
-        port: 7433,
         ragSystemPrompt: "",
         generalSystemPrompt: "",
         ...overrides,
@@ -93,13 +92,8 @@ describe("ServerManager", () => {
             expect(mgr.state).toBe("stopped");
         });
 
-        it("serverUrl reflects the configured port", () => {
-            const mgr = new ServerManager(defaultOpts({ port: 9999 }));
-            expect(mgr.serverUrl).toBe("http://127.0.0.1:9999");
-        });
-
-        it("serverUrl is empty in managed mode before the port file is read", () => {
-            const mgr = new ServerManager(defaultOpts({ port: null }));
+        it("serverUrl is empty until start() reads the port file", () => {
+            const mgr = new ServerManager(defaultOpts());
             expect(mgr.serverUrl).toBe("");
         });
 
@@ -124,7 +118,8 @@ describe("ServerManager", () => {
             expect(spawnSpy).toHaveBeenCalledOnce();
             const [bin, args, opts] = spawnSpy.mock.calls[0] as any[];
             expect(bin).toBe("/usr/local/bin/lilbee");
-            expect(args).toEqual(["serve", "--host", "127.0.0.1", "--port", "7433", "--data-dir", "/tmp/data"]);
+            expect(args).toEqual(["serve", "--host", "127.0.0.1", "--data-dir", "/tmp/data"]);
+            expect(args).not.toContain("--port");
             expect(opts.env.LILBEE_CORS_ORIGINS).toBe("app://obsidian.md");
             expect(opts.env.LILBEE_PARENT_PID).toBe(String(process.pid));
             expect(opts.env.LILBEE_RAG_SYSTEM_PROMPT).toBeUndefined();
@@ -161,29 +156,22 @@ describe("ServerManager", () => {
             expect(opts.env.LILBEE_RAG_SYSTEM_PROMPT).toBeUndefined();
         });
 
-        it("in dynamic port mode (port: null), reads port from file and sets state to ready", async () => {
-            const stateChanges: string[] = [];
-            const mgr = new ServerManager(defaultOpts({ port: null, onStateChange: (s) => stateChanges.push(s) }));
+        it("reads the actual port from the port file written by the server", async () => {
+            const mgr = new ServerManager(defaultOpts());
 
             const startPromise = mgr.start();
-            await vi.advanceTimersByTimeAsync(200);
+            await vi.advanceTimersByTimeAsync(1000);
             await startPromise;
 
-            expect(spawnSpy).toHaveBeenCalledOnce();
-            const [bin, args] = spawnSpy.mock.calls[0] as any[];
-            expect(bin).toBe("/usr/local/bin/lilbee");
-            expect(args).toEqual(["serve", "--host", "127.0.0.1", "--data-dir", "/tmp/data"]);
             expect(existsSyncSpy).toHaveBeenCalled();
             expect(readFileSyncSpy).toHaveBeenCalled();
-
+            expect(mgr.serverUrl).toBe("http://127.0.0.1:9999");
             expect(mgr.state).toBe("ready");
-            expect(stateChanges).toContain("starting");
-            expect(stateChanges).toContain("ready");
         });
 
-        it("in dynamic port mode, sets state to error when port file times out", async () => {
+        it("sets state to error when the port file never appears", async () => {
             existsSyncSpy.mockReturnValue(false);
-            const mgr = new ServerManager(defaultOpts({ port: null }));
+            const mgr = new ServerManager(defaultOpts());
 
             const startPromise = mgr.start();
             await vi.advanceTimersByTimeAsync(120_000);
@@ -432,6 +420,27 @@ describe("ServerManager", () => {
 
             expect(mgr.state).toBe("stopped");
         });
+
+        it("skips port file cleanup when the file is already gone", async () => {
+            const mgr = new ServerManager(defaultOpts());
+            const p1 = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p1;
+
+            child.kill = vi.fn(() => {
+                setTimeout(() => child._emit("exit", 0, null), 10);
+            });
+            // Port file vanished between start and stop — e.g. the server
+            // unlinked it on shutdown before our stop() ran the check.
+            existsSyncSpy.mockReturnValue(false);
+
+            const stopPromise = mgr.stop();
+            await vi.advanceTimersByTimeAsync(50);
+            await stopPromise;
+
+            expect(unlinkSyncSpy).not.toHaveBeenCalled();
+            expect(mgr.state).toBe("stopped");
+        });
     });
 
     // ── restart() ───────────────────────────────────────────────────
@@ -604,6 +613,29 @@ describe("ServerManager", () => {
             expect(mgr.lastStderr).toBe("line one\nline two");
         });
 
+        it("skips empty lines emitted by the server", async () => {
+            const mgr = new ServerManager(defaultOpts());
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+
+            child.stderr._emit("data", Buffer.from("line one\n\nline two\n"));
+            expect(mgr.lastStderr).toBe("line one\nline two");
+        });
+
+        it("no-ops when the spawned child has no stderr stream", async () => {
+            const childNoStderr = { ...mockChild(), stderr: null };
+            spawnSpy.mockReturnValue(childNoStderr as any);
+
+            const mgr = new ServerManager(defaultOpts());
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+
+            expect(mgr.lastStderr).toBe("");
+            expect(mgr.state).toBe("ready");
+        });
+
         it("limits to MAX_STDERR_LINES", async () => {
             const mgr = new ServerManager(defaultOpts());
             const p = mgr.start();
@@ -642,23 +674,6 @@ describe("ServerManager", () => {
             await p2;
 
             expect(mgr.lastStderr).toBe("");
-        });
-    });
-
-    // ── updatePort ──────────────────────────────────────────────
-
-    describe("updatePort", () => {
-        it("updates the port in options", () => {
-            const mgr = new ServerManager(defaultOpts());
-            mgr.updatePort(8080);
-            expect(mgr.serverUrl).toBe("http://127.0.0.1:8080");
-        });
-
-        it("sets _actualPort when given explicit port, allowing serverUrl to work in dynamic mode", () => {
-            const mgr = new ServerManager(defaultOpts());
-            mgr.updatePort(9000);
-            mgr.updatePort(null);
-            expect(mgr.serverUrl).toBe("http://127.0.0.1:9000");
         });
     });
 

@@ -16,7 +16,6 @@ const SERVER_MANAGER_CONFIG = {
 export interface ServerManagerOptions {
     binaryPath: string;
     dataDir: string;
-    port: number | null;
     ragSystemPrompt: string;
     generalSystemPrompt: string;
     onStateChange?: (state: ServerState) => void;
@@ -48,9 +47,8 @@ export class ServerManager {
     }
 
     get serverUrl(): string {
-        const port = this._actualPort ?? this.opts.port;
-        if (port === null) return "";
-        return `http://127.0.0.1:${port}`;
+        if (this._actualPort === null) return "";
+        return `http://127.0.0.1:${this._actualPort}`;
     }
 
     get dataDir(): string {
@@ -59,6 +57,11 @@ export class ServerManager {
 
     private get portFilePath(): string {
         return `${this.opts.dataDir}/data/server.port`;
+    }
+
+    private setState(s: ServerState): void {
+        this._state = s;
+        this.opts.onStateChange?.(s);
     }
 
     private async waitForPortFile(): Promise<void> {
@@ -76,25 +79,7 @@ export class ServerManager {
         throw new Error("Port file not found within timeout");
     }
 
-    private setState(s: ServerState): void {
-        this._state = s;
-        this.opts.onStateChange?.(s);
-    }
-
-    async start(): Promise<void> {
-        if (this.child) return;
-        this.stopping = false;
-        this._actualPort = null;
-        this.setState(SERVER_STATE.STARTING);
-
-        const args = ["serve", "--host", "127.0.0.1"];
-
-        if (this.opts.port !== null) {
-            args.push("--port", String(this.opts.port));
-        }
-
-        args.push("--data-dir", this.opts.dataDir);
-
+    private buildSpawnEnv(): Record<string, string | undefined> {
         const env: Record<string, string | undefined> = {
             ...process.env,
             LILBEE_CORS_ORIGINS: "app://obsidian.md",
@@ -106,58 +91,69 @@ export class ServerManager {
         if (this.opts.generalSystemPrompt) {
             env.LILBEE_GENERAL_SYSTEM_PROMPT = this.opts.generalSystemPrompt;
         }
+        return env;
+    }
 
-        this._stderrLines = [];
-
-        this.child = node.spawn(this.opts.binaryPath, args, {
-            env,
-            stdio: ["ignore", "ignore", "pipe"],
-            detached: false,
-        });
-
-        if (this.child.stderr) {
-            let partial = "";
-            this.child.stderr.on("data", (chunk: Buffer) => {
-                partial += chunk.toString();
-                const lines = partial.split("\n");
-                partial = lines.pop()!;
-                for (const line of lines) {
-                    if (line.length > 0) {
-                        this._stderrLines.push(line);
-                        if (this._stderrLines.length > ServerManager.MAX_STDERR_LINES) {
-                            this._stderrLines.shift();
-                        }
+    private attachStderrCapture(child: ChildProcess): void {
+        if (!child.stderr) return;
+        let partial = "";
+        child.stderr.on("data", (chunk: Buffer) => {
+            partial += chunk.toString();
+            const lines = partial.split("\n");
+            partial = lines.pop()!;
+            for (const line of lines) {
+                if (line.length > 0) {
+                    this._stderrLines.push(line);
+                    if (this._stderrLines.length > ServerManager.MAX_STDERR_LINES) {
+                        this._stderrLines.shift();
                     }
                 }
-            });
-        }
+            }
+        });
+    }
 
-        this.child.on("exit", (_code, _signal) => {
+    private attachLifecycleHandlers(child: ChildProcess): void {
+        child.on("exit", () => {
             this.child = null;
-            if (!this.stopping && this.crashCount < SERVER_MANAGER_CONFIG.MAX_CRASH_RESTARTS) {
+            if (this.stopping) return;
+            if (this.crashCount < SERVER_MANAGER_CONFIG.MAX_CRASH_RESTARTS) {
                 this.crashCount++;
                 this.setState(SERVER_STATE.ERROR);
                 this.restartTimer = setTimeout(() => {
                     this.restartTimer = null;
                     if (!this.stopping) void this.start();
                 }, SERVER_MANAGER_CONFIG.CRASH_RESTART_DELAY_MS);
-            } else if (!this.stopping) {
-                this.setState(SERVER_STATE.ERROR);
-                this.opts.onRestartsExhausted?.(this.lastStderr);
+                return;
             }
+            this.setState(SERVER_STATE.ERROR);
+            this.opts.onRestartsExhausted?.(this.lastStderr);
         });
-
-        this.child.on("error", () => {
+        child.on("error", () => {
             this.child = null;
             this.setState(SERVER_STATE.ERROR);
         });
+    }
+
+    async start(): Promise<void> {
+        if (this.child) return;
+        this.stopping = false;
+        this._actualPort = null;
+        this.setState(SERVER_STATE.STARTING);
+        this._stderrLines = [];
+
+        // No --port: the server binds 0, the kernel picks a free port, and
+        // the chosen value is written to data/server.port for us to read.
+        const args = ["serve", "--host", "127.0.0.1", "--data-dir", this.opts.dataDir];
+        this.child = node.spawn(this.opts.binaryPath, args, {
+            env: this.buildSpawnEnv(),
+            stdio: ["ignore", "ignore", "pipe"],
+            detached: false,
+        });
+        this.attachStderrCapture(this.child);
+        this.attachLifecycleHandlers(this.child);
 
         try {
-            if (this.opts.port === null) {
-                await this.waitForPortFile();
-            } else {
-                this._actualPort = this.opts.port;
-            }
+            await this.waitForPortFile();
             await this.waitForReady();
             this.crashCount = 0;
             this.setState(SERVER_STATE.READY);
@@ -182,6 +178,27 @@ export class ServerManager {
         throw new Error("Server did not become ready within timeout");
     }
 
+    private async terminateChild(child: ChildProcess): Promise<void> {
+        if (process.platform === PLATFORM.WIN32) {
+            try {
+                await node.execFile("taskkill", ["/pid", String(child.pid), "/f", "/t"]);
+            } catch (err) {
+                this.opts.onShutdownFailure?.(err instanceof Error ? err : new Error(String(err)));
+            }
+            return;
+        }
+        child.kill("SIGTERM");
+    }
+
+    private cleanupPortFile(): void {
+        if (!node.existsSync(this.portFilePath)) return;
+        try {
+            node.unlinkSync(this.portFilePath);
+        } catch {
+            // ignore cleanup errors
+        }
+    }
+
     async stop(): Promise<void> {
         this.stopping = true;
         if (this.restartTimer) {
@@ -194,24 +211,11 @@ export class ServerManager {
         }
 
         const child = this.child;
-
-        if (process.platform === PLATFORM.WIN32) {
-            try {
-                await node.execFile("taskkill", ["/pid", String(child.pid), "/f", "/t"]);
-            } catch (err) {
-                this.opts.onShutdownFailure?.(err instanceof Error ? err : new Error(String(err)));
-            }
-        } else {
-            child.kill("SIGTERM");
-        }
+        await this.terminateChild(child);
 
         const exited = await Promise.race([
-            new Promise<boolean>((resolve) => {
-                child.on("exit", () => resolve(true));
-            }),
-            new Promise<boolean>((resolve) => {
-                setTimeout(() => resolve(false), SERVER_MANAGER_CONFIG.STOP_GRACE_MS);
-            }),
+            new Promise<boolean>((resolve) => child.on("exit", () => resolve(true))),
+            new Promise<boolean>((resolve) => setTimeout(() => resolve(false), SERVER_MANAGER_CONFIG.STOP_GRACE_MS)),
         ]);
 
         if (!exited && this.child) {
@@ -220,26 +224,12 @@ export class ServerManager {
 
         this.child = null;
         this.setState(SERVER_STATE.STOPPED);
-
-        if (node.existsSync(this.portFilePath)) {
-            try {
-                node.unlinkSync(this.portFilePath);
-            } catch {
-                // ignore cleanup errors
-            }
-        }
+        this.cleanupPortFile();
     }
 
     async restart(): Promise<void> {
         await this.stop();
         this.crashCount = 0;
         await this.start();
-    }
-
-    updatePort(port: number | null): void {
-        this.opts.port = port;
-        if (port !== null) {
-            this._actualPort = port;
-        }
     }
 }

@@ -108,7 +108,6 @@ const mockBinaryExists = vi.fn().mockReturnValue(true);
 const mockDownload = vi.fn().mockResolvedValue(undefined);
 const mockServerStart = vi.fn().mockResolvedValue(undefined);
 const mockServerStop = vi.fn().mockResolvedValue(undefined);
-const mockUpdatePort = vi.fn();
 let mockServerOpts: any = null;
 
 vi.mock("../src/binary-manager", () => ({
@@ -151,9 +150,8 @@ vi.mock("../src/server-manager", () => ({
             start: mockServerStart,
             stop: mockServerStop,
             restart: vi.fn(),
-            updatePort: mockUpdatePort,
             get serverUrl() {
-                return `http://127.0.0.1:${opts.port}`;
+                return "http://127.0.0.1:54321";
             },
             get dataDir() {
                 return opts.dataDir;
@@ -4087,17 +4085,6 @@ describe("LilbeePlugin", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             expect(plugin.binaryManager).not.toBeNull();
-        });
-
-        it("managed → managed with serverManager: updates port", async () => {
-            const plugin = await createPlugin({ serverMode: "managed" });
-            await plugin.onload();
-            await flush();
-
-            plugin.settings.serverPort = 9999;
-            await plugin.saveSettings();
-
-            expect(mockUpdatePort).toHaveBeenCalledWith(9999);
         });
 
         it("2rf: managed → external sets status to 'ready [external]', not 'stopped'", async () => {
