@@ -454,10 +454,15 @@ export interface EmbeddingModelResponse {
     model: string;
 }
 
+/** All page-type strings the server emits via /api/wiki. Matches
+ * lilbee.wiki.shared.SUBDIR_TO_TYPE values; if a new subdir is added on
+ * the server, this union must grow with it. */
+export type WikiPageType = "summary" | "synthesis" | "concept" | "entity" | "draft" | "archive";
+
 export interface WikiPage {
     slug: string;
     title: string;
-    page_type: "summary" | "synthesis";
+    page_type: WikiPageType;
     source_count: number;
     created_at: string | null;
 }
