@@ -23,8 +23,57 @@ QUESTION = "When was the 9C1 police package introduced?"
 def run(page: Page) -> None:
     prepare(page)
 
-    # Open the crawl modal via the command id directly (cross-platform;
-    # the Command Palette flow is slower on camera and not the point).
+    # Layout: chat in the main pane, Task Center pinned to the right
+    # sidebar with the COMPLETED section cleared so the audience sees a
+    # fresh "0 done" baseline before the crawl beat starts.
+    page.evaluate('''async () => {
+        const app = window.app;
+        if (!app) return;
+        app.workspace.detachLeavesOfType('lilbee-wiki');
+        app.workspace.detachLeavesOfType('lilbee-tasks');
+        // Main pane: chat.
+        let chatLeaf = app.workspace.getLeavesOfType('lilbee-chat').find(
+            l => l.getRoot && l.getRoot() === app.workspace.rootSplit
+        );
+        if (!chatLeaf) {
+            chatLeaf = app.workspace.getMostRecentLeaf();
+            if (chatLeaf) {
+                await chatLeaf.setViewState({ type: 'lilbee-chat', active: true });
+            }
+        }
+        const closeOthers = (split) => {
+            if (!split || !split.children) return;
+            for (const child of [...split.children]) {
+                if (child === chatLeaf) continue;
+                if (child.children) closeOthers(child);
+                else if (child.detach && child !== chatLeaf) child.detach();
+            }
+        };
+        closeOthers(app.workspace.rootSplit);
+        if (chatLeaf) app.workspace.revealLeaf(chatLeaf);
+        if (app.workspace.leftSplit && !app.workspace.leftSplit.collapsed) {
+            app.workspace.leftSplit.collapse();
+        }
+        // Right sidebar: Task Center, expanded.
+        if (app.workspace.rightSplit?.collapsed) {
+            app.workspace.rightSplit.expand();
+        }
+    }''')
+    jitter_sleep(0.6)
+    # Mount the Task Center in the right sidebar.
+    page.evaluate('() => window.app.commands.executeCommandById("lilbee:lilbee:tasks")')
+    jitter_sleep(0.8)
+    # Clear the COMPLETED section so the new crawl task is the only one
+    # visible -- the audience sees the empty "0 done" then watches a
+    # single task fill in.
+    try:
+        page.locator('.lilbee-tasks-clear').first.click(timeout=1500)
+        jitter_sleep(0.4)
+    except Exception:
+        pass
+    jitter_sleep(1.0)
+
+    # Open the crawl modal via the command id directly.
     page.evaluate('() => window.app.commands.executeCommandById("lilbee:lilbee:crawl")')
     jitter_sleep(1.2)
 
@@ -64,42 +113,18 @@ def run(page: Page) -> None:
                 break
         page.wait_for_timeout(900)
 
-    # Linger so the recorded frames show the completed task before we move on.
+    # Linger on the completed task before we move on.
     jitter_sleep(2.0)
 
-    # Now flip to the chat layout (single-pane, dark theme, no sidebars).
-    page.evaluate('''async () => {
+    # Chat layout already in place; keep Task Center visible so the audience
+    # sees the chat happen alongside the completed crawl task. Just bring
+    # the chat leaf into focus.
+    page.evaluate('''() => {
         const app = window.app;
-        if (!app) return;
-        app.workspace.detachLeavesOfType('lilbee-tasks');
-        app.workspace.detachLeavesOfType('lilbee-wiki');
-        let chatLeaf = app.workspace.getLeavesOfType('lilbee-chat').find(
-            l => l.getRoot && l.getRoot() === app.workspace.rootSplit
-        );
-        if (!chatLeaf) {
-            chatLeaf = app.workspace.getMostRecentLeaf();
-            if (chatLeaf) {
-                await chatLeaf.setViewState({ type: 'lilbee-chat', active: true });
-            }
-        }
-        const closeOthers = (split) => {
-            if (!split || !split.children) return;
-            for (const child of [...split.children]) {
-                if (child === chatLeaf) continue;
-                if (child.children) closeOthers(child);
-                else if (child.detach && child !== chatLeaf) child.detach();
-            }
-        };
-        closeOthers(app.workspace.rootSplit);
+        const chatLeaf = app.workspace.getLeavesOfType('lilbee-chat')[0];
         if (chatLeaf) app.workspace.revealLeaf(chatLeaf);
-        if (app.workspace.leftSplit && !app.workspace.leftSplit.collapsed) {
-            app.workspace.leftSplit.collapse();
-        }
-        if (app.workspace.rightSplit && !app.workspace.rightSplit.collapsed) {
-            app.workspace.rightSplit.collapse();
-        }
     }''')
-    jitter_sleep(1.2)
+    jitter_sleep(0.8)
 
     # Clear any prior chat content so the cited Caprice answer reads cleanly.
     try:

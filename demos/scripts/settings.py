@@ -1,73 +1,68 @@
-"""Settings demo: open Settings, jump to the lilbee tab, drive the filter.
+"""Settings demo: page through every section so the surface is visible.
 
-The filter input is the headline: typing in `.lilbee-settings-filter`
-narrows the visible setting rows in real time. The demo:
-
-  1. open the Settings modal (Cmd+,)
-  2. click the lilbee tab in the sidebar
-  3. focus the filter, type "results"  -> Results count narrows in
-  4. clear, type "rerank"              -> reranker toggle row narrows in
-  5. clear, type "strict"              -> Search strictness row narrows in
-  6. clear -> all settings restored
-  7. close
+Beats:
+  1. Open Settings, jump to the lilbee tab.
+  2. Scroll smoothly through each named section (Server / Models /
+     Search & Retrieval / Generation / Worker pool / Ingest / Wiki /
+     API keys / Advanced).
+  3. Pause briefly so each header is readable.
+  4. Close.
 """
 from __future__ import annotations
 
-from _record import jitter_sleep, type_chunked
+from _record import jitter_sleep
 from _setup import prepare
 from playwright.sync_api import Page
+
+# Each entry is a substring that uniquely identifies the section's first
+# visible header text. Order matches the rendered settings.
+SECTION_ANCHORS = [
+    "Server mode",
+    "Models",
+    "Search & Retrieval",
+    "Generation",
+    "Worker pool",
+    "Ingest",
+    "Wiki",
+    "API keys",
+    "Advanced",
+]
 
 
 def run(page: Page) -> None:
     prepare(page)
 
-    # Open Settings via Obsidian's command id (works cross-platform; the
-    # Cmd+, hotkey is macOS-only and not always honoured through CDP).
-    page.evaluate('''() => window.app.commands.executeCommandById("app:open-settings")''')
-    jitter_sleep(1.2)
-
-    # Click the lilbee tab. The vertical nav may need scrolling on smaller
-    # screens; .scrollIntoViewIfNeeded handles that.
+    page.evaluate('() => window.app.commands.executeCommandById("app:open-settings")')
+    jitter_sleep(1.0)
     lilbee_tab = page.locator('.vertical-tab-nav-item:has-text("lilbee")').first
     lilbee_tab.scroll_into_view_if_needed()
-    jitter_sleep(0.4)
+    jitter_sleep(0.3)
     lilbee_tab.click()
-    jitter_sleep(1.2)
+    jitter_sleep(1.5)
 
-    # Focus the filter input.
-    filt = page.locator('input.lilbee-settings-filter').first
-    filt.click()
-    jitter_sleep(0.5)
+    for anchor in SECTION_ANCHORS:
+        scrolled = page.evaluate(f'''() => {{
+            const scroller = document.querySelector('.vertical-tab-content-container');
+            if (!scroller) return false;
+            const candidates = scroller.querySelectorAll('h1, h2, h3, .setting-item-name, summary');
+            for (const el of candidates) {{
+                if (el.innerText.trim().toLowerCase().startsWith({anchor.lower()!r})) {{
+                    if (el.tagName === 'SUMMARY') el.parentElement?.setAttribute('open', '');
+                    const rect = el.getBoundingClientRect();
+                    const sRect = scroller.getBoundingClientRect();
+                    scroller.scrollBy({{ top: rect.top - sRect.top - 80, behavior: 'smooth' }});
+                    return true;
+                }}
+            }}
+            return false;
+        }}''')
+        jitter_sleep(2.2 if scrolled else 0.5)
 
-    # Beat 1: "results" narrows to Results count.
-    type_chunked(page, "results", prose=False)
+    page.evaluate('''() => {
+        const scroller = document.querySelector('.vertical-tab-content-container');
+        if (scroller) scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' });
+    }''')
     jitter_sleep(2.5)
 
-    # Clear (triple-click + delete is more reliable than .fill across modals).
-    filt.click()
-    page.keyboard.press("Meta+A")
-    page.keyboard.press("Backspace")
-    jitter_sleep(0.8)
-
-    # Beat 2: "rerank" narrows to the reranker toggle.
-    type_chunked(page, "rerank", prose=False)
-    jitter_sleep(2.5)
-
-    filt.click()
-    page.keyboard.press("Meta+A")
-    page.keyboard.press("Backspace")
-    jitter_sleep(0.8)
-
-    # Beat 3: "strict" narrows to Search strictness.
-    type_chunked(page, "strict", prose=False)
-    jitter_sleep(2.5)
-
-    # Clear, full settings restored.
-    filt.click()
-    page.keyboard.press("Meta+A")
-    page.keyboard.press("Backspace")
-    jitter_sleep(2.0)
-
-    # Close the modal.
     page.keyboard.press("Escape")
     jitter_sleep(1.0)

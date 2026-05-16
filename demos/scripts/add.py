@@ -14,23 +14,34 @@ from _record import jitter_sleep, type_chunked, wait_for_idle
 from _setup import prepare
 from playwright.sync_api import Page
 
-FILE_PATH = "Notes/Quick add demo.md"
-FILE_BODY = """# Quick add demo
+FILE_PATH = "Notes/Crown Vic upgrade log.md"
+FILE_BODY = """# Crown Vic upgrade log
 
-When chatting with lilbee about kayak portage tips, remember these three
-rules I picked up at the Algonquin outfitter:
+Personal notes on aftermarket upgrades layered onto the 2011
+Crown Victoria Police Interceptor described in the owner's manual.
 
-1. Always carry the kayak above your shoulder, not on top of it -- you
-   lose less energy fighting the weight on long carries.
-2. Tape the gunwale where the yoke sits, otherwise the paint chips off
-   inside two trips.
-3. Drop the rudder before launching; raising it underwater snaps the
-   pull-cord every time.
+## Alternator
 
-The outfitter's name was Alex; their shop is on the Oxtongue river just
-south of the park gate.
+Stock is 130 amps. Replacing with a 220-amp Mechman MH220-DR upgrade
+rated for sustained 180 A output at idle. Pairs with the auxiliary
+trunk-shelf battery so the radio, light bar, and laptop dock can run
+on a stopped engine without dropping the bus below 12.6 V.
+
+## Tow hitch
+
+OEM towing capacity in the manual caps at 2,000 lb with the factory
+hitch kit. The CURT 13384 Class III hitch I installed is rated to
+5,000 lb gross trailer weight when paired with a weight-distribution
+bar, which is what I use for the 4,200 lb boat trailer.
+
+## Brake pads
+
+Hawk HP+ HB418N.710 pads on the front, ceramic OEM on the rear. HP+
+has 0.55 average coefficient of friction vs 0.42 for OEM, so pedal
+feel is stiffer and 60-0 mph stopping distance drops about 14 feet
+on dry pavement.
 """
-QUESTION = "What does the Algonquin outfitter say about carrying a kayak?"
+QUESTION = "Based on my upgrade log, can I safely tow my 4,200 lb boat with this car?"
 
 
 def run(page: Page) -> None:
