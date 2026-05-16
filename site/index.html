@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>lilbee for Obsidian: a local search engine for your vault</title>
 <meta name="description" content="Obsidian's interface to lilbee. Ask questions about anything in your vault (notes, PDFs, ebooks, code, scans, 150+ file types) and get answers with the source one click away. Everything runs on your computer; cloud models are optional.">
-<link rel="stylesheet" href="style.css">
-<script src="main.js" defer></script>
+<link rel="stylesheet" href="style.css?v=20260516a">
+<script src="main.js?v=20260516a" defer></script>
 </head>
 <body>
 <h1 class="sr">lilbee for Obsidian</h1>
@@ -57,23 +57,86 @@
     </section>
 
     <section>
-      <div class="label">try it</div>
-      <div class="demo" role="figure" aria-label="chat preview">
-        <div class="titlebar">
-          <span class="title">lilbee · chat</span>
-          <span>[qwen3:8b]</span>
+      <div class="label">watch it work</div>
+
+      <div class="reel">
+        <div class="reeltabs" role="tablist" aria-label="Demo reel">
+          <button type="button" class="reeltab" role="tab" id="reel-tab-setup"        aria-controls="reel-pane-setup"        aria-selected="true"  tabindex="0">first run</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-tour"         aria-controls="reel-pane-tour"         aria-selected="false" tabindex="-1">tour</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-chat"         aria-controls="reel-pane-chat"         aria-selected="false" tabindex="-1">chat</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-click"        aria-controls="reel-pane-click"        aria-selected="false" tabindex="-1">click to source</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-add"          aria-controls="reel-pane-add"          aria-selected="false" tabindex="-1">add</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-crawl"        aria-controls="reel-pane-crawl"        aria-selected="false" tabindex="-1">crawl</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-catalog"      aria-controls="reel-pane-catalog"      aria-selected="false" tabindex="-1">catalog</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-settings"     aria-controls="reel-pane-settings"     aria-selected="false" tabindex="-1">settings</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-wiki"         aria-controls="reel-pane-wiki"         aria-selected="false" tabindex="-1">wiki</button>
         </div>
-        <div class="body">
-          <div class="line"><span class="prompt">&gt;</span><span class="answer">what does the oil pressure warning mean?</span></div>
-          <div class="line"><span class="answer">the oil pressure warning indicates low oil pressure.<sup>[1]</sup></span></div>
-          <div class="line"><span class="answer">when the light stays on, stop the engine immediately.<sup>[2]</sup></span></div>
-          <div class="rule">─── sources ─────────────────────────────────</div>
-          <div class="cite"><span class="cite-link">[1] owners-manual.pdf, p.42</span> &nbsp;<span class="hint">&larr; click to open the page</span></div>
-          <div class="cite"><span class="cite-link">[2] owners-manual.pdf, p.43</span></div>
-          <div class="line" style="margin-top:0.6rem"><span class="prompt">&gt;</span><span class="cursor"></span></div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-setup" aria-labelledby="reel-tab-setup">
+          <div class="reel-frame">
+            <img alt="first-run setup wizard installs the lilbee server, pulls Qwen3 4B + Nomic, indexes the vault, then answers a question about lilbee's README" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first-run.gif">
+          </div>
+          <p class="reel-caption">First launch: managed mode pulls the lilbee server and a small chat model on camera, then opens chat against the vault you just indexed.</p>
         </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-tour" aria-labelledby="reel-tab-tour" hidden>
+          <div class="reel-frame">
+            <img alt="60 second sweep through the chat sidebar, task center, catalog modal, settings, and wiki view" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/tour.gif">
+          </div>
+          <p class="reel-caption">A minute through every plugin surface: chat sidebar, task center, catalog, settings, wiki.</p>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-chat" aria-labelledby="reel-tab-chat" hidden>
+          <div class="reel-frame">
+            <img alt="chat sidebar streaming a cited answer with [1] [2] footnotes against the Crown Vic owner's manual" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/chat.gif">
+          </div>
+          <p class="reel-caption">Ask in plain English. The reply streams in with `[1] [2]` footnotes pointing back to the source line.</p>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-click" aria-labelledby="reel-tab-click" hidden>
+          <div class="reel-frame">
+            <img alt="click a citation footnote to open the source preview modal scrolled to the cited passage" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/click-to-source.gif">
+          </div>
+          <p class="reel-caption"><em>The differentiator.</em> Click any footnote and the source preview opens at the exact passage in the original note, cited lines highlighted.</p>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-add" aria-labelledby="reel-tab-add" hidden>
+          <div class="reel-frame">
+            <img alt="right click a file in the vault, choose Add to lilbee, watch the task center sync, then ask a question about it" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/add.gif">
+          </div>
+          <p class="reel-caption">Right-click any file in your vault, choose <code>Add to lilbee</code>, then ask about it the moment the sync lands.</p>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-crawl" aria-labelledby="reel-tab-crawl" hidden>
+          <div class="reel-frame">
+            <img alt="crawl modal accepts a Wikipedia URL, ingests the page into the vault, then a chat question is answered with a citation back to the crawled page" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl.gif">
+          </div>
+          <p class="reel-caption"><code>lilbee:crawl</code> pulls a page (or a small site) into your vault as searchable markdown, then chat answers cite it.</p>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-catalog" aria-labelledby="reel-tab-catalog" hidden>
+          <div class="reel-frame">
+            <img alt="model catalog modal browses Hugging Face Hub, opens a model info card, pulls a small model live, then switches the active chat model" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/catalog.gif">
+          </div>
+          <p class="reel-caption">Browse Hugging Face Hub from inside Obsidian, pull a model live, switch the active chat model from the inline picker.</p>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-settings" aria-labelledby="reel-tab-settings" hidden>
+          <div class="reel-frame">
+            <img alt="settings tab with the filter input narrowing settings to topK, then a value being edited" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/settings.gif">
+          </div>
+          <p class="reel-caption">50+ knobs across connection, models, retrieval, generation, and ingest. The filter input lands you on the one you mean.</p>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-wiki" aria-labelledby="reel-tab-wiki" hidden>
+          <div class="reel-frame">
+            <img alt="wiki sidebar shows auto-generated concept pages with citation footnotes; one page opens to show the cited body, then the lint modal opens" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/wiki.gif">
+          </div>
+          <p class="reel-caption">Auto-generated concept pages, written from your indexed content, citation-checked before publish, landing in your vault graph alongside your own notes. <em>Experimental.</em></p>
+        </div>
+
+        <p class="reel-more"><kbd>&larr;</kbd>/<kbd>&rarr;</kbd> scrub. Long-form captions and a couple of bonus demos in <a href="https://github.com/tobocop2/obsidian-lilbee/blob/main/docs/demos.md">the full reel &rarr;</a></p>
       </div>
-      <p class="demo-cap">Ask in plain English. The answer comes back with footnotes. Click one to jump to the exact page it came from.</p>
     </section>
 
     <section>
