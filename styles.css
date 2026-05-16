@@ -539,14 +539,28 @@
     border-bottom: none;
 }
 
+/* Catalog action cell: keep "Installed" pill + trash on one row. The td
+   is ~100 px wide so inline layout wraps; flex with justify-end keeps
+   the cluster anchored right and centers the trash button against the
+   pill instead of stacking below it. */
+.lilbee-model-catalog td:last-child {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--size-4-1, 4px);
+    white-space: nowrap;
+}
+
 .lilbee-installed {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
     padding: 1px var(--size-4-2, 8px);
     border-radius: 999px;
     background-color: var(--text-success);
     color: var(--text-on-accent);
     font-size: var(--font-smallest, 10px);
     font-weight: var(--font-medium, 500);
+    line-height: 1.4;
 }
 
 .lilbee-progress-row {
@@ -594,9 +608,14 @@
     cursor: pointer;
     color: var(--text-muted);
     padding: 2px;
-    margin-left: var(--size-4-2, 8px);
     border-radius: var(--radius-s, 4px);
     vertical-align: middle;
+    flex: 0 0 auto;
+}
+
+.lilbee-model-delete .svg-icon {
+    width: 16px;
+    height: 16px;
 }
 
 .lilbee-model-delete:hover {
