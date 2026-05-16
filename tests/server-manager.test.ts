@@ -35,6 +35,42 @@ function mockChild() {
 
 type MockChild = ReturnType<typeof mockChild>;
 
+// ── Mock net.Server for port pre-flight ─────────────────────────────
+
+interface NetServerMock {
+    listen: (port: number, host: string) => void;
+    close: (cb: () => void) => void;
+    once: (event: string, handler: (...args: unknown[]) => void) => void;
+    address: () => { port: number; address: string; family: string };
+}
+
+/**
+ * Fake `net.Server` covering both port-preflight and OS-picked-port paths.
+ * Fires `listening` (free) or `error` (occupied) on the next microtask after
+ * `listen`. When picking a free port, `address()` reports `pickedPort`.
+ */
+function mockNetServer(opts: { available?: boolean; errorCode?: string; pickedPort?: number } = {}): NetServerMock {
+    const handlers: Record<string, ((...args: unknown[]) => void)[]> = {};
+    const available = opts.available ?? true;
+    return {
+        listen: () => {
+            queueMicrotask(() => {
+                if (available) {
+                    handlers.listening?.forEach((h) => h());
+                } else {
+                    const err = Object.assign(new Error("bind failed"), { code: opts.errorCode ?? "EADDRINUSE" });
+                    handlers.error?.forEach((h) => h(err));
+                }
+            });
+        },
+        close: (cb) => cb(),
+        once: (event, handler) => {
+            (handlers[event] ??= []).push(handler);
+        },
+        address: () => ({ port: opts.pickedPort ?? 54321, address: "127.0.0.1", family: "IPv4" }),
+    };
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function defaultOpts(overrides?: Partial<ServerManagerOptions>): ServerManagerOptions {
@@ -67,6 +103,7 @@ describe("ServerManager", () => {
     let existsSyncSpy: ReturnType<typeof vi.spyOn>;
     let readFileSyncSpy: ReturnType<typeof vi.spyOn>;
     let unlinkSyncSpy: ReturnType<typeof vi.spyOn>;
+    let createServerSpy: ReturnType<typeof vi.spyOn>;
     let child: MockChild;
 
     beforeEach(() => {
@@ -78,6 +115,9 @@ describe("ServerManager", () => {
         existsSyncSpy = vi.spyOn(node, "existsSync").mockReturnValue(true);
         readFileSyncSpy = vi.spyOn(node, "readFileSync").mockReturnValue("9999");
         unlinkSyncSpy = vi.spyOn(node, "unlinkSync").mockImplementation(() => {});
+        createServerSpy = vi
+            .spyOn(node, "createServer")
+            .mockImplementation(() => mockNetServer({ available: true }) as any);
     });
 
     afterEach(() => {
@@ -98,7 +138,7 @@ describe("ServerManager", () => {
             expect(mgr.serverUrl).toBe("http://127.0.0.1:9999");
         });
 
-        it("serverUrl is empty in managed mode before the port file is read", () => {
+        it("serverUrl is empty in dynamic-port mode until start() resolves a port", () => {
             const mgr = new ServerManager(defaultOpts({ port: null }));
             expect(mgr.serverUrl).toBe("");
         });
@@ -161,12 +201,12 @@ describe("ServerManager", () => {
             expect(opts.env.LILBEE_RAG_SYSTEM_PROMPT).toBeUndefined();
         });
 
-        it("in dynamic port mode (port: null), reads port from file and sets state to ready", async () => {
+        it("in dynamic-port mode (port: null), omits --port and reads the actual port from the port file", async () => {
             const stateChanges: string[] = [];
             const mgr = new ServerManager(defaultOpts({ port: null, onStateChange: (s) => stateChanges.push(s) }));
 
             const startPromise = mgr.start();
-            await vi.advanceTimersByTimeAsync(200);
+            await vi.advanceTimersByTimeAsync(1000);
             await startPromise;
 
             expect(spawnSpy).toHaveBeenCalledOnce();
@@ -175,13 +215,14 @@ describe("ServerManager", () => {
             expect(args).toEqual(["serve", "--host", "127.0.0.1", "--data-dir", "/tmp/data"]);
             expect(existsSyncSpy).toHaveBeenCalled();
             expect(readFileSyncSpy).toHaveBeenCalled();
+            expect(mgr.serverUrl).toBe("http://127.0.0.1:9999");
 
             expect(mgr.state).toBe("ready");
             expect(stateChanges).toContain("starting");
             expect(stateChanges).toContain("ready");
         });
 
-        it("in dynamic port mode, sets state to error when port file times out", async () => {
+        it("in dynamic-port mode, sets state to error when the port file never appears", async () => {
             existsSyncSpy.mockReturnValue(false);
             const mgr = new ServerManager(defaultOpts({ port: null }));
 
@@ -226,6 +267,41 @@ describe("ServerManager", () => {
 
             expect(mgr.state).toBe("error");
         }, 15_000);
+    });
+
+    // ── port resolution ─────────────────────────────────────────────
+
+    describe("port resolution", () => {
+        it("honors the configured port when it is free", async () => {
+            const mgr = new ServerManager(defaultOpts({ port: 7433 }));
+
+            const startPromise = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await startPromise;
+
+            const [, args] = spawnSpy.mock.calls[0] as any[];
+            expect(args).toContain("--port");
+            expect(args[args.indexOf("--port") + 1]).toBe("7433");
+            expect(mgr.serverUrl).toBe("http://127.0.0.1:7433");
+            expect(createServerSpy).toHaveBeenCalled();
+        });
+
+        it("omits --port and defers to the server's auto-pick when the configured port is occupied", async () => {
+            createServerSpy.mockImplementation(() => mockNetServer({ available: false }) as any);
+            // Server picks a free port and writes it to the port file.
+            readFileSyncSpy.mockReturnValue("54321");
+
+            const mgr = new ServerManager(defaultOpts({ port: 7433 }));
+
+            const startPromise = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await startPromise;
+
+            const [, args] = spawnSpy.mock.calls[0] as any[];
+            expect(args).not.toContain("--port");
+            expect(mgr.serverUrl).toBe("http://127.0.0.1:54321");
+            expect(mgr.state).toBe("ready");
+        });
     });
 
     // ── stop() ──────────────────────────────────────────────────────
@@ -577,7 +653,9 @@ describe("ServerManager", () => {
             const mgr = new ServerManager(defaultOpts({ onStateChange: (s) => stateChanges.push(s) }));
 
             const p1 = mgr.start();
-            // Fire error before health check completes
+            // Flush microtasks so port resolution + spawn complete and the
+            // child has registered its error handler before we emit.
+            await vi.advanceTimersByTimeAsync(0);
             child._emit("error", new Error("spawn ENOENT"));
             await vi.advanceTimersByTimeAsync(15_000);
             await p1;

@@ -11,6 +11,7 @@ import {
     cpSync,
     statSync,
 } from "fs";
+import { createServer } from "net";
 import { basename, join } from "path";
 import { promisify } from "util";
 import { ARCH, PLATFORM } from "./types";
@@ -34,6 +35,7 @@ export const node = {
     basename,
     requestUrl,
     fetch: globalThis.fetch.bind(globalThis) as typeof globalThis.fetch,
+    createServer,
 };
 
 const GITHUB_REPO = "tobocop2/lilbee";

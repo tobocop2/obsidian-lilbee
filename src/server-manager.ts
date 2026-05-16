@@ -81,18 +81,36 @@ export class ServerManager {
         this.opts.onStateChange?.(s);
     }
 
+    private async isPortAvailable(port: number): Promise<boolean> {
+        return new Promise<boolean>((resolve) => {
+            const tester = node.createServer();
+            tester.once("error", () => resolve(false));
+            tester.once("listening", () => tester.close(() => resolve(true)));
+            tester.listen(port, "127.0.0.1");
+        });
+    }
+
     async start(): Promise<void> {
         if (this.child) return;
         this.stopping = false;
         this._actualPort = null;
         this.setState(SERVER_STATE.STARTING);
 
-        const args = ["serve", "--host", "127.0.0.1"];
-
-        if (this.opts.port !== null) {
-            args.push("--port", String(this.opts.port));
+        // Honor a pinned port only if it's actually free. Otherwise defer to
+        // the server (no --port → uvicorn binds port 0 → kernel picks), and
+        // read the chosen port back from data/server.port. This keeps the
+        // managed server starting on the first available port instead of
+        // looping in crash-recovery with the misleading "no session token"
+        // toast.
+        let pinnedPort: number | null = null;
+        if (this.opts.port !== null && (await this.isPortAvailable(this.opts.port))) {
+            pinnedPort = this.opts.port;
         }
 
+        const args = ["serve", "--host", "127.0.0.1"];
+        if (pinnedPort !== null) {
+            args.push("--port", String(pinnedPort));
+        }
         args.push("--data-dir", this.opts.dataDir);
 
         const env: Record<string, string | undefined> = {
@@ -153,10 +171,10 @@ export class ServerManager {
         });
 
         try {
-            if (this.opts.port === null) {
+            if (pinnedPort === null) {
                 await this.waitForPortFile();
             } else {
-                this._actualPort = this.opts.port;
+                this._actualPort = pinnedPort;
             }
             await this.waitForReady();
             this.crashCount = 0;
