@@ -5,3 +5,9 @@ coverage/
 .worktrees/
 .superpowers/
 docs/superpowers/
+
+# demo-reel artifacts (rendered binaries live on gh-pages)
+demos/_out/
+*.mov
+**/__pycache__/
+data.json
