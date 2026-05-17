@@ -402,6 +402,46 @@ describe("LilbeePlugin", () => {
         });
     });
 
+    describe("dedupeLilbeeLeaves()", () => {
+        it("detaches duplicate lilbee-chat / -tasks / -wiki leaves and keeps one of each", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const detached: number[] = [];
+            const fakeLeaf = (i: number) => ({ detach: () => detached.push(i) });
+            const leaves: Record<string, ReturnType<typeof fakeLeaf>[]> = {
+                "lilbee-chat": [fakeLeaf(1), fakeLeaf(2), fakeLeaf(3)],
+                "lilbee-tasks": [fakeLeaf(11), fakeLeaf(12)],
+                "lilbee-wiki": [fakeLeaf(21)],
+            };
+            plugin.app.workspace.getLeavesOfType = vi.fn((t: string) => (leaves[t] ?? []) as any);
+            plugin.app.workspace.requestSaveLayout = vi.fn();
+
+            (plugin as any).dedupeLilbeeLeaves();
+
+            expect(detached).toEqual([2, 3, 12]);
+            expect(plugin.app.workspace.requestSaveLayout).toHaveBeenCalled();
+        });
+
+        it("is a no-op when each leaf type has 0 or 1 already", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const detached: number[] = [];
+            const fakeLeaf = (i: number) => ({ detach: () => detached.push(i) });
+            const leaves: Record<string, ReturnType<typeof fakeLeaf>[]> = {
+                "lilbee-chat": [fakeLeaf(1)],
+                "lilbee-tasks": [],
+                "lilbee-wiki": [fakeLeaf(21)],
+            };
+            plugin.app.workspace.getLeavesOfType = vi.fn((t: string) => (leaves[t] ?? []) as any);
+            plugin.app.workspace.requestSaveLayout = vi.fn();
+
+            (plugin as any).dedupeLilbeeLeaves();
+
+            expect(detached).toEqual([]);
+            expect(plugin.app.workspace.requestSaveLayout).toHaveBeenCalled();
+        });
+    });
+
     describe("onunload()", () => {
         it("clears the pending-sync hint timeout if one is active", async () => {
             vi.useFakeTimers();
@@ -1395,6 +1435,30 @@ describe("LilbeePlugin", () => {
             await (plugin as any).addToLilbee({ path: "notes/test.md", name: "test.md" });
 
             expect(plugin.api.addFiles).not.toHaveBeenCalled();
+            mockConfirm.mockRestore();
+        });
+
+        it('addToLilbee labels the vault root as "Vault root" when name + path are empty', async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            plugin.api.listDocuments = vi.fn().mockResolvedValue({
+                documents: [{ filename: "Vault root", chunk_count: 1, ingested_at: "2026-01-01" }],
+                total: 1,
+                limit: 1,
+                offset: 0,
+            });
+            let capturedMessage = "";
+            const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
+            mockConfirm.mockImplementation((_app: unknown, msg: string) => {
+                capturedMessage = msg;
+                const inst = { open: vi.fn(), result: Promise.resolve(false), close: vi.fn() };
+                return inst as unknown as ConfirmModal;
+            });
+
+            await (plugin as any).addToLilbee({ name: "", path: "" });
+
+            expect(capturedMessage).toContain("Vault root");
             mockConfirm.mockRestore();
         });
 

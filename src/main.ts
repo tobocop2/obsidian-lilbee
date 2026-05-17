@@ -292,6 +292,23 @@ export default class LilbeePlugin extends Plugin {
                 void this.openCockpit();
             });
         }
+
+        // Defend against duplicate sidebar leaves persisted in workspace.json
+        // from prior sessions. activateChatView() / openCockpit() are
+        // idempotent for one leaf, but Obsidian restores whatever was saved,
+        // so a workspace that ended up with two chat panes restores both.
+        this.app.workspace.onLayoutReady(() => {
+            this.dedupeLilbeeLeaves();
+        });
+    }
+
+    /** Collapse multiple lilbee-chat / -tasks / -wiki leaves to one of each. */
+    private dedupeLilbeeLeaves(): void {
+        for (const type of [VIEW_TYPE_CHAT, VIEW_TYPE_TASKS, VIEW_TYPE_WIKI]) {
+            const leaves = this.app.workspace.getLeavesOfType(type);
+            for (let i = 1; i < leaves.length; i++) leaves[i].detach();
+        }
+        this.app.workspace.requestSaveLayout?.();
     }
 
     async startManagedServer(onProgress?: ManagedServerProgressHandler): Promise<void> {
@@ -1138,7 +1155,9 @@ export default class LilbeePlugin extends Plugin {
         if (!this.statusBarEl) return;
         if (!this.assertActiveModel()) return;
         const absolutePath = `${this.getVaultBasePath()}/${file.path}`;
-        const name = file.name ?? file.path;
+        // The vault root's name is the empty string and its path is "/", so
+        // `?? file.path` doesn't fall back; both have to be checked.
+        const name = file.name || file.path || MESSAGES.LABEL_VAULT_ROOT;
 
         const isRetry = this.failedAddPaths.has(absolutePath);
         if (!isRetry && !(await this.confirmReindexIfNeeded(name))) return;
