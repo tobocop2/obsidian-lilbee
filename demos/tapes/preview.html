@@ -1,0 +1,95 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>obsidian-lilbee demo reel preview</title>
+<style>
+  :root {
+    --bg: #1a1a1a;
+    --panel: #232323;
+    --ink: #e6e3dd;
+    --muted: #888;
+    --accent: #b5b095;
+    --warn-bg: #3a3326;
+    --warn-ink: #d7c896;
+  }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 -apple-system, system-ui, sans-serif; }
+  body { padding: 32px; max-width: 1500px; margin: 0 auto; }
+  h1 { margin: 0 0 8px; font-size: 28px; font-weight: 500; }
+  .subtitle { color: var(--muted); margin: 0 0 16px; }
+  .banner { background: var(--warn-bg); color: var(--warn-ink); padding: 12px 16px; border-radius: 8px; margin: 0 0 24px; font-size: 14px; }
+  .grid { display: grid; gap: 32px; }
+  .demo { background: var(--panel); border-radius: 10px; padding: 18px 18px 22px; }
+  .demo h2 { margin: 0 0 4px; font-size: 18px; font-weight: 500; color: var(--accent); }
+  .demo .meta { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+  .demo img { display: block; width: 100%; max-width: 1400px; border-radius: 6px; background: #000; }
+  .demo .caption { margin: 14px 0 0; max-width: 1200px; color: var(--ink); font-size: 14px; }
+  .demo .status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 6px; vertical-align: middle; }
+  .status.stale { background: var(--warn-bg); color: var(--warn-ink); }
+  .status.fresh { background: #2c3a2c; color: #a8c8a8; }
+</style>
+
+<h1>obsidian-lilbee demo reel preview</h1>
+<p class="subtitle">All 8 demos in dark theme, 24 fps, 1400×900 Obsidian window. From branch <code>demos/iteration-2</code>.</p>
+
+<div class="banner">
+  <strong>These tapes are stale relative to the latest scripts.</strong> After review you asked for: merge chat+click-to-source, Crown-Vic-grounded add question, Task Center visible during crawl, all-tabs catalog with infinite scroll + on-camera pull, settings paging through sections instead of using the filter, and a Gemma-4-built wiki. The scripts now reflect all of that, but the rendered tapes below are from <em>before</em> the rework. Re-recording is gated on the Gemma 4 26B A4B pull finishing (~25% last check, ~9h ETA).
+</div>
+
+<div class="grid">
+
+  <section class="demo" id="first-run">
+    <h2>first run <span class="status stale">stale (script unchanged, may re-record)</span></h2>
+    <p class="meta">649 KB &middot; ~22 s</p>
+    <img src="first-run.gif" alt="first run">
+    <p class="caption">SetupWizard walk-through: welcome &rarr; Managed mode &rarr; model picker. Stops before download.</p>
+  </section>
+
+  <section class="demo" id="tour">
+    <h2>tour <span class="status stale">stale - terminal bleed-through</span></h2>
+    <p class="meta">4.7 MB &middot; ~57 s</p>
+    <img src="tour.gif" alt="tour">
+    <p class="caption">Sweep across every plugin surface. <em>Recording rig now hides other apps via System Events; pending re-record.</em></p>
+  </section>
+
+  <section class="demo" id="chat">
+    <h2>chat <span class="status stale">stale - to merge with click-to-source</span></h2>
+    <p class="meta">1.1 MB &middot; ~68 s</p>
+    <img src="chat.gif" alt="chat">
+    <p class="caption">Towing question against the cv-manual PDF. Streams a 6-item answer with chips for pp. 173 / 256 / 211-212. <em>chat.py now also clicks each chip after the answer lands; pending re-record.</em></p>
+  </section>
+
+  <section class="demo" id="add">
+    <h2>add a file <span class="status stale">stale - was kayak text, now Crown Vic</span></h2>
+    <p class="meta">1.8 MB &middot; ~54 s</p>
+    <img src="add.gif" alt="add">
+    <p class="caption">Old version stages a kayak-portage note. The new script stages a "Crown Vic upgrade log" (alternator, hitch, brake-pad spec) and asks "can I safely tow a 4,200 lb boat?" -- verified the answer cites BOTH the new note AND the manual. Pending re-record.</p>
+  </section>
+
+  <section class="demo" id="crawl">
+    <h2>crawl <span class="status stale">stale - task center not visible</span></h2>
+    <p class="meta">989 KB &middot; ~54 s (encoded at 4&times;)</p>
+    <img src="crawl.gif" alt="crawl">
+    <p class="caption">Chevrolet Caprice Wikipedia &rarr; "When was the 9C1 police package introduced?" &rarr; <strong>1986</strong>. <em>New script pins Task Center to the right sidebar and clears COMPLETED before the crawl so the new task lands in an empty pane. Pending re-record.</em></p>
+  </section>
+
+  <section class="demo" id="catalog">
+    <h2>model catalog <span class="status stale">stale - only walks Discover</span></h2>
+    <p class="meta">2.0 MB &middot; ~16 s</p>
+    <img src="catalog.gif" alt="catalog">
+    <p class="caption">Old version searches "qwen" + clicks Use. <em>New script walks Chat / Embed / Vision / Rerank / Library tabs, scrolls each to surface infinite scroll, pulls Gemma 2 2B on camera with Task Center visible for the async beat. Pending re-record (and pending Gemma 4 26B finishing first, so the on-camera pull doesn't fight it for disk + filelock).</em></p>
+  </section>
+
+  <section class="demo" id="settings">
+    <h2>settings <span class="status stale">stale - was driving the broken filter</span></h2>
+    <p class="meta">1.3 MB &middot; ~17 s</p>
+    <img src="settings.gif" alt="settings">
+    <p class="caption">Old version typed in the filter input (which was broken; filter fix shipped in PR #86). <em>New script pages through every section: Server &rarr; Models &rarr; Search &rarr; Generation &rarr; Worker pool &rarr; Ingest &rarr; Wiki &rarr; API keys &rarr; Advanced. Pending re-record.</em></p>
+  </section>
+
+  <section class="demo" id="wiki">
+    <h2>wiki <span class="status stale">stale - recipe waiting on Gemma 4</span></h2>
+    <p class="meta">2.5 MB &middot; ~22 s</p>
+    <img src="wiki.gif" alt="wiki">
+    <p class="caption">Wiki sidebar &rarr; concept page &rarr; cite chip opens CitationModal &rarr; DraftModal &rarr; lint result. <em>Pending: rebuild wiki against the Crown Vic vault with Gemma 4 26B A4B for richer concept pages, add the "vault file tree fills" beat per review feedback.</em></p>
+  </section>
+
+</div>

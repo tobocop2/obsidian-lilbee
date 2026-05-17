@@ -113,15 +113,14 @@ def run(page: Page) -> None:
     # Linger on the completed task before we move on.
     jitter_sleep(2.0)
 
-    # Chat layout already in place; keep Task Center visible so the audience
-    # sees the chat happen alongside the completed crawl task. Just bring
-    # the chat leaf into focus.
-    page.evaluate('''() => {
-        const app = window.app;
-        const chatLeaf = app.workspace.getLeavesOfType('lilbee-chat')[0];
-        if (chatLeaf) app.workspace.revealLeaf(chatLeaf);
-    }''')
-    jitter_sleep(0.8)
+    # Chat layout: re-mount via the plugin's idempotent activateChatView
+    # in case the initial layout reset's leaf got reaped by the crawl
+    # flow. activateChatView reveals the existing leaf if present or
+    # creates a fresh one.
+    page.evaluate('() => window.app.plugins.plugins.lilbee.activateChatView()')
+    jitter_sleep(1.2)
+    # Wait for the chat toolbar to render (async fetchAndFillSelectors).
+    page.wait_for_selector('.lilbee-chat-mode-btn', timeout=15000)
 
     # Clear any prior chat content so the cited Caprice answer reads cleanly.
     try:
