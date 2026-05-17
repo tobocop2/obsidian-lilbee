@@ -2,6 +2,7 @@ import { MODEL_TASK } from "../types";
 
 export const MESSAGES = {
     CONFIRM_REINDEX: (name: string): string => `"${name}" is already indexed. Re-add it?`,
+    LABEL_VAULT_ROOT: "Vault root",
     CONFIRM_SYNC_REBUILD:
         "Rebuilding the index drops every stored document and re-embeds your whole vault from scratch. This can take a while. Continue?",
     BUTTON_SKIP_SETUP: "Skip setup",
