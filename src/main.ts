@@ -38,6 +38,7 @@ import {
     NOTICE_DURATION_MS,
     NOTICE_ERROR_DURATION_MS,
     NOTICE_PERMANENT,
+    sessionTokenInvalidMessage,
     STREAM_IDLE_TIMEOUT_MS,
     StreamIdleError,
     withIdleTimeout,
@@ -524,11 +525,15 @@ export default class LilbeePlugin extends Plugin {
      * itself does (LILBEE_DATA env > .lilbee walk-up > platform default).
      */
     private readCurrentToken(): string | null {
-        if (this.settings.manualToken) {
-            return this.settings.manualToken;
-        }
+        // Managed mode owns its own token in the plugin-managed dataDir;
+        // a paste-token (which belongs to external mode) must not be sent
+        // to the managed server, or the server rejects it as stale and
+        // the user sees the misleading "paste a new one" notice.
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
             return this.serverManager ? readSessionToken(this.serverManager.dataDir) : null;
+        }
+        if (this.settings.manualToken) {
+            return this.settings.manualToken;
         }
         const dataRoot = resolveExternalDataRoot(this.getVaultBasePath());
         return readSessionToken(dataRoot);
@@ -1242,8 +1247,9 @@ export default class LilbeePlugin extends Plugin {
                 this.taskQueue.cancel(taskId);
                 this.markAddFailed(retryKeys);
             } else if (err instanceof SessionTokenError) {
-                new Notice(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
-                this.taskQueue.fail(taskId, MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+                const msg = sessionTokenInvalidMessage(this.settings.serverMode);
+                new Notice(msg);
+                this.taskQueue.fail(taskId, msg);
                 this.markAddFailed(retryKeys);
             } else {
                 console.error("[lilbee] add failed:", err);
@@ -1696,13 +1702,9 @@ export default class LilbeePlugin extends Plugin {
                 new Notice(MESSAGES.STATUS_SYNC_CANCELLED);
                 this.taskQueue.cancel(taskId);
             } else if (err instanceof SessionTokenError) {
-                // Auto-sync gets 401 when the stored token is stale — e.g. the
-                // server restarted with a new data-dir. Surface the same
-                // actionable notice the manual-sync paths do so the user
-                // knows to paste a fresh token in Settings instead of
-                // wondering why sync silently stopped working.
-                new Notice(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
-                this.taskQueue.fail(taskId, MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+                const msg = sessionTokenInvalidMessage(this.settings.serverMode);
+                new Notice(msg);
+                this.taskQueue.fail(taskId, msg);
             } else {
                 console.error("[lilbee] sync failed:", err);
                 new Notice(MESSAGES.STATUS_SYNC_FAILED);

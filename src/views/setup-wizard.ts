@@ -6,7 +6,13 @@ import { CATALOG_TAB, SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_N
 import { CatalogModal } from "./catalog-modal";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
-import { bindEscapeToClose, percentFromSse, extractSseErrorMessage, getSystemMemoryGB } from "../utils";
+import {
+    bindEscapeToClose,
+    extractSseErrorMessage,
+    getSystemMemoryGB,
+    percentFromSse,
+    sessionTokenInvalidMessage,
+} from "../utils";
 
 type FeaturedModel = CatalogEntry;
 type EmbeddingModel = CatalogEntry;
@@ -647,8 +653,9 @@ export class SetupWizard extends Modal {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELLED);
             } else if (err instanceof SessionTokenError) {
-                new Notice(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
-                statusEl.textContent = MESSAGES.NOTICE_SESSION_TOKEN_INVALID;
+                const msg = sessionTokenInvalidMessage(this.plugin.settings.serverMode);
+                new Notice(msg);
+                statusEl.textContent = msg;
             } else {
                 statusEl.textContent = MESSAGES.ERROR_DOWNLOAD_FAILED;
             }
@@ -809,8 +816,9 @@ export class SetupWizard extends Modal {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELLED);
             } else if (err instanceof SessionTokenError) {
-                new Notice(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
-                statusEl.textContent = MESSAGES.NOTICE_SESSION_TOKEN_INVALID;
+                const msg = sessionTokenInvalidMessage(this.plugin.settings.serverMode);
+                new Notice(msg);
+                statusEl.textContent = msg;
             } else {
                 statusEl.textContent = MESSAGES.ERROR_DOWNLOAD_FAILED;
             }
@@ -892,8 +900,9 @@ export class SetupWizard extends Modal {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 new Notice(MESSAGES.NOTICE_INDEXING_CANCELLED);
             } else if (err instanceof SessionTokenError) {
-                new Notice(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
-                progressLabel.textContent = MESSAGES.NOTICE_SESSION_TOKEN_INVALID;
+                const msg = sessionTokenInvalidMessage(this.plugin.settings.serverMode);
+                new Notice(msg);
+                progressLabel.textContent = msg;
             } else {
                 progressLabel.textContent = MESSAGES.ERROR_INDEXING_FAILED;
             }

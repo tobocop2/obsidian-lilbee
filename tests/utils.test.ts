@@ -14,6 +14,7 @@ import {
     noticeServerUnreachableIfApplicable,
     percentFromSse,
     relativeTimeFromIso,
+    sessionTokenInvalidMessage,
     StreamIdleError,
     withIdleTimeout,
 } from "../src/utils";
@@ -214,6 +215,33 @@ describe("errorMessage", () => {
     it("uses ERROR_NAME.SESSION_TOKEN constant for the thrown error name", () => {
         const e = new SessionTokenError(403, "bad");
         expect(e.name).toBe(ERROR_NAME.SESSION_TOKEN);
+    });
+
+    it("returns the managed-mode message when serverMode=managed", () => {
+        const out = errorMessage(new SessionTokenError(401, "stale"), "fallback", SERVER_MODE.MANAGED);
+        expect(out).toBe(MESSAGES.NOTICE_SESSION_TOKEN_INVALID_MANAGED);
+    });
+
+    it("returns the external-mode message when serverMode=external", () => {
+        const out = errorMessage(new SessionTokenError(401, "stale"), "fallback", SERVER_MODE.EXTERNAL);
+        expect(out).toBe(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+    });
+});
+
+describe("sessionTokenInvalidMessage", () => {
+    it("picks the managed variant for SERVER_MODE.MANAGED", () => {
+        expect(sessionTokenInvalidMessage(SERVER_MODE.MANAGED)).toBe(MESSAGES.NOTICE_SESSION_TOKEN_INVALID_MANAGED);
+    });
+
+    it("picks the external variant for SERVER_MODE.EXTERNAL", () => {
+        expect(sessionTokenInvalidMessage(SERVER_MODE.EXTERNAL)).toBe(MESSAGES.NOTICE_SESSION_TOKEN_INVALID);
+    });
+});
+
+describe("noticeForResultError with serverMode", () => {
+    it("returns the managed-mode token message for SessionTokenError under managed mode", () => {
+        const out = noticeForResultError(new SessionTokenError(401, "stale"), "fallback", SERVER_MODE.MANAGED);
+        expect(out).toBe(MESSAGES.NOTICE_SESSION_TOKEN_INVALID_MANAGED);
     });
 });
 

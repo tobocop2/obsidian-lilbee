@@ -234,7 +234,7 @@ export class ChatView extends ItemView {
                 textarea.value = "";
                 void this.sendMessage(text);
             } catch (err) {
-                const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
+                const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
                 new Notice(MESSAGES.ERROR_CHAT_FAILED(reason));
             }
         };
@@ -339,7 +339,7 @@ export class ChatView extends ItemView {
             this.chatModeCurrent = mode;
             this.applyActiveClassToChatModeButtons(mode);
         } catch (err) {
-            const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
+            const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
             new Notice(MESSAGES.NOTICE_FAILED_UPDATE(`${MESSAGES.LABEL_CHAT_MODE}: ${reason}`));
         }
     }
@@ -668,7 +668,7 @@ export class ChatView extends ItemView {
             } else {
                 this.renderInlineError(
                     assistantBubble,
-                    MESSAGES.ERROR_CHAT_FAILED(errorMessage(err, MESSAGES.ERROR_UNKNOWN)),
+                    MESSAGES.ERROR_CHAT_FAILED(errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode)),
                 );
             }
         } finally {
