@@ -25,13 +25,13 @@
 <p class="subtitle">8 demos in dark theme, 24 fps, managed-mode lilbee + Qwen3 4B. PR <a style="color:var(--accent)" href="https://github.com/tobocop2/obsidian-lilbee/pull/89">#89</a>.</p>
 
 <div class="bugs">
-  <strong>Bugs surfaced while recording</strong> (all filed in beads; fixes deferred so the reel can ship first):
+  <strong>Bugs surfaced while recording &mdash; all shipped:</strong>
   <ul>
-    <li><b>Crawl task reports completed without indexing the page</b> (P1) — the crawl GIF shows "no info" because the Wikipedia page never reached the chunk store.</li>
-    <li><b>Plugin allows duplicate lilbee-chat / -tasks / -wiki leaves</b> across workspace restores (P2). Rig now auto-dedupes.</li>
-    <li><b>Chat-mode toggle vs dispatch path mismatch</b> (P2). Scripts switched to Search mode to dodge it.</li>
-    <li><b>"" empty-name confirmation</b> when add-folder targets a folder whose name resolves to empty (P2).</li>
-    <li><b>Recording rig hide-others used System Events visible flag</b> which iTerm2 silently ignored — fixed on this branch (Cmd+Option+H).</li>
+    <li><b>Crawl wrote no files</b> (P1) &mdash; lilbee main, PR #268. Plugin's Chromium check matched any revision; the bundled Playwright needed an exact one.</li>
+    <li><b>Duplicate sidebar leaves</b> persisted across launches (P2) &mdash; plugin v0.6.66b428, PR #90.</li>
+    <li><b>Empty-name confirmation</b> when adding the vault root (P2) &mdash; same release.</li>
+    <li><b>Recording rig hide-others</b> didn't hide iTerm2 &mdash; fixed on this branch (Cmd+Option+H).</li>
+    <li><b>Chat-mode toggle vs dispatch path mismatch</b> (P2) &mdash; not reproducible without more info; scripts use Search mode to dodge.</li>
   </ul>
 </div>
 
@@ -66,10 +66,10 @@
   </section>
 
   <section class="demo" id="crawl">
-    <h2>crawl <span class="status bug">crawl bug: answer empty</span></h2>
-    <p class="meta">702 KB &middot; 54 s (4&times; speed)</p>
+    <h2>crawl <span class="status ok">ok (rendered against the fixed server)</span></h2>
+    <p class="meta">2.0 MB &middot; 55 s (4&times; speed)</p>
     <img src="crawl.gif" alt="crawl">
-    <p class="caption">CrawlModal &rarr; Chevrolet Caprice Wikipedia URL &rarr; Crawl. Task Center pinned right, COMPLETED section cleared before so the audience sees the task land in an empty pane. The async-visibility beat works, <em>but</em> the chat answer says "no information found" because the crawl reports completion without persisting the chunks to the index. Demo will be re-rendered after the P1 crawl bug is fixed.</p>
+    <p class="caption">Empty corpus &rarr; CrawlModal &rarr; <code>https://en.wikipedia.org/wiki/Chevrolet_Caprice</code> &rarr; the file explorer surfaces the new <code>lilbee/_web/en.wikipedia.org/&hellip;/index.md</code> alongside the Task Center filling in. &ldquo;When was the 9C1 police package introduced?&rdquo; &rarr; cited <strong>1986</strong> answer from the wiki page. Click the source chip &rarr; SourcePreviewModal opens the full Wikipedia markdown (images and all) and scrolls through it. Verified against the Chromium-revision fix in lilbee main (PR #268).</p>
   </section>
 
   <section class="demo" id="catalog">
