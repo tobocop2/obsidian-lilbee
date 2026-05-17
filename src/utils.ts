@@ -154,15 +154,22 @@ export function formatRate(bytesPerSecond: number): string {
     return `${formatBytes(bytesPerSecond)}/s`;
 }
 
+/** Pick the right session-token-invalid notice for the active server mode. */
+export function sessionTokenInvalidMessage(serverMode: ServerMode): string {
+    return serverMode === SERVER_MODE.MANAGED
+        ? MESSAGES.NOTICE_SESSION_TOKEN_INVALID_MANAGED
+        : MESSAGES.NOTICE_SESSION_TOKEN_INVALID;
+}
+
 /**
  * Pull a human-readable message out of an unknown thrown value.
  * Centralizes the `err instanceof Error ? err.message : <fallback>` pattern.
  * Stale-session-token errors get a dedicated, actionable message so the user
  * knows exactly where to fix it (see SessionTokenError in api.ts).
  */
-export function errorMessage(err: unknown, fallback: string): string {
+export function errorMessage(err: unknown, fallback: string, serverMode?: ServerMode): string {
     if (err instanceof SessionTokenError) {
-        return MESSAGES.NOTICE_SESSION_TOKEN_INVALID;
+        return sessionTokenInvalidMessage(serverMode ?? SERVER_MODE.EXTERNAL);
     }
     return err instanceof Error ? err.message : fallback;
 }
@@ -179,9 +186,9 @@ export function errorMessage(err: unknown, fallback: string): string {
  * caller (Settings panels, CatalogModal, …) surfaces the same actionable diagnostic
  * without duplicating the parse logic.
  */
-export function noticeForResultError(err: unknown, fallback: string): string {
+export function noticeForResultError(err: unknown, fallback: string, serverMode?: ServerMode): string {
     if (err instanceof SessionTokenError) {
-        return MESSAGES.NOTICE_SESSION_TOKEN_INVALID;
+        return sessionTokenInvalidMessage(serverMode ?? SERVER_MODE.EXTERNAL);
     }
     if (err instanceof Error) {
         const detail = extractServerErrorDetail(err.message);

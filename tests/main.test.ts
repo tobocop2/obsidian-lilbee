@@ -458,6 +458,44 @@ describe("LilbeePlugin", () => {
         });
     });
 
+    describe("readCurrentToken() priority", () => {
+        it("managed mode ignores manualToken and reads from serverManager.dataDir", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const { SERVER_MODE } = await import("../src/types");
+            plugin.settings.serverMode = SERVER_MODE.MANAGED;
+            plugin.settings.manualToken = "stale-from-external-mode";
+            (plugin as any).serverManager = { dataDir: "/some/managed/dir" };
+            const sessionToken = await import("../src/session-token");
+            const spy = vi.spyOn(sessionToken, "readSessionToken").mockReturnValue("managed-token-xyz");
+            try {
+                expect((plugin as any).readCurrentToken()).toBe("managed-token-xyz");
+                expect(spy).toHaveBeenCalledWith("/some/managed/dir");
+            } finally {
+                spy.mockRestore();
+            }
+        });
+
+        it("managed mode returns null when serverManager is absent (even with manualToken set)", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const { SERVER_MODE } = await import("../src/types");
+            plugin.settings.serverMode = SERVER_MODE.MANAGED;
+            plugin.settings.manualToken = "stale-from-external-mode";
+            (plugin as any).serverManager = null;
+            expect((plugin as any).readCurrentToken()).toBeNull();
+        });
+
+        it("external mode still honors manualToken first", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const { SERVER_MODE } = await import("../src/types");
+            plugin.settings.serverMode = SERVER_MODE.EXTERNAL;
+            plugin.settings.manualToken = "pasted-token";
+            expect((plugin as any).readCurrentToken()).toBe("pasted-token");
+        });
+    });
+
     describe("settings initialisation", () => {
         it("settings is a separate object from DEFAULT_SETTINGS", async () => {
             const { default: LilbeePlugin } = await import("../src/main");
