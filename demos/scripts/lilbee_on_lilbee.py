@@ -1,48 +1,41 @@
-"""Add-a-file demo: live-ingest the Crown Vic PDF, watch the task,
-then ask the towing question.
+"""Lilbee-on-lilbee demo: ingest lilbee's own README + ask about it.
 
-The vault already has ``Crown Victoria Owner's Manual.pdf`` sitting in
-the vault root, but the demo's lilbee server doesn't have it indexed
-yet. Demo:
+The vault has ``Code/lilbee-README.md`` -- a slice of lilbee's
+documentation -- that the demo lilbee server hasn't seen yet. Demo:
 
-  1. Layout: file explorer (left) + chat (main) + Task Center (right),
-     all panes proportioned so each is readable.
-  2. Mouse-scroll the file explorer to surface the cv-manual.pdf entry,
-     click it (selects + opens in the main pane).
-  3. Trigger ``lilbee:add-file`` -- ConfirmModal pops; click Continue
-     when present.
-  4. Task Center shows the live ingest task counting chunks (the
-     headline beat: this is what async work looks like).
-  5. Once done, switch the main pane back to chat + ask the towing
-     question. The cited answer streams.
+  1. Layout: file explorer left, chat main, Task Center right.
+  2. Click Code/lilbee-README.md in the file explorer so the README
+     opens in the main pane (the audience sees the actual content
+     about to be indexed).
+  3. Trigger lilbee:add-file -> watch the Task Center ingest task.
+  4. Switch to chat + ask "What is lilbee in one sentence?" -> cited
+     answer that quotes the README.
 """
 from __future__ import annotations
 
-from _mouse import click_locator, click_selector, scroll_at
+from _mouse import click_locator, click_selector
 from _record import jitter_sleep, type_chunked, wait_for_idle
 from _setup import prepare
 from playwright.sync_api import Page
 
-VAULT_FILE = "Crown Victoria Owner's Manual.pdf"
-QUESTION = "I'm prepping this car to tow my boat. What does the manual say I need to check?"
+README_PATH = "Code/lilbee-README.md"
+QUESTION = "What is lilbee in one sentence?"
 
 
 def run(page: Page) -> None:
     prepare(page)
 
-    # Three-pane layout: file explorer left, chat main, Task Center right.
     page.evaluate('''async () => {
         const app = window.app;
         app.workspace.detachLeavesOfType('lilbee-wiki');
         app.workspace.detachLeavesOfType('lilbee-tasks');
-        // Keep one chat leaf in the main pane; create if missing.
         const rootChat = app.workspace.getLeavesOfType('lilbee-chat').find(
             l => l.getRoot && l.getRoot() === app.workspace.rootSplit
         );
         if (!rootChat) {
             for (const l of app.workspace.getLeavesOfType('lilbee-chat')) l.detach();
-            const ribbonChat = document.querySelector('[aria-label="Open lilbee chat"]');
-            if (ribbonChat) ribbonChat.click();
+            const ribbon = document.querySelector('[aria-label="Open lilbee chat"]');
+            if (ribbon) ribbon.click();
             await new Promise(r => setTimeout(r, 600));
         }
         if (app.workspace.leftSplit?.collapsed) app.workspace.leftSplit.expand();
@@ -51,7 +44,6 @@ def run(page: Page) -> None:
         if (explorer) app.workspace.revealLeaf(explorer);
     }''')
     jitter_sleep(1.2)
-    # Make sure the Task Center is in the right sidebar.
     page.evaluate('() => window.app.commands.executeCommandById("lilbee:lilbee:tasks")')
     jitter_sleep(0.6)
     try:
@@ -60,35 +52,44 @@ def run(page: Page) -> None:
     except Exception:
         pass
 
-    # Mouse-click the cv-manual.pdf row in the file explorer.
-    target = page.locator(f'.nav-file-title[data-path="{VAULT_FILE}"]').first
+    # Expand Code/ folder so the README is reachable.
+    page.evaluate('''() => {
+        document.querySelectorAll('.nav-folder-title').forEach(el => {
+            if (el.getAttribute('data-path') === 'Code' && el.parentElement?.classList.contains('is-collapsed')) {
+                el.click();
+            }
+        });
+    }''')
+    jitter_sleep(0.8)
+
+    # Mouse-click the README so it opens in the main pane.
+    target = page.locator(f'.nav-file-title[data-path="{README_PATH}"]').first
     target.scroll_into_view_if_needed()
     click_locator(page, target, duration=0.5)
-    jitter_sleep(1.0)
+    jitter_sleep(2.5)
 
-    # Trigger the Add command via the registered command id.
+    # Ingest it.
     page.evaluate('() => window.app.commands.executeCommandById("lilbee:lilbee:add-file")')
     jitter_sleep(1.0)
-    # If the file was already indexed (re-add confirmation), click Continue.
     try:
         click_selector(page, '.modal-container button:has-text("Continue")', duration=0.4)
         jitter_sleep(0.6)
     except Exception:
         pass
 
-    # Wait for the ingest task to land in COMPLETED.
+    # Wait for ingest.
     import re as _re
     import time as _time
     t0 = _time.monotonic()
-    while _time.monotonic() - t0 < 180:
+    while _time.monotonic() - t0 < 120:
         counters = page.evaluate('() => document.querySelector(".lilbee-tasks-counters")?.innerText || ""')
         m = _re.search(r'(\d+) running .* (\d+) queued .* (\d+) done', counters)
         if m and int(m.group(1)) == 0 and int(m.group(2)) == 0 and int(m.group(3)) >= 1:
             break
-        page.wait_for_timeout(800)
-    jitter_sleep(2.5)
+        page.wait_for_timeout(700)
+    jitter_sleep(2.0)
 
-    # Bring the chat leaf into focus.
+    # Bring chat into focus.
     page.evaluate('''() => {
         const chatLeaf = window.app.workspace.getLeavesOfType('lilbee-chat')
             .find(l => l.getRoot && l.getRoot() === window.app.workspace.rootSplit);
@@ -96,7 +97,6 @@ def run(page: Page) -> None:
     }''')
     page.wait_for_selector('.lilbee-chat-mode-btn', timeout=15000)
 
-    # Clear + Search mode + send the towing question.
     try:
         click_selector(page, '.lilbee-chat-clear', duration=0.4)
         jitter_sleep(0.3)
@@ -110,8 +110,7 @@ def run(page: Page) -> None:
     click_locator(page, textarea, duration=0.4)
     jitter_sleep(0.3)
     type_chunked(page, QUESTION, prose=True)
-    jitter_sleep(0.6)
+    jitter_sleep(0.5)
     page.keyboard.press("Enter")
-
     wait_for_idle(page, '.lilbee-chat-message.assistant', idle_for=3.0, timeout=120.0)
-    jitter_sleep(3.5)
+    jitter_sleep(3.0)

@@ -1,104 +1,87 @@
-"""Catalog demo: walk every tab, demonstrate infinite scroll, pull a model.
+"""Catalog demo: mouse-walk every tab + demo infinite scroll on each.
 
 Beats:
-  1. Open Catalog modal -- Discover tab is the default.
-  2. Click each tab in order: Chat -> Embed -> Vision -> Rerank ->
-     Library. Brief linger on each so the grid is visible.
-  3. On the content-rich tabs, scroll the grid to surface infinite
-     scroll (more cards mount as the bottom sentinel is observed).
-  4. Search "gemma 2", click Pull on Gemma 2 2B (small enough that the
-     pull lands fast on camera).
-  5. Close the catalog modal -- reveals the Task Center pane that was
-     pre-staged in the right sidebar with the in-flight pull task.
-  6. Linger on the progress bar so the async-visibility beat is clear.
+  1. Open Catalog modal (defaults to Discover).
+  2. Mouse-click each tab in turn: Discover -> Chat -> Embed -> Vision
+     -> Rerank -> Library. On every tab, mouse-wheel-scroll the grid to
+     surface infinite-scroll loading more cards.
+  3. Back to Chat, search ``gemma 2``, mouse-click Pull. Catalog
+     closes and the Task Center on the right shows the live pull.
 """
 from __future__ import annotations
 
+from _mouse import click_locator, click_selector, scroll_at
 from _record import jitter_sleep, type_chunked
 from _setup import prepare
 from playwright.sync_api import Page
 
-TABS_TO_WALK = ["Chat", "Embed", "Vision", "Rerank", "Library"]
-PULL_MODEL = {"hf_repo": "bartowski/gemma-2-2b-it-GGUF", "search": "gemma 2"}
-
-
-def _click_tab(page: Page, label: str) -> None:
-    page.evaluate(f'''() => {{
-        const buttons = document.querySelectorAll('.modal-container button');
-        for (const b of buttons) {{
-            if (b.innerText.trim() === {label!r}) {{ b.click(); return; }}
-        }}
-    }}''')
+TABS = ["Discover", "Chat", "Embed", "Vision", "Rerank", "Library"]
+PULL_REPO = "bartowski/gemma-2-2b-it-GGUF"
 
 
 def run(page: Page) -> None:
     prepare(page)
 
-    # Pre-stage the right sidebar with a freshly cleared Task Center so
-    # the pull task lands in an empty COMPLETED section when the catalog
-    # modal closes.
-    page.evaluate('''async () => {
+    # Pre-stage the right sidebar's Task Center so the pull progress
+    # has somewhere to land when the catalog closes.
+    page.evaluate('''() => {
         const app = window.app;
         if (app.workspace.rightSplit?.collapsed) app.workspace.rightSplit.expand();
     }''')
     page.evaluate('() => window.app.commands.executeCommandById("lilbee:lilbee:tasks")')
     jitter_sleep(0.8)
     try:
-        page.locator('.lilbee-tasks-clear').first.click(timeout=1500)
-        jitter_sleep(0.4)
+        click_selector(page, '.workspace-leaf-content[data-type="lilbee-tasks"] .lilbee-tasks-clear', duration=0.4)
+        jitter_sleep(0.3)
     except Exception:
         pass
 
-    # Open catalog.
     page.evaluate('() => window.app.commands.executeCommandById("lilbee:lilbee:catalog")')
     jitter_sleep(2.0)
 
-    for tab in TABS_TO_WALK:
-        _click_tab(page, tab)
-        jitter_sleep(2.6)
-        if tab in ("Chat", "Library"):
-            page.evaluate('''() => {
-                const grid = document.querySelector('.lilbee-catalog-body');
-                if (grid) grid.scrollBy({ top: 600, behavior: 'smooth' });
-            }''')
-            jitter_sleep(2.0)
-            page.evaluate('''() => {
-                const grid = document.querySelector('.lilbee-catalog-body');
-                if (grid) grid.scrollBy({ top: 600, behavior: 'smooth' });
-            }''')
-            jitter_sleep(2.0)
+    grid_box = page.evaluate(
+        '() => { const g = document.querySelector(".lilbee-catalog-body");'
+        ' const r = g?.getBoundingClientRect();'
+        ' return r ? {cx: r.x + r.width/2, cy: r.y + r.height/2} : null; }'
+    )
+    for tab_label in TABS:
+        tab_btn = page.locator(f'.modal-container button:text-is("{tab_label}")').first
+        if tab_btn.count() == 0:
+            continue
+        click_locator(page, tab_btn, duration=0.4)
+        jitter_sleep(1.8)
+        if grid_box:
+            scroll_at(page, grid_box["cx"], grid_box["cy"], dy=-12, steps=4)
+            jitter_sleep(1.6)
+            scroll_at(page, grid_box["cx"], grid_box["cy"], dy=-12, steps=4)
+            jitter_sleep(1.6)
+            scroll_at(page, grid_box["cx"], grid_box["cy"], dy=30, steps=6)
+            jitter_sleep(0.6)
 
-    # Back to Chat to do the pull demo.
-    _click_tab(page, "Chat")
-    jitter_sleep(1.5)
-    page.evaluate('''() => {
-        const grid = document.querySelector('.lilbee-catalog-body');
-        if (grid) grid.scrollTo({ top: 0, behavior: 'smooth' });
-    }''')
-    jitter_sleep(1.0)
+    chat_tab = page.locator('.modal-container button:text-is("Chat")').first
+    click_locator(page, chat_tab, duration=0.4)
+    jitter_sleep(1.2)
 
     search = page.locator('input.lilbee-catalog-search').first
-    search.click()
+    click_locator(page, search, duration=0.4)
     jitter_sleep(0.3)
-    type_chunked(page, PULL_MODEL["search"], prose=False)
-    jitter_sleep(2.5)
+    type_chunked(page, "gemma 2", prose=False)
+    jitter_sleep(2.0)
 
-    page.evaluate(f'''() => {{
-        const card = document.querySelector('.lilbee-model-card[data-repo="{PULL_MODEL["hf_repo"]}"]');
-        card?.querySelector('.lilbee-catalog-pull')?.click();
-    }}''')
-    jitter_sleep(1.5)
+    page.wait_for_selector(f'.lilbee-model-card[data-repo="{PULL_REPO}"]', timeout=10000)
+    pull_btn = page.locator(f'.lilbee-model-card[data-repo="{PULL_REPO}"] .lilbee-catalog-pull').first
+    if pull_btn.count() > 0:
+        click_locator(page, pull_btn, duration=0.4)
+        jitter_sleep(1.2)
+        try:
+            click_selector(page, '.modal-container button.mod-cta', duration=0.4)
+            jitter_sleep(0.6)
+        except Exception:
+            pass
 
-    # ConfirmPullModal -- accept it.
-    try:
-        page.locator('.modal-container button.mod-cta').first.click(timeout=1500)
-        jitter_sleep(0.8)
-    except Exception:
-        pass
-
-    # Close the catalog so the Task Center pane is the focus.
-    page.keyboard.press("Escape")
-    jitter_sleep(1.0)
-
-    # Linger on the in-flight pull task in the Task Center.
+    close_btn = page.locator('.modal-container .modal-close-button').first
+    if close_btn.count() > 0:
+        click_locator(page, close_btn, duration=0.4)
+    else:
+        page.keyboard.press("Escape")
     jitter_sleep(8.0)

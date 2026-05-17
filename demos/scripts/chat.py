@@ -1,46 +1,42 @@
-"""Chat demo: cited answer + click-through to the source PDF page.
+"""Chat demo: cited answer + mouse-click through to the source PDF page.
 
-One demo, two beats:
-  1. Ask the towing question -- streamed reply with chips for the cited
-     pages of cv-manual.pdf (p. 173, p. 256, pp. 211-212).
-  2. Click each chip in turn -- SourcePreviewModal opens at the exact
-     page in the embedded PDFium viewer.
-
-The lilbee TUI tui-chat + tui-click-source demos run as two separate
-videos; in the plugin they're the same flow with a natural pause
-between, so we ship one combined GIF instead of duplicating the chat
-context.
+Single full-width chat (sidebars collapsed) so the streaming answer
+and the three chip-clicks land with maximum readability. All clicks
+mouse-driven via the OS cursor.
 """
 from __future__ import annotations
 
+from _mouse import click_at, click_locator, click_selector, coords_from_js
 from _record import jitter_sleep, type_chunked, wait_for_idle
 from _setup import prepare
 from playwright.sync_api import Page
 
 PROMPT = "I'm prepping this car to tow my boat. What does the manual say I need to check?"
-
-# Chips to click after the answer lands. Each is the visible label text
-# on a `.lilbee-source-chip-loc` element inside the expanded `<details>`.
 CHIPS = ["p. 173", "p. 256", "pp. 211–212"]
 
 
 def run(page: Page) -> None:
     prepare(page)
 
-    # Clean single-pane layout: chat fills the whole main area, no sidebars,
-    # no New-tab placeholder, no other tabs. Detaches every existing
-    # lilbee-chat leaf first so a sidebar chat left over from a prior run
-    # can't end up rendered next to the main-pane one.
+    # Single-pane chat in the main pane, sidebars collapsed.
     page.evaluate('''async () => {
         const app = window.app;
         if (!app) return;
         app.workspace.detachLeavesOfType('lilbee-tasks');
         app.workspace.detachLeavesOfType('lilbee-wiki');
-        app.workspace.detachLeavesOfType('lilbee-chat');
-        const chatLeaf = app.workspace.getMostRecentLeaf();
-        if (chatLeaf) {
-            await chatLeaf.setViewState({ type: 'lilbee-chat', active: true });
+        const rootChat = app.workspace.getLeavesOfType('lilbee-chat').find(
+            l => l.getRoot && l.getRoot() === app.workspace.rootSplit
+        );
+        if (!rootChat) {
+            for (const l of app.workspace.getLeavesOfType('lilbee-chat')) l.detach();
+            const ribbon = document.querySelector('[aria-label="Open lilbee chat"]');
+            if (ribbon) ribbon.click();
+            await new Promise(r => setTimeout(r, 600));
         }
+        // Close every OTHER tab in the root split.
+        const chatLeaf = app.workspace.getLeavesOfType('lilbee-chat').find(
+            l => l.getRoot && l.getRoot() === app.workspace.rootSplit
+        );
         const closeOthers = (split) => {
             if (!split || !split.children) return;
             for (const child of [...split.children]) {
@@ -51,75 +47,69 @@ def run(page: Page) -> None:
         };
         closeOthers(app.workspace.rootSplit);
         if (chatLeaf) app.workspace.revealLeaf(chatLeaf);
-        if (app.workspace.leftSplit && !app.workspace.leftSplit.collapsed) {
-            app.workspace.leftSplit.collapse();
-        }
-        if (app.workspace.rightSplit && !app.workspace.rightSplit.collapsed) {
-            app.workspace.rightSplit.collapse();
-        }
+        if (app.workspace.leftSplit && !app.workspace.leftSplit.collapsed) app.workspace.leftSplit.collapse();
+        if (app.workspace.rightSplit && !app.workspace.rightSplit.collapsed) app.workspace.rightSplit.collapse();
     }''')
     jitter_sleep(1.5)
+    page.wait_for_selector('.lilbee-chat-mode-btn', timeout=15000)
 
-    # Clear any prior chat content.
     try:
-        page.locator('.lilbee-chat-clear').first.click(timeout=1500)
-        jitter_sleep(0.4)
+        click_selector(page, '.lilbee-chat-clear', duration=0.4)
+        jitter_sleep(0.3)
     except Exception:
         pass
 
-    # Use Search mode (default lilbee behavior; the Chat-mode toggle has a
-    # known dispatch bug and the answers we want are search-grounded RAG
-    # anyway).
     search_btn = page.locator('.lilbee-chat-mode-btn:has-text("Search")').first
     if not search_btn.evaluate('el => el.classList.contains("active")'):
-        search_btn.click()
-        jitter_sleep(0.4)
+        click_locator(page, search_btn, duration=0.4)
+        jitter_sleep(0.3)
 
-    # Type prompt + send.
     textarea = page.locator('textarea.lilbee-chat-textarea').first
-    textarea.click()
+    click_locator(page, textarea, duration=0.4)
     jitter_sleep(0.3)
     type_chunked(page, PROMPT, prose=True)
     jitter_sleep(0.6)
     page.keyboard.press("Enter")
 
-    # Wait for the streamed answer.
     wait_for_idle(page, '.lilbee-chat-message.assistant', idle_for=3.0, timeout=120.0)
     jitter_sleep(3.0)
 
-    # Open Sources expander so the chips are visible.
+    # Open Sources expander, force all details open.
     try:
-        page.locator('.lilbee-chat-sources summary, .lilbee-chat-sources [role="button"]').first.click(timeout=2000)
-        jitter_sleep(1.0)
+        click_selector(page, '.lilbee-chat-sources summary', duration=0.4)
+        jitter_sleep(0.6)
     except Exception:
         pass
-    # Force every <details> open in the visible chat leaf so chip access
-    # is reliable regardless of which expander Obsidian rendered.
     page.evaluate('''() => {
-        const leaves = document.querySelectorAll('.workspace-leaf');
-        for (const leaf of leaves) {
-            if (getComputedStyle(leaf).display === 'none') continue;
+        document.querySelectorAll('.workspace-leaf').forEach(leaf => {
+            if (getComputedStyle(leaf).display === 'none') return;
             leaf.querySelectorAll('details').forEach(d => d.open = true);
-        }
+        });
     }''')
-    jitter_sleep(2.0)
+    jitter_sleep(1.5)
 
-    # Click each chip. Modal mounts + PDFium scrolls to the target page,
-    # linger so the reader sees the highlighted region, Escape to close.
+    # Mouse-click each chip in turn. Modal mounts, linger, Escape.
     for chip_label in CHIPS:
-        clicked = page.evaluate(f'''() => {{
+        coords = coords_from_js(page, f'''() => {{
             const leaves = document.querySelectorAll('.workspace-leaf');
             for (const leaf of leaves) {{
                 if (getComputedStyle(leaf).display === 'none') continue;
                 const chip = Array.from(leaf.querySelectorAll('.lilbee-source-chip-loc'))
                     .find(el => el.innerText.trim() === {chip_label!r});
-                if (chip) {{ chip.click(); return true; }}
+                if (chip) {{
+                    const r = chip.getBoundingClientRect();
+                    return {{ x: r.x + r.width/2, y: r.y + r.height/2 }};
+                }}
             }}
-            return false;
+            return null;
         }}''')
-        if not clicked:
+        if not coords:
             continue
-        page.wait_for_selector('.lilbee-preview-modal-frame', timeout=5000)
+        click_at(page, coords["x"], coords["y"], duration=0.5)
+        try:
+            page.wait_for_selector('.lilbee-preview-modal-frame', timeout=5000)
+        except Exception:
+            continue
         jitter_sleep(4.0)
         page.keyboard.press("Escape")
         jitter_sleep(0.9)

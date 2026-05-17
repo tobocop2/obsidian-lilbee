@@ -1,34 +1,31 @@
-"""Tour demo: a 60-90s sweep through every lilbee surface.
+"""Tour demo: short mouse-driven sweep across every plugin surface.
 
-Order (each beat ~5-8s):
-  1. Status bar shows "lilbee: ready [external] (Qwen3 8B)" + sync hint
-  2. Open chat sidebar via the ribbon (Open lilbee chat)
-  3. Ask a quick cited question -> streamed reply with chip
-  4. Open Task Center via the ribbon
-  5. Open the catalog modal via command id -> close
-  6. Open the documents modal via command id -> close
-  7. Open the wiki sidebar via command id
-  8. Open the settings modal -> jump to lilbee tab -> close
-  9. Back to chat as the closing frame
+No chat question (the per-token streaming latency made the v1 tour
+drag); every beat is a mouse-click that exposes a different surface,
+held just long enough to be recognisable.
 
-This is a flythrough, not a deep dive. Each beat lingers just long
-enough for the surface to be recognisable.
+Beats (each ~3-4 s):
+  1. Collapsed-sidebar baseline so the status bar + ribbons read.
+  2. Ribbon -> open chat sidebar.
+  3. Ribbon -> open Task Center sidebar.
+  4. Cmd-id -> open Catalog modal.
+  5. Cmd-id -> open Documents modal.
+  6. Cmd-id -> open Wiki sidebar.
+  7. Cmd-id -> open Settings, click the lilbee tab.
+  8. Close back to chat.
 """
 from __future__ import annotations
 
-from _record import jitter_sleep, type_chunked, wait_for_idle
+from _mouse import click_locator
+from _record import jitter_sleep
 from _setup import prepare
 from playwright.sync_api import Page
-
-QUICK_PROMPT = "What is lilbee in one sentence?"
 
 
 def run(page: Page) -> None:
     prepare(page)
 
-    # ------------------------------------------------------------------
-    # Beat 1: collapsed-sidebar baseline + status bar visible
-    # ------------------------------------------------------------------
+    # Baseline: sidebars collapsed, lilbee leaves detached.
     page.evaluate('''() => {
         const app = window.app;
         app.workspace.detachLeavesOfType('lilbee-tasks');
@@ -36,80 +33,44 @@ def run(page: Page) -> None:
         if (app.workspace.leftSplit && !app.workspace.leftSplit.collapsed) app.workspace.leftSplit.collapse();
         if (app.workspace.rightSplit && !app.workspace.rightSplit.collapsed) app.workspace.rightSplit.collapse();
     }''')
-    jitter_sleep(2.0)
-
-    # ------------------------------------------------------------------
-    # Beat 2: ribbon -> chat. Use the registered ribbon icon.
-    # ------------------------------------------------------------------
-    page.locator('[aria-label="Open lilbee chat"]').first.click()
     jitter_sleep(1.5)
 
-    # ------------------------------------------------------------------
-    # Beat 3: quick cited chat answer.
-    # ------------------------------------------------------------------
-    try:
-        page.locator('.lilbee-chat-clear').first.click(timeout=1500)
-        jitter_sleep(0.3)
-    except Exception:
-        pass
-    chat_btn = page.locator('.lilbee-chat-mode-btn:has-text("Chat")').first
-    if not chat_btn.evaluate('el => el.classList.contains("active")'):
-        chat_btn.click()
-        jitter_sleep(0.4)
-    textarea = page.locator('textarea.lilbee-chat-textarea').first
-    textarea.click()
-    jitter_sleep(0.3)
-    type_chunked(page, QUICK_PROMPT, prose=True)
-    jitter_sleep(0.4)
-    page.keyboard.press("Enter")
-    wait_for_idle(page, '.lilbee-chat-message.assistant', idle_for=2.5, timeout=60.0)
-    jitter_sleep(2.0)
+    # Beat 2: Ribbon -> chat.
+    click_locator(page, page.locator('[aria-label="Open lilbee chat"]').first, duration=0.5)
+    jitter_sleep(2.5)
 
-    # ------------------------------------------------------------------
-    # Beat 4: Task Center via ribbon (lands as a sidebar leaf).
-    # ------------------------------------------------------------------
-    page.locator('[aria-label="Open lilbee Task Center"]').first.click()
-    jitter_sleep(3.0)
+    # Beat 3: Ribbon -> Task Center.
+    click_locator(page, page.locator('[aria-label="Open lilbee Task Center"]').first, duration=0.5)
+    jitter_sleep(2.5)
 
-    # ------------------------------------------------------------------
-    # Beat 5: catalog modal. Glance, then close.
-    # ------------------------------------------------------------------
+    # Beat 4: Catalog modal.
     page.evaluate('() => window.app.commands.executeCommandById("lilbee:lilbee:catalog")')
-    jitter_sleep(3.0)
+    jitter_sleep(2.5)
     page.keyboard.press("Escape")
-    jitter_sleep(0.8)
+    jitter_sleep(0.5)
 
-    # ------------------------------------------------------------------
-    # Beat 6: documents modal. Glance, then close.
-    # ------------------------------------------------------------------
+    # Beat 5: Documents modal.
     page.evaluate('() => window.app.commands.executeCommandById("lilbee:lilbee:documents")')
-    jitter_sleep(3.0)
+    jitter_sleep(2.5)
     page.keyboard.press("Escape")
-    jitter_sleep(0.8)
+    jitter_sleep(0.5)
 
-    # ------------------------------------------------------------------
-    # Beat 7: wiki sidebar.
-    # ------------------------------------------------------------------
+    # Beat 6: Wiki sidebar.
     page.evaluate('() => window.app.commands.executeCommandById("lilbee:lilbee:wiki")')
-    jitter_sleep(3.0)
+    jitter_sleep(2.5)
 
-    # ------------------------------------------------------------------
-    # Beat 8: settings -> lilbee tab -> close.
-    # ------------------------------------------------------------------
+    # Beat 7: Settings + click the lilbee tab.
     page.evaluate('() => window.app.commands.executeCommandById("app:open-settings")')
     jitter_sleep(1.2)
     lilbee_tab = page.locator('.vertical-tab-nav-item:has-text("lilbee")').first
     lilbee_tab.scroll_into_view_if_needed()
-    jitter_sleep(0.3)
-    lilbee_tab.click()
+    click_locator(page, lilbee_tab, duration=0.4)
     jitter_sleep(2.5)
     page.keyboard.press("Escape")
-    jitter_sleep(0.8)
+    jitter_sleep(0.5)
 
-    # ------------------------------------------------------------------
-    # Beat 9: closing frame on chat
-    # ------------------------------------------------------------------
-    page.evaluate('''async () => {
+    # Beat 8: closing frame on chat.
+    page.evaluate('''() => {
         const app = window.app;
         const chatLeaf = app.workspace.getLeavesOfType('lilbee-chat')[0];
         if (chatLeaf) app.workspace.revealLeaf(chatLeaf);
