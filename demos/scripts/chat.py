@@ -28,20 +28,18 @@ def run(page: Page) -> None:
     prepare(page)
 
     # Clean single-pane layout: chat fills the whole main area, no sidebars,
-    # no New-tab placeholder, no other tabs.
+    # no New-tab placeholder, no other tabs. Detaches every existing
+    # lilbee-chat leaf first so a sidebar chat left over from a prior run
+    # can't end up rendered next to the main-pane one.
     page.evaluate('''async () => {
         const app = window.app;
         if (!app) return;
         app.workspace.detachLeavesOfType('lilbee-tasks');
         app.workspace.detachLeavesOfType('lilbee-wiki');
-        let chatLeaf = app.workspace.getLeavesOfType('lilbee-chat').find(
-            l => l.getRoot && l.getRoot() === app.workspace.rootSplit
-        );
-        if (!chatLeaf) {
-            chatLeaf = app.workspace.getMostRecentLeaf();
-            if (chatLeaf) {
-                await chatLeaf.setViewState({ type: 'lilbee-chat', active: true });
-            }
+        app.workspace.detachLeavesOfType('lilbee-chat');
+        const chatLeaf = app.workspace.getMostRecentLeaf();
+        if (chatLeaf) {
+            await chatLeaf.setViewState({ type: 'lilbee-chat', active: true });
         }
         const closeOthers = (split) => {
             if (!split || !split.children) return;

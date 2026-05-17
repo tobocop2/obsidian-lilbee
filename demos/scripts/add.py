@@ -144,14 +144,11 @@ def run(page: Page) -> None:
     page.evaluate('''async () => {
         const app = window.app;
         app.workspace.detachLeavesOfType('lilbee-tasks');
-        let chatLeaf = app.workspace.getLeavesOfType('lilbee-chat').find(
-            l => l.getRoot && l.getRoot() === app.workspace.rootSplit
-        );
-        if (!chatLeaf) {
-            chatLeaf = app.workspace.getMostRecentLeaf();
-            if (chatLeaf) {
-                await chatLeaf.setViewState({ type: 'lilbee-chat', active: true });
-            }
+        // Detach every prior chat leaf so we only render the one we open.
+        app.workspace.detachLeavesOfType('lilbee-chat');
+        const chatLeaf = app.workspace.getMostRecentLeaf();
+        if (chatLeaf) {
+            await chatLeaf.setViewState({ type: 'lilbee-chat', active: true });
         }
         const closeOthers = (split) => {
             if (!split || !split.children) return;

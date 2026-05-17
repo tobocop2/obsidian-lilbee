@@ -31,15 +31,12 @@ def run(page: Page) -> None:
         if (!app) return;
         app.workspace.detachLeavesOfType('lilbee-wiki');
         app.workspace.detachLeavesOfType('lilbee-tasks');
-        // Main pane: chat.
-        let chatLeaf = app.workspace.getLeavesOfType('lilbee-chat').find(
-            l => l.getRoot && l.getRoot() === app.workspace.rootSplit
-        );
-        if (!chatLeaf) {
-            chatLeaf = app.workspace.getMostRecentLeaf();
-            if (chatLeaf) {
-                await chatLeaf.setViewState({ type: 'lilbee-chat', active: true });
-            }
+        // Main pane: a single chat leaf. Detach every prior chat first
+        // so a leftover sidebar chat can't render alongside.
+        app.workspace.detachLeavesOfType('lilbee-chat');
+        const chatLeaf = app.workspace.getMostRecentLeaf();
+        if (chatLeaf) {
+            await chatLeaf.setViewState({ type: 'lilbee-chat', active: true });
         }
         const closeOthers = (split) => {
             if (!split || !split.children) return;
