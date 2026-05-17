@@ -67,10 +67,12 @@ def run(page: Page) -> None:
     except Exception:
         pass
 
-    # Switch to Chat mode.
-    chat_btn = page.locator('.lilbee-chat-mode-btn:has-text("Chat")').first
-    if not chat_btn.evaluate('el => el.classList.contains("active")'):
-        chat_btn.click()
+    # Use Search mode (default lilbee behavior; the Chat-mode toggle has a
+    # known dispatch bug and the answers we want are search-grounded RAG
+    # anyway).
+    search_btn = page.locator('.lilbee-chat-mode-btn:has-text("Search")').first
+    if not search_btn.evaluate('el => el.classList.contains("active")'):
+        search_btn.click()
         jitter_sleep(0.4)
 
     # Type prompt + send.

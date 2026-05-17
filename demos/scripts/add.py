@@ -171,9 +171,9 @@ def run(page: Page) -> None:
         jitter_sleep(0.3)
     except Exception:
         pass
-    chat_btn = page.locator('.lilbee-chat-mode-btn:has-text("Chat")').first
-    if not chat_btn.evaluate('el => el.classList.contains("active")'):
-        chat_btn.click()
+    search_btn = page.locator('.lilbee-chat-mode-btn:has-text("Search")').first
+    if not search_btn.evaluate('el => el.classList.contains("active")'):
+        search_btn.click()
         jitter_sleep(0.3)
     textarea = page.locator('textarea.lilbee-chat-textarea').first
     textarea.click()

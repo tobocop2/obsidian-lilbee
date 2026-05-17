@@ -76,33 +76,28 @@ def position_obsidian(x: int = 120, y: int = 80, w: int = 1400, h: int = 900) ->
 
 
 def hide_other_apps() -> None:
-    """Hide every visible GUI app except Obsidian + Finder.
+    """Bring Obsidian frontmost + Hide-Others so the cropped capture is clean.
 
-    ffmpeg's `Capture screen 0` records the whole display; we crop in
-    post to the Obsidian rect. Anything that paints in that rect during
-    the recording (Slack notifications, a Terminal window, a Notes pop,
-    iTerm with stdout flying by) ends up in the GIF. Hiding the other
-    apps eliminates that surface entirely. Finder stays visible because
-    hiding it leaves the desktop blank and the macOS focus model gets
-    confused.
+    Earlier approach (``set visible of process to false``) silently fails
+    for apps that don't cooperate with System Events -- iTerm2 in particular
+    keeps painting through. Cmd+Option+H ("Hide Others") goes through the
+    macOS hide pathway directly and works on every app.
     """
-    script = '''
+    activate = '''
+    tell application "Obsidian" to activate
+    delay 0.3
     tell application "System Events"
-        set procs to every process whose visible is true
-        repeat with p in procs
-            try
-                if name of p is not "Obsidian" and name of p is not "Finder" then
-                    set visible of p to false
-                end if
-            end try
-        end repeat
+        tell process "Obsidian" to set frontmost to true
+        delay 0.3
+        keystroke "h" using {command down, option down}
     end tell
     '''
     try:
-        subprocess.run(["osascript", "-e", script], timeout=10, check=False)
+        subprocess.run(["osascript", "-e", activate], timeout=10, check=False)
     except subprocess.TimeoutExpired:
-        # Non-fatal: a stuck app shouldn't prevent recording.
         pass
+    # Give macOS a beat to actually unmount the hidden windows.
+    time.sleep(0.6)
 
 
 def start_ffmpeg(out_mov: Path, crop: tuple[int, int, int, int]) -> subprocess.Popen[bytes]:
