@@ -520,15 +520,14 @@ export default class LilbeePlugin extends Plugin {
     /**
      * Read the lilbee session token.
      *
-     * Managed mode: reads from the plugin-owned server-data directory.
+     * Managed mode: server-manager's dataDir owns the token. `manualToken`
+     * is only consulted in external mode -- sending an external-mode paste
+     * to the managed server produces a misleading "paste a new token" error.
+     *
      * External mode: auto-discovers the user's data root the same way lilbee
      * itself does (LILBEE_DATA env > .lilbee walk-up > platform default).
      */
     private readCurrentToken(): string | null {
-        // Managed mode owns its own token in the plugin-managed dataDir;
-        // a paste-token (which belongs to external mode) must not be sent
-        // to the managed server, or the server rejects it as stale and
-        // the user sees the misleading "paste a new one" notice.
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
             return this.serverManager ? readSessionToken(this.serverManager.dataDir) : null;
         }
