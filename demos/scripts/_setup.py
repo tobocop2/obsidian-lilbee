@@ -47,4 +47,16 @@ def prepare(page: Page) -> None:
         // synthesised contextmenu that the keyboard handler never saw).
         document.querySelectorAll('body > .menu').forEach(el => el.remove());
     }''')
+
+    # Collapse duplicate lilbee leaves to one of each. The plugin doesn't
+    # actively dedupe on workspace restore (see beads obsidian-lilbee-1n7),
+    # so repeated demo runs accumulate stacked chat / tasks / wiki panes.
+    # Drain to one of each so every recording starts from the same baseline.
+    page.evaluate('''() => {
+        for (const type of ['lilbee-chat', 'lilbee-tasks', 'lilbee-wiki']) {
+            const leaves = window.app.workspace.getLeavesOfType(type);
+            for (let i = 1; i < leaves.length; i++) leaves[i].detach();
+        }
+        window.app.workspace.requestSaveLayout?.();
+    }''')
     jitter_sleep(0.3)
