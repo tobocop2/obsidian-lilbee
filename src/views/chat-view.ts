@@ -668,7 +668,9 @@ export class ChatView extends ItemView {
             } else {
                 this.renderInlineError(
                     assistantBubble,
-                    MESSAGES.ERROR_CHAT_FAILED(errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode)),
+                    MESSAGES.ERROR_CHAT_FAILED(
+                        errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode),
+                    ),
                 );
             }
         } finally {
