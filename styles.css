@@ -246,22 +246,23 @@
     height: 8px;
     border-radius: 50%;
     background-color: var(--text-muted);
+    transition: box-shadow 200ms ease, background-color 200ms ease;
 }
 
 .lilbee-server-dot.is-ready {
     background-color: var(--text-success);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--text-success) 55%, transparent);
 }
 
 .lilbee-server-dot.is-error {
     background-color: var(--text-error);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--text-error) 55%, transparent);
 }
 
-.lilbee-server-dot.is-starting {
-    background-color: var(--text-warning);
-}
-
+.lilbee-server-dot.is-starting,
 .lilbee-server-dot.is-downloading {
     background-color: var(--text-warning);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--text-warning) 55%, transparent);
 }
 
 .lilbee-chat-messages {
@@ -553,8 +554,9 @@
     align-items: center;
     padding: 1px var(--size-4-2, 8px);
     border-radius: 999px;
-    background-color: var(--text-success);
-    color: var(--text-on-accent);
+    background-color: transparent;
+    color: var(--text-success);
+    border: 1px solid color-mix(in srgb, var(--text-success) 55%, transparent);
     font-size: var(--font-smallest, 10px);
     font-weight: var(--font-medium, 500);
     line-height: 1.4;
@@ -679,31 +681,12 @@
     background-color: var(--interactive-accent);
     border-radius: var(--radius-s, 4px);
     padding: 0 var(--size-4-2, 8px);
-    position: relative;
-    overflow: hidden;
+    animation: lilbee-pill-breathe 1.8s ease-in-out infinite;
 }
 
-.lilbee-status-downloading::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: -40%;
-    width: 40%;
-    height: 100%;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        rgba(255, 255, 255, 0.15),
-        transparent
-    );
-    animation: lilbee-knight 1.4s ease-in-out infinite;
-}
-
-@keyframes lilbee-knight {
-    0% { left: -40%; }
-    50% { left: 100%; }
-    50.01% { left: 100%; }
-    100% { left: -40%; }
+@keyframes lilbee-pill-breathe {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.72; }
 }
 
 .lilbee-health-dot {
@@ -713,14 +696,17 @@
     border-radius: 50%;
     background-color: var(--text-muted);
     vertical-align: middle;
+    transition: box-shadow 200ms ease, background-color 200ms ease;
 }
 
 .lilbee-health-dot.is-ok {
     background-color: var(--text-success);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--text-success) 55%, transparent);
 }
 
 .lilbee-health-dot.is-error {
     background-color: var(--text-error);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--text-error) 55%, transparent);
 }
 
 .lilbee-status-starting {
@@ -728,24 +714,7 @@
     background-color: var(--text-warning);
     border-radius: var(--radius-s, 4px);
     padding: 0 var(--size-4-2, 8px);
-    position: relative;
-    overflow: hidden;
-}
-
-.lilbee-status-starting::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: -40%;
-    width: 40%;
-    height: 100%;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        rgba(255, 255, 255, 0.15),
-        transparent
-    );
-    animation: lilbee-knight 1.4s ease-in-out infinite;
+    animation: lilbee-pill-breathe 1.8s ease-in-out infinite;
 }
 
 .lilbee-status-ready {
@@ -767,24 +736,7 @@
     background-color: var(--interactive-accent);
     border-radius: var(--radius-s, 4px);
     padding: 0 var(--size-4-2, 8px);
-    position: relative;
-    overflow: hidden;
-}
-
-.lilbee-status-adding::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: -40%;
-    width: 40%;
-    height: 100%;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        rgba(255, 255, 255, 0.15),
-        transparent
-    );
-    animation: lilbee-knight 1.4s ease-in-out infinite;
+    animation: lilbee-pill-breathe 1.8s ease-in-out infinite;
 }
 
 /* Catalog Modal */
@@ -2383,24 +2335,26 @@
     margin-right: 6px;
     vertical-align: middle;
     background-color: var(--text-muted);
-    animation: lilbee-dot-pulse 1s ease-in-out infinite;
 }
 
 .lilbee-statusbar-dot.is-primary {
     background-color: var(--interactive-accent);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--interactive-accent) 60%, transparent);
+    animation: lilbee-dot-pulse 1.4s ease-in-out infinite;
 }
 
 .lilbee-statusbar-dot.is-success {
     background-color: var(--text-success, #22c55e);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--text-success, #22c55e) 55%, transparent);
 }
 
 .lilbee-statusbar-dot.is-error {
     background-color: var(--text-error, #ef4444);
+    box-shadow: 0 0 5px color-mix(in srgb, var(--text-error, #ef4444) 55%, transparent);
 }
 
 .lilbee-statusbar-dot.is-muted {
     background-color: var(--text-faint, #888);
-    animation: none;
     opacity: 0.7;
 }
 
@@ -2435,11 +2389,11 @@
 
 @media (prefers-reduced-motion: reduce) {
     .lilbee-task-row[data-state="active"] .lilbee-task-rail,
-    .lilbee-statusbar-dot,
+    .lilbee-statusbar-dot.is-primary,
     .lilbee-task-progress-fill.lilbee-task-progress-indeterminate,
-    .lilbee-status-downloading::before,
-    .lilbee-status-starting::before,
-    .lilbee-status-adding::before {
+    .lilbee-status-downloading,
+    .lilbee-status-starting,
+    .lilbee-status-adding {
         animation: none;
     }
 }
@@ -2606,51 +2560,38 @@
     100% { background-position: -200% 0; }
 }
 
-.side-dock-ribbon-action.lilbee-ribbon-icon {
-    position: relative;
+.side-dock-ribbon-action.lilbee-ribbon-icon svg {
+    transition: color 180ms ease, filter 220ms ease;
 }
 
-.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-active::after,
-.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-success::after,
-.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-error::after {
-    content: "";
-    position: absolute;
-    top: 3px;
-    right: 3px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    border: 1.5px solid var(--background-primary);
-    pointer-events: none;
+.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-active svg {
+    color: var(--interactive-accent);
+    animation: lilbee-ribbon-icon-pulse 1.8s ease-in-out infinite;
 }
 
-.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-active::after {
-    background-color: var(--interactive-accent);
-    animation: lilbee-ribbon-glow 1.4s ease-in-out infinite;
-}
-
-@keyframes lilbee-ribbon-glow {
+@keyframes lilbee-ribbon-icon-pulse {
     0%, 100% {
-        transform: scale(1);
-        box-shadow: 0 0 0 0 color-mix(in srgb, var(--interactive-accent) 70%, transparent);
+        filter: drop-shadow(0 0 2px color-mix(in srgb, var(--interactive-accent) 55%, transparent));
     }
     50% {
-        transform: scale(1.18);
-        box-shadow: 0 0 0 5px color-mix(in srgb, var(--interactive-accent) 0%, transparent);
+        filter: drop-shadow(0 0 7px color-mix(in srgb, var(--interactive-accent) 90%, transparent));
     }
 }
 
-.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-success::after {
-    background-color: var(--text-success, #22c55e);
+.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-success svg {
+    color: var(--text-success, #22c55e);
+    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--text-success, #22c55e) 65%, transparent));
 }
 
-.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-error::after {
-    background-color: var(--text-error, #ef4444);
+.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-error svg {
+    color: var(--text-error, #ef4444);
+    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--text-error, #ef4444) 65%, transparent));
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-active::after {
+    .side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-active svg {
         animation: none;
+        filter: drop-shadow(0 0 4px color-mix(in srgb, var(--interactive-accent) 70%, transparent));
     }
 }
 
@@ -3131,21 +3072,6 @@
     height: 100%;
 }
 
-/* Make the resize handle visible — Obsidian's modal-container has overflow
-   hidden that would normally clip it. The diagonal grip doubles as a visual
-   cue so users notice the modal is resizable. */
-.lilbee-preview-modal-frame::after {
-    content: "";
-    position: absolute;
-    right: 4px;
-    bottom: 4px;
-    width: 14px;
-    height: 14px;
-    background:
-        linear-gradient(135deg, transparent 0 50%, var(--text-faint) 50% 58%, transparent 58% 66%, var(--text-faint) 66% 74%, transparent 74% 82%, var(--text-faint) 82% 90%, transparent 90%);
-    pointer-events: none;
-    opacity: 0.6;
-}
 
 .lilbee-preview-header {
     font-family: var(--font-monospace);
