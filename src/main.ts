@@ -831,6 +831,17 @@ export default class LilbeePlugin extends Plugin {
             name: "Show status",
             callback: () => new StatusModal(this.app, this).open(),
         });
+
+        this.addCommand({
+            id: "lilbee:take-over",
+            name: MESSAGES.COMMAND_TAKE_OVER,
+            checkCallback: (checking) => {
+                if (this.settings.serverMode !== SERVER_MODE.MANAGED) return false;
+                if (this.serverManager !== null) return false;
+                if (!checking) void this.startManagedServer();
+                return true;
+            },
+        });
     }
 
     onunload(): void {

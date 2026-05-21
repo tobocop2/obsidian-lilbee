@@ -4,6 +4,9 @@
 
 ### Breaking changes
 
+- The plugin no longer keeps a separate lilbee install per Obsidian vault. On first load it silently relocates `<vault>/.obsidian/plugins/lilbee/server-data` into a shared root (`~/Library/Application Support/Lilbee/` on macOS, `~/.local/share/lilbee/` on Linux, `%LOCALAPPDATA%\Lilbee\` on Windows). The binary, downloaded models, and HuggingFace cache now sit at the root; each Obsidian vault has its own `vaults/<id>/` subfolder for its index, wiki, and config. If the source and shared root are on different filesystems the plugin asks before moving — the copy can take several minutes on multi-GB models. The shared root path is configurable in Settings → Connection.
+- Only one Obsidian vault can drive the managed lilbee at a time (lilbee is single-vault). Opening a second vault shows the active owner in the status bar; the `lilbee: Take over the managed lilbee server` command switches the running process to the new vault after a confirmation dialog. The previous vault's index is preserved on disk and restored when you reopen it.
+- `lilbeeVersion` and `hfToken` moved from per-vault plugin settings to the shared `<shared-root>/config.json` because the binary and HuggingFace cache they describe are shared. The old per-vault values migrate automatically on the same first load and are removed from `data.json`.
 - Renamed the local plugin setting `systemPrompt` to `ragSystemPrompt` to match the lilbee server's `system_prompt` → `rag_system_prompt` rename. Any prompt set under the old key resets to the default.
 - The `LILBEE_SYSTEM_PROMPT` env var passed to managed servers is now `LILBEE_RAG_SYSTEM_PROMPT`. A second env var `LILBEE_GENERAL_SYSTEM_PROMPT` is set when the new sibling field is configured.
 - Auto-sync mode is gone. The status bar shows a clickable "lilbee: N to sync" hint when the vault has files the server hasn't indexed; click to sync. The `syncMode` and `syncDebounceMs` plugin settings are no longer used.

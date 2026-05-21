@@ -244,16 +244,46 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerView).toHaveBeenCalled();
         });
 
-        it("adds all twenty-one commands", async () => {
+        it("take-over command is disabled while a server is running and unavailable in external mode", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            const calls = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls;
+            const takeOver = calls.find((c) => c[0]?.id === "lilbee:take-over")?.[0];
+            expect(takeOver).toBeDefined();
+            // Managed mode, no server running yet → available
+            (plugin as any).serverManager = null;
+            expect(takeOver!.checkCallback(true)).toBe(true);
+            // Server running → unavailable (already ours)
+            (plugin as any).serverManager = {};
+            expect(takeOver!.checkCallback(true)).toBe(false);
+            // External mode → unavailable
+            plugin.settings.serverMode = "external";
+            (plugin as any).serverManager = null;
+            expect(takeOver!.checkCallback(true)).toBe(false);
+        });
+
+        it("take-over command invokes startManagedServer when not in check mode", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            (plugin as any).serverManager = null;
+            const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
+            const calls = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls;
+            const takeOver = calls.find((c) => c[0]?.id === "lilbee:take-over")?.[0];
+            expect(takeOver!.checkCallback(false)).toBe(true);
+            expect(startSpy).toHaveBeenCalled();
+        });
+
+        it("adds all twenty-two commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(21);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(22);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("lilbee:model-picker-chat");
             expect(allIds).toContain("lilbee:model-picker-embedding");
             expect(allIds).toContain("lilbee:model-info-active-chat");
             expect(allIds).toContain("lilbee:model-info-active-embedding");
+            expect(allIds).toContain("lilbee:take-over");
             const ids = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(ids).toContain("lilbee:search");
             expect(ids).toContain("lilbee:chat");
