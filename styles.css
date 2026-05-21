@@ -555,6 +555,11 @@
     gap: var(--size-4-1, 4px);
 }
 
+/* Size column: keep "264.8 GB" on one line. */
+.lilbee-model-catalog td:nth-child(2) {
+    white-space: nowrap;
+}
+
 .lilbee-installed {
     display: inline-flex;
     align-items: center;
