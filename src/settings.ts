@@ -226,7 +226,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         const updateSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_SERVER_VERSION)
-            .setDesc(this.plugin.settings.lilbeeVersion || MESSAGES.DESC_SERVER_VERSION_UNKNOWN);
+            .setDesc(this.plugin.getSharedLilbeeVersion() || MESSAGES.DESC_SERVER_VERSION_UNKNOWN);
 
         let pendingRelease: ReleaseInfo | null = null;
         updateSetting.addButton((checkBtn) =>
@@ -266,7 +266,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         // pin the inline button label to "Up to date" until
                         // the next click — both the toast and the button
                         // change confirm the action.
-                        const current = this.plugin.settings.lilbeeVersion || MESSAGES.LABEL_UNKNOWN;
+                        const current = this.plugin.getSharedLilbeeVersion() || MESSAGES.LABEL_UNKNOWN;
                         new Notice(MESSAGES.NOTICE_SERVER_UPTODATE(current));
                         checkBtn.setButtonText(MESSAGES.LABEL_UPTODATE);
                         checkBtn.setDisabled(false);
@@ -1763,11 +1763,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_HF_TOKEN)
             .addText((text) => {
                 text.setPlaceholder(MESSAGES.PLACEHOLDER_HF_TOKEN)
-                    .setValue(this.plugin.settings.hfToken)
+                    .setValue(this.plugin.getSharedHfToken())
                     .onChange(async (value) => {
                         const trimmed = value.trim();
-                        this.plugin.settings.hfToken = trimmed;
-                        await this.plugin.saveSettings();
+                        this.plugin.setSharedHfToken(trimmed);
                         try {
                             await this.plugin.api.updateConfig({ hf_token: trimmed });
                             new Notice(MESSAGES.NOTICE_HF_TOKEN_SAVED);

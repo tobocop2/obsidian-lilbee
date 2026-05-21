@@ -16,7 +16,30 @@ vi.mock("../src/binary-manager", () => ({
     getLatestRelease: (...args: any[]) => mockGetLatestRelease(...args),
     checkForUpdate: (...args: any[]) => mockCheckForUpdate(...args),
     BinaryManager: vi.fn(),
-    node: {},
+    node: {
+        existsSync: vi.fn(() => false),
+        readFileSync: vi.fn(),
+        writeFileSync: vi.fn(),
+        mkdirSync: vi.fn(),
+        renameSync: vi.fn(),
+        unlinkSync: vi.fn(),
+        statSync: vi.fn(() => ({ isDirectory: () => false, dev: 1, size: 0 })),
+        readdirSync: vi.fn(() => [] as string[]),
+        rmSync: vi.fn(),
+        cpSync: vi.fn(),
+        join: (...parts: string[]) => parts.join("/").replace(/\/+/g, "/"),
+        basename: (p: string) => p.replace(/\\/g, "/").split("/").pop() ?? "",
+        resolve: (p: string) => p.replace(/\/+/g, "/"),
+        dirname: (p: string) => {
+            const normalized = p.replace(/\/+/g, "/");
+            const i = normalized.lastIndexOf("/");
+            return i <= 0 ? "/" : normalized.slice(0, i);
+        },
+        createHash: () => ({
+            update: () => ({ digest: () => "abcdef0123456789abcdef0123456789abcdef0123456789" }),
+        }),
+        processKill: vi.fn(),
+    },
 }));
 
 let mockConfirmResult = true;
@@ -54,8 +77,11 @@ vi.mock("../src/views/confirm-modal", () => ({
     })),
 }));
 
-function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
-    const settings: LilbeeSettings = { ...DEFAULT_SETTINGS, wikiEnabled: true, ...overrides };
+function makePlugin(overrides: Partial<LilbeeSettings> & { lilbeeVersion?: string; hfToken?: string } = {}) {
+    const { lilbeeVersion: ver, hfToken: hf, ...settingsOverrides } = overrides;
+    const settings: LilbeeSettings = { ...DEFAULT_SETTINGS, wikiEnabled: true, ...settingsOverrides };
+    let sharedVersion = ver ?? "";
+    let sharedHfToken = hf ?? "";
     const api = {
         listModels: vi.fn(),
         setChatModel: vi.fn(),
@@ -98,6 +124,14 @@ function makePlugin(overrides: Partial<LilbeeSettings> = {}) {
         wikiEnabled: overrides.wikiEnabled !== undefined ? settings.wikiEnabled : true,
         wikiSync: null,
         taskQueue: new TaskQueue(),
+        getSharedLilbeeVersion: () => sharedVersion,
+        setSharedLilbeeVersion: (v: string) => {
+            sharedVersion = v;
+        },
+        getSharedHfToken: () => sharedHfToken,
+        setSharedHfToken: (t: string) => {
+            sharedHfToken = t;
+        },
     } as unknown as InstanceType<typeof import("../src/main").default>;
 }
 
@@ -3328,7 +3362,7 @@ describe("managed mode settings", () => {
 
             await textOnChanges[HF_TOKEN_IDX]("hf_test123");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ hf_token: "hf_test123" });
-            expect(plugin.settings.hfToken).toBe("hf_test123");
+            expect(plugin.getSharedHfToken()).toBe("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("HuggingFace token saved"))).toBe(true);
         });
 
@@ -3339,7 +3373,7 @@ describe("managed mode settings", () => {
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
             await textOnChanges[HF_TOKEN_IDX]("");
-            expect(plugin.settings.hfToken).toBe("");
+            expect(plugin.getSharedHfToken()).toBe("");
         });
 
         it("shows error notice on failure", async () => {

@@ -143,7 +143,7 @@ describe("BinaryManager", () => {
     describe("binaryPath", () => {
         it("returns unix binary path on non-win32", () => {
             restore = stubPlatform("darwin", "arm64");
-            const mgr = new BinaryManager("/plugins/lilbee");
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
             expect(mgr.binaryPath).toContain("lilbee");
             expect(mgr.binaryPath).not.toContain(".exe");
             expect(mgr.binaryPath).toBe("/plugins/lilbee/bin/lilbee");
@@ -151,7 +151,7 @@ describe("BinaryManager", () => {
 
         it("returns .exe binary path on win32", () => {
             restore = stubPlatform("win32", "x64");
-            const mgr = new BinaryManager("/plugins/lilbee");
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
             expect(mgr.binaryPath).toContain("lilbee.exe");
         });
     });
@@ -160,14 +160,14 @@ describe("BinaryManager", () => {
         it("returns true when binary file exists", () => {
             restore = stubPlatform("darwin", "arm64");
             vi.spyOn(node, "existsSync").mockReturnValue(true);
-            const mgr = new BinaryManager("/plugins/lilbee");
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
             expect(mgr.binaryExists()).toBe(true);
         });
 
         it("returns false when binary file does not exist", () => {
             restore = stubPlatform("darwin", "arm64");
             vi.spyOn(node, "existsSync").mockReturnValue(false);
-            const mgr = new BinaryManager("/plugins/lilbee");
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
             expect(mgr.binaryExists()).toBe(false);
         });
     });
@@ -176,14 +176,14 @@ describe("BinaryManager", () => {
         it("returns path immediately when binary already exists", async () => {
             restore = stubPlatform("darwin", "arm64");
             vi.spyOn(node, "existsSync").mockReturnValue(true);
-            const mgr = new BinaryManager("/plugins/lilbee");
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
             const path = await mgr.ensureBinary();
             expect(path).toBe(mgr.binaryPath);
         });
 
         it("downloads binary when it does not exist", async () => {
             restore = stubPlatform("darwin", "arm64");
-            const mgr = new BinaryManager("/plugins/lilbee");
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
             const data = new Uint8Array([1, 2, 3]);
 
             // existsSync: first call (binaryExists) => false, second call (binDir check in download) => true
@@ -221,7 +221,7 @@ describe("BinaryManager", () => {
             vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
 
-            const mgr = new BinaryManager("/plugins/lilbee");
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
             await mgr.download("https://example.com/dl");
 
             expect(node.mkdirSync).toHaveBeenCalledWith(expect.stringContaining("bin"), { recursive: true });
@@ -237,7 +237,7 @@ describe("BinaryManager", () => {
             vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
 
-            const mgr = new BinaryManager("/plugins/lilbee");
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
             await mgr.download("https://example.com/dl");
 
             expect(node.mkdirSync).not.toHaveBeenCalled();
@@ -253,7 +253,7 @@ describe("BinaryManager", () => {
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
 
             const onProgress = vi.fn();
-            const mgr = new BinaryManager("/plugins/lilbee");
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
             await mgr.download("https://example.com/dl", onProgress);
 
             expect(node.writeFileSync).toHaveBeenCalledWith(mgr.binaryPath, expect.any(Buffer));
@@ -274,7 +274,7 @@ describe("BinaryManager", () => {
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
             const execSpy = vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "", stderr: "" });
 
-            const mgr = new BinaryManager("/plugins/lilbee");
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
             await mgr.download("https://example.com/dl");
 
             expect(execSpy).toHaveBeenCalledWith("xattr", ["-cr", mgr.binaryPath]);
@@ -290,7 +290,7 @@ describe("BinaryManager", () => {
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
             vi.spyOn(node, "execFile").mockRejectedValue(new Error("xattr not found"));
 
-            const mgr = new BinaryManager("/plugins/lilbee");
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
             // Should not throw
             await expect(mgr.download("https://example.com/dl")).resolves.toBeUndefined();
         });
@@ -304,7 +304,7 @@ describe("BinaryManager", () => {
             vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
 
-            const mgr = new BinaryManager("/plugins/lilbee");
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
             await mgr.download("https://example.com/dl");
 
             expect(node.chmodSync).not.toHaveBeenCalled();
@@ -320,7 +320,7 @@ describe("BinaryManager", () => {
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
             const execSpy = vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "", stderr: "" });
 
-            const mgr = new BinaryManager("/plugins/lilbee");
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
             await mgr.download("https://example.com/dl");
 
             expect(execSpy).not.toHaveBeenCalled();
@@ -336,7 +336,7 @@ describe("BinaryManager", () => {
                 headers: {},
             });
 
-            const mgr = new BinaryManager("/plugins/lilbee");
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
             await expect(mgr.download("https://example.com/dl")).rejects.toThrow("Download failed: 404");
         });
 
@@ -349,7 +349,7 @@ describe("BinaryManager", () => {
             vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
 
-            const mgr = new BinaryManager("/plugins/lilbee");
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
             // No onProgress — should not throw
             await expect(mgr.download("https://example.com/dl")).resolves.toBeUndefined();
         });

@@ -41,6 +41,7 @@ function defaultOpts(overrides?: Partial<ServerManagerOptions>): ServerManagerOp
     return {
         binaryPath: "/usr/local/bin/lilbee",
         dataDir: "/tmp/data",
+        modelsDir: "/tmp/models",
         ragSystemPrompt: "",
         generalSystemPrompt: "",
         ...overrides,
@@ -122,6 +123,7 @@ describe("ServerManager", () => {
             expect(args).not.toContain("--port");
             expect(opts.env.LILBEE_CORS_ORIGINS).toBe("app://obsidian.md");
             expect(opts.env.LILBEE_PARENT_PID).toBe(String(process.pid));
+            expect(opts.env.LILBEE_MODELS_DIR).toBe("/tmp/models");
             expect(opts.env.LILBEE_RAG_SYSTEM_PROMPT).toBeUndefined();
             expect(opts.env.LILBEE_GENERAL_SYSTEM_PROMPT).toBeUndefined();
             expect(opts.stdio).toEqual(["ignore", "ignore", "pipe"]);

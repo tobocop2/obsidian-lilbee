@@ -16,6 +16,12 @@ const SERVER_MANAGER_CONFIG = {
 export interface ServerManagerOptions {
     binaryPath: string;
     dataDir: string;
+    /**
+     * HuggingFace cache and GGUF storage. Set via `LILBEE_MODELS_DIR` so the
+     * server uses the same path across all vaults — without it, lilbee would
+     * scope models to each per-vault data-dir and re-download per vault.
+     */
+    modelsDir: string;
     ragSystemPrompt: string;
     generalSystemPrompt: string;
     onStateChange?: (state: ServerState) => void;
@@ -84,6 +90,7 @@ export class ServerManager {
             ...process.env,
             LILBEE_CORS_ORIGINS: "app://obsidian.md",
             LILBEE_PARENT_PID: String(process.pid),
+            LILBEE_MODELS_DIR: this.opts.modelsDir,
         };
         if (this.opts.ragSystemPrompt) {
             env.LILBEE_RAG_SYSTEM_PROMPT = this.opts.ragSystemPrompt;

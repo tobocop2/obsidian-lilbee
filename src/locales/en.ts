@@ -181,6 +181,19 @@ export const MESSAGES = {
     NOTICE_STORAGE_REORGANIZING: "Reorganizing lilbee storage into your vault…",
     NOTICE_STORAGE_REORGANIZED: "Lilbee storage is now inside your vault.",
     NOTICE_STORAGE_REORGANIZE_FAILED: "Could not move lilbee storage into your vault: ",
+    NOTICE_MIGRATION_DONE:
+        "Moved this vault's lilbee data to the shared location — models are now shared across your vaults.",
+    NOTICE_MIGRATION_DECLINED: "Skipped the move. This vault will keep its own copy of the lilbee data and models.",
+    NOTICE_TAKE_OVER_SUCCESS: (vaultName: string): string => `lilbee switched from "${vaultName}" to this vault.`,
+    NOTICE_TAKE_OVER_DECLINED: (vaultName: string): string =>
+        `lilbee stays with "${vaultName}". This vault will run without managed lilbee until you take over or close the other vault.`,
+    NOTICE_TAKE_OVER_TIMEOUT:
+        "The other lilbee process did not shut down in time. Try again, or close the other Obsidian window first.",
+    CONFIRM_MIGRATE_CROSS_FS: (sizeMb: number): string =>
+        `Move ~${sizeMb} MB of lilbee data across disks? This may take several minutes. Skipping keeps this vault's lilbee data where it is and uses its own copy of the models.`,
+    CONFIRM_TAKE_OVER: (vaultName: string): string =>
+        `lilbee is currently serving "${vaultName}". Switch it to this vault? The other vault will lose its lilbee connection until you reopen it.`,
+    STATUS_LOCKED_BY_OTHER: (vaultName: string): string => `lilbee: serving "${vaultName}"`,
     LABEL_EMBEDDING_MODEL: "Embedding model",
     LABEL_RERANKER_TITLE: "Reranker model",
     LABEL_RERANKER_DISABLED: "(disabled)",

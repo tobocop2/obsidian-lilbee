@@ -93,11 +93,7 @@ export function checkForUpdate(currentVersion: string, latestTag: string): boole
 }
 
 export class BinaryManager {
-    private binDir: string;
-
-    constructor(pluginDir: string) {
-        this.binDir = join(pluginDir, "bin");
-    }
+    constructor(private binDir: string) {}
 
     get binaryPath(): string {
         const name = process.platform === PLATFORM.WIN32 ? "lilbee.exe" : "lilbee";

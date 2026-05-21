@@ -130,14 +130,28 @@ vi.mock("../src/binary-manager", () => ({
         unlinkSync: vi.fn(),
         copyFileSync: vi.fn(),
         cpSync: vi.fn(),
+        renameSync: vi.fn(),
+        readdirSync: vi.fn(() => [] as string[]),
+        rmSync: vi.fn(),
         // Default every stat-ed source to a regular file so pre-existing
         // tests (which only exercise the file path) keep hitting copyFileSync
         // rather than cpSync. Directory tests override this per-test.
-        statSync: vi.fn(() => ({ isDirectory: () => false })),
+        statSync: vi.fn(() => ({ isDirectory: () => false, dev: 1, size: 0 })),
         // Real node:path join/basename — tests exercise cross-platform path
         // normalisation and need the actual behaviour, not a stub.
         join: (...parts: string[]) => parts.join("/").replace(/\/+/g, "/"),
         basename: (p: string) => p.replace(/\\/g, "/").split("/").pop() ?? "",
+        // Used by computeVaultId and migration; minimal real-ish behaviour.
+        resolve: (p: string) => p.replace(/\/+/g, "/"),
+        dirname: (p: string) => {
+            const normalized = p.replace(/\/+/g, "/");
+            const i = normalized.lastIndexOf("/");
+            return i <= 0 ? "/" : normalized.slice(0, i);
+        },
+        createHash: () => ({
+            update: () => ({ digest: () => "abcdef0123456789abcdef0123456789abcdef0123456789" }),
+        }),
+        processKill: vi.fn(),
         requestUrl: vi.fn(),
     },
 }));
@@ -4098,7 +4112,7 @@ describe("LilbeePlugin", () => {
             expect(statusTexts.some((t) => t.includes("downloading"))).toBe(false);
         });
 
-        it("saves version on fresh download when lilbeeVersion is empty", async () => {
+        it("saves version on fresh download when shared lilbeeVersion is empty", async () => {
             mockBinaryExists.mockReturnValueOnce(false);
             const { getLatestRelease } = await import("../src/binary-manager");
             (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -4106,21 +4120,25 @@ describe("LilbeePlugin", () => {
                 assetUrl: "https://example.com",
             });
 
-            const plugin = await createPlugin({ serverMode: "managed", lilbeeVersion: "" });
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const setSpy = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
+            vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("");
             await plugin.onload();
             await flush();
 
-            expect(plugin.settings.lilbeeVersion).toBe("v0.5.1");
+            expect(setSpy).toHaveBeenCalledWith("v0.5.1");
         });
 
-        it("does not overwrite existing lilbeeVersion on fresh download", async () => {
+        it("does not overwrite existing shared lilbeeVersion on fresh download", async () => {
             mockBinaryExists.mockReturnValueOnce(false);
 
-            const plugin = await createPlugin({ serverMode: "managed", lilbeeVersion: "v0.4.0" });
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const setSpy = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
+            vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("v0.4.0");
             await plugin.onload();
             await flush();
 
-            expect(plugin.settings.lilbeeVersion).toBe("v0.4.0");
+            expect(setSpy).not.toHaveBeenCalled();
         });
 
         it("does not create serverManager when ensureBinary fails", async () => {
@@ -4492,7 +4510,8 @@ describe("LilbeePlugin", () => {
             });
             (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(true);
 
-            const plugin = await createPlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
+            const plugin = await createPlugin({ serverMode: "managed" });
+            vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("v0.1.0");
             await plugin.onload();
             await flush();
 
@@ -4509,7 +4528,8 @@ describe("LilbeePlugin", () => {
             });
             (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(false);
 
-            const plugin = await createPlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
+            const plugin = await createPlugin({ serverMode: "managed" });
+            vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("v0.1.0");
             await plugin.onload();
             await flush();
 
@@ -5268,6 +5288,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
+            const setSpy = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
 
             const progress: string[] = [];
             await plugin.updateServer({ tag: "v0.3.0", assetUrl: "https://example.com/v0.3.0" }, (msg) =>
@@ -5276,7 +5297,7 @@ describe("LilbeePlugin", () => {
 
             expect(mockServerStop).toHaveBeenCalled();
             expect(mockDownload).toHaveBeenCalledWith("https://example.com/v0.3.0", expect.any(Function));
-            expect(plugin.settings.lilbeeVersion).toBe("v0.3.0");
+            expect(setSpy).toHaveBeenCalledWith("v0.3.0");
             expect(progress).toContain("Stopping server...");
             expect(progress).toContain("Downloading...");
             expect(progress).toContain("Starting server...");
@@ -5300,12 +5321,13 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             await flush();
+            const setSpy = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
 
             mockServerStart.mockClear();
             await plugin.updateServer({ tag: "v0.3.0", assetUrl: "https://example.com" });
 
             expect(mockServerStart).not.toHaveBeenCalled();
-            expect(plugin.settings.lilbeeVersion).toBe("v0.3.0");
+            expect(setSpy).toHaveBeenCalledWith("v0.3.0");
         });
     });
 
