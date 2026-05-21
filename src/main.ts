@@ -6,15 +6,18 @@ import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
 import { LilbeeSettingTab } from "./settings";
+import { VaultRegistry, computeVaultId, resolveSharedRoot, sharedBinDir, sharedModelsDir } from "./vault-registry";
 import {
     DEFAULT_SETTINGS,
     DOT_STATE,
     ERROR_NAME,
+    LOCK_STATE,
     SERVER_MODE,
     SERVER_STATE,
     SSE_EVENT,
     TASK_STATUS,
     TASK_TYPE,
+    type ActiveLock,
     type BatchProgressPayload,
     type DotState,
     type LilbeeSettings,
@@ -27,6 +30,7 @@ import {
     type SyncOptions,
     type TaskEntry,
     type VaultAdapter,
+    type VaultRegistryEntry,
 } from "./types";
 import { MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
@@ -57,6 +61,7 @@ import { LintModal } from "./views/lint-modal";
 import { DraftModal } from "./views/draft-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { StatusModal } from "./views/status-modal";
+import { VaultPickerModal } from "./views/vault-picker-modal";
 import { TaskQueue, FLASH_WINDOW_MS as TASK_FLASH_WINDOW_MS } from "./task-queue";
 import { WikiSync } from "./wiki-sync";
 
@@ -197,6 +202,8 @@ export default class LilbeePlugin extends Plugin {
     chatRibbonIconEl: HTMLElement | null = null;
     binaryManager: BinaryManager | null = null;
     serverManager: ServerManager | null = null;
+    vaultRegistry: VaultRegistry | null = null;
+    vaultId = "";
     syncController: AbortController | null = null;
     private pendingHintTimeout: ReturnType<typeof setTimeout> | null = null;
     private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
@@ -313,71 +320,22 @@ export default class LilbeePlugin extends Plugin {
 
     async startManagedServer(onProgress?: ManagedServerProgressHandler): Promise<void> {
         if (this.startingServer) return;
+        const registry = this.vaultRegistry;
+        if (!registry) return;
         this.startingServer = true;
         this.serverStartFailed = false;
 
         try {
-            const pluginDir = this.getPluginDir();
-            this.binaryManager = new BinaryManager(pluginDir);
+            if (!(await this.acquireLockOrBail(registry, onProgress))) return;
 
-            const needsDownload = !this.binaryManager.binaryExists();
-            if (needsDownload) {
-                this.updateStatusBar(MESSAGES.STATUS_DOWNLOADING, DOT_STATE.PRIMARY);
-                this.setStatusClass("lilbee-status-downloading");
-                onProgress?.({ phase: "downloading", message: MESSAGES.STATUS_DOWNLOADING });
-            }
-
-            let binaryPath: string;
-            let downloadNotice: Notice | undefined;
-            try {
-                binaryPath = await this.binaryManager.ensureBinary((msg, url) => {
-                    this.updateStatusBar(`lilbee: ${msg}`, DOT_STATE.PRIMARY);
-                    onProgress?.({ phase: "downloading", message: msg, url });
-                    if (!downloadNotice && needsDownload) {
-                        const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
-                        downloadNotice = new Notice(text, NOTICE_PERMANENT);
-                    } else if (downloadNotice) {
-                        const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
-                        downloadNotice.setMessage(text);
-                    }
-                });
-                downloadNotice?.hide();
-            } catch (err) {
-                downloadNotice?.hide();
-                this.showError("failed to download server", err);
-                onProgress?.({ phase: "error", message: errorMessage(err, String(err)) });
-                return;
-            } finally {
-                this.setStatusClass(null);
-            }
-
-            if (needsDownload && !this.settings.lilbeeVersion) {
-                try {
-                    const release = await getLatestRelease();
-                    this.settings.lilbeeVersion = release.tag;
-                    await this.persistAll();
-                } catch {
-                    /* version tracking is best-effort */
-                }
-            }
+            const sharedRoot = registry.sharedRoot;
+            this.binaryManager = new BinaryManager(sharedBinDir(sharedRoot));
+            const binaryPath = await this.ensureBinaryWithUi(onProgress);
+            if (binaryPath === null) return;
+            await this.recordLilbeeVersionAfterDownload();
 
             try {
-                this.serverManager = new ServerManager({
-                    binaryPath,
-                    dataDir: `${pluginDir}/server-data`,
-                    ragSystemPrompt: this.settings.ragSystemPrompt,
-                    generalSystemPrompt: this.settings.generalSystemPrompt,
-                    onStateChange: (state) => this.handleServerStateChange(state),
-                    onRestartsExhausted: (stderr: string) => {
-                        if (this.serverStartFailed) return;
-                        const detail = stderr ? `\n${stderr.split("\n").slice(-5).join("\n")}` : "";
-                        new Notice(`${MESSAGES.ERROR_SERVER_CRASHED}${detail}`, NOTICE_PERMANENT);
-                    },
-                    onShutdownFailure: (err: Error) => {
-                        new Notice(`${MESSAGES.ERROR_SERVER_SHUTDOWN_FAILED}: ${err.message}`);
-                    },
-                });
-
+                this.serverManager = this.buildServerManager(binaryPath, registry, sharedRoot);
                 this.updateStatusBar(MESSAGES.STATUS_STARTING, DOT_STATE.PRIMARY);
                 this.setStatusClass("lilbee-status-starting");
                 onProgress?.({ phase: "starting", message: MESSAGES.STATUS_STARTING_SERVER });
@@ -385,6 +343,7 @@ export default class LilbeePlugin extends Plugin {
                 this.configureApi(this.serverManager.serverUrl);
                 this.fetchActiveModel();
                 void this.configureManagedStorage();
+                this.recordReadyState();
                 onProgress?.({ phase: "ready", message: "" });
             } catch (err) {
                 this.showError("failed to start server", err);
@@ -393,6 +352,141 @@ export default class LilbeePlugin extends Plugin {
         } finally {
             this.startingServer = false;
         }
+    }
+
+    private buildServerManager(binaryPath: string, registry: VaultRegistry, sharedRoot: string): ServerManager {
+        return new ServerManager({
+            binaryPath,
+            dataDir: registry.resolveDataDir(this.vaultId),
+            modelsDir: sharedModelsDir(sharedRoot),
+            ragSystemPrompt: this.settings.ragSystemPrompt,
+            generalSystemPrompt: this.settings.generalSystemPrompt,
+            onStateChange: (state) => this.handleServerStateChange(state),
+            onRestartsExhausted: (stderr: string) => {
+                if (this.serverStartFailed) return;
+                const detail = stderr ? `\n${stderr.split("\n").slice(-5).join("\n")}` : "";
+                new Notice(`${MESSAGES.ERROR_SERVER_CRASHED}${detail}`, NOTICE_PERMANENT);
+            },
+            onShutdownFailure: (err: Error) => {
+                new Notice(`${MESSAGES.ERROR_SERVER_SHUTDOWN_FAILED}: ${err.message}`);
+            },
+        });
+    }
+
+    /** Decide who owns the shared root and (if not us) ask the user. */
+    private async acquireLockOrBail(
+        registry: VaultRegistry,
+        onProgress?: ManagedServerProgressHandler,
+    ): Promise<boolean> {
+        const state = registry.lockState(this.vaultId);
+        if (state === LOCK_STATE.LIVE_OTHER) {
+            const owner = registry.readLock();
+            const ownerName = owner ? this.lookupVaultName(owner.vaultId) : "another vault";
+            const takeOver = await this.confirmTakeOver(ownerName);
+            if (!takeOver) {
+                new Notice(MESSAGES.NOTICE_TAKE_OVER_DECLINED(ownerName));
+                this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
+                onProgress?.({ phase: "error", message: MESSAGES.NOTICE_TAKE_OVER_DECLINED(ownerName) });
+                return false;
+            }
+            if (!(await this.terminateOwningProcess(owner))) {
+                new Notice(MESSAGES.NOTICE_TAKE_OVER_TIMEOUT);
+                return false;
+            }
+            new Notice(MESSAGES.NOTICE_TAKE_OVER_SUCCESS(ownerName));
+        }
+        return true;
+    }
+
+    private async confirmTakeOver(ownerName: string): Promise<boolean> {
+        const modal = new ConfirmModal(this.app, MESSAGES.CONFIRM_TAKE_OVER(ownerName));
+        modal.open();
+        return modal.result;
+    }
+
+    private lookupVaultName(vaultId: string): string {
+        return this.vaultRegistry?.get(vaultId)?.displayName ?? "another vault";
+    }
+
+    private async terminateOwningProcess(owner: ActiveLock | null): Promise<boolean> {
+        if (!owner) return true;
+        try {
+            node.processKill(owner.pid);
+        } catch {
+            // already gone — fine
+        }
+        for (let i = 0; i < 50; i++) {
+            try {
+                node.processKill(owner.pid, 0);
+            } catch {
+                return true;
+            }
+            await new Promise((r) => setTimeout(r, 100));
+        }
+        return false;
+    }
+
+    private async ensureBinaryWithUi(onProgress?: ManagedServerProgressHandler): Promise<string | null> {
+        const bm = this.binaryManager;
+        if (!bm) return null;
+        const needsDownload = !bm.binaryExists();
+        if (needsDownload) {
+            this.updateStatusBar(MESSAGES.STATUS_DOWNLOADING, DOT_STATE.PRIMARY);
+            this.setStatusClass("lilbee-status-downloading");
+            onProgress?.({ phase: "downloading", message: MESSAGES.STATUS_DOWNLOADING });
+        }
+        let downloadNotice: Notice | undefined;
+        try {
+            const path = await bm.ensureBinary((msg, url) => {
+                this.updateStatusBar(`lilbee: ${msg}`, DOT_STATE.PRIMARY);
+                onProgress?.({ phase: "downloading", message: msg, url });
+                if (!downloadNotice && needsDownload) {
+                    const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
+                    downloadNotice = new Notice(text, NOTICE_PERMANENT);
+                } else if (downloadNotice) {
+                    const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
+                    downloadNotice.setMessage(text);
+                }
+            });
+            downloadNotice?.hide();
+            this.setStatusClass(null);
+            return path;
+        } catch (err) {
+            downloadNotice?.hide();
+            this.setStatusClass(null);
+            this.showError("failed to download server", err);
+            onProgress?.({ phase: "error", message: errorMessage(err, String(err)) });
+            return null;
+        }
+    }
+
+    private async recordLilbeeVersionAfterDownload(): Promise<void> {
+        if (this.getSharedLilbeeVersion()) return;
+        try {
+            const release = await getLatestRelease();
+            this.setSharedLilbeeVersion(release.tag);
+        } catch {
+            /* version tracking is best-effort */
+        }
+    }
+
+    /** Persist lock + registry entry once the server is up. */
+    private recordReadyState(): void {
+        const sm = this.serverManager;
+        const registry = this.vaultRegistry;
+        if (!sm || !registry) return;
+        const port = parseInt(sm.serverUrl.split(":").pop() || "0", 10);
+        const now = Date.now();
+        registry.writeLock({ vaultId: this.vaultId, pid: process.pid, port, startedAt: now });
+        const existing = registry.get(this.vaultId);
+        registry.upsert({
+            id: this.vaultId,
+            displayName: existing?.displayName ?? this.getVaultDisplayName(),
+            dataDir: sm.dataDir,
+            obsidianVaultPath: this.getVaultBasePath(),
+            addedAt: existing?.addedAt ?? now,
+            lastActiveAt: now,
+        });
     }
 
     /**
@@ -443,16 +537,17 @@ export default class LilbeePlugin extends Plugin {
 
     async checkForUpdate(): Promise<{ available: boolean; release?: ReleaseInfo }> {
         const release = await getLatestRelease();
-        if (checkForUpdate(this.settings.lilbeeVersion, release.tag)) {
+        if (checkForUpdate(this.getSharedLilbeeVersion(), release.tag)) {
             return { available: true, release };
         }
         return { available: false };
     }
 
     async updateServer(release: ReleaseInfo, onProgress?: (msg: string) => void): Promise<void> {
-        const pluginDir = this.getPluginDir();
+        const registry = this.vaultRegistry;
+        if (!registry) return;
         if (!this.binaryManager) {
-            this.binaryManager = new BinaryManager(pluginDir);
+            this.binaryManager = new BinaryManager(sharedBinDir(registry.sharedRoot));
         }
 
         // Stop the running server first
@@ -467,8 +562,7 @@ export default class LilbeePlugin extends Plugin {
         await this.binaryManager.download(release.assetUrl, onProgress);
 
         // Save the new version
-        this.settings.lilbeeVersion = release.tag;
-        await this.persistAll();
+        this.setSharedLilbeeVersion(release.tag);
 
         // Restart if in managed mode
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
@@ -523,10 +617,6 @@ export default class LilbeePlugin extends Plugin {
                 this.setStatusClass(null);
                 break;
         }
-    }
-
-    private getPluginDir(): string {
-        return `${this.getVaultBasePath()}/.obsidian/plugins/lilbee`;
     }
 
     private getVaultBasePath(): string {
@@ -740,6 +830,73 @@ export default class LilbeePlugin extends Plugin {
             name: "Show status",
             callback: () => new StatusModal(this.app, this).open(),
         });
+
+        this.addCommand({
+            id: "lilbee:take-over",
+            name: MESSAGES.COMMAND_TAKE_OVER,
+            checkCallback: (checking) => {
+                if (this.settings.serverMode !== SERVER_MODE.MANAGED) return false;
+                if (this.serverManager !== null) return false;
+                if (!checking) void this.startManagedServer();
+                return true;
+            },
+        });
+
+        this.addCommand({
+            id: "lilbee:switch-vault",
+            name: MESSAGES.COMMAND_SWITCH_VAULT,
+            checkCallback: (checking) => {
+                if (this.settings.serverMode !== SERVER_MODE.MANAGED) return false;
+                if (!this.vaultRegistry) return false;
+                if (!checking) void this.openVaultPicker();
+                return true;
+            },
+        });
+    }
+
+    private async openVaultPicker(): Promise<void> {
+        const registry = this.vaultRegistry;
+        if (!registry) return;
+        const others = registry.list().filter((e) => e.id !== this.vaultId);
+        new VaultPickerModal(this.app, others, (picked) => void this.releaseFor(picked)).open();
+    }
+
+    /**
+     * Re-point this vault at a different lilbee data-dir. Used by Settings →
+     * "Use existing lilbee data directory" so a user can adopt an existing
+     * `lilbee serve` data-dir or one they moved manually from the old layout.
+     */
+    async adoptDataDir(dataDir: string): Promise<void> {
+        const registry = this.vaultRegistry;
+        if (!registry) return;
+        const existing = registry.get(this.vaultId);
+        const now = Date.now();
+        registry.upsert({
+            id: this.vaultId,
+            displayName: existing?.displayName ?? this.getVaultDisplayName(),
+            dataDir,
+            obsidianVaultPath: this.getVaultBasePath(),
+            addedAt: existing?.addedAt ?? now,
+            lastActiveAt: now,
+        });
+        if (this.serverManager) {
+            await this.serverManager.stop();
+            this.serverManager = null;
+        }
+        if (this.settings.serverMode === SERVER_MODE.MANAGED) {
+            await this.startManagedServer();
+        }
+    }
+
+    private async releaseFor(picked: VaultRegistryEntry): Promise<void> {
+        if (this.serverManager) {
+            await this.serverManager.stop();
+            this.serverManager = null;
+        }
+        this.vaultRegistry?.releaseLock(this.vaultId);
+        new Notice(MESSAGES.NOTICE_RELEASED_FOR_VAULT(picked.displayName));
+        this.updateStatusBar(MESSAGES.STATUS_STOPPED, DOT_STATE.MUTED);
+        this.setStatusClass(null);
     }
 
     onunload(): void {
@@ -750,6 +907,7 @@ export default class LilbeePlugin extends Plugin {
         this.syncHintEl = null;
         this.taskQueue.dispose();
         void this.serverManager?.stop();
+        this.vaultRegistry?.releaseLock(this.vaultId);
     }
 
     async loadSettings(): Promise<void> {
@@ -757,6 +915,34 @@ export default class LilbeePlugin extends Plugin {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, raw ?? {});
         this.previousServerMode = this.settings.serverMode;
         this.taskQueue.loadFromJSON(raw?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
+        this.vaultId = computeVaultId(this.getVaultBasePath());
+        this.vaultRegistry = new VaultRegistry(resolveSharedRoot(this.settings.sharedRoot));
+    }
+
+    getSharedLilbeeVersion(): string {
+        return this.vaultRegistry?.loadConfig().lilbeeVersion ?? "";
+    }
+
+    setSharedLilbeeVersion(version: string): void {
+        const reg = this.vaultRegistry;
+        if (!reg) return;
+        reg.saveConfig({ ...reg.loadConfig(), lilbeeVersion: version });
+    }
+
+    getSharedHfToken(): string {
+        return this.vaultRegistry?.loadConfig().hfToken ?? "";
+    }
+
+    setSharedHfToken(token: string): void {
+        const reg = this.vaultRegistry;
+        if (!reg) return;
+        reg.saveConfig({ ...reg.loadConfig(), hfToken: token });
+    }
+
+    private getVaultDisplayName(): string {
+        const path = this.getVaultBasePath();
+        const base = path.split("/").filter(Boolean).pop();
+        return base ?? "vault";
     }
 
     private async persistAll(): Promise<void> {

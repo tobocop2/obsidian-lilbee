@@ -49,7 +49,7 @@ describe("MESSAGES", () => {
             expect(MESSAGES.LABEL_SIZE_ASC).toBe("Size (asc)");
             expect(MESSAGES.LABEL_SIZE_DESC).toBe("Size (desc)");
             expect(MESSAGES.LABEL_ACTIVE).toBe("Active");
-            expect(MESSAGES.LABEL_INSTALLED).toBe("Installed");
+            expect(MESSAGES.LABEL_INSTALLED).toBe("Installed (shared)");
             expect(MESSAGES.LABEL_NOT_INSTALLED).toBe(" (not installed)");
             expect(MESSAGES.LABEL_MODEL).toBe("Model");
             expect(MESSAGES.LABEL_SIZE).toBe("Size");

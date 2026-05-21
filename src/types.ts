@@ -243,7 +243,6 @@ export interface LilbeeSettings {
     maxDistance: number;
     adaptiveThreshold: boolean;
     serverMode: ServerMode;
-    lilbeeVersion: string;
     ragSystemPrompt: string;
     generalSystemPrompt: string;
     setupCompleted: boolean;
@@ -253,7 +252,6 @@ export interface LilbeeSettings {
     searchChunkType: SearchChunkType;
     wikiSyncToVault: boolean;
     wikiVaultFolder: string;
-    hfToken: string;
     enableOcr: boolean | null;
     manualToken: string;
     /**
@@ -270,6 +268,13 @@ export interface LilbeeSettings {
      * this in Settings → Connection.
      */
     autoOpenCockpit: boolean;
+    /**
+     * Filesystem root that holds the shared lilbee binary, models cache, and
+     * per-vault data directories. Empty string means "use platform default"
+     * (resolved via getDefaultLilbeeDataRoot). Set explicitly to point the
+     * plugin at a different location (e.g. an external SSD).
+     */
+    sharedRoot: string;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -278,7 +283,6 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     maxDistance: 0.9,
     adaptiveThreshold: false,
     serverMode: "managed",
-    lilbeeVersion: "",
     ragSystemPrompt: "",
     generalSystemPrompt: "",
     setupCompleted: false,
@@ -288,13 +292,65 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     searchChunkType: "raw",
     wikiSyncToVault: false,
     wikiVaultFolder: "lilbee-wiki",
-    hfToken: "",
     enableOcr: null,
     manualToken: "",
     storeContentInVault: true,
     lastCatalogTab: "discover",
     autoOpenCockpit: true,
+    sharedRoot: "",
 };
+
+/**
+ * Cross-vault state that lives in `<shared-root>/config.json`. These fields
+ * used to be per-vault but the binary and the HuggingFace cache they describe
+ * are shared, so they must agree across all vaults using this shared root.
+ */
+export interface SharedConfig {
+    lilbeeVersion: string;
+    hfToken: string;
+}
+
+export const DEFAULT_SHARED_CONFIG: SharedConfig = {
+    lilbeeVersion: "",
+    hfToken: "",
+};
+
+/** One row in `<shared-root>/registry.json` — one per Obsidian vault. */
+export interface VaultRegistryEntry {
+    id: string;
+    displayName: string;
+    dataDir: string;
+    obsidianVaultPath: string;
+    addedAt: number;
+    lastActiveAt: number;
+}
+
+/** Contents of `<shared-root>/active.lock` — only one vault holds it. */
+export interface ActiveLock {
+    vaultId: string;
+    pid: number;
+    port: number;
+    startedAt: number;
+}
+
+export type LockState = "none" | "ours" | "stale" | "live_other";
+
+export const LOCK_STATE = {
+    NONE: "none",
+    OURS: "ours",
+    STALE: "stale",
+    LIVE_OTHER: "live_other",
+} as const satisfies Record<string, LockState>;
+
+/** Names of files/dirs the plugin writes inside the shared root. */
+export const SHARED_PATH = {
+    BIN: "bin",
+    MODELS: "models",
+    VAULTS: "vaults",
+    CONFIG: "config.json",
+    REGISTRY: "registry.json",
+    LOCK: "active.lock",
+} as const;
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */
 export const SSE_EVENT = {

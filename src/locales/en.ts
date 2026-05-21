@@ -51,7 +51,7 @@ export const MESSAGES = {
     LABEL_SIZE_ASC: "Size (asc)",
     LABEL_SIZE_DESC: "Size (desc)",
     LABEL_ACTIVE: "Active",
-    LABEL_INSTALLED: "Installed",
+    LABEL_INSTALLED: "Installed (shared)",
     LABEL_NOT_INSTALLED: " (not installed)",
     LABEL_MODEL: "Model",
     LABEL_SIZE: "Size",
@@ -181,6 +181,52 @@ export const MESSAGES = {
     NOTICE_STORAGE_REORGANIZING: "Reorganizing lilbee storage into your vault…",
     NOTICE_STORAGE_REORGANIZED: "Lilbee storage is now inside your vault.",
     NOTICE_STORAGE_REORGANIZE_FAILED: "Could not move lilbee storage into your vault: ",
+    NOTICE_TAKE_OVER_SUCCESS: (vaultName: string): string => `lilbee switched from "${vaultName}" to this vault.`,
+    NOTICE_TAKE_OVER_DECLINED: (vaultName: string): string =>
+        `lilbee stays with "${vaultName}". This vault will run without managed lilbee until you take over or close the other vault.`,
+    NOTICE_TAKE_OVER_TIMEOUT:
+        "The other lilbee process did not shut down in time. Try again, or close the other Obsidian window first.",
+    CONFIRM_TAKE_OVER: (vaultName: string): string =>
+        `lilbee is currently serving "${vaultName}". Switch it to this vault? The other vault will lose its lilbee connection until you reopen it.`,
+    STATUS_LOCKED_BY_OTHER: (vaultName: string): string => `lilbee: serving "${vaultName}"`,
+    COMMAND_TAKE_OVER: "Take over the managed lilbee server",
+    TOOLTIP_MODEL_INSTALLED_SHARED:
+        "Installed in the shared lilbee models directory — every vault on this computer can use it without re-downloading.",
+    COMMAND_SWITCH_VAULT: "Switch lilbee to another vault",
+    TITLE_VAULT_PICKER: "Switch lilbee to another vault",
+    DESC_VAULT_PICKER:
+        "Pick a vault from your shared lilbee installation. The managed lilbee will stop here so the picked vault can take over — open it in Obsidian to claim it.",
+    EMPTY_VAULT_PICKER: "No other vaults registered yet. Open another Obsidian vault with the lilbee plugin first.",
+    LABEL_VAULT_NEVER_ACTIVE: "never active",
+    LABEL_VAULT_ACTIVE_RECENTLY: "active just now",
+    LABEL_VAULT_ACTIVE_MINUTES: (n: number): string => (n === 1 ? "active 1 minute ago" : `active ${n} minutes ago`),
+    LABEL_VAULT_ACTIVE_HOURS: (n: number): string => (n === 1 ? "active 1 hour ago" : `active ${n} hours ago`),
+    LABEL_VAULT_ACTIVE_DAYS: (n: number): string => (n === 1 ? "active 1 day ago" : `active ${n} days ago`),
+    NOTICE_RELEASED_FOR_VAULT: (vaultName: string): string =>
+        `lilbee released — open "${vaultName}" in Obsidian to take it over.`,
+    LABEL_SHARED_ROOT: "Shared lilbee directory",
+    DESC_SHARED_ROOT: (resolved: string): string =>
+        `Holds the lilbee binary, model cache, and one subfolder per vault. Leave blank to use the platform default (currently ${resolved}). Restart the plugin or Obsidian for changes to take effect.`,
+    LABEL_ADOPT_DATA_DIR: "Use existing lilbee data directory",
+    DESC_ADOPT_DATA_DIR:
+        "Point this vault at a lilbee data directory you already have on disk (e.g. one moved from the old per-vault location, or one created by `lilbee serve`). The plugin restarts the managed server against the new path.",
+    PLACEHOLDER_ADOPT_DATA_DIR: "/path/to/lilbee/data-dir",
+    BUTTON_ADOPT_DATA_DIR: "Use this folder",
+    NOTICE_ADOPT_DATA_DIR_BLANK: "Enter a path first.",
+    NOTICE_ADOPT_DATA_DIR_DONE: (path: string): string => `lilbee now uses ${path} for this vault.`,
+    LABEL_REGISTERED_VAULTS: "Registered vaults",
+    DESC_REGISTERED_VAULTS:
+        "Every Obsidian vault that has connected to this shared lilbee, with the data-dir it uses. Remove a vault to drop its entry from the registry; this does not delete its data on disk.",
+    LABEL_REGISTERED_VAULTS_EMPTY: "No vaults registered yet — open the chat or run a sync to register this one.",
+    LABEL_VAULT_ROW_CURRENT: (name: string): string => `${name} (this vault)`,
+    BUTTON_REMOVE_VAULT: "Remove",
+    TOOLTIP_REMOVE_VAULT:
+        "Forget this vault from the registry. The data directory stays on disk so you can re-register it later.",
+    LABEL_STORAGE_REPORT: "Disk usage",
+    DESC_STORAGE_REPORT: "How much of the shared lilbee directory each piece is using right now.",
+    LABEL_STORAGE_BIN: "Binary",
+    LABEL_STORAGE_MODELS: "Models cache",
+    LABEL_STORAGE_TOTAL: "Total",
     LABEL_EMBEDDING_MODEL: "Embedding model",
     LABEL_RERANKER_TITLE: "Reranker model",
     LABEL_RERANKER_DISABLED: "(disabled)",

@@ -43,7 +43,7 @@ describe("integration: binary download", () => {
     let bm: BinaryManager;
 
     it("downloads the binary from GitHub releases", async () => {
-        bm = new BinaryManager(tempDir);
+        bm = new BinaryManager(`${tempDir}/bin`);
         const path = await bm.ensureBinary();
 
         expect(existsSync(path)).toBe(true);
@@ -60,13 +60,13 @@ describe("integration: binary download", () => {
 
 describe("integration: server start", () => {
     it("starts the server and reaches ready state", async () => {
-        const bm = new BinaryManager(tempDir);
+        const bm = new BinaryManager(`${tempDir}/bin`);
         if (!bm.binaryExists()) return; // skip if download failed
 
         const sm = new ServerManager({
             binaryPath: bm.binaryPath,
             dataDir: tempDir,
-            port: null,
+            modelsDir: `${tempDir}/models`,
             ragSystemPrompt: "",
             generalSystemPrompt: "",
         });
