@@ -10,17 +10,42 @@
 
   1. **Close Obsidian.**
   2. **Move your existing data over (optional, preserves the index):**
+
+     macOS:
      ```bash
-     # macOS / Linux. Replace <vault> with your Obsidian vault path.
      mkdir -p ~/Library/Application\ Support/Lilbee/vaults
      mv "<vault>/.obsidian/plugins/lilbee/server-data" \
         ~/Library/Application\ Support/Lilbee/vaults/legacy
      ```
-     The plugin will pick this up when you register the vault (Settings → Connection → "Use existing lilbee data directory").
-  3. **Or just delete the leftovers (loses the existing index — rebuild on next sync):**
+
+     Linux:
+     ```bash
+     mkdir -p ~/.local/share/lilbee/vaults
+     mv "<vault>/.obsidian/plugins/lilbee/server-data" \
+        ~/.local/share/lilbee/vaults/legacy
+     ```
+
+     Windows PowerShell:
+     ```powershell
+     New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Lilbee\vaults" | Out-Null
+     Move-Item "<vault>\.obsidian\plugins\lilbee\server-data" `
+       "$env:LOCALAPPDATA\Lilbee\vaults\legacy"
+     ```
+
+     After moving, open the vault in Obsidian and paste the destination path into Settings → Connection → "Use existing lilbee data directory" → "Use this folder".
+
+  3. **Or just delete the leftovers** (loses the existing index — rebuild on next sync):
+
+     macOS / Linux:
      ```bash
      rm -rf "<vault>/.obsidian/plugins/lilbee/server-data" \
             "<vault>/.obsidian/plugins/lilbee/bin"
+     ```
+
+     Windows PowerShell:
+     ```powershell
+     Remove-Item -Recurse -Force "<vault>\.obsidian\plugins\lilbee\server-data"
+     Remove-Item -Recurse -Force "<vault>\.obsidian\plugins\lilbee\bin"
      ```
 
   After cleanup the plugin starts with one binary download and one model download that every vault on the machine shares.
