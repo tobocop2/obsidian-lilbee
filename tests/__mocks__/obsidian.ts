@@ -763,6 +763,9 @@ class MockButtonComponent {
     setDisabled(_disabled: boolean): this {
         return this;
     }
+    setTooltip(_text: string): this {
+        return this;
+    }
     setWarning(): this {
         this.warning = true;
         return this;

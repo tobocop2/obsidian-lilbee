@@ -51,7 +51,7 @@ export const MESSAGES = {
     LABEL_SIZE_ASC: "Size (asc)",
     LABEL_SIZE_DESC: "Size (desc)",
     LABEL_ACTIVE: "Active",
-    LABEL_INSTALLED: "Installed",
+    LABEL_INSTALLED: "Installed (shared)",
     LABEL_NOT_INSTALLED: " (not installed)",
     LABEL_MODEL: "Model",
     LABEL_SIZE: "Size",
@@ -204,6 +204,22 @@ export const MESSAGES = {
     LABEL_VAULT_ACTIVE_DAYS: (n: number): string => (n === 1 ? "active 1 day ago" : `active ${n} days ago`),
     NOTICE_RELEASED_FOR_VAULT: (vaultName: string): string =>
         `lilbee released — open "${vaultName}" in Obsidian to take it over.`,
+    LABEL_SHARED_ROOT: "Shared lilbee directory",
+    DESC_SHARED_ROOT: (resolved: string): string =>
+        `Holds the lilbee binary, model cache, and one subfolder per vault. Leave blank to use the platform default (currently ${resolved}). Restart the plugin or Obsidian for changes to take effect.`,
+    LABEL_REGISTERED_VAULTS: "Registered vaults",
+    DESC_REGISTERED_VAULTS:
+        "Every Obsidian vault that has connected to this shared lilbee, with the data-dir it uses. Remove a vault to drop its entry from the registry; this does not delete its data on disk.",
+    LABEL_REGISTERED_VAULTS_EMPTY: "No vaults registered yet — open the chat or run a sync to register this one.",
+    LABEL_VAULT_ROW_CURRENT: (name: string): string => `${name} (this vault)`,
+    BUTTON_REMOVE_VAULT: "Remove",
+    TOOLTIP_REMOVE_VAULT:
+        "Forget this vault from the registry. The data directory stays on disk so you can re-register it later.",
+    LABEL_STORAGE_REPORT: "Disk usage",
+    DESC_STORAGE_REPORT: "How much of the shared lilbee directory each piece is using right now.",
+    LABEL_STORAGE_BIN: "Binary",
+    LABEL_STORAGE_MODELS: "Models cache",
+    LABEL_STORAGE_TOTAL: "Total",
     LABEL_EMBEDDING_MODEL: "Embedding model",
     LABEL_RERANKER_TITLE: "Reranker model",
     LABEL_RERANKER_DISABLED: "(disabled)",
