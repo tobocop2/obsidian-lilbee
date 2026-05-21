@@ -117,7 +117,7 @@ vi.mock("../src/server-manager", () => {
 import LilbeePlugin from "../src/main";
 import { App, Notice } from "obsidian";
 import { node } from "../src/binary-manager";
-import { SHARED_PATH, MIGRATION_RESULT } from "../src/types";
+import { SHARED_PATH } from "../src/types";
 
 async function createPlugin() {
     const app = new App() as any;
@@ -324,53 +324,6 @@ describe("acquireLockOrBail", () => {
     });
 });
 
-describe("runStartupMigration", () => {
-    it("is a no-op in external mode", async () => {
-        const plugin = await createPlugin();
-        plugin.settings.serverMode = "external";
-        await (plugin as any).runStartupMigration();
-        expect(plugin.vaultRegistry!.list()).toEqual([]);
-    });
-
-    it("emits a notice on successful migration and clears legacy fields", async () => {
-        const plugin = await createPlugin();
-        plugin.settings.serverMode = "managed";
-        (plugin as any).legacyVersionAndToken = { lilbeeVersion: "v0.4.0", hfToken: "hf_x" };
-        const migration = await import("../src/migration");
-        vi.spyOn(migration, "migrateIfNeeded").mockResolvedValue(MIGRATION_RESULT.MIGRATED);
-        (plugin as any).persistAll = vi.fn().mockResolvedValue(undefined);
-        await (plugin as any).runStartupMigration();
-        expect((plugin as any).legacyVersionAndToken).toEqual({});
-        expect(Notice.instances.some((n) => n.message.includes("Moved this vault"))).toBe(true);
-    });
-
-    it("emits a notice when the user declines a cross-fs migration", async () => {
-        const plugin = await createPlugin();
-        plugin.settings.serverMode = "managed";
-        const migration = await import("../src/migration");
-        vi.spyOn(migration, "migrateIfNeeded").mockResolvedValue(MIGRATION_RESULT.CROSS_FS_DECLINED);
-        await (plugin as any).runStartupMigration();
-        expect(Notice.instances.some((n) => n.message.includes("Skipped the move"))).toBe(true);
-    });
-
-    it("is silent when there is nothing to migrate", async () => {
-        const plugin = await createPlugin();
-        plugin.settings.serverMode = "managed";
-        const migration = await import("../src/migration");
-        vi.spyOn(migration, "migrateIfNeeded").mockResolvedValue(MIGRATION_RESULT.NONE);
-        await (plugin as any).runStartupMigration();
-        expect(Notice.instances).toEqual([]);
-    });
-
-    it("does nothing when vaultRegistry is unset", async () => {
-        const plugin = await createPlugin();
-        plugin.settings.serverMode = "managed";
-        (plugin as any).vaultRegistry = null;
-        await (plugin as any).runStartupMigration();
-        expect(Notice.instances).toEqual([]);
-    });
-});
-
 describe("confirmTakeOver", () => {
     it("opens a ConfirmModal showing the owning vault name", async () => {
         const plugin = await createPlugin();
@@ -403,19 +356,6 @@ describe("terminateOwningProcess", () => {
             port: 1,
             startedAt: 1,
         });
-        expect(result).toBe(true);
-    });
-});
-
-describe("confirmCrossFsMigration", () => {
-    it("opens a ConfirmModal with a size in MB", async () => {
-        const plugin = await createPlugin();
-        const { ConfirmModal } = await import("../src/views/confirm-modal");
-        const openSpy = vi.spyOn(ConfirmModal.prototype, "open").mockImplementation(function (this: any) {
-            this._resolve?.(true);
-        });
-        const result = await (plugin as any).confirmCrossFsMigration(2_500_000);
-        expect(openSpy).toHaveBeenCalled();
         expect(result).toBe(true);
     });
 });
@@ -568,32 +508,84 @@ describe("Shared-root layout integration", () => {
         expect(plugin.vaultRegistry!.sharedRoot).toMatch(/lilbee/);
         expect(plugin.vaultId).toMatch(/^[a-f0-9]{12}$/);
     });
+});
 
-    it("loadSettings stashes legacy lilbeeVersion + hfToken for the migration step", async () => {
-        const app = new App() as any;
-        app.vault.adapter.getBasePath = () => "/Users/tester/MyVault";
-        const plugin = new LilbeePlugin(app, { id: "lilbee" } as any);
-        (plugin as any).loadData = vi.fn().mockResolvedValue({
-            lilbeeVersion: "v0.4.0",
-            hfToken: "hf_old",
+describe("openVaultPicker", () => {
+    it("opens the picker with every registered vault except our own", async () => {
+        const plugin = await createPlugin();
+        const reg = plugin.vaultRegistry!;
+        reg.upsert({
+            id: plugin.vaultId,
+            displayName: "Me",
+            dataDir: "/shared/vaults/me",
+            obsidianVaultPath: "/Users/tester/MyVault",
+            addedAt: 1,
+            lastActiveAt: 1,
         });
-        await plugin.loadSettings();
-        expect((plugin as any).legacyVersionAndToken).toEqual({ lilbeeVersion: "v0.4.0", hfToken: "hf_old" });
+        reg.upsert({
+            id: "other",
+            displayName: "Personal",
+            dataDir: "/shared/vaults/other",
+            obsidianVaultPath: "/Users/tester/Personal",
+            addedAt: 1,
+            lastActiveAt: 1,
+        });
+        const picker = await import("../src/views/vault-picker-modal");
+        let captured: any[] = [];
+        vi.spyOn(picker.VaultPickerModal.prototype, "open").mockImplementation(function (this: any) {
+            captured = this.entries;
+        });
+        await (plugin as any).openVaultPicker();
+        expect(captured.map((e) => e.id)).toEqual(["other"]);
     });
 
-    it("loadSettings ignores non-string legacy values", async () => {
-        const app = new App() as any;
-        app.vault.adapter.getBasePath = () => "/Users/tester/MyVault";
-        const plugin = new LilbeePlugin(app, { id: "lilbee" } as any);
-        (plugin as any).loadData = vi.fn().mockResolvedValue({
-            lilbeeVersion: 42,
-            hfToken: null,
+    it("is a no-op when the registry is unset", async () => {
+        const plugin = await createPlugin();
+        (plugin as any).vaultRegistry = null;
+        const picker = await import("../src/views/vault-picker-modal");
+        const openSpy = vi.spyOn(picker.VaultPickerModal.prototype, "open").mockImplementation(() => {});
+        await (plugin as any).openVaultPicker();
+        expect(openSpy).not.toHaveBeenCalled();
+    });
+
+    it("invokes releaseFor with the picked entry", async () => {
+        const plugin = await createPlugin();
+        plugin.vaultRegistry!.upsert({
+            id: "other",
+            displayName: "Personal",
+            dataDir: "/shared/vaults/other",
+            obsidianVaultPath: "/Users/tester/Personal",
+            addedAt: 1,
+            lastActiveAt: 1,
         });
-        await plugin.loadSettings();
-        expect((plugin as any).legacyVersionAndToken).toEqual({
-            lilbeeVersion: undefined,
-            hfToken: undefined,
+        const releaseSpy = vi.spyOn(plugin as any, "releaseFor").mockResolvedValue(undefined);
+        const picker = await import("../src/views/vault-picker-modal");
+        vi.spyOn(picker.VaultPickerModal.prototype, "open").mockImplementation(function (this: any) {
+            this.onPick(this.entries[0]);
         });
+        await (plugin as any).openVaultPicker();
+        expect(releaseSpy).toHaveBeenCalledWith(expect.objectContaining({ id: "other" }));
+    });
+});
+
+describe("releaseFor", () => {
+    it("stops the server, releases the lock, and surfaces a Notice naming the target", async () => {
+        const plugin = await createPlugin();
+        const stop = vi.fn().mockResolvedValue(undefined);
+        (plugin as any).serverManager = { stop, dataDir: "/x", serverUrl: "" };
+        const releaseSpy = vi.spyOn(plugin.vaultRegistry!, "releaseLock");
+        await (plugin as any).releaseFor({ id: "x", displayName: "Personal" });
+        expect(stop).toHaveBeenCalled();
+        expect(plugin.serverManager).toBeNull();
+        expect(releaseSpy).toHaveBeenCalledWith(plugin.vaultId);
+        expect(Notice.instances.some((n) => n.message.includes("Personal"))).toBe(true);
+    });
+
+    it("works when there is no live server to stop", async () => {
+        const plugin = await createPlugin();
+        (plugin as any).serverManager = null;
+        await (plugin as any).releaseFor({ id: "x", displayName: "Personal" });
+        expect(Notice.instances.some((n) => n.message.includes("Personal"))).toBe(true);
     });
 });
 

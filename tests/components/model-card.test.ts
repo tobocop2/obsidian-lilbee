@@ -79,6 +79,14 @@ describe("renderModelCard", () => {
             const label = card.find("lilbee-model-card-status-label");
             expect(label?.textContent).toBe(MESSAGES.LABEL_INSTALLED);
             expect(label?.classList.contains("is-installed")).toBe(true);
+            expect(label?.getAttribute("title")).toBe(MESSAGES.TOOLTIP_MODEL_INSTALLED_SHARED);
+        });
+
+        it("omits the shared-installed tooltip when the model is not installed", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry({ installed: false }), {}) as unknown as MockElement;
+            const label = card.find("lilbee-model-card-status-label");
+            expect(label?.getAttribute("title")).toBeNull();
         });
 
         it("renders an active dot+label when isActive is true", () => {

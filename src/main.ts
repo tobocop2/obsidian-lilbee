@@ -6,7 +6,6 @@ import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
 import { LilbeeSettingTab } from "./settings";
-import { migrateIfNeeded } from "./migration";
 import { VaultRegistry, computeVaultId, resolveSharedRoot, sharedBinDir, sharedModelsDir } from "./vault-registry";
 import {
     DEFAULT_SETTINGS,
@@ -31,6 +30,7 @@ import {
     type SyncOptions,
     type TaskEntry,
     type VaultAdapter,
+    type VaultRegistryEntry,
 } from "./types";
 import { MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
@@ -61,6 +61,7 @@ import { LintModal } from "./views/lint-modal";
 import { DraftModal } from "./views/draft-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { StatusModal } from "./views/status-modal";
+import { VaultPickerModal } from "./views/vault-picker-modal";
 import { TaskQueue, FLASH_WINDOW_MS as TASK_FLASH_WINDOW_MS } from "./task-queue";
 import { WikiSync } from "./wiki-sync";
 
@@ -226,7 +227,6 @@ export default class LilbeePlugin extends Plugin {
 
     async onload(): Promise<void> {
         await this.loadSettings();
-        await this.runStartupMigration();
         this.wikiEnabled = this.settings.wikiEnabled;
 
         this.statusBarEl = this.addStatusBarItem();
@@ -616,10 +616,6 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    private getPluginDir(): string {
-        return `${this.getVaultBasePath()}/.obsidian/plugins/lilbee`;
-    }
-
     private getVaultBasePath(): string {
         const adapter = this.app.vault.adapter as unknown as VaultAdapter;
         return adapter.getBasePath();
@@ -842,6 +838,35 @@ export default class LilbeePlugin extends Plugin {
                 return true;
             },
         });
+
+        this.addCommand({
+            id: "lilbee:switch-vault",
+            name: MESSAGES.COMMAND_SWITCH_VAULT,
+            checkCallback: (checking) => {
+                if (this.settings.serverMode !== SERVER_MODE.MANAGED) return false;
+                if (!this.vaultRegistry) return false;
+                if (!checking) void this.openVaultPicker();
+                return true;
+            },
+        });
+    }
+
+    private async openVaultPicker(): Promise<void> {
+        const registry = this.vaultRegistry;
+        if (!registry) return;
+        const others = registry.list().filter((e) => e.id !== this.vaultId);
+        new VaultPickerModal(this.app, others, (picked) => void this.releaseFor(picked)).open();
+    }
+
+    private async releaseFor(picked: VaultRegistryEntry): Promise<void> {
+        if (this.serverManager) {
+            await this.serverManager.stop();
+            this.serverManager = null;
+        }
+        this.vaultRegistry?.releaseLock(this.vaultId);
+        new Notice(MESSAGES.NOTICE_RELEASED_FOR_VAULT(picked.displayName));
+        this.updateStatusBar(MESSAGES.STATUS_STOPPED, DOT_STATE.MUTED);
+        this.setStatusClass(null);
     }
 
     onunload(): void {
@@ -855,61 +880,14 @@ export default class LilbeePlugin extends Plugin {
         this.vaultRegistry?.releaseLock(this.vaultId);
     }
 
-    /**
-     * One-shot relocation of `<vault>/.obsidian/plugins/lilbee/server-data` into
-     * the shared root. Runs once per vault before the server starts so the
-     * spawn uses the new path. Cross-filesystem cases prompt; same-fs is silent.
-     */
-    private async runStartupMigration(): Promise<void> {
-        if (this.settings.serverMode !== SERVER_MODE.MANAGED) return;
-        const registry = this.vaultRegistry;
-        if (!registry) return;
-        const result = await migrateIfNeeded({
-            pluginDir: this.getPluginDir(),
-            sharedRoot: registry.sharedRoot,
-            vaultId: this.vaultId,
-            displayName: this.getVaultDisplayName(),
-            obsidianVaultPath: this.getVaultBasePath(),
-            legacy: this.legacyVersionAndToken,
-            confirmCrossFs: this.confirmCrossFsMigration.bind(this),
-        });
-        if (result === "migrated") {
-            this.legacyVersionAndToken = {};
-            await this.persistAll();
-            new Notice(MESSAGES.NOTICE_MIGRATION_DONE, NOTICE_DURATION_MS);
-        } else if (result === "cross_fs_declined") {
-            new Notice(MESSAGES.NOTICE_MIGRATION_DECLINED, NOTICE_DURATION_MS);
-        }
-    }
-
-    private async confirmCrossFsMigration(bytes: number): Promise<boolean> {
-        const sizeMb = Math.ceil(bytes / 1_000_000);
-        const modal = new ConfirmModal(this.app, MESSAGES.CONFIRM_MIGRATE_CROSS_FS(sizeMb));
-        modal.open();
-        return modal.result;
-    }
-
     async loadSettings(): Promise<void> {
-        const raw = (await this.loadData()) as
-            | (LilbeeSettings & {
-                  taskHistory?: { history?: unknown[] };
-                  lilbeeVersion?: string;
-                  hfToken?: string;
-              })
-            | null;
+        const raw = (await this.loadData()) as (LilbeeSettings & { taskHistory?: { history?: unknown[] } }) | null;
         this.settings = Object.assign({}, DEFAULT_SETTINGS, raw ?? {});
         this.previousServerMode = this.settings.serverMode;
         this.taskQueue.loadFromJSON(raw?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
         this.vaultId = computeVaultId(this.getVaultBasePath());
         this.vaultRegistry = new VaultRegistry(resolveSharedRoot(this.settings.sharedRoot));
-        this.legacyVersionAndToken = {
-            lilbeeVersion: typeof raw?.lilbeeVersion === "string" ? raw.lilbeeVersion : undefined,
-            hfToken: typeof raw?.hfToken === "string" ? raw.hfToken : undefined,
-        };
     }
-
-    /** Per-vault `data.json` fields that the new layout has promoted to shared config. */
-    private legacyVersionAndToken: { lilbeeVersion?: string; hfToken?: string } = {};
 
     getSharedLilbeeVersion(): string {
         return this.vaultRegistry?.loadConfig().lilbeeVersion ?? "";

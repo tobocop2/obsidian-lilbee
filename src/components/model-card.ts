@@ -97,7 +97,13 @@ function renderCardStatus(card: HTMLElement, entry: CatalogEntry, options: Model
     const status = card.createDiv({ cls: "lilbee-model-card-status" });
     const tone = statusTone(entry, options);
     status.createEl("span", { cls: `lilbee-model-card-status-dot ${tone.dotCls}` });
-    status.createEl("span", { text: tone.label, cls: `lilbee-model-card-status-label ${tone.labelCls}` });
+    const label = status.createEl("span", {
+        text: tone.label,
+        cls: `lilbee-model-card-status-label ${tone.labelCls}`,
+    });
+    if (entry.installed) {
+        label.setAttribute("title", MESSAGES.TOOLTIP_MODEL_INSTALLED_SHARED);
+    }
     if (entry.fit && FIT_LABEL[entry.fit]) {
         status.createEl("span", {
             text: FIT_LABEL[entry.fit],

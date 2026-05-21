@@ -7,7 +7,6 @@ import {
     SERVER_MODE,
     DOWNLOAD_PANEL,
     LOCK_STATE,
-    MIGRATION_RESULT,
     SHARED_PATH,
 } from "../src/types";
 import type {
@@ -339,14 +338,6 @@ describe("LOCK_STATE constants", () => {
         expect(LOCK_STATE.OURS).toBe("ours");
         expect(LOCK_STATE.STALE).toBe("stale");
         expect(LOCK_STATE.LIVE_OTHER).toBe("live_other");
-    });
-});
-
-describe("MIGRATION_RESULT constants", () => {
-    it("covers every migration outcome", () => {
-        expect(MIGRATION_RESULT.NONE).toBe("none");
-        expect(MIGRATION_RESULT.MIGRATED).toBe("migrated");
-        expect(MIGRATION_RESULT.CROSS_FS_DECLINED).toBe("cross_fs_declined");
     });
 });
 

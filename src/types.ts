@@ -342,14 +342,6 @@ export const LOCK_STATE = {
     LIVE_OTHER: "live_other",
 } as const satisfies Record<string, LockState>;
 
-export type MigrationResult = "none" | "migrated" | "cross_fs_declined";
-
-export const MIGRATION_RESULT = {
-    NONE: "none",
-    MIGRATED: "migrated",
-    CROSS_FS_DECLINED: "cross_fs_declined",
-} as const satisfies Record<string, MigrationResult>;
-
 /** Names of files/dirs the plugin writes inside the shared root. */
 export const SHARED_PATH = {
     BIN: "bin",

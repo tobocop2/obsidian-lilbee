@@ -181,20 +181,29 @@ export const MESSAGES = {
     NOTICE_STORAGE_REORGANIZING: "Reorganizing lilbee storage into your vault…",
     NOTICE_STORAGE_REORGANIZED: "Lilbee storage is now inside your vault.",
     NOTICE_STORAGE_REORGANIZE_FAILED: "Could not move lilbee storage into your vault: ",
-    NOTICE_MIGRATION_DONE:
-        "Moved this vault's lilbee data to the shared location — models are now shared across your vaults.",
-    NOTICE_MIGRATION_DECLINED: "Skipped the move. This vault will keep its own copy of the lilbee data and models.",
     NOTICE_TAKE_OVER_SUCCESS: (vaultName: string): string => `lilbee switched from "${vaultName}" to this vault.`,
     NOTICE_TAKE_OVER_DECLINED: (vaultName: string): string =>
         `lilbee stays with "${vaultName}". This vault will run without managed lilbee until you take over or close the other vault.`,
     NOTICE_TAKE_OVER_TIMEOUT:
         "The other lilbee process did not shut down in time. Try again, or close the other Obsidian window first.",
-    CONFIRM_MIGRATE_CROSS_FS: (sizeMb: number): string =>
-        `Move ~${sizeMb} MB of lilbee data across disks? This may take several minutes. Skipping keeps this vault's lilbee data where it is and uses its own copy of the models.`,
     CONFIRM_TAKE_OVER: (vaultName: string): string =>
         `lilbee is currently serving "${vaultName}". Switch it to this vault? The other vault will lose its lilbee connection until you reopen it.`,
     STATUS_LOCKED_BY_OTHER: (vaultName: string): string => `lilbee: serving "${vaultName}"`,
     COMMAND_TAKE_OVER: "Take over the managed lilbee server",
+    TOOLTIP_MODEL_INSTALLED_SHARED:
+        "Installed in the shared lilbee models directory — every vault on this computer can use it without re-downloading.",
+    COMMAND_SWITCH_VAULT: "Switch lilbee to another vault",
+    TITLE_VAULT_PICKER: "Switch lilbee to another vault",
+    DESC_VAULT_PICKER:
+        "Pick a vault from your shared lilbee installation. The managed lilbee will stop here so the picked vault can take over — open it in Obsidian to claim it.",
+    EMPTY_VAULT_PICKER: "No other vaults registered yet. Open another Obsidian vault with the lilbee plugin first.",
+    LABEL_VAULT_NEVER_ACTIVE: "never active",
+    LABEL_VAULT_ACTIVE_RECENTLY: "active just now",
+    LABEL_VAULT_ACTIVE_MINUTES: (n: number): string => (n === 1 ? "active 1 minute ago" : `active ${n} minutes ago`),
+    LABEL_VAULT_ACTIVE_HOURS: (n: number): string => (n === 1 ? "active 1 hour ago" : `active ${n} hours ago`),
+    LABEL_VAULT_ACTIVE_DAYS: (n: number): string => (n === 1 ? "active 1 day ago" : `active ${n} days ago`),
+    NOTICE_RELEASED_FOR_VAULT: (vaultName: string): string =>
+        `lilbee released — open "${vaultName}" in Obsidian to take it over.`,
     LABEL_EMBEDDING_MODEL: "Embedding model",
     LABEL_RERANKER_TITLE: "Reranker model",
     LABEL_RERANKER_DISABLED: "(disabled)",
