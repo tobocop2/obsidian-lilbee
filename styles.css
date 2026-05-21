@@ -104,7 +104,7 @@
     font-weight: var(--font-medium, 500);
     border: none;
     margin: 2px 2px 0 0;
-    cursor: default;
+    cursor: pointer;
 }
 
 .lilbee-source-chip-grouped {
@@ -121,6 +121,7 @@
     padding: 0 6px;
     border-radius: 8px;
     background-color: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+    cursor: pointer;
 }
 
 .lilbee-source-chip-loc:hover {
