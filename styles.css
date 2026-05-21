@@ -540,12 +540,23 @@
     border-bottom: none;
 }
 
-/* Keep "Installed" pill + trash on one row at narrow column widths. */
+/* Keep the action cell a real <td> (display:flex on a <td> drops it
+ * out of the table layout and any wrapped text in adjacent cells
+ * misaligns the row). Lay the action contents out inside an inner
+ * flex container instead. */
 .lilbee-model-catalog td:last-child {
+    text-align: right;
+    white-space: nowrap;
+}
+.lilbee-model-actions {
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: var(--size-4-1, 4px);
+}
+
+/* Size column: keep "264.8 GB" on one line. */
+.lilbee-model-catalog td:nth-child(2) {
     white-space: nowrap;
 }
 

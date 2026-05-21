@@ -1084,7 +1084,9 @@ describe("LilbeeSettingTab", () => {
             (tab as any).renderChatCatalogRow(table, entry, LLAMA_REF);
             const row = (table as unknown as MockElement).children[0];
             const actionCell = row.children[3];
-            const badge = actionCell.children[0];
+            const actions = actionCell.children[0];
+            expect(actions.classList.contains("lilbee-model-actions")).toBe(true);
+            const badge = actions.children[0];
             expect(badge.textContent).toBe("Installed (shared)");
             expect(badge.classList.contains("lilbee-installed")).toBe(true);
         });
@@ -1097,7 +1099,9 @@ describe("LilbeeSettingTab", () => {
             (tab as any).renderChatCatalogRow(table, entry, "");
             const row = (table as unknown as MockElement).children[0];
             const actionCell = row.children[3];
-            const btn = actionCell.children[0];
+            const actions = actionCell.children[0];
+            expect(actions.classList.contains("lilbee-model-actions")).toBe(true);
+            const btn = actions.children[0];
             expect(btn.tagName).toBe("BUTTON");
             expect(btn.textContent).toBe("Pull");
         });
@@ -1123,7 +1127,8 @@ describe("LilbeeSettingTab", () => {
             (tab as any).renderChatCatalogRow(table, entry, active);
             const row = (table as unknown as MockElement).children[0];
             const actionCell = row.children[3];
-            const deleteBtn = actionCell.children[1];
+            const actions = actionCell.children[0];
+            const deleteBtn = actions.children[1];
             return { tab, deleteBtn, actionCell, entry };
         }
 
