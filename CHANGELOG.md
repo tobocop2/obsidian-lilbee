@@ -4,6 +4,56 @@
 
 ### Breaking changes
 
+- **Shared lilbee install replaces per-vault installs.** The plugin no longer keeps a separate lilbee binary, models cache, or data directory per Obsidian vault. Everything moves to a shared root (`~/Library/Application Support/Lilbee/` on macOS, `~/.local/share/lilbee/` on Linux, `%LOCALAPPDATA%\Lilbee\` on Windows). The binary lives in `<shared-root>/bin/`, downloaded models live in `<shared-root>/models/`, and each Obsidian vault has its own `vaults/<id>/` subfolder for its index, wiki, and config. The shared root path is configurable in Settings → Connection.
+
+  **No automatic migration.** Existing installs will spawn lilbee against the new shared root on first load and behave as a fresh install for indexing purposes. To recover disk space and (optionally) carry over your existing index, do this once per vault:
+
+  1. **Close Obsidian.**
+  2. **Move your existing data over (optional, preserves the index):**
+
+     macOS:
+     ```bash
+     mkdir -p ~/Library/Application\ Support/Lilbee/vaults
+     mv "<vault>/.obsidian/plugins/lilbee/server-data" \
+        ~/Library/Application\ Support/Lilbee/vaults/legacy
+     ```
+
+     Linux:
+     ```bash
+     mkdir -p ~/.local/share/lilbee/vaults
+     mv "<vault>/.obsidian/plugins/lilbee/server-data" \
+        ~/.local/share/lilbee/vaults/legacy
+     ```
+
+     Windows PowerShell:
+     ```powershell
+     New-Item -ItemType Directory -Force "$env:LOCALAPPDATA\Lilbee\vaults" | Out-Null
+     Move-Item "<vault>\.obsidian\plugins\lilbee\server-data" `
+       "$env:LOCALAPPDATA\Lilbee\vaults\legacy"
+     ```
+
+     After moving, open the vault in Obsidian and paste the destination path into Settings → Connection → "Use existing lilbee data directory" → "Use this folder".
+
+  3. **Or just delete the leftovers** (loses the existing index — rebuild on next sync):
+
+     macOS / Linux:
+     ```bash
+     rm -rf "<vault>/.obsidian/plugins/lilbee/server-data" \
+            "<vault>/.obsidian/plugins/lilbee/bin"
+     ```
+
+     Windows PowerShell:
+     ```powershell
+     Remove-Item -Recurse -Force "<vault>\.obsidian\plugins\lilbee\server-data"
+     Remove-Item -Recurse -Force "<vault>\.obsidian\plugins\lilbee\bin"
+     ```
+
+  After cleanup the plugin starts with one binary download and one model download that every vault on the machine shares.
+
+- **Only one Obsidian vault can drive the managed lilbee at a time.** Lilbee is single-vault. Opening a second vault shows the active owner in the status bar; the `lilbee: Take over the managed lilbee server` command switches the running process to the new vault after a confirmation dialog. The previous vault's index is preserved on disk and restored when you reopen it. A new `lilbee: Switch lilbee to another vault` command lists registered vaults so you can release the managed server for another vault without a take-over prompt.
+
+- **`lilbeeVersion` and `hfToken` moved out of per-vault settings.** Both now live in `<shared-root>/config.json` because the binary and HuggingFace cache they describe are shared. Any per-vault values in `data.json` are ignored; re-enter the HuggingFace token in Settings → Advanced if you had one.
+
 - Renamed the local plugin setting `systemPrompt` to `ragSystemPrompt` to match the lilbee server's `system_prompt` → `rag_system_prompt` rename. Any prompt set under the old key resets to the default.
 - The `LILBEE_SYSTEM_PROMPT` env var passed to managed servers is now `LILBEE_RAG_SYSTEM_PROMPT`. A second env var `LILBEE_GENERAL_SYSTEM_PROMPT` is set when the new sibling field is configured.
 - Auto-sync mode is gone. The status bar shows a clickable "lilbee: N to sync" hint when the vault has files the server hasn't indexed; click to sync. The `syncMode` and `syncDebounceMs` plugin settings are no longer used.

@@ -15,6 +15,7 @@ import {
     ERROR_NAME,
 } from "./types";
 import type { CatalogEntry, ConfigResponse, InstalledModel, LilbeeSettings, ServerMode } from "./types";
+import { formatBytes, reportFor } from "./storage-stats";
 import { MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import { CatalogModal } from "./views/catalog-modal";
@@ -224,9 +225,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
         }
 
+        this.renderSharedRootSetting(containerEl);
+        this.renderAdoptDataDir(containerEl);
+        this.renderVaultRegistry(containerEl);
+        this.renderStorageReport(containerEl);
+
         const updateSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_SERVER_VERSION)
-            .setDesc(this.plugin.settings.lilbeeVersion || MESSAGES.DESC_SERVER_VERSION_UNKNOWN);
+            .setDesc(this.plugin.getSharedLilbeeVersion() || MESSAGES.DESC_SERVER_VERSION_UNKNOWN);
 
         let pendingRelease: ReleaseInfo | null = null;
         updateSetting.addButton((checkBtn) =>
@@ -266,7 +272,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         // pin the inline button label to "Up to date" until
                         // the next click — both the toast and the button
                         // change confirm the action.
-                        const current = this.plugin.settings.lilbeeVersion || MESSAGES.LABEL_UNKNOWN;
+                        const current = this.plugin.getSharedLilbeeVersion() || MESSAGES.LABEL_UNKNOWN;
                         new Notice(MESSAGES.NOTICE_SERVER_UPTODATE(current));
                         checkBtn.setButtonText(MESSAGES.LABEL_UPTODATE);
                         checkBtn.setDisabled(false);
@@ -278,6 +284,91 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 }
             }),
         );
+    }
+
+    private renderSharedRootSetting(containerEl: HTMLElement): void {
+        const resolved = this.plugin.vaultRegistry?.sharedRoot ?? "";
+        new Setting(containerEl)
+            .setName(MESSAGES.LABEL_SHARED_ROOT)
+            .setDesc(MESSAGES.DESC_SHARED_ROOT(resolved))
+            .addText((text) =>
+                text
+                    .setPlaceholder(resolved)
+                    .setValue(this.plugin.settings.sharedRoot)
+                    .onChange(async (value) => {
+                        this.plugin.settings.sharedRoot = value.trim();
+                        await this.plugin.saveSettings();
+                    }),
+            );
+    }
+
+    private renderAdoptDataDir(containerEl: HTMLElement): void {
+        const registry = this.plugin.vaultRegistry;
+        if (!registry) return;
+        let staged = "";
+        new Setting(containerEl)
+            .setName(MESSAGES.LABEL_ADOPT_DATA_DIR)
+            .setDesc(MESSAGES.DESC_ADOPT_DATA_DIR)
+            .addText((text) =>
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_ADOPT_DATA_DIR).onChange((value) => {
+                    staged = value.trim();
+                }),
+            )
+            .addButton((btn) =>
+                btn.setButtonText(MESSAGES.BUTTON_ADOPT_DATA_DIR).onClick(async () => {
+                    if (!staged) {
+                        new Notice(MESSAGES.NOTICE_ADOPT_DATA_DIR_BLANK);
+                        return;
+                    }
+                    await this.plugin.adoptDataDir(staged);
+                    new Notice(MESSAGES.NOTICE_ADOPT_DATA_DIR_DONE(staged));
+                    this.display();
+                }),
+            );
+    }
+
+    private renderVaultRegistry(containerEl: HTMLElement): void {
+        const registry = this.plugin.vaultRegistry;
+        if (!registry) return;
+        const entries = registry.list();
+        new Setting(containerEl).setName(MESSAGES.LABEL_REGISTERED_VAULTS).setDesc(MESSAGES.DESC_REGISTERED_VAULTS);
+
+        if (entries.length === 0) {
+            const empty = containerEl.createDiv({ cls: "lilbee-vault-registry-empty" });
+            empty.setText(MESSAGES.LABEL_REGISTERED_VAULTS_EMPTY);
+        }
+        for (const entry of entries) {
+            const isCurrent = entry.id === this.plugin.vaultId;
+            const setting = new Setting(containerEl)
+                .setName(isCurrent ? MESSAGES.LABEL_VAULT_ROW_CURRENT(entry.displayName) : entry.displayName)
+                .setDesc(`${entry.obsidianVaultPath}  →  ${entry.dataDir}`);
+            if (!isCurrent) {
+                setting.addButton((btn) =>
+                    btn
+                        .setButtonText(MESSAGES.BUTTON_REMOVE_VAULT)
+                        .setTooltip(MESSAGES.TOOLTIP_REMOVE_VAULT)
+                        .onClick(async () => {
+                            registry.remove(entry.id);
+                            this.display();
+                        }),
+                );
+            }
+        }
+    }
+
+    private renderStorageReport(containerEl: HTMLElement): void {
+        const registry = this.plugin.vaultRegistry;
+        if (!registry) return;
+        const report = reportFor(registry.sharedRoot, registry.list());
+        new Setting(containerEl).setName(MESSAGES.LABEL_STORAGE_REPORT).setDesc(MESSAGES.DESC_STORAGE_REPORT);
+
+        const list = containerEl.createDiv({ cls: "lilbee-storage-report" });
+        appendStorageRow(list, MESSAGES.LABEL_STORAGE_BIN, report.binBytes);
+        appendStorageRow(list, MESSAGES.LABEL_STORAGE_MODELS, report.modelsBytes);
+        for (const vault of report.vaults) {
+            appendStorageRow(list, vault.displayName, vault.bytes, vault.dataDir);
+        }
+        appendStorageRow(list, MESSAGES.LABEL_STORAGE_TOTAL, report.totalBytes);
     }
 
     private renderExternalSettings(containerEl: HTMLElement): void {
@@ -1763,11 +1854,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_HF_TOKEN)
             .addText((text) => {
                 text.setPlaceholder(MESSAGES.PLACEHOLDER_HF_TOKEN)
-                    .setValue(this.plugin.settings.hfToken)
+                    .setValue(this.plugin.getSharedHfToken())
                     .onChange(async (value) => {
                         const trimmed = value.trim();
-                        this.plugin.settings.hfToken = trimmed;
-                        await this.plugin.saveSettings();
+                        this.plugin.setSharedHfToken(trimmed);
                         try {
                             await this.plugin.api.updateConfig({ hf_token: trimmed });
                             new Notice(MESSAGES.NOTICE_HF_TOKEN_SAVED);
@@ -2125,4 +2215,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
             new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_RERANKER_CANDIDATES));
         }
     }
+}
+
+function appendStorageRow(parent: HTMLElement, label: string, bytes: number, detail?: string): void {
+    const row = parent.createDiv({ cls: "lilbee-storage-row" });
+    row.createSpan({ text: label, cls: "lilbee-storage-row-label" });
+    row.createSpan({ text: formatBytes(bytes), cls: "lilbee-storage-row-bytes" });
+    if (detail) row.createSpan({ text: detail, cls: "lilbee-storage-row-detail" });
 }

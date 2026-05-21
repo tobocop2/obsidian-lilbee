@@ -3540,3 +3540,104 @@
     cursor: pointer;
     font-size: var(--font-small, 13px);
 }
+
+/* Vault picker (Switch lilbee to another vault) */
+.lilbee-vault-picker-modal {
+    padding: var(--size-4-3, 12px);
+    min-width: 480px;
+}
+
+.lilbee-vault-picker-desc {
+    color: var(--text-muted);
+    font-size: var(--font-small, 13px);
+    margin: 0 0 var(--size-4-3, 12px);
+}
+
+.lilbee-vault-picker-empty {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: var(--font-small, 13px);
+    padding: var(--size-4-3, 12px);
+    text-align: center;
+}
+
+.lilbee-vault-picker-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-2, 8px);
+}
+
+.lilbee-vault-picker-row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    text-align: left;
+    cursor: pointer;
+}
+
+.lilbee-vault-picker-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-vault-picker-name {
+    font-weight: var(--font-medium, 500);
+    font-size: var(--font-ui-medium, 14px);
+}
+
+.lilbee-vault-picker-path {
+    color: var(--text-muted);
+    font-size: var(--font-smallest, 10px);
+    overflow-wrap: anywhere;
+}
+
+.lilbee-vault-picker-meta {
+    color: var(--text-faint);
+    font-size: var(--font-smallest, 10px);
+}
+
+/* Registered vaults section: empty-state hint */
+.lilbee-vault-registry-empty {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: var(--font-small, 13px);
+    padding: var(--size-4-2, 8px) 0;
+}
+
+/* Disk usage report */
+.lilbee-storage-report {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: var(--size-4-2, 8px) 0;
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-storage-row {
+    display: grid;
+    grid-template-columns: minmax(120px, 1fr) auto;
+    column-gap: var(--size-4-3, 12px);
+    align-items: baseline;
+}
+
+.lilbee-storage-row-label {
+    color: var(--text-normal);
+}
+
+.lilbee-storage-row-bytes {
+    color: var(--text-muted);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.lilbee-storage-row-detail {
+    grid-column: 1 / -1;
+    color: var(--text-faint);
+    font-size: var(--font-smallest, 10px);
+    overflow-wrap: anywhere;
+}
