@@ -895,7 +895,7 @@ export default class LilbeePlugin extends Plugin {
         }
         this.vaultRegistry?.releaseLock(this.vaultId);
         new Notice(MESSAGES.NOTICE_RELEASED_FOR_VAULT(picked.displayName));
-        this.updateStatusBar(MESSAGES.STATUS_STOPPED, DOT_STATE.MUTED);
+        this.updateStatusBar(MESSAGES.STATUS_STOPPED, DOT_STATE.MUTED, false);
         this.setStatusClass(null);
     }
 
@@ -979,9 +979,9 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    private updateStatusBar(text: string, dotState: DotState | null = null): void {
+    private updateStatusBar(text: string, dotState: DotState | null = null, withModel = true): void {
         if (!this.statusBarEl) return;
-        const label = displayLabelForRef(this.activeModel);
+        const label = withModel ? displayLabelForRef(this.activeModel) : "";
         const model = label ? ` (${label})` : "";
         this.statusBarEl.empty();
         if (dotState) {
@@ -1004,6 +1004,15 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private setStatusReady(): void {
+        // Managed mode without a running serverManager is the "released"
+        // state (after switch-to-another-vault or onunload). Stay stuck
+        // on STOPPED instead of cheerfully claiming "ready" against a
+        // server that isn't running.
+        if (this.settings.serverMode === SERVER_MODE.MANAGED && this.serverManager === null) {
+            this.updateStatusBar(MESSAGES.STATUS_STOPPED, DOT_STATE.MUTED, false);
+            this.setStatusClass(null);
+            return;
+        }
         const text =
             this.settings.serverMode === SERVER_MODE.EXTERNAL ? MESSAGES.STATUS_READY_EXTERNAL : MESSAGES.STATUS_READY;
         this.updateStatusBar(text);
