@@ -10,8 +10,12 @@ import {
     copyFileSync,
     cpSync,
     statSync,
+    renameSync,
+    readdirSync,
+    rmSync,
 } from "fs";
-import { basename, join } from "path";
+import { basename, join, resolve, dirname } from "path";
+import { createHash } from "crypto";
 import { promisify } from "util";
 import { ARCH, PLATFORM } from "./types";
 
@@ -30,8 +34,15 @@ export const node = {
     copyFileSync,
     cpSync,
     statSync,
+    renameSync,
+    readdirSync,
+    rmSync,
     join,
     basename,
+    resolve,
+    dirname,
+    createHash,
+    processKill: process.kill.bind(process),
     requestUrl,
     fetch: globalThis.fetch.bind(globalThis) as typeof globalThis.fetch,
 };

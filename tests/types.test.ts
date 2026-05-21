@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { DEFAULT_SETTINGS, SSE_EVENT, JSON_HEADERS, SERVER_MODE, DOWNLOAD_PANEL } from "../src/types";
+import {
+    DEFAULT_SETTINGS,
+    DEFAULT_SHARED_CONFIG,
+    SSE_EVENT,
+    JSON_HEADERS,
+    SERVER_MODE,
+    DOWNLOAD_PANEL,
+    LOCK_STATE,
+    MIGRATION_RESULT,
+    SHARED_PATH,
+} from "../src/types";
 import type {
     Excerpt,
     DocumentResult,
@@ -13,6 +23,9 @@ import type {
     SSEEvent,
     Message,
     LilbeeSettings,
+    SharedConfig,
+    VaultRegistryEntry,
+    ActiveLock,
     ModelVariant,
     ModelFamily,
     CatalogResponse,
@@ -46,8 +59,6 @@ describe("DEFAULT_SETTINGS", () => {
         const expected = [
             "adaptiveThreshold",
             "autoOpenCockpit",
-            "hfToken",
-            "lilbeeVersion",
             "manualToken",
             "maxDistance",
             "searchChunkType",
@@ -55,6 +66,7 @@ describe("DEFAULT_SETTINGS", () => {
             "serverMode",
             "serverUrl",
             "setupCompleted",
+            "sharedRoot",
             "storeContentInVault",
             "lastCatalogTab",
             "generalSystemPrompt",
@@ -67,6 +79,17 @@ describe("DEFAULT_SETTINGS", () => {
             "wikiVaultFolder",
         ].sort();
         expect(keys).toEqual(expected);
+    });
+
+    it("sharedRoot defaults to empty (use platform default)", () => {
+        expect(DEFAULT_SETTINGS.sharedRoot).toBe("");
+    });
+});
+
+describe("DEFAULT_SHARED_CONFIG", () => {
+    it("has empty lilbeeVersion and hfToken", () => {
+        expect(DEFAULT_SHARED_CONFIG.lilbeeVersion).toBe("");
+        expect(DEFAULT_SHARED_CONFIG.hfToken).toBe("");
     });
 });
 
@@ -264,12 +287,77 @@ describe("LilbeeSettings interface", () => {
             adaptiveThreshold: false,
             topK: 3,
             serverMode: "managed",
-            lilbeeVersion: "",
             ragSystemPrompt: "",
             generalSystemPrompt: "",
             setupCompleted: false,
+            sharedRoot: "",
         } as unknown as LilbeeSettings;
         expect(s.topK).toBe(3);
+        expect(s.sharedRoot).toBe("");
+    });
+});
+
+describe("SharedConfig interface", () => {
+    it("accepts version and token", () => {
+        const c: SharedConfig = { lilbeeVersion: "v0.5.0", hfToken: "hf_x" };
+        expect(c.lilbeeVersion).toBe("v0.5.0");
+        expect(c.hfToken).toBe("hf_x");
+    });
+});
+
+describe("VaultRegistryEntry interface", () => {
+    it("captures vault identity and data-dir mapping", () => {
+        const e: VaultRegistryEntry = {
+            id: "abc123def456",
+            displayName: "Work",
+            dataDir: "/Users/x/Library/Application Support/lilbee/vaults/abc123def456",
+            obsidianVaultPath: "/Users/x/Documents/Work",
+            addedAt: 1700000000000,
+            lastActiveAt: 1700000999000,
+        };
+        expect(e.id).toHaveLength(12);
+        expect(e.displayName).toBe("Work");
+    });
+});
+
+describe("ActiveLock interface", () => {
+    it("records the owning vault, PID, and port", () => {
+        const l: ActiveLock = {
+            vaultId: "abc123def456",
+            pid: 4242,
+            port: 54321,
+            startedAt: 1700000000000,
+        };
+        expect(l.pid).toBe(4242);
+        expect(l.port).toBe(54321);
+    });
+});
+
+describe("LOCK_STATE constants", () => {
+    it("covers every lock-state branch", () => {
+        expect(LOCK_STATE.NONE).toBe("none");
+        expect(LOCK_STATE.OURS).toBe("ours");
+        expect(LOCK_STATE.STALE).toBe("stale");
+        expect(LOCK_STATE.LIVE_OTHER).toBe("live_other");
+    });
+});
+
+describe("MIGRATION_RESULT constants", () => {
+    it("covers every migration outcome", () => {
+        expect(MIGRATION_RESULT.NONE).toBe("none");
+        expect(MIGRATION_RESULT.MIGRATED).toBe("migrated");
+        expect(MIGRATION_RESULT.CROSS_FS_DECLINED).toBe("cross_fs_declined");
+    });
+});
+
+describe("SHARED_PATH constants", () => {
+    it("names the shared-root files and directories", () => {
+        expect(SHARED_PATH.BIN).toBe("bin");
+        expect(SHARED_PATH.MODELS).toBe("models");
+        expect(SHARED_PATH.VAULTS).toBe("vaults");
+        expect(SHARED_PATH.CONFIG).toBe("config.json");
+        expect(SHARED_PATH.REGISTRY).toBe("registry.json");
+        expect(SHARED_PATH.LOCK).toBe("active.lock");
     });
 });
 
