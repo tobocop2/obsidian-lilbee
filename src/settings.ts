@@ -2045,14 +2045,19 @@ export class LilbeeSettingTab extends PluginSettingTab {
         row.createEl("td", { text: `${entry.size_gb} GB` });
         row.createEl("td", { text: entry.description });
         const actionCell = row.createEl("td");
+        // Wrap the action contents in an inner div so the cell stays a
+        // proper table cell — display:flex on a <td> drops it out of
+        // the table layout and any wrapped text in adjacent cells then
+        // misaligns the row.
+        const actions = actionCell.createDiv({ cls: "lilbee-model-actions" });
         if (entry.installed) {
-            actionCell.createEl("span", { text: MESSAGES.LABEL_INSTALLED, cls: "lilbee-installed" });
-            const deleteBtn = actionCell.createEl("button", { cls: "lilbee-model-delete" }) as HTMLButtonElement;
+            actions.createEl("span", { text: MESSAGES.LABEL_INSTALLED, cls: "lilbee-installed" });
+            const deleteBtn = actions.createEl("button", { cls: "lilbee-model-delete" }) as HTMLButtonElement;
             setIcon(deleteBtn, "trash-2");
             deleteBtn.setAttribute("aria-label", MESSAGES.LABEL_DELETE_MODEL);
             deleteBtn.addEventListener("click", () => this.deleteChatEntry(deleteBtn, entry, active));
         } else {
-            const btn = actionCell.createEl("button", { text: MESSAGES.BUTTON_PULL }) as HTMLButtonElement;
+            const btn = actions.createEl("button", { text: MESSAGES.BUTTON_PULL }) as HTMLButtonElement;
             btn.addEventListener("click", () => this.pullAndSetChat(entry));
         }
     }
