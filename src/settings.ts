@@ -226,6 +226,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
 
         this.renderSharedRootSetting(containerEl);
+        this.renderAdoptDataDir(containerEl);
         this.renderVaultRegistry(containerEl);
         this.renderStorageReport(containerEl);
 
@@ -298,6 +299,31 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         this.plugin.settings.sharedRoot = value.trim();
                         await this.plugin.saveSettings();
                     }),
+            );
+    }
+
+    private renderAdoptDataDir(containerEl: HTMLElement): void {
+        const registry = this.plugin.vaultRegistry;
+        if (!registry) return;
+        let staged = "";
+        new Setting(containerEl)
+            .setName(MESSAGES.LABEL_ADOPT_DATA_DIR)
+            .setDesc(MESSAGES.DESC_ADOPT_DATA_DIR)
+            .addText((text) =>
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_ADOPT_DATA_DIR).onChange((value) => {
+                    staged = value.trim();
+                }),
+            )
+            .addButton((btn) =>
+                btn.setButtonText(MESSAGES.BUTTON_ADOPT_DATA_DIR).onClick(async () => {
+                    if (!staged) {
+                        new Notice(MESSAGES.NOTICE_ADOPT_DATA_DIR_BLANK);
+                        return;
+                    }
+                    await this.plugin.adoptDataDir(staged);
+                    new Notice(MESSAGES.NOTICE_ADOPT_DATA_DIR_DONE(staged));
+                    this.display();
+                }),
             );
     }
 

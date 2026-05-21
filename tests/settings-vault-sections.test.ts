@@ -185,6 +185,36 @@ describe("Shared root setting onChange", () => {
     });
 });
 
+describe("Adopt data dir affordance", () => {
+    it("calls plugin.adoptDataDir with the trimmed staged value", async () => {
+        const registry = makeRegistry([entry({ id: "abc", displayName: "Work" })]);
+        const plugin = makePlugin({}, registry);
+        const adopt = vi.fn().mockResolvedValue(undefined);
+        (plugin as any).adoptDataDir = adopt;
+        const tab = new LilbeeSettingTab(new App() as any, plugin as any);
+        const { textOnChanges, buttonLabels, buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        // textOnChanges[0] = shared-root, [1] = adopt path.
+        await textOnChanges[1]("  /external/lilbee-data  ");
+        const adoptIdx = buttonLabels.findIndex((l) => l === "Use this folder");
+        expect(adoptIdx).toBeGreaterThanOrEqual(0);
+        await buttonOnClicks[adoptIdx]();
+        expect(adopt).toHaveBeenCalledWith("/external/lilbee-data");
+    });
+
+    it("surfaces a Notice when the path is blank and does not call adoptDataDir", async () => {
+        const registry = makeRegistry([entry({ id: "abc", displayName: "Work" })]);
+        const plugin = makePlugin({}, registry);
+        const adopt = vi.fn().mockResolvedValue(undefined);
+        (plugin as any).adoptDataDir = adopt;
+        const tab = new LilbeeSettingTab(new App() as any, plugin as any);
+        const { buttonLabels, buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        const adoptIdx = buttonLabels.findIndex((l) => l === "Use this folder");
+        await buttonOnClicks[adoptIdx]();
+        expect(adopt).not.toHaveBeenCalled();
+        expect(Notice.instances.some((n) => n.message.includes("Enter a path"))).toBe(true);
+    });
+});
+
 describe("Registered vaults section", () => {
     it("renders an empty-state message when no vaults are registered", () => {
         const registry = makeRegistry([]);

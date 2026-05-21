@@ -207,6 +207,13 @@ export const MESSAGES = {
     LABEL_SHARED_ROOT: "Shared lilbee directory",
     DESC_SHARED_ROOT: (resolved: string): string =>
         `Holds the lilbee binary, model cache, and one subfolder per vault. Leave blank to use the platform default (currently ${resolved}). Restart the plugin or Obsidian for changes to take effect.`,
+    LABEL_ADOPT_DATA_DIR: "Use existing lilbee data directory",
+    DESC_ADOPT_DATA_DIR:
+        "Point this vault at a lilbee data directory you already have on disk (e.g. one moved from the old per-vault location, or one created by `lilbee serve`). The plugin restarts the managed server against the new path.",
+    PLACEHOLDER_ADOPT_DATA_DIR: "/path/to/lilbee/data-dir",
+    BUTTON_ADOPT_DATA_DIR: "Use this folder",
+    NOTICE_ADOPT_DATA_DIR_BLANK: "Enter a path first.",
+    NOTICE_ADOPT_DATA_DIR_DONE: (path: string): string => `lilbee now uses ${path} for this vault.`,
     LABEL_REGISTERED_VAULTS: "Registered vaults",
     DESC_REGISTERED_VAULTS:
         "Every Obsidian vault that has connected to this shared lilbee, with the data-dir it uses. Remove a vault to drop its entry from the registry; this does not delete its data on disk.",

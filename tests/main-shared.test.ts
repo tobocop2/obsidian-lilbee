@@ -510,6 +510,60 @@ describe("Shared-root layout integration", () => {
     });
 });
 
+describe("adoptDataDir", () => {
+    it("rewrites the registry entry to point at the new data-dir", async () => {
+        const plugin = await createPlugin();
+        vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
+        await plugin.adoptDataDir("/external/lilbee-data");
+        const stored = plugin.vaultRegistry!.get(plugin.vaultId);
+        expect(stored?.dataDir).toBe("/external/lilbee-data");
+    });
+
+    it("preserves displayName and addedAt when adopting", async () => {
+        const plugin = await createPlugin();
+        plugin.vaultRegistry!.upsert({
+            id: plugin.vaultId,
+            displayName: "Renamed",
+            dataDir: "/old",
+            obsidianVaultPath: "/Users/tester/MyVault",
+            addedAt: 42,
+            lastActiveAt: 42,
+        });
+        vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
+        await plugin.adoptDataDir("/new");
+        const stored = plugin.vaultRegistry!.get(plugin.vaultId);
+        expect(stored?.displayName).toBe("Renamed");
+        expect(stored?.addedAt).toBe(42);
+        expect(stored?.dataDir).toBe("/new");
+    });
+
+    it("stops the running server before restarting it on the new data-dir", async () => {
+        const plugin = await createPlugin();
+        const stop = vi.fn().mockResolvedValue(undefined);
+        (plugin as any).serverManager = { stop, dataDir: "/old", serverUrl: "" };
+        const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
+        await plugin.adoptDataDir("/new");
+        expect(stop).toHaveBeenCalled();
+        expect(startSpy).toHaveBeenCalled();
+    });
+
+    it("does not restart in external mode", async () => {
+        const plugin = await createPlugin();
+        plugin.settings.serverMode = "external";
+        const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
+        await plugin.adoptDataDir("/new");
+        expect(startSpy).not.toHaveBeenCalled();
+    });
+
+    it("is a no-op when vaultRegistry is null", async () => {
+        const plugin = await createPlugin();
+        (plugin as any).vaultRegistry = null;
+        const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
+        await plugin.adoptDataDir("/new");
+        expect(startSpy).not.toHaveBeenCalled();
+    });
+});
+
 describe("openVaultPicker", () => {
     it("opens the picker with every registered vault except our own", async () => {
         const plugin = await createPlugin();

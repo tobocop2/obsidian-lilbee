@@ -335,23 +335,7 @@ export default class LilbeePlugin extends Plugin {
             await this.recordLilbeeVersionAfterDownload();
 
             try {
-                this.serverManager = new ServerManager({
-                    binaryPath,
-                    dataDir: registry.resolveDataDir(this.vaultId),
-                    modelsDir: sharedModelsDir(sharedRoot),
-                    ragSystemPrompt: this.settings.ragSystemPrompt,
-                    generalSystemPrompt: this.settings.generalSystemPrompt,
-                    onStateChange: (state) => this.handleServerStateChange(state),
-                    onRestartsExhausted: (stderr: string) => {
-                        if (this.serverStartFailed) return;
-                        const detail = stderr ? `\n${stderr.split("\n").slice(-5).join("\n")}` : "";
-                        new Notice(`${MESSAGES.ERROR_SERVER_CRASHED}${detail}`, NOTICE_PERMANENT);
-                    },
-                    onShutdownFailure: (err: Error) => {
-                        new Notice(`${MESSAGES.ERROR_SERVER_SHUTDOWN_FAILED}: ${err.message}`);
-                    },
-                });
-
+                this.serverManager = this.buildServerManager(binaryPath, registry, sharedRoot);
                 this.updateStatusBar(MESSAGES.STATUS_STARTING, DOT_STATE.PRIMARY);
                 this.setStatusClass("lilbee-status-starting");
                 onProgress?.({ phase: "starting", message: MESSAGES.STATUS_STARTING_SERVER });
@@ -368,6 +352,25 @@ export default class LilbeePlugin extends Plugin {
         } finally {
             this.startingServer = false;
         }
+    }
+
+    private buildServerManager(binaryPath: string, registry: VaultRegistry, sharedRoot: string): ServerManager {
+        return new ServerManager({
+            binaryPath,
+            dataDir: registry.resolveDataDir(this.vaultId),
+            modelsDir: sharedModelsDir(sharedRoot),
+            ragSystemPrompt: this.settings.ragSystemPrompt,
+            generalSystemPrompt: this.settings.generalSystemPrompt,
+            onStateChange: (state) => this.handleServerStateChange(state),
+            onRestartsExhausted: (stderr: string) => {
+                if (this.serverStartFailed) return;
+                const detail = stderr ? `\n${stderr.split("\n").slice(-5).join("\n")}` : "";
+                new Notice(`${MESSAGES.ERROR_SERVER_CRASHED}${detail}`, NOTICE_PERMANENT);
+            },
+            onShutdownFailure: (err: Error) => {
+                new Notice(`${MESSAGES.ERROR_SERVER_SHUTDOWN_FAILED}: ${err.message}`);
+            },
+        });
     }
 
     /** Decide who owns the shared root and (if not us) ask the user. */
@@ -856,6 +859,33 @@ export default class LilbeePlugin extends Plugin {
         if (!registry) return;
         const others = registry.list().filter((e) => e.id !== this.vaultId);
         new VaultPickerModal(this.app, others, (picked) => void this.releaseFor(picked)).open();
+    }
+
+    /**
+     * Re-point this vault at a different lilbee data-dir. Used by Settings →
+     * "Use existing lilbee data directory" so a user can adopt an existing
+     * `lilbee serve` data-dir or one they moved manually from the old layout.
+     */
+    async adoptDataDir(dataDir: string): Promise<void> {
+        const registry = this.vaultRegistry;
+        if (!registry) return;
+        const existing = registry.get(this.vaultId);
+        const now = Date.now();
+        registry.upsert({
+            id: this.vaultId,
+            displayName: existing?.displayName ?? this.getVaultDisplayName(),
+            dataDir,
+            obsidianVaultPath: this.getVaultBasePath(),
+            addedAt: existing?.addedAt ?? now,
+            lastActiveAt: now,
+        });
+        if (this.serverManager) {
+            await this.serverManager.stop();
+            this.serverManager = null;
+        }
+        if (this.settings.serverMode === SERVER_MODE.MANAGED) {
+            await this.startManagedServer();
+        }
     }
 
     private async releaseFor(picked: VaultRegistryEntry): Promise<void> {
