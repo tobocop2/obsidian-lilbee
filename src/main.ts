@@ -232,6 +232,11 @@ export default class LilbeePlugin extends Plugin {
     private chatInFlight = 0;
     // Counts consecutive failed probes against HEALTH_FAILURE_STREAK_THRESHOLD.
     private healthFailureStreak = 0;
+    // The managed server has reached READY at least once this session. Until
+    // it has, a failing health probe means "still coming up", not "error" —
+    // so a fresh install / first-run wizard doesn't flash a red error pill
+    // while the binary downloads and the server boots.
+    private serverEverReady = false;
 
     async onload(): Promise<void> {
         await this.loadSettings();
@@ -631,6 +636,7 @@ export default class LilbeePlugin extends Plugin {
                     this.configureApi(this.serverManager.serverUrl);
                 }
                 this.serverUnreachable = false;
+                this.serverEverReady = true;
                 this.setStatusReady();
                 this.refreshSettingsTab();
                 new Notice(MESSAGES.STATUS_READY, NOTICE_DURATION_MS);
@@ -699,6 +705,9 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         if (outcome === "server_error" || outcome === "unreachable") {
+            // Before the managed server has ever reached READY, a failed
+            // request means it's still coming up — don't flash a red error.
+            if (this.settings.serverMode === SERVER_MODE.MANAGED && !this.serverEverReady) return;
             this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
             this.setStatusClass("lilbee-status-error");
         }
@@ -1085,6 +1094,11 @@ export default class LilbeePlugin extends Plugin {
         }
         this.healthFailureStreak += 1;
         if (this.healthFailureStreak < HEALTH_FAILURE_STREAK_THRESHOLD) return;
+        // Managed mode, pre-first-ready (fresh install, wizard still
+        // downloading/booting): a failing probe is "starting", not "error".
+        // Don't paint a red pill. External mode reports errors normally —
+        // it points at a server the user already runs.
+        if (this.settings.serverMode === SERVER_MODE.MANAGED && !this.serverEverReady) return;
         if (this.serverUnreachable) return;
         this.serverUnreachable = true;
         this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);

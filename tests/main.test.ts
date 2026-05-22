@@ -3113,6 +3113,9 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             (plugin as any).startingServer = false;
             (plugin as any).serverUnreachable = false;
+            // Managed mode only flips to error after the server has been ready
+            // at least once — simulate a server that came up then went down.
+            (plugin as any).serverEverReady = true;
             (plugin as any).readCurrentToken = vi.fn(() => null);
             plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
             (plugin as any).missingTokenNoticeFired = false;
@@ -3120,6 +3123,18 @@ describe("LilbeePlugin", () => {
             Notice.clear();
             await (plugin as any).probeServerHealth();
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_TOKEN_MANAGED);
+        });
+
+        it("managed mode stays quiet (no error pill) while the server has never been ready", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            (plugin as any).startingServer = false;
+            (plugin as any).serverUnreachable = false;
+            (plugin as any).serverEverReady = false;
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            (plugin as any).healthFailureStreak = 5;
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent ?? "").not.toContain("error");
         });
 
         it("skips probing while a chat stream is in flight", async () => {
@@ -3316,6 +3331,22 @@ describe("LilbeePlugin", () => {
             const before = (plugin.statusBarEl as any)?.textContent;
             (plugin as any).handleRequestOutcome("starting");
             expect((plugin.statusBarEl as any)?.textContent).toBe(before);
+        });
+
+        it("managed mode does not flip to error on 'server_error' before the server has ever been ready", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            (plugin as any).serverEverReady = false;
+            (plugin as any).handleRequestOutcome("server_error");
+            expect((plugin.statusBarEl as any)?.textContent ?? "").not.toContain("error");
+        });
+
+        it("managed mode flips to error on 'server_error' once the server has been ready", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            (plugin as any).serverEverReady = true;
+            (plugin as any).handleRequestOutcome("server_error");
+            expect((plugin.statusBarEl as any)?.textContent).toContain("error");
         });
     });
 
