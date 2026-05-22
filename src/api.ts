@@ -34,6 +34,14 @@ import type {
 const DEFAULT_TIMEOUT_MS = 15_000;
 const RETRY_COUNT = 2;
 const RETRY_BACKOFF_MS = 500;
+// In managed mode, the plugin's onload doesn't configure the API until
+// startManagedServer finishes (binary download + server boot). A caller
+// firing a chat or catalog request in that window would otherwise see
+// "Server is still starting up" with no recovery. Poll for the URL
+// instead of bailing immediately; if it never lands, the throw still
+// happens, just deferred.
+const STARTUP_WAIT_MS = 12_000;
+const STARTUP_POLL_INTERVAL_MS = 250;
 
 /**
  * Thrown when the server rejects a request with 401 / 403 after the plugin's
@@ -176,8 +184,14 @@ export class LilbeeClient {
         opts?: { stream?: boolean; signal?: AbortSignal },
     ): Promise<Response> {
         if (!this.baseUrl) {
-            this.recordOutcome("starting");
-            throw new ServerStartingError();
+            const deadline = Date.now() + STARTUP_WAIT_MS;
+            while (!this.baseUrl && Date.now() < deadline) {
+                await new Promise((r) => setTimeout(r, STARTUP_POLL_INTERVAL_MS));
+            }
+            if (!this.baseUrl) {
+                this.recordOutcome("starting");
+                throw new ServerStartingError();
+            }
         }
         const maxAttempts = RETRY_COUNT + 1;
         let lastError: unknown;

@@ -1859,17 +1859,55 @@ describe("ServerStartingError", () => {
         expect(e.message).toContain("starting");
     });
 
-    it("is thrown by fetchWithRetry when baseUrl is empty (no fetch attempted)", async () => {
-        const c = new LilbeeClient("");
-        await expect(c.fetchWithRetry("/api/health")).rejects.toBeInstanceOf(ServerStartingError);
-        expect(fetchMock).not.toHaveBeenCalled();
+    it("waits for baseUrl, then throws if it never lands (no fetch attempted)", async () => {
+        vi.useFakeTimers();
+        try {
+            const c = new LilbeeClient("");
+            const promise = c.fetchWithRetry("/api/health");
+            // Attach rejection handler before timers advance so the
+            // rejection isn't treated as unhandled.
+            const settled = expect(promise).rejects.toBeInstanceOf(ServerStartingError);
+            await vi.advanceTimersByTimeAsync(20_000);
+            await settled;
+            expect(fetchMock).not.toHaveBeenCalled();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("recovers when setBaseUrl lands during the wait window", async () => {
+        vi.useFakeTimers();
+        try {
+            const c = new LilbeeClient("");
+            fetchMock.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ status: "ok", version: "1" }),
+            } as unknown as Response);
+            const promise = c.fetchWithRetry("/api/health");
+            // Mid-wait, the plugin assigns the real URL. The poll picks it up.
+            await vi.advanceTimersByTimeAsync(500);
+            c.setBaseUrl(BASE_URL);
+            await vi.advanceTimersByTimeAsync(500);
+            const resp = await promise;
+            expect(resp.ok).toBe(true);
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it("surfaces via Result-returning methods as a typed error", async () => {
-        const c = new LilbeeClient("");
-        const result = await c.health();
-        expect(result.isErr()).toBe(true);
-        expect(result._unsafeUnwrapErr()).toBeInstanceOf(ServerStartingError);
+        vi.useFakeTimers();
+        try {
+            const c = new LilbeeClient("");
+            const promise = c.health();
+            await vi.advanceTimersByTimeAsync(20_000);
+            const result = await promise;
+            expect(result.isErr()).toBe(true);
+            expect(result._unsafeUnwrapErr()).toBeInstanceOf(ServerStartingError);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it("clears once setBaseUrl is called with a real URL", async () => {
@@ -1902,11 +1940,18 @@ describe("setOutcomeCallback", () => {
         vi.unstubAllGlobals();
     });
 
-    it("fires 'starting' when baseUrl is empty", async () => {
-        const c = new LilbeeClient("");
-        c.setOutcomeCallback((o) => outcomes.push(o));
-        await c.health();
-        expect(outcomes).toContain("starting");
+    it("fires 'starting' when baseUrl never lands within the wait window", async () => {
+        vi.useFakeTimers();
+        try {
+            const c = new LilbeeClient("");
+            c.setOutcomeCallback((o) => outcomes.push(o));
+            const promise = c.health();
+            await vi.advanceTimersByTimeAsync(20_000);
+            await promise;
+            expect(outcomes).toContain("starting");
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it("fires 'ok' on a successful request", async () => {

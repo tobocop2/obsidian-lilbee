@@ -26,6 +26,7 @@ vi.mock("../src/api", () => ({
         setToken: vi.fn(),
         setTokenProvider: vi.fn(),
         setOutcomeCallback: vi.fn(),
+        setBaseUrl: vi.fn(),
         health: vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} }),
         // Default config matches the test vault layout so the fire-and-forget
         // configureManagedStorage() in startManagedServer() hits the early
@@ -407,8 +408,7 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerEvent).toHaveBeenCalledTimes(5);
         });
 
-        it("recreates API client with loaded serverUrl", async () => {
-            const { LilbeeClient } = await import("../src/api");
+        it("repoints API client to the loaded serverUrl in place", async () => {
             const plugin = await createPlugin();
             plugin.loadData = vi.fn().mockResolvedValue({
                 setupCompleted: true,
@@ -416,7 +416,7 @@ describe("LilbeePlugin", () => {
                 serverUrl: "http://custom:9999",
             });
             await plugin.onload();
-            expect(LilbeeClient).toHaveBeenCalledWith("http://custom:9999");
+            expect(plugin.api.setBaseUrl).toHaveBeenCalledWith("http://custom:9999");
         });
 
         it("skips managed server start when setupCompleted is false", async () => {
@@ -552,18 +552,16 @@ describe("LilbeePlugin", () => {
     });
 
     describe("saveSettings()", () => {
-        it("calls saveData and recreates the API client", async () => {
-            const { LilbeeClient } = await import("../src/api");
+        it("calls saveData and repoints the API client to the new URL", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            const callsBefore = (LilbeeClient as ReturnType<typeof vi.fn>).mock.calls.length;
+            (plugin.api.setBaseUrl as ReturnType<typeof vi.fn>).mockClear();
 
             plugin.settings.serverUrl = "http://newserver:8080";
             await plugin.saveSettings();
 
             expect(plugin.saveData).toHaveBeenCalledWith(expect.objectContaining({ ...plugin.settings }));
-            const callsAfter = (LilbeeClient as ReturnType<typeof vi.fn>).mock.calls.length;
-            expect(callsAfter).toBeGreaterThan(callsBefore);
+            expect(plugin.api.setBaseUrl).toHaveBeenCalledWith("http://newserver:8080");
         });
     });
 
@@ -4024,9 +4022,7 @@ describe("LilbeePlugin", () => {
             expect(mockEnsureBinary).toHaveBeenCalledTimes(1);
         });
 
-        it("handleServerStateChange ready updates api with current server URL", async () => {
-            const { LilbeeClient } = await import("../src/api");
-
+        it("handleServerStateChange ready repoints api to the current server URL", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
@@ -4034,11 +4030,10 @@ describe("LilbeePlugin", () => {
             const stateChange = mockServerOpts?.onStateChange;
             expect(stateChange).toBeDefined();
 
-            const callsBefore = (LilbeeClient as ReturnType<typeof vi.fn>).mock.calls.length;
+            (plugin.api.setBaseUrl as ReturnType<typeof vi.fn>).mockClear();
             stateChange("ready");
-            const callsAfter = (LilbeeClient as ReturnType<typeof vi.fn>).mock.calls.length;
 
-            expect(callsAfter).toBeGreaterThan(callsBefore);
+            expect(plugin.api.setBaseUrl).toHaveBeenCalled();
         });
 
         it("readCurrentToken returns null in managed mode when the server manager is missing", async () => {

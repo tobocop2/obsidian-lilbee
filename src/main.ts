@@ -645,9 +645,12 @@ export default class LilbeePlugin extends Plugin {
         return readSessionToken(dataRoot);
     }
 
-    /** Build a fresh API client for *baseUrl* and re-register all hooks. */
+    /** Point the API client at *baseUrl* and re-bind the hooks. Updates the
+     * existing client instance in place so any caller already mid-await on
+     * fetchWithRetry (waiting for the server to come up) sees the new URL
+     * land instead of being orphaned on a replaced reference. */
     private configureApi(baseUrl: string): void {
-        this.api = new LilbeeClient(baseUrl);
+        this.api.setBaseUrl(baseUrl);
         this.api.setTokenProvider(() => this.readCurrentToken());
         this.api.setToken(this.readCurrentToken());
         this.api.setOutcomeCallback((outcome) => this.handleRequestOutcome(outcome));
