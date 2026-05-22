@@ -237,6 +237,17 @@ export default class LilbeePlugin extends Plugin {
         await this.loadSettings();
         this.wikiEnabled = this.settings.wikiEnabled;
 
+        // Sweep up status-bar items + ribbon icons that prior dead lilbee
+        // instances left behind. Each crashed/incompletely-unloaded reload
+        // accumulates more, so the corner ends up with multiple "lilbee:
+        // ready" / "lilbee: error" pills side by side until Obsidian
+        // restarts. Take a clean slate before adding our own. Guarded for
+        // node-environment tests where document is undefined.
+        if (typeof document !== "undefined") {
+            document.querySelectorAll(".status-bar-item.plugin-lilbee").forEach((el) => el.remove());
+            document.querySelectorAll(".lilbee-ribbon-icon").forEach((el) => el.remove());
+        }
+
         this.statusBarEl = this.addStatusBarItem();
         this.statusBarEl.style.cursor = "pointer";
         this.statusBarEl.setAttribute("aria-label", MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);

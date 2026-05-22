@@ -245,6 +245,30 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerView).toHaveBeenCalled();
         });
 
+        it("removes stale .status-bar-item.plugin-lilbee + .lilbee-ribbon-icon from prior dead instances during onload", async () => {
+            const removeMock = vi.fn();
+            const docMock = {
+                querySelectorAll: vi.fn().mockImplementation((sel: string) => {
+                    if (sel === ".status-bar-item.plugin-lilbee" || sel === ".lilbee-ribbon-icon") {
+                        return [{ remove: removeMock }, { remove: removeMock }];
+                    }
+                    return [];
+                }),
+            };
+            const stash = (globalThis as { document?: unknown }).document;
+            (globalThis as { document?: unknown }).document = docMock;
+            try {
+                const plugin = await createPlugin();
+                await plugin.onload();
+                expect(docMock.querySelectorAll).toHaveBeenCalledWith(".status-bar-item.plugin-lilbee");
+                expect(docMock.querySelectorAll).toHaveBeenCalledWith(".lilbee-ribbon-icon");
+                // Two matches per selector, two selectors -> four removes.
+                expect(removeMock).toHaveBeenCalledTimes(4);
+            } finally {
+                (globalThis as { document?: unknown }).document = stash;
+            }
+        });
+
         it("swallows duplicate-view-type errors from registerView so a stale view registration doesn't crash onload", async () => {
             const plugin = await createPlugin();
             (plugin.registerView as ReturnType<typeof vi.fn>).mockImplementation(() => {
