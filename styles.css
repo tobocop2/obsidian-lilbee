@@ -3602,12 +3602,15 @@
     border: 1px solid var(--background-modifier-border);
     border-radius: 10px;
     background-color: var(--background-secondary);
-    transition: border-color 100ms ease, background-color 100ms ease;
+    transition: border-color 100ms ease;
 }
 
-.lilbee-vault-picker-card:hover {
+/* The card itself is non-interactive; only the inner Switch button activates
+ * a vault. Highlight the border on focus-within so keyboard users see which
+ * card holds the focused button, but skip the hover background-color that
+ * would falsely suggest the whole card is clickable. */
+.lilbee-vault-picker-card:focus-within {
     border-color: var(--interactive-accent);
-    background-color: var(--background-modifier-hover);
 }
 
 .lilbee-vault-picker-card-icon {

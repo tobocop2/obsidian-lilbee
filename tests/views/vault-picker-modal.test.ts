@@ -97,9 +97,9 @@ describe("VaultPickerModal", () => {
             entry({ id: "b", displayName: "Personal", obsidianVaultPath: "/Users/x/Personal" }),
             entry({ id: "c", displayName: "Field research", obsidianVaultPath: "/Users/x/Field" }),
         ]);
-        const input = (modal as any).filterInput as MockElement;
+        const input = modal.filterInput as unknown as MockElement;
         input.value = "work";
-        (input as any).trigger("input");
+        input.trigger("input");
         const names = contentEl.findAll("lilbee-vault-picker-card-name").map((c) => c.textContent);
         expect(names).toEqual(["Work"]);
     });
@@ -109,18 +109,18 @@ describe("VaultPickerModal", () => {
             entry({ id: "a", displayName: "Work", obsidianVaultPath: "/Users/x/Work" }),
             entry({ id: "b", displayName: "Personal", obsidianVaultPath: "/Users/x/Notes/Personal" }),
         ]);
-        const input = (modal as any).filterInput as MockElement;
+        const input = modal.filterInput as unknown as MockElement;
         input.value = "notes";
-        (input as any).trigger("input");
+        input.trigger("input");
         const names = contentEl.findAll("lilbee-vault-picker-card-name").map((c) => c.textContent);
         expect(names).toEqual(["Personal"]);
     });
 
     it("shows an empty-state when the filter matches nothing", () => {
         const { modal, contentEl } = openModal([entry({ displayName: "Work" })]);
-        const input = (modal as any).filterInput as MockElement;
+        const input = modal.filterInput as unknown as MockElement;
         input.value = "zzz-no-match";
-        (input as any).trigger("input");
+        input.trigger("input");
         const empties = contentEl.findAll("lilbee-vault-picker-empty");
         expect(empties.length).toBeGreaterThan(0);
     });
@@ -142,7 +142,7 @@ describe("VaultPickerModal", () => {
         expect(secondPage[0]).toBe("Vault 5");
     });
 
-    it("clamps page index when filter narrows results past current page", () => {
+    it("filter input resets to page 1 even if a later page was active", () => {
         const entries = Array.from({ length: 12 }, (_, i) =>
             entry({
                 id: `v${i}`,
@@ -156,10 +156,10 @@ describe("VaultPickerModal", () => {
             .findAll("lilbee-vault-picker-page-btn")
             .find((b) => b.textContent === MESSAGES.BUTTON_NEXT_PAGE);
         nextBtn?.trigger("click");
-        // Now filter to a single match — page index should reset to 0.
-        const input = (modal as any).filterInput as MockElement;
+        // Now filter to a single match. Page index should reset to 0.
+        const input = modal.filterInput as unknown as MockElement;
         input.value = "Vault 0";
-        (input as any).trigger("input");
+        input.trigger("input");
         const names = contentEl.findAll("lilbee-vault-picker-card-name").map((c) => c.textContent);
         expect(names).toEqual(["Vault 0"]);
     });
@@ -200,7 +200,7 @@ describe("VaultPickerModal", () => {
         const prev = contentEl
             .findAll("lilbee-vault-picker-page-btn")
             .find((b) => b.textContent === MESSAGES.BUTTON_PREV_PAGE);
-        prev?.trigger("click"); // guarded — should do nothing
+        prev?.trigger("click"); // guarded; should do nothing
         const names = contentEl.findAll("lilbee-vault-picker-card-name").map((c) => c.textContent);
         expect(names[0]).toBe("Vault 0");
     });
@@ -217,7 +217,7 @@ describe("VaultPickerModal", () => {
         const nextBtn2 = contentEl
             .findAll("lilbee-vault-picker-page-btn")
             .find((b) => b.textContent === MESSAGES.BUTTON_NEXT_PAGE);
-        nextBtn2?.trigger("click"); // guarded — already on last page
+        nextBtn2?.trigger("click"); // guarded; already on last page
         const names = contentEl.findAll("lilbee-vault-picker-card-name").map((c) => c.textContent);
         expect(names[0]).toBe("Vault 5");
     });

@@ -47,28 +47,32 @@ export class VaultPickerModal extends Modal {
         const filterIcon = filterWrap.createSpan({ cls: "lilbee-vault-picker-filter-icon" });
         setIcon(filterIcon, "search");
         const filterInput = filterWrap.createEl("input", {
-            type: "text",
-            placeholder: MESSAGES.PLACEHOLDER_VAULT_FILTER,
             cls: "lilbee-vault-picker-filter-input",
+            placeholder: MESSAGES.PLACEHOLDER_VAULT_FILTER,
+            attr: { type: "text", "aria-label": MESSAGES.PLACEHOLDER_VAULT_FILTER },
         }) as HTMLInputElement;
         this.filterInput = filterInput;
         filterInput.addEventListener("input", () => {
-            /* c8 ignore next */
-            this.filterValue = (this.filterInput?.value ?? "").trim().toLowerCase();
+            this.filterValue = filterInput.value.trim().toLowerCase();
             this.currentPage = 0;
             this.renderList();
         });
 
-        this.listEl = contentEl.createDiv({ cls: "lilbee-vault-picker-list" });
-        this.paginationEl = contentEl.createDiv({ cls: "lilbee-vault-picker-pagination" });
+        const listEl = contentEl.createDiv({ cls: "lilbee-vault-picker-list" });
+        const paginationEl = contentEl.createDiv({ cls: "lilbee-vault-picker-pagination" });
+        this.listEl = listEl;
+        this.paginationEl = paginationEl;
         this.renderList();
     }
 
     private renderList(): void {
-        /* c8 ignore next */
-        if (!this.listEl || !this.paginationEl) return;
-        this.listEl.empty();
-        this.paginationEl.empty();
+        // listEl/paginationEl are assigned in onOpen before any renderList call;
+        // the non-null assertions encode that ordering. A defensive null check
+        // would be unreachable and drop branch coverage below 100%.
+        const listEl = this.listEl!;
+        const paginationEl = this.paginationEl!;
+        listEl.empty();
+        paginationEl.empty();
         const matches = this.filterValue
             ? this.entries.filter(
                   (e) =>
@@ -77,19 +81,21 @@ export class VaultPickerModal extends Modal {
               )
             : this.entries;
         if (matches.length === 0) {
-            this.listEl.createEl("p", { text: MESSAGES.EMPTY_VAULT_FILTER, cls: "lilbee-vault-picker-empty" });
+            listEl.createEl("p", { text: MESSAGES.EMPTY_VAULT_FILTER, cls: "lilbee-vault-picker-empty" });
             return;
         }
+        // Every caller of renderList either keeps currentPage within bounds
+        // (renderPagination's prev/next click handlers guard the in/decrement)
+        // or resets it to 0 (filter-input handler), so no defensive clamp is
+        // needed here. Asserting the invariant in tests would be redundant.
         const pageCount = Math.max(1, Math.ceil(matches.length / VAULT_PICKER_PAGE_SIZE));
-        /* c8 ignore next */
-        if (this.currentPage >= pageCount) this.currentPage = pageCount - 1;
         const start = this.currentPage * VAULT_PICKER_PAGE_SIZE;
         const page = matches.slice(start, start + VAULT_PICKER_PAGE_SIZE);
         for (const entry of page) {
-            this.renderCard(this.listEl, entry);
+            this.renderCard(listEl, entry);
         }
         if (pageCount > 1) {
-            this.renderPagination(this.paginationEl, pageCount, matches.length);
+            this.renderPagination(paginationEl, pageCount, matches.length);
         }
     }
 
@@ -105,11 +111,10 @@ export class VaultPickerModal extends Modal {
                 this.renderList();
             }
         });
-        const status = container.createSpan({
+        container.createSpan({
             cls: "lilbee-vault-picker-page-status",
             text: MESSAGES.LABEL_PAGE_STATUS(this.currentPage + 1, pageCount, totalMatches),
         });
-        void status;
         const next = container.createEl("button", {
             text: MESSAGES.BUTTON_NEXT_PAGE,
             cls: "lilbee-vault-picker-page-btn",
