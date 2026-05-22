@@ -35,9 +35,12 @@ export default storyboard("lilbee_on_lilbee", {
   beats: [
     beat("Opening hold", sleep(700)),
     beat(
-      "Click the README in the explorer to open it",
-      clickSelector(`.nav-file-title-content:text-is("${README_DISPLAY}")`),
-      { holdMs: 900 },
+      "Open the lilbee README in a new tab",
+      runJs(`
+        await window.app.workspace.openLinkText("Code/lilbee-README.md", '', 'tab');
+        await new Promise(r => setTimeout(r, 250));
+      `),
+      { holdMs: 1000 },
     ),
     beat(
       "Open the command palette",

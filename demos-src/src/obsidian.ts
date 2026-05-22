@@ -31,23 +31,25 @@ export async function connectObsidian(): Promise<ObsidianContext> {
   throw new Error("No Obsidian window found on CDP. Launch with --remote-debugging-port=9222.");
 }
 
-/** Resolve a CSS selector to a screen-coord click target. */
+/** Resolve a CSS selector to a screen-coord click target.
+ *
+ * textIs (exact match) or textHas (substring) narrow the matches by visible
+ * text content. Match the first viewport-visible element so virtualised
+ * trees don't trip us up. */
 export async function resolveSelector(
   ctx: ObsidianContext,
   selector: string,
-  options: { textIs?: string } = {},
+  options: { textIs?: string; textHas?: string } = {},
 ): Promise<{ x: number; y: number } | null> {
   const box = await ctx.page.evaluate(
-    ([sel, textIs]) => {
-      const matches = document.querySelectorAll(sel as string);
+    ([sel, textIs, textHas]) => {
+      const matches = Array.from(document.querySelectorAll(sel as string));
       let el: Element | null = null;
       if (textIs) {
-        for (const m of Array.from(matches)) {
-          if ((m as HTMLElement).innerText?.trim() === textIs) {
-            el = m;
-            break;
-          }
-        }
+        el = matches.find((m) => (m as HTMLElement).innerText?.trim() === textIs) ?? null;
+      } else if (textHas) {
+        const needle = (textHas as string).toLowerCase();
+        el = matches.find((m) => ((m as HTMLElement).innerText ?? "").toLowerCase().includes(needle)) ?? null;
       } else {
         el = matches[0] ?? null;
       }
@@ -55,7 +57,7 @@ export async function resolveSelector(
       const r = (el as HTMLElement).getBoundingClientRect();
       return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
     },
-    [selector, options.textIs ?? null] as const,
+    [selector, options.textIs ?? null, options.textHas ?? null] as const,
   );
   if (!box) return null;
   return {

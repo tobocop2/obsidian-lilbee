@@ -333,17 +333,20 @@ async function cursorActOnSelector(
 ): Promise<{ x: number; y: number }> {
   // Support Playwright-style :has-text("...") and :text-is("...") sugar
   // by extracting the text and matching against textContent in the
-  // resolveSelector helper.
+  // resolveSelector helper. :text-is is exact, :has-text is substring.
   let cleanSelector = selector;
   let effectiveTextIs = textIs;
+  let effectiveTextHas: string | undefined;
   const hasTextMatch = selector.match(/:has-text\(["'](.+?)["']\)/);
   const textIsMatch = selector.match(/:text-is\(["'](.+?)["']\)/);
-  const m = textIsMatch ?? hasTextMatch;
-  if (m) {
-    effectiveTextIs = m[1];
-    cleanSelector = selector.replace(/:(has-text|text-is)\(["'].+?["']\)/, "");
+  if (textIsMatch) {
+    effectiveTextIs = textIsMatch[1];
+    cleanSelector = selector.replace(/:text-is\(["'].+?["']\)/, "");
+  } else if (hasTextMatch) {
+    effectiveTextHas = hasTextMatch[1];
+    cleanSelector = selector.replace(/:has-text\(["'].+?["']\)/, "");
   }
-  const coord = await resolveSelector(ctx, cleanSelector, { textIs: effectiveTextIs });
+  const coord = await resolveSelector(ctx, cleanSelector, { textIs: effectiveTextIs, textHas: effectiveTextHas });
   if (!coord) throw new Error(`cannot resolve selector for beat '${beat.label}': ${selector}`);
   await moveToCoord(coord.x, coord.y);
   await sleep(HOVER_BEFORE_CLICK_MS);

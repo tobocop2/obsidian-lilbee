@@ -65,44 +65,62 @@ export default storyboard("first_start", {
   noLilbee: true,
   caption: "Recorded on a 2021 M1 Pro, 32 GB RAM.",
   beats: [
-    beat("Opening hold", sleep(800)),
+    beat("Opening hold on a fresh empty vault", sleep(800)),
 
     // --- Stage 1: install BRAT ---
+    // Open settings via the gear icon so the viewer sees how a normal
+    // user gets there, not by command-palette mystery.
     beat(
-      "Open settings",
+      "Open settings via the command palette",
       runJs(`window.app.commands.executeCommandById("app:open-settings");`),
-      { holdMs: 1000 },
+      { holdMs: 1100 },
     ),
     beat(
-      "Click Community plugins",
+      "Click Community plugins in the settings tab list",
       clickSelector('.vertical-tab-nav-item:text-is("Community plugins")'),
-      { holdMs: 1000 },
+      { holdMs: 1100 },
     ),
     beat(
-      "Turn on community plugins if asked",
+      "Acknowledge the safe-mode modal — Turn on community plugins",
       runJs(`
         const btn = Array.from(document.querySelectorAll('button.mod-cta'))
           .find(b => /turn on community plugins/i.test(b.textContent || ''));
         if (btn) btn.click();
       `),
-      { holdMs: 1200 },
+      { holdMs: 1400 },
     ),
-    beat("Click Browse", clickSelector('button:text-is("Browse")'), { holdMs: 1200 }),
+    beat("Click Browse to open the community plugin store", clickSelector('button:text-is("Browse")'), { holdMs: 1300 }),
     beat(
       "Click the search field",
       clickSelector('input[placeholder^="Search community plugins"]'),
-      { holdMs: 400 },
+      { holdMs: 500 },
     ),
-    beat("Search for BRAT", type_("BRAT"), { holdMs: 1200 }),
+    beat("Search for BRAT", type_("BRAT"), { holdMs: 1300 }),
     beat(
       "Open the BRAT plugin card",
-      clickSelector('.community-item-name:text-is("BRAT")'),
-      { holdMs: 1500 },
+      clickSelector('.community-item:has-text("By tfthacker")'),
+      { holdMs: 1600 },
     ),
-    beat("Install", clickSelector('button:text-is("Install")'), { holdMs: 2500 }),
-    beat("Enable", clickSelector('button:text-is("Enable")'), { holdMs: 1500 }),
+    // Install/Enable buttons only show when BRAT isn't already installed
+    // in this vault. If a prior demo run left BRAT installed, the modal
+    // shows Disable/Uninstall instead — skip those clicks gracefully.
+    beat(
+      "Install + Enable BRAT (skipped if already installed)",
+      runJs(`
+        const btns = Array.from(document.querySelectorAll('.modal-container button'));
+        const install = btns.find(b => /^install$/i.test((b.textContent || '').trim()));
+        if (install) {
+          install.click();
+          await new Promise(r => setTimeout(r, 2500));
+          const after = Array.from(document.querySelectorAll('.modal-container button'));
+          const enable = after.find(b => /^enable$/i.test((b.textContent || '').trim()));
+          if (enable) enable.click();
+        }
+      `),
+      { holdMs: 2200 },
+    ),
     beat("Close BRAT details", key("escape"), { holdMs: 500 }),
-    beat("Close community plugin browse", key("escape"), { holdMs: 500 }),
+    beat("Close the community plugin browser", key("escape"), { holdMs: 500 }),
     beat("Close settings", key("escape"), { holdMs: 800 }),
 
     // --- Stage 2: BRAT add lilbee ---
@@ -163,30 +181,47 @@ export default storyboard("first_start", {
     beat("Dismiss any 'added' notice", key("escape"), { holdMs: 600 }),
 
     // --- Stage 3: enable lilbee ---
+    // Make absolutely sure lilbee is disabled before we click the
+    // toggle: if BRAT or a previous demo run left it enabled, the
+    // toggle would visibly flip OFF then ON and that's the "enabling
+    // and disabling" the viewer reads as broken.
     beat(
-      "Open settings",
+      "Make sure lilbee starts disabled so the toggle is a clean ON",
+      runJs(`
+        if (window.app.plugins.enabledPlugins.has("lilbee")) {
+          await window.app.plugins.disablePluginAndSave("lilbee");
+        }
+      `),
+      { holdMs: 200 },
+    ),
+    beat(
+      "Open settings again",
       runJs(`window.app.commands.executeCommandById("app:open-settings");`),
-      { holdMs: 800 },
+      { holdMs: 1000 },
     ),
     beat(
       "Click Community plugins",
       clickSelector('.vertical-tab-nav-item:text-is("Community plugins")'),
-      { holdMs: 800 },
+      { holdMs: 1000 },
     ),
     beat(
-      "Toggle lilbee on",
+      "Toggle lilbee ON",
       runJs(`
         const items = Array.from(document.querySelectorAll('.setting-item'));
         const row = items.find(el => /lilbee/i.test(el.querySelector('.setting-item-name')?.textContent || ''));
-        const toggle = row?.querySelector('.checkbox-container');
-        toggle?.click();
+        // Only click the toggle when lilbee is currently OFF, so the
+        // click reads as a clean turn-on and never as a flip-off then back-on.
         if (!window.app.plugins.enabledPlugins.has("lilbee")) {
-          await window.app.plugins.enablePluginAndSave("lilbee");
+          const toggle = row?.querySelector('.checkbox-container');
+          toggle?.click();
+          if (!window.app.plugins.enabledPlugins.has("lilbee")) {
+            await window.app.plugins.enablePluginAndSave("lilbee");
+          }
         }
       `),
       { holdMs: 2000 },
     ),
-    beat("Close settings (wizard appears next since lilbee just loaded fresh)", key("escape"), { holdMs: 1500 }),
+    beat("Close settings — the wizard appears next now that lilbee just loaded", key("escape"), { holdMs: 1500 }),
 
     // --- Stage 4: lilbee's first-load wizard auto-opens; walk it ---
     beat(

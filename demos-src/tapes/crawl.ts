@@ -72,34 +72,36 @@ export default storyboard("crawl", {
       { holdMs: 400 },
     ),
     beat("Click the citation to open the source preview", clickChip(0), { holdMs: 1400 }),
-    // Three real wheel bursts so the body flies by, then a smooth
-    // scroll that snaps the 9C1 section to centre-screen. wheelScroll
-    // uses the OS wheel via pyautogui so the modal's actual scroll
-    // container handles it (whatever Obsidian picked).
-    beat("Rapid scroll #1", wheelScroll(SOURCE_PREVIEW, -55), { holdMs: 250 }),
-    beat("Rapid scroll #2", wheelScroll(SOURCE_PREVIEW, -55), { holdMs: 250 }),
-    beat("Rapid scroll #3", wheelScroll(SOURCE_PREVIEW, -55), { holdMs: 250 }),
+    // Fly through the whole article: many fast wheel bursts so the
+    // body scrolls all the way to the bottom, then snap to the very
+    // end with scrollIntoView to make the landing deterministic.
+    beat("Rapid scroll #1", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
+    beat("Rapid scroll #2", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
+    beat("Rapid scroll #3", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
+    beat("Rapid scroll #4", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
+    beat("Rapid scroll #5", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
+    beat("Rapid scroll #6", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
+    beat("Rapid scroll #7", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
+    beat("Rapid scroll #8", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
     beat(
-      "Land on the 9C1 section",
+      "Snap to the very bottom of the article",
       runJs(`
-        // Search across modal AND workspace contexts so we land
-        // whether the chip opened a vault tab or the preview modal.
         const roots = [
           document.querySelector('.lilbee-source-preview, .modal-content'),
+          document.querySelector('.workspace-leaf.mod-active .markdown-preview-view'),
+          document.querySelector('.workspace-leaf.mod-active .cm-scroller'),
           document.querySelector('.workspace-leaf.mod-active'),
-          document,
         ].filter(Boolean);
         for (const root of roots) {
-          const headings = Array.from(root.querySelectorAll('h2, h3, h4'));
-          const targetHeading = headings.find(el => /\\b9C1\\b/i.test(el.textContent ?? ""));
-          const target = targetHeading ?? Array.from(root.querySelectorAll('p, li')).find(el => /\\b9C1\\b/.test(el.textContent ?? ""));
-          if (target && target.scrollIntoView) {
-            target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          const scroller =
+            root.querySelector('.markdown-preview-view, .cm-scroller, .modal-content') || root;
+          if (scroller && typeof scroller.scrollTo === 'function') {
+            scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' });
             return;
           }
         }
       `),
-      { holdMs: 3000 },
+      { holdMs: 2400 },
     ),
     beat("Close source preview", key("escape"), { holdMs: 500 }),
   ],

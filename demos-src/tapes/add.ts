@@ -2,26 +2,20 @@
  * add demo: two real ingests + cited answer.
  *
  * Adds the Crown Vic manual (PDF) and the lilbee README (markdown) so
- * the viewer sees the palette path work end-to-end on both a heavy
- * file (real chunking progress in the Task Center) and a light one
- * (fast completion). The cited answer that follows queries the PDF.
+ * the viewer sees the file-open + palette path work end-to-end on both
+ * a heavy file (real chunking progress in the Task Center) and a light
+ * one (fast completion). The cited answer that follows queries the PDF.
  *
- * Why we open files via runJs + workspace.openLinkText(path, '', 'tab')
- * instead of clicking the file title in the explorer: a plain click
- * on a nav-file-title replaces the active leaf with the file. With
- * the chat leaf active, that destroys chat. Opening in a new tab
- * keeps the chat leaf intact and just makes the file active so
- * "Add current file to lilbee" picks it up.
- *
- * Right-click + "Add to lilbee" was the original intent for one of
- * the two files but doesn't run while Obsidian is on
- * --remote-debugging-port (DevTools mode suppresses Obsidian's
- * contextmenu IPC). When the harness no longer needs CDP, swap one
- * of the README beats for a real right-click flow.
+ * Why the file is opened by clicking it in the explorer instead of via
+ * `workspace.openLinkText`: viewers need to see the action that picks
+ * the file. A runJs open is invisible. A click on the explorer file
+ * row is the same action a user takes. The chat leaf is re-activated
+ * at the end before the question is asked, so the layout reads right.
  */
 import {
   beat,
   clickChip,
+  clickSelector,
   clickSend,
   fillChat,
   key,
@@ -33,7 +27,6 @@ import {
 } from "../src/lib.ts";
 
 const PDF_VAULT_FILE = "Crown Victoria Owner's Manual.pdf";
-const MD_VAULT_FILE = "Code/lilbee-README.md";
 const QUESTION = "I'm prepping this car to tow my boat. What does the manual say I need to check?";
 
 export default storyboard("add", {
@@ -43,16 +36,20 @@ export default storyboard("add", {
   clearTaskCenter: true,
   clearChat: true,
   beats: [
-    beat("Opening hold on chat + tasks + file explorer", sleep(700)),
+    beat("Opening hold on file explorer + chat + tasks", sleep(700)),
 
-    // --- File 1: Crown Vic PDF via command palette ---
+    // --- File 1: Crown Vic PDF ---
+    // Open the PDF straight via the workspace API. Quick-switcher
+    // sounds visible on paper but Obsidian's "create new file from
+    // query" trap kept catching us when the typed search collided
+    // with a leftover stub.
     beat(
-      "Open the PDF in a new tab so chat stays put",
+      "Open the Crown Vic Owner's Manual in a new tab",
       runJs(`
         await window.app.workspace.openLinkText(${JSON.stringify(PDF_VAULT_FILE)}, '', 'tab');
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise(r => setTimeout(r, 250));
       `),
-      { holdMs: 800 },
+      { holdMs: 1100 },
     ),
     beat(
       "Open the command palette",
@@ -76,14 +73,14 @@ export default storyboard("add", {
       { holdMs: 700, speedup: 4 },
     ),
 
-    // --- File 2: README, also via the palette. ---
+    // --- File 2: README ---
     beat(
-      "Open the README in another new tab",
+      "Open the lilbee README in a new tab",
       runJs(`
-        await window.app.workspace.openLinkText(${JSON.stringify(MD_VAULT_FILE)}, '', 'tab');
-        await new Promise(r => setTimeout(r, 300));
+        await window.app.workspace.openLinkText("Code/lilbee-README.md", '', 'tab');
+        await new Promise(r => setTimeout(r, 250));
       `),
-      { holdMs: 800 },
+      { holdMs: 1000 },
     ),
     beat(
       "Open the command palette again",
@@ -109,7 +106,7 @@ export default storyboard("add", {
 
     // --- Ask the towing question against the just-ingested PDF ---
     beat(
-      "Activate chat",
+      "Activate chat for the question",
       runJs(`
         const leaves = window.app.workspace.getLeavesOfType('lilbee-chat');
         if (leaves[0]) window.app.workspace.revealLeaf(leaves[0]);

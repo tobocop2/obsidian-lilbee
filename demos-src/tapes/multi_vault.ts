@@ -25,7 +25,6 @@ import {
 } from "../src/lib.ts";
 
 const SWITCH_VAULT_FILTER = "Switch lilbee to another vault";
-const OTHER_VAULT = "obsidian-lilbee-firststart";
 
 export default storyboard("multi_vault", {
   window: [1400, 900],
@@ -48,9 +47,9 @@ export default storyboard("multi_vault", {
     beat("Run it — vault picker opens", key("enter"), { holdMs: 1800 }),
 
     beat(
-      "Click the other registered vault",
-      clickSelector(`.lilbee-vault-picker-row .lilbee-vault-picker-name:text-is("${OTHER_VAULT}")`),
-      { holdMs: 1200 },
+      "Click Switch on the other registered vault",
+      clickSelector(`.lilbee-vault-picker-card .lilbee-vault-picker-switch-btn`),
+      { holdMs: 1500 },
     ),
     // Give the plugin a beat to repaint the status bar (release → "Stopped"
     // muted dot) before the viewer's eye moves on. The release fires

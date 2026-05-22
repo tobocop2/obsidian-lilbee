@@ -1,15 +1,12 @@
 /**
- * settings demo: open the lilbee settings tab and wheel-scroll through
- * the whole pane so the viewer sees every section.
- *
- * Previously used an anchor-scroll-to-text helper; that worked but the
- * cursor stayed parked on the tab nav while the right pane moved on
- * its own. Real users have their pointer in the scroll area when they
- * scroll, so we wheel-scroll the `.vertical-tab-content` container
- * directly.
+ * settings demo: open the lilbee settings tab by clicking the green
+ * status-bar icon (the canonical entry the plugin exposes), then
+ * wheel-scroll the pane top to bottom so the viewer sees every
+ * section.
  */
-import { beat, key, openSettings, runJs, sleep, storyboard, wheelScroll } from "../src/lib.ts";
+import { beat, clickSelector, key, runJs, sleep, storyboard, wheelScroll } from "../src/lib.ts";
 
+const STATUS_BAR_ICON = ".status-bar-item.plugin-lilbee:not(.lilbee-sync-hint)";
 const SETTINGS_PANE = ".vertical-tab-content";
 
 export default storyboard("settings", {
@@ -17,14 +14,13 @@ export default storyboard("settings", {
   layout: "blank",
   preloadChatModel: false,
   beats: [
-    beat("Opening hold", sleep(500)),
-    beat("Open settings, jump to lilbee tab", openSettings(), { holdMs: 900 }),
+    beat("Opening hold on the empty workspace", sleep(700)),
+    beat("Mouse to the green lilbee status-bar icon and click", clickSelector(STATUS_BAR_ICON), { holdMs: 1000 }),
     beat(
       "Expand every section so scrolling reveals controls",
       runJs(`document.querySelectorAll('.vertical-tab-content details').forEach(d => d.setAttribute('open',''));`),
       { holdMs: 400 },
     ),
-    // Six wheel-scrolls walking the full lilbee tab top to bottom.
     beat("Scroll #1", wheelScroll(SETTINGS_PANE, -20), { holdMs: 700 }),
     beat("Scroll #2", wheelScroll(SETTINGS_PANE, -20), { holdMs: 700 }),
     beat("Scroll #3", wheelScroll(SETTINGS_PANE, -20), { holdMs: 700 }),

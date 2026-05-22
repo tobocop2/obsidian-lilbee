@@ -1,14 +1,15 @@
 /**
- * tour demo: a guided walk through every lilbee surface a user can
- * reach. Pure tour: no on-camera Q&A against an unindexed corpus.
+ * tour demo: a guided walk through every lilbee surface a user reaches
+ * during normal use. Runs against an already-used vault so the file
+ * tree shows real documents and the task center has historical entries.
  *
  * Surfaces covered:
+ *  - file explorer with the documents already in the vault
  *  - chat panel + task center
  *  - model catalog (every category tab)
- *  - settings (lilbee tab, model rows + sections)
- *  - command palette showing the lilbee command surface
- *  - the four headline commands (crawl, browse documents, browse wiki,
- *    review wiki drafts) each opened briefly to show what's reachable
+ *  - wiki view in the right sidebar
+ *  - settings (lilbee tab)
+ *  - command palette filtered to the lilbee command surface
  */
 import {
   beat,
@@ -28,14 +29,28 @@ const SETTINGS_PANE = ".vertical-tab-content";
 
 export default storyboard("tour", {
   window: [1400, 900],
-  layout: "chat-and-tasks",
+  layout: "explorer-chat-tasks",
   preloadChatModel: false,
-  clearTaskCenter: true,
-  clearChat: true,
+  // Tour against an already-used vault. Keep task center entries so
+  // the viewer sees real history. Don't clear chat.
+  clearTaskCenter: false,
+  clearChat: false,
   beats: [
-    beat("Opening hold: chat + tasks side by side", sleep(900)),
+    beat("Opening hold: file explorer + chat + tasks", sleep(900)),
 
-    // Catalog walkthrough — every category so the viewer sees breadth.
+    beat(
+      "Glance at the file explorer (the vault's existing documents)",
+      runJs(`
+        const fe = window.app.workspace.getLeavesOfType('file-explorer')[0];
+        if (fe) {
+          window.app.workspace.leftSplit?.expand?.();
+          window.app.workspace.revealLeaf(fe);
+        }
+        await new Promise(r => setTimeout(r, 200));
+      `),
+      { holdMs: 1300 },
+    ),
+
     beat("Open the model catalog", command("lilbee:lilbee:catalog"), { holdMs: 1000 }),
     beat("Chat models tab", clickSelector(`${CATALOG_TAB} button:text-is("Chat")`), { holdMs: 800 }),
     beat("Embedding models tab", clickSelector(`${CATALOG_TAB} button:text-is("Embed")`), { holdMs: 800 }),
@@ -43,7 +58,6 @@ export default storyboard("tour", {
     beat("Reranker models tab", clickSelector(`${CATALOG_TAB} button:text-is("Rerank")`), { holdMs: 900 }),
     beat("Close the catalog", key("escape"), { holdMs: 500 }),
 
-    // Wiki view — show the concept browser surface.
     beat(
       "Open the wiki view in the right sidebar",
       runJs(`
@@ -55,12 +69,9 @@ export default storyboard("tour", {
     ),
     beat("Close wiki view back to chat", key("escape"), { holdMs: 500 }),
 
-    // Crawl modal — show the web-crawl entry point.
     beat("Open the crawl modal", command("lilbee:lilbee:crawl"), { holdMs: 1500 }),
     beat("Close the crawl modal", key("escape"), { holdMs: 500 }),
 
-    // Settings — jump to lilbee tab, scroll through the configuration
-    // surface so the viewer sees how much is tunable.
     beat("Open lilbee settings", openSettings(), { holdMs: 800 }),
     beat(
       "Expand sections so a scroll reveals real controls",
@@ -71,7 +82,6 @@ export default storyboard("tour", {
     beat("Scroll settings #2", wheelScroll(SETTINGS_PANE, -28), { holdMs: 700 }),
     beat("Close settings", key("escape"), { holdMs: 500 }),
 
-    // Command palette — show every lilbee command in one place.
     beat(
       "Open the command palette",
       runJs(`window.app.commands.executeCommandById("command-palette:open");`),
@@ -80,6 +90,6 @@ export default storyboard("tour", {
     beat("Filter to lilbee commands", type_("lilbee"), { holdMs: 2000 }),
     beat("Close the palette", key("escape"), { holdMs: 500 }),
 
-    beat("Final hold on chat + tasks", sleep(900)),
+    beat("Final hold on file explorer + chat + tasks", sleep(900)),
   ],
 });
