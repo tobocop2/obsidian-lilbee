@@ -451,3 +451,12 @@ describe("types", () => {
         expect(sorts).toContain(FILTERS.SORT.SIZE_DESC);
     });
 });
+
+import { it as itLabel, expect as expectLabel } from "vitest";
+
+itLabel("LABEL_PAGE_STATUS pluralizes the count properly", () => {
+    const single = MESSAGES.LABEL_PAGE_STATUS(1, 1, 1);
+    const many = MESSAGES.LABEL_PAGE_STATUS(1, 1, 2);
+    expectLabel(single).toBe("Page 1 of 1 · 1 vault");
+    expectLabel(many).toBe("Page 1 of 1 · 2 vaults");
+});
