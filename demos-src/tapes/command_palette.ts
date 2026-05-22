@@ -34,8 +34,13 @@ export default storyboard("command_palette", {
       runJs(`window.app.commands.executeCommandById("command-palette:open");`),
       { holdMs: 700 },
     ),
-    beat("Filter to lilbee settings", type_("lilbee open settings"), { holdMs: 1200 }),
+    beat("Filter to Open settings", type_("Open settings"), { holdMs: 1300 }),
     beat("Open settings", key("enter"), { holdMs: 1600 }),
+    beat(
+      "Click the lilbee tab in settings",
+      clickSelector('.vertical-tab-nav-item:text-is("lilbee")'),
+      { holdMs: 1200 },
+    ),
     beat("Dismiss settings", key("escape"), { holdMs: 700 }),
 
     beat(
