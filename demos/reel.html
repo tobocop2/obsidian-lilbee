@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>obsidian-lilbee demo reel</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f0f10;
+    --surface: #1a1a1c;
+    --border: #2a2a2e;
+    --text: #e8e8ea;
+    --muted: #8a8a8e;
+    --accent: #7c3aed;
+  }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", Helvetica, Arial, sans-serif; }
+  header { padding: 32px 40px 16px; border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+  nav { padding: 16px 40px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; flex-wrap: wrap; background: var(--surface); position: sticky; top: 0; z-index: 10; }
+  nav a { color: var(--text); text-decoration: none; padding: 4px 10px; border-radius: 6px; font-size: 12px; background: #232326; }
+  nav a:hover { background: #2e2e32; }
+  main { padding: 24px 40px 64px; max-width: 1180px; margin: 0 auto; }
+  section { margin: 32px 0; padding: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; scroll-margin-top: 80px; }
+  section h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  section .meta { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+  section p.note { color: #c8c8cc; font-size: 13px; margin: 0 0 16px; }
+  video { width: 100%; max-width: 1100px; display: block; border-radius: 8px; background: #000; }
+  .contact { margin-top: 16px; }
+  .contact summary { color: var(--muted); cursor: pointer; font-size: 12px; padding: 6px 0; }
+  .contact img { width: 100%; max-width: 1100px; display: block; margin-top: 8px; border-radius: 6px; border: 1px solid var(--border); }
+  footer { padding: 24px 40px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<header>
+  <h1>obsidian-lilbee demo reel</h1>
+  <p>9 demos recorded 2026-05-21. Click any title to jump.</p>
+</header>
+<nav>
+  <a href="#tour">tour</a>
+  <a href="#chat">chat</a>
+  <a href="#add">add</a>
+  <a href="#lilbee_on_lilbee">lilbee_on_lilbee</a>
+  <a href="#crawl">crawl</a>
+  <a href="#catalog">catalog</a>
+  <a href="#settings">settings</a>
+  <a href="#command_palette">command_palette</a>
+  <a href="#first_start">first_start</a>
+  <a href="#multi_vault">multi_vault</a>
+</nav>
+<main>
+
+<section id="tour">
+  <h2>tour</h2>
+  <div class="meta">38s &middot; surface walkthrough</div>
+  <p class="note">Orientation tour. No on-camera Q&amp;A. Walks the model catalog (Discover / Chat / Embed / Vision / Rerank tabs), settings tab with the fixed model-row alignment, and the command palette filtered to "lilbee".</p>
+  <video src="tour.webm" controls preload="metadata"></video>
+  <details class="contact"><summary>contact sheet (8 evenly-spaced frames)</summary><img src="tour.contact.png" alt="tour contact sheet"></details>
+</section>
+
+<section id="chat">
+  <h2>chat</h2>
+  <div class="meta">25s &middot; cited answer against cv-manual</div>
+  <p class="note">Asks a towing prep question against the indexed Crown Victoria manual. Streams a cited answer with [1][2], clicks the first citation, source-preview modal opens at page 173.</p>
+  <video src="chat.webm" controls preload="metadata"></video>
+  <details class="contact"><summary>contact sheet</summary><img src="chat.contact.png" alt="chat contact sheet"></details>
+</section>
+
+<section id="add">
+  <h2>add</h2>
+  <div class="meta">44s &middot; fresh ingest + cited answer</div>
+  <p class="note">Two real ingests via the command palette (PDF + README), Task Center fills with chunk-embedding progress, towing question gets a cited answer, citation click opens the source. The recording uses the palette path for both files because Obsidian's right-click context menu doesn't fire to the renderer while CDP is active, but right-click + "Add to lilbee" works the same way for any vault file:</p>
+  <details class="contact" open><summary>right-click "Add to lilbee" (real Obsidian, no CDP)</summary><img src="right_click_add_to_lilbee.png" alt="Right-click on a vault file shows 'Add to lilbee' in the context menu"></details>
+  <video src="add.webm" controls preload="metadata"></video>
+  <details class="contact"><summary>contact sheet</summary><img src="add.contact.png" alt="add contact sheet"></details>
+</section>
+
+<section id="lilbee_on_lilbee">
+  <h2>lilbee_on_lilbee</h2>
+  <div class="meta">48s &middot; ingest README + ask what lilbee is</div>
+  <p class="note">Ingests the lilbee README, scrolls through the file, asks "What is lilbee in one sentence?", gets cited answer, clicks the README chip to open the source preview.</p>
+  <video src="lilbee_on_lilbee.webm" controls preload="metadata"></video>
+  <details class="contact"><summary>contact sheet</summary><img src="lilbee_on_lilbee.contact.png" alt="lilbee_on_lilbee contact sheet"></details>
+</section>
+
+<section id="crawl">
+  <h2>crawl</h2>
+  <div class="meta">62s &middot; crawl Wikipedia + cite</div>
+  <p class="note">Crawls the Chevrolet Caprice Wikipedia page, asks when the 9C1 police package was introduced, gets a cited answer, clicks citation to open the source preview, rapid-scrolls through the body to show the photos and references.</p>
+  <video src="crawl.webm" controls preload="metadata"></video>
+  <details class="contact"><summary>contact sheet</summary><img src="crawl.contact.png" alt="crawl contact sheet"></details>
+</section>
+
+<section id="catalog">
+  <h2>catalog</h2>
+  <div class="meta">61s &middot; model catalog walkthrough</div>
+  <p class="note">Walks Chat, Embed, Vision, and Rerank tabs of the model catalog modal, scrolling each list, then searches "Phi-4" in the Chat tab.</p>
+  <video src="catalog.webm" controls preload="metadata"></video>
+  <details class="contact"><summary>contact sheet</summary><img src="catalog.contact.png" alt="catalog contact sheet"></details>
+</section>
+
+<section id="settings">
+  <h2>settings</h2>
+  <div class="meta">33s &middot; lilbee settings tour</div>
+  <p class="note">Scrolls top to bottom through every lilbee settings section. The model-row alignment fix is visible: long names, wrapping descriptions, and large sizes like "264.8 GB" all stay on aligned rows.</p>
+  <video src="settings.webm" controls preload="metadata"></video>
+  <details class="contact"><summary>contact sheet</summary><img src="settings.contact.png" alt="settings contact sheet"></details>
+</section>
+
+<section id="command_palette">
+  <h2>command_palette</h2>
+  <div class="meta">26s &middot; three palette opens</div>
+  <p class="note">Three opens of the command palette in sequence: lilbee browse model catalog, lilbee task center, lilbee open chat. Shows that every lilbee surface is keyboard-reachable.</p>
+  <video src="command_palette.webm" controls preload="metadata"></video>
+  <details class="contact"><summary>contact sheet</summary><img src="command_palette.contact.png" alt="command_palette contact sheet"></details>
+</section>
+
+<section id="multi_vault">
+  <h2>multi_vault</h2>
+  <div class="meta">19s &middot; switch the shared lilbee install between vaults</div>
+  <p class="note">From the active vault: open the command palette, run "Switch lilbee to another vault", the picker lists the other vault registered against the shared lilbee install, click it to release the lock, then Show Status confirms the current data-dir state. The viewer's next step would be switching Obsidian's open vault so the picked vault can claim the install.</p>
+  <video src="multi_vault.webm" controls preload="metadata"></video>
+  <details class="contact"><summary>contact sheet</summary><img src="multi_vault.contact.png" alt="multi_vault contact sheet"></details>
+</section>
+
+<section id="first_start">
+  <h2>first_start</h2>
+  <div class="meta">228s &middot; fresh vault end-to-end (install + wizard)</div>
+  <p class="note">From a clean vault: install BRAT from community plugins, use BRAT to install lilbee from GitHub, enable the plugin, walk the setup wizard end-to-end (Managed mode, Qwen3 0.6B, embedding model). Demo ends after the wizard's final step. <strong>Known issue:</strong> under the new shared-root architecture, the per-vault managed server doesn't yet read the shared models dir, so the chat panel ends in a "No models installed" state and the status bar reads "libee: error" at the end. The install flow itself is what the demo shows.</p>
+  <video src="first_start.webm" controls preload="metadata"></video>
+  <details class="contact"><summary>contact sheet</summary><img src="first_start.contact.png" alt="first_start contact sheet"></details>
+</section>
+
+</main>
+<footer>
+  Files live in <code>demos/output/</code>. Per-second walkthrough frames are at <code>demos/output/&lt;name&gt;.walkthrough/</code>.
+</footer>
+</body>
+</html>
