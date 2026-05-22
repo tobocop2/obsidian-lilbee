@@ -5,3 +5,10 @@ coverage/
 .worktrees/
 .superpowers/
 docs/superpowers/
+
+# Demos: ignore the large recording outputs + transient probes + node_modules
+demos/output/
+demos/node_modules/
+demos/_out/
+demos/probe-*.mjs
+demos/scripts/__pycache__/
