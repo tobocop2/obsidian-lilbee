@@ -51,34 +51,11 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
 
 ## Previews
 
-> ASCII sketches of each screen: the shape, not the pixels.
+The full 10-demo reel lives at [obsidian.lilbee.sh/reel](https://obsidian.lilbee.sh/reel). Highlights below.
 
 **Chat sidebar.** Streaming replies with `[¹]` citations. Click a citation to open the source preview. The header shows the active chat and embedding models as buttons that open the model picker, plus a Search / Chat mode toggle.
 
-```
- ┌─ Chat ─────────────────────────────────────┐
- │ [qwen3:8b ▾]  [nomic-embed ▾]  Search|Chat │
- │ [OCR: Auto]  [All | Wiki | Raw]  [Save] [×]│
- ├────────────────────────────────────────────┤
- │                                            │
- │ You:  what does the oil pressure warning   │
- │       mean?                                │
- │                                            │
- │ > thinking...                              │
- │                                            │
- │ Lilbee: The oil pressure warning indicates │
- │         low oil pressure.[1] When the      │
- │         light stays on, stop the engine    │
- │         immediately.[2]                    │
- │         ───────────────────────────────    │
- │         Sources                            │
- │         [1 owners-manual.pdf:42] <-preview │
- │         [2 owners-manual.pdf:43]           │
- │                                            │
- ├────────────────────────────────────────────┤
- │ [Attach]  Ask anything...          [Send]  │
- └────────────────────────────────────────────┘
-```
+![chat](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/chat.gif)
 
 **Server-emitted banner.** When the server has something to say about why an answer wasn't grounded (e.g. Search mode with no embedding model configured), it surfaces a banner above the assistant bubble. The plugin renders the server's text verbatim.
 
@@ -120,38 +97,7 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
 
 **Model Catalog.** Browse, search, and install models without leaving Obsidian. Two tabs: Local (installed and pullable GGUFs) and Frontier (cloud models via litellm). The Frontier tab is hidden until at least one provider API key is configured in Settings; once it appears, rows are grouped by provider with a Ready / Needs-key pill, and clicking a Needs-key row deep-links to that provider's API-key input.
 
-```
- ┌─ Browse model catalog ──────────────────┐
- │ [Local] [Frontier]                      │
- │ [All tasks v] [All sizes v] [Featured v]│
- │ search...                  [Grid | List]│
- │                                         │
- │ Our picks                               │
- │ ┌────────────┐ ┌────────────┐           │
- │ │ Qwen3 8B * │ │ Nomic      │           │
- │ │ [chat]     │ │ [embed]    │           │
- │ │ [GGUF]     │ │ [GGUF]     │           │
- │ │ 4.9 GB  ok │ │ 274 MB     │           │
- │ │ [Use]      │ │ [Pull]     │           │
- │ └────────────┘ └────────────┘           │
- │                                         │
- │             [Load more]                 │
- └─────────────────────────────────────────┘
-```
-
-```
- ┌─ Browse model catalog ──────────────────────┐
- │ [Local] [Frontier]                          │
- │ search...                                   │
- │ ── OpenAI ──────────────────────────────    │
- │   gpt-4o          [OpenAI] [Ready]   128k   │
- │   o3-mini         [OpenAI] [Ready]   128k   │
- │ ── Anthropic ───────────────────────────    │
- │   claude-opus-4-7 [Anthropic] [Needs key] 1M│ <- click to deep-link
- │ ── Google ──────────────────────────────    │
- │   gemini-2.5-pro  [Google] [Needs key]   2M │
- └─────────────────────────────────────────────┘
-```
+![catalog](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/catalog.gif)
 
 **Model picker.** A separate, faster affordance for switching the active chat or embedding model from inside the chat sidebar: just a search input and a virtualized list. Open via the model buttons in the chat header or the **Pick chat model** / **Pick embedding model** commands.
 
@@ -171,18 +117,7 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
 
 **Task Center.** Every background job (sync, crawl, wiki build, model pull) in one place. Per-type concurrent queues with a global cap.
 
-```
- ┌─ Task Center ─────────── [cap 3/3] [Clear]┐
- │ ACTIVE (2)                                │
- │   [============-----]  42%  PULL  qwen3   │
- │   [======-----------]  18%  SYNC  vault   │
- │ QUEUED (1)                                │
- │   CRAWL  https://docs.example.com         │
- │ COMPLETED                                 │
- │   [v] SYNC  vault              2 min ago  │
- │   [x] PULL  mistral            5 min ago  │
- └───────────────────────────────────────────┘
-```
+![add files + task center](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/add.gif)
 
 **Wiki sidebar.** Auto-generated concept and entity pages, drafts queue, citation footnotes that open the source preview.
 
@@ -211,18 +146,7 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
 
 **Setup wizard.** 7-step guided onboarding on first launch. Re-runnable from the command palette.
 
-```
- (1)--(2)--(3)--(4)--(5)--(6)--(7)
-  1    2    3    4    5    6    7
-
-  1  Welcome
-  2  Server mode      ->  Managed or External (URL + health)
-  3  Chat model       ->  Featured grid, RAM-based pick
-  4  Embedding model  ->  Featured grid (or keep current)
-  5  Initial sync     ->  SSE progress bar
-  6  Wiki (optional)  ->  Pros/cons, recommend skipping
-  7  Done             ->  Summary + tips + [Open chat]
-```
+![first_start](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first_start.gif)
 
 ## What you can do with it
 
