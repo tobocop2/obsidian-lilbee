@@ -907,6 +907,13 @@ export default class LilbeePlugin extends Plugin {
             clearTimeout(this.pendingHintTimeout);
             this.pendingHintTimeout = null;
         }
+        // Tear down the status-bar items we own. addStatusBarItem returns
+        // DOM nodes that survive plugin unload if the plugin doesn't detach
+        // them explicitly, so a disable/enable cycle leaves stale duplicates
+        // in the bar that the new plugin instance then sits next to.
+        this.statusBarEl?.remove();
+        this.statusBarEl = null;
+        this.syncHintEl?.remove();
         this.syncHintEl = null;
         this.taskQueue.dispose();
         void this.serverManager?.stop();
