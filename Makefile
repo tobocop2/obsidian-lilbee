@@ -9,9 +9,9 @@ TAPES := tour chat add lilbee_on_lilbee crawl catalog settings command_palette m
 
 # GIF width (px). The webms are recorded at retina 3456×2158; downscaling
 # to 800 keeps the GIFs viewable and the file sizes embeddable in README.
-GIF_WIDTH := 800
-GIF_FPS := 15
-GIF_COLORS := 128
+GIF_WIDTH := 1200
+GIF_FPS := 20
+GIF_COLORS := 256
 
 demo-prep:  ## Install harness deps; verify ffmpeg + pyautogui + gifsicle
 	@test -d demos-src/node_modules || ( cd demos-src && npm install )
@@ -40,7 +40,7 @@ demo-gifs: demo-record
 		echo "==> gififying $$tape"; \
 		ffmpeg -y -i "$$webm" -vf "fps=$(GIF_FPS),scale=$(GIF_WIDTH):-1:flags=lanczos,palettegen=max_colors=$(GIF_COLORS)" "$$pal" >/dev/null 2>&1; \
 		ffmpeg -y -i "$$webm" -i "$$pal" -lavfi "fps=$(GIF_FPS),scale=$(GIF_WIDTH):-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5" "$$gif" >/dev/null 2>&1; \
-		gifsicle -O3 --lossy=80 -b "$$gif" >/dev/null 2>&1; \
+		gifsicle -O3 --lossy=30 -b "$$gif" >/dev/null 2>&1; \
 	done
 	@rm -rf demos/.gif-tmp
 

@@ -138,6 +138,15 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
   if (pinnedModel !== wantModel) {
     throw new Error(`pre-flight: failed to pin model: got ${pinnedModel}, want ${wantModel}`);
   }
+  // Tell the plugin to re-read the active model from the server. Without
+  // this the status bar keeps showing whatever model the plugin thought
+  // was active before the pin, while the chat header reflects the pin.
+  await ctx.page.evaluate(async () => {
+    const p = (globalThis as unknown as { app: { plugins: { plugins: { lilbee: { fetchActiveModel?: () => Promise<void> } } } } }).app.plugins.plugins.lilbee;
+    if (typeof p.fetchActiveModel === "function") {
+      await p.fetchActiveModel();
+    }
+  });
   }
 
   // 4. Fresh ingest cleanup

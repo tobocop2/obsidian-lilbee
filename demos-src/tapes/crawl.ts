@@ -6,12 +6,12 @@ import {
   clickChip,
   clickSelector,
   clickSend,
-  command,
   fillChat,
   key,
   runJs,
   sleep,
   storyboard,
+  type_,
   waitChatIdle,
   wheelScroll,
 } from "../src/lib.ts";
@@ -35,7 +35,13 @@ export default storyboard("crawl", {
   caption: "Recorded on a 2021 M1 Pro, 32 GB RAM.",
   beats: [
     beat("Opening hold", sleep(500)),
-    beat("Open crawl modal", command("lilbee:lilbee:crawl"), { holdMs: 900 }),
+    beat(
+      "Open the command palette",
+      runJs(`window.app.commands.executeCommandById("command-palette:open");`),
+      { holdMs: 500 },
+    ),
+    beat("Filter to lilbee crawl", type_("Crawl web page"), { holdMs: 1100 }),
+    beat("Open crawl modal", key("enter"), { holdMs: 900 }),
     beat(
       "Paste the Caprice URL",
       runJs(`

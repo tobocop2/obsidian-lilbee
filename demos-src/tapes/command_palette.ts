@@ -1,10 +1,13 @@
 /**
- * command_palette demo: drive three lilbee surfaces from Cmd-P so the
- * viewer sees how Obsidian users actually reach the plugin.
+ * command_palette demo: three palette flows back to back so the viewer
+ * sees how Obsidian users reach lilbee surfaces.
  *
- *   1. lilbee settings (open + dismiss)
- *   2. lilbee crawl  (open the modal + paste a URL + dismiss)
- *   3. add current file (open a vault file, then add it via palette)
+ *   1. Open lilbee settings (Cmd-P + Open settings + click lilbee tab)
+ *   2. Crawl a web page (Cmd-P + Crawl web page + paste URL + dismiss)
+ *   3. Add the current file (Cmd-P + Add current file)
+ *
+ * No invisible runJs executeCommandById. Every command activation goes
+ * through the visible palette flow.
  */
 import {
   beat,
@@ -19,39 +22,39 @@ import {
 const SAMPLE_URL = "https://en.wikipedia.org/wiki/Knowledge_graph";
 const OPEN_VAULT_FILE = "Code/lilbee-README.md";
 
+const palette = (label: string, query: string, holdAfter = 1100) => [
+  beat(
+    `Open the command palette (${label})`,
+    runJs(`window.app.commands.executeCommandById("command-palette:open");`),
+    { holdMs: 500 },
+  ),
+  beat(`Type "${query}"`, type_(query), { holdMs: 1100 }),
+  beat(`Run ${label}`, key("enter"), { holdMs: holdAfter }),
+];
+
 export default storyboard("command_palette", {
   window: [1400, 900],
   layout: "chat-and-tasks",
   preloadChatModel: false,
   clearTaskCenter: true,
   clearChat: true,
-  freshIngest: ["lilbee-README.md"],
   beats: [
-    beat("Opening hold on the freshly cleared chat", sleep(800)),
+    beat("Opening hold on the chat panel", sleep(700)),
 
+    // 1. Open settings via palette, then click the lilbee tab.
+    ...palette("Open settings", "Open settings", 1300),
     beat(
-      "Open the command palette",
-      runJs(`window.app.commands.executeCommandById("command-palette:open");`),
-      { holdMs: 700 },
-    ),
-    beat("Filter to Open settings", type_("Open settings"), { holdMs: 1300 }),
-    beat("Open settings", key("enter"), { holdMs: 1600 }),
-    beat(
-      "Click the lilbee tab in settings",
+      "Click the lilbee tab in the settings nav",
       clickSelector('.vertical-tab-nav-item:text-is("lilbee")'),
-      { holdMs: 1200 },
+      { holdMs: 1500 },
     ),
-    beat("Dismiss settings", key("escape"), { holdMs: 700 }),
+    beat("Close settings", key("escape"), { holdMs: 600 }),
 
+    // 2. Crawl a web page via palette, paste a URL into the modal,
+    // dismiss without running the actual crawl.
+    ...palette("Crawl web page", "Crawl web page", 1000),
     beat(
-      "Open the command palette again",
-      runJs(`window.app.commands.executeCommandById("command-palette:open");`),
-      { holdMs: 700 },
-    ),
-    beat("Filter to lilbee crawl", type_("lilbee crawl"), { holdMs: 1200 }),
-    beat("Open the crawl modal", key("enter"), { holdMs: 1000 }),
-    beat(
-      "Type a URL so the crawl modal isn't empty",
+      "Paste a URL into the crawl modal",
       runJs(`
         const input = document.querySelector('input.lilbee-crawl-url');
         if (input) {
@@ -62,25 +65,20 @@ export default storyboard("command_palette", {
       `),
       { holdMs: 1300 },
     ),
-    beat("Dismiss the crawl modal", key("escape"), { holdMs: 700 }),
+    beat("Dismiss the crawl modal", key("escape"), { holdMs: 600 }),
 
+    // 3. Open a file from the vault, then Add current file via palette.
     beat(
-      "Open the lilbee README so the next palette has a target",
+      "Open the lilbee README in a new tab",
       runJs(`
         await window.app.workspace.openLinkText(${JSON.stringify(OPEN_VAULT_FILE)}, '', 'tab');
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise(r => setTimeout(r, 250));
       `),
-      { holdMs: 900 },
+      { holdMs: 800 },
     ),
+    ...palette("Add current file", "Add current file", 800),
     beat(
-      "Open the command palette one more time",
-      runJs(`window.app.commands.executeCommandById("command-palette:open");`),
-      { holdMs: 700 },
-    ),
-    beat("Filter to Add current file", type_("lilbee add current file"), { holdMs: 1300 }),
-    beat("Add the README to lilbee", key("enter"), { holdMs: 800 }),
-    beat(
-      "Watch the ingest land in the Task Center",
+      "Watch the Task Center fill in real time",
       runJs(`
         const tq = window.app.plugins.plugins.lilbee.taskQueue;
         let sawActive = false;
@@ -94,6 +92,6 @@ export default storyboard("command_palette", {
       { holdMs: 1200, speedup: 3 },
     ),
 
-    beat("Final hold on chat + populated task center", sleep(900)),
+    beat("Final hold on chat + populated Task Center", sleep(800)),
   ],
 });

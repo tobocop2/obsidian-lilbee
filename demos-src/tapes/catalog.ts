@@ -13,7 +13,7 @@
  * doesn't expose Frontier rows, but Local pagination has has_more=true
  * for all three tasks so the load behavior is visible regardless.
  */
-import { beat, clickSelector, command, key, sleep, storyboard, type_, wheelScroll } from "../src/lib.ts";
+import { beat, clickSelector, key, runJs, sleep, storyboard, type_, wheelScroll } from "../src/lib.ts";
 
 // Wheel ticks per scroll beat. macOS scroll ticks are tiny, so ~36
 // ticks gets us most of the way down a card list. The threshold for
@@ -32,7 +32,13 @@ export default storyboard("catalog", {
   clearTaskCenter: true,
   beats: [
     beat("Opening hold", sleep(500)),
-    beat("Open the model catalog", command("lilbee:lilbee:catalog"), { holdMs: 1000 }),
+    beat(
+      "Open the command palette",
+      runJs(`window.app.commands.executeCommandById("command-palette:open");`),
+      { holdMs: 500 },
+    ),
+    beat("Filter to the catalog command", type_("Browse model catalog"), { holdMs: 1100 }),
+    beat("Open the catalog", key("enter"), { holdMs: 1000 }),
 
     // Modal already opens on Chat tab — no redundant click. Just scroll.
     beat("Scroll Chat #1", wheelScroll(CATALOG_RESULTS, TICKS_PER_SCROLL), { holdMs: 600 }),
