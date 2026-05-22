@@ -1,4 +1,12 @@
-import { type Menu, type MenuItem, Notice, Plugin, type TAbstractFile } from "obsidian";
+import {
+    type ItemView,
+    type Menu,
+    type MenuItem,
+    Notice,
+    Plugin,
+    type TAbstractFile,
+    type WorkspaceLeaf,
+} from "obsidian";
 import { LilbeeClient, SessionTokenError } from "./api";
 import type { RequestOutcome } from "./api";
 import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
@@ -247,9 +255,21 @@ export default class LilbeePlugin extends Plugin {
             this.activateTaskView(),
         );
         this.ribbonIconEl.addClass("lilbee-ribbon-icon");
-        this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
-        this.registerView(VIEW_TYPE_TASKS, (leaf) => new TaskCenterView(leaf, this));
-        this.registerView(VIEW_TYPE_WIKI, (leaf) => new WikiView(leaf, this));
+        // Guard against Obsidian holding stale view registrations from a
+        // previous plugin instance that didn't unload cleanly (e.g. an
+        // onload that threw before registerView ran, or a disable that
+        // skipped its unregister callback). registerView throws on
+        // duplicate registration; wrap so the new instance still loads.
+        const safeRegisterView = (type: string, factory: (leaf: WorkspaceLeaf) => ItemView): void => {
+            try {
+                this.registerView(type, factory);
+            } catch (err) {
+                if (!(err instanceof Error) || !/existing view type/.test(err.message)) throw err;
+            }
+        };
+        safeRegisterView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
+        safeRegisterView(VIEW_TYPE_TASKS, (leaf) => new TaskCenterView(leaf, this));
+        safeRegisterView(VIEW_TYPE_WIKI, (leaf) => new WikiView(leaf, this));
         this.addSettingTab(new LilbeeSettingTab(this.app, this));
         this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
         this.taskQueue.onChange(() => this.updateRibbonFromQueue());

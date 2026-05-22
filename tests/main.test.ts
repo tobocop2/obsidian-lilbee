@@ -245,6 +245,22 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerView).toHaveBeenCalled();
         });
 
+        it("swallows duplicate-view-type errors from registerView so a stale view registration doesn't crash onload", async () => {
+            const plugin = await createPlugin();
+            (plugin.registerView as ReturnType<typeof vi.fn>).mockImplementation(() => {
+                throw new Error('Attempting to register an existing view type "lilbee-chat"');
+            });
+            await expect(plugin.onload()).resolves.not.toThrow();
+        });
+
+        it("re-throws non-duplicate registerView errors so genuine failures still surface", async () => {
+            const plugin = await createPlugin();
+            (plugin.registerView as ReturnType<typeof vi.fn>).mockImplementation(() => {
+                throw new Error("boom: something unrelated");
+            });
+            await expect(plugin.onload()).rejects.toThrow("boom");
+        });
+
         it("take-over command is disabled while a server is running and unavailable in external mode", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
