@@ -183,6 +183,12 @@ export class LilbeeClient {
         init?: RequestInit,
         opts?: { stream?: boolean; signal?: AbortSignal },
     ): Promise<Response> {
+        // Detect a URL that was pre-interpolated with an empty baseUrl
+        // (callers do `${this.baseUrl}/api/...` — when baseUrl is "" the
+        // result starts with "/api/..."). After the startup wait below
+        // we rebuild it with the real host.
+        const isRelative = !/^https?:\/\//i.test(url);
+        const path = isRelative ? (url.startsWith("/") ? url : `/${url}`) : null;
         if (!this.baseUrl) {
             const deadline = Date.now() + STARTUP_WAIT_MS;
             while (!this.baseUrl && Date.now() < deadline) {
@@ -192,6 +198,9 @@ export class LilbeeClient {
                 this.recordOutcome("starting");
                 throw new ServerStartingError();
             }
+        }
+        if (path !== null) {
+            url = `${this.baseUrl}${path}`;
         }
         const maxAttempts = RETRY_COUNT + 1;
         let lastError: unknown;

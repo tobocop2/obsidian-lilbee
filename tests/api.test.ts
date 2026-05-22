@@ -1896,6 +1896,50 @@ describe("ServerStartingError", () => {
         }
     });
 
+    it("rebuilds a pre-interpolated empty-baseUrl URL with the real host after the wait", async () => {
+        vi.useFakeTimers();
+        try {
+            const c = new LilbeeClient("");
+            fetchMock.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ status: "ok", version: "1" }),
+            } as unknown as Response);
+            // Caller did `${this.baseUrl}/api/chat/stream` while baseUrl was "".
+            // The fetch should still go out to the real host, not as a
+            // relative URL.
+            const promise = c.fetchWithRetry("/api/chat/stream");
+            await vi.advanceTimersByTimeAsync(200);
+            c.setBaseUrl(BASE_URL);
+            await vi.advanceTimersByTimeAsync(500);
+            await promise;
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+            const [actualUrl] = fetchMock.mock.calls[0]!;
+            expect(actualUrl).toBe(`${BASE_URL}/api/chat/stream`);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("rebuilds a URL with no leading slash by prepending one", async () => {
+        vi.useFakeTimers();
+        try {
+            const c = new LilbeeClient("");
+            fetchMock.mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({}),
+            } as unknown as Response);
+            const promise = c.fetchWithRetry("api/health");
+            await vi.advanceTimersByTimeAsync(200);
+            c.setBaseUrl(BASE_URL);
+            await vi.advanceTimersByTimeAsync(500);
+            await promise;
+            const [actualUrl] = fetchMock.mock.calls[0]!;
+            expect(actualUrl).toBe(`${BASE_URL}/api/health`);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it("surfaces via Result-returning methods as a typed error", async () => {
         vi.useFakeTimers();
         try {
