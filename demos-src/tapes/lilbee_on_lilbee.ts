@@ -57,14 +57,17 @@ export default storyboard("lilbee_on_lilbee", {
         // through the task queue churns the chat panel's polling so the
         // textarea gets recreated mid-fill). Drive the add endpoint and
         // wait for it to finish, all off the chat panel's render path.
+        // Re-ingest just the README. Fire-and-forget (awaiting the ingest
+        // — whether via addToLilbee or draining api.addFiles — hangs on the
+        // open SSE stream), then wait on the task queue with a bounded loop.
         const file = window.app.vault.getFiles().find(f => /lilbee-README\\.md$/i.test(f.path));
-        if (file) {
-          const abs = window.app.vault.adapter.getFullPath
-            ? window.app.vault.adapter.getFullPath(file.path)
-            : (window.app.vault.adapter.basePath + "/" + file.path);
-          try {
-            for await (const _ of p.api.addFiles([abs], true)) { /* drain stream to completion */ }
-          } catch {}
+        if (file) void p.addToLilbee(file);
+        let sawActive = false;
+        for (let i = 0; i < 40; i++) {
+          const busy = p.taskQueue.activeAll.length + p.taskQueue.queued.length;
+          if (busy > 0) sawActive = true;
+          if (sawActive && busy === 0) break;
+          await new Promise(r => setTimeout(r, 500));
         }
       `),
       { holdMs: 600, speedup: 6 },
