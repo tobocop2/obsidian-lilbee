@@ -1,23 +1,29 @@
 /**
- * lilbee-on-lilbee demo: the README headline. The corpus is wiped down
- * to just the lilbee README so the cited answer can only come from the
- * README and the citation chip lands on the README itself.
+ * lilbee-on-lilbee demo: the README headline. Ask "what is lilbee in one
+ * sentence?" and let the cited answer come straight from the lilbee
+ * README that's already in the corpus.
  *
- * Every UI surface that opens here is triggered via a visible action
- * (Cmd-P + typed command, or a mouse click). No invisible runJs calls
- * to executeCommandById.
+ * No corpus surgery. An earlier version wiped every document and
+ * re-ingested only the README so the citation could only be the README,
+ * but that (a) routed through addToLilbee's "already indexed — re-add?"
+ * confirm modal, (b) destructively emptied the shared demo-vault corpus
+ * the other demos rely on, and (c) raced the vector index's eventual
+ * consistency.
+ *
+ * Instead we constrain retrieval to the single top hit (top_k = 1) for
+ * this one question. "What is lilbee" matches the README far above the
+ * car-manual corpus, so the lone source is the README — README-only
+ * citations without touching the corpus. The original top_k is captured
+ * and restored so the demo leaves no trace in settings.
  */
 import {
   beat,
   clickChip,
   clickSend,
-  clickSelector,
   fillChat,
-  key,
   runJs,
   sleep,
   storyboard,
-  type_,
   waitChatIdle,
 } from "../src/lib.ts";
 
@@ -30,62 +36,22 @@ export default storyboard("lilbee_on_lilbee", {
   clearTaskCenter: true,
   clearChat: true,
   beats: [
-    beat("Opening hold on the chat panel", sleep(600)),
+    beat("Opening hold on the chat panel", sleep(700)),
 
-    // Wipe the corpus down to nothing so the demo can rebuild it cleanly
-    // with just the README. Then re-ingest the README. The cited answer
-    // that follows can only reference the README itself, which is the
-    // whole point of this demo.
+    // Retrieve only the single best-matching chunk so the cited source is
+    // the README alone, not the car-manual chunks that top_k=5 also pulls.
+    // Original is stashed on window and restored at the end.
     beat(
-      "Wipe the corpus down to nothing, then ingest only the README",
+      "Constrain retrieval to the top hit for a README-only citation",
       runJs(`
         const p = window.app.plugins.plugins.lilbee;
-        // Fully empty the corpus: listDocuments paginates, so loop until
-        // it reports zero. Otherwise leftover docs (e.g. the Crown Vic PDF
-        // from a prior demo) keep showing up in the cited sources, and
-        // this demo is supposed to cite ONLY the README.
-        for (let pass = 0; pass < 20; pass++) {
-          const list = await p.api.listDocuments(undefined, 1000, 0).catch(() => ({ documents: [] }));
-          const docs = list.documents ?? [];
-          const names = docs.map(d => d.name ?? d.path ?? d.id).filter(Boolean);
-          if (names.length === 0) break;
-          await p.api.removeDocuments(names).catch(() => {});
-          await new Promise(r => setTimeout(r, 300));
-        }
-        // Re-ingest just the README via the API directly (awaiting the
-        // plugin's addToLilbee hangs on the open SSE stream, and routing
-        // through the task queue churns the chat panel's polling so the
-        // textarea gets recreated mid-fill). Drive the add endpoint and
-        // wait for it to finish, all off the chat panel's render path.
-        // Re-ingest just the README. Fire-and-forget (awaiting the ingest
-        // — whether via addToLilbee or draining api.addFiles — hangs on the
-        // open SSE stream), then wait on the task queue with a bounded loop.
-        const file = window.app.vault.getFiles().find(f => /lilbee-README\\.md$/i.test(f.path));
-        if (file) void p.addToLilbee(file);
-        let sawActive = false;
-        for (let i = 0; i < 40; i++) {
-          const busy = p.taskQueue.activeAll.length + p.taskQueue.queued.length;
-          if (busy > 0) sawActive = true;
-          if (sawActive && busy === 0) break;
-          await new Promise(r => setTimeout(r, 500));
-        }
+        window.__lilbeeOrigTopK = p.settings.topK;
+        p.settings.topK = 1;
+        await p.saveSettings();
       `),
-      { holdMs: 600, speedup: 6 },
+      { holdMs: 200 },
     ),
 
-    // Re-activate the chat leaf so the textarea is fresh + focused before
-    // we type — the corpus mutation above can have triggered a re-render.
-    beat(
-      "Re-activate the chat panel",
-      runJs(`
-        const leaves = window.app.workspace.getLeavesOfType('lilbee-chat');
-        if (leaves[0]) window.app.workspace.revealLeaf(leaves[0]);
-        await new Promise(r => setTimeout(r, 300));
-      `),
-      { holdMs: 400 },
-    ),
-
-    // Single question. Single citation. Single source.
     beat("Ask the question", fillChat(QUESTION), { holdMs: 500 }),
     beat("Send", clickSend(), { holdMs: 500 }),
     beat("Stream the cited answer", waitChatIdle(120_000), { holdMs: 1200, speedup: 4 }),
@@ -94,7 +60,34 @@ export default storyboard("lilbee_on_lilbee", {
       runJs(`document.querySelectorAll('.lilbee-chat-sources details').forEach(d => d.open = true);`),
       { holdMs: 400 },
     ),
-    beat("Click the citation chip", clickChip(0), { holdMs: 2200 }),
-    beat("Close source preview", key("escape"), { holdMs: 500 }),
+    beat("Click the citation chip", clickChip(0), { holdMs: 1200 }),
+    // The chip is a vault-native deep link, so it opens the README as a real
+    // Obsidian note. Flip it to reading mode so the money-shot frame shows
+    // the rendered headline ("A batteries-included local search engine…")
+    // instead of raw markdown with <picture> tags.
+    beat(
+      "Render the README in reading mode",
+      runJs(`
+        const leaf = window.app.workspace.activeLeaf;
+        if (leaf && leaf.view?.getViewType?.() === 'markdown') {
+          const s = leaf.getViewState();
+          s.state = { ...s.state, mode: 'preview' };
+          await leaf.setViewState(s);
+        }
+      `),
+      { holdMs: 2400 },
+    ),
+
+    beat(
+      "Restore the original top_k",
+      runJs(`
+        const p = window.app.plugins.plugins.lilbee;
+        if (window.__lilbeeOrigTopK !== undefined) {
+          p.settings.topK = window.__lilbeeOrigTopK;
+          await p.saveSettings();
+        }
+      `),
+      { holdMs: 200 },
+    ),
   ],
 });
