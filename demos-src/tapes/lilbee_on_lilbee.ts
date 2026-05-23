@@ -40,23 +40,46 @@ export default storyboard("lilbee_on_lilbee", {
       "Wipe the corpus down to nothing, then ingest only the README",
       runJs(`
         const p = window.app.plugins.plugins.lilbee;
-        // List every document, then remove them as one batch call.
-        const list = await p.api.listDocuments().catch(() => ({ documents: [] }));
-        const docs = list.documents ?? [];
-        const names = docs.map(d => d.name ?? d.path ?? d.id).filter(Boolean);
-        if (names.length > 0) {
+        // Fully empty the corpus: listDocuments paginates, so loop until
+        // it reports zero. Otherwise leftover docs (e.g. the Crown Vic PDF
+        // from a prior demo) keep showing up in the cited sources, and
+        // this demo is supposed to cite ONLY the README.
+        for (let pass = 0; pass < 20; pass++) {
+          const list = await p.api.listDocuments(undefined, 1000, 0).catch(() => ({ documents: [] }));
+          const docs = list.documents ?? [];
+          const names = docs.map(d => d.name ?? d.path ?? d.id).filter(Boolean);
+          if (names.length === 0) break;
           await p.api.removeDocuments(names).catch(() => {});
+          await new Promise(r => setTimeout(r, 300));
         }
-        // Re-ingest just the README.
+        // Re-ingest just the README via the API directly (awaiting the
+        // plugin's addToLilbee hangs on the open SSE stream, and routing
+        // through the task queue churns the chat panel's polling so the
+        // textarea gets recreated mid-fill). Drive the add endpoint and
+        // wait for it to finish, all off the chat panel's render path.
         const file = window.app.vault.getFiles().find(f => /lilbee-README\\.md$/i.test(f.path));
-        if (file) await p.addToLilbee(file);
-        for (let i = 0; i < 60; i++) {
-          const busy = p.taskQueue.activeAll.length + p.taskQueue.queued.length;
-          if (busy === 0 && i > 4) return;
-          await new Promise(r => setTimeout(r, 500));
+        if (file) {
+          const abs = window.app.vault.adapter.getFullPath
+            ? window.app.vault.adapter.getFullPath(file.path)
+            : (window.app.vault.adapter.basePath + "/" + file.path);
+          try {
+            for await (const _ of p.api.addFiles([abs], true)) { /* drain stream to completion */ }
+          } catch {}
         }
       `),
-      { holdMs: 800, speedup: 6 },
+      { holdMs: 600, speedup: 6 },
+    ),
+
+    // Re-activate the chat leaf so the textarea is fresh + focused before
+    // we type — the corpus mutation above can have triggered a re-render.
+    beat(
+      "Re-activate the chat panel",
+      runJs(`
+        const leaves = window.app.workspace.getLeavesOfType('lilbee-chat');
+        if (leaves[0]) window.app.workspace.revealLeaf(leaves[0]);
+        await new Promise(r => setTimeout(r, 300));
+      `),
+      { holdMs: 400 },
     ),
 
     // Single question. Single citation. Single source.

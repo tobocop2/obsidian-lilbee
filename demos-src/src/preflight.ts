@@ -63,7 +63,11 @@ export type PreflightOptions = {
   noLilbee?: boolean;
 };
 
-const DEFAULT_MODEL = "Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf";
+// Qwen3 8B is the installed strong-general-purpose chat model in the
+// shared registry. Qwen3 4B is NOT installed there — pinning it left a
+// stale config ref that failed chat inference with "not found in
+// registry" (surfaced to the user as the now-fixed model_not_installed).
+const DEFAULT_MODEL = "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf";
 
 export async function preflight(opts: PreflightOptions): Promise<void> {
   const { ctx, layout } = opts;
@@ -89,23 +93,40 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
   const clearChat = opts.clearChat ?? true;
   const freshIngest = opts.freshIngest ?? [];
 
-  // 1. Server up + reachable. Use the plugin's live API base URL so
-  // managed mode (where the server picks its own port) reaches the
-  // right place instead of the stale settings.serverUrl.
+  // 1. Server genuinely READY. Poll until the plugin's OWN api.baseUrl
+  // (set by the server-ready handler) is non-empty AND health is 200.
+  // Falling back to settings.serverUrl masked a race: on a fresh Obsidian
+  // launch the managed server's READY event wires api.baseUrl late, so a
+  // demo that pinned the fallback URL would pass preflight while the
+  // chat-view's empty-baseUrl client failed with "Server is still
+  // starting up". Requiring api.baseUrl removes that race.
   const health = await ctx.page.evaluate(async () => {
-    const p = (globalThis as unknown as { app: { plugins: { plugins: { lilbee?: { settings: { serverUrl: string; manualToken?: string }; api?: { baseUrl: string; token?: string | null }; api?: { baseUrl: string } } } } } }).app.plugins.plugins.lilbee;
+    const p = (globalThis as unknown as { app: { plugins: { plugins: { lilbee?: { settings: { serverUrl: string; manualToken?: string }; serverManager?: { serverUrl?: string }; configureApi?: (u: string) => void; api?: { baseUrl: string; token?: string | null } } } } } }).app.plugins.plugins.lilbee;
     if (!p) return { ok: false, reason: "plugin not loaded" };
-    const url = p.api?.baseUrl ?? p.settings.serverUrl;
-    try {
-      const r = await fetch(url + "/api/health");
-      const j = await r.json();
-      return { ok: r.ok, status: j };
-    } catch (e) {
-      return { ok: false, reason: String(e) };
+    // Give a fresh launch up to 120s for the managed server to come up.
+    for (let i = 0; i < 240; i++) {
+      // If the server manager has a URL but the api hasn't been wired yet
+      // (late READY event), wire it now.
+      const smUrl = p.serverManager?.serverUrl;
+      if (smUrl && !p.api?.baseUrl && typeof p.configureApi === "function") {
+        p.configureApi(smUrl);
+      }
+      const url = p.api?.baseUrl;
+      if (url) {
+        try {
+          const r = await fetch(url + "/api/health");
+          if (r.ok) {
+            const j = await r.json();
+            return { ok: true, status: j, url };
+          }
+        } catch {}
+      }
+      await new Promise((res) => setTimeout(res, 500));
     }
+    return { ok: false, reason: "managed server never reported ready (api.baseUrl stayed empty)" };
   });
   if (!(health as { ok: boolean }).ok) {
-    throw new Error(`pre-flight: lilbee server unreachable: ${JSON.stringify(health)}`);
+    throw new Error(`pre-flight: lilbee server not ready: ${JSON.stringify(health)}`);
   }
 
   // 2. Drain modals + lilbee leaves so layout apply lands clean
@@ -115,25 +136,36 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
     document.querySelectorAll("body > .menu").forEach((m) => m.remove());
   });
 
-  // 3. Pin model. Skip the PUT if the active model already matches —
-  // the demo server's installed-models registry can drop locally
-  // cached HF models from its catalog even when they're still loadable
-  // and currently active. Forcing a re-pin in that state returns 422
-  // ("not available"), even though the model works for chat.
+  // 3. Pin model. ALWAYS issue the PUT (don't trust a config-string match):
+  // the config can hold a chat_model that's no longer in the installed
+  // registry, and PUT /api/models/chat is what actually validates
+  // installation. Also assert the target is in the installed-chat list
+  // up front so we fail loudly with an actionable message instead of
+  // recording a chat that errors with "Internal error" at inference time.
   if (opts.skipModelPin) {
     console.log("pre-flight: skipping chat-model pin (skipModelPin)");
   } else {
   const pinned = await ctx.page.evaluate(async (target) => {
     const p = (globalThis as unknown as { app: { plugins: { plugins: { lilbee: { settings: { serverUrl: string; manualToken?: string }; api?: { baseUrl: string; token?: string | null }; api?: { baseUrl: string } } } } } }).app.plugins.plugins.lilbee;
-    const cfg = await fetch((p.api?.baseUrl ?? p.settings.serverUrl) + "/api/config").then((r) => r.json()).catch(() => ({}));
-    if (cfg.chat_model === target) return { model: target, skipped: true };
-    const r = await fetch((p.api?.baseUrl ?? p.settings.serverUrl) + "/api/models/chat", {
+    const base = p.api?.baseUrl ?? p.settings.serverUrl;
+    const auth = { Authorization: "Bearer " + (p.api?.token ?? p.settings.manualToken ?? "") };
+    // Confirm the target is actually installed for the chat task.
+    const inst = await fetch(base + "/api/models/installed?task=chat", { headers: auth }).then((r) => r.json()).catch(() => ({ models: [] }));
+    const installed = Array.isArray(inst.models) ? inst.models.map((m: { name?: string }) => m.name) : [];
+    if (!installed.includes(target)) {
+      return { error: `target not installed`, installed };
+    }
+    const r = await fetch(base + "/api/models/chat", {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + (p.api?.token ?? p.settings.manualToken ?? "") },
+      headers: { "Content-Type": "application/json", ...auth },
       body: JSON.stringify({ model: target }),
     });
     return r.json();
   }, wantModel);
+  const pinErr = (pinned as { error?: string; installed?: string[] }).error;
+  if (pinErr) {
+    throw new Error(`pre-flight: ${pinErr}: want ${wantModel}; installed chat models: ${JSON.stringify((pinned as { installed?: string[] }).installed)}`);
+  }
   const pinnedModel = (pinned as { model?: string }).model;
   if (pinnedModel !== wantModel) {
     throw new Error(`pre-flight: failed to pin model: got ${pinnedModel}, want ${wantModel}`);

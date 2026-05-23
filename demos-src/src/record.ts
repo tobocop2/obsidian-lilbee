@@ -29,6 +29,27 @@ const DEFAULT_LEAD_IN_MS = 1500;
 const DEFAULT_TAIL_MS = 1500;
 const DEFAULT_HOLD_MS = 800;
 const HOVER_BEFORE_CLICK_MS = 350;
+// Hard ceiling for a single runJs beat. A storyboard that awaits an
+// open SSE stream (e.g. addToLilbee) would otherwise hang forever while
+// ffmpeg captures a static screen. If a beat exceeds this, abort the
+// recording loudly instead of silently filming nothing.
+const RUN_JS_BEAT_TIMEOUT_MS = 240_000;
+
+/** Race a promise against a timeout; reject loudly if it doesn't settle. */
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`beat '${label}' exceeded ${ms}ms — aborting to avoid filming a static screen`)),
+      ms,
+    );
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 type BeatRecord = {
   index: number;
@@ -299,7 +320,11 @@ async function runAction(ctx: ObsidianContext, action: Action, beat: Beat): Prom
       return coord;
     }
     case "runJs":
-      await ctx.page.evaluate(`(async () => {\n${action.js}\n})()`);
+      await withTimeout(
+        ctx.page.evaluate(`(async () => {\n${action.js}\n})()`),
+        RUN_JS_BEAT_TIMEOUT_MS,
+        beat.label,
+      );
       return null;
     case "clickChip":
       return await cursorClickChip(ctx, action.index, beat);

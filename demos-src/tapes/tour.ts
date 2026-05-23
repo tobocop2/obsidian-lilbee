@@ -96,15 +96,37 @@ export default storyboard("tour", {
     beat("Scroll settings #2", wheelScroll(SETTINGS_PANE, -28), { holdMs: 600 }),
     beat("Close settings", key("escape"), { holdMs: 500 }),
 
-    // Real Q&A against the existing corpus.
+    // Real Q&A against the existing corpus. First rebuild a clean
+    // chat + task-center split: the wiki sidebar and the README tab the
+    // tour opened earlier otherwise leave a cramped 3-column pile with
+    // raw markdown showing. Tear them down and lay out chat 70 / tasks 30.
     beat(
-      "Activate the chat panel for the question",
+      "Rebuild a clean chat + task center layout for the closing Q&A",
       runJs(`
+        for (const t of ['lilbee-wiki', 'lilbee-chat', 'lilbee-tasks']) {
+          window.app.workspace.detachLeavesOfType(t);
+        }
+        // Close any leftover document tabs (README opened during the tour).
+        for (const leaf of window.app.workspace.getLeavesOfType('markdown')) leaf.detach();
+        window.app.workspace.leftSplit?.collapse?.();
+        window.app.workspace.rightSplit?.collapse?.();
+        await new Promise(r => setTimeout(r, 200));
+        const chat = window.app.workspace.getLeaf(true);
+        await chat.setViewState({ type: 'lilbee-chat', active: true });
+        const tasks = window.app.workspace.createLeafBySplit(chat, 'vertical', false);
+        await tasks.setViewState({ type: 'lilbee-tasks', active: false });
+        window.app.workspace.setActiveLeaf(chat);
+        await new Promise(r => setTimeout(r, 250));
+        const splits = document.querySelectorAll('.workspace-split.mod-vertical');
+        for (const s of Array.from(splits)) {
+          const tabs = s.querySelectorAll(':scope > .workspace-tabs');
+          if (tabs.length === 2) { tabs[0].style.flex = '7'; tabs[1].style.flex = '3'; break; }
+        }
         const leaves = window.app.workspace.getLeavesOfType('lilbee-chat');
         if (leaves[0]) window.app.workspace.revealLeaf(leaves[0]);
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 250));
       `),
-      { holdMs: 500 },
+      { holdMs: 700, speedup: 2 },
     ),
     beat("Ask the closing question", fillChat(QUESTION), { holdMs: 500 }),
     beat("Send", clickSend(), { holdMs: 500 }),
