@@ -1346,6 +1346,13 @@ describe("LilbeePlugin", () => {
             expect(plugin.statusBarEl?.textContent).toBe("lilbee: 2 to sync");
             expect(plugin.statusBarEl?.getAttribute("aria-label")).toBe(MESSAGES.TOOLTIP_PENDING_SYNC_HINT);
             expect((plugin as any).statusBarShowsSyncHint).toBe(true);
+            // Calm/static treatment: the static pending-sync chip + muted dot,
+            // never the breathing accent-glow of an active task.
+            expect(plugin.statusBarEl?.classList.contains("lilbee-status-pending-sync")).toBe(true);
+            expect(plugin.statusBarEl?.classList.contains("lilbee-status-adding")).toBe(false);
+            const dot = plugin.statusBarEl?.querySelector(".lilbee-statusbar-dot");
+            expect(dot?.classList.contains("is-muted")).toBe(true);
+            expect(dot?.classList.contains("is-primary")).toBe(false);
         });
 
         it("falls back to the ready status when nothing is pending", async () => {

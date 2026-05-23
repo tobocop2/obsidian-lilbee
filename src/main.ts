@@ -1110,6 +1110,7 @@ export default class LilbeePlugin extends Plugin {
             "lilbee-status-starting",
             "lilbee-status-ready",
             "lilbee-status-adding",
+            "lilbee-status-pending-sync",
             "lilbee-status-error",
         );
         if (cls) this.statusBarEl.classList.add(cls);
@@ -1133,8 +1134,13 @@ export default class LilbeePlugin extends Plugin {
         // opening settings.
         if (this.pendingSyncCount > 0) {
             this.statusBarShowsSyncHint = true;
-            this.updateStatusBar(MESSAGES.STATUS_DOCS_PENDING_SYNC(this.pendingSyncCount), DOT_STATE.PRIMARY, false);
-            this.setStatusClass("lilbee-status-adding");
+            // Calm, static treatment — a muted dot + neutral chip. Pending
+            // sync is a passive "there's work you could do" hint, not an
+            // active operation, so it must NOT borrow the breathing
+            // accent-glow of lilbee-status-adding (that reads as intrusive
+            // when it's parked there the whole session).
+            this.updateStatusBar(MESSAGES.STATUS_DOCS_PENDING_SYNC(this.pendingSyncCount), DOT_STATE.MUTED, false);
+            this.setStatusClass("lilbee-status-pending-sync");
             this.statusBarEl?.setAttribute("aria-label", MESSAGES.TOOLTIP_PENDING_SYNC_HINT);
             return;
         }
