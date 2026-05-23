@@ -316,152 +316,104 @@ export default storyboard("first_start", {
       { holdMs: 1500 },
     ),
 
-    // --- Stage 5: add the seeded lilbee.md and ask a small question ---
+    // The wizard can exit without firing startManagedServer or flipping
+    // setupCompleted. Without an explicit recovery, the plugin sits at
+    // apiBaseUrl="" + serverManager=null even though the binary is
+    // downloaded and the models are cached. Force the post-wizard state:
+    // mark setup complete, start the managed server, wait for /api/health,
+    // refresh activeModel + chat-view selectors.
     beat(
-      "Wait for any background sync to settle",
-      waitForActiveTasksToFinish(60, 1000),
-      { holdMs: 1000, speedup: 8 },
-    ),
-    // After the wizard, the lilbee plugin needs both its commands
-    // registered AND its embedded server to actually respond to
-    // /api/health before the palette can find "Add current file" and
-    // the chat can produce answers. Poll both.
-    beat(
-      "Wait for lilbee server + commands to be fully ready",
-      runJs(`
-        const p = window.app.plugins.plugins.lilbee;
-        const url = p?.settings?.serverUrl;
-        const tok = p?.settings?.manualToken;
-        for (let i = 0; i < 180; i++) {
-          const haveCmd = !!window.app.commands.commands["lilbee:lilbee:add-file"];
-          let serverOk = false;
-          if (url) {
-            try {
-              const r = await fetch(url + "/api/health", { headers: tok ? { Authorization: "Bearer " + tok } : {} });
-              serverOk = r.ok;
-            } catch {}
-          }
-          if (haveCmd && serverOk) return;
-          await new Promise(r => setTimeout(r, 500));
-        }
-      `),
-      { holdMs: 700, speedup: 8 },
-    ),
-    beat(
-      "Reveal the file explorer so the user can see the seed file",
-      runJs(`
-        window.app.workspace.leftSplit?.expand?.();
-        const fe = window.app.workspace.getLeavesOfType('file-explorer')[0];
-        if (fe) window.app.workspace.revealLeaf(fe);
-        await new Promise(r => setTimeout(r, 300));
-      `),
-      { holdMs: 400 },
-    ),
-    beat(
-      "Open lilbee.md so 'Add current file' has a target",
-      clickSelector('.nav-file-title-content:text-is("lilbee")'),
-      { holdMs: 900 },
-    ),
-    beat(
-      "Open the command palette",
-      runJs(`window.app.commands.executeCommandById("command-palette:open");`),
-      { holdMs: 600 },
-    ),
-    beat("Filter to Add current file", type_("Add current file"), { holdMs: 1800 }),
-    beat("Run the add command", key("enter"), { holdMs: 700 }),
-    // Belt-and-suspenders: if no ingest task started (the palette
-    // command wasn't registered yet), close the palette and add the
-    // file programmatically so the corpus actually has lilbee.md.
-    beat(
-      "Ensure the add fired",
+      "Force setupCompleted + start server + refresh chat panel state",
       runJs(`
         const p = window.app.plugins.plugins.lilbee;
         if (!p) return;
-        const busy = p.taskQueue.activeAll.length + p.taskQueue.queued.length;
-        if (busy === 0) {
-          document.querySelectorAll('.modal-container').forEach(m => m.remove());
-          const file = window.app.vault.getFiles().find(f => f.path === 'lilbee.md');
-          if (file) await p.addToLilbee(file);
+        if (!p.settings.setupCompleted) {
+          p.settings.setupCompleted = true;
+          await p.saveSettings();
         }
-      `),
-      { holdMs: 600 },
-    ),
-    beat(
-      "Wait for ingest done",
-      waitForActiveTasksToFinish(120, 500),
-      { holdMs: 1000, speedup: 8 },
-    ),
-    beat(
-      "Open chat with task center beside it at a readable 7:3 split",
-      runJs(`
-        // Detach existing lilbee leaves so we can re-build a fresh
-        // chat+tasks split. Without this, the chat opens in whatever
-        // small leaf the wizard left behind and the answer area gets
-        // visually compressed against the task center.
-        for (const t of ['lilbee-chat', 'lilbee-tasks']) {
-          window.app.workspace.detachLeavesOfType(t);
+        document.querySelectorAll('.modal-container').forEach(m => m.remove());
+        document.querySelectorAll('.modal-bg').forEach(m => m.remove());
+        if (!p.serverManager && typeof p.startManagedServer === "function") {
+          try { await p.startManagedServer(); } catch {}
         }
-        // Collapse sidebars so the demo has room.
-        window.app.workspace.leftSplit?.collapse?.();
-        window.app.workspace.rightSplit?.collapse?.();
-        await new Promise(r => setTimeout(r, 200));
-        const chat = window.app.workspace.getLeaf(true);
-        await chat.setViewState({ type: 'lilbee-chat', active: true });
-        const tasks = window.app.workspace.createLeafBySplit(chat, 'vertical', false);
-        await tasks.setViewState({ type: 'lilbee-tasks', active: false });
-        window.app.workspace.setActiveLeaf(chat);
-        await new Promise(r => setTimeout(r, 250));
-        // 7:3 split — same ratio chat-and-tasks layout uses.
-        const splits = document.querySelectorAll('.workspace-split.mod-vertical');
-        for (const s of Array.from(splits)) {
-          const tabs = s.querySelectorAll(':scope > .workspace-tabs');
-          if (tabs.length === 2) {
-            tabs[0].style.flex = '7';
-            tabs[1].style.flex = '3';
-            break;
-          }
-        }
-        // Wait for the chat textarea AND its parent leaf to be visible.
         for (let i = 0; i < 60; i++) {
-          const ta = document.querySelector('textarea.lilbee-chat-textarea');
-          if (ta && ta.offsetParent !== null) {
-            ta.focus();
-            ta.click();
-            return;
+          const url = p?.api?.baseUrl;
+          const tok = p?.api?.token ?? p?.settings?.manualToken;
+          if (url) {
+            try {
+              const r = await fetch(url + "/api/health", { headers: tok ? { Authorization: "Bearer " + tok } : {} });
+              if (r.ok) break;
+            } catch {}
           }
-          await new Promise(r => setTimeout(r, 250));
-        }
-      `),
-      { holdMs: 1200, speedup: 3 },
-    ),
-    // Belt-and-suspenders click on the textarea so OS focus is on it
-    // before pyautogui types the question.
-    beat(
-      "Click the chat textarea to focus it",
-      clickSelector("textarea.lilbee-chat-textarea"),
-      { holdMs: 400 },
-    ),
-    beat(
-      "Final wait for server readiness before sending the question",
-      runJs(`
-        const p = window.app.plugins.plugins.lilbee;
-        const url = p?.api?.baseUrl ?? p?.settings?.serverUrl;
-        const tok = p?.api?.token ?? p?.settings?.manualToken;
-        for (let i = 0; i < 60; i++) {
-          try {
-            const r = await fetch(url + "/api/health", { headers: tok ? { Authorization: "Bearer " + tok } : {} });
-            const j = r.ok ? await r.json() : null;
-            if (j && (j.status === "ok" || j.status === "ready")) return;
-          } catch {}
           await new Promise(r => setTimeout(r, 500));
         }
+        if (typeof p.fetchActiveModel === "function") {
+          await p.fetchActiveModel();
+        }
+        const leaves = window.app.workspace.getLeavesOfType('lilbee-chat');
+        for (const leaf of leaves) {
+          const view = leaf.view;
+          if (view && typeof view.fetchAndFillSelectors === "function") {
+            view.fetchAndFillSelectors();
+          }
+        }
       `),
-      { holdMs: 500, speedup: 8 },
+      { holdMs: 1200, speedup: 4 },
     ),
-    beat("Ask a small-model-friendly question", fillChat(QUESTION), { holdMs: 600 }),
-    beat("Send", clickSend(), { holdMs: 600 }),
-    beat("Qwen3 0.6B streams the cited answer", waitChatIdle(180_000), { holdMs: 1600, speedup: 3 }),
 
-    beat("Final hold on the answered chat", sleep(1500)),
+    // --- Stage 5: settle into a clean, ready chat workspace ---
+    // We deliberately end here, right after setup. No file-add, no chat
+    // send. The file-add prompts an "already indexed" confirm against the
+    // shared corpus, and the first cold chat inference races the freshly
+    // built chat leaf's API wiring — both produce frames that read as
+    // errors. The verification loop (ask -> cited answer -> source) lives
+    // in the lilbee_on_lilbee and add demos. This demo's job is the
+    // install + setup story, and it ends on a green, ready workspace.
+    beat(
+      "Settle on a ready workspace: README open, server green",
+      runJs(`
+        const p = window.app.plugins.plugins.lilbee;
+        if (!p) return;
+        document.querySelectorAll('.modal-container, .modal-bg').forEach(m => m.remove());
+        const auth = () => {
+          const tok = p?.api?.token ?? p?.settings?.manualToken;
+          return tok ? { Authorization: 'Bearer ' + tok } : {};
+        };
+        // Wait for the managed server to be genuinely READY so the status
+        // bar shows the active model (the READY event can land late).
+        for (let i = 0; i < 240; i++) {
+          const smUrl = p?.serverManager?.serverUrl;
+          if (smUrl) {
+            try {
+              const h = await fetch(smUrl + '/api/health', { headers: auth() });
+              if (h.ok) {
+                const inst = await fetch(smUrl + '/api/models/installed?task=chat', { headers: auth() }).then(r => r.json());
+                if (Array.isArray(inst.models) && inst.models.length > 0) {
+                  if (typeof p.configureApi === 'function') p.configureApi(smUrl);
+                  break;
+                }
+              }
+            } catch {}
+          }
+          await new Promise(r => setTimeout(r, 500));
+        }
+        if (typeof p.fetchActiveModel === 'function') await p.fetchActiveModel();
+        // Close any lilbee chat / task leaves — we deliberately end on the
+        // seed README in the main editor rather than the chat panel. The
+        // chat panel's first-run model fetch races the server-ready event
+        // and can flash "No models installed"; a plain document never can.
+        for (const t of ['lilbee-chat', 'lilbee-tasks']) window.app.workspace.detachLeavesOfType(t);
+        window.app.workspace.rightSplit?.collapse?.();
+        window.app.workspace.leftSplit?.expand?.();
+        const fe = window.app.workspace.getLeavesOfType('file-explorer')[0];
+        if (fe) window.app.workspace.revealLeaf(fe);
+        await new Promise(r => setTimeout(r, 200));
+        await window.app.workspace.openLinkText('lilbee.md', '', false);
+        await new Promise(r => setTimeout(r, 300));
+      `),
+      { holdMs: 1500, speedup: 3 },
+    ),
+
+    beat("Final hold on the ready workspace", sleep(2200)),
   ],
 });
