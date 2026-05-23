@@ -714,23 +714,49 @@ export default class LilbeePlugin extends Plugin {
         // "starting" is a no-op — the existing startup UI already says so.
     }
 
+    /**
+     * Whether lilbee can actually serve requests right now. Managed mode
+     * needs a live server-manager that isn't flagged unreachable; external
+     * mode trusts the user's server until a probe says otherwise.
+     *
+     * Server-dependent commands gate their checkCallback on this so the
+     * command palette doesn't offer (and silently fail) catalog / chat /
+     * crawl / sync while the managed server is stopped — when it's down,
+     * the only lilbee command offered is the one that starts it.
+     */
+    private isLilbeeReady(): boolean {
+        if (this.settings.serverMode === SERVER_MODE.EXTERNAL) {
+            return !this.serverUnreachable;
+        }
+        return this.serverManager !== null && !this.serverUnreachable;
+    }
+
     private registerCommands(): void {
         this.addCommand({
             id: "lilbee:search",
             name: "Search knowledge base",
-            callback: () => new SearchModal(this.app, this).open(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) new SearchModal(this.app, this).open();
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:chat",
             name: "Open chat",
-            callback: () => this.activateChatView(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void this.activateChatView();
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:add-file",
             name: "Add current file to lilbee",
             checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
                 const file = this.app.workspace.getActiveFile();
                 if (!file) return false;
                 if (!checking) void this.addToLilbee(file);
@@ -742,6 +768,7 @@ export default class LilbeePlugin extends Plugin {
             id: "lilbee:add-folder",
             name: "Add current folder to lilbee",
             checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
                 const file = this.app.workspace.getActiveFile();
                 const folder = file?.parent;
                 if (!folder) return false;
@@ -753,65 +780,107 @@ export default class LilbeePlugin extends Plugin {
         this.addCommand({
             id: "lilbee:sync",
             name: MESSAGES.COMMAND_SYNC,
-            callback: () => this.triggerSync(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void this.triggerSync();
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:sync-retry-skipped",
             name: MESSAGES.COMMAND_SYNC_RETRY_SKIPPED,
-            callback: () => this.triggerSync({ retrySkipped: true }),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void this.triggerSync({ retrySkipped: true });
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:sync-rebuild",
             name: MESSAGES.COMMAND_SYNC_REBUILD,
-            callback: async () => {
-                const confirmModal = new ConfirmModal(this.app, MESSAGES.CONFIRM_SYNC_REBUILD);
-                confirmModal.open();
-                if (await confirmModal.result) void this.triggerSync({ forceRebuild: true });
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) {
+                    void (async () => {
+                        const confirmModal = new ConfirmModal(this.app, MESSAGES.CONFIRM_SYNC_REBUILD);
+                        confirmModal.open();
+                        if (await confirmModal.result) void this.triggerSync({ forceRebuild: true });
+                    })();
+                }
+                return true;
             },
         });
 
         this.addCommand({
             id: "lilbee:catalog",
             name: "Browse model catalog",
-            callback: () => new CatalogModal(this.app, this).open(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) new CatalogModal(this.app, this).open();
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:model-picker-chat",
             name: MESSAGES.COMMAND_MODEL_PICKER_CHAT,
-            callback: () => new ModelPickerModal(this.app, this, "chat").open(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) new ModelPickerModal(this.app, this, "chat").open();
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:model-picker-embedding",
             name: MESSAGES.COMMAND_MODEL_PICKER_EMBED,
-            callback: () => new ModelPickerModal(this.app, this, "embedding").open(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) new ModelPickerModal(this.app, this, "embedding").open();
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:model-info-active-chat",
             name: MESSAGES.COMMAND_MODEL_INFO_CHAT,
-            callback: () => this.openModelInfoForActiveTask("chat"),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void this.openModelInfoForActiveTask("chat");
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:model-info-active-embedding",
             name: MESSAGES.COMMAND_MODEL_INFO_EMBED,
-            callback: () => this.openModelInfoForActiveTask("embedding"),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void this.openModelInfoForActiveTask("embedding");
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:crawl",
             name: "Crawl web page",
-            callback: () => new CrawlModal(this.app, this).open(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) new CrawlModal(this.app, this).open();
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:documents",
             name: "Browse documents",
-            callback: () => new DocumentsModal(this.app, this).open(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) new DocumentsModal(this.app, this).open();
+                return true;
+            },
         });
 
         this.addCommand({

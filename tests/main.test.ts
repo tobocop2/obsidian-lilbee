@@ -901,10 +901,27 @@ describe("LilbeePlugin", () => {
     describe("commands", () => {
         async function getCommandCallback(plugin: Awaited<ReturnType<typeof createPlugin>>, id: string) {
             const calls = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls as Array<
-                [{ id: string; callback: () => void | Promise<void> }]
+                [{ id: string; callback?: () => void | Promise<void>; checkCallback?: (checking: boolean) => boolean }]
             >;
             const call = calls.find((c) => c[0].id === id);
-            return call?.[0].callback;
+            const cmd = call?.[0];
+            if (!cmd) return undefined;
+            // Server-dependent commands now gate on isLilbeeReady() via
+            // checkCallback. Mark the managed server live so the gate passes,
+            // then return an invoker that fires the command's action
+            // (checkCallback(false)) — falling back to a plain callback.
+            (plugin as unknown as { serverManager: unknown }).serverManager ??= {};
+            (plugin as unknown as { serverUnreachable: boolean }).serverUnreachable = false;
+            // checkCallback returns synchronously and detaches the action
+            // (void ...). Flush a macrotask so the detached async settles
+            // before the test asserts on its effects.
+            if (cmd.checkCallback) {
+                return async () => {
+                    cmd.checkCallback!(false);
+                    await new Promise((r) => setTimeout(r, 0));
+                };
+            }
+            return cmd.callback;
         }
 
         it("lilbee:search opens SearchModal", async () => {
@@ -1148,6 +1165,60 @@ describe("LilbeePlugin", () => {
             const cb = await getCommandCallback(plugin, "lilbee:model-info-active-embedding");
             await cb?.();
             expect(ModelInfoModal).toHaveBeenCalled();
+        });
+
+        function checkOf(plugin: Awaited<ReturnType<typeof createPlugin>>, id: string) {
+            const calls = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls as Array<
+                [{ id: string; checkCallback?: (checking: boolean) => boolean }]
+            >;
+            return calls.find((c) => c[0].id === id)?.[0].checkCallback;
+        }
+
+        it("server-dependent commands are hidden when the managed server is down", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            (plugin as unknown as { serverManager: unknown }).serverManager = null;
+            (plugin as unknown as { serverUnreachable: boolean }).serverUnreachable = false;
+            // Give add-file/folder a real active file so the gate, not the
+            // missing-file guard, is what hides them.
+            (plugin.app.workspace.getActiveFile as ReturnType<typeof vi.fn>) = vi.fn(
+                () => ({ path: "x.md", parent: { path: "" } }) as never,
+            );
+            for (const id of [
+                "lilbee:search",
+                "lilbee:chat",
+                "lilbee:add-file",
+                "lilbee:add-folder",
+                "lilbee:sync",
+                "lilbee:sync-retry-skipped",
+                "lilbee:sync-rebuild",
+                "lilbee:catalog",
+                "lilbee:model-picker-chat",
+                "lilbee:model-picker-embedding",
+                "lilbee:model-info-active-chat",
+                "lilbee:model-info-active-embedding",
+                "lilbee:crawl",
+                "lilbee:documents",
+            ]) {
+                expect(checkOf(plugin, id)!(true)).toBe(false);
+            }
+        });
+
+        it("server-dependent commands are available once the managed server is up", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            (plugin as unknown as { serverManager: unknown }).serverManager = {};
+            (plugin as unknown as { serverUnreachable: boolean }).serverUnreachable = false;
+            expect(checkOf(plugin, "lilbee:catalog")!(true)).toBe(true);
+        });
+
+        it("external mode gates commands on reachability, not a server-manager", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as unknown as { serverUnreachable: boolean }).serverUnreachable = false;
+            expect(checkOf(plugin, "lilbee:catalog")!(true)).toBe(true);
+            (plugin as unknown as { serverUnreachable: boolean }).serverUnreachable = true;
+            expect(checkOf(plugin, "lilbee:catalog")!(true)).toBe(false);
         });
 
         it("lilbee:tasks calls activateTaskView", async () => {
