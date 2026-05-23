@@ -475,7 +475,6 @@ export const MESSAGES = {
     STATUS_SYNCED: "lilbee: synced — {summary}",
     STATUS_SYNC_CANCELLED: "lilbee: sync cancelled",
     STATUS_SYNC_FAILED: "lilbee: sync failed",
-    STATUS_SYNC_IN_PROGRESS: "lilbee: syncing…",
     STATUS_DOCS_PENDING_SYNC: (n: number) => `lilbee: ${n} to sync`,
     TOOLTIP_PENDING_SYNC_HINT: "Click to sync new documents",
     STATUS_STARTING_SERVER: "Starting server...",

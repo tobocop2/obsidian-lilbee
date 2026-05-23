@@ -205,7 +205,6 @@ export default class LilbeePlugin extends Plugin {
     api: LilbeeClient = new LilbeeClient("");
     activeModel = "";
     statusBarEl: HTMLElement | null = null;
-    syncHintEl: HTMLElement | null = null;
     ribbonIconEl: HTMLElement | null = null;
     chatRibbonIconEl: HTMLElement | null = null;
     binaryManager: BinaryManager | null = null;
@@ -213,6 +212,8 @@ export default class LilbeePlugin extends Plugin {
     vaultRegistry: VaultRegistry | null = null;
     vaultId = "";
     syncController: AbortController | null = null;
+    private pendingSyncCount = 0;
+    private statusBarShowsSyncHint = false;
     private pendingHintTimeout: ReturnType<typeof setTimeout> | null = null;
     private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
     private startingServer = false;
@@ -256,13 +257,7 @@ export default class LilbeePlugin extends Plugin {
         this.statusBarEl = this.addStatusBarItem();
         this.statusBarEl.style.cursor = "pointer";
         this.statusBarEl.setAttribute("aria-label", MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);
-        this.statusBarEl.addEventListener("click", () => this.openPluginSettings());
-
-        this.syncHintEl = this.addStatusBarItem();
-        this.syncHintEl.addClass("lilbee-sync-hint");
-        this.syncHintEl.style.display = "none";
-        this.syncHintEl.setAttribute("aria-label", MESSAGES.TOOLTIP_PENDING_SYNC_HINT);
-        this.syncHintEl.addEventListener("click", () => void this.triggerSync());
+        this.statusBarEl.addEventListener("click", () => this.handleStatusBarClick());
         this.chatRibbonIconEl = this.addRibbonIcon("messages-square", MESSAGES.LABEL_RIBBON_OPEN_CHAT, () =>
             this.activateChatView(),
         );
@@ -1016,14 +1011,12 @@ export default class LilbeePlugin extends Plugin {
             clearTimeout(this.pendingHintTimeout);
             this.pendingHintTimeout = null;
         }
-        // Tear down the status-bar items we own. addStatusBarItem returns
-        // DOM nodes that survive plugin unload if the plugin doesn't detach
-        // them explicitly, so a disable/enable cycle leaves stale duplicates
+        // Tear down the status-bar item we own. addStatusBarItem returns a
+        // DOM node that survives plugin unload if the plugin doesn't detach
+        // it explicitly, so a disable/enable cycle leaves a stale duplicate
         // in the bar that the new plugin instance then sits next to.
         this.statusBarEl?.remove();
         this.statusBarEl = null;
-        this.syncHintEl?.remove();
-        this.syncHintEl = null;
         this.taskQueue.dispose();
         void this.serverManager?.stop();
         this.vaultRegistry?.releaseLock(this.vaultId);
@@ -1128,14 +1121,37 @@ export default class LilbeePlugin extends Plugin {
         // on STOPPED instead of cheerfully claiming "ready" against a
         // server that isn't running.
         if (this.settings.serverMode === SERVER_MODE.MANAGED && this.serverManager === null) {
+            this.statusBarShowsSyncHint = false;
             this.updateStatusBar(MESSAGES.STATUS_STOPPED, DOT_STATE.MUTED, false);
             this.setStatusClass(null);
+            this.statusBarEl?.setAttribute("aria-label", MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);
             return;
         }
+        // When the server is up and idle but the vault has documents the
+        // server hasn't ingested yet, the single status icon becomes an
+        // actionable sync prompt: clicking it triggers a sync instead of
+        // opening settings.
+        if (this.pendingSyncCount > 0) {
+            this.statusBarShowsSyncHint = true;
+            this.updateStatusBar(MESSAGES.STATUS_DOCS_PENDING_SYNC(this.pendingSyncCount), DOT_STATE.PRIMARY, false);
+            this.setStatusClass("lilbee-status-adding");
+            this.statusBarEl?.setAttribute("aria-label", MESSAGES.TOOLTIP_PENDING_SYNC_HINT);
+            return;
+        }
+        this.statusBarShowsSyncHint = false;
         const text =
             this.settings.serverMode === SERVER_MODE.EXTERNAL ? MESSAGES.STATUS_READY_EXTERNAL : MESSAGES.STATUS_READY;
         this.updateStatusBar(text);
         this.setStatusClass("lilbee-status-ready");
+        this.statusBarEl?.setAttribute("aria-label", MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);
+    }
+
+    private handleStatusBarClick(): void {
+        if (this.statusBarShowsSyncHint) {
+            void this.triggerSync();
+        } else {
+            this.openPluginSettings();
+        }
     }
 
     private startHealthProbe(): void {
@@ -1197,6 +1213,10 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private updateStatusBarFromQueue(): void {
+        // Any queue-driven render (running task or completed-task flash) means
+        // the bar isn't showing the actionable sync prompt; setStatusReady
+        // re-arms it in the idle branch below when sync work is pending.
+        this.statusBarShowsSyncHint = false;
         const allActive = this.taskQueue.activeAll;
         const queued = this.taskQueue.queued;
         const completed = this.taskQueue.completed;
@@ -1732,9 +1752,9 @@ export default class LilbeePlugin extends Plugin {
         this.pendingHintTimeout = setTimeout(() => {
             this.pendingHintTimeout = null;
             // Bail if the plugin was unloaded between scheduling and firing.
-            // The syncHintEl guard inside updatePendingSyncHint covers this,
+            // The statusBarEl guard inside updatePendingSyncHint covers this,
             // but the explicit check here keeps the contract local.
-            if (!this.syncHintEl) return;
+            if (!this.statusBarEl) return;
             void this.updatePendingSyncHint();
         }, PENDING_SYNC_HINT_DEBOUNCE_MS);
     }
@@ -1768,14 +1788,17 @@ export default class LilbeePlugin extends Plugin {
     }
 
     async updatePendingSyncHint(): Promise<void> {
-        if (!this.syncHintEl) return;
+        if (!this.statusBarEl) return;
         const count = await this.countPendingSync();
-        if (!this.syncHintEl) return;
-        if (count > 0) {
-            this.syncHintEl.setText(MESSAGES.STATUS_DOCS_PENDING_SYNC(count));
-            this.syncHintEl.style.display = "";
-        } else {
-            this.syncHintEl.style.display = "none";
+        if (!this.statusBarEl) return;
+        this.pendingSyncCount = count;
+        // Only repaint the idle, healthy status into the pending-sync prompt.
+        // While a task is running/queued the queue-driven render holds the bar
+        // (and re-reads the count on settle); while the server is down or in
+        // an error state, leave that status untouched rather than overwriting
+        // it with a stale "ready"/"stopped".
+        if (this.isLilbeeReady() && this.taskQueue.activeAll.length === 0 && this.taskQueue.queued.length === 0) {
+            this.updateStatusBarFromQueue();
         }
     }
 
@@ -1966,7 +1989,6 @@ export default class LilbeePlugin extends Plugin {
         }
         this.syncController = new AbortController();
         this.taskQueue.registerAbort(taskId, this.syncController);
-        this.markSyncHintRunning(true);
 
         try {
             const progress = new FileProgressTracker();
@@ -2049,19 +2071,7 @@ export default class LilbeePlugin extends Plugin {
             }
         } finally {
             this.syncController = null;
-            this.markSyncHintRunning(false);
             this.schedulePendingSyncHint();
-        }
-    }
-
-    private markSyncHintRunning(running: boolean): void {
-        if (!this.syncHintEl) return;
-        if (running) {
-            this.syncHintEl.setAttribute("data-running", "true");
-            this.syncHintEl.setText(MESSAGES.STATUS_SYNC_IN_PROGRESS);
-            this.syncHintEl.style.display = "";
-        } else {
-            this.syncHintEl.removeAttribute("data-running");
         }
     }
 }

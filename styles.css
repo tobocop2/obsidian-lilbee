@@ -3407,16 +3407,6 @@
     color: var(--text-muted);
 }
 
-.lilbee-sync-hint {
-    cursor: pointer;
-    padding: 0 4px;
-}
-
-.lilbee-sync-hint[data-running="true"] {
-    opacity: 0.6;
-    cursor: wait;
-}
-
 .lilbee-catalog-body {
     display: block;
 }
