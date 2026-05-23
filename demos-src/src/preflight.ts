@@ -67,7 +67,7 @@ export type PreflightOptions = {
 // shared registry. Qwen3 4B is NOT installed there — pinning it left a
 // stale config ref that failed chat inference with "not found in
 // registry" (surfaced to the user as the now-fixed model_not_installed).
-const DEFAULT_MODEL = "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf";
+export const DEFAULT_MODEL = "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf";
 
 export async function preflight(opts: PreflightOptions): Promise<void> {
   const { ctx, layout } = opts;

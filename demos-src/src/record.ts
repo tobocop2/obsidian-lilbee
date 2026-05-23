@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import { clickAtCoord, clickMenuItem, moveToCoord, parkCursor, pressKey, rightClickAtCoord, scrollAt, typeText } from "./cursor.ts";
 import { connectObsidian, getWindowBounds, resolveByJs, resolveSelector, type ObsidianContext } from "./obsidian.ts";
-import { preflight, restoreVaultFiles } from "./preflight.ts";
+import { DEFAULT_MODEL, preflight, restoreVaultFiles } from "./preflight.ts";
 import { buildReview } from "./review.ts";
 import type { Action, Beat, Storyboard } from "./lib.ts";
 
@@ -150,16 +150,21 @@ export async function record(storyboard: Storyboard): Promise<void> {
     // Re-pin the chat model right before recording. The preload step
     // can occasionally cause the plugin to flip active model if a
     // download finishes in the background. Re-pinning here is cheap.
+    // MUST match preflight's DEFAULT_MODEL — pinning a model that isn't
+    // installed (e.g. Qwen3 4B, which the shared registry doesn't have)
+    // overrides the validated preflight pin and makes the on-camera chat
+    // fail with "Internal error" at inference time.
     if (!storyboard.noLilbee && !storyboard.skipModelPin) {
-      await ctx.page.evaluate(async () => {
-        const p = (globalThis as unknown as { app: { plugins: { plugins: { lilbee: { settings: { serverUrl: string; manualToken?: string }; api?: { baseUrl: string; token?: string | null }; api?: { baseUrl: string } } } } } }).app.plugins.plugins.lilbee;
+      await ctx.page.evaluate(async (model) => {
+        const p = (globalThis as unknown as { app: { plugins: { plugins: { lilbee: { settings: { serverUrl: string; manualToken?: string }; api?: { baseUrl: string; token?: string | null }; api?: { baseUrl: string }; fetchActiveModel?: () => Promise<void> } } } } }).app.plugins.plugins.lilbee;
         const base = p.api?.baseUrl ?? p.settings.serverUrl;
         await fetch(base + "/api/models/chat", {
           method: "PUT",
           headers: { "Content-Type": "application/json", Authorization: "Bearer " + (p.api?.token ?? p.settings.manualToken ?? "") },
-          body: JSON.stringify({ model: "Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf" }),
+          body: JSON.stringify({ model }),
         }).catch(() => {});
-      });
+        if (typeof p.fetchActiveModel === "function") await p.fetchActiveModel();
+      }, DEFAULT_MODEL);
     }
 
     // Start ffmpeg. Record both the spawn moment AND the "first frame
