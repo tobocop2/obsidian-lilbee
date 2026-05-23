@@ -31,19 +31,19 @@ const GITHUB_REPO = "tobocop2/obsidian-lilbee";
 const SMALL_MODEL_REPO = "Qwen/Qwen3-0.6B-GGUF";
 const QUESTION = "Is lilbee open source?";
 
+// Advance the wizard by mouse-clicking the step's primary CTA. Every
+// wizard step renders exactly one `.lilbee-wizard-actions button.mod-cta`
+// (Get started / Next / Download & continue / Open chat), so the cursor
+// glides to it and clicks for real instead of a runJs .click(). A quick
+// scrollIntoView first keeps the button on screen for steps whose body
+// overflows the modal.
 const wizardStep = (label: string) => [
   beat(
-    label,
-    runJs(`
-      const btn = document.querySelector('.lilbee-wizard button.mod-cta:last-of-type, .modal-container .lilbee-wizard button.mod-cta');
-      if (btn) {
-        btn.scrollIntoView({ block: 'center', behavior: 'instant' });
-        await new Promise(r => setTimeout(r, 250));
-        btn.click();
-      }
-    `),
-    { holdMs: 1700 },
+    label + " (reveal CTA)",
+    runJs(`document.querySelector('.lilbee-wizard-actions button.mod-cta')?.scrollIntoView({ block: 'center', behavior: 'instant' });`),
+    { holdMs: 250 },
   ),
+  beat(label, clickSelector(".lilbee-wizard-actions button.mod-cta"), { holdMs: 1700 }),
 ];
 
 const waitForActiveTasksToFinish = (maxIters: number, intervalMs: number) => runJs(`
@@ -262,17 +262,18 @@ export default storyboard("first_start", {
       `),
       { holdMs: 1500, speedup: 4 },
     ),
+    // Bring the Qwen3 0.6B card into view, then mouse-click it. Cards
+    // carry data-repo = hf_repo (e.g. "Qwen/Qwen3-0.6B-GGUF"), so the
+    // attribute selector lands on the right tile and the cursor visibly
+    // moves to it.
+    beat(
+      "Reveal the Qwen3 0.6B card",
+      runJs(`document.querySelector('.lilbee-wizard-models [data-repo*="Qwen3-0.6B"]')?.scrollIntoView({ block: 'center', behavior: 'instant' });`),
+      { holdMs: 250 },
+    ),
     beat(
       "Select Qwen3 0.6B in the model picker",
-      runJs(`
-        const cards = Array.from(document.querySelectorAll('.lilbee-wizard .lilbee-model-card, .lilbee-wizard .lilbee-catalog-card'));
-        const target = cards.find(c => /qwen3?\\s*0\\.6/i.test(c.textContent || ''));
-        if (target) {
-          target.scrollIntoView({ block: 'center', behavior: 'instant' });
-          await new Promise(r => setTimeout(r, 200));
-          target.click();
-        }
-      `),
+      clickSelector('.lilbee-wizard-models [data-repo*="Qwen3-0.6B"]'),
       { holdMs: 1200 },
     ),
     ...wizardStep("Model picker -> Continue (Qwen3 0.6B downloads)"),
