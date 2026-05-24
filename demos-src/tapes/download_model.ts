@@ -2,18 +2,19 @@
  * download_model demo: pull a model from the catalog, start to finish.
  *
  * Open the catalog, search for a small chat model that isn't installed
- * (Llama 3.2 1B), confirm the download, then close the catalog and watch
- * the Task Center stream the download from start to completion. The
- * catalog pull downloads without changing the active model, so the
- * status bar stays on Qwen3 8B throughout — no disruption.
+ * (SmolLM2 360M — a ~0.3GB model that downloads in well under a minute),
+ * confirm the download, then close the catalog and watch the Task Center
+ * stream the download from start to completion. The catalog pull
+ * downloads without changing the active model, so the status bar stays
+ * on Qwen3 8B throughout — no disruption.
  *
  * freshModel uninstalls the model in pre-flight so the pull is a real
  * download on every take (models_dir is shared across vaults).
  */
 import { beat, clickSelector, key, runJs, sleep, storyboard, type_ } from "../src/lib.ts";
 
-const MODEL_QUERY = "Llama 3.2 1B";
-const MODEL_REPO = "hugging-quants/Llama-3.2-1B-Instruct-Q8_0-GGUF";
+const MODEL_QUERY = "SmolLM2 360M";
+const MODEL_REPO = "bartowski/SmolLM2-360M-Instruct-GGUF";
 
 export default storyboard("download_model", {
   window: [1400, 900],

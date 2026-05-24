@@ -55,8 +55,8 @@ export default storyboard("command_palette", {
     ),
     beat("Close settings", key("escape"), { holdMs: 600 }),
 
-    // 2. Crawl a web page via palette, paste a URL into the modal,
-    // dismiss without running the actual crawl.
+    // 2. Crawl a web page via palette: paste a URL, then actually run it
+    // and watch the crawl + sync land in the Task Center.
     ...palette("Crawl web page", "Crawl web page", 1000),
     beat(
       "Paste a URL into the crawl modal",
@@ -68,9 +68,23 @@ export default storyboard("command_palette", {
           input.dispatchEvent(new Event('input', { bubbles: true }));
         }
       `),
-      { holdMs: 1300 },
+      { holdMs: 1100 },
     ),
-    beat("Dismiss the crawl modal", key("escape"), { holdMs: 600 }),
+    beat("Click Crawl", clickSelector('.modal-container button.mod-cta:has-text("Crawl")'), { holdMs: 1000 }),
+    beat(
+      "Watch the crawl + sync run in the Task Center",
+      runJs(`
+        const tq = window.app.plugins.plugins.lilbee.taskQueue;
+        let sawActive = false;
+        for (let i = 0; i < 600; i++) {
+          const busy = tq.activeAll.length + tq.queued.length;
+          if (busy > 0) sawActive = true;
+          if (sawActive && busy === 0) return;
+          await new Promise(r => setTimeout(r, 500));
+        }
+      `),
+      { holdMs: 1200, speedup: 4, maxMs: 600_000 },
+    ),
 
     // 3. Open a file from the vault, then Add current file via palette.
     beat(

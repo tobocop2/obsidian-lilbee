@@ -105,6 +105,26 @@ def _ease_in_out_quad(t: float) -> float:
     return 2 * t * t if t < 0.5 else 1 - (-2 * t + 2) ** 2 / 2
 
 
+def _wake_cursor() -> None:
+    """Nudge the cursor 1px and back so macOS un-hides it.
+
+    macOS auto-hides the pointer while keys are pressed (typing in the
+    command palette, the chat box, a search field) and leaves it hidden
+    until the next mouse-move event. Without this, the cursor vanishes
+    for the whole typing beat *and the hold after it*, then "emerges"
+    only when the next beat moves it — exactly the disappear/emerge the
+    reels showed. A tiny move after each type/key fires a mouse-moved
+    event, so the cursor is visible again for the following hold, with
+    no net position change.
+    """
+    p = pyautogui.position()
+    pyautogui.moveTo(p.x + 3, p.y)
+    time.sleep(0.02)
+    pyautogui.moveTo(p.x, p.y)
+    time.sleep(0.02)
+    _trace(p.x, p.y)
+
+
 def smooth_move(x: float, y: float) -> None:
     start = pyautogui.position()
     duration_ms = _duration_for(x - start.x, y - start.y)
@@ -178,6 +198,7 @@ def main(argv: list[str]) -> int:
                 lines.append("delay 0.07")
             lines.append("end tell")
             subprocess.run(["osascript", "-e", "\n".join(lines)], check=True)
+        _wake_cursor()
         return 0
     if cmd == "menu":
         # Smooth-move the cursor over a context-menu item by name,
@@ -221,6 +242,7 @@ def main(argv: list[str]) -> int:
             pyautogui.hotkey(*parts)
         else:
             pyautogui.press(key)
+        _wake_cursor()
         return 0
     if cmd == "scroll":
         x, y = float(args[0]), float(args[1])
