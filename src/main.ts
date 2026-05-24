@@ -86,6 +86,12 @@ const PENDING_SYNC_HINT_DEBOUNCE_MS = 1000;
 
 const SUPPORTED_SYNC_EXTENSIONS = new Set(["md", "pdf", "txt", "html"]);
 
+// Vault-relative folder where managed mode stores lilbee's documents
+// (see configureManagedStorage). It is the only scope `Sync vault` reconciles.
+const MANAGED_DOCS_PREFIX = "lilbee/";
+
+const basename = (p: string): string => p.slice(p.lastIndexOf("/") + 1);
+
 function formatSetupDetail(downloaded: number, total: number | null): string {
     const dlMB = (downloaded / BYTES_PER_MB).toFixed(1);
     if (total === null) {
@@ -1755,18 +1761,25 @@ export default class LilbeePlugin extends Plugin {
         // setTimeout was still pending). Bail cleanly instead of crashing.
         const files = this.app?.vault?.getFiles?.();
         if (!Array.isArray(files)) return 0;
-        const vaultFiles = files
+        // Only count files inside lilbee's managed document folder
+        // (<vault>/lilbee/). That's the scope `Sync vault` actually
+        // reconciles. Loose vault notes live outside it and are indexed
+        // only via the explicit Add action (which copies them in), so
+        // counting them here would show a count that sync can never clear.
+        const docFiles = files
             .filter((f) => SUPPORTED_SYNC_EXTENSIONS.has(f.extension.toLowerCase()))
-            .filter((f) => !this.wikiSync?.isWikiPath(f.path) && !f.path.startsWith("lilbee/"));
+            .filter((f) => f.path.startsWith(MANAGED_DOCS_PREFIX) && !this.wikiSync?.isWikiPath(f.path));
         const known = new Set<string>();
         try {
             // Page through the documents endpoint so we count every known
-            // source, not just the first page.
+            // source, not just the first page. Match on basename: crawled
+            // sources keep a relative path (_web/.../index.md) while added
+            // files use a basename, so the basename is the common key.
             let offset = 0;
             const limit = 100;
             while (true) {
                 const page = await this.api.listDocuments(undefined, limit, offset);
-                for (const d of page.documents) known.add(d.filename);
+                for (const d of page.documents) known.add(basename(d.filename));
                 if (!page.has_more || page.documents.length === 0) break;
                 offset += page.documents.length;
             }
@@ -1774,7 +1787,7 @@ export default class LilbeePlugin extends Plugin {
             // Server offline — leave the hint hidden rather than guessing.
             return 0;
         }
-        return vaultFiles.filter((f) => !known.has(f.name)).length;
+        return docFiles.filter((f) => !known.has(f.name)).length;
     }
 
     async updatePendingSyncHint(): Promise<void> {

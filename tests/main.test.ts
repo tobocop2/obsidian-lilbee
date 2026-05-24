@@ -1329,9 +1329,9 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "notes/a.md", name: "a.md", extension: "md" },
-                { path: "notes/b.pdf", name: "b.pdf", extension: "pdf" },
-                { path: "notes/c.txt", name: "c.txt", extension: "txt" },
+                { path: "lilbee/a.md", name: "a.md", extension: "md" },
+                { path: "lilbee/b.pdf", name: "b.pdf", extension: "pdf" },
+                { path: "lilbee/c.txt", name: "c.txt", extension: "txt" },
             ]);
             (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
                 documents: [{ filename: "a.md", chunk_count: 1, ingested_at: "" }],
@@ -1353,7 +1353,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "notes/a.md", name: "a.md", extension: "md" },
+                { path: "lilbee/a.md", name: "a.md", extension: "md" },
             ]);
             (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
                 documents: [{ filename: "a.md", chunk_count: 1, ingested_at: "" }],
@@ -1369,18 +1369,18 @@ describe("LilbeePlugin", () => {
             expect(plugin.syncPillEl?.style.display).toBe("none");
         });
 
-        it("filters out unsupported extensions, wiki paths, and lilbee/ paths", async () => {
+        it("counts only lilbee/ docs, skipping loose notes, unsupported files, and wiki pages", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.wikiSync = {
-                isWikiPath: (p: string) => p.startsWith("lilbee-wiki/"),
+                isWikiPath: (p: string) => p.startsWith("lilbee/wiki/"),
                 reconcile: vi.fn(),
             } as any;
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "notes/a.md", name: "a.md", extension: "md" },
-                { path: "img/b.png", name: "b.png", extension: "png" }, // unsupported
-                { path: "lilbee/c.md", name: "c.md", extension: "md" }, // server-managed
-                { path: "lilbee-wiki/d.md", name: "d.md", extension: "md" }, // wiki
+                { path: "lilbee/a.md", name: "a.md", extension: "md" }, // counts
+                { path: "lilbee/b.png", name: "b.png", extension: "png" }, // unsupported
+                { path: "notes/c.md", name: "c.md", extension: "md" }, // loose note, indexed via Add
+                { path: "lilbee/wiki/d.md", name: "d.md", extension: "md" }, // wiki
             ]);
             (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
                 documents: [],
@@ -1399,8 +1399,8 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "notes/a.md", name: "a.md", extension: "md" },
-                { path: "notes/b.md", name: "b.md", extension: "md" },
+                { path: "lilbee/a.md", name: "a.md", extension: "md" },
+                { path: "lilbee/b.md", name: "b.md", extension: "md" },
             ]);
             const mock = plugin.api.listDocuments as ReturnType<typeof vi.fn>;
             mock.mockClear();
@@ -1428,7 +1428,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "notes/a.md", name: "a.md", extension: "md" },
+                { path: "lilbee/a.md", name: "a.md", extension: "md" },
             ]);
             (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
 
@@ -1441,8 +1441,8 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "notes/a.md", name: "a.md", extension: "md" },
-                { path: "notes/b.md", name: "b.md", extension: "md" },
+                { path: "lilbee/a.md", name: "a.md", extension: "md" },
+                { path: "lilbee/b.md", name: "b.md", extension: "md" },
             ]);
             (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
                 documents: [],
@@ -1470,7 +1470,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "notes/a.md", name: "a.md", extension: "md" },
+                { path: "lilbee/a.md", name: "a.md", extension: "md" },
             ]);
             (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockImplementation(async () => {
                 plugin.syncPillEl = null; // simulate onunload during the await
