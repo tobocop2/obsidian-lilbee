@@ -67,9 +67,9 @@ export default storyboard("tour", {
 
     // --- 2. Model catalog: browse, then show the pull flow ---
     ...runViaPalette("Browse model catalog", "Browse model catalog", 1100),
-    beat("Walk the Chat tab", clickSelector(`${CATALOG_TABS} button:text-is("Chat")`), { holdMs: 800 }),
-    beat("Walk the Embed tab", clickSelector(`${CATALOG_TABS} button:text-is("Embed")`), { holdMs: 800 }),
-    beat("Walk the Vision tab", clickSelector(`${CATALOG_TABS} button:text-is("Vision")`), { holdMs: 800 }),
+    beat("Flick through the Chat models", wheelScroll(".lilbee-catalog-results", -48, true), { holdMs: 600 }),
+    beat("Walk the Embed tab", clickSelector(`${CATALOG_TABS} button:text-is("Embed")`), { holdMs: 700 }),
+    beat("Walk the Vision tab", clickSelector(`${CATALOG_TABS} button:text-is("Vision")`), { holdMs: 700 }),
     beat("Back to the Chat tab", clickSelector(`${CATALOG_TABS} button:text-is("Chat")`), { holdMs: 700 }),
     beat("Click the catalog search", clickSelector(CATALOG_SEARCH), { holdMs: 400 }),
     beat("Search for a model", type_("Phi-4"), { holdMs: 1200 }),

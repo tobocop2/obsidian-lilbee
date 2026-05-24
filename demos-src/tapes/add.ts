@@ -24,12 +24,13 @@ export default storyboard("add", {
   window: [1400, 900],
   layout: "explorer-chat-tasks",
   // Re-add the manual fresh so the Task Center shows real chunk-embedding
-  // progress. Keep the Task Center's seeded history (actively-used vault).
+  // progress. Clear the Task Center first so the ingest reads as a fresh,
+  // deliberate action rather than blending into prior history.
   freshIngest: [PDF_VAULT_FILE],
-  clearTaskCenter: false,
+  clearTaskCenter: true,
   clearChat: true,
   beats: [
-    beat("Opening hold on the used workspace", sleep(900)),
+    beat("Opening hold on the clean workspace", sleep(900)),
 
     // Open the Crown Vic PDF, then add it via the command palette.
     beat(

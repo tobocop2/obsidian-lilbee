@@ -29,7 +29,7 @@ import {
 
 const GITHUB_REPO = "tobocop2/obsidian-lilbee";
 const SMALL_MODEL_REPO = "Qwen/Qwen3-0.6B-GGUF";
-const QUESTION = "Is lilbee open source?";
+const QUESTION = "What is lilbee?";
 
 // Advance the wizard by mouse-clicking the step's primary CTA. Every
 // wizard step renders exactly one `.lilbee-wizard-actions button.mod-cta`
@@ -362,16 +362,15 @@ export default storyboard("first_start", {
       { holdMs: 1200, speedup: 4 },
     ),
 
-    // --- Stage 5: settle into a clean, ready chat workspace ---
-    // We deliberately end here, right after setup. No file-add, no chat
-    // send. The file-add prompts an "already indexed" confirm against the
-    // shared corpus, and the first cold chat inference races the freshly
-    // built chat leaf's API wiring — both produce frames that read as
-    // errors. The verification loop (ask -> cited answer -> source) lives
-    // in the lilbee_on_lilbee and add demos. This demo's job is the
-    // install + setup story, and it ends on a green, ready workspace.
+    // --- Stage 5: the first usage — ask a question, get a cited answer ---
+    // The whole point of the install is the first chat. Wait until the
+    // managed server is genuinely READY with the just-downloaded model
+    // installed (the READY event lands late) before revealing the chat
+    // panel, so the first-run model fetch never flashes "No models
+    // installed". Then ask, send, and stream the first cited answer from
+    // the freshly downloaded Qwen3 0.6B against the synced corpus.
     beat(
-      "Settle on a ready workspace: README open, server green",
+      "Wait for the server to be ready, then open a clean chat panel",
       runJs(`
         const p = window.app.plugins.plugins.lilbee;
         if (!p) return;
@@ -380,8 +379,6 @@ export default storyboard("first_start", {
           const tok = p?.api?.token ?? p?.settings?.manualToken;
           return tok ? { Authorization: 'Bearer ' + tok } : {};
         };
-        // Wait for the managed server to be genuinely READY so the status
-        // bar shows the active model (the READY event can land late).
         for (let i = 0; i < 240; i++) {
           const smUrl = p?.serverManager?.serverUrl;
           if (smUrl) {
@@ -399,22 +396,44 @@ export default storyboard("first_start", {
           await new Promise(r => setTimeout(r, 500));
         }
         if (typeof p.fetchActiveModel === 'function') await p.fetchActiveModel();
-        // Close any lilbee chat / task leaves — we deliberately end on the
-        // seed README in the main editor rather than the chat panel. The
-        // chat panel's first-run model fetch races the server-ready event
-        // and can flash "No models installed"; a plain document never can.
-        for (const t of ['lilbee-chat', 'lilbee-tasks']) window.app.workspace.detachLeavesOfType(t);
-        window.app.workspace.rightSplit?.collapse?.();
-        window.app.workspace.leftSplit?.expand?.();
-        const fe = window.app.workspace.getLeavesOfType('file-explorer')[0];
-        if (fe) window.app.workspace.revealLeaf(fe);
-        await new Promise(r => setTimeout(r, 200));
-        await window.app.workspace.openLinkText('lilbee.md', '', false);
-        await new Promise(r => setTimeout(r, 300));
+        // Open the chat panel and fill its model selectors from the server
+        // before we type, so the panel is in its ready state on camera.
+        if (!window.app.commands.executeCommandById('lilbee:lilbee:chat') && typeof p.activateChatView === 'function') {
+          await p.activateChatView();
+        }
+        await new Promise(r => setTimeout(r, 500));
+        const leaves = window.app.workspace.getLeavesOfType('lilbee-chat');
+        for (const leaf of leaves) {
+          window.app.workspace.revealLeaf(leaf);
+          const view = leaf.view;
+          if (view && typeof view.fetchAndFillSelectors === 'function') await view.fetchAndFillSelectors();
+        }
+        await new Promise(r => setTimeout(r, 400));
+        const ta = document.querySelector('textarea.lilbee-chat-textarea');
+        if (ta) ta.focus();
       `),
-      { holdMs: 1500, speedup: 3 },
+      { holdMs: 1400, speedup: 3 },
     ),
-
-    beat("Final hold on the ready workspace", sleep(2200)),
+    beat("Ask the first question", fillChat(QUESTION), { holdMs: 600 }),
+    beat(
+      "Ensure the question is in the box",
+      runJs(`
+        const ta = document.querySelector('textarea.lilbee-chat-textarea');
+        if (ta && !ta.value.trim()) {
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+          setter.call(ta, ${JSON.stringify(QUESTION)});
+          ta.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      `),
+      { holdMs: 300 },
+    ),
+    beat("Send the first message", clickSend(), { holdMs: 600 }),
+    beat("Stream the first cited answer", waitChatIdle(180_000), { holdMs: 1600, speedup: 4 }),
+    beat(
+      "Expand sources",
+      runJs(`document.querySelectorAll('.lilbee-chat-sources details').forEach(d => d.open = true);`),
+      { holdMs: 400 },
+    ),
+    beat("Final hold on the first cited answer", sleep(2400)),
   ],
 });

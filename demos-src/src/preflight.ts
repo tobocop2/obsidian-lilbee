@@ -51,6 +51,8 @@ export type PreflightOptions = {
   ctx: ObsidianContext;
   layout: LayoutName;
   freshIngest?: string[];
+  /** HF repo to uninstall before recording so a download demo pulls fresh. */
+  freshModel?: string;
   clearTaskCenter?: boolean;
   clearChat?: boolean;
   pinChatModel?: string;
@@ -193,6 +195,24 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
         });
       },
       [name] as const,
+    );
+  }
+
+  // 4b. Fresh-model cleanup: uninstall the named model so a download demo
+  // triggers a real pull every take (models_dir is global, so an install
+  // from a prior take would otherwise short-circuit the download).
+  if (opts.freshModel) {
+    await ctx.page.evaluate(
+      async ([repo]) => {
+        const p = (globalThis as unknown as { app: { plugins: { plugins: { lilbee: { settings: { serverUrl: string; manualToken?: string }; api?: { baseUrl: string; token?: string | null } } } } } }).app.plugins.plugins.lilbee;
+        const base = p.api?.baseUrl ?? p.settings.serverUrl;
+        const tok = p.api?.token ?? p.settings.manualToken ?? "";
+        await fetch(base + "/api/models/" + encodeURIComponent(repo) + "?source=native", {
+          method: "DELETE",
+          headers: { Authorization: "Bearer " + tok },
+        }).catch(() => {});
+      },
+      [opts.freshModel] as const,
     );
   }
 

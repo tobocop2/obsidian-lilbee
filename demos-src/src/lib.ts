@@ -37,7 +37,7 @@ export type Action =
   | { kind: "waitForSelector"; selector: string }
   | { kind: "waitChatIdle"; maxMs: number }
   | { kind: "screenshot" }
-  | { kind: "wheelScroll"; selector: string; ticks: number }
+  | { kind: "wheelScroll"; selector: string; ticks: number; fast?: boolean }
   | { kind: "runJs"; js: string };
 
 export type Beat = {
@@ -63,6 +63,9 @@ export type Storyboard = {
   layout: LayoutName;
   /** Doc names to remove from the corpus before recording (so ingest demos start fresh). */
   freshIngest?: string[];
+  /** HF repo of a model to uninstall before recording, so a download demo
+   * triggers a real pull on every take. */
+  freshModel?: string;
   /** Clear Task Center (cancel active + Clear button) in pre-flight. Defaults to true. */
   clearTaskCenter?: boolean;
   /** Clear chat history in pre-flight. Defaults to true. */
@@ -90,6 +93,7 @@ export type StoryboardOptions = {
   window?: [number, number];
   layout?: LayoutName;
   freshIngest?: string[];
+  freshModel?: string;
   clearTaskCenter?: boolean;
   clearChat?: boolean;
   preloadChatModel?: boolean;
@@ -107,6 +111,7 @@ export function storyboard(name: string, opts: StoryboardOptions): Storyboard {
     window: { w: opts.window?.[0] ?? 1400, h: opts.window?.[1] ?? 900 },
     layout: opts.layout ?? "chat-and-tasks",
     freshIngest: opts.freshIngest,
+    freshModel: opts.freshModel,
     clearTaskCenter: opts.clearTaskCenter,
     clearChat: opts.clearChat,
     preloadChatModel: opts.preloadChatModel,
@@ -151,6 +156,12 @@ export const waitForSelector = (selector: string): Action => ({ kind: "waitForSe
 export const waitChatIdle = (maxMs = 90_000): Action => ({ kind: "waitChatIdle", maxMs });
 export const screenshot = (): Action => ({ kind: "screenshot" });
 /** Move the OS cursor over the resolved selector, then drive real mouse-wheel ticks.
- * `ticks` is the same convention as pyautogui.scroll: positive = up, negative = down. */
-export const wheelScroll = (selector: string, ticks: number): Action => ({ kind: "wheelScroll", selector, ticks });
+ * `ticks` is the same convention as pyautogui.scroll: positive = up, negative = down.
+ * `fast` uses larger bursts / shorter pauses — a quick flick through a long list. */
+export const wheelScroll = (selector: string, ticks: number, fast = false): Action => ({
+  kind: "wheelScroll",
+  selector,
+  ticks,
+  fast,
+});
 export const runJs = (js: string): Action => ({ kind: "runJs", js });

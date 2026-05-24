@@ -62,9 +62,11 @@ export async function pressKey(key: string): Promise<void> {
   await run(["key", key]);
 }
 
-/** Smooth-move to (x, y) then scroll N ticks (positive = up). */
-export async function scrollAt(x: number, y: number, ticks: number): Promise<void> {
-  await run(["scroll", String(x), String(y), String(ticks)]);
+/** Smooth-move to (x, y) then scroll N ticks (positive = up). When `fast`
+ * is set, the scroll uses larger bursts and shorter pauses — a quick flick
+ * through a long list rather than a deliberate read. */
+export async function scrollAt(x: number, y: number, ticks: number, fast = false): Promise<void> {
+  await run(["scroll", String(x), String(y), String(ticks), ...(fast ? ["fast"] : [])]);
 }
 
 /** Park cursor to a non-distracting home position. Default: bottom-right of the Obsidian window. */

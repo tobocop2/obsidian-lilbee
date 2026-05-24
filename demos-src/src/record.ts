@@ -120,6 +120,7 @@ export async function record(storyboard: Storyboard): Promise<void> {
       ctx,
       layout: storyboard.layout,
       freshIngest: storyboard.freshIngest,
+      freshModel: storyboard.freshModel,
       clearTaskCenter: storyboard.clearTaskCenter,
       clearChat: storyboard.clearChat,
       preloadChatModel: storyboard.preloadChatModel,
@@ -321,7 +322,7 @@ async function runAction(ctx: ObsidianContext, action: Action, beat: Beat): Prom
         console.warn(`wheelScroll: no element for beat '${beat.label}' (${action.selector}); skipping`);
         return null;
       }
-      await scrollAt(coord.x, coord.y, action.ticks);
+      await scrollAt(coord.x, coord.y, action.ticks, action.fast ?? false);
       return coord;
     }
     case "runJs":

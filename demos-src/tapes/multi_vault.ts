@@ -28,12 +28,12 @@ const SWITCH_VAULT_FILTER = "Switch lilbee to another vault";
 
 export default storyboard("multi_vault", {
   window: [1400, 900],
-  layout: "chat-and-tasks",
-  // Skip the model pin + chat preload. The demo is pure UI navigation
-  // through the vault-picker modal and the command palette.
+  layout: "explorer-chat-tasks",
+  // Pin Qwen3 8B so the opening "active vault" state reads as running
+  // (green status, model shown) before the switch releases it. Keep the
+  // seeded Task Center history so the source vault looks actively used.
   preloadChatModel: false,
-  skipModelPin: true,
-  clearTaskCenter: true,
+  clearTaskCenter: false,
   clearChat: true,
   beats: [
     beat("Opening hold on the active vault (demo)", sleep(900)),

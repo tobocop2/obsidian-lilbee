@@ -1,35 +1,28 @@
 /**
- * catalog demo: infinite scroll across Chat / Embed / Vision, then a
- * direct search for a specific model.
+ * catalog demo: a fast flick down each model list — Chat / Embed /
+ * Vision / Rerank — to show how many models there are, then a direct
+ * search for a specific one.
  *
- * The catalog list paginates with PAGE_SIZE = 20 per fetch and fires
- * fetchPage when the scroll container is within
- * SCROLL_BOTTOM_THRESHOLD_PX (200) of its own bottom. Each beat moves
- * the OS cursor over the results list and drives real mouse-wheel
- * ticks, so the cursor is on the cards while the list scrolls — same
- * gesture a human would make.
- *
- * We scroll the LOCAL view of each task tab — the demo environment
- * doesn't expose Frontier rows, but Local pagination has has_more=true
- * for all three tasks so the load behavior is visible regardless.
+ * Each tab gets a single fast wheel-scroll beat: the cursor moves to the
+ * results list once and rips down through the cards (infinite scroll
+ * fetches the next page as it nears the bottom), so the motion is one
+ * deliberate flick per tab rather than the cursor bouncing between the
+ * tab bar and the list on every small scroll.
  */
 import { beat, clickSelector, key, runJs, sleep, storyboard, type_, wheelScroll } from "../src/lib.ts";
 
-// Wheel ticks per scroll beat. macOS scroll ticks are tiny, so ~36
-// ticks gets us most of the way down a card list. The threshold for
-// fetching the next page is 200 px from bottom, so reaching anywhere
-// near the end of the list triggers a fetch and the cards keep
-// appearing below the cursor.
-// Smaller bursts feel like a breeze through the list rather than a
-// long deliberate scroll.
-const TICKS_PER_SCROLL = -22;
-
+// One long fast flick per tab. macOS scroll ticks are tiny, so a big
+// count rips through many cards; "fast" mode uses large bursts and short
+// pauses so it reads as a quick flick, not a deliberate read.
+const FLICK = -60;
 const CATALOG_RESULTS = ".lilbee-catalog-results";
+const tab = (name: string) => `.lilbee-catalog-main-tab-bar button:text-is("${name}")`;
 
 export default storyboard("catalog", {
   window: [1400, 900],
   layout: "explorer-chat-tasks",
   clearTaskCenter: false,
+  preloadChatModel: false,
   beats: [
     beat("Opening hold", sleep(500)),
     beat(
@@ -37,35 +30,26 @@ export default storyboard("catalog", {
       runJs(`window.app.commands.executeCommandById("command-palette:open");`),
       { holdMs: 500 },
     ),
-    beat("Filter to the catalog command", type_("Browse model catalog"), { holdMs: 1100 }),
-    beat("Open the catalog", key("enter"), { holdMs: 1000 }),
+    beat("Filter to the catalog command", type_("Browse model catalog"), { holdMs: 1000 }),
+    beat("Open the catalog", key("enter"), { holdMs: 900 }),
 
-    // Modal already opens on Chat tab — no redundant click. Just scroll.
-    beat("Scroll Chat #1", wheelScroll(CATALOG_RESULTS, TICKS_PER_SCROLL), { holdMs: 600 }),
-    beat("Scroll Chat #2", wheelScroll(CATALOG_RESULTS, TICKS_PER_SCROLL), { holdMs: 600 }),
-    beat("Scroll Chat #3", wheelScroll(CATALOG_RESULTS, TICKS_PER_SCROLL), { holdMs: 800 }),
+    // Chat tab is already open — flick down through the chat models.
+    beat("Flick through the Chat models", wheelScroll(CATALOG_RESULTS, FLICK, true), { holdMs: 700 }),
 
-    // Embed models — 2 page loads.
-    beat("Embed tab", clickSelector('.lilbee-catalog-main-tab-bar button:text-is("Embed")'), { holdMs: 1000 }),
-    beat("Scroll Embed #1", wheelScroll(CATALOG_RESULTS, TICKS_PER_SCROLL), { holdMs: 600 }),
-    beat("Scroll Embed #2", wheelScroll(CATALOG_RESULTS, TICKS_PER_SCROLL), { holdMs: 800 }),
+    beat("Embed tab", clickSelector(tab("Embed")), { holdMs: 700 }),
+    beat("Flick through the Embed models", wheelScroll(CATALOG_RESULTS, FLICK, true), { holdMs: 700 }),
 
-    // Vision models — 2 page loads.
-    beat("Vision tab", clickSelector('.lilbee-catalog-main-tab-bar button:text-is("Vision")'), { holdMs: 1000 }),
-    beat("Scroll Vision #1", wheelScroll(CATALOG_RESULTS, TICKS_PER_SCROLL), { holdMs: 600 }),
-    beat("Scroll Vision #2", wheelScroll(CATALOG_RESULTS, TICKS_PER_SCROLL), { holdMs: 800 }),
+    beat("Vision tab", clickSelector(tab("Vision")), { holdMs: 700 }),
+    beat("Flick through the Vision models", wheelScroll(CATALOG_RESULTS, FLICK, true), { holdMs: 700 }),
 
-    // Rerank models — same treatment so every category in the catalog
-    // is on screen at least once.
-    beat("Rerank tab", clickSelector('.lilbee-catalog-main-tab-bar button:text-is("Rerank")'), { holdMs: 1000 }),
-    beat("Scroll Rerank #1", wheelScroll(CATALOG_RESULTS, TICKS_PER_SCROLL), { holdMs: 600 }),
-    beat("Scroll Rerank #2", wheelScroll(CATALOG_RESULTS, TICKS_PER_SCROLL), { holdMs: 800 }),
+    beat("Rerank tab", clickSelector(tab("Rerank")), { holdMs: 700 }),
+    beat("Flick through the Rerank models", wheelScroll(CATALOG_RESULTS, FLICK, true), { holdMs: 700 }),
 
-    // Direct search: back to Chat, click search, type a specific name.
-    beat("Back to Chat", clickSelector('.lilbee-catalog-main-tab-bar button:text-is("Chat")'), { holdMs: 700 }),
-    beat("Click search box", clickSelector("input.lilbee-catalog-search"), { holdMs: 400 }),
-    beat("Type a specific model name", type_("Phi-4"), { holdMs: 2000 }),
+    // Direct search: back to Chat, then type a specific model name.
+    beat("Back to the Chat tab", clickSelector(tab("Chat")), { holdMs: 600 }),
+    beat("Click the search box", clickSelector("input.lilbee-catalog-search"), { holdMs: 400 }),
+    beat("Search for a specific model", type_("Phi-4"), { holdMs: 1800 }),
 
-    beat("Close", key("escape"), { holdMs: 500 }),
+    beat("Close the catalog", key("escape"), { holdMs: 500 }),
   ],
 });

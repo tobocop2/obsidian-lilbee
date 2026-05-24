@@ -225,22 +225,28 @@ def main(argv: list[str]) -> int:
     if cmd == "scroll":
         x, y = float(args[0]), float(args[1])
         amount = int(args[2])
+        fast = len(args) > 3 and args[3] == "fast"
         smooth_move(x, y)
-        time.sleep(0.15)
+        time.sleep(0.15 if not fast else 0.08)
         # Real trackpad/wheel scrolls don't fire as a continuous spin.
-        # Emit short bursts of 3-4 ticks, then a noticeable pause, so
-        # the captured scroll reads as a series of swipes rather than
-        # one long blur.
+        # Emit bursts of ticks, then a pause, so the captured scroll
+        # reads as a series of swipes rather than one long blur. In
+        # "fast" mode the bursts are larger and the pauses shorter — a
+        # quick flick through a long list (the catalog model lists) to
+        # show how many entries there are.
+        burst_size = 9 if fast else 4
+        tick_delay = 0.02 if fast else 0.045
+        pause = 0.05 if fast else 0.12
         ticks = abs(amount)
         sign = 1 if amount > 0 else -1
         i = 0
         while i < ticks:
-            burst = min(4, ticks - i)
+            burst = min(burst_size, ticks - i)
             for _ in range(burst):
                 pyautogui.scroll(sign)
-                time.sleep(0.045)
+                time.sleep(tick_delay)
             i += burst
-            time.sleep(0.12 + random.uniform(0, 0.06))
+            time.sleep(pause + random.uniform(0, 0.03 if fast else 0.06))
         return 0
     print(f"unknown command: {cmd}", file=sys.stderr)
     return 2

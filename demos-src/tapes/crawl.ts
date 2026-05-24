@@ -24,11 +24,29 @@ export default storyboard("crawl", {
   // The Caprice corpus entry is the markdown stored under
   // lilbee/_web/en.wikipedia.org/.../index.md
   freshIngest: ["index.md"],
-  clearTaskCenter: false,
+  // Clear the Task Center first so the crawl + sync that follow read as
+  // a fresh, deliberate action rather than blending into prior history.
+  clearTaskCenter: true,
   clearChat: true,
   caption: "Recorded on a 2021 M1 Pro, 32 GB RAM.",
   beats: [
     beat("Opening hold", sleep(500)),
+    // The 9C1 introduction sentence ("introduced ... for 1986") sits in a
+    // long paragraph alongside Michigan State Police test results, while
+    // the article's dense reference list and the 1987/1989 paragraphs
+    // repeat "9C1" far more often. At a low top_k those out-rank the
+    // actual answer and the model hedges. Widen retrieval so the
+    // introduction paragraph is in context.
+    beat(
+      "Widen retrieval so the answer paragraph is in context",
+      runJs(`
+        const p = window.app.plugins.plugins.lilbee;
+        window.__crawlOrigTopK = p.settings.topK;
+        p.settings.topK = 10;
+        await p.saveSettings();
+      `),
+      { holdMs: 200 },
+    ),
     beat(
       "Open the command palette",
       runJs(`window.app.commands.executeCommandById("command-palette:open");`),
@@ -114,5 +132,13 @@ export default storyboard("crawl", {
       { holdMs: 3200 },
     ),
     beat("Close the source", key("escape"), { holdMs: 500 }),
+    beat(
+      "Restore the original top_k",
+      runJs(`
+        const p = window.app.plugins.plugins.lilbee;
+        if (window.__crawlOrigTopK !== undefined) { p.settings.topK = window.__crawlOrigTopK; await p.saveSettings(); }
+      `),
+      { holdMs: 200 },
+    ),
   ],
 });
