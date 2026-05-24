@@ -13,16 +13,10 @@ import {
   storyboard,
   type_,
   waitChatIdle,
-  wheelScroll,
 } from "../src/lib.ts";
 
 const URL = "https://en.wikipedia.org/wiki/Chevrolet_Caprice";
 const QUESTION = "When was the 9C1 police package introduced?";
-
-// The cited source either lands in the workspace as a vault file
-// (markdown / preview view) or as a source-preview modal. The
-// selector list covers both so wheelScroll lands somewhere real.
-const SOURCE_PREVIEW = ".workspace-leaf.mod-active .markdown-preview-view, .workspace-leaf.mod-active .cm-scroller, .lilbee-source-preview, .modal-container .markdown-rendered, .modal-content";
 
 export default storyboard("crawl", {
   window: [1400, 900],
@@ -77,38 +71,45 @@ export default storyboard("crawl", {
       runJs(`document.querySelectorAll('.lilbee-chat-sources details').forEach(d => d.open = true);`),
       { holdMs: 400 },
     ),
-    beat("Click the citation to open the source preview", clickChip(0), { holdMs: 1400 }),
-    // Fly through the whole article: many fast wheel bursts so the
-    // body scrolls all the way to the bottom, then snap to the very
-    // end with scrollIntoView to make the landing deterministic.
-    beat("Rapid scroll #1", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
-    beat("Rapid scroll #2", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
-    beat("Rapid scroll #3", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
-    beat("Rapid scroll #4", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
-    beat("Rapid scroll #5", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
-    beat("Rapid scroll #6", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
-    beat("Rapid scroll #7", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
-    beat("Rapid scroll #8", wheelScroll(SOURCE_PREVIEW, -60), { holdMs: 180 }),
+    beat("Click the citation to open the source", clickChip(0), { holdMs: 1000 }),
+    // Render the crawled page instead of leaving it as raw markdown.
     beat(
-      "Snap to the very bottom of the article",
+      "Render the crawled article in reading mode",
       runJs(`
-        const roots = [
-          document.querySelector('.lilbee-source-preview, .modal-content'),
-          document.querySelector('.workspace-leaf.mod-active .markdown-preview-view'),
-          document.querySelector('.workspace-leaf.mod-active .cm-scroller'),
-          document.querySelector('.workspace-leaf.mod-active'),
-        ].filter(Boolean);
-        for (const root of roots) {
-          const scroller =
-            root.querySelector('.markdown-preview-view, .cm-scroller, .modal-content') || root;
-          if (scroller && typeof scroller.scrollTo === 'function') {
-            scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' });
-            return;
+        const leaf = window.app.workspace.activeLeaf;
+        if (leaf && leaf.view?.getViewType?.() === 'markdown') {
+          const s = leaf.getViewState();
+          s.state = { ...s.state, mode: 'preview' };
+          await leaf.setViewState(s);
+        }
+        await new Promise(r => setTimeout(r, 500));
+      `),
+      { holdMs: 700 },
+    ),
+    // Jump straight to the cited 9C1 police-package section. Reading mode
+    // lazy-renders, so an off-screen "9C1" element isn't in the DOM for a
+    // querySelector scroll; use Obsidian's applyScroll(line) with the line
+    // number of "9C1" from the file content, which renders + scrolls there.
+    beat(
+      "Fast-scroll to the cited 9C1 section",
+      runJs(`
+        const leaf = window.app.workspace.activeLeaf;
+        const view = leaf?.view;
+        if (view?.file && view.currentMode?.applyScroll) {
+          const lines = (await window.app.vault.read(view.file)).split('\\n');
+          // Prefer the "9C1" section heading over the first match, which is
+          // the table-of-contents link near the top of the page.
+          let lineNo = lines.findIndex((l) => /^#{1,6}\\s.*9C1/.test(l));
+          if (lineNo < 0) {
+            for (let i = lines.length - 1; i >= 0; i--) {
+              if (/9C1/.test(lines[i])) { lineNo = i; break; }
+            }
           }
+          if (lineNo >= 0) view.currentMode.applyScroll(lineNo);
         }
       `),
-      { holdMs: 2400 },
+      { holdMs: 3200 },
     ),
-    beat("Close source preview", key("escape"), { holdMs: 500 }),
+    beat("Close the source", key("escape"), { holdMs: 500 }),
   ],
 });
