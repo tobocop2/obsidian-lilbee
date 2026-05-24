@@ -333,6 +333,8 @@ async function runAction(ctx: ObsidianContext, action: Action, beat: Beat): Prom
       return null;
     case "clickChip":
       return await cursorClickChip(ctx, action.index, beat);
+    case "clickSourceFile":
+      return await cursorClickSourceFile(ctx, action.name, beat);
   }
 }
 
@@ -414,6 +416,36 @@ async function cursorClickChip(ctx: ObsidianContext, index: number, beat: Beat):
   );
   if (!coord) {
     console.warn(`clickChip ${index}: no chip rendered for beat '${beat.label}' (answer had no citations); skipping`);
+    return null;
+  }
+  await moveToCoord(coord.x, coord.y);
+  await sleep(HOVER_BEFORE_CLICK_MS);
+  await clickAtCoord(coord.x, coord.y);
+  return coord;
+}
+
+async function cursorClickSourceFile(
+  ctx: ObsidianContext,
+  name: string,
+  beat: Beat,
+): Promise<{ x: number; y: number } | null> {
+  // Force the sources <details> open and scroll the matching file's chip
+  // into view before measuring its coordinates.
+  await ctx.page.evaluate((n) => {
+    document.querySelectorAll(".lilbee-chat-sources details").forEach((d) => ((d as HTMLDetailsElement).open = true));
+    const groups = Array.from(document.querySelectorAll(".lilbee-source-chip-grouped"));
+    const group = groups.find((g) => (g.querySelector(".lilbee-source-chip-file")?.textContent ?? "").includes(n));
+    group?.querySelector(".lilbee-source-chip-loc")?.scrollIntoView({ block: "center", behavior: "instant" });
+  }, name);
+  await sleep(350);
+  const coord = await resolveByJs(
+    ctx,
+    `const groups = Array.from(document.querySelectorAll('.lilbee-source-chip-grouped'));
+     const group = groups.find(g => (g.querySelector('.lilbee-source-chip-file')?.textContent ?? '').includes(${JSON.stringify(name)}));
+     return group?.querySelector('.lilbee-source-chip-loc') ?? null;`,
+  );
+  if (!coord) {
+    console.warn(`clickSourceFile: no cited source matching '${name}' for beat '${beat.label}'; skipping`);
     return null;
   }
   await moveToCoord(coord.x, coord.y);

@@ -14,8 +14,7 @@
  */
 import {
   beat,
-  clickChip,
-  clickSelector,
+  clickSourceFile,
   clickSend,
   fillChat,
   key,
@@ -101,20 +100,46 @@ export default storyboard("add", {
           await new Promise(r => setTimeout(r, 300));
         }
       `),
-      { holdMs: 700 },
+      { holdMs: 700, speedup: 4 },
     ),
 
     // --- Ask the towing question against the just-ingested PDF ---
+    // Close the PDF/README tabs opened during the add steps first. They
+    // clutter the layout AND steal keyboard focus from the chat textarea —
+    // leaving fillChat focused on the input but the pasted question landing
+    // nowhere, so Send fired on an empty chat. A clean single chat panel
+    // (like lilbee_on_lilbee) makes the question land reliably.
     beat(
-      "Activate chat for the question",
+      "Close the add tabs and activate a clean chat panel",
       runJs(`
+        for (const leaf of window.app.workspace.getLeavesOfType('markdown')) leaf.detach();
+        for (const leaf of window.app.workspace.getLeavesOfType('pdf')) leaf.detach();
         const leaves = window.app.workspace.getLeavesOfType('lilbee-chat');
         if (leaves[0]) window.app.workspace.revealLeaf(leaves[0]);
-        await new Promise(r => setTimeout(r, 250));
+        await new Promise(r => setTimeout(r, 400));
+        const ta = document.querySelector('textarea.lilbee-chat-textarea');
+        if (ta) ta.focus();
       `),
-      { holdMs: 600 },
+      { holdMs: 700 },
     ),
     beat("Ask the towing question", fillChat(QUESTION), { holdMs: 600 }),
+    // Safety net: in the multi-pane add layout the OS-level paste behind
+    // fillChat occasionally fires before the textarea click settles focus,
+    // leaving the box empty and Send firing on nothing. If the visible
+    // typing didn't land, set the value directly so the send never goes out
+    // empty (a no-op when fillChat worked).
+    beat(
+      "Ensure the question is in the box",
+      runJs(`
+        const ta = document.querySelector('textarea.lilbee-chat-textarea');
+        if (ta && !ta.value.trim()) {
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+          setter.call(ta, ${JSON.stringify(QUESTION)});
+          ta.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      `),
+      { holdMs: 300 },
+    ),
     beat("Send", clickSend(), { holdMs: 600 }),
     beat("Stream the cited answer", waitChatIdle(180_000), { holdMs: 1400, speedup: 4 }),
     beat(
@@ -122,7 +147,11 @@ export default storyboard("add", {
       runJs(`document.querySelectorAll('.lilbee-chat-sources details').forEach(d => d.open = true);`),
       { holdMs: 400 },
     ),
-    beat("Click the first citation", clickChip(0), { holdMs: 4500 }),
+    // Click the manual's citation specifically. The towing answer cites the
+    // Crown Vic PDF, but retrieval ranks the README/Caprice chunks ahead of
+    // it, so clickChip(0) would open an uncited source. Target the cited
+    // file by name so the source preview lands on the manual page.
+    beat("Open the cited page of the manual", clickSourceFile("Crown Victoria"), { holdMs: 4500 }),
     beat("Close source preview", key("escape"), { holdMs: 600 }),
   ],
 });

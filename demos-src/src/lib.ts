@@ -30,6 +30,7 @@ export type Action =
   | { kind: "fillChat"; text: string }
   | { kind: "clickSend" }
   | { kind: "clickChip"; index: number }
+  | { kind: "clickSourceFile"; name: string }
   | { kind: "type"; text: string }
   | { kind: "key"; key: string }
   | { kind: "sleep"; ms: number }
@@ -139,6 +140,10 @@ export const command = (commandId: string): Action => ({ kind: "executeCommand",
 export const fillChat = (text: string): Action => ({ kind: "fillChat", text });
 export const clickSend = (): Action => ({ kind: "clickSend" });
 export const clickChip = (index: number): Action => ({ kind: "clickChip", index });
+/** Click the location chip of the cited source whose filename contains `name`.
+ * Use when the answer cites a specific document that isn't the first source —
+ * clickChip(0) would open whatever ranked first, not the cited file. */
+export const clickSourceFile = (name: string): Action => ({ kind: "clickSourceFile", name });
 export const type_ = (text: string): Action => ({ kind: "type", text });
 export const key = (k: string): Action => ({ kind: "key", key: k });
 export const sleep = (ms: number): Action => ({ kind: "sleep", ms });
