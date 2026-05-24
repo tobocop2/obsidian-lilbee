@@ -205,6 +205,7 @@ export default class LilbeePlugin extends Plugin {
     api: LilbeeClient = new LilbeeClient("");
     activeModel = "";
     statusBarEl: HTMLElement | null = null;
+    syncPillEl: HTMLElement | null = null;
     ribbonIconEl: HTMLElement | null = null;
     chatRibbonIconEl: HTMLElement | null = null;
     binaryManager: BinaryManager | null = null;
@@ -213,7 +214,6 @@ export default class LilbeePlugin extends Plugin {
     vaultId = "";
     syncController: AbortController | null = null;
     private pendingSyncCount = 0;
-    private statusBarShowsSyncHint = false;
     private pendingHintTimeout: ReturnType<typeof setTimeout> | null = null;
     private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
     private startingServer = false;
@@ -257,7 +257,20 @@ export default class LilbeePlugin extends Plugin {
         this.statusBarEl = this.addStatusBarItem();
         this.statusBarEl.style.cursor = "pointer";
         this.statusBarEl.setAttribute("aria-label", MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);
-        this.statusBarEl.addEventListener("click", () => this.handleStatusBarClick());
+        this.statusBarEl.addEventListener("click", () => this.openPluginSettings());
+
+        // A separate, visually distinct sync pill (refresh glyph + count) that
+        // only appears when the vault has documents the server hasn't ingested.
+        // Keeping it off the main status pill lets the green "running" state
+        // stay clean and prominent; this pill is a sync affordance, not a
+        // second status icon. Clicking it triggers a sync.
+        this.syncPillEl = this.addStatusBarItem();
+        this.syncPillEl.addClass("lilbee-sync-pill");
+        this.syncPillEl.style.cursor = "pointer";
+        this.syncPillEl.style.display = "none";
+        this.syncPillEl.setAttribute("aria-label", MESSAGES.TOOLTIP_PENDING_SYNC_HINT);
+        this.syncPillEl.addEventListener("click", () => void this.triggerSync());
+
         this.chatRibbonIconEl = this.addRibbonIcon("messages-square", MESSAGES.LABEL_RIBBON_OPEN_CHAT, () =>
             this.activateChatView(),
         );
@@ -1011,12 +1024,14 @@ export default class LilbeePlugin extends Plugin {
             clearTimeout(this.pendingHintTimeout);
             this.pendingHintTimeout = null;
         }
-        // Tear down the status-bar item we own. addStatusBarItem returns a
-        // DOM node that survives plugin unload if the plugin doesn't detach
-        // it explicitly, so a disable/enable cycle leaves a stale duplicate
+        // Tear down the status-bar items we own. addStatusBarItem returns
+        // DOM nodes that survive plugin unload if the plugin doesn't detach
+        // them explicitly, so a disable/enable cycle leaves stale duplicates
         // in the bar that the new plugin instance then sits next to.
         this.statusBarEl?.remove();
         this.statusBarEl = null;
+        this.syncPillEl?.remove();
+        this.syncPillEl = null;
         this.taskQueue.dispose();
         void this.serverManager?.stop();
         this.vaultRegistry?.releaseLock(this.vaultId);
@@ -1121,41 +1136,16 @@ export default class LilbeePlugin extends Plugin {
         // on STOPPED instead of cheerfully claiming "ready" against a
         // server that isn't running.
         if (this.settings.serverMode === SERVER_MODE.MANAGED && this.serverManager === null) {
-            this.statusBarShowsSyncHint = false;
             this.updateStatusBar(MESSAGES.STATUS_STOPPED, DOT_STATE.MUTED, false);
             this.setStatusClass(null);
-            this.statusBarEl?.setAttribute("aria-label", MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);
             return;
         }
-        // When the server is up and idle but the vault has documents the
-        // server hasn't ingested yet, the single status icon becomes an
-        // actionable sync prompt: clicking it triggers a sync instead of
-        // opening settings.
-        const readyText =
+        // The main pill always shows running status, plainly and prominently.
+        // Pending-sync work lives on the separate sync pill, never here.
+        const text =
             this.settings.serverMode === SERVER_MODE.EXTERNAL ? MESSAGES.STATUS_READY_EXTERNAL : MESSAGES.STATUS_READY;
-        if (this.pendingSyncCount > 0) {
-            this.statusBarShowsSyncHint = true;
-            // Stay on the prominent green "ready" pill so the icon clearly
-            // reads as running, with the pending count noted in the same pill.
-            // Never grey it down or borrow the breathing accent-glow of
-            // lilbee-status-adding — running must stand out, calmly.
-            this.updateStatusBar(MESSAGES.STATUS_READY_PENDING_SYNC(readyText, this.pendingSyncCount));
-            this.setStatusClass("lilbee-status-ready");
-            this.statusBarEl?.setAttribute("aria-label", MESSAGES.TOOLTIP_PENDING_SYNC_HINT);
-            return;
-        }
-        this.statusBarShowsSyncHint = false;
-        this.updateStatusBar(readyText);
+        this.updateStatusBar(text);
         this.setStatusClass("lilbee-status-ready");
-        this.statusBarEl?.setAttribute("aria-label", MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);
-    }
-
-    private handleStatusBarClick(): void {
-        if (this.statusBarShowsSyncHint) {
-            void this.triggerSync();
-        } else {
-            this.openPluginSettings();
-        }
     }
 
     private startHealthProbe(): void {
@@ -1217,10 +1207,6 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private updateStatusBarFromQueue(): void {
-        // Any queue-driven render (running task or completed-task flash) means
-        // the bar isn't showing the actionable sync prompt; setStatusReady
-        // re-arms it in the idle branch below when sync work is pending.
-        this.statusBarShowsSyncHint = false;
         const allActive = this.taskQueue.activeAll;
         const queued = this.taskQueue.queued;
         const completed = this.taskQueue.completed;
@@ -1792,17 +1778,18 @@ export default class LilbeePlugin extends Plugin {
     }
 
     async updatePendingSyncHint(): Promise<void> {
-        if (!this.statusBarEl) return;
+        if (!this.syncPillEl) return;
         const count = await this.countPendingSync();
-        if (!this.statusBarEl) return;
+        if (!this.syncPillEl) return;
+        // countPendingSync returns 0 when the server is unreachable, so the
+        // pill naturally hides when lilbee isn't up — the main status pill
+        // owns the running/stopped state, this one only the sync count.
         this.pendingSyncCount = count;
-        // Only repaint the idle, healthy status into the pending-sync prompt.
-        // While a task is running/queued the queue-driven render holds the bar
-        // (and re-reads the count on settle); while the server is down or in
-        // an error state, leave that status untouched rather than overwriting
-        // it with a stale "ready"/"stopped".
-        if (this.isLilbeeReady() && this.taskQueue.activeAll.length === 0 && this.taskQueue.queued.length === 0) {
-            this.updateStatusBarFromQueue();
+        if (count > 0) {
+            this.syncPillEl.setText(MESSAGES.STATUS_SYNC_PILL(count));
+            this.syncPillEl.style.display = "";
+        } else {
+            this.syncPillEl.style.display = "none";
         }
     }
 

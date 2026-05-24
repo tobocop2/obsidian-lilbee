@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Notice } from "obsidian";
 import { App, WorkspaceLeaf } from "./__mocks__/obsidian";
-import { SSE_EVENT, TASK_TYPE } from "../src/types";
+import { SSE_EVENT } from "../src/types";
 import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
 import { ConfirmModal } from "../src/views/confirm-modal";
@@ -1325,7 +1325,7 @@ describe("LilbeePlugin", () => {
     });
 
     describe("updatePendingSyncHint()", () => {
-        it("turns the single status icon into a sync prompt when the vault has unknown files", async () => {
+        it("shows the sync pill with the count when the vault has unknown files", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
@@ -1343,17 +1343,13 @@ describe("LilbeePlugin", () => {
 
             await plugin.updatePendingSyncHint();
 
-            expect(plugin.statusBarEl?.textContent).toContain("ready");
-            expect(plugin.statusBarEl?.textContent).toContain("2 to sync");
-            expect(plugin.statusBarEl?.getAttribute("aria-label")).toBe(MESSAGES.TOOLTIP_PENDING_SYNC_HINT);
-            expect((plugin as any).statusBarShowsSyncHint).toBe(true);
-            // Stays on the prominent green "ready" pill so it reads as running,
-            // never greyed down and never the breathing accent-glow of a task.
-            expect(plugin.statusBarEl?.classList.contains("lilbee-status-ready")).toBe(true);
-            expect(plugin.statusBarEl?.classList.contains("lilbee-status-adding")).toBe(false);
+            // The sync pill shows the count; the main status pill is untouched.
+            expect(plugin.syncPillEl?.textContent).toBe("⟳ 2");
+            expect(plugin.syncPillEl?.style.display).toBe("");
+            expect(plugin.statusBarEl?.textContent).not.toContain("to sync");
         });
 
-        it("falls back to the ready status when nothing is pending", async () => {
+        it("hides the sync pill when nothing is pending", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
@@ -1366,13 +1362,11 @@ describe("LilbeePlugin", () => {
                 offset: 0,
                 has_more: false,
             });
+            plugin.syncPillEl!.style.display = "";
 
             await plugin.updatePendingSyncHint();
 
-            expect(plugin.statusBarEl?.textContent).not.toContain("to sync");
-            expect(plugin.statusBarEl?.textContent).toContain("ready");
-            expect(plugin.statusBarEl?.getAttribute("aria-label")).toBe(MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);
-            expect((plugin as any).statusBarShowsSyncHint).toBe(false);
+            expect(plugin.syncPillEl?.style.display).toBe("none");
         });
 
         it("filters out unsupported extensions, wiki paths, and lilbee/ paths", async () => {
@@ -1398,7 +1392,7 @@ describe("LilbeePlugin", () => {
 
             await plugin.updatePendingSyncHint();
 
-            expect(plugin.statusBarEl?.textContent).toContain("1 to sync");
+            expect(plugin.syncPillEl?.textContent).toBe("⟳ 1");
         });
 
         it("pages through listDocuments when has_more is true", async () => {
@@ -1427,10 +1421,10 @@ describe("LilbeePlugin", () => {
             await plugin.updatePendingSyncHint();
 
             expect(mock).toHaveBeenCalledTimes(2);
-            expect((plugin as any).statusBarShowsSyncHint).toBe(false);
+            expect(plugin.syncPillEl?.style.display).toBe("none");
         });
 
-        it("leaves the icon on the ready status when listDocuments rejects (server offline)", async () => {
+        it("hides the sync pill when listDocuments rejects (server offline)", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
@@ -1440,11 +1434,10 @@ describe("LilbeePlugin", () => {
 
             await plugin.updatePendingSyncHint();
 
-            expect((plugin as any).statusBarShowsSyncHint).toBe(false);
-            expect(plugin.statusBarEl?.textContent).toContain("ready");
+            expect(plugin.syncPillEl?.style.display).toBe("none");
         });
 
-        it("does not repaint the bar while a task is active, but still records the count", async () => {
+        it("renders the sync pill independently of the main status pill", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
@@ -1458,56 +1451,62 @@ describe("LilbeePlugin", () => {
                 offset: 0,
                 has_more: false,
             });
-            plugin.taskQueue.enqueue("Adding files", TASK_TYPE.ADD);
             const fromQueueSpy = vi.spyOn(plugin as any, "updateStatusBarFromQueue");
 
             await plugin.updatePendingSyncHint();
 
             expect(fromQueueSpy).not.toHaveBeenCalled();
-            expect((plugin as any).pendingSyncCount).toBe(2);
+            expect(plugin.syncPillEl?.textContent).toBe("⟳ 2");
         });
 
-        it("no-ops if statusBarEl is null", async () => {
+        it("no-ops if syncPillEl is null", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
-            plugin.statusBarEl = null;
+            plugin.syncPillEl = null;
             await expect(plugin.updatePendingSyncHint()).resolves.toBeUndefined();
         });
 
-        it("records 0 silently when the vault adapter is gone (timer fired post-teardown)", async () => {
+        it("bails after the await if the pill was torn down mid-flight", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+                { path: "notes/a.md", name: "a.md", extension: "md" },
+            ]);
+            (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+                plugin.syncPillEl = null; // simulate onunload during the await
+                return { documents: [], total: 0, limit: 100, offset: 0, has_more: false };
+            });
+            await expect(plugin.updatePendingSyncHint()).resolves.toBeUndefined();
+        });
+
+        it("hides the sync pill when the vault adapter is gone (timer fired post-teardown)", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
             await expect(plugin.updatePendingSyncHint()).resolves.toBeUndefined();
-            expect((plugin as any).statusBarShowsSyncHint).toBe(false);
+            expect(plugin.syncPillEl?.style.display).toBe("none");
         });
     });
 
     describe("status-bar click routing", () => {
-        it("triggers a sync when the icon is showing the pending-sync prompt", async () => {
+        it("opens settings when the main status pill is clicked", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
-            (plugin as any).statusBarShowsSyncHint = true;
-            const triggerSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
-            const settingsSpy = vi.spyOn(plugin, "openPluginSettings").mockImplementation(() => {});
-
-            (plugin.statusBarEl as any).trigger("click");
-
-            expect(triggerSpy).toHaveBeenCalled();
-            expect(settingsSpy).not.toHaveBeenCalled();
-        });
-
-        it("opens settings when the icon is showing ordinary status", async () => {
-            const plugin = await createPlugin({ serverMode: "external" });
-            await plugin.onload();
-            (plugin as any).statusBarShowsSyncHint = false;
-            const triggerSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
             const settingsSpy = vi.spyOn(plugin, "openPluginSettings").mockImplementation(() => {});
 
             (plugin.statusBarEl as any).trigger("click");
 
             expect(settingsSpy).toHaveBeenCalled();
-            expect(triggerSpy).not.toHaveBeenCalled();
+        });
+
+        it("triggers a sync when the sync pill is clicked", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const triggerSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            (plugin.syncPillEl as any).trigger("click");
+
+            expect(triggerSpy).toHaveBeenCalled();
         });
     });
 

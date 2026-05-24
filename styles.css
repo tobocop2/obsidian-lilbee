@@ -751,6 +751,18 @@
     animation: lilbee-pill-breathe 1.8s ease-in-out infinite;
 }
 
+/* Dedicated sync pill: a distinct, static affordance that appears only when
+ * documents are pending. Amber so it stands apart from the green "ready"
+ * status pill without alarming like the red error state, and no animation so
+ * it stays calm when parked in the corner. */
+.lilbee-sync-pill {
+    color: var(--text-on-accent) !important;
+    background-color: var(--color-orange, #e0922f);
+    border-radius: var(--radius-s, 4px);
+    padding: 0 var(--size-4-2, 8px);
+    font-variant-numeric: tabular-nums;
+}
+
 /* Catalog Modal */
 
 .lilbee-catalog-modal {
