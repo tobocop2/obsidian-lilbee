@@ -751,16 +751,6 @@
     animation: lilbee-pill-breathe 1.8s ease-in-out infinite;
 }
 
-/* Passive "you have unsynced documents" hint. Deliberately static — no
- * breathing/glow — so it stays out of the way when parked in the corner
- * for a whole session, while the chip + muted dot still signal it's there. */
-.lilbee-status-pending-sync {
-    color: var(--text-muted) !important;
-    background-color: var(--background-modifier-border);
-    border-radius: var(--radius-s, 4px);
-    padding: 0 var(--size-4-2, 8px);
-}
-
 /* Catalog Modal */
 
 .lilbee-catalog-modal {

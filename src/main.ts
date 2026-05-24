@@ -1110,7 +1110,6 @@ export default class LilbeePlugin extends Plugin {
             "lilbee-status-starting",
             "lilbee-status-ready",
             "lilbee-status-adding",
-            "lilbee-status-pending-sync",
             "lilbee-status-error",
         );
         if (cls) this.statusBarEl.classList.add(cls);
@@ -1132,22 +1131,21 @@ export default class LilbeePlugin extends Plugin {
         // server hasn't ingested yet, the single status icon becomes an
         // actionable sync prompt: clicking it triggers a sync instead of
         // opening settings.
+        const readyText =
+            this.settings.serverMode === SERVER_MODE.EXTERNAL ? MESSAGES.STATUS_READY_EXTERNAL : MESSAGES.STATUS_READY;
         if (this.pendingSyncCount > 0) {
             this.statusBarShowsSyncHint = true;
-            // Calm, static treatment — a muted dot + neutral chip. Pending
-            // sync is a passive "there's work you could do" hint, not an
-            // active operation, so it must NOT borrow the breathing
-            // accent-glow of lilbee-status-adding (that reads as intrusive
-            // when it's parked there the whole session).
-            this.updateStatusBar(MESSAGES.STATUS_DOCS_PENDING_SYNC(this.pendingSyncCount), DOT_STATE.MUTED, false);
-            this.setStatusClass("lilbee-status-pending-sync");
+            // Stay on the prominent green "ready" pill so the icon clearly
+            // reads as running, with the pending count noted in the same pill.
+            // Never grey it down or borrow the breathing accent-glow of
+            // lilbee-status-adding — running must stand out, calmly.
+            this.updateStatusBar(MESSAGES.STATUS_READY_PENDING_SYNC(readyText, this.pendingSyncCount));
+            this.setStatusClass("lilbee-status-ready");
             this.statusBarEl?.setAttribute("aria-label", MESSAGES.TOOLTIP_PENDING_SYNC_HINT);
             return;
         }
         this.statusBarShowsSyncHint = false;
-        const text =
-            this.settings.serverMode === SERVER_MODE.EXTERNAL ? MESSAGES.STATUS_READY_EXTERNAL : MESSAGES.STATUS_READY;
-        this.updateStatusBar(text);
+        this.updateStatusBar(readyText);
         this.setStatusClass("lilbee-status-ready");
         this.statusBarEl?.setAttribute("aria-label", MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);
     }
