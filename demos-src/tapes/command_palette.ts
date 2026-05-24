@@ -142,22 +142,30 @@ export default storyboard("command_palette", {
       `),
       { holdMs: 700 },
     ),
-    // Jump to a relevant section. Reading mode lazy-renders, so use
-    // Obsidian's applyScroll(line) with the line number of a definition /
-    // first real section heading from the file content.
+    // Glide down through the crawled article (not a jump that lingers at
+    // the top) and land on the Definitions section — the part that
+    // answers "what is a knowledge graph?". Reading mode lazy-renders, so
+    // applyScroll(line) in paused steps reliably renders + scrolls.
     beat(
-      "Jump to the relevant section of the source",
+      "Scroll down through the crawled article to the Definitions section",
       runJs(`
-        const leaf = window.app.workspace.activeLeaf;
-        const view = leaf?.view;
+        const view = window.app.workspace.activeLeaf?.view;
         if (view?.file && view.currentMode?.applyScroll) {
           const lines = (await window.app.vault.read(view.file)).split('\\n');
-          let lineNo = lines.findIndex((l) => /^#{1,6}\\s.*(definition|knowledge graph)/i.test(l));
-          if (lineNo < 0) lineNo = lines.findIndex((l) => /^##\\s/.test(l));
-          if (lineNo >= 0) view.currentMode.applyScroll(lineNo);
+          let target = lines.findIndex((l) => /^#{1,6}\\s+definitions/i.test(l));
+          if (target < 0) target = lines.findIndex((l) => /^#{1,6}\\s+history/i.test(l));
+          if (target < 0) target = lines.findIndex((l, i) => i > 60 && /^##\\s/.test(l));
+          if (target >= 0) {
+            const steps = 4;
+            for (let i = 1; i < steps; i++) {
+              view.currentMode.applyScroll(Math.round((target * i) / steps));
+              await new Promise(r => setTimeout(r, 1300));
+            }
+            view.currentMode.applyScroll(target);
+          }
         }
       `),
-      { holdMs: 3200 },
+      { holdMs: 3000 },
     ),
     beat("Close the source", key("escape"), { holdMs: 500 }),
   ],

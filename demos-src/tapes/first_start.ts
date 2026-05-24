@@ -252,32 +252,26 @@ export default storyboard("first_start", {
     // downloads the binary and starts the process. The task queue
     // doesn't track this; wait for the wizard to advance to the model
     // picker step instead.
+    // The picker's cards load AND re-render asynchronously (catalog API
+    // call, then a RAM-fit pass), so a coordinate-based click races the
+    // re-render — the card is found one moment and gone the next. Poll for
+    // the Qwen3 0.6B card and DOM-click it, re-querying each iteration so a
+    // re-render can't strand a stale node, until the card reports selected.
     beat(
-      "Wait for the wizard to land on the model picker",
+      "Wait for the model picker, then select Qwen3 0.6B",
       runJs(`
-        // The picker's model cards load asynchronously (a catalog API
-        // call), so waiting for the container alone races the cards. Wait
-        // for the Qwen3 0.6B card itself to render before selecting it.
         for (let i = 0; i < 240; i++) {
-          if (document.querySelector('.lilbee-wizard-models [data-repo*="Qwen3-0.6B"]')) return;
-          await new Promise(r => setTimeout(r, 500));
+          const card = document.querySelector('.lilbee-wizard-models [data-repo*="Qwen3-0.6B"]');
+          if (card) {
+            card.scrollIntoView({ block: 'center', behavior: 'instant' });
+            card.click();
+            await new Promise(r => setTimeout(r, 250));
+            if (document.querySelector('.lilbee-wizard-models [data-repo*="Qwen3-0.6B"].is-selected')) return;
+          }
+          await new Promise(r => setTimeout(r, 400));
         }
       `),
-      { holdMs: 1500, speedup: 4 },
-    ),
-    // Bring the Qwen3 0.6B card into view, then mouse-click it. Cards
-    // carry data-repo = hf_repo (e.g. "Qwen/Qwen3-0.6B-GGUF"), so the
-    // attribute selector lands on the right tile and the cursor visibly
-    // moves to it.
-    beat(
-      "Reveal the Qwen3 0.6B card",
-      runJs(`document.querySelector('.lilbee-wizard-models [data-repo*="Qwen3-0.6B"]')?.scrollIntoView({ block: 'center', behavior: 'instant' });`),
-      { holdMs: 250 },
-    ),
-    beat(
-      "Select Qwen3 0.6B in the model picker",
-      clickSelector('.lilbee-wizard-models [data-repo*="Qwen3-0.6B"]'),
-      { holdMs: 1200 },
+      { holdMs: 1200, speedup: 4 },
     ),
     ...wizardStep("Model picker -> Continue (Qwen3 0.6B downloads)"),
     // pullSelectedModel streams the download via SSE and only advances
