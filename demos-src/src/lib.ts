@@ -53,6 +53,10 @@ export type Beat = {
   /** Post-process speedup factor for this beat. 4 = render 4x faster.
    * While this beat plays, a "Sped up Nx" caption appears top-right. */
   speedup?: number;
+  /** Override the runJs abort guard (default 240s) for beats that
+   * legitimately run long while the screen keeps changing — e.g. waiting
+   * on a real model download to stream to completion. */
+  maxMs?: number;
 };
 
 import type { LayoutName } from "./layouts.ts";
@@ -128,9 +132,16 @@ export function storyboard(name: string, opts: StoryboardOptions): Storyboard {
 export function beat(
   label: string,
   action: Action,
-  options: { holdMs?: number; cursorParkTo?: [number, number]; speedup?: number } = {},
+  options: { holdMs?: number; cursorParkTo?: [number, number]; speedup?: number; maxMs?: number } = {},
 ): Beat {
-  return { label, action, holdMs: options.holdMs, cursorParkTo: options.cursorParkTo, speedup: options.speedup };
+  return {
+    label,
+    action,
+    holdMs: options.holdMs,
+    cursorParkTo: options.cursorParkTo,
+    speedup: options.speedup,
+    maxMs: options.maxMs,
+  };
 }
 
 // --- action factories ------------------------------------------------

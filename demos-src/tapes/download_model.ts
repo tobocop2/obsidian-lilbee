@@ -3,14 +3,12 @@
  *
  * Open the catalog, search for a small chat model that isn't installed
  * (Llama 3.2 1B), confirm the download, then close the catalog and watch
- * the Task Center stream the download to completion. A real pull
- * auto-activates the model, so the status bar flips to it at the end —
- * the model goes from "in the catalog" to "downloaded and active".
+ * the Task Center stream the download from start to completion. The
+ * catalog pull downloads without changing the active model, so the
+ * status bar stays on Qwen3 8B throughout — no disruption.
  *
  * freshModel uninstalls the model in pre-flight so the pull is a real
- * download on every take (models_dir is shared across vaults). A chat
- * model is safe to auto-activate; only embedding-model pulls would swap
- * the embedder out from under the corpus.
+ * download on every take (models_dir is shared across vaults).
  */
 import { beat, clickSelector, key, runJs, sleep, storyboard, type_ } from "../src/lib.ts";
 
@@ -63,18 +61,10 @@ export default storyboard("download_model", {
           await new Promise(r => setTimeout(r, 500));
         }
       `),
-      { holdMs: 1200, speedup: 6 },
+      // A real ~1.2GB pull can take several minutes; let it run past the
+      // default 240s guard since the progress bar keeps the screen alive.
+      { holdMs: 1200, speedup: 6, maxMs: 900_000 },
     ),
-    // The pull auto-activates the model; refresh the status bar so it
-    // reflects the newly downloaded, now-active model.
-    beat(
-      "Refresh the active model in the status bar",
-      runJs(`
-        const p = window.app.plugins.plugins.lilbee;
-        if (typeof p.fetchActiveModel === "function") await p.fetchActiveModel();
-      `),
-      { holdMs: 600 },
-    ),
-    beat("Final hold on the completed download", sleep(2000)),
+    beat("Final hold on the completed download", sleep(2200)),
   ],
 });

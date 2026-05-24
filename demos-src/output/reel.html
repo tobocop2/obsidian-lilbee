@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>lilbee demo reel</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #15171a;
+    color: #e7e9ec;
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  header { padding: 30px 32px 14px; border-bottom: 1px solid #2a2e34; }
+  header h1 { margin: 0 0 6px; font-size: 23px; font-weight: 650; }
+  header p { margin: 0; color: #9aa1ab; font-size: 13px; }
+  main { max-width: 1120px; margin: 0 auto; padding: 26px 32px 72px; display: grid; gap: 38px; }
+  .section-label { margin: 8px 0 -14px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #6b7280; }
+  .demo { background: #1c1f24; border: 1px solid #2a2e34; border-radius: 12px; overflow: hidden; }
+  .demo.pending { opacity: .82; }
+  .demo-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 16px 20px 10px; }
+  .demo-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+  .demo-head .meta { color: #7f8792; font-size: 12px; white-space: nowrap; }
+  .demo p.desc { margin: 0 20px 14px; color: #b6bcc5; font-size: 13.5px; }
+  .badge { display: inline-block; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; padding: 2px 7px; border-radius: 5px; margin-left: 8px; vertical-align: middle; }
+  .badge.new { background: color-mix(in srgb, #44cf6e 22%, transparent); color: #66d98a; }
+  .badge.old { background: #3a2f1c; color: #e0a14a; }
+  video { display: block; width: 100%; background: #000; border-top: 1px solid #2a2e34; }
+  .num { color: #6b7280; font-variant-numeric: tabular-nums; margin-right: 8px; }
+  code { background: #262a30; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>lilbee demo reel</h1>
+  <p>Recreated 2026-05-24 against the review guidelines: single contextual cursor (no disappearing, no overlap), soft green "running" status, actively-used vault (populated explorer + Task Center history), cursor kept off README links, no error frames.</p>
+</header>
+<main id="demos"></main>
+<script>
+  const demos = [
+    { name: "tour", fresh: true,
+      desc: "A walk through every surface: file explorer, the model catalog (fast flick through the lists + the Download-model confirm), adding a file, a README-only cited “what is lilbee” answer, and settings." },
+    { name: "lilbee_on_lilbee", fresh: true,
+      desc: "Ask “What is lilbee in one sentence?” — a README-only cited answer, then the citation opens the README and scrolls down to the Offline-copies-of-websites GIF." },
+    { name: "add", fresh: true,
+      desc: "Cleared Task Center, then add the Crown Victoria owner’s manual and ask a towing question; the citation opens the manual at the cited page (p.173)." },
+    { name: "crawl", fresh: true,
+      desc: "Cleared Task Center, then crawl the Caprice Wikipedia page and ask when the 9C1 package was introduced — the answer states 1986 and the citation jumps to the 9C1 section." },
+    { name: "catalog", fresh: true,
+      desc: "Fast flick down each model list — Chat / Embed / Vision / Rerank — to show how many models there are (infinite scroll), then a direct search." },
+    { name: "download_model", fresh: true,
+      desc: "Pull Llama 3.2 1B from the catalog and watch the download stream start-to-finish in the Task Center." },
+    { name: "command_palette", fresh: true,
+      desc: "Three palette flows back to back: open settings, crawl a page, add the current file (the Task Center fills as it ingests)." },
+    { name: "settings", fresh: true,
+      desc: "Open lilbee settings via the palette and scroll the full surface, top to bottom through the Advanced section." },
+    { name: "multi_vault", fresh: true,
+      desc: "An active vault running Qwen3 8B → switch the shared lilbee install to another registered vault via the picker → the released/stopped state." },
+    { name: "first_start", fresh: false,
+      desc: "True from-scratch install: BRAT → enable lilbee → the setup wizard with real model downloads → the first cited chat. PENDING recreation (needs the firststart vault opened + reset)." },
+  ];
+  const main = document.getElementById("demos");
+  let lastFresh = null;
+  demos.forEach((d, i) => {
+    if (d.fresh !== lastFresh) {
+      const lab = document.createElement("div");
+      lab.className = "section-label";
+      lab.textContent = d.fresh ? "Recreated to the blueprint" : "Pending recreation (vault switch)";
+      main.appendChild(lab);
+      lastFresh = d.fresh;
+    }
+    const el = document.createElement("section");
+    el.className = "demo" + (d.fresh ? "" : " pending");
+    el.innerHTML = `
+      <div class="demo-head">
+        <h2><span class="num">${String(i + 1).padStart(2, "0")}</span>${d.name}
+          <span class="badge ${d.fresh ? "new" : "old"}">${d.fresh ? "updated" : "older"}</span></h2>
+        <span class="meta">${d.name}.webm</span>
+      </div>
+      <p class="desc">${d.desc}</p>
+      <video src="./${d.name}.webm" controls loop muted preload="metadata" playsinline></video>`;
+    main.appendChild(el);
+  });
+</script>
+</body>
+</html>

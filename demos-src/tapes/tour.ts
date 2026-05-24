@@ -114,7 +114,7 @@ export default storyboard("tour", {
         window.app.workspace.leftSplit?.collapse?.();
         const p = window.app.plugins.plugins.lilbee;
         window.__tourOrigTopK = p.settings.topK;
-        p.settings.topK = 1;
+        p.settings.topK = 2;
         await p.saveSettings();
         const leaves = window.app.workspace.getLeavesOfType('lilbee-chat');
         if (leaves[0]) window.app.workspace.revealLeaf(leaves[0]);

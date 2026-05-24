@@ -42,15 +42,17 @@ export default storyboard("lilbee_on_lilbee", {
   beats: [
     beat("Opening hold on the used workspace", sleep(900)),
 
-    // Retrieve only the single best-matching chunk so the cited source is
-    // the README alone, not the car-manual chunks that top_k=5 also pulls.
-    // Original is stashed on window and restored at the end.
+    // The two best-matching chunks for "what is lilbee" are both from the
+    // README, so top_k=2 dedupes to a README-only citation. (Oddly, top_k=1
+    // and top_k=3 also pull in an unrelated crawled page via MMR
+    // re-selection, so 2 is the value that stays clean.) Original is
+    // stashed on window and restored at the end.
     beat(
-      "Constrain retrieval to the top hit for a README-only citation",
+      "Constrain retrieval for a README-only citation",
       runJs(`
         const p = window.app.plugins.plugins.lilbee;
         window.__lilbeeOrigTopK = p.settings.topK;
-        p.settings.topK = 1;
+        p.settings.topK = 2;
         await p.saveSettings();
       `),
       { holdMs: 200 },

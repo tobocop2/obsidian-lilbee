@@ -328,7 +328,7 @@ async function runAction(ctx: ObsidianContext, action: Action, beat: Beat): Prom
     case "runJs":
       await withTimeout(
         ctx.page.evaluate(`(async () => {\n${action.js}\n})()`),
-        RUN_JS_BEAT_TIMEOUT_MS,
+        beat.maxMs ?? RUN_JS_BEAT_TIMEOUT_MS,
         beat.label,
       );
       return null;

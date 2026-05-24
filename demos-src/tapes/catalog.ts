@@ -3,11 +3,13 @@
  * Vision / Rerank — to show how many models there are, then a direct
  * search for a specific one.
  *
- * Each tab gets a single fast wheel-scroll beat: the cursor moves to the
- * results list once and rips down through the cards (infinite scroll
- * fetches the next page as it nears the bottom), so the motion is one
- * deliberate flick per tab rather than the cursor bouncing between the
- * tab bar and the list on every small scroll.
+ * The modal opens on the Discover tab (a short curated "OUR PICKS"
+ * grid), so we click into Chat / Embed / Vision / Rerank — the full
+ * paginated lists — and flick each one. Each tab gets a single fast
+ * wheel-scroll beat: the cursor moves to the results list once and rips
+ * down through the cards (infinite scroll fetches the next page as it
+ * nears the bottom), so the motion is one deliberate flick per tab
+ * rather than the cursor bouncing between the tab bar and the list.
  */
 import { beat, clickSelector, key, runJs, sleep, storyboard, type_, wheelScroll } from "../src/lib.ts";
 
@@ -33,7 +35,9 @@ export default storyboard("catalog", {
     beat("Filter to the catalog command", type_("Browse model catalog"), { holdMs: 1000 }),
     beat("Open the catalog", key("enter"), { holdMs: 900 }),
 
-    // Chat tab is already open — flick down through the chat models.
+    // The modal opens on Discover (curated picks); click into Chat for the
+    // full paginated list, then flick down through it.
+    beat("Chat tab", clickSelector(tab("Chat")), { holdMs: 600 }),
     beat("Flick through the Chat models", wheelScroll(CATALOG_RESULTS, FLICK, true), { holdMs: 700 }),
 
     beat("Embed tab", clickSelector(tab("Embed")), { holdMs: 700 }),
