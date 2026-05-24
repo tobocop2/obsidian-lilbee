@@ -304,6 +304,11 @@ export default class LilbeePlugin extends Plugin {
         this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
         this.taskQueue.onChange(() => this.updateRibbonFromQueue());
         this.taskQueue.onChange(() => this.schedulePersistHistory());
+        // Add/sync/crawl tasks completing is when the server's set of known
+        // documents changes, so re-count pending sync then. Vault file events
+        // alone miss it: adding a file fires a create event (pill appears),
+        // but nothing fires when the ingest finishes (pill would never clear).
+        this.taskQueue.onChange(() => this.schedulePendingSyncHint());
         this.registerCommands();
 
         this.registerEvent(

@@ -1295,6 +1295,20 @@ describe("LilbeePlugin", () => {
             expect(scheduleSpy).not.toHaveBeenCalled();
         });
 
+        it("a task-queue change schedules the hint, so the pill clears after an ingest finishes", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const scheduleSpy = vi.spyOn(plugin as any, "schedulePendingSyncHint").mockImplementation(() => {});
+            await plugin.onload();
+
+            // Adding a file fires a vault create event (pill appears), but the
+            // ingest finishing fires no vault event — only a task-queue change.
+            // The pill must re-count then or it would stay amber forever.
+            scheduleSpy.mockClear();
+            const id = plugin.taskQueue.enqueue("Adding files", "add");
+            plugin.taskQueue.complete(id!);
+            expect(scheduleSpy).toHaveBeenCalled();
+        });
+
         it("schedulePendingSyncHint debounces by 1000ms and cancels prior schedules", async () => {
             vi.useFakeTimers();
             const plugin = await createPlugin({ serverMode: "external" });
