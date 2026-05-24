@@ -43,6 +43,7 @@ export default storyboard("add", {
     ),
     beat("Open the command palette", runJs(`window.app.commands.executeCommandById("command-palette:open");`), {
       holdMs: 700,
+      keyHint: "⌘P",
     }),
     beat("Filter to the Add command", type_("Add current file"), { holdMs: 1500 }),
     beat("Run the command — the manual starts ingesting", key("enter"), { holdMs: 700 }),

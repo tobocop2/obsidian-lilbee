@@ -36,6 +36,7 @@ const QUESTION = "What is lilbee in one sentence?";
 const runViaPalette = (label: string, query: string, holdAfter = 1100) => [
   beat(`Open the command palette (${label})`, runJs(`window.app.commands.executeCommandById("command-palette:open");`), {
     holdMs: 500,
+    keyHint: "⌘P",
   }),
   beat(`Type "${query}"`, type_(query), { holdMs: 1000 }),
   beat(`Run ${label}`, key("enter"), { holdMs: holdAfter }),

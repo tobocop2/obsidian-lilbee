@@ -50,7 +50,7 @@ export default storyboard("crawl", {
     beat(
       "Open the command palette",
       runJs(`window.app.commands.executeCommandById("command-palette:open");`),
-      { holdMs: 500 },
+      { holdMs: 500, keyHint: "⌘P" },
     ),
     beat("Filter to lilbee crawl", type_("Crawl web page"), { holdMs: 1100 }),
     beat("Open crawl modal", key("enter"), { holdMs: 900 }),

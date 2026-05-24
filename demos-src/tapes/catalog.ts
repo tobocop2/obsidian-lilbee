@@ -30,7 +30,7 @@ export default storyboard("catalog", {
     beat(
       "Open the command palette",
       runJs(`window.app.commands.executeCommandById("command-palette:open");`),
-      { holdMs: 500 },
+      { holdMs: 500, keyHint: "⌘P" },
     ),
     beat("Filter to the catalog command", type_("Browse model catalog"), { holdMs: 1000 }),
     beat("Open the catalog", key("enter"), { holdMs: 900 }),

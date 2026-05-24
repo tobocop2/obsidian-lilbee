@@ -61,6 +61,7 @@ type BeatRecord = {
   endedAt: number;
   cursor: { x: number; y: number } | null;
   speedup?: number;
+  keyHint?: string;
 };
 
 export async function record(storyboard: Storyboard): Promise<void> {
@@ -194,7 +195,7 @@ export async function record(storyboard: Storyboard): Promise<void> {
       const hold = beat.holdMs ?? DEFAULT_HOLD_MS;
       await sleep(hold);
       const endedAt = Date.now() - recordingStartTime;
-      records.push({ index: i, label: beat.label, kind: beat.action.kind, startedAt, endedAt, cursor, speedup: beat.speedup });
+      records.push({ index: i, label: beat.label, kind: beat.action.kind, startedAt, endedAt, cursor, speedup: beat.speedup, keyHint: beat.keyHint });
       console.log(`beat ${i} [${beat.label}] ${beat.action.kind}: ${startedAt}-${endedAt} ms${cursor ? ` cursor=(${Math.round(cursor.x)},${Math.round(cursor.y)})` : ""}`);
     }
 
@@ -737,6 +738,15 @@ async function postProcess(opts: PostOptions): Promise<void> {
     await renderCaptionPng(caption, captionPath);
   }
 
+  // Key-hint badges (e.g. ⌘P) flashed while a palette-opening beat plays.
+  const keyHints = Array.from(new Set(timeline.beats.map((b) => b.keyHint).filter((k): k is string => !!k)));
+  const keyHintPaths = new Map<string, string>();
+  for (const kh of keyHints) {
+    const path = `${rawPath}.keyhint-${Buffer.from(kh).toString("hex")}.png`;
+    await renderKeyHintPng(kh, path);
+    keyHintPaths.set(kh, path);
+  }
+
   // The SCK capture is cursor-free, so draw a synthetic cursor from the
   // recorded trace: one PNG per output frame at 30fps (always present, never
   // flickers), the cropped size, aligned 1:1 with the trimmed video (both
@@ -760,6 +770,12 @@ async function postProcess(opts: PostOptions): Promise<void> {
   if (captionPath) {
     ffArgs.push("-i", captionPath);
     captionInputIdx = inputIdx;
+    inputIdx++;
+  }
+  const keyHintInputIdx = new Map<string, number>();
+  for (const kh of keyHints) {
+    ffArgs.push("-i", keyHintPaths.get(kh) ?? "");
+    keyHintInputIdx.set(kh, inputIdx);
     inputIdx++;
   }
 
@@ -798,6 +814,25 @@ async function postProcess(opts: PostOptions): Promise<void> {
     lastLabel = "v_globcap";
   }
 
+  // Key-hint badges: flash centred at the top during the output window of
+  // every beat that declared the hint (one hint can fire on several palette
+  // opens). Top-centre stays clear of the top-left caption and top-right
+  // speedup badge.
+  const KEY_HINT_FLASH_SEC = 1.4;
+  for (const kh of keyHints) {
+    const windows: string[] = [];
+    for (const b of timeline.beats) {
+      if (b.keyHint !== kh) continue;
+      const inStart = Math.max(0, timeline.ffmpegStartupGapMs + b.startedAt - trimStart);
+      const outStart = inMsToOutSec(inStart, segments);
+      windows.push(`between(t,${outStart.toFixed(3)},${(outStart + KEY_HINT_FLASH_SEC).toFixed(3)})`);
+    }
+    if (!windows.length) continue;
+    const next = `v_kh${keyHints.indexOf(kh)}`;
+    chain.push(`[${lastLabel}][${keyHintInputIdx.get(kh)}:v]overlay=(W-w)/2:36:enable='${windows.join("+")}'[${next}]`);
+    lastLabel = next;
+  }
+
   ffArgs.push("-filter_complex", chain.join("; "), "-map", `[${lastLabel}]`);
   ffArgs.push("-c:v", "libvpx-vp9", "-b:v", "6M", "-row-mt", "1", "-deadline", "good", outPath);
   console.log(`post-process: ${segments.length} segments, distinct speedups: ${distinctSpeedups.length ? distinctSpeedups.join(", ") : "none"}`);
@@ -825,6 +860,19 @@ function pushSegment(
 function formatSpeedup(s: number): string {
   if (Number.isInteger(s)) return String(s);
   return s.toFixed(1);
+}
+
+// Map an input-relative time (ms, measured from the trim start) to its
+// position in the final output (sec), accounting for per-segment speedups.
+function inMsToOutSec(inMs: number, segments: { inStartMs: number; inEndMs: number; speedup: number }[]): number {
+  let out = 0;
+  for (const s of segments) {
+    if (inMs <= s.inStartMs) return out;
+    const span = Math.min(inMs, s.inEndMs) - s.inStartMs;
+    out += span / 1000 / s.speedup;
+    if (inMs <= s.inEndMs) return out;
+  }
+  return out;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -894,6 +942,42 @@ img.save(out)
     const proc = spawn("python3", ["-c", py, text, outPath], { stdio: ["ignore", "ignore", "inherit"] });
     proc.on("error", rej);
     proc.on("exit", (code) => (code === 0 ? res() : rej(new Error(`caption render exit ${code}`))));
+  });
+}
+
+async function renderKeyHintPng(text: string, outPath: string): Promise<void> {
+  // A keyboard-key style chip: white text on a rounded translucent dark
+  // box with a faint border. Larger than the info caption so it reads as a
+  // shortcut prompt.
+  const py = `
+import sys
+from PIL import Image, ImageDraw, ImageFont
+text = sys.argv[1]
+out = sys.argv[2]
+font_size = 56
+font = None
+for p in ["/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc", "/Library/Fonts/Arial.ttf"]:
+    try:
+        font = ImageFont.truetype(p, font_size)
+        break
+    except Exception:
+        continue
+if font is None:
+    font = ImageFont.load_default()
+pad_x, pad_y = 34, 22
+bbox = font.getbbox(text)
+tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+w, h = tw + 2 * pad_x, th + 2 * pad_y
+img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+d = ImageDraw.Draw(img)
+d.rounded_rectangle([0, 0, w - 1, h - 1], radius=18, fill=(22, 24, 28, 220), outline=(255, 255, 255, 70), width=2)
+d.text((pad_x, pad_y - bbox[1]), text, fill=(255, 255, 255, 255), font=font)
+img.save(out)
+`;
+  await new Promise<void>((res, rej) => {
+    const proc = spawn("python3", ["-c", py, text, outPath], { stdio: ["ignore", "ignore", "inherit"] });
+    proc.on("error", rej);
+    proc.on("exit", (code) => (code === 0 ? res() : rej(new Error(`keyhint render exit ${code}`))));
   });
 }
 

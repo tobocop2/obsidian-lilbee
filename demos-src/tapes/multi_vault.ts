@@ -41,7 +41,7 @@ export default storyboard("multi_vault", {
     beat(
       "Open the command palette",
       runJs(`window.app.commands.executeCommandById("command-palette:open");`),
-      { holdMs: 800 },
+      { holdMs: 800, keyHint: "⌘P" },
     ),
     beat("Filter to the switch-vault command", type_(SWITCH_VAULT_FILTER), { holdMs: 1500 }),
     beat("Run it — vault picker opens", key("enter"), { holdMs: 1800 }),

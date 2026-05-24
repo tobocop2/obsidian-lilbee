@@ -23,7 +23,7 @@ export default storyboard("settings", {
     beat(
       "Open the command palette",
       runJs(`window.app.commands.executeCommandById("command-palette:open");`),
-      { holdMs: 500 },
+      { holdMs: 500, keyHint: "⌘P" },
     ),
     beat('Type "Open settings"', type_("Open settings"), { holdMs: 1000 }),
     beat("Open settings", key("enter"), { holdMs: 1000 }),

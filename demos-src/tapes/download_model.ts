@@ -14,14 +14,15 @@
 import { beat, clickSelector, key, runJs, sleep, storyboard, type_, waitForSelector } from "../src/lib.ts";
 
 const MODEL_QUERY = "SmolLM2 360M";
-// The catalog renders prithivMLmods's SmolLM2 360M as the first result;
-// match freshModel to it so the pull is a real download on every take.
-const MODEL_REPO = "prithivMLmods/SmolLM2-360M-GGUF";
-// Wait on the SmolLM2 card name (Playwright handles :text-is) so the
-// search results have actually rendered before we click. Once they have,
-// the first .lilbee-catalog-pull is the top result — bartowski's SmolLM2
-// 360M, which matches MODEL_REPO.
-const MODEL_CARD_NAME = '.lilbee-model-card-name:text-is("SmolLM2 360M")';
+// bartowski's SmolLM2 360M is the canonical, well-formed GGUF. Other repos
+// for this model (e.g. prithivMLmods) ship a file whose name has a stray
+// space that the server rejects after the download finishes, so target this
+// repo explicitly rather than trusting the top search result.
+const MODEL_REPO = "bartowski/SmolLM2-360M-Instruct-GGUF";
+// Each card carries data-repo = hf_repo, so wait on and click the exact
+// card we want. The pull button lives inside that card.
+const MODEL_CARD = `.lilbee-model-card[data-repo="${MODEL_REPO}"]`;
+const MODEL_PULL = `${MODEL_CARD} .lilbee-catalog-pull`;
 
 export default storyboard("download_model", {
   window: [1400, 900],
@@ -36,7 +37,7 @@ export default storyboard("download_model", {
     beat(
       "Open the command palette",
       runJs(`window.app.commands.executeCommandById("command-palette:open");`),
-      { holdMs: 500 },
+      { holdMs: 500, keyHint: "⌘P" },
     ),
     beat("Filter to the catalog command", type_("Browse model catalog"), { holdMs: 1000 }),
     beat("Open the catalog", key("enter"), { holdMs: 1000 }),
@@ -44,15 +45,14 @@ export default storyboard("download_model", {
     // Search for the model by name so the viewer sees how you find one.
     beat("Click the catalog search", clickSelector("input.lilbee-catalog-search"), { holdMs: 400 }),
     beat("Search for the model", type_(MODEL_QUERY), { holdMs: 1400 }),
-    // The search hits Hugging Face and takes a moment; wait for the
-    // SmolLM2 card to actually render before clicking, otherwise the
-    // click lands on whatever card was on screen first.
-    beat("Wait for the search results", waitForSelector(MODEL_CARD_NAME), { holdMs: 800 }),
+    // The search hits Hugging Face and takes a moment; wait for the exact
+    // bartowski card to render before clicking, so the click lands on the
+    // repo we uninstalled in pre-flight and not whatever rendered first.
+    beat("Wait for the search results", waitForSelector(MODEL_CARD), { holdMs: 800 }),
 
-    // Pull -> confirm. With the SmolLM2 results rendered, the first pull
-    // button is the top result (bartowski's SmolLM2 360M). The confirm
-    // modal shows the download size and the RAM the model needs.
-    beat("Click Download on the model card", clickSelector(".lilbee-catalog-pull"), { holdMs: 1200 }),
+    // Pull -> confirm. Clicking the pull button inside the bartowski card
+    // opens the confirm modal showing the download size and RAM needed.
+    beat("Click Download on the model card", clickSelector(MODEL_PULL), { holdMs: 1200 }),
     beat(
       "Confirm the download",
       clickSelector(".lilbee-confirm-pull-actions button.mod-cta"),
@@ -74,9 +74,9 @@ export default storyboard("download_model", {
           await new Promise(r => setTimeout(r, 500));
         }
       `),
-      // A real ~1.2GB pull can take several minutes; let it run past the
-      // default 240s guard since the progress bar keeps the screen alive.
-      { holdMs: 1200, speedup: 6, maxMs: 900_000 },
+      // SmolLM2 360M is ~0.3GB and pulls in well under a minute; the 6x
+      // speedup keeps the progress bar lively without dead air.
+      { holdMs: 1200, speedup: 6, maxMs: 300_000 },
     ),
     beat("Final hold on the completed download", sleep(2200)),
   ],

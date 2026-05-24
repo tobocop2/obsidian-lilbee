@@ -127,7 +127,7 @@ export default storyboard("first_start", {
     beat(
       "Open command palette",
       runJs(`window.app.commands.executeCommandById("command-palette:open");`),
-      { holdMs: 600 },
+      { holdMs: 600, keyHint: "⌘P" },
     ),
     beat("Filter to BRAT add", type_("BRAT add beta plugin"), { holdMs: 800 }),
     beat("Run the BRAT add command", key("enter"), { holdMs: 700 }),

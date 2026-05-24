@@ -57,6 +57,10 @@ export type Beat = {
    * legitimately run long while the screen keeps changing — e.g. waiting
    * on a real model download to stream to completion. */
   maxMs?: number;
+  /** Flash a keyboard-shortcut badge (e.g. "⌘P") at the top of the frame
+   * while this beat plays — used on beats that trigger the command palette
+   * so viewers see which shortcut opened it. */
+  keyHint?: string;
 };
 
 import type { LayoutName } from "./layouts.ts";
@@ -132,7 +136,13 @@ export function storyboard(name: string, opts: StoryboardOptions): Storyboard {
 export function beat(
   label: string,
   action: Action,
-  options: { holdMs?: number; cursorParkTo?: [number, number]; speedup?: number; maxMs?: number } = {},
+  options: {
+    holdMs?: number;
+    cursorParkTo?: [number, number];
+    speedup?: number;
+    maxMs?: number;
+    keyHint?: string;
+  } = {},
 ): Beat {
   return {
     label,
@@ -141,6 +151,7 @@ export function beat(
     cursorParkTo: options.cursorParkTo,
     speedup: options.speedup,
     maxMs: options.maxMs,
+    keyHint: options.keyHint,
   };
 }
 
