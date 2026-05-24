@@ -1,17 +1,23 @@
 /**
- * tour demo: exhaustive walk through every lilbee surface in a used
- * vault. Documents already indexed, chat history present, Task Center
- * has entries from prior runs. Every command activation goes through
- * the command palette so the action is visible — no invisible runJs
- * executeCommandById calls.
+ * tour demo: a longer walk through every lilbee surface in a used vault —
+ * file explorer, the model catalog (browsing + the pull flow), adding a
+ * file, and a cited chat answer, then settings. No wiki.
  *
- * One real Q&A at the end so the viewer sees the citation loop.
+ * The catalog step opens the "Download model?" confirmation to show how a
+ * pull starts, then dismisses it rather than actually downloading: a real
+ * pull auto-activates the chosen model, and pulling an embedding model in
+ * particular swaps the active embedder out from under the nomic-embedded
+ * corpus (dimension mismatch → retrieval breaks). The full download is
+ * shown end-to-end in the first_start demo instead.
+ *
+ * The README is removed in pre-flight so the "add current file" step is a
+ * clean ingest; the "what is lilbee" question then cites it.
  */
 import {
   beat,
   clickChip,
-  clickSend,
   clickSelector,
+  clickSend,
   fillChat,
   key,
   runJs,
@@ -22,20 +28,16 @@ import {
   wheelScroll,
 } from "../src/lib.ts";
 
-const CATALOG_TAB = ".lilbee-catalog-main-tab-bar";
+const CATALOG_TABS = ".lilbee-catalog-main-tab-bar";
+const CATALOG_SEARCH = "input.lilbee-catalog-search";
 const SETTINGS_PANE = ".vertical-tab-content";
-const QUESTION = "What is lilbee in one sentence again?";
+const QUESTION = "What is lilbee in one sentence?";
 
-// Open the command palette and run a command by typing its label. Every
-// command activation in this tour goes through this flow so the viewer
-// sees the palette open, the text typed, and the command selected.
-const runViaPalette = (label: string, typeText: string, holdAfter = 1100) => [
-  beat(
-    `Open the command palette (for: ${label})`,
-    runJs(`window.app.commands.executeCommandById("command-palette:open");`),
-    { holdMs: 500 },
-  ),
-  beat(`Type "${typeText}"`, type_(typeText), { holdMs: 1000 }),
+const runViaPalette = (label: string, query: string, holdAfter = 1100) => [
+  beat(`Open the command palette (${label})`, runJs(`window.app.commands.executeCommandById("command-palette:open");`), {
+    holdMs: 500,
+  }),
+  beat(`Type "${query}"`, type_(query), { holdMs: 1000 }),
   beat(`Run ${label}`, key("enter"), { holdMs: holdAfter }),
 ];
 
@@ -43,13 +45,15 @@ export default storyboard("tour", {
   window: [1400, 900],
   layout: "explorer-chat-tasks",
   preloadChatModel: true,
-  // Used vault: keep history visible in chat AND task center.
-  clearTaskCenter: false,
-  clearChat: false,
+  clearTaskCenter: true,
+  clearChat: true,
+  // Remove the Notes file the add step ingests so it's a clean add. The
+  // README stays in the corpus so the "what is lilbee" question cites it.
+  freshIngest: ["Crown Vic upgrade log.md"],
   beats: [
-    beat("Opening hold: file explorer + chat + tasks with prior history", sleep(900)),
+    beat("Opening hold: file explorer + chat + tasks", sleep(900)),
 
-    // File explorer with real documents visible.
+    // --- 1. File explorer with the indexed documents ---
     beat(
       "Reveal the file explorer so the indexed documents are visible",
       runJs(`
@@ -58,77 +62,81 @@ export default storyboard("tour", {
         if (fe) window.app.workspace.revealLeaf(fe);
         await new Promise(r => setTimeout(r, 200));
       `),
-      { holdMs: 1300 },
+      { holdMs: 1400 },
     ),
 
-    // Model catalog via palette.
+    // --- 2. Model catalog: browse, then show the pull flow ---
     ...runViaPalette("Browse model catalog", "Browse model catalog", 1100),
-    beat("Walk Chat tab", clickSelector(`${CATALOG_TAB} button:text-is("Chat")`), { holdMs: 700 }),
-    beat("Walk Embed tab", clickSelector(`${CATALOG_TAB} button:text-is("Embed")`), { holdMs: 700 }),
-    beat("Walk Vision tab", clickSelector(`${CATALOG_TAB} button:text-is("Vision")`), { holdMs: 700 }),
-    beat("Walk Rerank tab", clickSelector(`${CATALOG_TAB} button:text-is("Rerank")`), { holdMs: 800 }),
-    beat("Close the catalog", key("escape"), { holdMs: 500 }),
+    beat("Walk the Chat tab", clickSelector(`${CATALOG_TABS} button:text-is("Chat")`), { holdMs: 800 }),
+    beat("Walk the Embed tab", clickSelector(`${CATALOG_TABS} button:text-is("Embed")`), { holdMs: 800 }),
+    beat("Walk the Vision tab", clickSelector(`${CATALOG_TABS} button:text-is("Vision")`), { holdMs: 800 }),
+    beat("Back to the Chat tab", clickSelector(`${CATALOG_TABS} button:text-is("Chat")`), { holdMs: 700 }),
+    beat("Click the catalog search", clickSelector(CATALOG_SEARCH), { holdMs: 400 }),
+    beat("Search for a model", type_("Phi-4"), { holdMs: 1200 }),
+    beat("Start a pull", clickSelector(".lilbee-catalog-pull"), { holdMs: 1000 }),
+    // The "Download model?" confirm shows size + RAM fit. Hold on it to
+    // show how a pull begins, then dismiss without downloading.
+    beat("Hold on the download confirmation", sleep(1800)),
+    beat("Dismiss the confirmation", key("escape"), { holdMs: 700 }),
+    beat("Close the catalog", key("escape"), { holdMs: 600 }),
 
-    // Wiki view via palette. Command's user-facing name is "Browse wiki".
-    ...runViaPalette("Browse wiki", "Browse wiki", 1500),
-    beat("Close wiki view back to chat", key("escape"), { holdMs: 500 }),
-
-    // Crawl modal via palette.
-    ...runViaPalette("Crawl web page", "Crawl web page", 1300),
-    beat("Close the crawl modal", key("escape"), { holdMs: 500 }),
-
-    // Task Center view via palette so the viewer sees the entries panel.
-    ...runViaPalette("Show task center", "Show task center", 1500),
-    beat("Close Task Center", key("escape"), { holdMs: 500 }),
-
-    // Settings via the green status-bar icon (mouse click — visible).
+    // --- 3. Add a file to the corpus ---
     beat(
-      "Mouse to the green lilbee status-bar icon and click",
-      clickSelector('.status-bar-item.plugin-lilbee:not(.lilbee-sync-hint)'),
-      { holdMs: 900 },
-    ),
-    beat(
-      "Expand every section so a scroll reveals controls",
-      runJs(`document.querySelectorAll('.vertical-tab-content details').forEach(d => d.setAttribute('open',''));`),
-      { holdMs: 300 },
-    ),
-    beat("Scroll settings #1", wheelScroll(SETTINGS_PANE, -28), { holdMs: 600 }),
-    beat("Scroll settings #2", wheelScroll(SETTINGS_PANE, -28), { holdMs: 600 }),
-    beat("Close settings", key("escape"), { holdMs: 500 }),
-
-    // Real Q&A against the existing corpus. First rebuild a clean
-    // chat + task-center split: the wiki sidebar and the README tab the
-    // tour opened earlier otherwise leave a cramped 3-column pile with
-    // raw markdown showing. Tear them down and lay out chat 70 / tasks 30.
-    beat(
-      "Rebuild a clean chat + task center layout for the closing Q&A",
+      "Open a Notes file in a new tab",
       runJs(`
-        for (const t of ['lilbee-wiki', 'lilbee-chat', 'lilbee-tasks']) {
-          window.app.workspace.detachLeavesOfType(t);
-        }
-        // Close any leftover document tabs (README opened during the tour).
-        for (const leaf of window.app.workspace.getLeavesOfType('markdown')) leaf.detach();
-        window.app.workspace.leftSplit?.collapse?.();
-        window.app.workspace.rightSplit?.collapse?.();
-        await new Promise(r => setTimeout(r, 200));
-        const chat = window.app.workspace.getLeaf(true);
-        await chat.setViewState({ type: 'lilbee-chat', active: true });
-        const tasks = window.app.workspace.createLeafBySplit(chat, 'vertical', false);
-        await tasks.setViewState({ type: 'lilbee-tasks', active: false });
-        window.app.workspace.setActiveLeaf(chat);
-        await new Promise(r => setTimeout(r, 250));
-        const splits = document.querySelectorAll('.workspace-split.mod-vertical');
-        for (const s of Array.from(splits)) {
-          const tabs = s.querySelectorAll(':scope > .workspace-tabs');
-          if (tabs.length === 2) { tabs[0].style.flex = '7'; tabs[1].style.flex = '3'; break; }
-        }
-        const leaves = window.app.workspace.getLeavesOfType('lilbee-chat');
-        if (leaves[0]) window.app.workspace.revealLeaf(leaves[0]);
+        await window.app.workspace.openLinkText("Notes/Crown Vic upgrade log.md", '', 'tab');
         await new Promise(r => setTimeout(r, 250));
       `),
-      { holdMs: 700, speedup: 2 },
+      { holdMs: 900 },
     ),
-    beat("Ask the closing question", fillChat(QUESTION), { holdMs: 500 }),
+    ...runViaPalette("Add current file", "Add current file", 800),
+    beat(
+      "Task Center fills as the file ingests",
+      runJs(`
+        const tq = window.app.plugins.plugins.lilbee.taskQueue;
+        let sawActive = false;
+        for (let i = 0; i < 120; i++) {
+          const busy = tq.activeAll.length + tq.queued.length;
+          if (busy > 0) sawActive = true;
+          if (sawActive && busy === 0) return;
+          await new Promise(r => setTimeout(r, 300));
+        }
+      `),
+      { holdMs: 1000, speedup: 4 },
+    ),
+
+    // --- 4. A cited chat answer ---
+    beat(
+      "Rebuild a clean chat + task center layout",
+      runJs(`
+        for (const leaf of window.app.workspace.getLeavesOfType('markdown')) leaf.detach();
+        for (const leaf of window.app.workspace.getLeavesOfType('pdf')) leaf.detach();
+        window.app.workspace.leftSplit?.collapse?.();
+        const p = window.app.plugins.plugins.lilbee;
+        window.__tourOrigTopK = p.settings.topK;
+        p.settings.topK = 1;
+        await p.saveSettings();
+        const leaves = window.app.workspace.getLeavesOfType('lilbee-chat');
+        if (leaves[0]) window.app.workspace.revealLeaf(leaves[0]);
+        await new Promise(r => setTimeout(r, 400));
+        const ta = document.querySelector('textarea.lilbee-chat-textarea');
+        if (ta) ta.focus();
+      `),
+      { holdMs: 700 },
+    ),
+    beat("Ask what lilbee is", fillChat(QUESTION), { holdMs: 500 }),
+    beat(
+      "Ensure the question is in the box",
+      runJs(`
+        const ta = document.querySelector('textarea.lilbee-chat-textarea');
+        if (ta && !ta.value.trim()) {
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+          setter.call(ta, ${JSON.stringify(QUESTION)});
+          ta.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      `),
+      { holdMs: 300 },
+    ),
     beat("Send", clickSend(), { holdMs: 500 }),
     beat("Stream the cited answer", waitChatIdle(120_000), { holdMs: 1200, speedup: 4 }),
     beat(
@@ -136,7 +144,40 @@ export default storyboard("tour", {
       runJs(`document.querySelectorAll('.lilbee-chat-sources details').forEach(d => d.open = true);`),
       { holdMs: 400 },
     ),
-    beat("Click the citation chip", clickChip(0), { holdMs: 1800 }),
-    beat("Close source preview", key("escape"), { holdMs: 500 }),
+    beat("Click the citation chip", clickChip(0), { holdMs: 900 }),
+    beat(
+      "Render the cited README in reading mode",
+      runJs(`
+        const leaf = window.app.workspace.activeLeaf;
+        if (leaf && leaf.view?.getViewType?.() === 'markdown') {
+          const s = leaf.getViewState();
+          s.state = { ...s.state, mode: 'preview' };
+          await leaf.setViewState(s);
+        }
+      `),
+      { holdMs: 2200 },
+    ),
+    beat(
+      "Restore the original top_k and close the source",
+      runJs(`
+        const p = window.app.plugins.plugins.lilbee;
+        if (window.__tourOrigTopK !== undefined) { p.settings.topK = window.__tourOrigTopK; await p.saveSettings(); }
+        for (const leaf of window.app.workspace.getLeavesOfType('markdown')) leaf.detach();
+      `),
+      { holdMs: 400 },
+    ),
+
+    // --- 5. Settings (open via palette; the status icon is a sync prompt) ---
+    ...runViaPalette("Open settings", "Open settings", 1000),
+    beat("Click the lilbee tab", clickSelector('.vertical-tab-nav-item:text-is("lilbee")'), { holdMs: 900 }),
+    beat(
+      "Expand every collapsible section",
+      runJs(`document.querySelectorAll('.vertical-tab-content details').forEach(d => d.setAttribute('open',''));`),
+      { holdMs: 300 },
+    ),
+    beat("Scroll settings #1", wheelScroll(SETTINGS_PANE, -24), { holdMs: 500 }),
+    beat("Scroll settings #2", wheelScroll(SETTINGS_PANE, -24), { holdMs: 500 }),
+    beat("Scroll settings #3", wheelScroll(SETTINGS_PANE, -24), { holdMs: 500 }),
+    beat("Close settings", key("escape"), { holdMs: 500 }),
   ],
 });
