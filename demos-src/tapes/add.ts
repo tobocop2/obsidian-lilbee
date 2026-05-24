@@ -30,7 +30,7 @@ export default storyboard("add", {
   clearTaskCenter: true,
   clearChat: true,
   beats: [
-    beat("Opening hold on the clean workspace", sleep(900)),
+    beat("Opening hold on the clean workspace", sleep(300)),
 
     // Open the Crown Vic PDF, then add it via the command palette.
     beat(

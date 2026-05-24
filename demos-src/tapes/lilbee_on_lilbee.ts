@@ -40,7 +40,7 @@ export default storyboard("lilbee_on_lilbee", {
   clearTaskCenter: false,
   clearChat: true,
   beats: [
-    beat("Opening hold on the used workspace", sleep(900)),
+    beat("Opening hold on the used workspace", sleep(300)),
 
     // The two best-matching chunks for "what is lilbee" are both from the
     // README, so top_k=2 dedupes to a README-only citation. (Oddly, top_k=1

@@ -65,7 +65,7 @@ export default storyboard("first_start", {
   noLilbee: true,
   caption: "Recorded on a 2021 M1 Pro, 32 GB RAM.",
   beats: [
-    beat("Opening hold on a fresh empty vault", sleep(800)),
+    beat("Opening hold on a fresh empty vault", sleep(400)),
 
     // --- Stage 1: install BRAT ---
     // Open settings via the gear icon so the viewer sees how a normal

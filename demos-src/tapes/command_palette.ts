@@ -1,17 +1,20 @@
 /**
- * command_palette demo: three palette flows back to back so the viewer
- * sees how Obsidian users reach lilbee surfaces.
+ * command_palette demo: reach lilbee through the command palette, then
+ * show the payoff of a crawl.
  *
  *   1. Open lilbee settings (Cmd-P + Open settings + click lilbee tab)
- *   2. Crawl a web page (Cmd-P + Crawl web page + paste URL + dismiss)
- *   3. Add the current file (Cmd-P + Add current file)
+ *   2. Crawl a web page (Cmd-P + Crawl web page + paste URL + run it)
+ *   3. Ask the just-crawled page a question — a cited answer, then the
+ *      citation opens the crawled article at the relevant section.
  *
- * No invisible runJs executeCommandById. Every command activation goes
- * through the visible palette flow.
+ * Every command activation goes through the visible palette flow.
  */
 import {
   beat,
+  clickChip,
   clickSelector,
+  clickSend,
+  fillChat,
   key,
   runJs,
   sleep,
@@ -20,7 +23,7 @@ import {
 } from "../src/lib.ts";
 
 const SAMPLE_URL = "https://en.wikipedia.org/wiki/Knowledge_graph";
-const OPEN_VAULT_FILE = "Code/lilbee-README.md";
+const QUESTION = "What is a knowledge graph?";
 
 const palette = (label: string, query: string, holdAfter = 1100) => [
   beat(
@@ -35,16 +38,14 @@ const palette = (label: string, query: string, holdAfter = 1100) => [
 export default storyboard("command_palette", {
   window: [1400, 900],
   layout: "explorer-chat-tasks",
-  preloadChatModel: false,
+  preloadChatModel: true,
   clearTaskCenter: false,
   clearChat: true,
-  // The "Add current file" step adds the README. It's already in the
-  // corpus, so without removing it first the add hits the "already
-  // indexed — re-add?" confirm modal and the Task Center never fills.
-  // Drop it from the index in pre-flight; the add re-ingests it cleanly.
-  freshIngest: ["lilbee-README.md"],
+  // The crawled Knowledge_graph page is stored as index.md under
+  // lilbee/_web/.../Knowledge_graph/ — drop it so the crawl is fresh.
+  freshIngest: ["index.md"],
   beats: [
-    beat("Opening hold on the chat panel", sleep(700)),
+    beat("Opening hold on the chat panel", sleep(300)),
 
     // 1. Open settings via palette, then click the lilbee tab.
     ...palette("Open settings", "Open settings", 1300),
@@ -55,8 +56,8 @@ export default storyboard("command_palette", {
     ),
     beat("Close settings", key("escape"), { holdMs: 600 }),
 
-    // 2. Crawl a web page via palette: paste a URL, then actually run it
-    // and watch the crawl + sync land in the Task Center.
+    // 2. Crawl a web page via palette: paste a URL, run it, watch the
+    // crawl + sync land in the Task Center.
     ...palette("Crawl web page", "Crawl web page", 1000),
     beat(
       "Paste a URL into the crawl modal",
@@ -86,31 +87,78 @@ export default storyboard("command_palette", {
       { holdMs: 1200, speedup: 4, maxMs: 600_000 },
     ),
 
-    // 3. Open a file from the vault, then Add current file via palette.
+    // 3. Ask the just-crawled page a question, then open the citation.
     beat(
-      "Open the lilbee README in a new tab",
+      "Activate a clean chat panel",
       runJs(`
-        await window.app.workspace.openLinkText(${JSON.stringify(OPEN_VAULT_FILE)}, '', 'tab');
-        await new Promise(r => setTimeout(r, 250));
+        const leaves = window.app.workspace.getLeavesOfType('lilbee-chat');
+        if (leaves[0]) window.app.workspace.revealLeaf(leaves[0]);
+        await new Promise(r => setTimeout(r, 300));
+        const ta = document.querySelector('textarea.lilbee-chat-textarea');
+        if (ta) ta.focus();
       `),
-      { holdMs: 800 },
+      { holdMs: 500 },
     ),
-    ...palette("Add current file", "Add current file", 800),
+    beat("Ask about the knowledge graph", fillChat(QUESTION), { holdMs: 600 }),
     beat(
-      "Watch the Task Center fill in real time",
+      "Ensure the question is in the box",
       runJs(`
-        const tq = window.app.plugins.plugins.lilbee.taskQueue;
-        let sawActive = false;
-        for (let i = 0; i < 120; i++) {
-          const busy = tq.activeAll.length + tq.queued.length;
-          if (busy > 0) sawActive = true;
-          if (sawActive && busy === 0) return;
-          await new Promise(r => setTimeout(r, 300));
+        const ta = document.querySelector('textarea.lilbee-chat-textarea');
+        if (ta && !ta.value.trim()) {
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+          setter.call(ta, ${JSON.stringify(QUESTION)});
+          ta.dispatchEvent(new Event('input', { bubbles: true }));
         }
       `),
-      { holdMs: 1200, speedup: 3 },
+      { holdMs: 300 },
     ),
-
-    beat("Final hold on chat + populated Task Center", sleep(800)),
+    beat("Send", clickSend(), { holdMs: 600 }),
+    beat("Cited answer from the just-crawled page", runJs(`
+      const send = document.querySelector('.lilbee-chat-send');
+      for (let i = 0; i < 240; i++) {
+        const t = (send?.textContent || '').toLowerCase();
+        if (t.includes('send') && i > 4) return;
+        await new Promise(r => setTimeout(r, 500));
+      }
+    `), { holdMs: 1400, speedup: 4, maxMs: 180_000 }),
+    beat(
+      "Expand sources",
+      runJs(`document.querySelectorAll('.lilbee-chat-sources details').forEach(d => d.open = true);`),
+      { holdMs: 400 },
+    ),
+    // Park the cursor in the source pane's empty right margin so it never
+    // dwells on one of the article's links while it scrolls.
+    beat("Click the citation to open the source", clickChip(0), { holdMs: 1000, cursorParkTo: [1245, 520] }),
+    beat(
+      "Render the crawled article in reading mode",
+      runJs(`
+        const leaf = window.app.workspace.activeLeaf;
+        if (leaf && leaf.view?.getViewType?.() === 'markdown') {
+          const s = leaf.getViewState();
+          s.state = { ...s.state, mode: 'preview' };
+          await leaf.setViewState(s);
+        }
+        await new Promise(r => setTimeout(r, 500));
+      `),
+      { holdMs: 700 },
+    ),
+    // Jump to a relevant section. Reading mode lazy-renders, so use
+    // Obsidian's applyScroll(line) with the line number of a definition /
+    // first real section heading from the file content.
+    beat(
+      "Jump to the relevant section of the source",
+      runJs(`
+        const leaf = window.app.workspace.activeLeaf;
+        const view = leaf?.view;
+        if (view?.file && view.currentMode?.applyScroll) {
+          const lines = (await window.app.vault.read(view.file)).split('\\n');
+          let lineNo = lines.findIndex((l) => /^#{1,6}\\s.*(definition|knowledge graph)/i.test(l));
+          if (lineNo < 0) lineNo = lines.findIndex((l) => /^##\\s/.test(l));
+          if (lineNo >= 0) view.currentMode.applyScroll(lineNo);
+        }
+      `),
+      { holdMs: 3200 },
+    ),
+    beat("Close the source", key("escape"), { holdMs: 500 }),
   ],
 });

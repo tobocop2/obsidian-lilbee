@@ -51,7 +51,7 @@ export default storyboard("tour", {
   // README stays in the corpus so the "what is lilbee" question cites it.
   freshIngest: ["Crown Vic upgrade log.md"],
   beats: [
-    beat("Opening hold: file explorer + chat + tasks", sleep(900)),
+    beat("Opening hold: file explorer + chat + tasks", sleep(300)),
 
     // --- 1. File explorer with the indexed documents ---
     beat(

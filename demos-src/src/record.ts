@@ -25,7 +25,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..");
 const OUT_DIR = join(REPO_ROOT, "output");
 
-const DEFAULT_LEAD_IN_MS = 1500;
+// Short lead-in so demos start with minimal static lingering before the
+// first action. The tail still holds the money shot.
+const DEFAULT_LEAD_IN_MS = 500;
 const DEFAULT_TAIL_MS = 1500;
 const DEFAULT_HOLD_MS = 800;
 const HOVER_BEFORE_CLICK_MS = 350;

@@ -26,7 +26,7 @@ export default storyboard("catalog", {
   clearTaskCenter: false,
   preloadChatModel: false,
   beats: [
-    beat("Opening hold", sleep(500)),
+    beat("Opening hold", sleep(300)),
     beat(
       "Open the command palette",
       runJs(`window.app.commands.executeCommandById("command-palette:open");`),

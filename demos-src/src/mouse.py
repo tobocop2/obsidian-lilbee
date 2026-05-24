@@ -54,16 +54,18 @@ except ImportError as exc:
     sys.exit(2)
 
 
-# Distance -> total move duration. Short hops snap quick; long sweeps
-# take longer so the curve has room to breathe.
-_MIN_MS = 220
-_MAX_MS = 900
-_PX_PER_SEC = 1900
+# Distance -> total move duration. Tuned for a slow, cinematic glide
+# rather than a snappy snap: even short hops take ~0.4s and long sweeps
+# stretch to ~1.1s, so the cursor reads as gliding to its target with
+# clear ease-in/ease-out instead of jumping there.
+_MIN_MS = 420
+_MAX_MS = 1150
+_PX_PER_SEC = 1050
 
 # Perpendicular control-point offset as a fraction of straight-line
 # distance. A small arc reads as a real hand; a big arc reads as a
 # circus trick.
-_CURVE_FRACTION = 0.07
+_CURVE_FRACTION = 0.09
 
 # Sub-step granularity. ffmpeg records at 30 fps, so ~33 ms / step
 # means roughly one rendered frame per intermediate point. We push to

@@ -30,7 +30,7 @@ export default storyboard("crawl", {
   clearChat: true,
   caption: "Recorded on a 2021 M1 Pro, 32 GB RAM.",
   beats: [
-    beat("Opening hold", sleep(500)),
+    beat("Opening hold", sleep(300)),
     // The 9C1 introduction sentence ("introduced ... for 1986") sits in a
     // long paragraph alongside Michigan State Police test results, while
     // the article's dense reference list and the 1987/1989 paragraphs

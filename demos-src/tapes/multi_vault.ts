@@ -36,7 +36,7 @@ export default storyboard("multi_vault", {
   clearTaskCenter: false,
   clearChat: true,
   beats: [
-    beat("Opening hold on the active vault (demo)", sleep(900)),
+    beat("Opening hold on the active vault (demo)", sleep(300)),
 
     beat(
       "Open the command palette",
