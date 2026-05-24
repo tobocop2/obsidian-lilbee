@@ -200,15 +200,33 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
   await applyLayout(ctx.page, layout);
   await ctx.page.waitForTimeout(450);
 
-  // 6. Task Center clear
-  if (clearTaskCenter) {
+  // 6. Task Center: always reset to a known baseline (cancel active + Clear),
+  // then for an actively-used demo (clearTaskCenter === false) seed a clean,
+  // consistent set of completed tasks so the workspace reads as a vault that's
+  // been in use rather than fresh. Clearing first keeps the seeded set from
+  // accumulating across recordings.
+  await ctx.page.evaluate(() => {
+    document.querySelectorAll(".lilbee-task-row[data-state=\"active\"] .lilbee-task-cancel").forEach((b) => (b as HTMLElement).click());
+    const taskLeaf = document.querySelector('.workspace-leaf-content[data-type="lilbee-tasks"]');
+    const clearBtn = taskLeaf?.querySelector(".lilbee-tasks-clear");
+    (clearBtn as HTMLElement | null)?.click();
+  });
+  await ctx.page.waitForTimeout(250);
+  if (!clearTaskCenter) {
     await ctx.page.evaluate(() => {
-      // Cancel any active task by clicking its x button.
-      document.querySelectorAll(".lilbee-task-row[data-state=\"active\"] .lilbee-task-cancel").forEach((b) => (b as HTMLElement).click());
-      // Then click the visible Clear button on the Task Center leaf.
-      const taskLeaf = document.querySelector('.workspace-leaf-content[data-type="lilbee-tasks"]');
-      const clearBtn = taskLeaf?.querySelector(".lilbee-tasks-clear");
-      (clearBtn as HTMLElement | null)?.click();
+      const tq = (globalThis as unknown as { app: { plugins: { plugins: { lilbee: { taskQueue: { enqueue: (n: string, t: string) => string | null; update: (id: string, p: number, d?: string) => void; complete: (id: string) => void } } } } } }).app.plugins.plugins.lilbee.taskQueue;
+      const seeds: [string, string, string][] = [
+        ["Crawl Chevrolet_Caprice", "crawl", "1 page"],
+        ["Adding files", "add", "ingested 1/1 Crown Victoria Owner's Manual.pdf"],
+        ["Sync vault", "sync", "synced 4 files"],
+      ];
+      for (const [name, type, detail] of seeds) {
+        const id = tq.enqueue(name, type);
+        if (id) {
+          tq.update(id, 100, detail);
+          tq.complete(id);
+        }
+      }
     });
     await ctx.page.waitForTimeout(250);
   }

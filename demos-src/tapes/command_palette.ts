@@ -34,9 +34,9 @@ const palette = (label: string, query: string, holdAfter = 1100) => [
 
 export default storyboard("command_palette", {
   window: [1400, 900],
-  layout: "chat-and-tasks",
+  layout: "explorer-chat-tasks",
   preloadChatModel: false,
-  clearTaskCenter: true,
+  clearTaskCenter: false,
   clearChat: true,
   // The "Add current file" step adds the README. It's already in the
   // corpus, so without removing it first the add hits the "already

@@ -31,12 +31,16 @@ const QUESTION = "What is lilbee in one sentence?";
 
 export default storyboard("lilbee_on_lilbee", {
   window: [1400, 900],
-  layout: "chat-and-tasks",
+  // Show the populated vault (file explorer) alongside chat + task center so
+  // the workspace reads as actively used, not a fresh install.
+  layout: "explorer-chat-tasks",
   preloadChatModel: true,
-  clearTaskCenter: true,
+  // Keep the Task Center's seeded history (preflight seeds it when false) so
+  // the corner of the workspace shows real prior activity.
+  clearTaskCenter: false,
   clearChat: true,
   beats: [
-    beat("Opening hold on the chat panel", sleep(700)),
+    beat("Opening hold on the used workspace", sleep(900)),
 
     // Retrieve only the single best-matching chunk so the cited source is
     // the README alone, not the car-manual chunks that top_k=5 also pulls.
@@ -60,11 +64,15 @@ export default storyboard("lilbee_on_lilbee", {
       runJs(`document.querySelectorAll('.lilbee-chat-sources details').forEach(d => d.open = true);`),
       { holdMs: 400 },
     ),
-    beat("Click the citation chip", clickChip(0), { holdMs: 1200 }),
+    // Park the cursor in the README pane's empty right margin (beside the
+    // text column, by the scrollbar) right after opening the README, so it
+    // stays over the pane where scrolling is natural but never dwells on a
+    // link — that hover triggers Obsidian's "unable to load" preview popup.
+    // The text column is x478-1178; the pane right edge is ~1313, so 1245
+    // sits in the empty margin.
+    beat("Click the citation chip", clickChip(0), { holdMs: 900, cursorParkTo: [1245, 520] }),
     // The chip is a vault-native deep link, so it opens the README as a real
-    // Obsidian note. Flip it to reading mode so the money-shot frame shows
-    // the rendered headline ("A batteries-included local search engine…")
-    // instead of raw markdown with <picture> tags.
+    // Obsidian note. Flip it to reading mode so it renders.
     beat(
       "Render the README in reading mode",
       runJs(`
@@ -75,7 +83,36 @@ export default storyboard("lilbee_on_lilbee", {
           await leaf.setViewState(s);
         }
       `),
-      { holdMs: 2400 },
+      { holdMs: 300 },
+    ),
+    // Scroll down past the header (the top logo SVG renders broken in
+    // Obsidian and isn't worth dwelling on), gliding slowly through the demo
+    // GIFs so they animate, and stop at the "Offline copies of websites"
+    // section, whose GIF is the one to land on.
+    beat(
+      "Scroll through the README, stopping at the Offline copies of websites GIF",
+      runJs(`
+        const view = window.app.workspace.activeLeaf?.view;
+        if (view?.file && view.currentMode?.applyScroll) {
+          const lines = (await window.app.vault.read(view.file)).split('\\n');
+          let target = lines.findIndex((l) => /^#{1,6}\\s+offline copies of websites/i.test(l));
+          if (target < 0) target = lines.findIndex((l) => /offline copies of websites/i.test(l));
+          if (target >= 0) {
+            // Glide down through the body in paused steps so each demo GIF
+            // along the way has time to animate, then land on the
+            // "Offline copies of websites" header (its crawl GIF sits just
+            // below it). Reading mode lazy-renders, so applyScroll(line)
+            // (not a DOM scroll) reliably renders and lands on each spot.
+            const steps = 5;
+            for (let i = 1; i < steps; i++) {
+              view.currentMode.applyScroll(Math.round((target * i) / steps));
+              await new Promise(r => setTimeout(r, 2200));
+            }
+            view.currentMode.applyScroll(target);
+          }
+        }
+      `),
+      { holdMs: 3000 },
     ),
 
     beat(

@@ -20,11 +20,11 @@ const QUESTION = "When was the 9C1 police package introduced?";
 
 export default storyboard("crawl", {
   window: [1400, 900],
-  layout: "chat-and-tasks",
+  layout: "explorer-chat-tasks",
   // The Caprice corpus entry is the markdown stored under
   // lilbee/_web/en.wikipedia.org/.../index.md
   freshIngest: ["index.md"],
-  clearTaskCenter: true,
+  clearTaskCenter: false,
   clearChat: true,
   caption: "Recorded on a 2021 M1 Pro, 32 GB RAM.",
   beats: [
@@ -71,7 +71,10 @@ export default storyboard("crawl", {
       runJs(`document.querySelectorAll('.lilbee-chat-sources details').forEach(d => d.open = true);`),
       { holdMs: 400 },
     ),
-    beat("Click the citation to open the source", clickChip(0), { holdMs: 1000 }),
+    // Park the cursor in the source pane's empty right margin (by the
+    // scrollbar) so it never dwells on one of the crawled article's many
+    // links while it scrolls — that hover fires Obsidian's link preview.
+    beat("Click the citation to open the source", clickChip(0), { holdMs: 1000, cursorParkTo: [1245, 520] }),
     // Render the crawled page instead of leaving it as raw markdown.
     beat(
       "Render the crawled article in reading mode",

@@ -28,8 +28,8 @@ const CATALOG_RESULTS = ".lilbee-catalog-results";
 
 export default storyboard("catalog", {
   window: [1400, 900],
-  layout: "chat-and-tasks",
-  clearTaskCenter: true,
+  layout: "explorer-chat-tasks",
+  clearTaskCenter: false,
   beats: [
     beat("Opening hold", sleep(500)),
     beat(

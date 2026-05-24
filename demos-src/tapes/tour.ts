@@ -45,7 +45,7 @@ export default storyboard("tour", {
   window: [1400, 900],
   layout: "explorer-chat-tasks",
   preloadChatModel: true,
-  clearTaskCenter: true,
+  clearTaskCenter: false,
   clearChat: true,
   // Remove the Notes file the add step ingests so it's a clean add. The
   // README stays in the corpus so the "what is lilbee" question cites it.
@@ -144,15 +144,21 @@ export default storyboard("tour", {
       runJs(`document.querySelectorAll('.lilbee-chat-sources details').forEach(d => d.open = true);`),
       { holdMs: 400 },
     ),
-    beat("Click the citation chip", clickChip(0), { holdMs: 900 }),
+    beat("Click the citation chip", clickChip(0), { holdMs: 900, cursorParkTo: [1245, 520] }),
     beat(
-      "Render the cited README in reading mode",
+      "Render the cited README and scroll past the logo into the body",
       runJs(`
         const leaf = window.app.workspace.activeLeaf;
         if (leaf && leaf.view?.getViewType?.() === 'markdown') {
           const s = leaf.getViewState();
           s.state = { ...s.state, mode: 'preview' };
           await leaf.setViewState(s);
+          await new Promise(r => setTimeout(r, 400));
+          // The top logo SVG renders broken in Obsidian; scroll down into the
+          // body so the citation lands on real content, not the broken logo.
+          const root = leaf.containerEl ?? document.querySelector('.workspace-leaf.mod-active');
+          const sc = root?.querySelector('.markdown-preview-view') ?? root?.querySelector('.markdown-reading-view');
+          if (sc) sc.scrollTo({ top: (sc.clientHeight || 700) * 1.1, behavior: 'smooth' });
         }
       `),
       { holdMs: 2200 },

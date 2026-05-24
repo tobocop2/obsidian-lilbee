@@ -421,6 +421,10 @@ async function cursorClickChip(ctx: ObsidianContext, index: number, beat: Beat):
   await moveToCoord(coord.x, coord.y);
   await sleep(HOVER_BEFORE_CLICK_MS);
   await clickAtCoord(coord.x, coord.y);
+  if (beat.cursorParkTo) {
+    const [px, py] = beat.cursorParkTo;
+    await moveToCoord(ctx.windowOrigin.x + px, ctx.windowOrigin.y + py);
+  }
   return coord;
 }
 
@@ -599,9 +603,6 @@ async function postProcess(opts: PostOptions): Promise<void> {
   if (rawDurMs === 0) {
     console.warn(`post-process: raw duration unknown (muxer not finalised) — encoding what's readable`);
   }
-  void tracePath;
-  void recordingStartTime;
-
   // Crop in retina pixels.
   const cropX = timeline.window.x * 2;
   const cropY = timeline.window.y * 2;
@@ -663,6 +664,14 @@ async function postProcess(opts: PostOptions): Promise<void> {
     captionPath = `${rawPath}.caption.png`;
     await renderCaptionPng(caption, captionPath);
   }
+
+  // The real OS cursor is captured by ffmpeg (-capture_cursor 1) and is the
+  // single cursor in the reel: it's the genuine contextual pointer (arrow,
+  // hand over links). We do NOT overlay a synthetic cursor — on this macOS the
+  // hardware cursor is composited into the capture regardless of the
+  // capture_cursor flag, so a synthetic overlay would double it.
+  void tracePath;
+  void recordingStartTime;
 
   // Build the ffmpeg filter graph.
   const ffArgs: string[] = ["-y", "-ss", String(startMs / 1000), "-i", rawPath, "-t", String((trimEnd - trimStart) / 1000)];
