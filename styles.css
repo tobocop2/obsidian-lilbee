@@ -729,9 +729,12 @@
     animation: lilbee-pill-breathe 1.8s ease-in-out infinite;
 }
 
+/* Ready is the calm resting state, shown most of the time, so it uses a
+ * soft green tint with green text rather than a loud solid fill. The
+ * attention states (error/starting/adding) keep their solid fills. */
 .lilbee-status-ready {
-    color: var(--text-on-accent) !important;
-    background-color: var(--text-success);
+    color: var(--text-success) !important;
+    background-color: color-mix(in srgb, var(--text-success) 18%, transparent);
     border-radius: var(--radius-s, 4px);
     padding: 0 var(--size-4-2, 8px);
 }
