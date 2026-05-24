@@ -10,8 +10,8 @@
  *   5. Trim + crop using recorded timestamps. Re-encode VP9.
  *   6. Emit <name>.webm + <name>.timeline.json + run review.ts.
  */
-import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -562,11 +562,10 @@ const SCK_BIN = join(__dirname, ".sckrecord");
 
 function ensureSckBinary(): string {
   const src = join(__dirname, "sckrecord.swift");
-  const needsBuild = !existsSync(SCK_BIN) ||
-    (require("node:fs").statSync(src).mtimeMs > require("node:fs").statSync(SCK_BIN).mtimeMs);
+  const needsBuild = !existsSync(SCK_BIN) || statSync(src).mtimeMs > statSync(SCK_BIN).mtimeMs;
   if (needsBuild) {
     console.log("compiling sckrecord.swift ...");
-    const r = require("node:child_process").spawnSync("swiftc", ["-swift-version", "5", "-O", src, "-o", SCK_BIN], { stdio: "inherit" });
+    const r = spawnSync("swiftc", ["-swift-version", "5", "-O", src, "-o", SCK_BIN], { stdio: "inherit" });
     if (r.status !== 0) throw new Error("swiftc failed to build sckrecord");
   }
   return SCK_BIN;
