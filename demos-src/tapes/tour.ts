@@ -3,12 +3,12 @@
  * file explorer, the model catalog (browsing + the pull flow), adding a
  * file, and a cited chat answer, then settings. No wiki.
  *
- * The catalog step opens the "Download model?" confirmation to show how a
- * pull starts, then dismisses it rather than actually downloading: a real
- * pull auto-activates the chosen model, and pulling an embedding model in
- * particular swaps the active embedder out from under the nomic-embedded
- * corpus (dimension mismatch → retrieval breaks). The full download is
- * shown end-to-end in the first_start demo instead.
+ * The catalog step starts a real chat-model download, watches it begin in
+ * the Task Center, then cancels it — showing how a pull starts AND stops.
+ * Cancelling a chat-model pull before it finishes leaves the active models
+ * untouched (a completed pull auto-activates; an embedding-model pull in
+ * particular would swap the embedder out from under the corpus). The full
+ * download to completion is shown in the download_model demo.
  *
  * The README is removed in pre-flight so the "add current file" step is a
  * clean ingest; the "what is lilbee" question then cites it.
@@ -73,13 +73,26 @@ export default storyboard("tour", {
     beat("Walk the Vision tab", clickSelector(`${CATALOG_TABS} button:text-is("Vision")`), { holdMs: 700 }),
     beat("Back to the Chat tab", clickSelector(`${CATALOG_TABS} button:text-is("Chat")`), { holdMs: 700 }),
     beat("Click the catalog search", clickSelector(CATALOG_SEARCH), { holdMs: 400 }),
-    beat("Search for a model", type_("Phi-4"), { holdMs: 1200 }),
-    beat("Start a pull", clickSelector(".lilbee-catalog-pull"), { holdMs: 1000 }),
-    // The "Download model?" confirm shows size + RAM fit. Hold on it to
-    // show how a pull begins, then dismiss without downloading.
-    beat("Hold on the download confirmation", sleep(1800)),
-    beat("Dismiss the confirmation", key("escape"), { holdMs: 700 }),
-    beat("Close the catalog", key("escape"), { holdMs: 600 }),
+    beat("Search for a chat model", type_("Phi-4"), { holdMs: 1200 }),
+    beat("Click Download on the model card", clickSelector(".lilbee-catalog-pull"), { holdMs: 1200 }),
+    // The "Download model?" confirm shows size + RAM fit; confirm it to
+    // actually start the pull.
+    beat("Confirm the download", clickSelector(".lilbee-confirm-pull-actions button.mod-cta"), { holdMs: 1000 }),
+    beat("Close the catalog so the Task Center is in view", key("escape"), { holdMs: 800 }),
+    // Watch the pull stream into the Task Center, then cancel it.
+    beat(
+      "Watch the download start in the Task Center",
+      runJs(`
+        const tq = window.app.plugins.plugins.lilbee.taskQueue;
+        for (let i = 0; i < 40; i++) {
+          if (tq.activeAll.some(t => t.type === 'pull')) break;
+          await new Promise(r => setTimeout(r, 250));
+        }
+        await new Promise(r => setTimeout(r, 3000));
+      `),
+      { holdMs: 800 },
+    ),
+    beat("Cancel the download", clickSelector(".lilbee-task-row .lilbee-task-cancel"), { holdMs: 1800 }),
 
     // --- 3. Add a file to the corpus ---
     beat(

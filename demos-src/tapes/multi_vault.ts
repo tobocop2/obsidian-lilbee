@@ -6,13 +6,13 @@
  *  - <shared-root>/registry.json lists at least two vaults
  *  - the demo vault is in managed mode and currently holds the lock
  *
- * Beat sequence: open the command palette, run "Switch lilbee to
- * another vault", show the picker listing the other registered vault
- * (firststart), pick it, watch the status bar drop the active model
- * and the notice land ("lilbee released for ..."). The viewer
- * understands the next step is switching Obsidian's open vault — that
- * step doesn't survive a single ffmpeg recording (Obsidian relaunches),
- * so the demo ends at the released state.
+ * Beat sequence: open the command palette, run "Switch lilbee to another
+ * vault", read the picker listing the other registered vaults, filter to
+ * one by name (Research) so the choice is deliberate, switch to it, then
+ * confirm the release in Show Status — the status bar drops the active
+ * model and the server stops. The viewer understands the next step is
+ * reopening Obsidian on that vault; that relaunch doesn't survive a single
+ * ffmpeg recording, so the demo ends at the released state.
  */
 import {
   beat,
@@ -25,6 +25,9 @@ import {
 } from "../src/lib.ts";
 
 const SWITCH_VAULT_FILTER = "Switch lilbee to another vault";
+// A clean, independent registered vault to switch to (not the firststart
+// vault, which the first_start demo owns).
+const TARGET_VAULT = "Research";
 
 export default storyboard("multi_vault", {
   window: [1400, 900],
@@ -44,12 +47,15 @@ export default storyboard("multi_vault", {
       { holdMs: 800, keyHint: "⌘P" },
     ),
     beat("Filter to the switch-vault command", type_(SWITCH_VAULT_FILTER), { holdMs: 1500 }),
-    beat("Run it — vault picker opens", key("enter"), { holdMs: 1800 }),
-
+    // Hold on the picker so the viewer reads the registered vaults before a
+    // choice is made — this is the "you have several vaults" moment.
+    beat("Run it — the vault picker opens", key("enter"), { holdMs: 2400 }),
+    beat("Click the picker's filter field", clickSelector(".lilbee-vault-picker-filter-input"), { holdMs: 500 }),
+    beat(`Narrow to the ${TARGET_VAULT} vault`, type_(TARGET_VAULT), { holdMs: 1600 }),
     beat(
-      "Click Switch on the other registered vault",
+      `Switch lilbee to the ${TARGET_VAULT} vault`,
       clickSelector(`.lilbee-vault-picker-card .lilbee-vault-picker-switch-btn`),
-      { holdMs: 1500 },
+      { holdMs: 1800 },
     ),
     // Give the plugin a beat to repaint the status bar (release → "Stopped"
     // muted dot) before the viewer's eye moves on. The release fires
