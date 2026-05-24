@@ -38,6 +38,11 @@ export default storyboard("command_palette", {
   preloadChatModel: false,
   clearTaskCenter: true,
   clearChat: true,
+  // The "Add current file" step adds the README. It's already in the
+  // corpus, so without removing it first the add hits the "already
+  // indexed — re-add?" confirm modal and the Task Center never fills.
+  // Drop it from the index in pre-flight; the add re-ingests it cleanly.
+  freshIngest: ["lilbee-README.md"],
   beats: [
     beat("Opening hold on the chat panel", sleep(700)),
 
