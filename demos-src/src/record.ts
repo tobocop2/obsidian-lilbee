@@ -173,12 +173,14 @@ export async function record(storyboard: Storyboard): Promise<void> {
     // Start ffmpeg. Record both the spawn moment AND the "first frame
     // committed to disk" moment — the gap between them is dead time
     // that has to be trimmed away in post.
-    const ffmpegSpawnedAt = Date.now();
-    const ffmpeg = trackChild(startFfmpeg(rawPath));
-    await waitForFfmpegFrame(rawPath);
-    const recordingStartTime = Date.now();
-    const ffmpegStartupGapMs = recordingStartTime - ffmpegSpawnedAt;
-    console.log(`recording → ${rawPath} (ffmpeg startup gap: ${ffmpegStartupGapMs}ms)`);
+    const sckPath = `${rawPath}.sck.mp4`;
+    const sck = startSck(sckPath);
+    trackChild(sck.proc);
+    // SCK's first written frame IS recording t=0 (no startup junk to trim,
+    // unlike avfoundation), so the gap is 0.
+    const recordingStartTime = await sck.firstFrame;
+    const ffmpegStartupGapMs = 0;
+    console.log(`recording (SCK, cursor-free) → ${sckPath}`);
 
     // Lead-in: held frame before first action
     await sleep(DEFAULT_LEAD_IN_MS);
@@ -199,10 +201,14 @@ export async function record(storyboard: Storyboard): Promise<void> {
     // Tail: held frame after last action
     await sleep(DEFAULT_TAIL_MS);
 
-    // Stop ffmpeg
-    await stopFfmpeg(ffmpeg);
-
+    // Stop the SCK recorder, then convert the change-driven capture to a
+    // constant-30fps h264 raw (matching the old avfoundation output) so the
+    // rest of the pipeline is unchanged. Pad the tail so the held shot isn't
+    // cut when the last action doesn't repaint the screen.
+    await stopSck(sck.proc);
     const totalRecorded = Date.now() - recordingStartTime;
+    await cfrConvert(sckPath, rawPath, 4);
+    rmSync(sckPath, { force: true });
 
     // Persist timeline
     const timeline = {
@@ -546,6 +552,70 @@ async function stopFfmpeg(ffmpeg: ChildProcess): Promise<void> {
   });
 }
 
+// -----------------------------------------------------------------------------
+// ScreenCaptureKit control — cursor-free capture. The avfoundation hardware
+// cursor flickers/drops out during heavy repaints; SCK (showsCursor=false)
+// gives a clean cursor-free video and the post-process draws a synthetic
+// always-present cursor from the recorded trace.
+
+const SCK_BIN = join(__dirname, ".sckrecord");
+
+function ensureSckBinary(): string {
+  const src = join(__dirname, "sckrecord.swift");
+  const needsBuild = !existsSync(SCK_BIN) ||
+    (require("node:fs").statSync(src).mtimeMs > require("node:fs").statSync(SCK_BIN).mtimeMs);
+  if (needsBuild) {
+    console.log("compiling sckrecord.swift ...");
+    const r = require("node:child_process").spawnSync("swiftc", ["-swift-version", "5", "-O", src, "-o", SCK_BIN], { stdio: "inherit" });
+    if (r.status !== 0) throw new Error("swiftc failed to build sckrecord");
+  }
+  return SCK_BIN;
+}
+
+/** Spawn the SCK recorder. Resolves firstFrameEpochMs when the first frame
+ * is written (the wall-clock moment that maps to video t=0). */
+function startSck(outPath: string): { proc: ChildProcess; firstFrame: Promise<number> } {
+  const bin = ensureSckBinary();
+  const proc = spawn(bin, [outPath, "30"], { stdio: ["ignore", "ignore", "pipe"] });
+  let resolveFirst: (ms: number) => void;
+  const firstFrame = new Promise<number>((res) => (resolveFirst = res));
+  proc.stderr?.on("data", (b: Buffer) => {
+    const s = b.toString();
+    const m = s.match(/sck: firstframe (\d+)/);
+    if (m) resolveFirst(Number(m[1]));
+    if (s.includes("error")) console.error(s.trim());
+  });
+  return { proc, firstFrame };
+}
+
+async function stopSck(proc: ChildProcess): Promise<void> {
+  return new Promise((res) => {
+    proc.on("exit", () => res());
+    proc.kill("SIGINT");
+    setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} }, 15_000);
+  });
+}
+
+/** Convert the change-driven SCK capture into a constant-30fps h264 file
+ * (matching what avfoundation produced) so the rest of the pipeline is
+ * unchanged. Pads the tail so the held money shot isn't cut. */
+async function cfrConvert(sckPath: string, rawPath: string, padSec: number): Promise<void> {
+  const pad = Math.max(0, padSec);
+  const vf = `fps=30,tpad=stop_mode=clone:stop_duration=${pad.toFixed(2)}`;
+  const args = [
+    "-y", "-i", sckPath,
+    "-vf", vf,
+    "-fps_mode", "cfr", "-r", "30",
+    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18", "-pix_fmt", "yuv420p",
+    rawPath,
+  ];
+  await new Promise<void>((res, rej) => {
+    const p = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "ignore"] });
+    p.on("error", rej);
+    p.on("exit", (c) => (c === 0 ? res() : rej(new Error(`cfrConvert exit ${c}`))));
+  });
+}
+
 async function bringObsidianToFront(): Promise<void> {
   await new Promise<void>((res, rej) => {
     const proc = spawn("osascript", ["-e", 'tell application "Obsidian" to activate']);
@@ -668,17 +738,19 @@ async function postProcess(opts: PostOptions): Promise<void> {
     await renderCaptionPng(caption, captionPath);
   }
 
-  // The real OS cursor is captured by ffmpeg (-capture_cursor 1) and is the
-  // single cursor in the reel: it's the genuine contextual pointer (arrow,
-  // hand over links). We do NOT overlay a synthetic cursor — on this macOS the
-  // hardware cursor is composited into the capture regardless of the
-  // capture_cursor flag, so a synthetic overlay would double it.
-  void tracePath;
-  void recordingStartTime;
+  // The SCK capture is cursor-free, so draw a synthetic cursor from the
+  // recorded trace: one PNG per output frame at 30fps (always present, never
+  // flickers), the cropped size, aligned 1:1 with the trimmed video (both
+  // start at recording t=0 + startMs in wall-clock terms).
+  const haloDir = `${rawPath}.halo`;
+  rmSync(haloDir, { recursive: true, force: true });
+  await renderHaloFrames(tracePath, haloDir, cropW, cropH, recordingStartTime + startMs, trimEnd - trimStart, 30, cropX, cropY);
 
-  // Build the ffmpeg filter graph.
+  // Build the ffmpeg filter graph. Input 0 = raw video; input 1 = halo PNGs.
   const ffArgs: string[] = ["-y", "-ss", String(startMs / 1000), "-i", rawPath, "-t", String((trimEnd - trimStart) / 1000)];
-  let inputIdx = 1;
+  ffArgs.push("-framerate", "30", "-i", join(haloDir, "halo-%05d.png"));
+  const haloInputIdx = 1;
+  let inputIdx = 2;
   const speedupInputIdx = new Map<number, number>();
   for (const sp of distinctSpeedups) {
     ffArgs.push("-i", speedupCaptionPaths.get(sp) ?? "");
@@ -694,7 +766,10 @@ async function postProcess(opts: PostOptions): Promise<void> {
 
   const chain: string[] = [];
   chain.push(`[0:v]crop=${cropW}:${cropH}:${cropX}:${cropY}[v_crop]`);
-  chain.push(`[v_crop]split=${segments.length}${segments.map((_, i) => `[c${i}]`).join("")}`);
+  // Overlay the synthetic cursor at full rate, before the speedup split, so
+  // it's decimated together with the screen during sped-up segments.
+  chain.push(`[v_crop][${haloInputIdx}:v]overlay=0:0:eof_action=pass[v_crop_h]`);
+  chain.push(`[v_crop_h]split=${segments.length}${segments.map((_, i) => `[c${i}]`).join("")}`);
   const segOuts: string[] = [];
   for (let i = 0; i < segments.length; i++) {
     const s = segments[i];
