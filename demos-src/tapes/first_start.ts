@@ -255,8 +255,11 @@ export default storyboard("first_start", {
     beat(
       "Wait for the wizard to land on the model picker",
       runJs(`
-        for (let i = 0; i < 180; i++) {
-          if (document.querySelector('.lilbee-wizard .lilbee-wizard-models')) return;
+        // The picker's model cards load asynchronously (a catalog API
+        // call), so waiting for the container alone races the cards. Wait
+        // for the Qwen3 0.6B card itself to render before selecting it.
+        for (let i = 0; i < 240; i++) {
+          if (document.querySelector('.lilbee-wizard-models [data-repo*="Qwen3-0.6B"]')) return;
           await new Promise(r => setTimeout(r, 500));
         }
       `),

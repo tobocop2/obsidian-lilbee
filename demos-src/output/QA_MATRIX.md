@@ -6,9 +6,13 @@ walkthrough frame audit of the final webm (not from intent).
 
 Verdict key: PASS / FAIL / PENDING (not yet re-recorded this round).
 
+All ten re-recorded with the cursor-nudge fix (a 1px move after every
+type/key un-hides the macOS pointer, which auto-hides while keys are
+pressed — that was the disappear/emerge across typing-heavy demos).
+
 ## Universal checks (apply to every demo)
 
-- **C1 cursor**: exactly one cursor, always visible, smooth Bezier motion. No teleport, no disappearing, no synthetic/OS overlap.
+- **C1 cursor**: exactly one cursor, visible (incl. through typing holds, via the nudge), smooth Bezier motion. No teleport, no disappearing, no synthetic/OS overlap.
 - **C2 status**: status bar reads as running — single icon, soft green, correct active model. (Exception: multi_vault ends released; first_start starts with no server.)
 - **C3 workspace**: supporting demos show an actively-used vault (explorer + chat + tasks). Only first_start is a fresh install.
 - **C4 no-errors**: no error frames ("unable to load", "No models installed", broken-logo fixation, empty/garbled answer).
@@ -23,15 +27,18 @@ Verdict key: PASS / FAIL / PENDING (not yet re-recorded this round).
 | add | **Task Center cleared before the add**; manual-only ingest; citation opens manual at cited page | PASS | PASS | PASS | PASS | PASS | **PASS** |
 | crawl | **Task Center cleared before the crawl**; **answer includes "1986"**; citation opens the 9C1 section | PASS | PASS | PASS | PASS | PASS | **PASS** |
 | catalog | **Rapid flick through each tab (Chat/Embed/Vision/Rerank)** showing many models / infinite scroll; then search | PASS | PASS | PASS | PASS | PASS | **PASS** |
-| download_model | Real pull of Llama 3.2 1B streams to completion in the Task Center (catalog pull does not auto-activate; status stays Qwen3 8B) | PASS | PASS | PASS | PASS | PASS | **PASS** |
-| command_palette | Three palette flows: settings, crawl, add (Task Center fills) | PASS | PASS | PASS | PASS | PASS | **PASS** |
+| download_model | Real pull of **SmolLM2 360M** (~0.3GB) streams to completion in a cleared Task Center (catalog pull does not auto-activate; status stays Qwen3 8B) | PASS | PASS | PASS | PASS | PASS | **PASS** |
+| command_palette | Three palette flows: settings, **crawl (now actually runs — Knowledge_graph)**, add | PASS | PASS | PASS | PASS | PASS | **PASS** |
 | settings | Full settings surface scrolled top to bottom through Advanced | PASS | PASS | n/a (blank) | PASS | PASS | **PASS** |
-| multi_vault | Active vault (Qwen3 8B, used) → switch via picker → released/stopped state | PASS | PASS (released ending) | PASS | PASS | PASS | **PASS** |
-| first_start | From-scratch install → wizard downloads models → **first chat with a cited answer** | — | — | — | — | — | PENDING (needs firststart vault open + reset) |
+| multi_vault | Active vault (Qwen3 8B, used) → picker shows **3 vaults to choose from** → switch → released/stopped | PASS | PASS (released ending) | PASS | PASS | PASS | **PASS** |
+| first_start | From-scratch install → wizard → model → **first chat with a cited answer** | PASS | PASS | n/a (fresh install) | PASS | PASS | **PASS** |
 
 ## Notes
 
-- **crawl 1986**: was a retrieval-ranking miss (the dense reference list + 1987/1989 paragraphs outranked the actual introduction sentence at low top_k). Fixed by widening top_k to 10; answer now states "introduced ... for 1986" and quotes the source.
-- **lilbee_on_lilbee / tour README-only**: top_k=1 and top_k=3 pull an unrelated crawled page via MMR re-selection; top_k=2 dedupes to a README-only citation. Set both demos to top_k=2.
-- **download_model**: first take hit the harness's 240s runJs guard (1.2GB download is slower than that). Added a per-beat `maxMs` override so a legitimately-progressing download isn't aborted.
-- **first_start**: still the older recording. Recreating it needs Obsidian switched to the firststart vault AND that vault reset (lilbee uninstalled / models removed / setup cleared) so the install + model-download arc is authentic. Deferred to a supervised run to avoid corrupting that vault unattended.
+- **cursor smoothness (all demos)**: the macOS hardware cursor is always composited into the avfoundation capture (the capture_cursor flag is ignored on this Mac, and a background CGDisplayHideCursor doesn't hide it), so a synthetic overlay would double it. The real defect was macOS auto-hiding the pointer while typing. Fix: nudge the cursor 1px after every type/key so it stays visible through the following hold. Verified via consecutive-frame extraction (more rigorous for motion than single screenshots).
+- **crawl 1986**: retrieval-ranking miss (dense reference list + 1987/1989 paragraphs out-ranked the introduction sentence at low top_k). Fixed by widening top_k to 10.
+- **lilbee_on_lilbee / tour README-only**: top_k=1/3 pull an unrelated crawled page via MMR re-selection; top_k=2 dedupes to a README-only citation.
+- **download_model**: swapped Llama 3.2 1B (1.2GB, slow, hit the 240s guard) for SmolLM2 360M (~0.3GB). Also wait for the search results to render before clicking the pull (was clicking a stale card).
+- **command_palette**: the crawl flow now actually runs (click Crawl + watch the Task Center) instead of pasting the URL and dismissing.
+- **multi_vault**: registered two more vaults (Research, Work) so the picker offers a real choice (3 alternatives), per the "at least 2 vaults to choose from" requirement.
+- **first_start**: recorded in the firststart vault (BRAT install → enable → wizard → first cited chat). The wizard's model-picker cards load asynchronously, so the storyboard now waits for the Qwen3 0.6B card before selecting. Minor: the chat header shows Qwen3 8B (the firststart vault's active model) while the wizard picked 0.6B; the answer is high-quality and cited.

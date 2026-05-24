@@ -35,7 +35,7 @@
 <body>
 <header>
   <h1>lilbee demo reel</h1>
-  <p>Recreated 2026-05-24 against the review guidelines: single contextual cursor (no disappearing, no overlap), soft green "running" status, actively-used vault (populated explorer + Task Center history), cursor kept off README links, no error frames.</p>
+  <p>Recreated 2026-05-24. Cursor stays visible through typing (macOS auto-hides it while keys are pressed — nudged back), soft green "running" status, actively-used vault (populated explorer + Task Center history), cursor kept off README links, no error frames.</p>
 </header>
 <main id="demos"></main>
 <script>
@@ -51,15 +51,15 @@
     { name: "catalog", fresh: true,
       desc: "Fast flick down each model list — Chat / Embed / Vision / Rerank — to show how many models there are (infinite scroll), then a direct search." },
     { name: "download_model", fresh: true,
-      desc: "Pull Llama 3.2 1B from the catalog and watch the download stream start-to-finish in the Task Center." },
+      desc: "Search the catalog for SmolLM2 360M and watch the download stream start-to-finish in the Task Center." },
     { name: "command_palette", fresh: true,
-      desc: "Three palette flows back to back: open settings, crawl a page, add the current file (the Task Center fills as it ingests)." },
+      desc: "Three palette flows back to back: open settings, crawl a web page (which actually runs), add the current file." },
     { name: "settings", fresh: true,
       desc: "Open lilbee settings via the palette and scroll the full surface, top to bottom through the Advanced section." },
+    { name: "first_start", fresh: true,
+      desc: "From-scratch install: BRAT → enable lilbee → the setup wizard (server + model) → the first cited chat answer." },
     { name: "multi_vault", fresh: true,
-      desc: "An active vault running Qwen3 8B → switch the shared lilbee install to another registered vault via the picker → the released/stopped state." },
-    { name: "first_start", fresh: false,
-      desc: "True from-scratch install: BRAT → enable lilbee → the setup wizard with real model downloads → the first cited chat. PENDING recreation (needs the firststart vault opened + reset)." },
+      desc: "An active vault running Qwen3 8B → the picker showing three registered vaults to choose from → switch → the released state." },
   ];
   const main = document.getElementById("demos");
   let lastFresh = null;

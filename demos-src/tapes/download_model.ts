@@ -11,10 +11,17 @@
  * freshModel uninstalls the model in pre-flight so the pull is a real
  * download on every take (models_dir is shared across vaults).
  */
-import { beat, clickSelector, key, runJs, sleep, storyboard, type_ } from "../src/lib.ts";
+import { beat, clickSelector, key, runJs, sleep, storyboard, type_, waitForSelector } from "../src/lib.ts";
 
 const MODEL_QUERY = "SmolLM2 360M";
-const MODEL_REPO = "bartowski/SmolLM2-360M-Instruct-GGUF";
+// The catalog renders prithivMLmods's SmolLM2 360M as the first result;
+// match freshModel to it so the pull is a real download on every take.
+const MODEL_REPO = "prithivMLmods/SmolLM2-360M-GGUF";
+// Wait on the SmolLM2 card name (Playwright handles :text-is) so the
+// search results have actually rendered before we click. Once they have,
+// the first .lilbee-catalog-pull is the top result — bartowski's SmolLM2
+// 360M, which matches MODEL_REPO.
+const MODEL_CARD_NAME = '.lilbee-model-card-name:text-is("SmolLM2 360M")';
 
 export default storyboard("download_model", {
   window: [1400, 900],
@@ -37,9 +44,14 @@ export default storyboard("download_model", {
     // Search for the model by name so the viewer sees how you find one.
     beat("Click the catalog search", clickSelector("input.lilbee-catalog-search"), { holdMs: 400 }),
     beat("Search for the model", type_(MODEL_QUERY), { holdMs: 1400 }),
+    // The search hits Hugging Face and takes a moment; wait for the
+    // SmolLM2 card to actually render before clicking, otherwise the
+    // click lands on whatever card was on screen first.
+    beat("Wait for the search results", waitForSelector(MODEL_CARD_NAME), { holdMs: 800 }),
 
-    // Pull -> confirm. The confirm modal shows the download size and the
-    // RAM the model needs before anything is fetched.
+    // Pull -> confirm. With the SmolLM2 results rendered, the first pull
+    // button is the top result (bartowski's SmolLM2 360M). The confirm
+    // modal shows the download size and the RAM the model needs.
     beat("Click Download on the model card", clickSelector(".lilbee-catalog-pull"), { holdMs: 1200 }),
     beat(
       "Confirm the download",
