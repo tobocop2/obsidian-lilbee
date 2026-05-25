@@ -143,9 +143,12 @@ export default storyboard("first_start", {
     // Click Add plugin. The URL was just typed via OS keystrokes so
     // it's already in the input; no need for a DOM-level value setter
     // that would briefly fight the typing animation.
+    // BRAT labels this "Add Plugin" (capital P); match loosely so a casing
+    // or wording change can't strand the click. The programmatic addPlugin in
+    // the next beat does the real work regardless.
     beat(
       "Click Add plugin",
-      clickSelector('.modal-container button.mod-cta:text-is("Add plugin")'),
+      clickSelector('.modal-container button.mod-cta:has-text("Add")'),
       { holdMs: 1200 },
     ),
     beat(
