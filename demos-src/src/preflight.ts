@@ -118,6 +118,10 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
       document.querySelectorAll(".modal-container").forEach((m) => m.remove());
       document.querySelectorAll(".modal-bg").forEach((m) => m.remove());
       document.querySelectorAll("body > .menu").forEach((m) => m.remove());
+      // Close any open document tabs so the fresh-install demo opens on a
+      // bare workspace, not a note left over from a prior session.
+      const app = (globalThis as unknown as { app: { workspace: { detachLeavesOfType: (t: string) => void } } }).app;
+      for (const t of ["markdown", "pdf", "lilbee-chat", "lilbee-tasks", "lilbee-wiki"]) app.workspace.detachLeavesOfType(t);
     });
     console.log(`pre-flight (noLilbee): ${JSON.stringify(wiped)}`);
     return;

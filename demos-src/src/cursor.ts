@@ -13,11 +13,14 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MOUSE_PY = join(__dirname, "mouse.py");
 
-function run(args: string[]): Promise<string> {
+function run(args: string[], cursorStyle?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     // Inherit env so MOUSE_TRACE_PATH (set by record.ts) reaches the
     // mouse.py subprocess and per-step cursor positions get logged.
-    const proc = spawn("python3", [MOUSE_PY, ...args], { stdio: ["ignore", "pipe", "pipe"], env: process.env });
+    // MOUSE_CURSOR_STYLE tells mouse.py the destination cursor style so
+    // the trace's resting point records the right glyph (hand / I-beam).
+    const env = cursorStyle ? { ...process.env, MOUSE_CURSOR_STYLE: cursorStyle } : process.env;
+    const proc = spawn("python3", [MOUSE_PY, ...args], { stdio: ["ignore", "pipe", "pipe"], env });
     let out = "";
     let err = "";
     proc.stdout.on("data", (b) => (out += b.toString()));
@@ -30,19 +33,21 @@ function run(args: string[]): Promise<string> {
   });
 }
 
-/** Smoothly move the OS cursor to (x, y) — screen logical points. */
-export async function moveToCoord(x: number, y: number): Promise<void> {
-  await run(["move", String(x), String(y)]);
+/** Smoothly move the OS cursor to (x, y) — screen logical points. The
+ * optional cursorStyle (CSS cursor under the destination) selects the
+ * glyph the overlay draws at rest. */
+export async function moveToCoord(x: number, y: number, cursorStyle?: string): Promise<void> {
+  await run(["move", String(x), String(y)], cursorStyle);
 }
 
 /** Smooth-move then click. */
-export async function clickAtCoord(x: number, y: number): Promise<void> {
-  await run(["click", String(x), String(y)]);
+export async function clickAtCoord(x: number, y: number, cursorStyle?: string): Promise<void> {
+  await run(["click", String(x), String(y)], cursorStyle);
 }
 
 /** Smooth-move then right-click. */
-export async function rightClickAtCoord(x: number, y: number): Promise<void> {
-  await run(["rightclick", String(x), String(y)]);
+export async function rightClickAtCoord(x: number, y: number, cursorStyle?: string): Promise<void> {
+  await run(["rightclick", String(x), String(y)], cursorStyle);
 }
 
 /** Smooth-move the cursor onto a native context-menu item by name (via

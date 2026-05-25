@@ -52,7 +52,7 @@ export async function resolveSelector(
   ctx: ObsidianContext,
   selector: string,
   options: { textIs?: string; textHas?: string } = {},
-): Promise<{ x: number; y: number } | null> {
+): Promise<{ x: number; y: number; cursor: string } | null> {
   const box = await ctx.page.evaluate(
     ([sel, textIs, textHas]) => {
       const matches = Array.from(document.querySelectorAll(sel as string));
@@ -67,7 +67,13 @@ export async function resolveSelector(
       }
       if (!el) return null;
       const r = (el as HTMLElement).getBoundingClientRect();
-      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      const cx = r.x + r.width / 2;
+      const cy = r.y + r.height / 2;
+      // The CSS cursor at the click point — use the topmost element there
+      // so a clickable child (button inside a card) reports its own cursor.
+      const atPoint = document.elementFromPoint(cx, cy) ?? el;
+      const cursor = getComputedStyle(atPoint as Element).cursor || "default";
+      return { x: cx, y: cy, cursor };
     },
     [selector, options.textIs ?? null, options.textHas ?? null] as const,
   );
@@ -75,6 +81,7 @@ export async function resolveSelector(
   return {
     x: ctx.windowOrigin.x + box.x,
     y: ctx.windowOrigin.y + box.y,
+    cursor: box.cursor,
   };
 }
 

@@ -34,13 +34,18 @@ import time
 # "ts_us\tx\ty\n". record.ts reads it after the run to drive a halo
 # overlay in post-processing.
 _TRACE_PATH = os.environ.get("MOUSE_TRACE_PATH")
+# CSS cursor under the destination element for this invocation (pointer,
+# text, default). The glide itself is always "default" (an arrow while
+# moving fast); the cursor at rest takes this style so the halo overlay
+# can draw the hand over buttons and the I-beam over text fields.
+_LANDING_STYLE = os.environ.get("MOUSE_CURSOR_STYLE", "default")
 
 
-def _trace(x: float, y: float) -> None:
+def _trace(x: float, y: float, style: str | None = None) -> None:
     if _TRACE_PATH:
         try:
             with open(_TRACE_PATH, "a") as f:
-                f.write(f"{int(time.time() * 1_000_000)}\t{x:.1f}\t{y:.1f}\n")
+                f.write(f"{int(time.time() * 1_000_000)}\t{x:.1f}\t{y:.1f}\t{style or _LANDING_STYLE}\n")
         except OSError:
             pass
 
@@ -124,7 +129,6 @@ def _wake_cursor() -> None:
     time.sleep(0.02)
     pyautogui.moveTo(p.x, p.y)
     time.sleep(0.02)
-    _trace(p.x, p.y)
 
 
 def smooth_move(x: float, y: float) -> None:
@@ -137,8 +141,11 @@ def smooth_move(x: float, y: float) -> None:
     per_step_s = (duration_ms / 1000.0) / len(points)
     for px, py in points:
         pyautogui.moveTo(px, py)
-        _trace(px, py)
+        _trace(px, py, "default")  # an arrow while in motion
         time.sleep(per_step_s)
+    # Final resting point takes the landing style (hand / I-beam / arrow),
+    # which the overlay carries through the hold after the move.
+    _trace(x, y)
 
 
 def main(argv: list[str]) -> int:
@@ -146,10 +153,10 @@ def main(argv: list[str]) -> int:
         print("usage: mouse.py <move|click|type|key|scroll|pos> [args]", file=sys.stderr)
         return 2
     cmd, *args = argv
-    # Trace current position at command entry so the halo overlay has
-    # a sample even for non-move commands (click, key, type).
-    p0 = pyautogui.position()
-    _trace(p0.x, p0.y)
+    # Commands that reposition the cursor (move/click/scroll/menu) trace
+    # their own points below. type/key/pos don't move it, so they emit no
+    # trace and the overlay keeps the previous resting point + glyph (an
+    # entry trace here would overwrite a text-field I-beam with an arrow).
     if cmd == "pos":
         pos = pyautogui.position()
         print(f"{pos.x} {pos.y}")

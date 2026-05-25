@@ -115,7 +115,7 @@ export async function record(storyboard: Storyboard): Promise<void> {
   process.on("uncaughtException", uncaughtHandler);
   process.on("unhandledRejection", uncaughtHandler);
 
-  const ctx = await connectObsidian();
+  const ctx = await connectObsidian(storyboard.vaultMatch);
   try {
     // Pre-flight FIRST (we want Obsidian to be in a known state before
     // ffmpeg even sees a frame).
@@ -296,9 +296,9 @@ async function runAction(ctx: ObsidianContext, action: Action, beat: Beat): Prom
       // it and text appears in a field the cursor isn't anywhere near.
       const coord = await resolveSelector(ctx, "textarea.lilbee-chat-textarea");
       if (coord) {
-        await moveToCoord(coord.x, coord.y);
+        await moveToCoord(coord.x, coord.y, coord.cursor);
         await sleep(HOVER_BEFORE_CLICK_MS);
-        await clickAtCoord(coord.x, coord.y);
+        await clickAtCoord(coord.x, coord.y, coord.cursor);
       } else {
         await ctx.page.evaluate(() => (document.querySelector("textarea.lilbee-chat-textarea") as HTMLElement | null)?.focus());
       }
@@ -390,15 +390,15 @@ async function cursorActOnSelector(
   }
   const coord = await resolveSelector(ctx, cleanSelector, { textIs: effectiveTextIs, textHas: effectiveTextHas });
   if (!coord) throw new Error(`cannot resolve selector for beat '${beat.label}': ${selector}`);
-  await moveToCoord(coord.x, coord.y);
+  await moveToCoord(coord.x, coord.y, coord.cursor);
   await sleep(HOVER_BEFORE_CLICK_MS);
   if (button === "right") {
     // Real OS right-click via pyautogui so Obsidian's native context
     // menu opens on screen for the recording. Playwright's in-page
     // right-click doesn't trigger Obsidian's file-menu event.
-    await rightClickAtCoord(coord.x, coord.y);
+    await rightClickAtCoord(coord.x, coord.y, coord.cursor);
   } else {
-    await clickAtCoord(coord.x, coord.y);
+    await clickAtCoord(coord.x, coord.y, coord.cursor);
   }
   if (beat.cursorParkTo) {
     const [px, py] = beat.cursorParkTo;
@@ -428,9 +428,9 @@ async function cursorClickChip(ctx: ObsidianContext, index: number, beat: Beat):
     console.warn(`clickChip ${index}: no chip rendered for beat '${beat.label}' (answer had no citations); skipping`);
     return null;
   }
-  await moveToCoord(coord.x, coord.y);
+  await moveToCoord(coord.x, coord.y, "pointer");
   await sleep(HOVER_BEFORE_CLICK_MS);
-  await clickAtCoord(coord.x, coord.y);
+  await clickAtCoord(coord.x, coord.y, "pointer");
   if (beat.cursorParkTo) {
     const [px, py] = beat.cursorParkTo;
     await moveToCoord(ctx.windowOrigin.x + px, ctx.windowOrigin.y + py);
@@ -462,9 +462,9 @@ async function cursorClickSourceFile(
     console.warn(`clickSourceFile: no cited source matching '${name}' for beat '${beat.label}'; skipping`);
     return null;
   }
-  await moveToCoord(coord.x, coord.y);
+  await moveToCoord(coord.x, coord.y, "pointer");
   await sleep(HOVER_BEFORE_CLICK_MS);
-  await clickAtCoord(coord.x, coord.y);
+  await clickAtCoord(coord.x, coord.y, "pointer");
   return coord;
 }
 

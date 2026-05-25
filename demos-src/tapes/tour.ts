@@ -68,10 +68,12 @@ export default storyboard("tour", {
 
     // --- 2. Model catalog: browse, then show the pull flow ---
     ...runViaPalette("Browse model catalog", "Browse model catalog", 1100),
-    beat("Flick through the Chat models", wheelScroll(".lilbee-catalog-results", -48, true), { holdMs: 600 }),
-    beat("Walk the Embed tab", clickSelector(`${CATALOG_TABS} button:text-is("Embed")`), { holdMs: 700 }),
-    beat("Walk the Vision tab", clickSelector(`${CATALOG_TABS} button:text-is("Vision")`), { holdMs: 700 }),
-    beat("Back to the Chat tab", clickSelector(`${CATALOG_TABS} button:text-is("Chat")`), { holdMs: 700 }),
+    // Browsing the catalog is a fast-forward (the catalog demo covers it in
+    // full), so speed this contiguous run up rather than dwell on it.
+    beat("Flick through the Chat models", wheelScroll(".lilbee-catalog-results", -48, true), { holdMs: 600, speedup: 2 }),
+    beat("Walk the Embed tab", clickSelector(`${CATALOG_TABS} button:text-is("Embed")`), { holdMs: 700, speedup: 2 }),
+    beat("Walk the Vision tab", clickSelector(`${CATALOG_TABS} button:text-is("Vision")`), { holdMs: 700, speedup: 2 }),
+    beat("Back to the Chat tab", clickSelector(`${CATALOG_TABS} button:text-is("Chat")`), { holdMs: 700, speedup: 2 }),
     beat("Click the catalog search", clickSelector(CATALOG_SEARCH), { holdMs: 400 }),
     beat("Search for a chat model", type_("Phi-4"), { holdMs: 1200 }),
     beat("Click Download on the model card", clickSelector(".lilbee-catalog-pull"), { holdMs: 1200 }),
@@ -195,9 +197,11 @@ export default storyboard("tour", {
       runJs(`document.querySelectorAll('.vertical-tab-content details').forEach(d => d.setAttribute('open',''));`),
       { holdMs: 300 },
     ),
-    beat("Scroll settings #1", wheelScroll(SETTINGS_PANE, -24), { holdMs: 500 }),
-    beat("Scroll settings #2", wheelScroll(SETTINGS_PANE, -24), { holdMs: 500 }),
-    beat("Scroll settings #3", wheelScroll(SETTINGS_PANE, -24), { holdMs: 500 }),
+    // The settings demo walks this surface in full; here just sweep it
+    // quickly to show it exists.
+    beat("Scroll settings #1", wheelScroll(SETTINGS_PANE, -24), { holdMs: 500, speedup: 2 }),
+    beat("Scroll settings #2", wheelScroll(SETTINGS_PANE, -24), { holdMs: 500, speedup: 2 }),
+    beat("Scroll settings #3", wheelScroll(SETTINGS_PANE, -24), { holdMs: 500, speedup: 2 }),
     beat("Close settings", key("escape"), { holdMs: 500 }),
   ],
 });
