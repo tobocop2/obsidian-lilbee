@@ -420,13 +420,14 @@ export default storyboard("first_start", {
           await new Promise(r => setTimeout(r, 500));
         }
         if (typeof p.fetchActiveModel === 'function') await p.fetchActiveModel();
-        // 2. Warm the chat worker through the same path the panel uses. The
-        // server spins workers up lazily on the first request and can restart
-        // its pool (changing serverUrl) right after a fresh model is set, so
-        // re-bind the api to the current url each loop and fire a throwaway
-        // completion until one succeeds. After this, the on-camera question
-        // hits a warm worker on the correct url instead of "Failed to fetch".
-        for (let i = 0; i < 90; i++) {
+        // 2. Wait for the server to STABILISE. After a fresh model is set it
+        // restarts its worker pool a few times, and a chat that lands in a
+        // restart window fails with "Failed to fetch". Require several
+        // consecutive successful completions on an unchanging url before the
+        // on-camera chat, re-binding the api to the current url each pass.
+        let stable = 0;
+        let lastUrl = '';
+        for (let i = 0; i < 240 && stable < 4; i++) {
           const url = p?.serverManager?.serverUrl;
           if (url) {
             if (typeof p.configureApi === 'function') p.configureApi(url);
@@ -436,11 +437,21 @@ export default storyboard("first_start", {
                 headers: { 'Content-Type': 'application/json', ...auth() },
                 body: JSON.stringify({ question: 'hello', top_k: 1 }),
               });
-              if (r.ok) { await r.json().catch(() => {}); break; }
-            } catch {}
+              if (r.ok) {
+                await r.json().catch(() => {});
+                stable = url === lastUrl ? stable + 1 : 1;
+                lastUrl = url;
+              } else {
+                stable = 0;
+              }
+            } catch {
+              stable = 0;
+            }
           }
           await new Promise(r => setTimeout(r, 1000));
         }
+        // Final settle so the on-camera send is well clear of the last restart.
+        await new Promise(r => setTimeout(r, 1500));
         // 3. Open the chat panel and fill its selectors now that the api is
         // bound to a warm server.
         if (!window.app.commands.executeCommandById('lilbee:lilbee:chat') && typeof p.activateChatView === 'function') {
