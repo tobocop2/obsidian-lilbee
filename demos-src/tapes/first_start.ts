@@ -405,6 +405,7 @@ export default storyboard("first_start", {
           const tok = p?.api?.token ?? p?.settings?.manualToken;
           return tok ? { Authorization: 'Bearer ' + tok } : {};
         };
+        // 1. Wait until the managed server reports the freshly downloaded chat model.
         for (let i = 0; i < 240; i++) {
           const smUrl = p?.serverManager?.serverUrl;
           if (smUrl) {
@@ -412,18 +413,36 @@ export default storyboard("first_start", {
               const h = await fetch(smUrl + '/api/health', { headers: auth() });
               if (h.ok) {
                 const inst = await fetch(smUrl + '/api/models/installed?task=chat', { headers: auth() }).then(r => r.json());
-                if (Array.isArray(inst.models) && inst.models.length > 0) {
-                  if (typeof p.configureApi === 'function') p.configureApi(smUrl);
-                  break;
-                }
+                if (Array.isArray(inst.models) && inst.models.length > 0) break;
               }
             } catch {}
           }
           await new Promise(r => setTimeout(r, 500));
         }
         if (typeof p.fetchActiveModel === 'function') await p.fetchActiveModel();
-        // Open the chat panel and fill its model selectors from the server
-        // before we type, so the panel is in its ready state on camera.
+        // 2. Warm the chat worker through the same path the panel uses. The
+        // server spins workers up lazily on the first request and can restart
+        // its pool (changing serverUrl) right after a fresh model is set, so
+        // re-bind the api to the current url each loop and fire a throwaway
+        // completion until one succeeds. After this, the on-camera question
+        // hits a warm worker on the correct url instead of "Failed to fetch".
+        for (let i = 0; i < 90; i++) {
+          const url = p?.serverManager?.serverUrl;
+          if (url) {
+            if (typeof p.configureApi === 'function') p.configureApi(url);
+            try {
+              const r = await fetch(url + '/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...auth() },
+                body: JSON.stringify({ question: 'hello', top_k: 1 }),
+              });
+              if (r.ok) { await r.json().catch(() => {}); break; }
+            } catch {}
+          }
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        // 3. Open the chat panel and fill its selectors now that the api is
+        // bound to a warm server.
         if (!window.app.commands.executeCommandById('lilbee:lilbee:chat') && typeof p.activateChatView === 'function') {
           await p.activateChatView();
         }
