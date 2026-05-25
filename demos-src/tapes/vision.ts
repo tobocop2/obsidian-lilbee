@@ -5,8 +5,9 @@
  * no text layer — plain text extraction gets nothing. With a vision model
  * set (LightOnOCR), lilbee rasterises each page and OCRs it through the
  * model, so the manual becomes searchable. The Task Center streams the OCR
- * page by page; then a chat answer reads the four starfighters and their
- * manufacturers straight off the pages the model just transcribed.
+ * page by page; then a chat answer reads a detail that could only come from
+ * OCR — the manual's technical-support phone number and publisher — straight
+ * off the scanned cover.
  *
  * The chat model stays Qwen3 8B (pinned in pre-flight); the vision model is
  * set in the first beat and only does the OCR. freshIngest drops the manual
@@ -26,7 +27,7 @@ import {
 
 const PDF_FILE = "Star Wars X-Wing Pilot Manual.pdf";
 const VISION_MODEL = "noctrex/LightOnOCR-2-1B-GGUF/LightOnOCR-2-1B-Q4_K_M.gguf";
-const QUESTION = "Which starfighters does this manual cover, and who manufactures each one?";
+const QUESTION = "What technical support phone number does this manual give, and who is the publisher?";
 
 const palette = (label: string, query: string, holdAfter = 900) => [
   beat(
@@ -110,7 +111,7 @@ export default storyboard("vision", {
       `),
       { holdMs: 500 },
     ),
-    beat("Ask which starfighters the manual covers", fillChat(QUESTION), { holdMs: 700 }),
+    beat("Ask for the support number and publisher", fillChat(QUESTION), { holdMs: 700 }),
     beat(
       "Ensure the question is in the box",
       runJs(`
