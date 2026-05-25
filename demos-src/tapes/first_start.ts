@@ -452,18 +452,18 @@ export default storyboard("first_start", {
         }
         // Final settle so the on-camera send is well clear of the last restart.
         await new Promise(r => setTimeout(r, 1500));
-        // 3. Open the chat panel and fill its selectors now that the api is
-        // bound to a warm server.
-        if (!window.app.commands.executeCommandById('lilbee:lilbee:chat') && typeof p.activateChatView === 'function') {
-          await p.activateChatView();
-        }
+        // 3. Open the chat WIDE in the main editor area (the wizard otherwise
+        // drops it in the narrow right sidebar, which compresses every bubble)
+        // and collapse both side panels for a clean full-width chat.
+        window.app.workspace.detachLeavesOfType('lilbee-chat');
+        window.app.workspace.leftSplit?.collapse?.();
+        window.app.workspace.rightSplit?.collapse?.();
+        const mainLeaf = window.app.workspace.getLeaf(false);
+        await mainLeaf.setViewState({ type: 'lilbee-chat', active: true });
+        window.app.workspace.revealLeaf(mainLeaf);
         await new Promise(r => setTimeout(r, 500));
-        const leaves = window.app.workspace.getLeavesOfType('lilbee-chat');
-        for (const leaf of leaves) {
-          window.app.workspace.revealLeaf(leaf);
-          const view = leaf.view;
-          if (view && typeof view.fetchAndFillSelectors === 'function') await view.fetchAndFillSelectors();
-        }
+        const view = mainLeaf.view;
+        if (view && typeof view.fetchAndFillSelectors === 'function') await view.fetchAndFillSelectors();
         await new Promise(r => setTimeout(r, 400));
         const ta = document.querySelector('textarea.lilbee-chat-textarea');
         if (ta) ta.focus();
