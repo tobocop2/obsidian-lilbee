@@ -66,15 +66,16 @@ _IBEAM_STEM = 1
 
 
 def _stamp_outline(draw: "ImageDraw.ImageDraw", polys: list[list[tuple[float, float]]]) -> None:
-    """Stamp a white border ring under each polygon, then a dark fill."""
+    """Stamp a dark border ring under each polygon, then a white fill —
+    the standard macOS cursor look (white body, thin dark outline)."""
     for dx in range(-_OUTLINE, _OUTLINE + 1):
         for dy in range(-_OUTLINE, _OUTLINE + 1):
             if dx * dx + dy * dy > _OUTLINE * _OUTLINE:
                 continue
             for poly in polys:
-                draw.polygon([(x + dx, y + dy) for x, y in poly], fill=(255, 255, 255, 255))
+                draw.polygon([(x + dx, y + dy) for x, y in poly], fill=(30, 30, 32, 255))
     for poly in polys:
-        draw.polygon(poly, fill=(20, 20, 22, 255))
+        draw.polygon(poly, fill=(255, 255, 255, 255))
 
 
 def _build_polygon_glyph(points: list[tuple[int, int]], hotspot: tuple[int, int]) -> tuple[Image.Image, int, int]:

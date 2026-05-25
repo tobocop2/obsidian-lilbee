@@ -72,8 +72,12 @@ export default storyboard("command_palette", {
       { holdMs: 1100 },
     ),
     beat("Click Crawl", clickSelector('.modal-container button.mod-cta:has-text("Crawl")'), { holdMs: 1000 }),
+    // On a first-ever crawl this also covers the one-time Playwright/Chromium
+    // download + browser warmup (surfaced in the Task Center as a "Chromium
+    // setup" task), which can run a couple of minutes — heavy speedup keeps
+    // the reel tight while still showing it happen.
     beat(
-      "Watch the crawl + sync run in the Task Center",
+      "Watch the first-run browser setup + crawl + sync in the Task Center",
       runJs(`
         const tq = window.app.plugins.plugins.lilbee.taskQueue;
         let sawActive = false;
@@ -84,22 +88,7 @@ export default storyboard("command_palette", {
           await new Promise(r => setTimeout(r, 500));
         }
       `),
-      { holdMs: 1200, speedup: 4, maxMs: 600_000 },
-    ),
-    // Wikipedia references crawl as [[N]](url), which Obsidian mis-renders
-    // as a broken wikilink plus a literal URL. Strip them so the cited page
-    // reads cleanly when the citation opens it.
-    beat(
-      "Tidy the crawled markdown (strip reference-link clutter)",
-      runJs(`
-        const adapter = window.app.vault.adapter;
-        const files = window.app.vault.getFiles().filter(f => f.path.startsWith('lilbee/_web/') && f.path.endsWith('index.md'));
-        for (const f of files) {
-          const md = await adapter.read(f.path);
-          await adapter.write(f.path, md.replace(/\\[\\[[^\\]]*\\]\\]\\([^)]*\\)/g, ''));
-        }
-      `),
-      { holdMs: 150 },
+      { holdMs: 1200, speedup: 8, maxMs: 600_000 },
     ),
 
     // 3. Ask the just-crawled page a question, then open the citation.

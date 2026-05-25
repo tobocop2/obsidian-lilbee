@@ -98,9 +98,17 @@ export default storyboard("tour", {
 
     // --- 3. Add a file to the corpus ---
     beat(
-      "Open a Notes file in a new tab",
+      "Open the Notes file beside the chat (not over the Task Center)",
       runJs(`
-        await window.app.workspace.openLinkText("Notes/Crown Vic upgrade log.md", '', 'tab');
+        // Open in the chat (centre) group so the file sits beside the Task
+        // Center, never on top of it — the Task Center must stay visible to
+        // show the ingest progress.
+        const app = window.app;
+        const chatLeaf = app.workspace.getLeavesOfType('lilbee-chat')[0];
+        if (chatLeaf) app.workspace.setActiveLeaf(chatLeaf, { focus: true });
+        const file = app.vault.getAbstractFileByPath("Notes/Crown Vic upgrade log.md");
+        const leaf = app.workspace.getLeaf('tab');
+        if (file) await leaf.openFile(file);
         await new Promise(r => setTimeout(r, 250));
       `),
       { holdMs: 900 },

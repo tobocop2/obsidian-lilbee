@@ -11,7 +11,19 @@
  * freshModel uninstalls the model in pre-flight so the pull is a real
  * download on every take (models_dir is shared across vaults).
  */
-import { beat, clickSelector, key, runJs, sleep, storyboard, type_, waitForSelector } from "../src/lib.ts";
+import {
+  beat,
+  clickSelector,
+  clickSend,
+  fillChat,
+  key,
+  runJs,
+  sleep,
+  storyboard,
+  type_,
+  waitChatIdle,
+  waitForSelector,
+} from "../src/lib.ts";
 
 const MODEL_QUERY = "SmolLM2 360M";
 // bartowski's SmolLM2 360M is the canonical, well-formed GGUF. Other repos
@@ -74,10 +86,55 @@ export default storyboard("download_model", {
           await new Promise(r => setTimeout(r, 500));
         }
       `),
-      // SmolLM2 360M is ~0.3GB and pulls in well under a minute; the 6x
-      // speedup keeps the progress bar lively without dead air.
-      { holdMs: 1200, speedup: 6, maxMs: 300_000 },
+      // SmolLM2 360M is ~0.3GB; speed the download segment up hard so the
+      // demo spends its time on the end-to-end payoff (downloading + chatting)
+      // rather than on a progress bar.
+      { holdMs: 800, speedup: 10, maxMs: 300_000 },
     ),
-    beat("Final hold on the completed download", sleep(2200)),
+
+    // End-to-end: now actually use the model we just downloaded. Activate it
+    // as the chat model, switch the panel to Chat mode (pure-LLM, no
+    // retrieval), and ask it something a small instruct model handles well.
+    beat(
+      "Activate the new model and switch to Chat mode",
+      runJs(`
+        const p = window.app.plugins.plugins.lilbee;
+        const base = p.api?.baseUrl ?? p.settings.serverUrl;
+        const h = { Authorization: "Bearer " + (p.api?.token ?? p.settings.manualToken ?? "") };
+        const inst = await fetch(base + "/api/models/installed?task=chat", { headers: h }).then(r => r.json()).catch(() => ({ models: [] }));
+        const smol = (inst.models || []).map(m => m.name).find(n => /SmolLM2-360M/i.test(n));
+        if (smol) {
+          await fetch(base + "/api/models/chat", { method: "PUT", headers: { ...h, "Content-Type": "application/json" }, body: JSON.stringify({ model: smol }) }).catch(() => {});
+          if (typeof p.fetchActiveModel === "function") await p.fetchActiveModel();
+        }
+        const leaves = window.app.workspace.getLeavesOfType('lilbee-chat');
+        for (const leaf of leaves) {
+          window.app.workspace.revealLeaf(leaf);
+          if (leaf.view?.fetchAndFillSelectors) await leaf.view.fetchAndFillSelectors();
+        }
+        await new Promise(r => setTimeout(r, 300));
+        const btns = document.querySelectorAll('.lilbee-chat-mode-btn');
+        if (btns[1]) btns[1].click();
+        const ta = document.querySelector('textarea.lilbee-chat-textarea');
+        if (ta) ta.focus();
+      `),
+      { holdMs: 1200 },
+    ),
+    beat("Ask the new model what it can do", fillChat("What can you do?"), { holdMs: 600 }),
+    beat(
+      "Ensure the question is in the box",
+      runJs(`
+        const ta = document.querySelector('textarea.lilbee-chat-textarea');
+        if (ta && !ta.value.trim()) {
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+          setter.call(ta, "What can you do?");
+          ta.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      `),
+      { holdMs: 300 },
+    ),
+    beat("Send", clickSend(), { holdMs: 600 }),
+    beat("Stream SmolLM2's answer", waitChatIdle(120_000), { holdMs: 1600, speedup: 3 }),
+    beat("Final hold on the answer", sleep(2400)),
   ],
 });

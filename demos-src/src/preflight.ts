@@ -78,13 +78,13 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
   snapshotVaultFiles();
 
   // first_start records a genuine from-scratch install, so it must start
-  // with no trace of lilbee. If a prior run left the plugin installed +
-  // enabled, the opening frames show it preloaded. Disable it and delete
-  // its plugin folder + enabled-list entry — but ONLY in the firststart
-  // vault, never the demo vault (a prior vault mix-up nuked the demo
-  // server). BRAT re-adds lilbee during the demo itself.
+  // with no trace of lilbee OR BRAT — the demo installs BRAT from the
+  // community store and then adds lilbee through it. Disable + delete both
+  // plugin folders + enabled-list entries, but ONLY in the firststart vault,
+  // never the demo vault (a prior vault mix-up nuked the demo server).
   if (opts.noLilbee) {
     const wiped = await ctx.page.evaluate(async () => {
+      const PLUGINS_TO_WIPE = ["lilbee", "obsidian42-brat"];
       const app = (globalThis as unknown as {
         app: {
           vault: { adapter: { basePath: string } };
@@ -99,16 +99,18 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
       if (!vaultPath.includes("firststart")) {
         return { wiped: false, reason: "not the firststart vault", vaultPath };
       }
-      if (app.plugins.enabledPlugins.has("lilbee") || app.plugins.plugins.lilbee) {
-        await app.plugins.disablePluginAndSave("lilbee");
-      }
       const fs = require("node:fs");
       const path = require("node:path");
-      fs.rmSync(path.join(vaultPath, ".obsidian/plugins/lilbee"), { recursive: true, force: true });
+      for (const id of PLUGINS_TO_WIPE) {
+        if (app.plugins.enabledPlugins.has(id) || app.plugins.plugins[id]) {
+          await app.plugins.disablePluginAndSave(id);
+        }
+        fs.rmSync(path.join(vaultPath, ".obsidian/plugins/" + id), { recursive: true, force: true });
+      }
       const cpFile = path.join(vaultPath, ".obsidian/community-plugins.json");
       try {
         const list = JSON.parse(fs.readFileSync(cpFile, "utf8")) as string[];
-        fs.writeFileSync(cpFile, JSON.stringify(list.filter((id) => id !== "lilbee"), null, 2));
+        fs.writeFileSync(cpFile, JSON.stringify(list.filter((id) => !PLUGINS_TO_WIPE.includes(id)), null, 2));
       } catch {
         // No community-plugins.json yet — nothing to prune.
       }
