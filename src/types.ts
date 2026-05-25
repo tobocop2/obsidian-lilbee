@@ -222,6 +222,31 @@ export const SERVER_STATE = {
     ERROR: "error",
 } as const satisfies Record<string, ServerState>;
 
+/**
+ * Progress phases emitted by the managed-server start flow to any observer that
+ * passes an `onProgress` handler — currently the setup wizard, which shows
+ * binary-download and server-startup state inline while the user waits on the
+ * Server step. Lives here (not in main.ts) so leaf views can import the
+ * constant without pulling in the plugin entry point and risking a circular
+ * value import.
+ */
+export type ManagedServerProgressPhase = "downloading" | "starting" | "ready" | "error";
+
+export const MANAGED_PHASE = {
+    DOWNLOADING: "downloading",
+    STARTING: "starting",
+    READY: "ready",
+    ERROR: "error",
+} as const satisfies Record<string, ManagedServerProgressPhase>;
+
+export interface ManagedServerProgress {
+    phase: ManagedServerProgressPhase;
+    message: string;
+    url?: string;
+}
+
+export type ManagedServerProgressHandler = (event: ManagedServerProgress) => void;
+
 export type ServerMode = "managed" | "external";
 
 export const SERVER_MODE = {

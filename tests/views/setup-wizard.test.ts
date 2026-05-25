@@ -414,10 +414,10 @@ describe("SetupWizard", () => {
         });
 
         // The wizard passes a progress handler to startManagedServer so users
-        // see binary download + starting-server phases inline. We simulate the
-        // plugin calling the handler with each phase and assert the label
-        // updates accordingly.
-        it("managed mode: surfaces each progress phase in the progress panel", async () => {
+        // see Downloading → Starting → Ready as three phase rows that light up.
+        // We simulate the plugin firing each phase and assert the rows reach the
+        // ready state before the wizard advances.
+        it("managed mode: surfaces each progress phase in the setup panel", async () => {
             const plugin = makePlugin({ serverManager: null });
             plugin.startManagedServer = vi
                 .fn()
@@ -443,18 +443,59 @@ describe("SetupWizard", () => {
             expect(plugin.startManagedServer).toHaveBeenCalled();
             const callArgs = (plugin.startManagedServer as ReturnType<typeof vi.fn>).mock.calls[0];
             expect(typeof callArgs[0]).toBe("function");
+            const texts = collectTexts(el);
+            expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(true);
         });
 
-        it("managed mode: surfaces error-phase message in progress label", async () => {
+        it("managed mode: shows the active downloading phase and blocks Next", async () => {
             const plugin = makePlugin({ serverManager: null });
+            // Hold the server-start promise open after the downloading event so
+            // we can inspect the in-flight downloading state before it advances.
+            let release: () => void = () => {};
+            const held = new Promise<void>((r) => {
+                release = r;
+            });
+            plugin.startManagedServer = vi
+                .fn()
+                .mockImplementation(async (onProgress?: (e: { phase: string; message: string }) => void) => {
+                    onProgress?.({ phase: "downloading", message: "Downloading…" });
+                    await held;
+                });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const nextBtn = findButtons(el).find((b) => b.textContent === "Next")!;
+            nextBtn.trigger("click");
+            await tick();
+
+            // Downloading phase active, the others still pending, and Next is
+            // disabled — the step is hard-gated until the server is ready.
+            const phases = el.findAll("lilbee-wizard-phase");
+            const downloading = phases.find((p) => p.dataset.phase === "downloading")!;
+            expect(downloading.classList.contains("is-active")).toBe(true);
+            const texts = collectTexts(el);
+            expect(texts.some((t) => t.includes("Downloading lilbee server"))).toBe(true);
+            expect(texts.some((t) => t.includes("Start the server"))).toBe(true);
+            expect(texts.some((t) => t.includes("up to ~1 min"))).toBe(true);
+            expect(texts.some((t) => t.includes("can't continue until the server is ready"))).toBe(true);
+            expect(nextBtn.disabled).toBe(true);
+
+            release();
+            await tick();
+        });
+
+        it("managed mode: error phase blocks advance and surfaces the failure", async () => {
+            const plugin = makePlugin({ serverManager: null });
+            // startManagedServer swallows download/start failures: it emits an
+            // error phase and resolves rather than throwing. The wizard must not
+            // mistake that resolve for a live server and advance.
             plugin.startManagedServer = vi
                 .fn()
                 .mockImplementation(async (onProgress?: (e: { phase: string; message: string }) => void) => {
                     onProgress?.({ phase: "downloading", message: "download failing" });
                     onProgress?.({ phase: "error", message: "binary download failed" });
-                    // Resolve without throwing — the plugin's own code path also
-                    // records the error and continues. The wizard's try/catch only
-                    // triggers on an actual rejection.
                 });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -467,13 +508,35 @@ describe("SetupWizard", () => {
             await tick();
 
             const texts = collectTexts(el);
-            // Because the promise resolved cleanly, the wizard proceeds to
-            // Model step — but the label was updated with the error message
-            // at the moment the error phase fired.
-            expect(plugin.startManagedServer).toHaveBeenCalled();
-            // Either we see the error label or we see the Model step title;
-            // prove the handler forwarded an error-phase event.
-            void texts;
+            // Stayed on the Server step (never reached the model picker) and
+            // surfaced the failure; Next is re-enabled so the user can retry.
+            expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(false);
+            expect(texts.some((t) => t.includes(MESSAGES.ERROR_START_SERVER))).toBe(true);
+            expect(nextBtn.disabled).toBe(false);
+        });
+
+        it("managed mode: error phase with no message falls back to generic failure text", async () => {
+            const plugin = makePlugin({ serverManager: null });
+            plugin.startManagedServer = vi
+                .fn()
+                .mockImplementation(async (onProgress?: (e: { phase: string; message: string }) => void) => {
+                    onProgress?.({ phase: "error", message: "" });
+                });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const nextBtn = findButtons(el).find((b) => b.textContent === "Next")!;
+            nextBtn.trigger("click");
+            await tick();
+            await tick();
+
+            // An empty error message falls back to the generic failure text in
+            // the setup-panel header rather than blanking it.
+            const headText = el.find("lilbee-wizard-setup-head-text")!;
+            expect(headText.textContent).toBe(MESSAGES.ERROR_START_SERVER);
+            expect(nextBtn.disabled).toBe(false);
         });
 
         it("external mode: Next checks health and advances", async () => {
