@@ -81,21 +81,6 @@ export default storyboard("crawl", {
       `),
       { holdMs: 700, speedup: 3 },
     ),
-    // Wikipedia references crawl as [[N]](url), which Obsidian mis-renders
-    // as a broken wikilink plus a literal URL, cluttering the article. Strip
-    // them from the crawled markdown so the cited page reads cleanly.
-    beat(
-      "Tidy the crawled markdown (strip reference-link clutter)",
-      runJs(`
-        const adapter = window.app.vault.adapter;
-        const files = window.app.vault.getFiles().filter(f => f.path.startsWith('lilbee/_web/') && f.path.endsWith('index.md'));
-        for (const f of files) {
-          const md = await adapter.read(f.path);
-          await adapter.write(f.path, md.replace(/\\[\\[[^\\]]*\\]\\]\\([^)]*\\)/g, ''));
-        }
-      `),
-      { holdMs: 150 },
-    ),
     beat("Ask about the 9C1 police package", fillChat(QUESTION), { holdMs: 600 }),
     beat("Send", clickSend(), { holdMs: 600 }),
     beat("Cited answer from the just-crawled page", waitChatIdle(120_000), { holdMs: 1400, speedup: 4 }),
