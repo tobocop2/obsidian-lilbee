@@ -6,13 +6,16 @@ walkthrough frame audit of the final webm (not from intent).
 
 Verdict key: PASS / FAIL / PENDING (not yet re-recorded this round).
 
-All ten re-recorded with the cursor-nudge fix (a 1px move after every
-type/key un-hides the macOS pointer, which auto-hides while keys are
-pressed — that was the disappear/emerge across typing-heavy demos).
+All ten re-recorded with a cursor-free ScreenCaptureKit capture plus a
+synthetic cursor overlay. The avfoundation capture composited the macOS
+hardware cursor, which dropped out during heavy repaints (scrolling lists);
+SCK (showsCursor=false) captures no cursor at all and the recorder draws an
+always-present arrow from the recorded mouse trace. Verified frame-by-frame
+on catalog: the cursor is present in every one of 1579 frames.
 
 ## Universal checks (apply to every demo)
 
-- **C1 cursor**: exactly one cursor, visible (incl. through typing holds, via the nudge), smooth Bezier motion. No teleport, no disappearing, no synthetic/OS overlap.
+- **C1 cursor**: exactly one cursor (the synthetic overlay; capture is cursor-free), present in every frame, smooth Bezier motion. No teleport, no disappearing, no double cursor.
 - **C2 status**: status bar reads as running — single icon, soft green, correct active model. (Exception: multi_vault ends released; first_start starts with no server.)
 - **C3 workspace**: supporting demos show an actively-used vault (explorer + chat + tasks). Only first_start is a fresh install.
 - **C4 no-errors**: no error frames ("unable to load", "No models installed", broken-logo fixation, empty/garbled answer).
@@ -35,7 +38,7 @@ pressed — that was the disappear/emerge across typing-heavy demos).
 
 ## Notes
 
-- **cursor smoothness (all demos)**: the macOS hardware cursor is always composited into the avfoundation capture (the capture_cursor flag is ignored on this Mac, and a background CGDisplayHideCursor doesn't hide it), so a synthetic overlay would double it. The real defect was macOS auto-hiding the pointer while typing. Fix: nudge the cursor 1px after every type/key so it stays visible through the following hold. Verified via consecutive-frame extraction (more rigorous for motion than single screenshots).
+- **cursor smoothness (all demos)**: the real defect was the macOS hardware cursor dropping out of the avfoundation capture during heavy repaints (scrolling lists, animating Task Center). Fix: capture cursor-free with ScreenCaptureKit (showsCursor=false) and overlay a synthetic arrow rendered from the recorded mouse trace, so the cursor is drawn into every output frame and cannot flicker. Verified by extracting all 1579 catalog frames and confirming the arrow is present in each.
 - **crawl 1986**: retrieval-ranking miss (dense reference list + 1987/1989 paragraphs out-ranked the introduction sentence at low top_k). Fixed by widening top_k to 10.
 - **lilbee_on_lilbee / tour README-only**: top_k=1/3 pull an unrelated crawled page via MMR re-selection; top_k=2 dedupes to a README-only citation.
 - **download_model**: swapped Llama 3.2 1B (1.2GB, slow, hit the 240s guard) for SmolLM2 360M (~0.3GB). Also wait for the search results to render before clicking the pull (was clicking a stale card).
@@ -49,3 +52,14 @@ pressed — that was the disappear/emerge across typing-heavy demos).
 - **Less lingering**: 500ms lead-in (was 1500) + ~300ms opening holds, so demos start ~0.8s in.
 - **command_palette**: after crawling the Knowledge_graph page it now asks "what is a knowledge graph?", gets a cited answer, and the citation glides the crawled article down to the Definitions section (was lingering at the top — the matcher had been hitting the page title).
 - **first_start**: the wizard model-picker re-renders asynchronously and stranded the coordinate click; replaced with a polling DOM-click that re-queries until the Qwen3 0.6B card reports selected. Now completes through the first cited chat.
+
+## Round 4 (cursor fix + feedback sweep)
+
+- **Cursor flicker eliminated**: cursor-free ScreenCaptureKit capture + synthetic cursor overlay. Verified present in all 1579 catalog frames (see top note).
+- **⌘P badge**: every palette-opening beat flashes a "⌘P" chip top-centre while the palette is up. Wired into all nine palette demos via a `keyHint` beat option.
+- **add — amber sync-pill**: the pill counts managed files the server doesn't yet know; it only refreshed on vault file events, so it appeared on add but never cleared when the ingest finished. Now also refreshed on task-queue changes (plugin fix + test). Verified `display:none` after ingest.
+- **download_model**: switched from prithivMLmods (its GGUF filename has a stray space the server rejects after downloading) to the well-formed bartowski repo; clicks that card by data-repo. freshModel now uninstalls by deleting the model's manifest+snapshot from the models dir (the HTTP DELETE route can't match slashed names). Verified clean pull to completion.
+- **tour**: starts a real Phi-4 chat-model pull, watches it begin in the Task Center, then cancels it (verified status=cancelled). Was: open the confirm and dismiss.
+- **multi_vault**: reads the picker, filters to a named vault (Research), then switches — a deliberate choice instead of an ambiguous first-card click.
+- **first_start**: preflight uninstalls lilbee with no trace (guarded to the firststart vault) so the opening shows no lilbee plugin UI; BRAT reinstalls it during the demo. Recorded self-driven via vault-aware page selection (vaultMatch).
+- **core Sync red icon**: disabled the unconfigured core Obsidian Sync plugin in the demo + firststart vaults — it was showing a red "Uninitialized" error glyph in the corner.
