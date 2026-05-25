@@ -115,7 +115,9 @@ export async function record(storyboard: Storyboard): Promise<void> {
   process.on("uncaughtException", uncaughtHandler);
   process.on("unhandledRejection", uncaughtHandler);
 
-  const ctx = await connectObsidian(storyboard.vaultMatch);
+  // Default to the demo vault window; first_start overrides to "firststart".
+  // Keeps recordings on the right window when both vaults are open at once.
+  const ctx = await connectObsidian(storyboard.vaultMatch ?? "obsidian-lilbee-demo");
   try {
     // Pre-flight FIRST (we want Obsidian to be in a known state before
     // ffmpeg even sees a frame).
