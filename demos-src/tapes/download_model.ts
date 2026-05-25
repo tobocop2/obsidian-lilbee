@@ -89,14 +89,14 @@ export default storyboard("download_model", {
       // SmolLM2 360M is ~0.3GB; speed the download segment up hard so the
       // demo spends its time on the end-to-end payoff (downloading + chatting)
       // rather than on a progress bar.
-      { holdMs: 800, speedup: 10, maxMs: 300_000 },
+      { holdMs: 800, speedup: 20, maxMs: 300_000 },
     ),
 
     // End-to-end: now actually use the model we just downloaded. Activate it
     // as the chat model, switch the panel to Chat mode (pure-LLM, no
     // retrieval), and ask it something a small instruct model handles well.
     beat(
-      "Activate the new model and switch to Chat mode",
+      "Activate the new model",
       runJs(`
         const p = window.app.plugins.plugins.lilbee;
         const base = p.api?.baseUrl ?? p.settings.serverUrl;
@@ -113,12 +113,16 @@ export default storyboard("download_model", {
           if (leaf.view?.fetchAndFillSelectors) await leaf.view.fetchAndFillSelectors();
         }
         await new Promise(r => setTimeout(r, 300));
-        const btns = document.querySelectorAll('.lilbee-chat-mode-btn');
-        if (btns[1]) btns[1].click();
-        const ta = document.querySelector('textarea.lilbee-chat-textarea');
-        if (ta) ta.focus();
       `),
-      { holdMs: 1200 },
+      { holdMs: 1000 },
+    ),
+    // Switch to Chat mode (pure-LLM, no retrieval) with a real click on the
+    // toggle so the viewer sees it — otherwise the question retrieves the car
+    // manual instead of answering directly.
+    beat(
+      "Click Chat mode in the toggle",
+      clickSelector('.lilbee-chat-mode-btn:text-is("Chat")'),
+      { holdMs: 1000 },
     ),
     beat("Ask the new model what it can do", fillChat("What can you do?"), { holdMs: 600 }),
     beat(

@@ -35,31 +35,31 @@
 <body>
 <header>
   <h1>lilbee demo reel</h1>
-  <p>Recreated 2026-05-24. Cursor-free capture with a synthetic always-present cursor (no flicker, smooth eased motion), a ⌘P badge when the palette opens, minimal opening lingering, soft green "running" status, actively-used vault, no error frames.</p>
+  <p>Recreated 2026-05-25. Standard white macOS cursor (white body, thin dark outline), cursor-free capture with a synthetic always-present pointer (no flicker, smooth eased motion), a ⌘P badge when the palette opens, minimal opening lingering, soft green "running" status, actively-used vault, no error frames.</p>
 </header>
 <main id="demos"></main>
 <script>
   const demos = [
     { name: "tour", fresh: true,
-      desc: "A walk through every surface: file explorer, the model catalog (fast flick through the lists), starting a model download and cancelling it from the Task Center, adding a file, a README-only cited “what is lilbee” answer, and settings." },
+      desc: "The palette as an async control surface: fire a crawl, a file add, and a model download back to back without waiting, watch all three run at once in the Task Center (the crawl's first-run browser setup included), then ask the just-crawled page a cited question." },
     { name: "lilbee_on_lilbee", fresh: true,
       desc: "Ask “What is lilbee in one sentence?” — a README-only cited answer, then the citation opens the README and scrolls down to the Offline-copies-of-websites GIF." },
     { name: "add", fresh: true,
       desc: "Cleared Task Center, then add the Crown Victoria owner’s manual and ask a towing question; the citation opens the manual at the cited page (p.173)." },
     { name: "crawl", fresh: true,
       desc: "Cleared Task Center, then crawl the Caprice Wikipedia page and ask when the 9C1 package was introduced — the answer states 1986 and the citation jumps to the 9C1 section." },
+    { name: "vision", fresh: true,
+      desc: "A scanned, image-only PDF (the Star Wars X-Wing pilot manual) read by a local vision model. The Task Center streams the OCR page by page through LightOnOCR, then a cited answer reads the manual's technical-support phone number and publisher straight off the scanned cover — a detail only OCR could surface." },
     { name: "catalog", fresh: true,
       desc: "Fast flick down each model list — Chat / Embed / Vision / Rerank — to show how many models there are (infinite scroll), then a direct search." },
     { name: "download_model", fresh: true,
-      desc: "Search the catalog for SmolLM2 360M and watch the download stream start-to-finish in the Task Center." },
-    { name: "command_palette", fresh: true,
-      desc: "Reach lilbee through the palette: open settings, crawl the Knowledge_graph page, then ask what a knowledge graph is and open the citation, scrolling the crawled article to the Definitions section." },
+      desc: "End to end: search the catalog for SmolLM2 360M, watch the download stream start-to-finish in the Task Center, then activate it, switch to Chat mode, and ask it what it can do." },
     { name: "settings", fresh: true,
       desc: "Open lilbee settings via the palette and scroll the full surface, top to bottom through the Advanced section." },
-    { name: "first_start", fresh: true,
-      desc: "From-scratch install: BRAT → enable lilbee → the setup wizard (server + model) → the first cited chat answer." },
-    { name: "multi_vault", fresh: true,
-      desc: "An active vault running Qwen3 8B → the picker showing three registered vaults to choose from → switch → the released state." },
+    { name: "first_start", fresh: false, noVideo: true,
+      desc: "From-scratch install: BRAT → enable lilbee → the setup wizard (server + model download) → the first cited chat answer. Recording is paused pending first-run UX work (filed as beads): the wizard's managed-server step needs to hard-block until the server is ready with clear progress, the chat-after-fresh-download race needs fixing, and the default chat/Task Center layout needs sensible defaults. A target UX mockup is at ~/lilbee-wizard-server-setup-preview.html." },
+    { name: "multi_vault", fresh: false, noVideo: true,
+      desc: "Pending the vault-switch rework: a manual vault picker is the wrong model. lilbee should follow whichever vault Obsidian has open. Holding the re-record until that architecture lands." },
   ];
   const main = document.getElementById("demos");
   let lastFresh = null;
@@ -67,7 +67,7 @@
     if (d.fresh !== lastFresh) {
       const lab = document.createElement("div");
       lab.className = "section-label";
-      lab.textContent = d.fresh ? "Recreated to the blueprint" : "Pending recreation (vault switch)";
+      lab.textContent = d.fresh ? "Re-rendered with the white cursor" : "Pending re-record";
       main.appendChild(lab);
       lastFresh = d.fresh;
     }
@@ -76,11 +76,11 @@
     el.innerHTML = `
       <div class="demo-head">
         <h2><span class="num">${String(i + 1).padStart(2, "0")}</span>${d.name}
-          <span class="badge ${d.fresh ? "new" : "old"}">${d.fresh ? "updated" : "older"}</span></h2>
-        <span class="meta">${d.name}.webm</span>
+          <span class="badge ${d.fresh ? "new" : "old"}">${d.fresh ? "updated" : "pending"}</span></h2>
+        <span class="meta">${d.noVideo ? "no recording yet" : d.name + ".webm"}</span>
       </div>
       <p class="desc">${d.desc}</p>
-      <video src="./${d.name}.webm" controls loop muted preload="metadata" playsinline></video>`;
+      ${d.noVideo ? "" : `<video src="./${d.name}.webm" controls loop muted preload="metadata" playsinline></video>`}`;
     main.appendChild(el);
   });
 </script>

@@ -8,7 +8,7 @@
  * documents pending sync, so the single status icon is in its
  * actionable sync-prompt state and clicking it would start a sync.
  */
-import { beat, clickSelector, key, runJs, sleep, storyboard, type_, wheelScroll } from "../src/lib.ts";
+import { beat, key, runJs, sleep, storyboard, type_, wheelScroll } from "../src/lib.ts";
 
 const SETTINGS_PANE = ".vertical-tab-content";
 
@@ -19,7 +19,10 @@ export default storyboard("settings", {
   beats: [
     beat("Opening hold (short)", sleep(400)),
 
-    // Open Obsidian settings via the palette, then click the lilbee tab.
+    // Open Obsidian settings via the palette (⌘P badge shows the shortcut),
+    // then select the lilbee tab. The tab is selected programmatically — no
+    // cursor detour to the nav corner — so the only visible motion is the
+    // natural scroll through the lilbee settings that follows.
     beat(
       "Open the command palette",
       runJs(`window.app.commands.executeCommandById("command-palette:open");`),
@@ -27,9 +30,15 @@ export default storyboard("settings", {
     ),
     beat('Type "Open settings"', type_("Open settings"), { holdMs: 1000 }),
     beat("Open settings", key("enter"), { holdMs: 1000 }),
-    beat("Click the lilbee tab in the settings nav", clickSelector('.vertical-tab-nav-item:text-is("lilbee")'), {
-      holdMs: 900,
-    }),
+    beat(
+      "Open the lilbee settings tab",
+      runJs(`
+        const tab = Array.from(document.querySelectorAll('.vertical-tab-nav-item'))
+          .find(el => /^lilbee$/i.test((el.textContent || '').trim()));
+        if (tab) tab.click();
+      `),
+      { holdMs: 900 },
+    ),
 
     beat(
       "Expand every collapsible section so scrolling reveals all controls",

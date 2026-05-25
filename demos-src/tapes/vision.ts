@@ -96,7 +96,7 @@ export default storyboard("vision", {
           await new Promise(r => setTimeout(r, 500));
         }
       `),
-      { holdMs: 1800, speedup: 12, maxMs: 600_000 },
+      { holdMs: 1800, speedup: 24, maxMs: 600_000 },
     ),
 
     // Ask a question only answerable from the OCR'd pages.
