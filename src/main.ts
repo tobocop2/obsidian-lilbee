@@ -1914,12 +1914,18 @@ export default class LilbeePlugin extends Plugin {
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 switch (event.event) {
                     case SSE_EVENT.SETUP_START: {
-                        if (setupTaskId !== null) break;
-                        setupTaskId = this.taskQueue.enqueue("Chromium setup", TASK_TYPE.SETUP);
+                        // Always surface the preparing-crawler stage on the crawl task —
+                        // covers both the Chromium download and the first-run browser warmup.
                         this.taskQueue.update(taskId, -1, MESSAGES.STATUS_TASK_CRAWLER_PREPARING);
-                        if (setupTaskId !== null) {
-                            const d = event.data as SetupStartPayload;
-                            this.taskQueue.update(setupTaskId, 0, formatSetupDetail(0, d.size_estimate_bytes));
+                        // Only track a separate download sub-task for a real install (one
+                        // with a size estimate). The browser warmup has none and would
+                        // otherwise show a misleading "0 MB" download.
+                        const d = event.data as SetupStartPayload;
+                        if (d.size_estimate_bytes && setupTaskId === null) {
+                            setupTaskId = this.taskQueue.enqueue("Chromium setup", TASK_TYPE.SETUP);
+                            if (setupTaskId !== null) {
+                                this.taskQueue.update(setupTaskId, 0, formatSetupDetail(0, d.size_estimate_bytes));
+                            }
                         }
                         break;
                     }
