@@ -11,7 +11,7 @@
  * Fails loud with a specific message if any assertion fails — no
  * silently driving against a wrong state.
  */
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -234,19 +234,20 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
   // 4b. Fresh-model cleanup: uninstall the named model so a download demo
   // triggers a real pull every take (models_dir is global, so an install
   // from a prior take would otherwise short-circuit the download).
+  //
+  // The HTTP DELETE route is {model:str}, so it can't match a slashed repo
+  // name (bartowski/SmolLM2-360M-Instruct-GGUF) — both repo and full-name
+  // deletes 404. Remove the model's files from the global models dir
+  // directly instead; the server reads the manifests dir to decide what's
+  // installed, so dropping the manifest + snapshot flips it to not-installed
+  // on the next catalog read.
   if (opts.freshModel) {
-    await ctx.page.evaluate(
-      async ([repo]) => {
-        const p = (globalThis as unknown as { app: { plugins: { plugins: { lilbee: { settings: { serverUrl: string; manualToken?: string }; api?: { baseUrl: string; token?: string | null } } } } } }).app.plugins.plugins.lilbee;
-        const base = p.api?.baseUrl ?? p.settings.serverUrl;
-        const tok = p.api?.token ?? p.settings.manualToken ?? "";
-        await fetch(base + "/api/models/" + encodeURIComponent(repo) + "?source=native", {
-          method: "DELETE",
-          headers: { Authorization: "Bearer " + tok },
-        }).catch(() => {});
-      },
-      [opts.freshModel] as const,
-    );
+    const modelsDir = process.env.LILBEE_MODELS_DIR ?? join(homedir(), "Library/Application Support/lilbee/models");
+    const slug = opts.freshModel.replace(/\//g, "--");
+    for (const sub of [`manifests/${slug}`, `models--${slug}`, `.locks/models--${slug}`]) {
+      rmSync(join(modelsDir, sub), { recursive: true, force: true });
+    }
+    console.log(`pre-flight: freshModel removed files for ${opts.freshModel}`);
   }
 
   // 5. Apply layout
