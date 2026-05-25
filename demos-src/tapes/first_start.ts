@@ -300,6 +300,26 @@ export default storyboard("first_start", {
       `),
       { holdMs: 1500, speedup: 4 },
     ),
+    // Pick a small embedding model that the demo isn't already running
+    // (embeddinggemma 300m), so the next step is a real download the viewer
+    // sees stream. Poll + re-query like the chat picker so a re-render can't
+    // strand the click; fall back to the wizard default if the card is absent.
+    beat(
+      "Select the embeddinggemma embedding model",
+      runJs(`
+        for (let i = 0; i < 180; i++) {
+          const card = document.querySelector('.lilbee-wizard-models [data-repo*="embeddinggemma"]');
+          if (card) {
+            card.scrollIntoView({ block: 'center', behavior: 'instant' });
+            card.click();
+            await new Promise(r => setTimeout(r, 250));
+            if (document.querySelector('.lilbee-wizard-models [data-repo*="embeddinggemma"].is-selected')) return;
+          }
+          await new Promise(r => setTimeout(r, 400));
+        }
+      `),
+      { holdMs: 1000, speedup: 3 },
+    ),
     ...wizardStep("Embedding picker -> Continue (embedding model downloads)"),
     beat(
       "Wait for embedding model download to land us on the next step",
