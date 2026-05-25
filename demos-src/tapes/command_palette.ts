@@ -1,17 +1,22 @@
 /**
- * command_palette demo: reach lilbee through the command palette, then
- * show the payoff of a crawl.
+ * command_palette demo: the palette is the async control surface for lilbee.
  *
- *   1. Open lilbee settings (Cmd-P + Open settings + click lilbee tab)
- *   2. Crawl a web page (Cmd-P + Crawl web page + paste URL + run it)
- *   3. Ask the just-crawled page a question — a cited answer, then the
- *      citation opens the crawled article at the relevant section.
+ * Fire three long-running jobs back to back, each through the visible palette
+ * flow, without waiting for any of them to finish:
  *
- * Every command activation goes through the visible palette flow.
+ *   1. Crawl a web page          (Crawl web page + URL)
+ *   2. Add the open file         (Add current file)
+ *   3. Download a model          (Browse model catalog + pull SmolLM2 360M)
+ *
+ * The Task Center then shows all three running at once — a crawl, an ingest,
+ * and a download in parallel — which is the point: the GUI never blocks. Once
+ * they settle, ask the just-crawled page a question for a cited answer.
+ *
+ * Recorded with the browser cache wiped, so the crawl's first-run Chromium
+ * setup is one of the visible Task Center jobs.
  */
 import {
   beat,
-  clickChip,
   clickSelector,
   clickSend,
   fillChat,
@@ -20,18 +25,25 @@ import {
   sleep,
   storyboard,
   type_,
+  waitForSelector,
 } from "../src/lib.ts";
 
-const SAMPLE_URL = "https://en.wikipedia.org/wiki/Knowledge_graph";
+const CRAWL_URL = "https://en.wikipedia.org/wiki/Knowledge_graph";
+const ADD_FILE = "Notes/Crown Vic upgrade log.md";
 const QUESTION = "What is a knowledge graph?";
 
-const palette = (label: string, query: string, holdAfter = 1100) => [
+// Small, well-formed GGUF so the parallel download is real but short.
+const MODEL_QUERY = "SmolLM2 360M";
+const MODEL_REPO = "bartowski/SmolLM2-360M-Instruct-GGUF";
+const MODEL_CARD = `.lilbee-model-card[data-repo="${MODEL_REPO}"]`;
+
+const palette = (label: string, query: string, holdAfter = 1000) => [
   beat(
     `Open the command palette (${label})`,
     runJs(`window.app.commands.executeCommandById("command-palette:open");`),
     { holdMs: 500, keyHint: "⌘P" },
   ),
-  beat(`Type "${query}"`, type_(query), { holdMs: 1100 }),
+  beat(`Type "${query}"`, type_(query), { holdMs: 1000 }),
   beat(`Run ${label}`, key("enter"), { holdMs: holdAfter }),
 ];
 
@@ -39,59 +51,77 @@ export default storyboard("command_palette", {
   window: [1400, 900],
   layout: "explorer-chat-tasks",
   preloadChatModel: true,
-  clearTaskCenter: false,
+  clearTaskCenter: true,
   clearChat: true,
-  // The crawled Knowledge_graph page is stored as index.md under
-  // lilbee/_web/.../Knowledge_graph/ — drop it so the crawl is fresh.
-  freshIngest: ["index.md"],
+  // Drop the crawled page and the add target so both are real jobs, and
+  // remove the model so the pull is a real download.
+  freshIngest: ["index.md", "Crown Vic upgrade log.md"],
+  freshModel: MODEL_REPO,
   beats: [
-    beat("Opening hold on the chat panel", sleep(300)),
+    beat("Opening hold on the chat + Task Center", sleep(300)),
 
-    // 1. Open settings via palette, then click the lilbee tab.
-    ...palette("Open settings", "Open settings", 1300),
+    // Open the file we'll add, beside the chat (never over the Task Center).
     beat(
-      "Click the lilbee tab in the settings nav",
-      clickSelector('.vertical-tab-nav-item:text-is("lilbee")'),
-      { holdMs: 1500 },
+      "Open a note to add, beside the chat",
+      runJs(`
+        const app = window.app;
+        const chatLeaf = app.workspace.getLeavesOfType('lilbee-chat')[0];
+        if (chatLeaf) app.workspace.setActiveLeaf(chatLeaf, { focus: true });
+        const file = app.vault.getAbstractFileByPath(${JSON.stringify(ADD_FILE)});
+        const leaf = app.workspace.getLeaf('tab');
+        if (file) await leaf.openFile(file);
+        await new Promise(r => setTimeout(r, 250));
+      `),
+      { holdMs: 700 },
     ),
-    beat("Close settings", key("escape"), { holdMs: 600 }),
 
-    // 2. Crawl a web page via palette: paste a URL, run it, watch the
-    // crawl + sync land in the Task Center.
-    ...palette("Crawl web page", "Crawl web page", 1000),
+    // --- Job 1: crawl a web page (cold run also pulls Chromium) ---
+    ...palette("Crawl web page", "Crawl web page", 900),
     beat(
-      "Paste a URL into the crawl modal",
+      "Paste the URL into the crawl modal",
       runJs(`
         const input = document.querySelector('input.lilbee-crawl-url');
         if (input) {
           const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-          setter.call(input, ${JSON.stringify(SAMPLE_URL)});
+          setter.call(input, ${JSON.stringify(CRAWL_URL)});
           input.dispatchEvent(new Event('input', { bubbles: true }));
         }
       `),
-      { holdMs: 1100 },
+      { holdMs: 900 },
     ),
     beat("Click Crawl", clickSelector('.modal-container button.mod-cta:has-text("Crawl")'), { holdMs: 1000 }),
-    // On a first-ever crawl this also covers the one-time Playwright/Chromium
-    // download + browser warmup (surfaced in the Task Center as a "Chromium
-    // setup" task), which can run a couple of minutes — heavy speedup keeps
-    // the reel tight while still showing it happen.
+
+    // --- Job 2: add the open file, without waiting for the crawl ---
+    ...palette("Add current file", "Add current file", 900),
+
+    // --- Job 3: download a model, again without waiting ---
+    ...palette("Browse model catalog", "Browse model catalog", 1000),
+    beat("Click the catalog search", clickSelector("input.lilbee-catalog-search"), { holdMs: 400 }),
+    beat("Search for the model", type_(MODEL_QUERY), { holdMs: 1200 }),
+    beat("Wait for the model card", waitForSelector(MODEL_CARD), { holdMs: 600 }),
+    beat("Click Download on the card", clickSelector(`${MODEL_CARD} .lilbee-catalog-pull`), { holdMs: 1000 }),
+    beat("Confirm the download", clickSelector(".lilbee-confirm-pull-actions button.mod-cta"), { holdMs: 900 }),
+    beat("Close the catalog so the Task Center is in view", key("escape"), { holdMs: 1000 }),
+
+    // The money shot: a crawl (with first-run browser setup), an ingest, and
+    // a download all running at once. Hold while they progress, sped up so
+    // the parallelism reads without the reel dragging.
     beat(
-      "Watch the first-run browser setup + crawl + sync in the Task Center",
+      "Three jobs run in parallel in the Task Center",
       runJs(`
         const tq = window.app.plugins.plugins.lilbee.taskQueue;
         let sawActive = false;
-        for (let i = 0; i < 600; i++) {
+        for (let i = 0; i < 900; i++) {
           const busy = tq.activeAll.length + tq.queued.length;
           if (busy > 0) sawActive = true;
           if (sawActive && busy === 0) return;
           await new Promise(r => setTimeout(r, 500));
         }
       `),
-      { holdMs: 1200, speedup: 8, maxMs: 600_000 },
+      { holdMs: 1600, speedup: 10, maxMs: 600_000 },
     ),
 
-    // 3. Ask the just-crawled page a question, then open the citation.
+    // Now use the page the crawl just fetched: a cited answer.
     beat(
       "Activate a clean chat panel",
       runJs(`
@@ -117,60 +147,22 @@ export default storyboard("command_palette", {
       { holdMs: 300 },
     ),
     beat("Send", clickSend(), { holdMs: 600 }),
-    beat("Cited answer from the just-crawled page", runJs(`
-      const send = document.querySelector('.lilbee-chat-send');
-      for (let i = 0; i < 240; i++) {
-        const t = (send?.textContent || '').toLowerCase();
-        if (t.includes('send') && i > 4) return;
-        await new Promise(r => setTimeout(r, 500));
-      }
-    `), { holdMs: 1400, speedup: 4, maxMs: 180_000 }),
+    beat(
+      "Cited answer from the just-crawled page",
+      runJs(`
+        const send = document.querySelector('.lilbee-chat-send');
+        for (let i = 0; i < 240; i++) {
+          const t = (send?.textContent || '').toLowerCase();
+          if (t.includes('send') && i > 4) return;
+          await new Promise(r => setTimeout(r, 500));
+        }
+      `),
+      { holdMs: 1400, speedup: 4, maxMs: 180_000 },
+    ),
     beat(
       "Expand sources",
       runJs(`document.querySelectorAll('.lilbee-chat-sources details').forEach(d => d.open = true);`),
-      { holdMs: 400 },
+      { holdMs: 1800 },
     ),
-    // Park the cursor in the source pane's empty right margin so it never
-    // dwells on one of the article's links while it scrolls.
-    beat("Click the citation to open the source", clickChip(0), { holdMs: 1000, cursorParkTo: [1245, 520] }),
-    beat(
-      "Render the crawled article in reading mode",
-      runJs(`
-        const leaf = window.app.workspace.activeLeaf;
-        if (leaf && leaf.view?.getViewType?.() === 'markdown') {
-          const s = leaf.getViewState();
-          s.state = { ...s.state, mode: 'preview' };
-          await leaf.setViewState(s);
-        }
-        await new Promise(r => setTimeout(r, 500));
-      `),
-      { holdMs: 700 },
-    ),
-    // Glide down through the crawled article (not a jump that lingers at
-    // the top) and land on the Definitions section — the part that
-    // answers "what is a knowledge graph?". Reading mode lazy-renders, so
-    // applyScroll(line) in paused steps reliably renders + scrolls.
-    beat(
-      "Scroll down through the crawled article to the Definitions section",
-      runJs(`
-        const view = window.app.workspace.activeLeaf?.view;
-        if (view?.file && view.currentMode?.applyScroll) {
-          const lines = (await window.app.vault.read(view.file)).split('\\n');
-          let target = lines.findIndex((l) => /^#{1,6}\\s+definitions/i.test(l));
-          if (target < 0) target = lines.findIndex((l) => /^#{1,6}\\s+history/i.test(l));
-          if (target < 0) target = lines.findIndex((l, i) => i > 60 && /^##\\s/.test(l));
-          if (target >= 0) {
-            const steps = 4;
-            for (let i = 1; i < steps; i++) {
-              view.currentMode.applyScroll(Math.round((target * i) / steps));
-              await new Promise(r => setTimeout(r, 1300));
-            }
-            view.currentMode.applyScroll(target);
-          }
-        }
-      `),
-      { holdMs: 3000 },
-    ),
-    beat("Close the source", key("escape"), { holdMs: 500 }),
   ],
 });
