@@ -19,6 +19,7 @@ import {
   clickSelector,
   fillChat,
   clickSend,
+  clickChip,
   key,
   runJs,
   sleep,
@@ -29,7 +30,9 @@ import {
 
 const GITHUB_REPO = "tobocop2/obsidian-lilbee";
 const SMALL_MODEL_REPO = "Qwen/Qwen3-0.6B-GGUF";
-const QUESTION = "What is lilbee?";
+// One-sentence framing keeps the freshly downloaded small chat model (Qwen3
+// 0.6B) on a task it handles well: a concise, grounded summary off the README.
+const QUESTION = "What is lilbee in one sentence?";
 
 // Advance the wizard by mouse-clicking the step's primary CTA. Every
 // wizard step renders exactly one `.lilbee-wizard-actions button.mod-cta`
@@ -435,8 +438,30 @@ export default storyboard("first_start", {
     beat(
       "Expand sources",
       runJs(`document.querySelectorAll('.lilbee-chat-sources details').forEach(d => d.open = true);`),
-      { holdMs: 400 },
+      { holdMs: 800 },
     ),
-    beat("Final hold on the first cited answer", sleep(2400)),
+    // Close the loop: jump to the citation, open the README it cites, scroll
+    // down into the body, and linger so the cited passage is the last thing
+    // on screen. Park the cursor off the links while it scrolls.
+    beat("Jump to the citation", clickChip(0), { holdMs: 1200, cursorParkTo: [1245, 520] }),
+    beat(
+      "Render the cited README and scroll down into the body",
+      runJs(`
+        const leaf = window.app.workspace.activeLeaf;
+        if (leaf && leaf.view?.getViewType?.() === 'markdown') {
+          const s = leaf.getViewState();
+          s.state = { ...s.state, mode: 'preview' };
+          await leaf.setViewState(s);
+          await new Promise(r => setTimeout(r, 400));
+          // The top logo SVG renders broken in Obsidian; scroll down past it
+          // so the view lands on real README prose.
+          const root = leaf.containerEl ?? document.querySelector('.workspace-leaf.mod-active');
+          const sc = root?.querySelector('.markdown-preview-view') ?? root?.querySelector('.markdown-reading-view');
+          if (sc) sc.scrollTo({ top: (sc.clientHeight || 700) * 1.1, behavior: 'smooth' });
+        }
+      `),
+      { holdMs: 2600 },
+    ),
+    beat("Linger on the cited passage", sleep(2600)),
   ],
 });
