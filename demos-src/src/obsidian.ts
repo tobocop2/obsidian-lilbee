@@ -16,19 +16,31 @@ export type ObsidianContext = {
   windowOrigin: { x: number; y: number };
 };
 
-export async function connectObsidian(): Promise<ObsidianContext> {
+export async function connectObsidian(vaultMatch?: string): Promise<ObsidianContext> {
   const browser = await chromium.connectOverCDP(CDP_URL);
+  // When more than one Obsidian window is open (e.g. the demo vault plus the
+  // firststart vault), vaultMatch picks the window whose vault path contains
+  // the substring. Without it, take the first Obsidian window.
   for (const ctx of browser.contexts()) {
     for (const page of ctx.pages()) {
       const title = await page.title();
-      if (title.includes("Obsidian")) {
-        const windowOrigin = await page.evaluate(() => ({ x: window.screenX, y: window.screenY }));
-        return { browser, page, windowOrigin };
+      if (!title.includes("Obsidian")) continue;
+      if (vaultMatch) {
+        const basePath = await page
+          .evaluate(() => (globalThis as unknown as { app?: { vault?: { adapter?: { basePath?: string } } } }).app?.vault?.adapter?.basePath ?? "")
+          .catch(() => "");
+        if (!basePath.includes(vaultMatch)) continue;
       }
+      const windowOrigin = await page.evaluate(() => ({ x: window.screenX, y: window.screenY }));
+      return { browser, page, windowOrigin };
     }
   }
   await browser.close();
-  throw new Error("No Obsidian window found on CDP. Launch with --remote-debugging-port=9222.");
+  throw new Error(
+    vaultMatch
+      ? `No Obsidian window for vault matching "${vaultMatch}" found on CDP. Open that vault (remote-debugging on 9222).`
+      : "No Obsidian window found on CDP. Launch with --remote-debugging-port=9222.",
+  );
 }
 
 /** Resolve a CSS selector to a screen-coord click target.

@@ -63,6 +63,9 @@ export default storyboard("first_start", {
   layout: "blank",
   preloadChatModel: false,
   noLilbee: true,
+  // The demo vault window is also open on the same CDP endpoint; target the
+  // firststart vault window explicitly.
+  vaultMatch: "firststart",
   caption: "Recorded on a 2021 M1 Pro, 32 GB RAM.",
   beats: [
     beat("Opening hold on a fresh empty vault", sleep(400)),

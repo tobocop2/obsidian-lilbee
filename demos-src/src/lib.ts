@@ -84,6 +84,10 @@ export type Storyboard = {
   skipModelPin?: boolean;
   /** Demo runs in a vault without lilbee installed (first_start). Skip pre-flight. */
   noLilbee?: boolean;
+  /** When several Obsidian windows are open, pick the one whose vault path
+   * contains this substring (first_start records in the firststart vault
+   * while the demo vault window is also open). */
+  vaultMatch?: string;
   /** Apply a global PTS speedup to the final webm. 2 = 2x faster. */
   postSpeedup?: number;
   /** Optional caption overlay drawn at the top-right of the final webm. */
@@ -105,7 +109,9 @@ export type StoryboardOptions = {
   clearTaskCenter?: boolean;
   clearChat?: boolean;
   preloadChatModel?: boolean;
+  skipModelPin?: boolean;
   noLilbee?: boolean;
+  vaultMatch?: string;
   postSpeedup?: number;
   caption?: string;
   moneyShotBeatIndex?: number;
@@ -125,6 +131,7 @@ export function storyboard(name: string, opts: StoryboardOptions): Storyboard {
     preloadChatModel: opts.preloadChatModel,
     skipModelPin: opts.skipModelPin,
     noLilbee: opts.noLilbee,
+    vaultMatch: opts.vaultMatch,
     postSpeedup: opts.postSpeedup,
     caption: opts.caption,
     moneyShotBeatIndex: opts.moneyShotBeatIndex,
