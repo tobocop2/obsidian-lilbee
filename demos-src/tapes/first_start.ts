@@ -77,9 +77,9 @@ export default storyboard("first_start", {
     // Open settings via the gear icon so the viewer sees how a normal
     // user gets there, not by command-palette mystery.
     beat(
-      "Open settings via the command palette",
+      "Open settings",
       runJs(`window.app.commands.executeCommandById("app:open-settings");`),
-      { holdMs: 1100 },
+      { holdMs: 1100, keyHint: "⌘," },
     ),
     beat(
       "Click Community plugins in the settings tab list",
@@ -206,7 +206,7 @@ export default storyboard("first_start", {
     beat(
       "Open settings again",
       runJs(`window.app.commands.executeCommandById("app:open-settings");`),
-      { holdMs: 1000 },
+      { holdMs: 1000, keyHint: "⌘," },
     ),
     beat(
       "Click Community plugins",
