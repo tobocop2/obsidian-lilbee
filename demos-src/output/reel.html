@@ -57,9 +57,9 @@
     { name: "settings", fresh: true,
       desc: "Open lilbee settings via the palette and scroll the full surface, top to bottom through the Advanced section." },
     { name: "first_start", fresh: false, noVideo: true,
-      desc: "From-scratch install: BRAT → enable lilbee → the setup wizard (server + model download) → the first cited chat answer. Recording is paused pending first-run UX work (filed as beads): the wizard's managed-server step needs to hard-block until the server is ready with clear progress, the chat-after-fresh-download race needs fixing, and the default chat/Task Center layout needs sensible defaults. A target UX mockup is at ~/lilbee-wizard-server-setup-preview.html." },
+      desc: "From-scratch install: BRAT → enable lilbee → the setup wizard → first cited chat. The wizard (now fixed) walks fully — server mode, model pick, the Qwen3 0.6B + embeddinggemma downloads, sync, done — but the managed server ends with no usable chat model (the picked model isn't landing on disk / only an unusable alias registers), so the first chat 500s. Blocked on that managed-mode model-pull bug, not the wizard." },
     { name: "multi_vault", fresh: false, noVideo: true,
-      desc: "Pending the vault-switch rework: a manual vault picker is the wrong model. lilbee should follow whichever vault Obsidian has open. Holding the re-record until that architecture lands." },
+      desc: "Being rewritten for the new model (#101): the cross-vault switcher is gone — lilbee now follows whichever vault Obsidian has open. The old switcher tape is dead; the new demo shows lilbee re-targeting as the open vault changes. Recording next on the open-vault-authoritative build." },
   ];
   const main = document.getElementById("demos");
   let lastFresh = null;
