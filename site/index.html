@@ -13,7 +13,7 @@
 <meta property="og:title" content="lilbee for Obsidian: a local search engine for your vault">
 <meta property="og:description" content="Ask your Obsidian vault questions in plain English (notes, PDFs, ebooks, code, scans, 150+ file types) and get answers with the source one click away. Runs on your computer; cloud models optional.">
 <meta property="og:url" content="https://obsidian.lilbee.sh/">
-<meta property="og:image" content="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/chat.contact.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.contact.png">
 <meta property="og:image:alt" content="lilbee for Obsidian: a cited answer from a vault note, shown inside Obsidian">
 
 <!-- SoftwareApplication JSON-LD: tells search engines what this is. -->
@@ -63,9 +63,92 @@
  / _|___ _ _   / _ \| |__ __(_)__| (_)__ _ _ _
 |  _/ _ \ '_| | (_) | '_ (_-&lt; / _` | / _` | ' \
 |_| \___/_|    \___/|_.__/__/_\__,_|_\__,_|_||_|</pre>
-      <p class="tagline">Obsidian's interface to <strong><a href="https://lilbee.sh/">lilbee</a></strong>: a local search engine for your vault.</p>
+      <h1 class="tagline">Obsidian's interface to <strong><a href="https://lilbee.sh/">lilbee</a></strong>: a local search engine for your vault.</h1>
       <p class="sub">Ask questions about anything in your vault (notes, PDFs, ebooks, code, scans, <strong>150+ file types</strong> in all) and get answers with the source one click away.</p>
+      <div class="surfaces">
+        <span class="surfaces-label">one plugin, inside obsidian</span>
+        <span class="surface">chat sidebar</span>
+        <span class="surface">cited answers</span>
+        <span class="surface">source preview</span>
+        <span class="surface">model catalog</span>
+        <span class="surface">auto wiki</span>
+      </div>
       <p class="trust"><strong>Everything runs on your computer.</strong> Your notes stay in your vault; nothing leaves unless you ask it to. Cloud models are optional, and only when you choose one.</p>
+    </section>
+
+    <section>
+      <div class="label">see it</div>
+
+      <div class="reel">
+        <div class="reeltabs" role="tablist" aria-label="Demo reel">
+          <button type="button" class="reeltab" role="tab" id="reel-tab-onlilbee" aria-controls="reel-pane-onlilbee" aria-selected="true"  tabindex="0">what is lilbee</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-ask"      aria-controls="reel-pane-ask"      aria-selected="false" tabindex="-1">ask &amp; cite</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-crawl"    aria-controls="reel-pane-crawl"    aria-selected="false" tabindex="-1">crawl</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-vision"   aria-controls="reel-pane-vision"   aria-selected="false" tabindex="-1">scanned PDF</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-catalog"  aria-controls="reel-pane-catalog"  aria-selected="false" tabindex="-1">catalog</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-download"  aria-controls="reel-pane-download"  aria-selected="false" tabindex="-1">download a model</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-settings" aria-controls="reel-pane-settings" aria-selected="false" tabindex="-1">settings</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-tour"     aria-controls="reel-pane-tour"     aria-selected="false" tabindex="-1">tour</button>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-onlilbee" aria-labelledby="reel-tab-onlilbee">
+          <div class="reel-frame">
+            <img alt="index the lilbee README, then ask what lilbee is and get a cited answer" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.gif">
+          </div>
+          <p class="reel-caption">Add the lilbee README to your library, then ask <em>what is lilbee in one sentence?</em>, get a cited answer, and click the citation to open the README at the source.</p>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-ask" aria-labelledby="reel-tab-ask" hidden>
+          <div class="reel-frame">
+            <img alt="add files to the vault, watch the Task Center, then ask a cited question" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/add.gif">
+          </div>
+          <p class="reel-caption">Add a PDF from the command palette, watch the Task Center index it, then ask a question and get a cited answer. Click the citation and the <em>source preview</em> opens at the exact page.</p>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-crawl" aria-labelledby="reel-tab-crawl" hidden>
+          <div class="reel-frame">
+            <img alt="crawl a Wikipedia page into the vault, then ask a cited question about it" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl.gif">
+          </div>
+          <p class="reel-caption">Crawl a Wikipedia page into your vault, ask when the 9C1 police package was introduced, and jump from the citation straight to the cited section of the rendered source.</p>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-vision" aria-labelledby="reel-tab-vision" hidden>
+          <div class="reel-frame">
+            <img alt="a scanned, image-only PDF read by a local vision model, OCR streaming page by page, then a cited answer off the scanned cover" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/vision.gif">
+          </div>
+          <p class="reel-caption">A scanned, image-only PDF read by a local vision model. The Task Center streams the OCR page by page, then a cited answer reads the support number and publisher straight off the scanned cover, a detail only OCR could surface.</p>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-catalog" aria-labelledby="reel-tab-catalog" hidden>
+          <div class="reel-frame">
+            <img alt="browse the model catalog inside Obsidian: Chat, Embed, Vision, Rerank tabs" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/catalog.gif">
+          </div>
+          <p class="reel-caption">Browse the model catalog without leaving Obsidian: Chat, Embed, Vision, and Rerank tabs, each pulled live from Hugging Face Hub. Models the bundled engine can't run are flagged before you pull.</p>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-download" aria-labelledby="reel-tab-download" hidden>
+          <div class="reel-frame">
+            <img alt="search the catalog for a small model, watch it download in the Task Center, then activate it and chat" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/download_model.gif">
+          </div>
+          <p class="reel-caption">Search the catalog for a small chat model, watch the download stream start to finish in the Task Center, then activate it, switch to Chat mode, and use it, the full pull-and-use loop without leaving Obsidian.</p>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-settings" aria-labelledby="reel-tab-settings" hidden>
+          <div class="reel-frame">
+            <img alt="scroll through every lilbee settings section inside Obsidian" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/settings.gif">
+          </div>
+          <p class="reel-caption">50+ settings: search depth, reranking, sampling, parsers, the wiki. Sane defaults; tune the moment you want to. Long model names and large sizes stay on aligned rows.</p>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-tour" aria-labelledby="reel-tab-tour" hidden>
+          <div class="reel-frame">
+            <img alt="fire a crawl, a file add, and a model download back to back and watch all three run at once in the Task Center, then ask the crawled page a cited question" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/tour.gif">
+          </div>
+          <p class="reel-caption">The palette as an async control surface: fire a crawl, a file add, and a model download back to back without waiting, watch all three run at once in the Task Center, then ask the just-crawled page a cited question.</p>
+        </div>
+
+        <p class="reel-more"><kbd>&larr;</kbd>/<kbd>&rarr;</kbd> scrub the tabs. Want the long-form walkthrough? <a href="https://obsidian.lilbee.sh/reel">full demo reel &rarr;</a> (every demo as a video, with longer notes).</p>
+      </div>
     </section>
 
     <section>
@@ -82,26 +165,6 @@
       </div>
       <p class="extras">lilbee is in active development, with frequent releases; BRAT updates you automatically. <a href="https://github.com/tobocop2/obsidian-lilbee/releases">latest release on GitHub &rarr;</a></p>
       <p class="extras">It's early days. If it's useful to you, a <a href="https://github.com/tobocop2/obsidian-lilbee">&#9733; on GitHub</a> helps other Obsidian users find it, and bug reports are very welcome.</p>
-    </section>
-
-    <section>
-      <div class="label">try it</div>
-      <div class="demo" role="figure" aria-label="chat preview">
-        <div class="titlebar">
-          <span class="title">lilbee · chat</span>
-          <span>[qwen3:8b]</span>
-        </div>
-        <div class="body">
-          <div class="line"><span class="prompt">&gt;</span><span class="answer">what does the oil pressure warning mean?</span></div>
-          <div class="line"><span class="answer">the oil pressure warning indicates low oil pressure.<sup>[1]</sup></span></div>
-          <div class="line"><span class="answer">when the light stays on, stop the engine immediately.<sup>[2]</sup></span></div>
-          <div class="rule">─── sources ─────────────────────────────────</div>
-          <div class="cite"><span class="cite-link">[1] owners-manual.pdf, p.42</span> &nbsp;<span class="hint">&larr; click to open the page</span></div>
-          <div class="cite"><span class="cite-link">[2] owners-manual.pdf, p.43</span></div>
-          <div class="line" style="margin-top:0.6rem"><span class="prompt">&gt;</span><span class="cursor"></span></div>
-        </div>
-      </div>
-      <p class="demo-cap">Ask in plain English. The answer comes back with footnotes. Click one to jump to the exact page it came from.</p>
     </section>
 
     <section>
@@ -164,12 +227,13 @@
       <div class="label">go deeper</div>
       <div class="links">
         <a href="https://github.com/tobocop2/obsidian-lilbee"><span class="num">[1]</span><span>GitHub</span><span class="dots">·······································</span><span class="desc">source &amp; readme</span></a>
-        <a href="https://github.com/tobocop2/obsidian-lilbee#quick-start"><span class="num">[2]</span><span>Quick start</span><span class="dots">·······································</span><span class="desc">BRAT setup</span></a>
-        <a href="https://github.com/tobocop2/obsidian-lilbee/blob/main/docs/usage.md"><span class="num">[3]</span><span>Usage guide</span><span class="dots">·······································</span><span class="desc">commands &amp; settings</span></a>
-        <a href="https://lilbee.sh/"><span class="num">[4]</span><span>lilbee</span><span class="dots">·······································</span><span class="desc">the engine</span></a>
-        <a href="https://github.com/tobocop2/obsidian-lilbee/releases"><span class="num">[5]</span><span>Releases</span><span class="dots">·······································</span><span class="desc">changelog</span></a>
-        <a href="coverage/"><span class="num">[6]</span><span>Coverage</span><span class="dots">·······································</span><span class="desc">100%</span></a>
-        <a href="https://obsidian.md"><span class="num">[7]</span><span>Obsidian</span><span class="dots">·······································</span><span class="desc">obsidian.md</span></a>
+        <a href="https://obsidian.lilbee.sh/reel"><span class="num">[2]</span><span>Demo reel</span><span class="dots">·······································</span><span class="desc">videos</span></a>
+        <a href="https://github.com/tobocop2/obsidian-lilbee#quick-start"><span class="num">[3]</span><span>Quick start</span><span class="dots">·······································</span><span class="desc">BRAT setup</span></a>
+        <a href="https://github.com/tobocop2/obsidian-lilbee/blob/main/docs/usage.md"><span class="num">[4]</span><span>Usage guide</span><span class="dots">·······································</span><span class="desc">commands &amp; settings</span></a>
+        <a href="https://lilbee.sh/"><span class="num">[5]</span><span>lilbee</span><span class="dots">·······································</span><span class="desc">the engine</span></a>
+        <a href="https://github.com/tobocop2/obsidian-lilbee/releases"><span class="num">[6]</span><span>Releases</span><span class="dots">·······································</span><span class="desc">changelog</span></a>
+        <a href="coverage/"><span class="num">[7]</span><span>Coverage</span><span class="dots">·······································</span><span class="desc">100%</span></a>
+        <a href="https://obsidian.md"><span class="num">[8]</span><span>Obsidian</span><span class="dots">·······································</span><span class="desc">obsidian.md</span></a>
       </div>
     </section>
 
