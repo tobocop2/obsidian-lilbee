@@ -1,6 +1,6 @@
 /* lilbee for Obsidian site
    Obsidian dark mode. Same neutral near-black surfaces and violet accent as
-   the plugin in dark theme, so the site and the demo reels read as one piece.
+   the plugin in dark theme, so the site and the tutorial reels read as one piece.
    Off-white body on near-black, violet accent, green for the local/trust note.
    No purple-tinted background, no heavy glow: easy on the eyes. */
 
@@ -11,7 +11,7 @@
   --bg: #18181a;          /* background-primary */
   --bg-elev: #141416;     /* background-secondary */
   --bg-card: #202023;     /* raised surface: cards, modals */
-  --bg-sunken: #161618;   /* recessed: titlebars, reel letterbox */
+  --bg-sunken: #161618;   /* recessed: titlebars, tutorial letterbox */
 
   /* text */
   --ink: #e3e3e7;         /* text-normal */
@@ -254,16 +254,16 @@ h1.sr {
   vertical-align: 1px;
 }
 
-/* demo reel ---------------------------------------------------------- */
-.reel { margin: 0.3rem 0 1.4rem; }
+/* tutorial reel ---------------------------------------------------------- */
+.tutorial { margin: 0.3rem 0 1.4rem; }
 
-.reeltabs {
+.tutorialtabs {
   display: flex;
   flex-wrap: wrap;
   border-bottom: 1px solid var(--rule-2);
   margin-bottom: 1rem;
 }
-.reeltabs .reeltab {
+.tutorialtabs .tutorialtab {
   font-family: var(--mono);
   font-size: 13px;
   letter-spacing: 0.04em;
@@ -277,24 +277,24 @@ h1.sr {
   cursor: pointer;
   transition: color 140ms, background-color 140ms, border-color 140ms;
 }
-.reeltabs .reeltab:hover {
+.tutorialtabs .tutorialtab:hover {
   color: var(--ink);
   background: rgba(124, 58, 237, 0.08);
 }
-.reeltabs .reeltab:focus-visible {
+.tutorialtabs .tutorialtab:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.reeltabs .reeltab[aria-selected="true"] {
+.tutorialtabs .tutorialtab[aria-selected="true"] {
   color: var(--accent);
   background: rgba(124, 58, 237, 0.14);
   border-color: var(--rule-2);
   border-bottom-color: var(--accent);
 }
 
-.reelpane[hidden] { display: none; }
+.tutorialpane[hidden] { display: none; }
 
-.reel-frame {
+.tutorial-frame {
   background: var(--bg-sunken);
   border: 1px solid var(--rule-2);
   border-radius: 6px;
@@ -305,7 +305,7 @@ h1.sr {
   aspect-ratio: 1200 / 749;
   position: relative;
 }
-.reel-frame::before {
+.tutorial-frame::before {
   content: "loading recording.";
   position: absolute;
   inset: 0;
@@ -321,7 +321,7 @@ h1.sr {
     repeating-linear-gradient(135deg, transparent 0 8px, rgba(255, 255, 255, 0.014) 8px 16px),
     var(--bg-sunken);
 }
-.reel-frame img {
+.tutorial-frame img {
   position: relative;
   display: block;
   width: 100%;
@@ -330,14 +330,14 @@ h1.sr {
   z-index: 1;
 }
 
-.reel-caption {
+.tutorial-caption {
   margin-top: 0.8rem;
   font-size: 13.5px;
   color: var(--ink-2);
   line-height: 1.6;
   max-width: 64ch;
 }
-.reel-caption code {
+.tutorial-caption code {
   background: var(--bg-card);
   border: 1px solid var(--rule);
   padding: 0 0.35rem;
@@ -345,13 +345,13 @@ h1.sr {
   color: var(--ink);
   font-size: 12.5px;
 }
-.reel-caption em { color: var(--accent); font-style: normal; font-weight: 500; }
+.tutorial-caption em { color: var(--accent); font-style: normal; font-weight: 500; }
 
-.reel-watch {
+.tutorial-watch {
   text-align: center;
   margin-bottom: 1.3rem;
 }
-.reel-cta {
+.tutorial-cta {
   display: inline-flex;
   align-items: center;
   font-family: var(--mono);
@@ -365,7 +365,7 @@ h1.sr {
   text-decoration: none;
   transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
-.reel-cta:hover {
+.tutorial-cta:hover {
   border-color: var(--accent-deep);
   background: rgba(124, 58, 237, 0.10);
   color: var(--accent-hot);
@@ -567,5 +567,5 @@ footer .meta { text-align: right; font-size: 12px; }
   .wordmark, .wordmark-sub { font-size: 9px; }
   .caps, .links, .shape { grid-template-columns: 1fr; }
   .tagline { font-size: 18px; }
-  .reeltabs .reeltab { padding: 0.45rem 0.6rem; font-size: 12px; }
+  .tutorialtabs .tutorialtab { padding: 0.45rem 0.6rem; font-size: 12px; }
 }

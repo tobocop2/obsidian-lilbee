@@ -9,7 +9,7 @@
 
 <p align="center"><strong>A local search engine for your vault, inside Obsidian.</strong></p>
 
-<p align="center"><a href="https://obsidian.lilbee.sh/">Project site</a> &nbsp;·&nbsp; <a href="https://obsidian.lilbee.sh/reel">Demo reel</a> &nbsp;·&nbsp; <a href="https://github.com/tobocop2/obsidian-lilbee/releases">Releases</a> &nbsp;·&nbsp; <a href="https://lilbee.sh/">lilbee engine</a></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/">Project site</a> &nbsp;·&nbsp; <a href="https://obsidian.lilbee.sh/tutorial">Tutorial reel</a> &nbsp;·&nbsp; <a href="https://github.com/tobocop2/obsidian-lilbee/releases">Releases</a> &nbsp;·&nbsp; <a href="https://lilbee.sh/">lilbee engine</a></p>
 
 This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives you chat, an auto-generated wiki, click-to-source citations, and a model catalog, all inside Obsidian. It downloads and manages the lilbee server for you; nothing to install separately. Everything runs on your computer; cloud models are opt-in, per role.
 
@@ -24,7 +24,7 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 
 ![index the lilbee README, ask what lilbee is, and get a cited answer with a click-to-open source](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.gif)
 
-> **Demo reel:** every recording on this page (and a few extras) as videos with longer notes at [**obsidian.lilbee.sh/reel**](https://obsidian.lilbee.sh/reel).
+> **Tutorial reel:** every recording on this page (and a few extras) as videos with longer notes at [**obsidian.lilbee.sh/tutorial**](https://obsidian.lilbee.sh/tutorial).
 
 > ## ⚠️ Beta software
 >
@@ -33,7 +33,7 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 ---
 
 - [Highlights](#highlights)
-- [Demo reel](https://obsidian.lilbee.sh/reel) (long-form videos)
+- [Tutorial reel](https://obsidian.lilbee.sh/tutorial) (long-form videos)
 - [Why a local search engine for Obsidian](#why-a-local-search-engine-for-obsidian)
 - [What you can do with it](#what-you-can-do-with-it)
 - [Quick start](#quick-start)

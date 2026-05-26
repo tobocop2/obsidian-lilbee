@@ -9,16 +9,16 @@ const demos = [
   { id: "settings", name: "settings", title: "Settings", desc: "50+ settings: search depth, reranking, sampling, parsers, the wiki. Sane defaults; tune the moment you want to." },
   { id: "tour", name: "tour", title: "Tour: the palette as an async control surface", desc: "Fire a crawl, a file add, and a model download back to back without waiting, watch all three run at once in the Task Center, then ask the just-crawled page a cited question." },
 ];
-const toc = document.getElementById("reel-toc");
+const toc = document.getElementById("tutorial-toc");
 const list = document.getElementById("demos");
 for (const d of demos) {
   toc.insertAdjacentHTML("beforeend", '<li><a href="#' + d.id + '">' + d.title + "</a></li>");
   const sec = document.createElement("section");
-  sec.className = "reel-section";
+  sec.className = "tutorial-section";
   sec.id = d.id;
   sec.innerHTML =
     "<h2>" + d.title + "</h2>" +
     "<p>" + d.desc + "</p>" +
-    '<div class="reel-clip"><video src="' + GH + d.name + '.webm" controls loop muted autoplay playsinline preload="metadata"></video></div>';
+    '<div class="tutorial-clip"><video src="' + GH + d.name + '.webm" controls loop muted autoplay playsinline preload="metadata"></video></div>';
   list.appendChild(sec);
 }

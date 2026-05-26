@@ -1,10 +1,10 @@
-// Interactivity for the lilbee for Obsidian landing page: the demo-reel tabs
+// Interactivity for the lilbee for Obsidian landing page: the tutorial reel tabs
 // and the copy-to-clipboard button on the install slug.
 
 (function () {
   'use strict';
 
-  /** Wire every [role="tablist"] on the page (the demo reel, anything else
+  /** Wire every [role="tablist"] on the page (the tutorial reel, anything else
       with the same ARIA shape). Click selection plus left/right arrow-key
       navigation. */
   function initTablists() {
