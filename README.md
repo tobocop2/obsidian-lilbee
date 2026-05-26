@@ -55,7 +55,7 @@ The full 10-demo reel lives at [obsidian.lilbee.sh/reel](https://obsidian.lilbee
 
 **Chat sidebar.** Streaming replies with `[¹]` citations. Click a citation to open the source preview. The header shows the active chat and embedding models as buttons that open the model picker, plus a Search / Chat mode toggle.
 
-![lilbee on lilbee](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/lilbee_on_lilbee.gif)
+![what is lilbee](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.gif)
 
 **Server-emitted banner.** When the server has something to say about why an answer wasn't grounded (e.g. Search mode with no embedding model configured), it surfaces a banner above the assistant bubble. The plugin renders the server's text verbatim.
 
@@ -145,8 +145,6 @@ The full 10-demo reel lives at [obsidian.lilbee.sh/reel](https://obsidian.lilbee
 ```
 
 **Setup wizard.** 7-step guided onboarding on first launch. Re-runnable from the command palette.
-
-![first_start](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first_start.gif)
 
 ## What you can do with it
 
