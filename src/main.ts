@@ -40,7 +40,6 @@ import {
     type SyncOptions,
     type TaskEntry,
     type VaultAdapter,
-    type VaultRegistryEntry,
 } from "./types";
 import { MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
@@ -71,7 +70,6 @@ import { LintModal } from "./views/lint-modal";
 import { DraftModal } from "./views/draft-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { StatusModal } from "./views/status-modal";
-import { VaultPickerModal } from "./views/vault-picker-modal";
 import { TaskQueue, FLASH_WINDOW_MS as TASK_FLASH_WINDOW_MS } from "./task-queue";
 import { WikiSync } from "./wiki-sync";
 
@@ -960,24 +958,6 @@ export default class LilbeePlugin extends Plugin {
                 return true;
             },
         });
-
-        this.addCommand({
-            id: "lilbee:switch-vault",
-            name: MESSAGES.COMMAND_SWITCH_VAULT,
-            checkCallback: (checking) => {
-                if (this.settings.serverMode !== SERVER_MODE.MANAGED) return false;
-                if (!this.vaultRegistry) return false;
-                if (!checking) void this.openVaultPicker();
-                return true;
-            },
-        });
-    }
-
-    private async openVaultPicker(): Promise<void> {
-        const registry = this.vaultRegistry;
-        if (!registry) return;
-        const others = registry.list().filter((e) => e.id !== this.vaultId);
-        new VaultPickerModal(this.app, others, (picked) => void this.releaseFor(picked)).open();
     }
 
     /**
@@ -1005,17 +985,6 @@ export default class LilbeePlugin extends Plugin {
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
             await this.startManagedServer();
         }
-    }
-
-    private async releaseFor(picked: VaultRegistryEntry): Promise<void> {
-        if (this.serverManager) {
-            await this.serverManager.stop();
-            this.serverManager = null;
-        }
-        this.vaultRegistry?.releaseLock(this.vaultId);
-        new Notice(MESSAGES.NOTICE_RELEASED_FOR_VAULT(picked.displayName));
-        this.updateStatusBar(MESSAGES.STATUS_STOPPED, DOT_STATE.MUTED, false);
-        this.setStatusClass(null);
     }
 
     onunload(): void {

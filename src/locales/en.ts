@@ -192,25 +192,6 @@ export const MESSAGES = {
     COMMAND_TAKE_OVER: "Take over the managed lilbee server",
     TOOLTIP_MODEL_INSTALLED_SHARED:
         "Installed in the shared lilbee models directory — every vault on this computer can use it without re-downloading.",
-    COMMAND_SWITCH_VAULT: "Switch lilbee to another vault",
-    TITLE_VAULT_PICKER: "Switch lilbee to another vault",
-    DESC_VAULT_PICKER:
-        "Pick a vault from your shared lilbee installation. The managed lilbee will stop here so the picked vault can take over — open it in Obsidian to claim it.",
-    EMPTY_VAULT_PICKER: "No other vaults registered yet. Open another Obsidian vault with the lilbee plugin first.",
-    LABEL_VAULT_NEVER_ACTIVE: "never active",
-    LABEL_VAULT_ACTIVE_RECENTLY: "active just now",
-    LABEL_VAULT_ACTIVE_MINUTES: (n: number): string => (n === 1 ? "active 1 minute ago" : `active ${n} minutes ago`),
-    LABEL_VAULT_ACTIVE_HOURS: (n: number): string => (n === 1 ? "active 1 hour ago" : `active ${n} hours ago`),
-    LABEL_VAULT_ACTIVE_DAYS: (n: number): string => (n === 1 ? "active 1 day ago" : `active ${n} days ago`),
-    PLACEHOLDER_VAULT_FILTER: "Filter vaults…",
-    EMPTY_VAULT_FILTER: "No vaults match that filter.",
-    BUTTON_SWITCH: "Switch",
-    BUTTON_PREV_PAGE: "‹ Prev",
-    BUTTON_NEXT_PAGE: "Next ›",
-    LABEL_PAGE_STATUS: (page: number, total: number, count: number): string =>
-        `Page ${page} of ${total} · ${count} vault${count === 1 ? "" : "s"}`,
-    NOTICE_RELEASED_FOR_VAULT: (vaultName: string): string =>
-        `lilbee released — open "${vaultName}" in Obsidian to take it over.`,
     LABEL_SHARED_ROOT: "Shared lilbee directory",
     DESC_SHARED_ROOT: (resolved: string): string =>
         `Holds the lilbee binary, model cache, and one subfolder per vault. Leave blank to use the platform default (currently ${resolved}). Restart the plugin or Obsidian for changes to take effect.`,
@@ -221,18 +202,12 @@ export const MESSAGES = {
     BUTTON_ADOPT_DATA_DIR: "Use this folder",
     NOTICE_ADOPT_DATA_DIR_BLANK: "Enter a path first.",
     NOTICE_ADOPT_DATA_DIR_DONE: (path: string): string => `lilbee now uses ${path} for this vault.`,
-    LABEL_REGISTERED_VAULTS: "Registered vaults",
-    DESC_REGISTERED_VAULTS:
-        "Every Obsidian vault that has connected to this shared lilbee, with the data-dir it uses. Remove a vault to drop its entry from the registry; this does not delete its data on disk.",
-    LABEL_REGISTERED_VAULTS_EMPTY: "No vaults registered yet — open the chat or run a sync to register this one.",
-    LABEL_VAULT_ROW_CURRENT: (name: string): string => `${name} (this vault)`,
-    BUTTON_REMOVE_VAULT: "Remove",
-    TOOLTIP_REMOVE_VAULT:
-        "Forget this vault from the registry. The data directory stays on disk so you can re-register it later.",
     LABEL_STORAGE_REPORT: "Disk usage",
-    DESC_STORAGE_REPORT: "How much of the shared lilbee directory each piece is using right now.",
+    DESC_STORAGE_REPORT:
+        "How much disk space the shared binary, model cache, and this vault's data are using right now.",
     LABEL_STORAGE_BIN: "Binary",
     LABEL_STORAGE_MODELS: "Models cache",
+    LABEL_STORAGE_VAULT: "This vault",
     LABEL_STORAGE_TOTAL: "Total",
     LABEL_EMBEDDING_MODEL: "Embedding model",
     LABEL_RERANKER_TITLE: "Reranker model",
@@ -322,15 +297,10 @@ export const MESSAGES = {
     LABEL_FIT_TIGHT: "tight",
     LABEL_FIT_WONT_RUN: "won't run",
     LABEL_COMPAT_UNSUPPORTED: "Unsupported",
-    LABEL_COMPAT_UNKNOWN: "Unverified",
     TOOLTIP_COMPAT_UNSUPPORTED: (architecture: string) =>
         architecture
             ? `Your lilbee server doesn't support this model's architecture (${architecture}).`
             : "Your lilbee server doesn't support this model's architecture.",
-    TOOLTIP_COMPAT_UNKNOWN: (architecture: string) =>
-        architecture
-            ? `lilbee can't confirm support for this model's architecture (${architecture}) — it may not load.`
-            : "lilbee can't confirm this model will load on your server.",
     TOOLTIP_PULL_UNSUPPORTED: "This model isn't supported by your lilbee server.",
     LABEL_SWITCH_TO_LIST: "Switch to list view",
     LABEL_SWITCH_TO_GRID: "Switch to grid view",

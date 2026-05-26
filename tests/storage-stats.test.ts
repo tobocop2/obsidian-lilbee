@@ -1,7 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { node } from "../src/binary-manager";
-import { dirSizeBytes, formatBytes, reportFor } from "../src/storage-stats";
-import type { VaultRegistryEntry } from "../src/types";
+import { dirSizeBytes, formatBytes, reportForVault } from "../src/storage-stats";
 
 function makeFs() {
     const files = new Map<string, number>(); // path → size
@@ -121,31 +120,21 @@ describe("formatBytes", () => {
     });
 });
 
-function entry(id: string, dataDir: string, displayName = id): VaultRegistryEntry {
-    return {
-        id,
-        displayName,
-        dataDir,
-        obsidianVaultPath: `/Users/x/${id}`,
-        addedAt: 1,
-        lastActiveAt: 1,
-    };
-}
-
-describe("reportFor", () => {
+describe("reportForVault", () => {
     it("returns zeros for an empty shared root", () => {
         mountFs(makeFs());
-        const report = reportFor("/shared", []);
+        const report = reportForVault("/shared", "/shared/vaults/a");
         expect(report).toEqual({
             sharedRoot: "/shared",
             binBytes: 0,
             modelsBytes: 0,
-            vaults: [],
+            vaultBytes: 0,
+            vaultDataDir: "/shared/vaults/a",
             totalBytes: 0,
         });
     });
 
-    it("aggregates bin, models, and per-vault sizes", () => {
+    it("aggregates bin, models, and the open vault's size only", () => {
         const fs = makeFs();
         fs.addDir("/shared/bin");
         fs.addFile("/shared/bin/lilbee", 1_000_000);
@@ -153,37 +142,14 @@ describe("reportFor", () => {
         fs.addFile("/shared/models/embed.gguf", 500_000_000);
         fs.addDir("/shared/vaults/a");
         fs.addFile("/shared/vaults/a/db.lance", 200_000);
+        // Another vault on disk must not be counted — only the open one.
         fs.addDir("/shared/vaults/b");
         fs.addFile("/shared/vaults/b/db.lance", 300_000);
         mountFs(fs);
-        const report = reportFor("/shared", [entry("a", "/shared/vaults/a"), entry("b", "/shared/vaults/b")]);
+        const report = reportForVault("/shared", "/shared/vaults/a");
         expect(report.binBytes).toBe(1_000_000);
         expect(report.modelsBytes).toBe(500_000_000);
-        expect(report.vaults).toHaveLength(2);
-        expect(report.totalBytes).toBe(501_500_000);
-    });
-
-    it("surfaces orphan vault directories not in the registry", () => {
-        const fs = makeFs();
-        fs.addDir("/shared/vaults/registered");
-        fs.addFile("/shared/vaults/registered/db.lance", 100);
-        fs.addDir("/shared/vaults/orphan");
-        fs.addFile("/shared/vaults/orphan/db.lance", 999);
-        mountFs(fs);
-        const report = reportFor("/shared", [entry("registered", "/shared/vaults/registered")]);
-        expect(report.vaults.map((v) => v.id)).toEqual(["registered", "orphan"]);
-        expect(report.vaults.find((v) => v.id === "orphan")?.bytes).toBe(999);
-    });
-
-    it("handles readdir failure on the vaults root by skipping orphan discovery", () => {
-        const fs = makeFs();
-        fs.addDir("/shared/vaults");
-        mountFs(fs);
-        vi.spyOn(node, "readdirSync").mockImplementation((p) => {
-            if ((p as string).endsWith("/vaults")) throw new Error("EACCES");
-            return [];
-        });
-        const report = reportFor("/shared", []);
-        expect(report.vaults).toEqual([]);
+        expect(report.vaultBytes).toBe(200_000);
+        expect(report.totalBytes).toBe(501_200_000);
     });
 });

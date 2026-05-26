@@ -83,9 +83,12 @@ function renderCardTags(card: HTMLElement, entry: CatalogEntry): void {
 }
 
 /**
- * Render the compatibility badge (Unsupported / Unverified) for a model, with a
- * tooltip naming the architecture when the server reported one. Shared by the
- * grid card and the catalog list view so both surfaces read identically.
+ * Render the compatibility badge for a model. Only models the server has
+ * confirmed it can't run get a badge (Unsupported). `unknown` compat just means
+ * the architecture wasn't probed — true for the curated "Our picks" (which
+ * carry no arch metadata) and for un-probed HF search hits — so it renders no
+ * badge, exactly like a supported model. Badging those "Unverified" was noise
+ * and made trusted featured models look broken.
  */
 export function renderCompatTag(tags: HTMLElement, entry: CatalogEntry): void {
     const architecture = entry.architecture ?? "";
@@ -95,12 +98,6 @@ export function renderCompatTag(tags: HTMLElement, entry: CatalogEntry): void {
             cls: "lilbee-tag lilbee-tag-compat is-unsupported",
         });
         tag.setAttribute("title", MESSAGES.TOOLTIP_COMPAT_UNSUPPORTED(architecture));
-    } else if (entry.compat === MODEL_COMPAT.UNKNOWN) {
-        const tag = tags.createEl("span", {
-            text: MESSAGES.LABEL_COMPAT_UNKNOWN,
-            cls: "lilbee-tag lilbee-tag-compat is-unknown",
-        });
-        tag.setAttribute("title", MESSAGES.TOOLTIP_COMPAT_UNKNOWN(architecture));
     }
 }
 

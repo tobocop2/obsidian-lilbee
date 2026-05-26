@@ -3,22 +3,15 @@
  * Walks are synchronous because the Settings UI already blocks while it renders.
  */
 import { node } from "./binary-manager";
-import { sharedBinDir, sharedModelsDir, vaultsRootDir } from "./vault-registry";
-import type { VaultRegistryEntry } from "./types";
+import { sharedBinDir, sharedModelsDir } from "./vault-registry";
 
 export interface StorageReport {
     sharedRoot: string;
     binBytes: number;
     modelsBytes: number;
-    vaults: VaultStorage[];
+    vaultBytes: number;
+    vaultDataDir: string;
     totalBytes: number;
-}
-
-export interface VaultStorage {
-    id: string;
-    displayName: string;
-    dataDir: string;
-    bytes: number;
 }
 
 export function dirSizeBytes(path: string): number {
@@ -43,38 +36,17 @@ export function dirSizeBytes(path: string): number {
     return total;
 }
 
-export function reportFor(sharedRoot: string, entries: VaultRegistryEntry[]): StorageReport {
+/**
+ * Disk usage for the open vault only: the shared binary + shared models it
+ * relies on, plus this vault's own data dir. The open Obsidian vault is the
+ * only vault lilbee serves, so the report never enumerates other vaults.
+ */
+export function reportForVault(sharedRoot: string, vaultDataDir: string): StorageReport {
     const binBytes = dirSizeBytes(sharedBinDir(sharedRoot));
     const modelsBytes = dirSizeBytes(sharedModelsDir(sharedRoot));
-    const vaults: VaultStorage[] = entries.map((entry) => ({
-        id: entry.id,
-        displayName: entry.displayName,
-        dataDir: entry.dataDir,
-        bytes: dirSizeBytes(entry.dataDir),
-    }));
-    // Catch vault subfolders that exist on disk but aren't in the registry.
-    const vaultsRoot = vaultsRootDir(sharedRoot);
-    if (node.existsSync(vaultsRoot)) {
-        const registeredDirs = new Set(entries.map((e) => e.dataDir));
-        let names: string[];
-        try {
-            names = node.readdirSync(vaultsRoot) as string[];
-        } catch {
-            names = [];
-        }
-        for (const name of names) {
-            const path = node.join(vaultsRoot, name);
-            if (registeredDirs.has(path)) continue;
-            vaults.push({
-                id: name,
-                displayName: name,
-                dataDir: path,
-                bytes: dirSizeBytes(path),
-            });
-        }
-    }
-    const totalBytes = binBytes + modelsBytes + vaults.reduce((sum, v) => sum + v.bytes, 0);
-    return { sharedRoot, binBytes, modelsBytes, vaults, totalBytes };
+    const vaultBytes = dirSizeBytes(vaultDataDir);
+    const totalBytes = binBytes + modelsBytes + vaultBytes;
+    return { sharedRoot, binBytes, modelsBytes, vaultBytes, vaultDataDir, totalBytes };
 }
 
 const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;

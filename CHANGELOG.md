@@ -50,7 +50,7 @@
 
   After cleanup the plugin starts with one binary download and one model download that every vault on the machine shares.
 
-- **Only one Obsidian vault can drive the managed lilbee at a time.** Lilbee is single-vault. Opening a second vault shows the active owner in the status bar; the `lilbee: Take over the managed lilbee server` command switches the running process to the new vault after a confirmation dialog. The previous vault's index is preserved on disk and restored when you reopen it. A new `lilbee: Switch lilbee to another vault` command lists registered vaults so you can release the managed server for another vault without a take-over prompt.
+- **The open Obsidian vault drives the managed lilbee.** Lilbee is single-vault, and it always serves whichever vault you have open. Opening a second vault shows the active owner in the status bar; the `lilbee: Take over the managed lilbee server` command switches the running process to the new vault after a confirmation dialog. The previous vault's index is preserved on disk and restored when you reopen it. There is no way to point lilbee at a vault other than the one open in front of you.
 
 - **`lilbeeVersion` and `hfToken` moved out of per-vault settings.** Both now live in `<shared-root>/config.json` because the binary and HuggingFace cache they describe are shared. Any per-vault values in `data.json` are ignored; re-enter the HuggingFace token in Settings → Advanced if you had one.
 
@@ -65,7 +65,6 @@
 - The chat header dropdown always shows the active model name now, instead of falling back to "── Other... ──" when the featured catalog hadn't loaded yet.
 - Sending a chat (or any lilbee action) in the brief gap between enabling the plugin and the server becoming reachable now waits for the server and goes through, instead of failing with "Server is still starting up".
 - The crawler's first-run browser warmup shows a "preparing crawler" stage on the crawl row instead of a misleading 0 MB download sub-task. The sync pill clears once an ingest finishes.
-- The vault picker (Switch lilbee to another vault) uses scannable cards with a filter and pagination, so it stays usable past a handful of shared vaults.
 
 ### Added
 

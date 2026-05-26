@@ -288,11 +288,12 @@ describe("ChatView.onOpen — DOM structure", () => {
         expect(container.find("lilbee-chat-toolbar")).not.toBeNull();
     });
 
-    it("creates a clear button inside the toolbar", () => {
+    it("creates a clear icon button inside the toolbar", () => {
         const clearBtn = container.find("lilbee-chat-clear");
         expect(clearBtn).not.toBeNull();
         expect(clearBtn!.tagName).toBe("BUTTON");
-        expect(clearBtn!.textContent).toBe("Clear chat");
+        // Icon button (matches the save action), with the label on aria-label.
+        expect(clearBtn!.getAttribute("aria-label")).toBe("Clear chat");
     });
 
     it("creates a paperclip add-file button inside the input area", () => {

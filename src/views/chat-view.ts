@@ -197,10 +197,9 @@ export class ChatView extends ItemView {
         saveBtn.setAttribute("aria-label", MESSAGES.LABEL_SAVE_VAULT);
         saveBtn.addEventListener("click", () => this.saveToVault());
 
-        const clearBtn = toolbar.createEl("button", {
-            text: MESSAGES.BUTTON_CLEAR_CHAT,
-            cls: "lilbee-chat-clear",
-        });
+        const clearBtn = toolbar.createEl("button", { cls: "lilbee-chat-clear" });
+        setIcon(clearBtn, "eraser");
+        clearBtn.setAttribute("aria-label", MESSAGES.BUTTON_CLEAR_CHAT);
         clearBtn.addEventListener("click", () => this.clearChat());
     }
 

@@ -9,6 +9,19 @@ const STRIP_SUFFIXES = [/-GGUF$/i, /-Instruct$/i, /-Chat$/i, /-v\d+(\.\d+)*$/i, 
 
 const META_PREFIX = /^Meta-/;
 
+/**
+ * Build the ref to send when activating a catalog entry. A multi-quant GGUF
+ * repo (e.g. "bartowski/SmolLM2-360M-Instruct-GGUF") has no single default
+ * file, so the server rejects the bare repo with "not available"; send the
+ * concrete "<repo>/<filename>.gguf" instead. Falls back to the bare repo when
+ * the filename is missing or a glob (sharded/pattern entries).
+ */
+export function nativeModelRef(hfRepo: string, ggufFilename: string | null | undefined): string {
+    const f = ggufFilename ?? "";
+    if (f && f.endsWith(".gguf") && !f.includes("*")) return `${hfRepo}/${f}`;
+    return hfRepo;
+}
+
 /** Strip the trailing `/<filename>.gguf` from a full HF ref so it matches a `CatalogEntry.hf_repo`. */
 export function extractHfRepo(ref: string): string {
     if (!ref.endsWith(".gguf")) return ref;
