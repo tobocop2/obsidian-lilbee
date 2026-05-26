@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>lilbee for Obsidian — demo reel</title>
+<meta name="description" content="Every lilbee for Obsidian demo as a video: ask and cite, crawl the web into your vault, OCR scanned PDFs, the model catalog, downloading a model, settings, and a full tour." />
+<meta property="og:title" content="lilbee for Obsidian — demo reel" />
+<meta property="og:description" content="Every lilbee for Obsidian demo as a video." />
+<meta property="og:image" content="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.contact.png" />
+<link rel="canonical" href="https://obsidian.lilbee.sh/reel/" />
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #15171a; color: #e7e9ec; font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  header { padding: 34px 32px 18px; border-bottom: 1px solid #2a2e34; }
+  header h1 { margin: 0 0 6px; font-size: 24px; font-weight: 650; }
+  header p { margin: 0; color: #9aa1ab; font-size: 14px; }
+  header a { color: #8ab4ff; text-decoration: none; }
+  header a:hover { text-decoration: underline; }
+  main { max-width: 1100px; margin: 0 auto; padding: 28px 32px 80px; display: grid; gap: 40px; }
+  .demo { background: #1c1f24; border: 1px solid #2a2e34; border-radius: 12px; overflow: hidden; }
+  .demo-head { padding: 16px 20px 6px; }
+  .demo-head h2 { margin: 0; font-size: 18px; font-weight: 600; }
+  .demo p.desc { margin: 0 20px 14px; color: #b6bcc5; font-size: 14px; }
+  video { display: block; width: 100%; background: #000; border-top: 1px solid #2a2e34; }
+  footer { max-width: 1100px; margin: 0 auto; padding: 0 32px 60px; color: #7f8792; font-size: 13px; }
+  footer a { color: #8ab4ff; text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>lilbee for Obsidian — demo reel</h1>
+  <p>Every demo as a video, longer notes below each one. <a href="https://obsidian.lilbee.sh/">&larr; back to the project site</a></p>
+</header>
+<main id="demos"></main>
+<footer>Recorded on a 2021 M1 Pro, 32&nbsp;GB RAM. lilbee runs entirely on your machine. <a href="https://github.com/tobocop2/obsidian-lilbee">Source &rarr;</a></footer>
+<script>
+  const GH = "https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/";
+  const demos = [
+    { name: "what_is_lilbee", title: "What is lilbee", desc: "Add lilbee's own README to your library and watch it ingest, then ask “what is lilbee in one sentence?” — a cited answer straight from the README, and the citation opens it at the source." },
+    { name: "add", title: "Ask & cite your documents", desc: "Add a PDF from the command palette, watch the Task Center index it, then ask a question and get a cited answer. Click the citation and the source preview opens at the exact page." },
+    { name: "crawl", title: "Crawl the web into your vault", desc: "Crawl a Wikipedia page into your vault, ask when the 9C1 police package was introduced, and jump from the citation straight to the cited section of the rendered source." },
+    { name: "vision", title: "Scanned PDFs, read by OCR", desc: "A scanned, image-only PDF read by a local vision model. The Task Center streams the OCR page by page, then a cited answer reads the support number and publisher straight off the scanned cover — a detail only OCR could surface." },
+    { name: "catalog", title: "Model catalog", desc: "Browse the model catalog without leaving Obsidian: Chat, Embed, Vision, and Rerank tabs, each pulled live from Hugging Face Hub. Models the bundled engine can't run are flagged before you pull." },
+    { name: "download_model", title: "Download and use a model", desc: "Search the catalog for a small chat model, watch the download stream start to finish in the Task Center, then activate it, switch to Chat mode, and use it — the full pull-and-use loop without leaving Obsidian." },
+    { name: "settings", title: "Settings", desc: "50+ settings: search depth, reranking, sampling, parsers, the wiki. Sane defaults; tune the moment you want to." },
+    { name: "tour", title: "Tour: the palette as an async control surface", desc: "Fire a crawl, a file add, and a model download back to back without waiting, watch all three run at once in the Task Center, then ask the just-crawled page a cited question." },
+  ];
+  const main = document.getElementById("demos");
+  for (const d of demos) {
+    const el = document.createElement("section");
+    el.className = "demo";
+    el.innerHTML =
+      '<div class="demo-head"><h2>' + d.title + "</h2></div>" +
+      '<p class="desc">' + d.desc + "</p>" +
+      '<video src="' + GH + d.name + '.webm" controls loop muted autoplay playsinline preload="metadata"></video>';
+    main.appendChild(el);
+  }
+</script>
+</body>
+</html>
