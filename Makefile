@@ -10,7 +10,7 @@ TAPES := tour chat add lilbee_on_lilbee crawl catalog settings command_palette m
 # GIF width (px). The webms are recorded at retina 3456×2158; downscaling
 # to 800 keeps the GIFs viewable and the file sizes embeddable in README.
 GIF_WIDTH := 1200
-GIF_FPS := 20
+GIF_FPS := 30
 GIF_COLORS := 256
 
 demo-prep:  ## Install harness deps; verify ffmpeg + pyautogui + gifsicle
