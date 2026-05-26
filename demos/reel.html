@@ -1,140 +1,88 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<title>obsidian-lilbee demo reel</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>lilbee demo reel</title>
 <style>
-  :root {
-    color-scheme: dark;
-    --bg: #0f0f10;
-    --surface: #1a1a1c;
-    --border: #2a2a2e;
-    --text: #e8e8ea;
-    --muted: #8a8a8e;
-    --accent: #7c3aed;
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #15171a;
+    color: #e7e9ec;
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   }
-  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", Helvetica, Arial, sans-serif; }
-  header { padding: 32px 40px 16px; border-bottom: 1px solid var(--border); }
-  header h1 { margin: 0 0 4px; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
-  header p { margin: 0; color: var(--muted); font-size: 13px; }
-  nav { padding: 16px 40px; border-bottom: 1px solid var(--border); display: flex; gap: 8px; flex-wrap: wrap; background: var(--surface); position: sticky; top: 0; z-index: 10; }
-  nav a { color: var(--text); text-decoration: none; padding: 4px 10px; border-radius: 6px; font-size: 12px; background: #232326; }
-  nav a:hover { background: #2e2e32; }
-  main { padding: 24px 40px 64px; max-width: 1180px; margin: 0 auto; }
-  section { margin: 32px 0; padding: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; scroll-margin-top: 80px; }
-  section h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
-  section .meta { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
-  section p.note { color: #c8c8cc; font-size: 13px; margin: 0 0 16px; }
-  video { width: 100%; max-width: 1100px; display: block; border-radius: 8px; background: #000; }
-  .contact { margin-top: 16px; }
-  .contact summary { color: var(--muted); cursor: pointer; font-size: 12px; padding: 6px 0; }
-  .contact img { width: 100%; max-width: 1100px; display: block; margin-top: 8px; border-radius: 6px; border: 1px solid var(--border); }
-  footer { padding: 24px 40px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); }
+  header { padding: 30px 32px 14px; border-bottom: 1px solid #2a2e34; }
+  header h1 { margin: 0 0 6px; font-size: 23px; font-weight: 650; }
+  header p { margin: 0; color: #9aa1ab; font-size: 13px; }
+  main { max-width: 1120px; margin: 0 auto; padding: 26px 32px 72px; display: grid; gap: 38px; }
+  .section-label { margin: 8px 0 -14px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #6b7280; }
+  .demo { background: #1c1f24; border: 1px solid #2a2e34; border-radius: 12px; overflow: hidden; }
+  .demo.pending { opacity: .82; }
+  .demo-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 16px 20px 10px; }
+  .demo-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+  .demo-head .meta { color: #7f8792; font-size: 12px; white-space: nowrap; }
+  .demo p.desc { margin: 0 20px 14px; color: #b6bcc5; font-size: 13.5px; }
+  .badge { display: inline-block; font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; padding: 2px 7px; border-radius: 5px; margin-left: 8px; vertical-align: middle; }
+  .badge.new { background: color-mix(in srgb, #44cf6e 22%, transparent); color: #66d98a; }
+  .badge.old { background: #3a2f1c; color: #e0a14a; }
+  video { display: block; width: 100%; background: #000; border-top: 1px solid #2a2e34; }
+  .num { color: #6b7280; font-variant-numeric: tabular-nums; margin-right: 8px; }
+  code { background: #262a30; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>obsidian-lilbee demo reel</h1>
-  <p>10 demos recorded 2026-05-22. Click any title to jump.</p>
+  <h1>lilbee demo reel</h1>
+  <p>Recreated 2026-05-25. Standard white macOS cursor (white body, thin dark outline), cursor-free capture with a synthetic always-present pointer (no flicker, smooth eased motion), a ⌘P badge when the palette opens, minimal opening lingering, soft green "running" status, actively-used vault, no error frames.</p>
 </header>
-<nav>
-  <a href="#tour">tour</a>
-  <a href="#chat">chat</a>
-  <a href="#add">add</a>
-  <a href="#lilbee_on_lilbee">lilbee_on_lilbee</a>
-  <a href="#crawl">crawl</a>
-  <a href="#catalog">catalog</a>
-  <a href="#settings">settings</a>
-  <a href="#command_palette">command_palette</a>
-  <a href="#first_start">first_start</a>
-  <a href="#multi_vault">multi_vault</a>
-</nav>
-<main>
-
-<section id="tour">
-  <h2>tour</h2>
-  <div class="meta">38s &middot; surface walkthrough</div>
-  <p class="note">Orientation tour. No on-camera Q&amp;A. Walks the model catalog (Discover / Chat / Embed / Vision / Rerank tabs), settings tab with the fixed model-row alignment, and the command palette filtered to "lilbee".</p>
-  <video src="tour.webm" controls preload="metadata"></video>
-  <details class="contact"><summary>contact sheet (8 evenly-spaced frames)</summary><img src="tour.contact.png" alt="tour contact sheet"></details>
-</section>
-
-<section id="chat">
-  <h2>chat</h2>
-  <div class="meta">25s &middot; cited answer against cv-manual</div>
-  <p class="note">Asks a towing prep question against the indexed Crown Victoria manual. Streams a cited answer with [1][2], clicks the first citation, source-preview modal opens at page 173.</p>
-  <video src="chat.webm" controls preload="metadata"></video>
-  <details class="contact"><summary>contact sheet</summary><img src="chat.contact.png" alt="chat contact sheet"></details>
-</section>
-
-<section id="add">
-  <h2>add</h2>
-  <div class="meta">44s &middot; fresh ingest + cited answer</div>
-  <p class="note">Two real ingests via the command palette (PDF + README), Task Center fills with chunk-embedding progress, towing question gets a cited answer, citation click opens the source. The recording uses the palette path for both files because Obsidian's right-click context menu doesn't fire to the renderer while CDP is active, but right-click + "Add to lilbee" works the same way for any vault file:</p>
-  <details class="contact" open><summary>right-click "Add to lilbee" (real Obsidian, no CDP)</summary><img src="right_click_add_to_lilbee.png" alt="Right-click on a vault file shows 'Add to lilbee' in the context menu"></details>
-  <video src="add.webm" controls preload="metadata"></video>
-  <details class="contact"><summary>contact sheet</summary><img src="add.contact.png" alt="add contact sheet"></details>
-</section>
-
-<section id="lilbee_on_lilbee">
-  <h2>lilbee_on_lilbee</h2>
-  <div class="meta">48s &middot; ingest README + ask what lilbee is</div>
-  <p class="note">Ingests the lilbee README, scrolls through the file, asks "What is lilbee in one sentence?", gets cited answer, clicks the README chip to open the source preview.</p>
-  <video src="lilbee_on_lilbee.webm" controls preload="metadata"></video>
-  <details class="contact"><summary>contact sheet</summary><img src="lilbee_on_lilbee.contact.png" alt="lilbee_on_lilbee contact sheet"></details>
-</section>
-
-<section id="crawl">
-  <h2>crawl</h2>
-  <div class="meta">62s &middot; crawl Wikipedia + cite</div>
-  <p class="note">Crawls the Chevrolet Caprice Wikipedia page, asks when the 9C1 police package was introduced, gets a cited answer, clicks citation to open the source preview, rapid-scrolls through the body to show the photos and references.</p>
-  <video src="crawl.webm" controls preload="metadata"></video>
-  <details class="contact"><summary>contact sheet</summary><img src="crawl.contact.png" alt="crawl contact sheet"></details>
-</section>
-
-<section id="catalog">
-  <h2>catalog</h2>
-  <div class="meta">61s &middot; model catalog walkthrough</div>
-  <p class="note">Walks Chat, Embed, Vision, and Rerank tabs of the model catalog modal, scrolling each list, then searches "Phi-4" in the Chat tab.</p>
-  <video src="catalog.webm" controls preload="metadata"></video>
-  <details class="contact"><summary>contact sheet</summary><img src="catalog.contact.png" alt="catalog contact sheet"></details>
-</section>
-
-<section id="settings">
-  <h2>settings</h2>
-  <div class="meta">33s &middot; lilbee settings tour</div>
-  <p class="note">Scrolls top to bottom through every lilbee settings section. The model-row alignment fix is visible: long names, wrapping descriptions, and large sizes like "264.8 GB" all stay on aligned rows.</p>
-  <video src="settings.webm" controls preload="metadata"></video>
-  <details class="contact"><summary>contact sheet</summary><img src="settings.contact.png" alt="settings contact sheet"></details>
-</section>
-
-<section id="command_palette">
-  <h2>command_palette</h2>
-  <div class="meta">26s &middot; three palette opens</div>
-  <p class="note">Three opens of the command palette in sequence: lilbee browse model catalog, lilbee task center, lilbee open chat. Shows that every lilbee surface is keyboard-reachable.</p>
-  <video src="command_palette.webm" controls preload="metadata"></video>
-  <details class="contact"><summary>contact sheet</summary><img src="command_palette.contact.png" alt="command_palette contact sheet"></details>
-</section>
-
-<section id="multi_vault">
-  <h2>multi_vault</h2>
-  <div class="meta">19s &middot; switch the shared lilbee install between vaults</div>
-  <p class="note">From the active vault: open the command palette, run "Switch lilbee to another vault", the picker lists the other vault registered against the shared lilbee install, click it to release the lock, then Show Status confirms the current data-dir state. The viewer's next step would be switching Obsidian's open vault so the picked vault can claim the install.</p>
-  <video src="multi_vault.webm" controls preload="metadata"></video>
-  <details class="contact"><summary>contact sheet</summary><img src="multi_vault.contact.png" alt="multi_vault contact sheet"></details>
-</section>
-
-<section id="first_start">
-  <h2>first_start</h2>
-  <div class="meta">228s &middot; fresh vault end-to-end (install + wizard)</div>
-  <p class="note">From a clean vault: install BRAT from community plugins, use BRAT to install lilbee from GitHub, enable the plugin, walk the setup wizard end-to-end (Managed mode, Qwen3 0.6B, embedding model). Demo ends after the wizard's final step. <strong>Known issue:</strong> under the new shared-root architecture, the per-vault managed server doesn't yet read the shared models dir, so the chat panel ends in a "No models installed" state and the status bar reads "libee: error" at the end. The install flow itself is what the demo shows.</p>
-  <video src="first_start.webm" controls preload="metadata"></video>
-  <details class="contact"><summary>contact sheet</summary><img src="first_start.contact.png" alt="first_start contact sheet"></details>
-</section>
-
-</main>
-<footer>
-  Files live in <code>demos/output/</code>. Per-second walkthrough frames are at <code>demos/output/&lt;name&gt;.walkthrough/</code>.
-</footer>
+<main id="demos"></main>
+<script>
+  const demos = [
+    { name: "tour", fresh: true,
+      desc: "The palette as an async control surface: fire a crawl, a file add, and a model download back to back without waiting, watch all three run at once in the Task Center (the crawl's first-run browser setup included), then ask the just-crawled page a cited question." },
+    { name: "what_is_lilbee", fresh: true,
+      desc: "Add lilbee’s own README to the library and watch it ingest, then ask “What is lilbee in one sentence?” — a cited answer straight from the README, and the citation opens it and scrolls to the Offline-copies-of-websites GIF." },
+    { name: "add", fresh: true,
+      desc: "Cleared Task Center, then add the Crown Victoria owner’s manual and ask a towing question; the citation opens the manual at the cited page (p.173)." },
+    { name: "crawl", fresh: true,
+      desc: "Cleared Task Center, then crawl the Caprice Wikipedia page and ask when the 9C1 package was introduced — the answer states 1986 and the citation jumps to the 9C1 section." },
+    { name: "vision", fresh: true,
+      desc: "A scanned, image-only PDF (the Star Wars X-Wing pilot manual) read by a local vision model. The Task Center streams the OCR page by page through LightOnOCR, then a cited answer reads the manual's technical-support phone number and publisher straight off the scanned cover — a detail only OCR could surface." },
+    { name: "catalog", fresh: true,
+      desc: "Fast flick down each model list — Chat / Embed / Vision / Rerank — to show how many there are (infinite scroll), then search a frontier model the server can't run (DeepSeek V4): lilbee flags it Unsupported and gates the download." },
+    { name: "download_model", fresh: true,
+      desc: "End to end: search the catalog for SmolLM2 360M, watch the download stream start-to-finish in the Task Center, then activate it, switch to Chat mode, and ask it a question it answers straight from the model." },
+    { name: "settings", fresh: true,
+      desc: "Open lilbee settings via the palette and scroll the full surface, top to bottom through the Advanced section." },
+    { name: "first_start", fresh: false, noVideo: true,
+      desc: "From-scratch install: BRAT → enable lilbee → the setup wizard → first cited chat. The wizard walks fully and the server pull+set path is healthy (verified). The tape now waits for the model to actually finish installing before advancing (the earlier failure was a 180s wait racing a ~300s download). Remaining blocker is purely recording: the 639 MB Qwen3 0.6B download via the managed binary is slow/unreliable on camera (exceeded 10 min). Pre-caching the model makes it reliable." },
+    { name: "multi_vault", fresh: false, noVideo: true,
+      desc: "Being rewritten for the new model (#101): the cross-vault switcher is gone — lilbee now follows whichever vault Obsidian has open. The old switcher tape is dead; the new demo shows lilbee re-targeting as the open vault changes. Recording next on the open-vault-authoritative build." },
+  ];
+  const main = document.getElementById("demos");
+  let lastFresh = null;
+  demos.forEach((d, i) => {
+    if (d.fresh !== lastFresh) {
+      const lab = document.createElement("div");
+      lab.className = "section-label";
+      lab.textContent = d.fresh ? "Re-rendered with the white cursor" : "Pending re-record";
+      main.appendChild(lab);
+      lastFresh = d.fresh;
+    }
+    const el = document.createElement("section");
+    el.className = "demo" + (d.fresh ? "" : " pending");
+    el.innerHTML = `
+      <div class="demo-head">
+        <h2><span class="num">${String(i + 1).padStart(2, "0")}</span>${d.name}
+          <span class="badge ${d.fresh ? "new" : "old"}">${d.fresh ? "updated" : "pending"}</span></h2>
+        <span class="meta">${d.noVideo ? "no recording yet" : d.name + ".webm"}</span>
+      </div>
+      <p class="desc">${d.desc}</p>
+      ${d.noVideo ? "" : `<video src="./${d.name}.webm" controls loop muted preload="metadata" playsinline></video>`}`;
+    main.appendChild(el);
+  });
+</script>
 </body>
 </html>

@@ -26,6 +26,7 @@ import {
   storyboard,
   type_,
   waitChatIdle,
+  waitForSelector,
 } from "../src/lib.ts";
 
 const GITHUB_REPO = "tobocop2/obsidian-lilbee";
@@ -73,29 +74,23 @@ export default storyboard("first_start", {
   beats: [
     beat("Opening hold on a fresh empty vault", sleep(400)),
 
-    // --- Stage 1: install BRAT ---
-    // Open settings via the gear icon so the viewer sees how a normal
-    // user gets there, not by command-palette mystery.
+    // --- Stage 1: install BRAT from the community store ---
+    // Open Settings with the standard shortcut (badge shows ⌘,); this Obsidian
+    // build exposes no clickable gear target. Every following step is a real
+    // cursor click.
     beat(
-      "Open settings",
+      "Open Settings (⌘,)",
       runJs(`window.app.commands.executeCommandById("app:open-settings");`),
       { holdMs: 1100, keyHint: "⌘," },
     ),
     beat(
-      "Click Community plugins in the settings tab list",
+      "Open the Community plugins tab",
       clickSelector('.vertical-tab-nav-item:text-is("Community plugins")'),
       { holdMs: 1100 },
     ),
-    beat(
-      "Acknowledge the safe-mode modal — Turn on community plugins",
-      runJs(`
-        const btn = Array.from(document.querySelectorAll('button.mod-cta'))
-          .find(b => /turn on community plugins/i.test(b.textContent || ''));
-        if (btn) btn.click();
-      `),
-      { holdMs: 1400 },
-    ),
-    beat("Click Browse to open the community plugin store", clickSelector('button:text-is("Browse")'), { holdMs: 1300 }),
+    // (Community plugins are already enabled — turning them on is a one-time
+    // Obsidian step that reloads the app, which a single recording can't span.)
+    beat("Open the community plugin store", clickSelector('button:text-is("Browse")'), { holdMs: 1300 }),
     beat(
       "Click the search field",
       clickSelector('input[placeholder^="Search community plugins"]'),
@@ -107,24 +102,11 @@ export default storyboard("first_start", {
       clickSelector('.community-item:has-text("By tfthacker")'),
       { holdMs: 1600 },
     ),
-    // Install/Enable buttons only show when BRAT isn't already installed
-    // in this vault. If a prior demo run left BRAT installed, the modal
-    // shows Disable/Uninstall instead — skip those clicks gracefully.
-    beat(
-      "Install + Enable BRAT (skipped if already installed)",
-      runJs(`
-        const btns = Array.from(document.querySelectorAll('.modal-container button'));
-        const install = btns.find(b => /^install$/i.test((b.textContent || '').trim()));
-        if (install) {
-          install.click();
-          await new Promise(r => setTimeout(r, 2500));
-          const after = Array.from(document.querySelectorAll('.modal-container button'));
-          const enable = after.find(b => /^enable$/i.test((b.textContent || '').trim()));
-          if (enable) enable.click();
-        }
-      `),
-      { holdMs: 2200 },
-    ),
+    // Real first-time install: the card shows Install, then Enable. Click each
+    // (the demo always starts from a clean slate, so these buttons are present).
+    beat("Click Install", clickSelector('.modal-container button:text-is("Install")'), { holdMs: 1000 }),
+    beat("Wait for the Enable button", waitForSelector('.modal-container button:text-is("Enable")'), { holdMs: 600 }),
+    beat("Click Enable", clickSelector('.modal-container button:text-is("Enable")'), { holdMs: 1600 }),
     beat("Close BRAT details", key("escape"), { holdMs: 500 }),
     beat("Close the community plugin browser", key("escape"), { holdMs: 500 }),
     beat("Close settings", key("escape"), { holdMs: 800 }),
@@ -142,112 +124,80 @@ export default storyboard("first_start", {
       clickSelector('.modal-container input[type="text"], .modal-container input.beta-plugin-input'),
       { holdMs: 300 },
     ),
-    beat("Paste the lilbee GitHub repo", type_(GITHUB_REPO), { holdMs: 700 }),
-    // Click Add plugin. The URL was just typed via OS keystrokes so
-    // it's already in the input; no need for a DOM-level value setter
-    // that would briefly fight the typing animation.
-    // BRAT labels this "Add Plugin" (capital P); match loosely so a casing
-    // or wording change can't strand the click. The programmatic addPlugin in
-    // the next beat does the real work regardless.
+    beat("Type the lilbee GitHub repo", type_(GITHUB_REPO), { holdMs: 900 }),
+    // Click Add Plugin — this is the real BRAT action: it downloads lilbee
+    // from GitHub and enables it. The release BRAT installs already carries the
+    // current build (the b431 tag points at it), so no file overlay is needed.
     beat(
-      "Click Add plugin",
+      "Click Add Plugin — BRAT downloads and enables lilbee",
       clickSelector('.modal-container button.mod-cta:has-text("Add")'),
-      { holdMs: 1200 },
+      { holdMs: 2000 },
     ),
+    // Safety net behind the visible Add Plugin click: BRAT's modal submit can
+    // race and not fire the download, so if the install hasn't started shortly,
+    // trigger BRAT's add directly. Invisible — the viewer still saw the click.
     beat(
-      "BRAT pulls lilbee from GitHub",
+      "Wait for BRAT to finish installing lilbee",
       runJs(`
         const brat = window.app.plugins.plugins["obsidian42-brat"];
-        document.querySelectorAll('.modal-container').forEach(m => m.remove());
-        if (brat) await brat.betaPlugins.addPlugin(${JSON.stringify(GITHUB_REPO)}, false);
-        for (let i = 0; i < 60; i++) {
+        for (let i = 0; i < 16; i++) {
+          if (window.app.plugins.manifests["lilbee"]) return;
+          await new Promise(r => setTimeout(r, 500));
+        }
+        if (!window.app.plugins.manifests["lilbee"] && brat) {
+          document.querySelectorAll('.modal-container').forEach(m => m.remove());
+          try { await brat.betaPlugins.addPlugin(${JSON.stringify(GITHUB_REPO)}, false); } catch {}
+        }
+        for (let i = 0; i < 120; i++) {
           if (window.app.plugins.manifests["lilbee"]) return;
           await new Promise(r => setTimeout(r, 500));
         }
       `),
-      { holdMs: 1500 },
+      { holdMs: 800 },
     ),
-    // BRAT installs the most recent tagged release, which lags main when
-    // there are unreleased commits (e.g. the multi-vault shared-root
-    // refactor). For the demo to exercise the same code the rest of the
-    // reel uses, overlay the freshly-built plugin files from this repo
-    // over the BRAT-installed ones. Off-camera: a no-op for the viewer,
-    // who sees BRAT add the plugin and the wizard come up moments later.
-    beat(
-      "Sync latest plugin files over the BRAT-installed version",
-      runJs(`
-        const fs = require('node:fs');
-        const path = require('node:path');
-        const vaultPath = window.app.vault.adapter.basePath;
-        const dst = path.join(vaultPath, '.obsidian/plugins/lilbee');
-        const src = '/Users/tobias/projects/obsidian-lilbee-demos';
-        for (const name of ['main.js', 'styles.css', 'manifest.json']) {
-          fs.copyFileSync(path.join(src, name), path.join(dst, name));
-        }
-      `),
-      { holdMs: 400 },
-    ),
-    beat("Dismiss any 'added' notice", key("escape"), { holdMs: 600 }),
+    beat("Dismiss BRAT's 'added' notice", key("escape"), { holdMs: 800 }),
 
-    // --- Stage 3: enable lilbee ---
-    // Make absolutely sure lilbee is disabled before we click the
-    // toggle: if BRAT or a previous demo run left it enabled, the
-    // toggle would visibly flip OFF then ON and that's the "enabling
-    // and disabling" the viewer reads as broken.
+    // BRAT installs lilbee but leaves it disabled; enable it with its toggle in
+    // Community plugins. lilbee opens its setup wizard the moment it loads.
     beat(
-      "Make sure lilbee starts disabled so the toggle is a clean ON",
-      runJs(`
-        if (window.app.plugins.enabledPlugins.has("lilbee")) {
-          await window.app.plugins.disablePluginAndSave("lilbee");
-        }
-      `),
-      { holdMs: 200 },
-    ),
-    beat(
-      "Open settings again",
+      "Open Settings (⌘,)",
       runJs(`window.app.commands.executeCommandById("app:open-settings");`),
       { holdMs: 1000, keyHint: "⌘," },
     ),
     beat(
-      "Click Community plugins",
+      "Open the Community plugins tab",
       clickSelector('.vertical-tab-nav-item:text-is("Community plugins")'),
       { holdMs: 1000 },
     ),
     beat(
-      "Toggle lilbee ON",
-      runJs(`
-        const items = Array.from(document.querySelectorAll('.setting-item'));
-        const row = items.find(el => /lilbee/i.test(el.querySelector('.setting-item-name')?.textContent || ''));
-        // Only click the toggle when lilbee is currently OFF, so the
-        // click reads as a clean turn-on and never as a flip-off then back-on.
-        if (!window.app.plugins.enabledPlugins.has("lilbee")) {
-          const toggle = row?.querySelector('.checkbox-container');
-          toggle?.click();
-          if (!window.app.plugins.enabledPlugins.has("lilbee")) {
-            await window.app.plugins.enablePluginAndSave("lilbee");
-          }
-        }
-      `),
+      "Enable lilbee with its toggle",
+      clickSelector('.setting-item:has(.setting-item-name:text-is("lilbee")) .checkbox-container'),
       { holdMs: 2000 },
     ),
-    beat("Close settings — the wizard appears next now that lilbee just loaded", key("escape"), { holdMs: 1500 }),
-
-    // --- Stage 4: lilbee's first-load wizard auto-opens; walk it ---
+    // Safety net behind the visible toggle click: make sure lilbee is actually
+    // enabled, then close the settings panel (via the API, not Escape, which
+    // would dismiss the wizard if it opened on top). lilbee opens its wizard
+    // the moment it loads, so it's left in front.
     beat(
-      "Wait for the wizard modal to appear",
+      "Confirm lilbee enabled, close the settings panel",
       runJs(`
-        // Plugin opens SetupWizard automatically when setupCompleted=false.
-        // Belt-and-suspenders: if a previous install left setupCompleted=true,
-        // flip it and trigger the wizard.
-        const p = window.app.plugins.plugins.lilbee;
-        if (!p) throw new Error("lilbee plugin still not loaded after wait");
-        if (p.settings.setupCompleted) {
-          p.settings.setupCompleted = false;
-          p.settings.activeChatModel = ${JSON.stringify(SMALL_MODEL_REPO + "/Qwen3-0.6B-Q8_0.gguf")};
-          await p.saveSettings();
-          window.app.commands.executeCommandById("lilbee:lilbee:setup");
+        if (!window.app.plugins.enabledPlugins.has("lilbee")) {
+          await window.app.plugins.enablePluginAndSave("lilbee");
         }
-        // Wait for the wizard DOM to materialise.
+        await new Promise(r => setTimeout(r, 1000));
+        window.app.setting?.close?.();
+      `),
+      { holdMs: 1500 },
+    ),
+
+    // --- Stage 2: lilbee's setup wizard opens on first enable; walk it ---
+    beat(
+      "Wait for lilbee's setup wizard to appear",
+      runJs(`
+        // BRAT enabled lilbee; on first load (setupCompleted === false, the
+        // default for a fresh install) the plugin opens its SetupWizard on its
+        // own. Just wait for it — no force-trigger, no toggling.
+        const p = window.app.plugins.plugins.lilbee;
         for (let i = 0; i < 60; i++) {
           if (document.querySelector('.lilbee-wizard')) return;
           await new Promise(r => setTimeout(r, 250));
@@ -257,30 +207,20 @@ export default storyboard("first_start", {
     ),
     ...wizardStep("Welcome -> Get started"),
     ...wizardStep("Server mode -> Next (Managed downloads server binary)"),
-    // The wizard's "Server mode → Next" calls startManagedServer, which
-    // downloads the binary and starts the process. The task queue
-    // doesn't track this; wait for the wizard to advance to the model
-    // picker step instead.
-    // The picker's cards load AND re-render asynchronously (catalog API
-    // call, then a RAM-fit pass), so a coordinate-based click races the
-    // re-render — the card is found one moment and gone the next. Poll for
-    // the Qwen3 0.6B card and DOM-click it, re-querying each iteration so a
-    // re-render can't strand a stale node, until the card reports selected.
+    // The wizard's "Server mode → Next" calls startManagedServer (downloads the
+    // binary, starts the process) and advances to the model picker. The picker's
+    // cards load via the catalog API then re-render once for a RAM-fit pass, so
+    // wait for the Qwen3 0.6B card to render and settle, then click it with the
+    // cursor.
     beat(
-      "Wait for the model picker, then select Qwen3 0.6B",
-      runJs(`
-        for (let i = 0; i < 240; i++) {
-          const card = document.querySelector('.lilbee-wizard-models [data-repo*="Qwen3-0.6B"]');
-          if (card) {
-            card.scrollIntoView({ block: 'center', behavior: 'instant' });
-            card.click();
-            await new Promise(r => setTimeout(r, 250));
-            if (document.querySelector('.lilbee-wizard-models [data-repo*="Qwen3-0.6B"].is-selected')) return;
-          }
-          await new Promise(r => setTimeout(r, 400));
-        }
-      `),
-      { holdMs: 1200, speedup: 4 },
+      "Wait for the model picker's Qwen3 0.6B card",
+      waitForSelector('.lilbee-wizard-models [data-repo*="Qwen3-0.6B"]'),
+      { holdMs: 1400, speedup: 4 },
+    ),
+    beat(
+      "Select Qwen3 0.6B",
+      clickSelector('.lilbee-wizard-models [data-repo*="Qwen3-0.6B"]'),
+      { holdMs: 1000 },
     ),
     ...wizardStep("Model picker -> Continue (Qwen3 0.6B downloads)"),
     // pullSelectedModel streams the download via SSE and only advances
@@ -316,25 +256,17 @@ export default storyboard("first_start", {
       `),
       { holdMs: 1500, speedup: 12, maxMs: 600_000 },
     ),
-    // Pick a small embedding model that the demo isn't already running
-    // (embeddinggemma 300m), so the next step is a real download the viewer
-    // sees stream. Poll + re-query like the chat picker so a re-render can't
-    // strand the click; fall back to the wizard default if the card is absent.
+    // Pick embeddinggemma 300m (a small model the demo isn't already running)
+    // by clicking its card, once it has rendered and settled.
+    beat(
+      "Wait for the embeddinggemma card",
+      waitForSelector('.lilbee-wizard-models [data-repo*="embeddinggemma"]'),
+      { holdMs: 1200, speedup: 3 },
+    ),
     beat(
       "Select the embeddinggemma embedding model",
-      runJs(`
-        for (let i = 0; i < 180; i++) {
-          const card = document.querySelector('.lilbee-wizard-models [data-repo*="embeddinggemma"]');
-          if (card) {
-            card.scrollIntoView({ block: 'center', behavior: 'instant' });
-            card.click();
-            await new Promise(r => setTimeout(r, 250));
-            if (document.querySelector('.lilbee-wizard-models [data-repo*="embeddinggemma"].is-selected')) return;
-          }
-          await new Promise(r => setTimeout(r, 400));
-        }
-      `),
-      { holdMs: 1000, speedup: 3 },
+      clickSelector('.lilbee-wizard-models [data-repo*="embeddinggemma"]'),
+      { holdMs: 1000 },
     ),
     ...wizardStep("Embedding picker -> Continue (embedding model downloads)"),
     beat(
