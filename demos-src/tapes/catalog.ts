@@ -10,8 +10,23 @@
  * down through the cards (infinite scroll fetches the next page as it
  * nears the bottom), so the motion is one deliberate flick per tab
  * rather than the cursor bouncing between the tab bar and the list.
+ *
+ * It closes by searching a frontier model the server can't run
+ * (DeepSeek V4): lilbee flags it "Unsupported" and gates the download,
+ * so the viewer sees the catalog won't let you pull a model that could
+ * never load on this machine.
  */
-import { beat, clickSelector, key, runJs, sleep, storyboard, type_, wheelScroll } from "../src/lib.ts";
+import {
+  beat,
+  clickSelector,
+  key,
+  runJs,
+  sleep,
+  storyboard,
+  type_,
+  waitForSelector,
+  wheelScroll,
+} from "../src/lib.ts";
 
 // One long fast flick per tab. macOS scroll ticks are tiny, so a big
 // count rips through many cards; "fast" mode uses large bursts and short
@@ -49,10 +64,25 @@ export default storyboard("catalog", {
     beat("Rerank tab", clickSelector(tab("Rerank")), { holdMs: 700 }),
     beat("Flick through the Rerank models", wheelScroll(CATALOG_RESULTS, FLICK, true), { holdMs: 700 }),
 
-    // Direct search: back to Chat, then type a specific model name.
+    // Direct search, ending on a model the server can't run: lilbee flags
+    // DeepSeek V4 "Unsupported" and gates its download instead of letting you
+    // pull a model that could never load here.
     beat("Back to the Chat tab", clickSelector(tab("Chat")), { holdMs: 600 }),
     beat("Click the search box", clickSelector("input.lilbee-catalog-search"), { holdMs: 400 }),
-    beat("Search for a specific model", type_("Phi-4"), { holdMs: 1800 }),
+    beat("Search for a model the server can't run", type_("deepseek v4"), { holdMs: 1400 }),
+    beat(
+      "Wait for the unsupported result",
+      waitForSelector(".lilbee-model-card.is-unsupported, .lilbee-catalog-list-row.is-unsupported"),
+      { holdMs: 700 },
+    ),
+    beat(
+      "Linger on the Unsupported badge and gated download",
+      runJs(`
+        const card = document.querySelector('.lilbee-model-card.is-unsupported, .lilbee-catalog-list-row.is-unsupported');
+        if (card) card.scrollIntoView({ block: 'center' });
+      `),
+      { holdMs: 2600 },
+    ),
 
     beat("Close the catalog", key("escape"), { holdMs: 500 }),
   ],
