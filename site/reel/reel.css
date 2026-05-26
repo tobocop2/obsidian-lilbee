@@ -1,0 +1,12 @@
+.reel-h1 { margin: 2rem 0 0.5rem; font-size: 22px; font-weight: 500; letter-spacing: 0.01em; color: var(--ink); }
+.reel-intro { margin: 0.4rem 0 2rem; max-width: 74ch; color: var(--ink-2); font-size: 13px; line-height: 1.6; }
+.reel-toc { margin: 0 0 2.6rem; padding: 1.1rem 1.3rem; background: var(--bg-card); border: 1px solid var(--rule); border-radius: 4px; }
+.reel-toc .toc-label { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-deep); }
+.reel-toc ol { margin: 0.7rem 0 0; padding-left: 1.5rem; }
+.reel-toc li { margin: 0.28rem 0; color: var(--ink-3); }
+.reel-section { margin: 2.4rem 0 2.9rem; scroll-margin-top: 1.5rem; }
+.reel-section h2 { margin: 0 0 0.45rem; font-size: 15px; font-weight: 500; letter-spacing: 0.02em; color: var(--accent); }
+.reel-section p { margin: 0.3rem 0 0.9rem; max-width: 82ch; color: var(--ink-2); font-size: 13px; line-height: 1.6; }
+.reel-clip { background: #000; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+.reel-clip video { display: block; width: 100%; background: #000; }
+.reel-foot { margin: 3rem 0 1rem; color: var(--ink-3); font-size: 12.5px; }
