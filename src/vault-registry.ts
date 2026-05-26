@@ -119,17 +119,6 @@ export class VaultRegistry {
         writeJsonAtomic(registryPath(this.sharedRoot), entries);
     }
 
-    markActive(id: string, when: number = Date.now()): void {
-        const entry = this.get(id);
-        if (!entry) return;
-        this.upsert({ ...entry, lastActiveAt: when });
-    }
-
-    remove(id: string): void {
-        const entries = this.list().filter((e) => e.id !== id);
-        writeJsonAtomic(registryPath(this.sharedRoot), entries);
-    }
-
     /** Return the registered data-dir or the default location for this id. */
     resolveDataDir(id: string): string {
         return this.get(id)?.dataDir ?? defaultDataDirFor(this.sharedRoot, id);

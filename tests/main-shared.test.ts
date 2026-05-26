@@ -235,6 +235,49 @@ describe("recordReadyState", () => {
     });
 });
 
+describe("managed server tracks the open vault's data dir", () => {
+    it("builds the server against whichever vault is open — switching vaults switches the data dir", async () => {
+        const plugin = await createPlugin();
+        const registry = plugin.vaultRegistry!;
+        registry.upsert({
+            id: "vault-a",
+            displayName: "A",
+            dataDir: "/shared/vaults/a",
+            obsidianVaultPath: "/Users/tester/A",
+            addedAt: 1,
+            lastActiveAt: 1,
+        });
+        registry.upsert({
+            id: "vault-b",
+            displayName: "B",
+            dataDir: "/shared/vaults/b",
+            obsidianVaultPath: "/Users/tester/B",
+            addedAt: 1,
+            lastActiveAt: 1,
+        });
+
+        // With vault A open, the server is wired to A's data dir.
+        (plugin as any).vaultId = "vault-a";
+        const smA = (plugin as any).buildServerManager("/fake/bin/lilbee", registry, registry.sharedRoot);
+        expect(smA.dataDir).toBe("/shared/vaults/a");
+
+        // Opening vault B (its own plugin instance loads with vault-b's id)
+        // points the managed server at B's data dir instead — not A's.
+        (plugin as any).vaultId = "vault-b";
+        const smB = (plugin as any).buildServerManager("/fake/bin/lilbee", registry, registry.sharedRoot);
+        expect(smB.dataDir).toBe("/shared/vaults/b");
+    });
+
+    it("falls back to the default per-vault dir when the open vault is unregistered", async () => {
+        const plugin = await createPlugin();
+        const registry = plugin.vaultRegistry!;
+        (plugin as any).vaultId = "fresh-vault";
+        const sm = (plugin as any).buildServerManager("/fake/bin/lilbee", registry, registry.sharedRoot);
+        expect(sm.dataDir).toBe(registry.resolveDataDir("fresh-vault"));
+        expect(sm.dataDir).toBe(`${registry.sharedRoot}/vaults/fresh-vault`);
+    });
+});
+
 describe("acquireLockOrBail", () => {
     it("returns true when the lock is unowned", async () => {
         const plugin = await createPlugin();
@@ -561,85 +604,6 @@ describe("adoptDataDir", () => {
         const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
         await plugin.adoptDataDir("/new");
         expect(startSpy).not.toHaveBeenCalled();
-    });
-});
-
-describe("openVaultPicker", () => {
-    it("opens the picker with every registered vault except our own", async () => {
-        const plugin = await createPlugin();
-        const reg = plugin.vaultRegistry!;
-        reg.upsert({
-            id: plugin.vaultId,
-            displayName: "Me",
-            dataDir: "/shared/vaults/me",
-            obsidianVaultPath: "/Users/tester/MyVault",
-            addedAt: 1,
-            lastActiveAt: 1,
-        });
-        reg.upsert({
-            id: "other",
-            displayName: "Personal",
-            dataDir: "/shared/vaults/other",
-            obsidianVaultPath: "/Users/tester/Personal",
-            addedAt: 1,
-            lastActiveAt: 1,
-        });
-        const picker = await import("../src/views/vault-picker-modal");
-        let captured: any[] = [];
-        vi.spyOn(picker.VaultPickerModal.prototype, "open").mockImplementation(function (this: any) {
-            captured = this.entries;
-        });
-        await (plugin as any).openVaultPicker();
-        expect(captured.map((e) => e.id)).toEqual(["other"]);
-    });
-
-    it("is a no-op when the registry is unset", async () => {
-        const plugin = await createPlugin();
-        (plugin as any).vaultRegistry = null;
-        const picker = await import("../src/views/vault-picker-modal");
-        const openSpy = vi.spyOn(picker.VaultPickerModal.prototype, "open").mockImplementation(() => {});
-        await (plugin as any).openVaultPicker();
-        expect(openSpy).not.toHaveBeenCalled();
-    });
-
-    it("invokes releaseFor with the picked entry", async () => {
-        const plugin = await createPlugin();
-        plugin.vaultRegistry!.upsert({
-            id: "other",
-            displayName: "Personal",
-            dataDir: "/shared/vaults/other",
-            obsidianVaultPath: "/Users/tester/Personal",
-            addedAt: 1,
-            lastActiveAt: 1,
-        });
-        const releaseSpy = vi.spyOn(plugin as any, "releaseFor").mockResolvedValue(undefined);
-        const picker = await import("../src/views/vault-picker-modal");
-        vi.spyOn(picker.VaultPickerModal.prototype, "open").mockImplementation(function (this: any) {
-            this.onPick(this.entries[0]);
-        });
-        await (plugin as any).openVaultPicker();
-        expect(releaseSpy).toHaveBeenCalledWith(expect.objectContaining({ id: "other" }));
-    });
-});
-
-describe("releaseFor", () => {
-    it("stops the server, releases the lock, and surfaces a Notice naming the target", async () => {
-        const plugin = await createPlugin();
-        const stop = vi.fn().mockResolvedValue(undefined);
-        (plugin as any).serverManager = { stop, dataDir: "/x", serverUrl: "" };
-        const releaseSpy = vi.spyOn(plugin.vaultRegistry!, "releaseLock");
-        await (plugin as any).releaseFor({ id: "x", displayName: "Personal" });
-        expect(stop).toHaveBeenCalled();
-        expect(plugin.serverManager).toBeNull();
-        expect(releaseSpy).toHaveBeenCalledWith(plugin.vaultId);
-        expect(Notice.instances.some((n) => n.message.includes("Personal"))).toBe(true);
-    });
-
-    it("works when there is no live server to stop", async () => {
-        const plugin = await createPlugin();
-        (plugin as any).serverManager = null;
-        await (plugin as any).releaseFor({ id: "x", displayName: "Personal" });
-        expect(Notice.instances.some((n) => n.message.includes("Personal"))).toBe(true);
     });
 });
 

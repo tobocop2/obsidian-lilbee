@@ -1,11 +1,11 @@
 /**
- * Tests for the shared-root, registered-vaults, and storage-report sections
+ * Tests for the shared-root, adopt-data-dir, and storage-report sections
  * inside the managed-mode Settings panel.
  */
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { App, MockElement, Setting, Notice } from "./__mocks__/obsidian";
 import { LilbeeSettingTab } from "../src/settings";
-import { DEFAULT_SETTINGS, type LilbeeSettings, type VaultRegistryEntry } from "../src/types";
+import { DEFAULT_SETTINGS, type LilbeeSettings } from "../src/types";
 import { TaskQueue } from "../src/task-queue";
 
 const mockEnsureBinary = vi.fn();
@@ -57,18 +57,6 @@ vi.mock("../src/views/confirm-pull-modal", () => ({
     ConfirmPullModal: vi.fn().mockImplementation(() => ({ open: vi.fn(), result: Promise.resolve(true) })),
 }));
 
-function entry(overrides: Partial<VaultRegistryEntry> = {}): VaultRegistryEntry {
-    return {
-        id: "abc",
-        displayName: "Work",
-        dataDir: "/shared/vaults/abc",
-        obsidianVaultPath: "/Users/x/Work",
-        addedAt: 1,
-        lastActiveAt: 1,
-        ...overrides,
-    };
-}
-
 function makePlugin(settings: Partial<LilbeeSettings> = {}, registry: any = null) {
     const merged: LilbeeSettings = { ...DEFAULT_SETTINGS, ...settings };
     return {
@@ -104,16 +92,10 @@ function makePlugin(settings: Partial<LilbeeSettings> = {}, registry: any = null
     } as unknown as InstanceType<typeof import("../src/main").default>;
 }
 
-function makeRegistry(entries: VaultRegistryEntry[], onRemove: (id: string) => void = () => {}) {
-    let current = [...entries];
+function makeRegistry() {
     return {
         sharedRoot: "/shared",
-        list: () => current.slice(),
-        get: (id: string) => current.find((e) => e.id === id) ?? null,
-        remove: (id: string) => {
-            current = current.filter((e) => e.id !== id);
-            onRemove(id);
-        },
+        resolveDataDir: (id: string) => `/shared/vaults/${id}`,
     };
 }
 
@@ -174,7 +156,7 @@ beforeEach(() => {
 
 describe("Shared root setting onChange", () => {
     it("trims and saves the new path", async () => {
-        const registry = makeRegistry([]);
+        const registry = makeRegistry();
         const plugin = makePlugin({ sharedRoot: "" }, registry);
         const tab = new LilbeeSettingTab(new App() as any, plugin as any);
         const { textOnChanges } = captureSettingCallbacks(() => tab.display());
@@ -187,7 +169,7 @@ describe("Shared root setting onChange", () => {
 
 describe("Adopt data dir affordance", () => {
     it("calls plugin.adoptDataDir with the trimmed staged value", async () => {
-        const registry = makeRegistry([entry({ id: "abc", displayName: "Work" })]);
+        const registry = makeRegistry();
         const plugin = makePlugin({}, registry);
         const adopt = vi.fn().mockResolvedValue(undefined);
         (plugin as any).adoptDataDir = adopt;
@@ -202,7 +184,7 @@ describe("Adopt data dir affordance", () => {
     });
 
     it("surfaces a Notice when the path is blank and does not call adoptDataDir", async () => {
-        const registry = makeRegistry([entry({ id: "abc", displayName: "Work" })]);
+        const registry = makeRegistry();
         const plugin = makePlugin({}, registry);
         const adopt = vi.fn().mockResolvedValue(undefined);
         (plugin as any).adoptDataDir = adopt;
@@ -215,73 +197,9 @@ describe("Adopt data dir affordance", () => {
     });
 });
 
-describe("Registered vaults section", () => {
-    it("renders an empty-state message when no vaults are registered", () => {
-        const registry = makeRegistry([]);
-        const plugin = makePlugin({}, registry);
-        const tab = new LilbeeSettingTab(new App() as any, plugin as any);
-        tab.display();
-        const containerEl = (tab as any).containerEl as MockElement;
-        const empty = containerEl.find("lilbee-vault-registry-empty");
-        expect(empty?.textContent).toContain("No vaults registered");
-    });
-
-    it("renders a row per registered vault and marks the current one", () => {
-        const registry = makeRegistry([
-            entry({ id: "abc", displayName: "Work" }),
-            entry({ id: "xyz", displayName: "Personal", obsidianVaultPath: "/Users/x/Personal" }),
-        ]);
-        const plugin = makePlugin({}, registry);
-        const tab = new LilbeeSettingTab(new App() as any, plugin as any);
-        const names: string[] = [];
-        const origSetName = Setting.prototype.setName;
-        Setting.prototype.setName = function (name: string) {
-            names.push(name);
-            return this;
-        };
-        try {
-            tab.display();
-        } finally {
-            Setting.prototype.setName = origSetName;
-        }
-        expect(names).toContain("Work (this vault)");
-        expect(names).toContain("Personal");
-    });
-
-    it("clicking Remove on a non-current vault drops the registry entry and re-renders", () => {
-        const removed: string[] = [];
-        const registry = makeRegistry(
-            [
-                entry({ id: "abc", displayName: "Work" }),
-                entry({ id: "xyz", displayName: "Personal", obsidianVaultPath: "/Users/x/Personal" }),
-            ],
-            (id) => removed.push(id),
-        );
-        const plugin = makePlugin({}, registry);
-        const tab = new LilbeeSettingTab(new App() as any, plugin as any);
-        const displaySpy = vi.spyOn(tab, "display");
-        const { buttonLabels, buttonOnClicks } = captureSettingCallbacks(() => tab.display());
-        // Click only the "Remove" buttons. Re-rendering would change indices, so
-        // collect handlers before iterating.
-        const removeHandlers = buttonOnClicks.filter((_, i) => buttonLabels[i] === "Remove");
-        expect(removeHandlers).toHaveLength(1);
-        for (const handler of removeHandlers) void handler();
-        expect(removed).toEqual(["xyz"]);
-        expect(displaySpy).toHaveBeenCalled();
-    });
-
-    it("renders no Remove button for the current vault row", () => {
-        const registry = makeRegistry([entry({ id: "abc", displayName: "Work" })]);
-        const plugin = makePlugin({}, registry);
-        const tab = new LilbeeSettingTab(new App() as any, plugin as any);
-        const { buttonLabels } = captureSettingCallbacks(() => tab.display());
-        expect(buttonLabels.filter((l) => l === "Remove")).toHaveLength(0);
-    });
-});
-
 describe("Storage report section", () => {
-    it("renders rows for binary, models, each vault, and the total", () => {
-        const registry = makeRegistry([entry({ id: "abc", displayName: "Work" })]);
+    it("renders rows for binary, models, the current vault, and the total", () => {
+        const registry = makeRegistry();
         const plugin = makePlugin({}, registry);
         const tab = new LilbeeSettingTab(new App() as any, plugin as any);
         tab.display();
@@ -291,12 +209,12 @@ describe("Storage report section", () => {
         const labels = report?.findAll("lilbee-storage-row-label").map((e) => e.textContent) ?? [];
         expect(labels).toContain("Binary");
         expect(labels).toContain("Models cache");
-        expect(labels).toContain("Work");
+        expect(labels).toContain("This vault");
         expect(labels).toContain("Total");
     });
 
     it("formats each row as bytes with a size", () => {
-        const registry = makeRegistry([]);
+        const registry = makeRegistry();
         const plugin = makePlugin({}, registry);
         const tab = new LilbeeSettingTab(new App() as any, plugin as any);
         tab.display();

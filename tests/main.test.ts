@@ -314,42 +314,17 @@ describe("LilbeePlugin", () => {
             expect(startSpy).toHaveBeenCalled();
         });
 
-        it("switch-vault command is unavailable without a vault registry or in external mode", async () => {
-            const plugin = await createPlugin({ serverMode: "managed" });
-            await plugin.onload();
-            const calls = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls;
-            const cmd = calls.find((c) => c[0]?.id === "lilbee:switch-vault")?.[0];
-            expect(cmd).toBeDefined();
-            expect(cmd!.checkCallback(true)).toBe(true);
-            plugin.settings.serverMode = "external";
-            expect(cmd!.checkCallback(true)).toBe(false);
-            plugin.settings.serverMode = "managed";
-            (plugin as any).vaultRegistry = null;
-            expect(cmd!.checkCallback(true)).toBe(false);
-        });
-
-        it("switch-vault command opens the vault picker", async () => {
-            const plugin = await createPlugin({ serverMode: "managed" });
-            await plugin.onload();
-            const pickerSpy = vi.spyOn(plugin as any, "openVaultPicker").mockResolvedValue(undefined);
-            const calls = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls;
-            const cmd = calls.find((c) => c[0]?.id === "lilbee:switch-vault")?.[0];
-            expect(cmd!.checkCallback(false)).toBe(true);
-            expect(pickerSpy).toHaveBeenCalled();
-        });
-
-        it("adds all twenty-three commands", async () => {
+        it("adds all twenty-two commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(23);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(22);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("lilbee:model-picker-chat");
             expect(allIds).toContain("lilbee:model-picker-embedding");
             expect(allIds).toContain("lilbee:model-info-active-chat");
             expect(allIds).toContain("lilbee:model-info-active-embedding");
             expect(allIds).toContain("lilbee:take-over");
-            expect(allIds).toContain("lilbee:switch-vault");
             const ids = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(ids).toContain("lilbee:search");
             expect(ids).toContain("lilbee:chat");
