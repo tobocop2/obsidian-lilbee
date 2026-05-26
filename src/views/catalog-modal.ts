@@ -21,7 +21,7 @@ import {
     ERROR_NAME,
 } from "../types";
 import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
-import { extractHfRepo } from "../utils/model-ref";
+import { extractHfRepo, nativeModelRef } from "../utils/model-ref";
 import { ConfirmModal } from "./confirm-modal";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import {
@@ -853,17 +853,21 @@ export class CatalogModal extends Modal {
     }
 
     private async setActiveFor(entry: CatalogEntry): ReturnType<typeof this.plugin.api.setChatModel> {
+        // Activate by the concrete GGUF file ref, not the bare repo: multi-quant
+        // repos have no single default file and the server rejects the bare repo
+        // with "not available", surfacing a spurious "Failed to set" toast.
+        const ref = nativeModelRef(entry.hf_repo, entry.gguf_filename);
         if (entry.task === MODEL_TASK.EMBEDDING) {
-            return this.plugin.api.setEmbeddingModel(entry.hf_repo);
+            return this.plugin.api.setEmbeddingModel(ref);
         }
         if (entry.task === MODEL_TASK.RERANK) {
-            return this.plugin.api.setRerankerModel(entry.hf_repo);
+            return this.plugin.api.setRerankerModel(ref);
         }
         if (entry.task === MODEL_TASK.VISION) {
-            return this.plugin.api.setVisionModel(entry.hf_repo);
+            return this.plugin.api.setVisionModel(ref);
         }
-        const result = await this.plugin.api.setChatModel(entry.hf_repo);
-        if (result.isOk()) this.plugin.activeModel = entry.hf_repo;
+        const result = await this.plugin.api.setChatModel(ref);
+        if (result.isOk()) this.plugin.activeModel = ref;
         return result;
     }
 

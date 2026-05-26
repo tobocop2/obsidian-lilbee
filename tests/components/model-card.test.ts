@@ -184,7 +184,7 @@ describe("renderModelCard", () => {
             expect(tag.getAttribute("title")).toContain("deepseek v4");
         });
 
-        it("renders an Unverified badge for compat=unknown without dimming the card", () => {
+        it("renders no badge for compat=unknown (un-probed arch is not surfaced)", () => {
             const c = container();
             const card = renderModelCard(
                 c,
@@ -192,10 +192,7 @@ describe("renderModelCard", () => {
                 {},
             ) as unknown as MockElement;
             expect(card.classList.contains("is-unsupported")).toBe(false);
-            const tag = card.find("lilbee-tag-compat")!;
-            expect(tag.textContent).toBe(MESSAGES.LABEL_COMPAT_UNKNOWN);
-            expect(tag.classList.contains("is-unknown")).toBe(true);
-            expect(tag.getAttribute("title")).toContain("mamba");
+            expect(card.find("lilbee-tag-compat")).toBeNull();
         });
 
         it("falls back to a generic tooltip when architecture is absent", () => {
@@ -208,12 +205,6 @@ describe("renderModelCard", () => {
             expect(unsupported.find("lilbee-tag-compat")!.getAttribute("title")).toBe(
                 MESSAGES.TOOLTIP_COMPAT_UNSUPPORTED(""),
             );
-            const unknown = renderModelCard(
-                container(),
-                makeEntry({ compat: "unknown", architecture: null }),
-                {},
-            ) as unknown as MockElement;
-            expect(unknown.find("lilbee-tag-compat")!.getAttribute("title")).toBe(MESSAGES.TOOLTIP_COMPAT_UNKNOWN(""));
         });
 
         it("renders no compat badge for supported or unset compat", () => {

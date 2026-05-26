@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { cleanDisplayName, displayLabelForRef, extractHfRepo } from "../../src/utils/model-ref";
+import { cleanDisplayName, displayLabelForRef, extractHfRepo, nativeModelRef } from "../../src/utils/model-ref";
+
+describe("nativeModelRef", () => {
+    it("builds the full file ref when a concrete .gguf filename is present", () => {
+        expect(nativeModelRef("bartowski/SmolLM2-360M-Instruct-GGUF", "SmolLM2-360M-Instruct-Q4_K_M.gguf")).toBe(
+            "bartowski/SmolLM2-360M-Instruct-GGUF/SmolLM2-360M-Instruct-Q4_K_M.gguf",
+        );
+    });
+
+    it("falls back to the bare repo for a glob filename", () => {
+        expect(nativeModelRef("Qwen/Qwen3-8B-GGUF", "*Q4_K_M.gguf")).toBe("Qwen/Qwen3-8B-GGUF");
+    });
+
+    it("falls back to the bare repo when the filename is missing", () => {
+        expect(nativeModelRef("Qwen/Qwen3-8B-GGUF", "")).toBe("Qwen/Qwen3-8B-GGUF");
+        expect(nativeModelRef("Qwen/Qwen3-8B-GGUF", null)).toBe("Qwen/Qwen3-8B-GGUF");
+        expect(nativeModelRef("Qwen/Qwen3-8B-GGUF", undefined)).toBe("Qwen/Qwen3-8B-GGUF");
+    });
+});
 
 describe("displayLabelForRef", () => {
     it("returns empty string for empty input", () => {
