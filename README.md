@@ -11,7 +11,7 @@
 
 <p align="center"><a href="https://obsidian.lilbee.sh/">Project site</a> &nbsp;·&nbsp; <a href="https://obsidian.lilbee.sh/reel">Demo reel</a> &nbsp;·&nbsp; <a href="https://github.com/tobocop2/obsidian-lilbee/releases">Releases</a> &nbsp;·&nbsp; <a href="https://lilbee.sh/">lilbee engine</a></p>
 
-This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives you chat, an auto-generated wiki, click-to-source citations, and a model catalog, all inside Obsidian. It bundles the lilbee server and manages it for you; nothing to install separately. Everything runs on your computer; cloud models are opt-in, per role.
+This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives you chat, an auto-generated wiki, click-to-source citations, and a model catalog, all inside Obsidian. It downloads and manages the lilbee server for you; nothing to install separately. Everything runs on your computer; cloud models are opt-in, per role.
 
 [![CI](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml/badge.svg)](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml)
 [![Coverage](https://obsidian.lilbee.sh/coverage/badge.svg)](https://obsidian.lilbee.sh/coverage/)
@@ -56,7 +56,7 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 
 ## Why a local search engine for Obsidian
 
-A vault is already a curated set of documents: notes you've taken, PDFs you've collected, scans you've filed away. That's exactly the corpus a local search engine wants. This plugin runs lilbee against your vault so a local model can reason over your own library and answer with citations you can click back to the source. lilbee itself is a terminal-first search engine that ships a TUI, an MCP server, a REST API, and a Python library; the plugin is the Obsidian frontend, sharing the same index, the same models, the same wiki.
+A vault is already a curated set of documents: notes you've taken, PDFs you've collected, scans you've filed away. That's exactly the corpus a local search engine wants. This plugin points lilbee at your vault so a local model can reason over your own library and answer with citations you can click back to the source.
 
 **The verification loop is one click.** When the answer matters and you want to read what the model read, every citation in chat or wiki opens a **Source Preview** that scrolls to the exact passage in the original document, with the surrounding paragraphs visible. No "open the file, find the page, scroll to the line."
 
@@ -70,7 +70,7 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
 
 Point lilbee at your vault and it builds a searchable library from every note, PDF, ebook, and code file, with citations that click back to the source line. The pattern works for any vault you've curated: a medical-textbook collection, a field's research papers, a car's service manuals, your company's internal wiki. Whatever your vault holds becomes searchable, and you can talk to it.
 
-Add a single file from the right-click menu or the command palette, or run **Sync vault** to index everything at once. Background jobs (sync, crawl, wiki build, model pull) run through a **Task Center** with per-type concurrent queues and a global cap; ask questions while it works.
+Add a single file from the right-click menu or the command palette, or run **Sync vault** to index everything at once. Background jobs (sync, crawl, wiki build, model downloads) run in a **Task Center**, so you can keep asking questions while they work.
 
 ![add a PDF and a README from the palette, watch the Task Center index them, then ask a cited question](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/add.gif)
 
@@ -78,13 +78,13 @@ Add a single file from the right-click menu or the command palette, or run **Syn
 
 Every citation in a chat reply or wiki page is a live link. Click it and a Source Preview opens, scrolled to the exact passage in the source document, surrounding paragraphs visible, cited lines highlighted. From there you can open the full document or copy a deep link back to the citation. A confident-sounding answer with a footnote is only as good as the footnote; making the check one click instead of a separate chore is the difference between trusting the system and re-reading everything by hand.
 
-This works for crawled web pages too: install the `[crawler]` extra (bundled with the managed server), crawl a docs site or a Wikipedia page into your vault, and search or chat with that copy offline, with citations back to the rendered source.
+This works for web pages too: crawl a docs site or a Wikipedia page into your vault, then search or chat with that copy offline, with citations back to the source.
 
 ![crawl a Wikipedia page into the vault, ask a cited question, and jump to the cited section](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl.gif)
 
 ### Pick and tune your models
 
-Chat, embedding, vision, and reranker are four separate roles, each picked independently. The Model Catalog (`Open model catalog` from the command palette, or the chat toolbar dropdown) browses featured picks or searches Hugging Face Hub, shows size and RAM before you pull, flags models the bundled engine can't run, and confirms before downloading; pulls run through the Task Center with progress and cancel. Retrieval and generation are deeply tunable from Settings, 50+ knobs in all: chunk size and overlap, search strictness, query rewriting on/off, a reranker pass with a configurable candidate count, each with reset-to-default. Settings groups them into Search & Retrieval, Generation, Sync, Crawling, Wiki, and Advanced, with a filter on top.
+Chat, embedding, vision, and reranking are separate roles, each with its own model. The Model Catalog (from the command palette or the chat toolbar) browses featured picks or searches Hugging Face Hub, shows each model's size and memory before you pull, flags ones that won't run on your hardware, and downloads through the Task Center so you can keep working. Defaults are sensible out of the gate; when you want to go deeper, Settings exposes the retrieval and generation knobs, each with a reset.
 
 ![browse the model catalog inside Obsidian: Chat, Embed, Vision, Rerank tabs, search Hugging Face Hub](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/catalog.gif)
 
@@ -92,9 +92,9 @@ Chat, embedding, vision, and reranker are four separate roles, each picked indep
 
 Your vault is full of more than markdown. lilbee handles the rest:
 
-- **Prose and structured files** (PDFs, `.docx` / `.xlsx` / `.pptx`, `.epub`, CSV / TSV / JSON / YAML) go through [Kreuzberg](https://github.com/Goldziher/kreuzberg)'s heading-aware extraction, so each chunk keeps its section context.
-- **Code** (150+ languages) goes through [tree-sitter](https://tree-sitter.github.io/tree-sitter/)'s AST-aware splitter, so chunks map to real functions, classes, and modules instead of arbitrary line ranges.
-- **Scanned PDFs and photographed pages** go through OCR: Tesseract for plain text, or a local GGUF vision model that keeps tables and layout as markdown. (A per-vault toggle in Settings.)
+- **Prose and structured files** (PDFs, Word / Excel / PowerPoint, ebooks, CSV / JSON / YAML) are split so each chunk keeps its section context.
+- **Code** (150+ languages) is split along real functions and classes, not arbitrary line ranges.
+- **Scanned PDFs and photographed pages** are read with OCR, including a local vision model that keeps tables and layout intact. (A per-vault toggle in Settings.)
 
 ![a scanned, image-only PDF read by a local vision model: the Task Center streams OCR page by page, then a cited answer reads the support number and publisher straight off the scanned cover](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/vision.gif)
 
@@ -137,9 +137,9 @@ The chat panel opens in the sidebar. From there you can ask questions, attach in
 
 The plugin runs [lilbee](https://lilbee.sh/) in the background for you: on first launch it downloads the right version for your platform, starts it automatically, and shuts it down when you close Obsidian. Your vault is the corpus. lilbee handles indexing, retrieval, generation, and the wiki; the plugin is the interface on top.
 
-Everything stays on your machine. The server, the models, the index, and your vault all live locally. Every Obsidian vault on your computer shares one lilbee binary and one HuggingFace cache under a shared root (`~/Library/Application Support/Lilbee/` on macOS, `~/.local/share/lilbee/` on Linux, `%LOCALAPPDATA%\Lilbee\` on Windows). Each vault keeps its own `vaults/<id>/` subfolder for its index, wiki, and config, so they stay isolated; downloaded models are reused instead of duplicated. The path is configurable from Settings → Connection.
+Everything stays on your machine: the server, the models, the index, and your vault. Vaults on the same computer share one lilbee install and one model cache, so the models you download are reused across vaults instead of fetched again. Each vault keeps its own index, isolated from the others.
 
-**One vault at a time.** lilbee is a single-vault server, so the managed process follows whichever vault you have open in Obsidian: open a vault and lilbee indexes and answers from it; open a different vault and it re-targets the new one automatically. Each vault's index stays on disk and is restored when you reopen it. If you'd rather run your own lilbee server (on a different machine, in a container, or on a port you control), point the plugin at it from Settings → Connection.
+**One vault at a time.** lilbee follows whichever vault you have open: switch vaults and it re-targets the new one automatically, and each vault's index is saved and restored when you reopen it. (Advanced users can point the plugin at their own lilbee server from Settings → Connection.)
 
 > **macOS users:** the server binary is unsigned (Apple charges [$99/year](https://developer.apple.com/support/enrollment/) for signing). The plugin clears the quarantine flag automatically. If macOS still blocks it, go to System Settings → Privacy & Security and click **Allow Anyway**. See the [lilbee source](https://github.com/tobocop2/lilbee) if you want to audit the build.
 
