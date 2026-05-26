@@ -2796,7 +2796,7 @@ describe("LilbeePlugin", () => {
             expect(plugin.taskQueue.completed.filter((t) => t.type === "setup").length).toBe(1);
         });
 
-        it("handles setup_progress with null total (indeterminate)", async () => {
+        it("shows the warmup on the crawl row without a fake download sub-task when there is no size estimate", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
@@ -2811,6 +2811,40 @@ describe("LilbeePlugin", () => {
                             total_bytes: null,
                             detail: "Downloading…",
                         },
+                    };
+                    yield { event: SSE_EVENT.SETUP_DONE, data: { component: "chromium", success: true, error: null } };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 0 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            // A warmup with no size estimate must not spawn a Chromium download
+            // sub-task (it would render a misleading 0 MB / indeterminate
+            // download); the stage surfaces on the crawl row instead, and the
+            // crawl still completes cleanly.
+            expect(plugin.taskQueue.completed.find((t) => t.type === "setup")).toBeUndefined();
+            expect(plugin.taskQueue.completed.some((t) => t.type === "crawl")).toBe(true);
+        });
+
+        it("renders an indeterminate detail when a sized setup download streams progress without a total", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    // A real install reports a size estimate up front (so the
+                    // download sub-task is created), but a later progress event
+                    // can still arrive without a total — formatSetupDetail must
+                    // fall back to the indeterminate label.
+                    yield {
+                        event: SSE_EVENT.SETUP_START,
+                        data: { component: "chromium", size_estimate_bytes: 150_000_000 },
+                    };
+                    yield {
+                        event: SSE_EVENT.SETUP_PROGRESS,
+                        data: { component: "chromium", downloaded_bytes: 5_000_000, total_bytes: null, detail: "" },
                     };
                     yield { event: SSE_EVENT.SETUP_DONE, data: { component: "chromium", success: true, error: null } };
                     yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 0 } };
