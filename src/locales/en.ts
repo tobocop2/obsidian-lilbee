@@ -297,15 +297,10 @@ export const MESSAGES = {
     LABEL_FIT_TIGHT: "tight",
     LABEL_FIT_WONT_RUN: "won't run",
     LABEL_COMPAT_UNSUPPORTED: "Unsupported",
-    LABEL_COMPAT_UNKNOWN: "Unverified",
     TOOLTIP_COMPAT_UNSUPPORTED: (architecture: string) =>
         architecture
             ? `Your lilbee server doesn't support this model's architecture (${architecture}).`
             : "Your lilbee server doesn't support this model's architecture.",
-    TOOLTIP_COMPAT_UNKNOWN: (architecture: string) =>
-        architecture
-            ? `lilbee can't confirm support for this model's architecture (${architecture}) — it may not load.`
-            : "lilbee can't confirm this model will load on your server.",
     TOOLTIP_PULL_UNSUPPORTED: "This model isn't supported by your lilbee server.",
     LABEL_SWITCH_TO_LIST: "Switch to list view",
     LABEL_SWITCH_TO_GRID: "Switch to grid view",

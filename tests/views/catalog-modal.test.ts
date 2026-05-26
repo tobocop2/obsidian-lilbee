@@ -798,6 +798,32 @@ describe("CatalogModal", () => {
             expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("Qwen/Qwen3-8B-GGUF");
         });
 
+        it("activates by the concrete GGUF file ref when the filename is not a glob", async () => {
+            const plugin = makePlugin();
+            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeEntry({
+                            installed: true,
+                            hf_repo: "bartowski/SmolLM2-360M-Instruct-GGUF",
+                            gguf_filename: "SmolLM2-360M-Instruct-Q4_K_M.gguf",
+                        }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const useBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_USE)!;
+            useBtn.trigger("click");
+            await tick();
+            await tick();
+            // Bare repo would 422 on the server (no default quant); send the full ref.
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith(
+                "bartowski/SmolLM2-360M-Instruct-GGUF/SmolLM2-360M-Instruct-Q4_K_M.gguf",
+            );
+        });
+
         it("4u1: handleUse refreshes the Settings tab on success", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));

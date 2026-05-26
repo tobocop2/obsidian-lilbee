@@ -164,6 +164,19 @@
     display: flex;
     align-items: center;
     gap: 2px;
+    /* Let the model/embed groups shrink so a narrow chat panel (e.g. beside the
+       Task Center) yields space to the toolbar actions instead of clipping. */
+    min-width: 0;
+}
+
+/* Native selects size to their widest option, which bloats the toolbar; cap
+   and shrink them so the row fits and the selected value truncates gracefully. */
+.lilbee-chat-model-select,
+.lilbee-embed-model-select {
+    min-width: 0;
+    max-width: 150px;
+    flex-shrink: 1;
+    text-overflow: ellipsis;
 }
 
 .lilbee-embed-browse {
@@ -599,16 +612,23 @@
     background-color: var(--background-modifier-hover);
 }
 
-.lilbee-chat-save {
+.lilbee-chat-save,
+.lilbee-chat-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: none;
     border: none;
     cursor: pointer;
     color: var(--text-muted);
     padding: 2px var(--size-4-2, 8px);
     border-radius: var(--radius-s, 4px);
+    /* Pinned action icons: never shrink or clip behind the Task Center edge. */
+    flex: 0 0 auto;
 }
 
-.lilbee-chat-save:hover {
+.lilbee-chat-save:hover,
+.lilbee-chat-clear:hover {
     background-color: var(--background-modifier-hover);
     color: var(--text-normal);
 }
