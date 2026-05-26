@@ -264,6 +264,32 @@ describe("CatalogModal", () => {
             expect(content.find("lilbee-catalog-pull")).not.toBeNull();
         });
 
+        it("gates the Pull button, dims the row, and badges an unsupported model in list view", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(makeCatalogResponse([makeEntry({ compat: "unsupported", architecture: "deepseek v4" })])),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            content.find("lilbee-catalog-view-toggle")!.trigger("click");
+            await tick();
+            const row = content.find("lilbee-catalog-list-row")!;
+            expect(row.classList.contains("is-unsupported")).toBe(true);
+            expect(row.find("lilbee-tag-compat")).not.toBeNull();
+            const pull = content.find("lilbee-catalog-pull")!;
+            expect(pull.classList.contains("is-gated")).toBe(true);
+            expect(pull.getAttribute("disabled")).toBe("true");
+        });
+
+        it("handlePull refuses an unsupported model with a Notice (safety net for every pull path)", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin);
+            (modal as unknown as { handlePull(e: CatalogEntry): void }).handlePull(
+                makeEntry({ compat: "unsupported" }),
+            );
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.TOOLTIP_PULL_UNSUPPORTED);
+        });
+
         it("renders Use + Remove buttons for installed entries in list view", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));

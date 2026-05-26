@@ -155,6 +155,20 @@ export const HARDWARE_FIT = {
     WONT_RUN: "wont_run",
 } as const satisfies Record<string, HardwareFit>;
 
+/**
+ * Whether the connected lilbee server can run a catalog model, derived from its
+ * architecture. `supported` is the common case (no badge); `unsupported` means
+ * the server's runtime can't load it (gate the download); `unknown` means the
+ * server couldn't classify the architecture (surface it, but don't block).
+ */
+export type ModelCompat = "supported" | "unsupported" | "unknown";
+
+export const MODEL_COMPAT = {
+    SUPPORTED: "supported",
+    UNSUPPORTED: "unsupported",
+    UNKNOWN: "unknown",
+} as const satisfies Record<string, ModelCompat>;
+
 export type DiscoverRail = "for_you" | "your_collection" | "fresh";
 
 export const DISCOVER_RAIL = {
@@ -221,6 +235,31 @@ export const SERVER_STATE = {
     READY: "ready",
     ERROR: "error",
 } as const satisfies Record<string, ServerState>;
+
+/**
+ * Progress phases emitted by the managed-server start flow to any observer that
+ * passes an `onProgress` handler — currently the setup wizard, which shows
+ * binary-download and server-startup state inline while the user waits on the
+ * Server step. Lives here (not in main.ts) so leaf views can import the
+ * constant without pulling in the plugin entry point and risking a circular
+ * value import.
+ */
+export type ManagedServerProgressPhase = "downloading" | "starting" | "ready" | "error";
+
+export const MANAGED_PHASE = {
+    DOWNLOADING: "downloading",
+    STARTING: "starting",
+    READY: "ready",
+    ERROR: "error",
+} as const satisfies Record<string, ManagedServerProgressPhase>;
+
+export interface ManagedServerProgress {
+    phase: ManagedServerProgressPhase;
+    message: string;
+    url?: string;
+}
+
+export type ManagedServerProgressHandler = (event: ManagedServerProgress) => void;
 
 export type ServerMode = "managed" | "external";
 
@@ -442,6 +481,8 @@ export interface CatalogEntry {
     downloads: number;
     param_count: string;
     fit?: HardwareFit | null;
+    compat?: ModelCompat | null;
+    architecture?: string | null;
     size_variants?: SizeVariant[] | null;
 }
 

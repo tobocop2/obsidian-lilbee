@@ -824,6 +824,15 @@
     background-color: var(--background-modifier-hover);
 }
 
+/* Gated pull (unsupported model): muted, non-interactive, no hover lift. */
+.lilbee-catalog-pull.is-gated,
+.lilbee-catalog-pull.is-gated:hover {
+    color: var(--text-muted);
+    background: transparent;
+    border-color: var(--background-modifier-border);
+    cursor: not-allowed;
+}
+
 .lilbee-catalog-use,
 .lilbee-catalog-remove {
     padding: 4px 12px;
@@ -884,6 +893,11 @@
 .lilbee-model-card.is-fits { --rail: var(--color-green, #4cb37b); }
 .lilbee-model-card.is-tight { --rail: var(--color-orange, #d49340); }
 .lilbee-model-card.is-wont-run { --rail: var(--color-red, #c8392f); }
+
+/* Unsupported models read as dimmed so they're visually de-emphasised against
+ * runnable ones; hover lifts the dim a little so the card stays inspectable. */
+.lilbee-model-card.is-unsupported { opacity: 0.55; }
+.lilbee-model-card.is-unsupported:hover { opacity: 0.85; }
 
 .lilbee-model-card.is-selected {
     --rail: var(--interactive-accent);
@@ -984,6 +998,21 @@
     color: var(--text-faint);
     background: transparent;
     border: 1px dashed color-mix(in srgb, var(--text-faint) 40%, transparent);
+}
+
+.lilbee-tag-compat {
+    text-transform: none;
+    letter-spacing: 0.02em;
+}
+
+.lilbee-tag-compat.is-unsupported {
+    color: var(--color-red, #c8392f);
+    background: color-mix(in srgb, var(--color-red, #c8392f) 14%, transparent);
+}
+
+.lilbee-tag-compat.is-unknown {
+    color: var(--color-orange, #d49340);
+    background: color-mix(in srgb, var(--color-orange, #d49340) 12%, transparent);
 }
 
 /* Specs row: monospace data line, bold size leads, dot separators. */
@@ -1252,6 +1281,14 @@
 
 .lilbee-catalog-list-row:hover {
     background: var(--background-modifier-hover);
+}
+
+.lilbee-catalog-list-row.is-unsupported { opacity: 0.55; }
+.lilbee-catalog-list-row.is-unsupported:hover { opacity: 0.85; }
+
+.lilbee-catalog-list-col-name .lilbee-tag-compat {
+    margin-left: 6px;
+    vertical-align: middle;
 }
 
 .lilbee-catalog-list-col-name {
@@ -1993,6 +2030,121 @@
 .lilbee-wizard-task-center-cta:hover {
     background-color: color-mix(in srgb, var(--wizard-step-color, var(--interactive-accent)) 12%, transparent);
     border-color: var(--wizard-step-color, var(--interactive-accent));
+}
+
+/* Managed-server setup panel: a header + three phase rows whose dots light up
+ * as the server moves Downloading → Starting → Ready. Mirrors the Task Center's
+ * visual language so first-run setup feels like the rest of the plugin. */
+.lilbee-wizard-setup {
+    margin: var(--size-4-3, 12px) 0 var(--size-4-1, 4px);
+    padding: var(--size-4-4, 16px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    background-color: color-mix(in srgb, var(--wizard-step-color) 4%, var(--background-secondary));
+}
+
+.lilbee-wizard-setup-head {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    font-weight: var(--font-semibold, 600);
+    font-size: var(--font-small, 13px);
+    margin-bottom: var(--size-4-3, 12px);
+}
+
+.lilbee-wizard-setup-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--background-modifier-border);
+    border-top-color: var(--wizard-step-color, var(--interactive-accent));
+    border-radius: 50%;
+    animation: lilbee-spin 0.7s linear infinite;
+    flex-shrink: 0;
+}
+
+.lilbee-wizard-setup-head.is-ready .lilbee-wizard-setup-spinner {
+    display: none;
+}
+
+/* Green check stands in for the spinner once the server answers. */
+.lilbee-wizard-setup-head.is-ready::before {
+    content: "✓";
+    color: var(--text-success, #22c55e);
+    font-weight: var(--font-bold, 700);
+}
+
+.lilbee-wizard-setup-head.is-error .lilbee-wizard-setup-head-text {
+    color: var(--text-error, #e0526a);
+}
+
+.lilbee-wizard-phase {
+    padding: var(--size-4-1, 4px) 0;
+}
+
+.lilbee-wizard-phase-line {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+}
+
+.lilbee-wizard-phase.is-active .lilbee-wizard-phase-line,
+.lilbee-wizard-phase.is-done .lilbee-wizard-phase-line {
+    color: var(--text-normal);
+}
+
+.lilbee-wizard-phase-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: var(--background-modifier-border);
+    flex-shrink: 0;
+}
+
+.lilbee-wizard-phase-label {
+    flex: 1;
+    min-width: 0;
+}
+
+.lilbee-wizard-phase.is-done .lilbee-wizard-phase-dot {
+    background-color: var(--text-success, #22c55e);
+}
+
+.lilbee-wizard-phase.is-active .lilbee-wizard-phase-dot {
+    background-color: var(--wizard-step-color, var(--interactive-accent));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--wizard-step-color, var(--interactive-accent)) 30%, transparent);
+}
+
+.lilbee-wizard-phase-detail {
+    margin: var(--size-4-2, 8px) 0 var(--size-4-1, 4px) calc(7px + var(--size-4-2, 8px));
+}
+
+.lilbee-wizard-phase-detail .lilbee-progress-bar-container {
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    background-color: var(--background-modifier-border);
+}
+
+.lilbee-wizard-phase-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
+    margin-top: var(--size-4-1, 4px);
+}
+
+.lilbee-wizard-setup-gate {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: var(--size-4-3, 12px);
+    font-size: 12px;
+    color: var(--text-warning, #e0a14a);
+}
+
+.lilbee-wizard-setup-gate::before {
+    content: "⚠";
 }
 
 .lilbee-wizard-actions {

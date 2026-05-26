@@ -321,6 +321,17 @@ export const MESSAGES = {
     LABEL_FIT_FITS: "fits",
     LABEL_FIT_TIGHT: "tight",
     LABEL_FIT_WONT_RUN: "won't run",
+    LABEL_COMPAT_UNSUPPORTED: "Unsupported",
+    LABEL_COMPAT_UNKNOWN: "Unverified",
+    TOOLTIP_COMPAT_UNSUPPORTED: (architecture: string) =>
+        architecture
+            ? `Your lilbee server doesn't support this model's architecture (${architecture}).`
+            : "Your lilbee server doesn't support this model's architecture.",
+    TOOLTIP_COMPAT_UNKNOWN: (architecture: string) =>
+        architecture
+            ? `lilbee can't confirm support for this model's architecture (${architecture}) — it may not load.`
+            : "lilbee can't confirm this model will load on your server.",
+    TOOLTIP_PULL_UNSUPPORTED: "This model isn't supported by your lilbee server.",
     LABEL_SWITCH_TO_LIST: "Switch to list view",
     LABEL_SWITCH_TO_GRID: "Switch to grid view",
     LABEL_VIEW_TOGGLE_CTA: "Switch to list view for the full catalog",
@@ -478,10 +489,19 @@ export const MESSAGES = {
     STATUS_SYNC_PILL: (n: number) => `⟳ ${n}`,
     TOOLTIP_PENDING_SYNC_HINT: "Click to sync new documents",
     STATUS_STARTING_SERVER: "Starting server...",
-    WIZARD_SERVER_PREPARING: "Preparing lilbee…",
-    WIZARD_SERVER_DOWNLOADING: "Downloading server — {msg}",
-    WIZARD_SERVER_STARTING: "Starting lilbee server…",
-    WIZARD_SERVER_READY: "Server ready. Loading models…",
+    WIZARD_SETUP_HEAD: "Setting up lilbee",
+    WIZARD_SETUP_RUNNING: "lilbee server is running",
+    WIZARD_SETUP_DOWNLOAD_PENDING: "Download lilbee server",
+    WIZARD_SETUP_DOWNLOAD_ACTIVE: "Downloading lilbee server",
+    WIZARD_SETUP_DOWNLOAD_DONE: "Downloaded lilbee server",
+    WIZARD_SETUP_START_PENDING: "Start the server",
+    WIZARD_SETUP_START_ACTIVE: "Starting the server",
+    WIZARD_SETUP_START_DONE: "Started the server",
+    WIZARD_SETUP_READY_PENDING: "Server ready",
+    WIZARD_SETUP_READY_DONE: "Server ready · listening on 127.0.0.1",
+    WIZARD_SETUP_DOWNLOAD_HINT: "Downloading… up to ~1 min on first run.",
+    WIZARD_SETUP_START_HINT: "Booting · waiting for the server to respond…",
+    WIZARD_SETUP_GATE: "You can't continue until the server is ready.",
     WIZARD_EXTERNAL_TOKEN_HINT:
         "Paste the session token from your lilbee server (found with `lilbee token`). Required for the plugin to authenticate against a remote server.",
     PLACEHOLDER_MANUAL_TOKEN: "lilbee-…",

@@ -1,5 +1,5 @@
 import type { CatalogEntry, HardwareFit, ModelCardOptions } from "../types";
-import { CATALOG_SOURCE, HARDWARE_FIT, MODEL_TASK } from "../types";
+import { CATALOG_SOURCE, HARDWARE_FIT, MODEL_COMPAT, MODEL_TASK } from "../types";
 import { MESSAGES } from "../locales/en";
 import { formatAbbreviatedCount } from "../utils";
 
@@ -27,6 +27,7 @@ export function renderModelCard(container: HTMLElement, entry: CatalogEntry, opt
     card.dataset.repo = entry.hf_repo;
     if (options.isActive) card.addClass("is-selected");
     if (entry.fit && FIT_RAIL_CLASS[entry.fit]) card.addClass(FIT_RAIL_CLASS[entry.fit]);
+    if (entry.compat === MODEL_COMPAT.UNSUPPORTED) card.addClass("is-unsupported");
 
     renderCardHead(card, entry, options);
     renderCardTags(card, entry);
@@ -77,6 +78,29 @@ function renderCardTags(card: HTMLElement, entry: CatalogEntry): void {
     }
     if (entry.source && entry.source !== CATALOG_SOURCE.LOCAL) {
         tags.createEl("span", { text: entry.source, cls: "lilbee-tag lilbee-tag-provider" });
+    }
+    renderCompatTag(tags, entry);
+}
+
+/**
+ * Render the compatibility badge (Unsupported / Unverified) for a model, with a
+ * tooltip naming the architecture when the server reported one. Shared by the
+ * grid card and the catalog list view so both surfaces read identically.
+ */
+export function renderCompatTag(tags: HTMLElement, entry: CatalogEntry): void {
+    const architecture = entry.architecture ?? "";
+    if (entry.compat === MODEL_COMPAT.UNSUPPORTED) {
+        const tag = tags.createEl("span", {
+            text: MESSAGES.LABEL_COMPAT_UNSUPPORTED,
+            cls: "lilbee-tag lilbee-tag-compat is-unsupported",
+        });
+        tag.setAttribute("title", MESSAGES.TOOLTIP_COMPAT_UNSUPPORTED(architecture));
+    } else if (entry.compat === MODEL_COMPAT.UNKNOWN) {
+        const tag = tags.createEl("span", {
+            text: MESSAGES.LABEL_COMPAT_UNKNOWN,
+            cls: "lilbee-tag lilbee-tag-compat is-unknown",
+        });
+        tag.setAttribute("title", MESSAGES.TOOLTIP_COMPAT_UNKNOWN(architecture));
     }
 }
 
@@ -165,6 +189,15 @@ function renderCardActions(card: HTMLElement, entry: CatalogEntry, options: Mode
             const handler = options.onRemove;
             removeBtn.addEventListener("click", () => handler(entry, removeBtn));
         }
+    } else if (entry.compat === MODEL_COMPAT.UNSUPPORTED) {
+        // Unsupported models can't run on this server — render the pull action
+        // gated (disabled, secondary look) rather than letting a download that
+        // can never load go through.
+        actions.createEl("button", {
+            text: MESSAGES.BUTTON_PULL,
+            cls: "lilbee-btn lilbee-catalog-pull is-gated",
+            attr: { disabled: "true", title: MESSAGES.TOOLTIP_PULL_UNSUPPORTED },
+        });
     } else {
         const pullBtn = actions.createEl("button", {
             text: MESSAGES.BUTTON_PULL,
