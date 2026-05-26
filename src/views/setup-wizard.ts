@@ -1,8 +1,17 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import { SessionTokenError } from "../api";
-import type { BatchProgressPayload, CatalogEntry, SSEEvent, SyncDone } from "../types";
-import { CATALOG_TAB, SERVER_MODE, SERVER_STATE, SSE_EVENT, WIZARD_STEP, ERROR_NAME, MODEL_TASK } from "../types";
+import type { BatchProgressPayload, CatalogEntry, ManagedServerProgressPhase, SSEEvent, SyncDone } from "../types";
+import {
+    CATALOG_TAB,
+    MANAGED_PHASE,
+    SERVER_MODE,
+    SERVER_STATE,
+    SSE_EVENT,
+    WIZARD_STEP,
+    ERROR_NAME,
+    MODEL_TASK,
+} from "../types";
 import { CatalogModal } from "./catalog-modal";
 import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
@@ -106,6 +115,47 @@ const PREFERRED_FAMILIES = [
     "smollm",
 ];
 const MAX_FEATURED_PICKS = 8;
+
+/**
+ * The three visible phases of managed-server setup, in order. Each renders as a
+ * row with a status dot that lights up as the server moves Downloading →
+ * Starting → Ready. The label re-words per state so the user always reads the
+ * current stage (`Downloading…` → `Downloaded`), never a stale one. `hint` is
+ * the line shown under the phase while it's the one in flight.
+ *
+ * Granular byte progress isn't available through the binary-download path (a
+ * known node-fetch progress-granularity limitation), so each in-flight phase
+ * shows an indeterminate bar plus its hint rather than a percentage.
+ */
+const SERVER_SETUP_PHASES: {
+    key: ManagedServerProgressPhase;
+    pending: string;
+    active: string;
+    done: string;
+    hint: string;
+}[] = [
+    {
+        key: MANAGED_PHASE.DOWNLOADING,
+        pending: MESSAGES.WIZARD_SETUP_DOWNLOAD_PENDING,
+        active: MESSAGES.WIZARD_SETUP_DOWNLOAD_ACTIVE,
+        done: MESSAGES.WIZARD_SETUP_DOWNLOAD_DONE,
+        hint: MESSAGES.WIZARD_SETUP_DOWNLOAD_HINT,
+    },
+    {
+        key: MANAGED_PHASE.STARTING,
+        pending: MESSAGES.WIZARD_SETUP_START_PENDING,
+        active: MESSAGES.WIZARD_SETUP_START_ACTIVE,
+        done: MESSAGES.WIZARD_SETUP_START_DONE,
+        hint: MESSAGES.WIZARD_SETUP_START_HINT,
+    },
+    {
+        key: MANAGED_PHASE.READY,
+        pending: MESSAGES.WIZARD_SETUP_READY_PENDING,
+        active: MESSAGES.WIZARD_SETUP_READY_DONE,
+        done: MESSAGES.WIZARD_SETUP_READY_DONE,
+        hint: "",
+    },
+];
 
 /**
  * Rank the server's featured chat entries into the wizard's "Our picks" row.
@@ -338,7 +388,7 @@ export class SetupWizard extends Modal {
         });
 
         const statusEl = step.createDiv({ cls: "lilbee-wizard-status" });
-        const { progressEl, progressFill, progressLabel } = this.renderProgressPanel(step);
+        const { panel, setPhase } = this.renderServerSetupPanel(step);
 
         managedOption.addEventListener("click", () => {
             mode = SERVER_MODE.MANAGED;
@@ -366,7 +416,7 @@ export class SetupWizard extends Modal {
             if (mode === SERVER_MODE.MANAGED) {
                 this.plugin.settings.serverMode = SERVER_MODE.MANAGED;
                 nextBtn.disabled = true;
-                void this.startManagedAndAdvance(step, progressEl, progressFill, progressLabel, statusEl, nextBtn);
+                void this.startManagedAndAdvance(step, panel, setPhase, statusEl, nextBtn);
             } else {
                 this.plugin.settings.serverUrl = String(urlInput.value || "").trim() || "http://127.0.0.1:7433";
                 this.plugin.settings.manualToken = String(tokenInput.value || "").trim();
@@ -380,44 +430,125 @@ export class SetupWizard extends Modal {
 
     private async startManagedAndAdvance(
         step: HTMLElement,
-        progressEl: HTMLElement,
-        progressFill: HTMLElement,
-        progressLabel: HTMLElement,
+        panel: HTMLElement,
+        setPhase: (phase: ManagedServerProgressPhase, message?: string) => void,
         statusEl: HTMLElement,
         nextBtn: HTMLElement,
     ): Promise<void> {
-        progressEl.style.display = "";
-        progressLabel.textContent = MESSAGES.WIZARD_SERVER_PREPARING;
-        this.updateProgress(step, progressFill, undefined);
+        panel.style.display = "";
+        step.querySelector<HTMLElement>(".lilbee-wizard-rail")?.classList.add("is-active");
+        setPhase(MANAGED_PHASE.DOWNLOADING);
         statusEl.textContent = "";
 
+        // Hard gate: the wizard must not advance unless the server is actually
+        // serving. startManagedServer swallows download/start failures (it
+        // emits an error phase and resolves rather than throwing), so resolve
+        // alone is not proof of a live server — we only advance if no error
+        // phase was observed.
+        let failed = false;
         try {
             await this.plugin.saveSettings();
             if (!this.plugin.serverManager) {
                 await this.plugin.startManagedServer((event) => {
-                    // Surface binary-download + server-boot phases inline. This
-                    // is the only place the user sees what's happening during
-                    // the initial ~10-60s wait for the server to come online.
-                    if (event.phase === "downloading") {
-                        progressLabel.textContent = MESSAGES.WIZARD_SERVER_DOWNLOADING.replace("{msg}", event.message);
-                    } else if (event.phase === "starting") {
-                        progressLabel.textContent = MESSAGES.WIZARD_SERVER_STARTING;
-                    } else if (event.phase === "ready") {
-                        progressLabel.textContent = MESSAGES.WIZARD_SERVER_READY;
-                    } else if (event.phase === "error") {
-                        progressLabel.textContent = event.message;
-                    }
+                    setPhase(event.phase, event.message);
+                    if (event.phase === MANAGED_PHASE.ERROR) failed = true;
                 });
             }
-            this.updateProgress(step, progressFill, 100);
-            progressLabel.textContent = MESSAGES.WIZARD_SERVER_READY;
+            if (failed) {
+                statusEl.textContent = MESSAGES.ERROR_START_SERVER;
+                (nextBtn as HTMLButtonElement).disabled = false;
+                return;
+            }
+            setPhase(MANAGED_PHASE.READY);
             this.step = WIZARD_STEP.MODEL_PICKER;
             this.renderStep();
         } catch {
-            progressEl.style.display = "none";
+            panel.style.display = "none";
             statusEl.textContent = MESSAGES.ERROR_START_SERVER;
             (nextBtn as HTMLButtonElement).disabled = false;
         }
+    }
+
+    /**
+     * Build the managed-server setup panel: a header (spinner + "Setting up
+     * lilbee", flipping to a check + "lilbee server is running" once ready)
+     * above three phase rows whose dots light up as the server moves
+     * Downloading → Starting → Ready. A gate line under the rows states the
+     * step won't advance until the server is up. Returns `setPhase`, which the
+     * start flow calls with each progress event. The panel starts hidden.
+     */
+    private renderServerSetupPanel(step: HTMLElement): {
+        panel: HTMLElement;
+        setPhase: (phase: ManagedServerProgressPhase, message?: string) => void;
+    } {
+        const panel = step.createDiv({ cls: "lilbee-wizard-setup" });
+        panel.style.display = "none";
+
+        const head = panel.createDiv({ cls: "lilbee-wizard-setup-head" });
+        const spinner = head.createSpan({ cls: "lilbee-wizard-setup-spinner" });
+        const headText = head.createSpan({ cls: "lilbee-wizard-setup-head-text", text: MESSAGES.WIZARD_SETUP_HEAD });
+
+        const rows = SERVER_SETUP_PHASES.map((meta) => {
+            const row = panel.createDiv({ cls: "lilbee-wizard-phase" });
+            row.dataset.phase = meta.key;
+            const line = row.createDiv({ cls: "lilbee-wizard-phase-line" });
+            line.createSpan({ cls: "lilbee-wizard-phase-dot" });
+            const label = line.createSpan({ cls: "lilbee-wizard-phase-label", text: meta.pending });
+            const detail = row.createDiv({ cls: "lilbee-wizard-phase-detail" });
+            detail.style.display = "none";
+            const bar = detail.createDiv({ cls: "lilbee-progress-bar-container" });
+            bar.createDiv({ cls: "lilbee-wizard-progress-fill lilbee-wizard-progress-indeterminate" });
+            detail.createDiv({ cls: "lilbee-wizard-phase-hint", text: meta.hint });
+            return { meta, row, label, detail };
+        });
+
+        const gate = panel.createDiv({ cls: "lilbee-wizard-setup-gate", text: MESSAGES.WIZARD_SETUP_GATE });
+
+        const order = SERVER_SETUP_PHASES.map((m) => m.key);
+        const setPhase = (phase: ManagedServerProgressPhase, message?: string): void => {
+            const idx = order.indexOf(phase);
+            // An unknown/error phase isn't one of the three rows: surface the
+            // message in the header and leave the rows showing where progress
+            // stalled rather than blanking them.
+            if (idx < 0) {
+                spinner.style.display = "none";
+                head.classList.add("is-error");
+                headText.setText(message || MESSAGES.ERROR_START_SERVER);
+                return;
+            }
+            // Reset header to its in-progress state so a retry after a failed
+            // attempt doesn't leave the stale error text/styling above freshly
+            // lit phase rows.
+            head.classList.remove("is-error", "is-ready");
+            spinner.style.display = "";
+            gate.style.display = "";
+            headText.setText(MESSAGES.WIZARD_SETUP_HEAD);
+
+            const terminal = idx === order.length - 1;
+            for (let i = 0; i < rows.length; i++) {
+                const { meta, row, label, detail } = rows[i];
+                row.classList.remove("is-active", "is-done");
+                detail.style.display = "none";
+                if (i < idx || (i === idx && terminal)) {
+                    row.classList.add("is-done");
+                    label.setText(meta.done);
+                } else if (i === idx) {
+                    row.classList.add("is-active");
+                    label.setText(meta.active);
+                    detail.style.display = "";
+                } else {
+                    label.setText(meta.pending);
+                }
+            }
+            if (terminal) {
+                spinner.style.display = "none";
+                head.classList.add("is-ready");
+                headText.setText(MESSAGES.WIZARD_SETUP_RUNNING);
+                gate.style.display = "none";
+            }
+        };
+
+        return { panel, setPhase };
     }
 
     private async checkExternalAndAdvance(statusEl: HTMLElement, nextBtn: HTMLElement): Promise<void> {
