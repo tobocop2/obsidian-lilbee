@@ -182,7 +182,7 @@ describe("VaultRegistry.saveConfig", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  VaultRegistry: list / get / upsert / markActive / remove           */
+/*  VaultRegistry: list / get / upsert / resolveDataDir                */
 /* ------------------------------------------------------------------ */
 
 function entry(id: string, overrides: Partial<VaultRegistryEntry> = {}): VaultRegistryEntry {
@@ -227,48 +227,6 @@ describe("VaultRegistry registry operations", () => {
         reg.upsert(entry("a", { displayName: "Renamed" }));
         expect(reg.list()).toHaveLength(1);
         expect(reg.get("a")?.displayName).toBe("Renamed");
-    });
-
-    it("markActive updates lastActiveAt without changing other fields", () => {
-        const fs = makeFs();
-        mountFs(fs);
-        const reg = new VaultRegistry("/r");
-        reg.upsert(entry("a", { addedAt: 100, lastActiveAt: 100 }));
-        reg.markActive("a", 999);
-        const after = reg.get("a");
-        expect(after?.lastActiveAt).toBe(999);
-        expect(after?.addedAt).toBe(100);
-    });
-
-    it("markActive is a no-op when the id is unknown", () => {
-        const fs = makeFs();
-        mountFs(fs);
-        const reg = new VaultRegistry("/r");
-        reg.markActive("ghost", 1);
-        expect(reg.list()).toEqual([]);
-    });
-
-    it("markActive uses Date.now() when no timestamp is passed", () => {
-        const fs = makeFs();
-        mountFs(fs);
-        const reg = new VaultRegistry("/r");
-        reg.upsert(entry("a", { lastActiveAt: 0 }));
-        const before = Date.now();
-        reg.markActive("a");
-        const after = Date.now();
-        const stored = reg.get("a")!.lastActiveAt;
-        expect(stored).toBeGreaterThanOrEqual(before);
-        expect(stored).toBeLessThanOrEqual(after);
-    });
-
-    it("remove drops the entry", () => {
-        const fs = makeFs();
-        mountFs(fs);
-        const reg = new VaultRegistry("/r");
-        reg.upsert(entry("a"));
-        reg.upsert(entry("b"));
-        reg.remove("a");
-        expect(reg.list().map((e) => e.id)).toEqual(["b"]);
     });
 
     it("resolveDataDir returns the registered path when present", () => {

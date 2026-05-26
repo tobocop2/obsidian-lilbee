@@ -374,13 +374,6 @@ describe("MESSAGES", () => {
         });
     });
 
-    describe("LABEL_PAGE_STATUS", () => {
-        it("pluralizes the count properly", () => {
-            expect(MESSAGES.LABEL_PAGE_STATUS(1, 1, 1)).toBe("Page 1 of 1 · 1 vault");
-            expect(MESSAGES.LABEL_PAGE_STATUS(1, 1, 2)).toBe("Page 1 of 1 · 2 vaults");
-        });
-    });
-
     describe("all strings are non-empty", () => {
         it("has no empty string values", () => {
             for (const [_key, value] of Object.entries(MESSAGES)) {

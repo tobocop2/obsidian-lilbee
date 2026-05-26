@@ -15,7 +15,7 @@ import {
     ERROR_NAME,
 } from "./types";
 import type { CatalogEntry, ConfigResponse, InstalledModel, LilbeeSettings, ServerMode } from "./types";
-import { formatBytes, reportFor } from "./storage-stats";
+import { formatBytes, reportForVault } from "./storage-stats";
 import { MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import { CatalogModal } from "./views/catalog-modal";
@@ -227,7 +227,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         this.renderSharedRootSetting(containerEl);
         this.renderAdoptDataDir(containerEl);
-        this.renderVaultRegistry(containerEl);
         this.renderStorageReport(containerEl);
 
         const updateSetting = new Setting(containerEl)
@@ -327,47 +326,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
     }
 
-    private renderVaultRegistry(containerEl: HTMLElement): void {
-        const registry = this.plugin.vaultRegistry;
-        if (!registry) return;
-        const entries = registry.list();
-        new Setting(containerEl).setName(MESSAGES.LABEL_REGISTERED_VAULTS).setDesc(MESSAGES.DESC_REGISTERED_VAULTS);
-
-        if (entries.length === 0) {
-            const empty = containerEl.createDiv({ cls: "lilbee-vault-registry-empty" });
-            empty.setText(MESSAGES.LABEL_REGISTERED_VAULTS_EMPTY);
-        }
-        for (const entry of entries) {
-            const isCurrent = entry.id === this.plugin.vaultId;
-            const setting = new Setting(containerEl)
-                .setName(isCurrent ? MESSAGES.LABEL_VAULT_ROW_CURRENT(entry.displayName) : entry.displayName)
-                .setDesc(`${entry.obsidianVaultPath}  →  ${entry.dataDir}`);
-            if (!isCurrent) {
-                setting.addButton((btn) =>
-                    btn
-                        .setButtonText(MESSAGES.BUTTON_REMOVE_VAULT)
-                        .setTooltip(MESSAGES.TOOLTIP_REMOVE_VAULT)
-                        .onClick(async () => {
-                            registry.remove(entry.id);
-                            this.display();
-                        }),
-                );
-            }
-        }
-    }
-
     private renderStorageReport(containerEl: HTMLElement): void {
         const registry = this.plugin.vaultRegistry;
         if (!registry) return;
-        const report = reportFor(registry.sharedRoot, registry.list());
+        const report = reportForVault(registry.sharedRoot, registry.resolveDataDir(this.plugin.vaultId));
         new Setting(containerEl).setName(MESSAGES.LABEL_STORAGE_REPORT).setDesc(MESSAGES.DESC_STORAGE_REPORT);
 
         const list = containerEl.createDiv({ cls: "lilbee-storage-report" });
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_BIN, report.binBytes);
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_MODELS, report.modelsBytes);
-        for (const vault of report.vaults) {
-            appendStorageRow(list, vault.displayName, vault.bytes, vault.dataDir);
-        }
+        appendStorageRow(list, MESSAGES.LABEL_STORAGE_VAULT, report.vaultBytes, report.vaultDataDir);
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_TOTAL, report.totalBytes);
     }
 
