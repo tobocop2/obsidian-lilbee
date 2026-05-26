@@ -13,7 +13,7 @@
 <meta property="og:title" content="lilbee for Obsidian: a local search engine for your vault">
 <meta property="og:description" content="Ask your Obsidian vault questions in plain English (notes, PDFs, ebooks, code, scans, 150+ file types) and get answers with the source one click away. Runs on your computer; cloud models optional.">
 <meta property="og:url" content="https://obsidian.lilbee.sh/">
-<meta property="og:image" content="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/chat.contact.png">
+<meta property="og:image" content="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.contact.png">
 <meta property="og:image:alt" content="lilbee for Obsidian: a cited answer from a vault note, shown inside Obsidian">
 
 <!-- SoftwareApplication JSON-LD: tells search engines what this is. -->
@@ -81,43 +81,28 @@
 
       <div class="reel">
         <div class="reeltabs" role="tablist" aria-label="Demo reel">
-          <button type="button" class="reeltab" role="tab" id="reel-tab-first"    aria-controls="reel-pane-first"    aria-selected="true"  tabindex="0">first run</button>
-          <button type="button" class="reeltab" role="tab" id="reel-tab-tour"     aria-controls="reel-pane-tour"     aria-selected="false" tabindex="-1">tour</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-onlilbee" aria-controls="reel-pane-onlilbee" aria-selected="true"  tabindex="0">what is lilbee</button>
           <button type="button" class="reeltab" role="tab" id="reel-tab-ask"      aria-controls="reel-pane-ask"      aria-selected="false" tabindex="-1">ask &amp; cite</button>
-          <button type="button" class="reeltab" role="tab" id="reel-tab-onlilbee" aria-controls="reel-pane-onlilbee" aria-selected="false" tabindex="-1">lilbee on lilbee</button>
           <button type="button" class="reeltab" role="tab" id="reel-tab-crawl"    aria-controls="reel-pane-crawl"    aria-selected="false" tabindex="-1">crawl</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-vision"   aria-controls="reel-pane-vision"   aria-selected="false" tabindex="-1">scanned PDF</button>
           <button type="button" class="reeltab" role="tab" id="reel-tab-catalog"  aria-controls="reel-pane-catalog"  aria-selected="false" tabindex="-1">catalog</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-download"  aria-controls="reel-pane-download"  aria-selected="false" tabindex="-1">download a model</button>
           <button type="button" class="reeltab" role="tab" id="reel-tab-settings" aria-controls="reel-pane-settings" aria-selected="false" tabindex="-1">settings</button>
-          <button type="button" class="reeltab" role="tab" id="reel-tab-palette"  aria-controls="reel-pane-palette"  aria-selected="false" tabindex="-1">palette</button>
-          <button type="button" class="reeltab" role="tab" id="reel-tab-vaults"   aria-controls="reel-pane-vaults"   aria-selected="false" tabindex="-1">multi-vault</button>
+          <button type="button" class="reeltab" role="tab" id="reel-tab-tour"     aria-controls="reel-pane-tour"     aria-selected="false" tabindex="-1">tour</button>
         </div>
 
-        <div class="reelpane" role="tabpanel" id="reel-pane-first" aria-labelledby="reel-tab-first">
+        <div class="reelpane" role="tabpanel" id="reel-pane-onlilbee" aria-labelledby="reel-tab-onlilbee">
           <div class="reel-frame">
-            <img alt="lilbee for Obsidian first-run setup wizard picking models and running the first sync" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first_start.gif">
+            <img alt="index the lilbee README, then ask what lilbee is and get a cited answer" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.gif">
           </div>
-          <p class="reel-caption">First run: a setup wizard picks a chat model and an embedding model, runs the first sync, and drops you straight into chat.</p>
-        </div>
-
-        <div class="reelpane" role="tabpanel" id="reel-pane-tour" aria-labelledby="reel-tab-tour" hidden>
-          <div class="reel-frame">
-            <img alt="a sweep through every lilbee surface inside Obsidian" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/tour.gif">
-          </div>
-          <p class="reel-caption">A sweep through the surfaces: the model catalog (Chat / Embed / Vision / Rerank tabs), the settings screen, and the command palette filtered to lilbee.</p>
+          <p class="reel-caption">Add the lilbee README to your library, then ask <em>what is lilbee in one sentence?</em>, get a cited answer, and click the citation to open the README at the source.</p>
         </div>
 
         <div class="reelpane" role="tabpanel" id="reel-pane-ask" aria-labelledby="reel-tab-ask" hidden>
           <div class="reel-frame">
             <img alt="add files to the vault, watch the Task Center, then ask a cited question" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/add.gif">
           </div>
-          <p class="reel-caption">Add a PDF and a README from the command palette, watch the Task Center index them, then ask a question and get a cited answer. Click the citation and the <em>source preview</em> opens at the exact page.</p>
-        </div>
-
-        <div class="reelpane" role="tabpanel" id="reel-pane-onlilbee" aria-labelledby="reel-tab-onlilbee" hidden>
-          <div class="reel-frame">
-            <img alt="index the lilbee README, then ask what lilbee is and get a cited answer" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/lilbee_on_lilbee.gif">
-          </div>
-          <p class="reel-caption">lilbee on lilbee: index the lilbee README, ask <em>what is lilbee in one sentence?</em>, get a cited answer, and click the README chip to open the source.</p>
+          <p class="reel-caption">Add a PDF from the command palette, watch the Task Center index it, then ask a question and get a cited answer. Click the citation and the <em>source preview</em> opens at the exact page.</p>
         </div>
 
         <div class="reelpane" role="tabpanel" id="reel-pane-crawl" aria-labelledby="reel-tab-crawl" hidden>
@@ -127,11 +112,25 @@
           <p class="reel-caption">Crawl a Wikipedia page into your vault, ask when the 9C1 police package was introduced, and jump from the citation straight to the cited section of the rendered source.</p>
         </div>
 
+        <div class="reelpane" role="tabpanel" id="reel-pane-vision" aria-labelledby="reel-tab-vision" hidden>
+          <div class="reel-frame">
+            <img alt="a scanned, image-only PDF read by a local vision model, OCR streaming page by page, then a cited answer off the scanned cover" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/vision.gif">
+          </div>
+          <p class="reel-caption">A scanned, image-only PDF read by a local vision model. The Task Center streams the OCR page by page, then a cited answer reads the support number and publisher straight off the scanned cover, a detail only OCR could surface.</p>
+        </div>
+
         <div class="reelpane" role="tabpanel" id="reel-pane-catalog" aria-labelledby="reel-tab-catalog" hidden>
           <div class="reel-frame">
             <img alt="browse the model catalog inside Obsidian: Chat, Embed, Vision, Rerank tabs" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/catalog.gif">
           </div>
-          <p class="reel-caption">Browse the model catalog without leaving Obsidian: Chat, Embed, Vision, and Rerank tabs, each pulled live from Hugging Face Hub. Search <code>Phi-4</code>, see size and fit before you pull.</p>
+          <p class="reel-caption">Browse the model catalog without leaving Obsidian: Chat, Embed, Vision, and Rerank tabs, each pulled live from Hugging Face Hub. Models the bundled engine can't run are flagged before you pull.</p>
+        </div>
+
+        <div class="reelpane" role="tabpanel" id="reel-pane-download" aria-labelledby="reel-tab-download" hidden>
+          <div class="reel-frame">
+            <img alt="search the catalog for a small model, watch it download in the Task Center, then activate it and chat" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/download_model.gif">
+          </div>
+          <p class="reel-caption">Search the catalog for a small chat model, watch the download stream start to finish in the Task Center, then activate it, switch to Chat mode, and use it, the full pull-and-use loop without leaving Obsidian.</p>
         </div>
 
         <div class="reelpane" role="tabpanel" id="reel-pane-settings" aria-labelledby="reel-tab-settings" hidden>
@@ -141,18 +140,11 @@
           <p class="reel-caption">50+ settings: search depth, reranking, sampling, parsers, the wiki. Sane defaults; tune the moment you want to. Long model names and large sizes stay on aligned rows.</p>
         </div>
 
-        <div class="reelpane" role="tabpanel" id="reel-pane-palette" aria-labelledby="reel-tab-palette" hidden>
+        <div class="reelpane" role="tabpanel" id="reel-pane-tour" aria-labelledby="reel-tab-tour" hidden>
           <div class="reel-frame">
-            <img alt="reach every lilbee surface from Obsidian's command palette" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/command_palette.gif">
+            <img alt="fire a crawl, a file add, and a model download back to back and watch all three run at once in the Task Center, then ask the crawled page a cited question" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/tour.gif">
           </div>
-          <p class="reel-caption">Every lilbee surface is keyboard-reachable. <kbd>Cmd/Ctrl+P</kbd>, type <code>lilbee</code>, and open the catalog, the Task Center, or chat: browse model catalog, task center, open chat.</p>
-        </div>
-
-        <div class="reelpane" role="tabpanel" id="reel-pane-vaults" aria-labelledby="reel-tab-vaults" hidden>
-          <div class="reel-frame">
-            <img alt="two Obsidian vaults, each with its own isolated lilbee library" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/multi_vault.gif">
-          </div>
-          <p class="reel-caption">One install, one vault at a time. Each vault keeps its own isolated index and config; hand the managed server from one vault to another without losing either library.</p>
+          <p class="reel-caption">The palette as an async control surface: fire a crawl, a file add, and a model download back to back without waiting, watch all three run at once in the Task Center, then ask the just-crawled page a cited question.</p>
         </div>
 
         <p class="reel-more"><kbd>&larr;</kbd>/<kbd>&rarr;</kbd> scrub the tabs. Want the long-form walkthrough? <a href="https://obsidian.lilbee.sh/reel">full demo reel &rarr;</a> (every demo as a video, with longer notes).</p>

@@ -15,7 +15,7 @@ This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives y
 
 Ask a question in plain English and lilbee answers from your vault, with citations that click straight back to the source line.
 
-![index the lilbee README, ask what lilbee is, and get a cited answer with a click-to-open source](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/lilbee_on_lilbee.gif)
+![index the lilbee README, ask what lilbee is, and get a cited answer with a click-to-open source](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.gif)
 
 > **Demo reel:** every recording on this page (and a few extras) as videos with longer notes at [**obsidian.lilbee.sh/reel**](https://obsidian.lilbee.sh/reel).
 
@@ -89,13 +89,20 @@ Your vault is full of more than markdown. lilbee handles the rest:
 - **Code** (150+ languages) goes through [tree-sitter](https://tree-sitter.github.io/tree-sitter/)'s AST-aware splitter, so chunks map to real functions, classes, and modules instead of arbitrary line ranges.
 - **Scanned PDFs and photographed pages** go through OCR: Tesseract for plain text, or a local GGUF vision model that keeps tables and layout as markdown. (A per-vault toggle in Settings.)
 
-### An auto-generated wiki of your knowledge
-
-The plugin reads everything you've indexed and writes a wiki about it. Pages compound across sources instead of one-per-document, so concepts and entities that recur get their own page with citations from every source that mentions them. They live in a configurable vault folder (default `lilbee/`) as ordinary markdown with `[[wiki links]]`, so Obsidian's graph view picks them up. Every section is citation-verified and scored for embedding faithfulness before publish; low-confidence pages land in a drafts queue with a review modal (accept, reject, or edit inline), and a lint command surfaces stale or broken citations by page.
+![a scanned, image-only PDF read by a local vision model: the Task Center streams OCR page by page, then a cited answer reads the support number and publisher straight off the scanned cover](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/vision.gif)
 
 ### Cloud models, when you want them
 
 By default everything stays on your machine: server, models, index, vault. For a role where a cloud model genuinely helps (sometimes vision OCR, sometimes long-context summarization), Settings → Advanced lets you key in an API endpoint and use it for that role only, while the rest stay local. The plugin shows a persistent indicator whenever a cloud model is the active chat or vision backend, so it's clear when chunks are leaving the machine.
+
+## Experimental
+
+<details>
+<summary><strong>Auto-generated wiki</strong> — linked markdown pages written from what you've indexed</summary>
+
+The plugin reads everything you've indexed and writes a wiki about it. Pages compound across sources instead of one-per-document, so concepts and entities that recur get their own page with citations from every source that mentions them. They live in a configurable vault folder (default `lilbee/`) as ordinary markdown with `[[wiki links]]`, so Obsidian's graph view picks them up. Every section is citation-verified and scored for embedding faithfulness before publish; low-confidence pages land in a drafts queue with a review modal (accept, reject, or edit inline), and a lint command surfaces stale or broken citations by page.
+
+</details>
 
 ## Quick start
 
@@ -103,8 +110,6 @@ By default everything stays on your machine: server, models, index, vault. For a
 2. Open the command palette (`Cmd/Ctrl + P`) → **BRAT: Plugins: Add a beta plugin for testing** → paste `tobocop2/obsidian-lilbee` → **Add Plugin**.
 3. Enable **lilbee** in Settings → Community plugins.
 4. The Setup Wizard auto-launches. Pick a chat model and an embedding model from the featured grid, then run the initial sync.
-
-![first run: a setup wizard picks a chat model and an embedding model, runs the first sync, opens chat](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first_start.gif)
 
 The plugin downloads and manages the [lilbee](https://lilbee.sh/) server automatically; nothing to install separately. The first launch fetches the right version for your platform and verifies it before starting. Wait for the status bar to show `lilbee: ready`, then open the chat.
 
@@ -121,17 +126,13 @@ Once the status bar shows **lilbee: ready**:
 
 The chat panel opens in the sidebar. From there you can ask questions, attach individual files, or run **Sync vault** (`Cmd/Ctrl + P` → "lilbee: Sync vault") to index everything at once. Every lilbee surface, the model catalog, the Task Center, chat, is reachable from the command palette.
 
-![reach every lilbee surface from Obsidian's command palette: catalog, task center, chat](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/command_palette.gif)
-
 ## How it works
 
 The plugin runs [lilbee](https://lilbee.sh/) in the background for you: on first launch it downloads the right version for your platform, starts it automatically, and shuts it down when you close Obsidian. Your vault is the corpus. lilbee handles indexing, retrieval, generation, and the wiki; the plugin is the interface on top.
 
 Everything stays on your machine. The server, the models, the index, and your vault all live locally. Every Obsidian vault on your computer shares one lilbee binary and one HuggingFace cache under a shared root (`~/Library/Application Support/Lilbee/` on macOS, `~/.local/share/lilbee/` on Linux, `%LOCALAPPDATA%\Lilbee\` on Windows). Each vault keeps its own `vaults/<id>/` subfolder for its index, wiki, and config, so they stay isolated; downloaded models are reused instead of duplicated. The path is configurable from Settings → Connection.
 
-**One vault at a time.** lilbee itself is a single-vault server, so only one Obsidian vault can drive the managed lilbee process at a time. Opening a second vault shows the active owner in the status bar; run the `lilbee: Take over the managed lilbee server` command (or wait for the other vault to close) to switch. The previous vault's index stays on disk and is restored when you reopen it. If you'd rather run your own lilbee server (on a different machine, in a container, or on a port you control), point the plugin at it from Settings → Connection.
-
-![two Obsidian vaults, each with its own isolated lilbee library, handing off the managed server](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/multi_vault.gif)
+**One vault at a time.** lilbee is a single-vault server, so the managed process follows whichever vault you have open in Obsidian: open a vault and lilbee indexes and answers from it; open a different vault and it re-targets the new one automatically. Each vault's index stays on disk and is restored when you reopen it. If you'd rather run your own lilbee server (on a different machine, in a container, or on a port you control), point the plugin at it from Settings → Connection.
 
 > **macOS users:** the server binary is unsigned (Apple charges [$99/year](https://developer.apple.com/support/enrollment/) for signing). The plugin clears the quarantine flag automatically. If macOS still blocks it, go to System Settings → Privacy & Security and click **Allow Anyway**. See the [lilbee source](https://github.com/tobocop2/lilbee) if you want to audit the build.
 
