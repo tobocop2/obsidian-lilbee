@@ -235,6 +235,49 @@ describe("recordReadyState", () => {
     });
 });
 
+describe("managed server tracks the open vault's data dir", () => {
+    it("builds the server against whichever vault is open — switching vaults switches the data dir", async () => {
+        const plugin = await createPlugin();
+        const registry = plugin.vaultRegistry!;
+        registry.upsert({
+            id: "vault-a",
+            displayName: "A",
+            dataDir: "/shared/vaults/a",
+            obsidianVaultPath: "/Users/tester/A",
+            addedAt: 1,
+            lastActiveAt: 1,
+        });
+        registry.upsert({
+            id: "vault-b",
+            displayName: "B",
+            dataDir: "/shared/vaults/b",
+            obsidianVaultPath: "/Users/tester/B",
+            addedAt: 1,
+            lastActiveAt: 1,
+        });
+
+        // With vault A open, the server is wired to A's data dir.
+        (plugin as any).vaultId = "vault-a";
+        const smA = (plugin as any).buildServerManager("/fake/bin/lilbee", registry, registry.sharedRoot);
+        expect(smA.dataDir).toBe("/shared/vaults/a");
+
+        // Opening vault B (its own plugin instance loads with vault-b's id)
+        // points the managed server at B's data dir instead — not A's.
+        (plugin as any).vaultId = "vault-b";
+        const smB = (plugin as any).buildServerManager("/fake/bin/lilbee", registry, registry.sharedRoot);
+        expect(smB.dataDir).toBe("/shared/vaults/b");
+    });
+
+    it("falls back to the default per-vault dir when the open vault is unregistered", async () => {
+        const plugin = await createPlugin();
+        const registry = plugin.vaultRegistry!;
+        (plugin as any).vaultId = "fresh-vault";
+        const sm = (plugin as any).buildServerManager("/fake/bin/lilbee", registry, registry.sharedRoot);
+        expect(sm.dataDir).toBe(registry.resolveDataDir("fresh-vault"));
+        expect(sm.dataDir).toBe(`${registry.sharedRoot}/vaults/fresh-vault`);
+    });
+});
+
 describe("acquireLockOrBail", () => {
     it("returns true when the lock is unowned", async () => {
         const plugin = await createPlugin();
