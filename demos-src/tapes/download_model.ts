@@ -124,14 +124,14 @@ export default storyboard("download_model", {
       clickSelector('.lilbee-chat-mode-btn:text-is("Chat")'),
       { holdMs: 1000 },
     ),
-    beat("Ask the new model what it can do", fillChat("What can you do?"), { holdMs: 600 }),
+    beat("Ask the new model a bounded question", fillChat("Explain what an API is in two sentences."), { holdMs: 600 }),
     beat(
       "Ensure the question is in the box",
       runJs(`
         const ta = document.querySelector('textarea.lilbee-chat-textarea');
         if (ta && !ta.value.trim()) {
           const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
-          setter.call(ta, "What can you do?");
+          setter.call(ta, "Explain what an API is in two sentences.");
           ta.dispatchEvent(new Event('input', { bubbles: true }));
         }
       `),
