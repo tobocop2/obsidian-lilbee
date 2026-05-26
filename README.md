@@ -1,8 +1,15 @@
-# [lilbee for Obsidian](https://obsidian.lilbee.sh/)
+<p align="center">
+  <a href="https://obsidian.lilbee.sh/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/obsidian-lilbee-logo-dark.svg">
+      <img alt="lilbee for Obsidian" src="docs/obsidian-lilbee-logo-light.svg" width="360">
+    </picture>
+  </a>
+</p>
 
-A local search engine for your vault, inside Obsidian.
+<p align="center"><strong>A local search engine for your vault, inside Obsidian.</strong></p>
 
-[Project site](https://obsidian.lilbee.sh/) · [Demo reel](https://obsidian.lilbee.sh/reel) · [Releases](https://github.com/tobocop2/obsidian-lilbee/releases) · [lilbee engine](https://lilbee.sh/)
+<p align="center"><a href="https://obsidian.lilbee.sh/">Project site</a> &nbsp;·&nbsp; <a href="https://obsidian.lilbee.sh/reel">Demo reel</a> &nbsp;·&nbsp; <a href="https://github.com/tobocop2/obsidian-lilbee/releases">Releases</a> &nbsp;·&nbsp; <a href="https://lilbee.sh/">lilbee engine</a></p>
 
 This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives you chat, an auto-generated wiki, click-to-source citations, and a model catalog, all inside Obsidian. It bundles the lilbee server and manages it for you; nothing to install separately. Everything runs on your computer; cloud models are opt-in, per role.
 
