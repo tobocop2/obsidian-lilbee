@@ -169,6 +169,66 @@ describe("renderModelCard", () => {
         });
     });
 
+    describe("compatibility", () => {
+        it("renders an Unsupported badge and dims the card for compat=unsupported", () => {
+            const c = container();
+            const card = renderModelCard(
+                c,
+                makeEntry({ compat: "unsupported", architecture: "deepseek v4" }),
+                {},
+            ) as unknown as MockElement;
+            expect(card.classList.contains("is-unsupported")).toBe(true);
+            const tag = card.find("lilbee-tag-compat")!;
+            expect(tag.textContent).toBe(MESSAGES.LABEL_COMPAT_UNSUPPORTED);
+            expect(tag.classList.contains("is-unsupported")).toBe(true);
+            expect(tag.getAttribute("title")).toContain("deepseek v4");
+        });
+
+        it("renders an Unverified badge for compat=unknown without dimming the card", () => {
+            const c = container();
+            const card = renderModelCard(
+                c,
+                makeEntry({ compat: "unknown", architecture: "mamba" }),
+                {},
+            ) as unknown as MockElement;
+            expect(card.classList.contains("is-unsupported")).toBe(false);
+            const tag = card.find("lilbee-tag-compat")!;
+            expect(tag.textContent).toBe(MESSAGES.LABEL_COMPAT_UNKNOWN);
+            expect(tag.classList.contains("is-unknown")).toBe(true);
+            expect(tag.getAttribute("title")).toContain("mamba");
+        });
+
+        it("falls back to a generic tooltip when architecture is absent", () => {
+            const c = container();
+            const unsupported = renderModelCard(
+                c,
+                makeEntry({ compat: "unsupported", architecture: null }),
+                {},
+            ) as unknown as MockElement;
+            expect(unsupported.find("lilbee-tag-compat")!.getAttribute("title")).toBe(
+                MESSAGES.TOOLTIP_COMPAT_UNSUPPORTED(""),
+            );
+            const unknown = renderModelCard(
+                container(),
+                makeEntry({ compat: "unknown", architecture: null }),
+                {},
+            ) as unknown as MockElement;
+            expect(unknown.find("lilbee-tag-compat")!.getAttribute("title")).toBe(MESSAGES.TOOLTIP_COMPAT_UNKNOWN(""));
+        });
+
+        it("renders no compat badge for supported or unset compat", () => {
+            const c = container();
+            expect(
+                (renderModelCard(c, makeEntry({ compat: "supported" }), {}) as unknown as MockElement).find(
+                    "lilbee-tag-compat",
+                ),
+            ).toBeNull();
+            expect(
+                (renderModelCard(container(), makeEntry(), {}) as unknown as MockElement).find("lilbee-tag-compat"),
+            ).toBeNull();
+        });
+    });
+
     describe("fit rail", () => {
         it("adds the is-fits modifier when entry.fit is 'fits'", () => {
             const c = container();
@@ -261,6 +321,30 @@ describe("renderModelCard", () => {
             const card = renderModelCard(c, makeEntry(), { showActions: true }) as unknown as MockElement;
             const btn = card.find("lilbee-catalog-pull")!;
             expect(() => btn.trigger("click")).not.toThrow();
+        });
+
+        it("gates the Pull button for unsupported models — disabled, no onPull", () => {
+            const c = container();
+            const entry = makeEntry({ compat: "unsupported" });
+            const onPull = vi.fn();
+            const card = renderModelCard(c, entry, { showActions: true, onPull }) as unknown as MockElement;
+            const btn = card.find("lilbee-catalog-pull")!;
+            expect(btn.classList.contains("is-gated")).toBe(true);
+            expect(btn.getAttribute("disabled")).toBe("true");
+            expect(btn.getAttribute("title")).toBe(MESSAGES.TOOLTIP_PULL_UNSUPPORTED);
+            btn.trigger("click");
+            expect(onPull).not.toHaveBeenCalled();
+        });
+
+        it("keeps the Pull button live for unknown compatibility", () => {
+            const c = container();
+            const entry = makeEntry({ compat: "unknown" });
+            const onPull = vi.fn();
+            const card = renderModelCard(c, entry, { showActions: true, onPull }) as unknown as MockElement;
+            const btn = card.find("lilbee-catalog-pull")!;
+            expect(btn.classList.contains("is-gated")).toBe(false);
+            btn.trigger("click");
+            expect(onPull).toHaveBeenCalledWith(entry, btn);
         });
 
         it("calls onUse when Use button clicked", () => {

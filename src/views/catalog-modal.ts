@@ -13,6 +13,7 @@ import {
     CATALOG_SOURCE,
     CATALOG_TAB,
     KEY_STATUS,
+    MODEL_COMPAT,
     MODEL_TASK,
     SSE_EVENT,
     TASK_TYPE,
@@ -34,7 +35,7 @@ import {
     noticeForResultError,
     getRelevantSystemMemoryGB,
 } from "../utils";
-import { renderModelCard } from "../components/model-card";
+import { renderModelCard, renderCompatTag } from "../components/model-card";
 import { renderModelDetail } from "../components/model-detail";
 import { ModelInfoModal } from "./model-info-modal";
 import {
@@ -701,9 +702,11 @@ export class CatalogModal extends Modal {
 
     private renderListRow(listEl: HTMLElement, entry: CatalogEntry): void {
         const row = listEl.createDiv({ cls: "lilbee-catalog-list-row" });
+        if (entry.compat === MODEL_COMPAT.UNSUPPORTED) row.addClass("is-unsupported");
         const nameText = entry.featured ? `★ ${entry.display_name}` : entry.display_name;
         const nameEl = row.createEl("span", { text: nameText, cls: "lilbee-catalog-list-col-name" });
         nameEl.setAttribute("title", entry.display_name);
+        renderCompatTag(nameEl, entry);
         row.createEl("span", { text: entry.task, cls: "lilbee-catalog-list-col-task" });
         row.createEl("span", { text: `${entry.size_gb} GB`, cls: "lilbee-catalog-list-col-size" });
         row.createEl("span", {
@@ -739,6 +742,12 @@ export class CatalogModal extends Modal {
                 cls: "lilbee-catalog-remove",
             });
             removeBtn.addEventListener("click", () => this.handleRemove(entry, removeBtn));
+        } else if (entry.compat === MODEL_COMPAT.UNSUPPORTED) {
+            actionEl.createEl("button", {
+                text: MESSAGES.BUTTON_PULL,
+                cls: "lilbee-catalog-pull is-gated",
+                attr: { disabled: "true", title: MESSAGES.TOOLTIP_PULL_UNSUPPORTED },
+            });
         } else {
             const pullBtn = actionEl.createEl("button", { text: MESSAGES.BUTTON_PULL, cls: "lilbee-catalog-pull" });
             pullBtn.addEventListener("click", () => this.handlePull(entry));
@@ -859,6 +868,13 @@ export class CatalogModal extends Modal {
     }
 
     private handlePull(entry: CatalogEntry): void {
+        // Safety net: every pull path (grid card, list row) funnels through
+        // here, so refuse an unsupported model even if a gated button is ever
+        // bypassed. The buttons are also disabled in the UI.
+        if (entry.compat === MODEL_COMPAT.UNSUPPORTED) {
+            new Notice(MESSAGES.TOOLTIP_PULL_UNSUPPORTED);
+            return;
+        }
         const confirmModal = new ConfirmPullModal(this.app, {
             displayName: entry.display_name,
             sizeGb: entry.size_gb,
