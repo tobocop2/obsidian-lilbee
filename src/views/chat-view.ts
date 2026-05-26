@@ -405,7 +405,12 @@ export class ChatView extends ItemView {
         const otherInstalled = this.chatInstalled
             .filter((m) => !featuredRepos.has(extractHfRepo(m.name)))
             .sort((a, b) => a.name.localeCompare(b.name));
-        if (otherInstalled.length > 0) {
+        // Only emit the separator when it's actually dividing two
+        // sections. Without this guard, an empty featured catalog (e.g.
+        // server still warming up) lets the separator be the first
+        // option, which browsers render as the dropdown's displayed
+        // value — "—— Other... ——" instead of the real active model.
+        if (featuredInstalled.length > 0 && otherInstalled.length > 0) {
             const sep = selectEl.createEl("option", { text: SEPARATOR_LABEL });
             (sep as HTMLOptionElement).value = SEPARATOR_KEY;
             (sep as HTMLOptionElement).disabled = true;

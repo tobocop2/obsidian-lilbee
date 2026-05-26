@@ -729,9 +729,12 @@
     animation: lilbee-pill-breathe 1.8s ease-in-out infinite;
 }
 
+/* Ready is the calm resting state, shown most of the time, so it uses a
+ * soft green tint with green text rather than a loud solid fill. The
+ * attention states (error/starting/adding) keep their solid fills. */
 .lilbee-status-ready {
-    color: var(--text-on-accent) !important;
-    background-color: var(--text-success);
+    color: var(--text-success) !important;
+    background-color: color-mix(in srgb, var(--text-success) 18%, transparent);
     border-radius: var(--radius-s, 4px);
     padding: 0 var(--size-4-2, 8px);
 }
@@ -749,6 +752,18 @@
     border-radius: var(--radius-s, 4px);
     padding: 0 var(--size-4-2, 8px);
     animation: lilbee-pill-breathe 1.8s ease-in-out infinite;
+}
+
+/* Dedicated sync pill: a distinct, static affordance that appears only when
+ * documents are pending. Amber so it stands apart from the green "ready"
+ * status pill without alarming like the red error state, and no animation so
+ * it stays calm when parked in the corner. */
+.lilbee-sync-pill {
+    color: var(--text-on-accent) !important;
+    background-color: var(--color-orange, #e0922f);
+    border-radius: var(--radius-s, 4px);
+    padding: 0 var(--size-4-2, 8px);
+    font-variant-numeric: tabular-nums;
 }
 
 /* Catalog Modal */
@@ -3559,16 +3574,6 @@
     color: var(--text-muted);
 }
 
-.lilbee-sync-hint {
-    cursor: pointer;
-    padding: 0 4px;
-}
-
-.lilbee-sync-hint[data-running="true"] {
-    opacity: 0.6;
-    cursor: wait;
-}
-
 .lilbee-catalog-body {
     display: block;
 }
@@ -3697,7 +3702,7 @@
 /* Vault picker (Switch lilbee to another vault) */
 .lilbee-vault-picker-modal {
     padding: var(--size-4-3, 12px);
-    min-width: 480px;
+    min-width: 520px;
 }
 
 .lilbee-vault-picker-desc {
@@ -3714,44 +3719,130 @@
     text-align: center;
 }
 
+.lilbee-vault-picker-filter {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    margin-bottom: var(--size-4-3, 12px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--background-secondary);
+}
+
+.lilbee-vault-picker-filter-icon {
+    display: inline-flex;
+    color: var(--text-muted);
+}
+
+.lilbee-vault-picker-filter-input {
+    flex: 1 1 auto;
+    background: transparent;
+    border: none;
+    color: var(--text-normal);
+    font-size: var(--font-small, 13px);
+    outline: none;
+}
+
 .lilbee-vault-picker-list {
     display: flex;
     flex-direction: column;
     gap: var(--size-4-2, 8px);
 }
 
-.lilbee-vault-picker-row {
+.lilbee-vault-picker-card {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: var(--size-4-3, 12px);
+    padding: var(--size-4-3, 12px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    background-color: var(--background-secondary);
+    transition: border-color 100ms ease;
+}
+
+/* The card itself is non-interactive; only the inner Switch button activates
+ * a vault. Highlight the border on focus-within so keyboard users see which
+ * card holds the focused button, but skip the hover background-color that
+ * would falsely suggest the whole card is clickable. */
+.lilbee-vault-picker-card:focus-within {
+    border-color: var(--interactive-accent);
+}
+
+.lilbee-vault-picker-card-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background-color: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+    color: var(--interactive-accent);
+}
+
+.lilbee-vault-picker-card-icon .svg-icon {
+    width: 18px;
+    height: 18px;
+}
+
+.lilbee-vault-picker-card-body {
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    align-items: stretch;
     gap: 2px;
-    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 8px;
-    background-color: var(--background-secondary);
-    color: var(--text-normal);
-    text-align: left;
-    cursor: pointer;
 }
 
-.lilbee-vault-picker-row:hover {
-    background-color: var(--background-modifier-hover);
-}
-
-.lilbee-vault-picker-name {
+.lilbee-vault-picker-card-name {
     font-weight: var(--font-medium, 500);
     font-size: var(--font-ui-medium, 14px);
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.lilbee-vault-picker-path {
+.lilbee-vault-picker-card-path {
     color: var(--text-muted);
-    font-size: var(--font-smallest, 10px);
-    overflow-wrap: anywhere;
+    font-size: var(--font-smallest, 11px);
+    font-family: var(--font-monospace, monospace);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.lilbee-vault-picker-meta {
+.lilbee-vault-picker-card-meta {
     color: var(--text-faint);
-    font-size: var(--font-smallest, 10px);
+    font-size: var(--font-smallest, 11px);
+    margin-top: 2px;
+}
+
+.lilbee-vault-picker-card-action {
+    display: flex;
+    align-items: center;
+}
+
+.lilbee-vault-picker-switch-btn {
+    padding: 4px var(--size-4-3, 12px);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-vault-picker-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--size-4-2, 8px);
+    margin-top: var(--size-4-3, 12px);
+}
+
+.lilbee-vault-picker-page-btn {
+    padding: 4px var(--size-4-2, 8px);
+    font-size: var(--font-small, 13px);
+}
+
+.lilbee-vault-picker-page-status {
+    color: var(--text-muted);
+    font-size: var(--font-smallest, 11px);
 }
 
 /* Registered vaults section: empty-state hint */

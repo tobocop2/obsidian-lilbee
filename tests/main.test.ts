@@ -26,6 +26,7 @@ vi.mock("../src/api", () => ({
         setToken: vi.fn(),
         setTokenProvider: vi.fn(),
         setOutcomeCallback: vi.fn(),
+        setBaseUrl: vi.fn(),
         health: vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} }),
         // Default config matches the test vault layout so the fire-and-forget
         // configureManagedStorage() in startManagedServer() hits the early
@@ -244,6 +245,46 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerView).toHaveBeenCalled();
         });
 
+        it("removes stale .status-bar-item.plugin-lilbee + .lilbee-ribbon-icon from prior dead instances during onload", async () => {
+            const removeMock = vi.fn();
+            const docMock = {
+                querySelectorAll: vi.fn().mockImplementation((sel: string) => {
+                    if (sel === ".status-bar-item.plugin-lilbee" || sel === ".lilbee-ribbon-icon") {
+                        return [{ remove: removeMock }, { remove: removeMock }];
+                    }
+                    return [];
+                }),
+            };
+            const stash = (globalThis as { document?: unknown }).document;
+            (globalThis as { document?: unknown }).document = docMock;
+            try {
+                const plugin = await createPlugin();
+                await plugin.onload();
+                expect(docMock.querySelectorAll).toHaveBeenCalledWith(".status-bar-item.plugin-lilbee");
+                expect(docMock.querySelectorAll).toHaveBeenCalledWith(".lilbee-ribbon-icon");
+                // Two matches per selector, two selectors -> four removes.
+                expect(removeMock).toHaveBeenCalledTimes(4);
+            } finally {
+                (globalThis as { document?: unknown }).document = stash;
+            }
+        });
+
+        it("swallows duplicate-view-type errors from registerView so a stale view registration doesn't crash onload", async () => {
+            const plugin = await createPlugin();
+            (plugin.registerView as ReturnType<typeof vi.fn>).mockImplementation(() => {
+                throw new Error('Attempting to register an existing view type "lilbee-chat"');
+            });
+            await expect(plugin.onload()).resolves.not.toThrow();
+        });
+
+        it("re-throws non-duplicate registerView errors so genuine failures still surface", async () => {
+            const plugin = await createPlugin();
+            (plugin.registerView as ReturnType<typeof vi.fn>).mockImplementation(() => {
+                throw new Error("boom: something unrelated");
+            });
+            await expect(plugin.onload()).rejects.toThrow("boom");
+        });
+
         it("take-over command is disabled while a server is running and unavailable in external mode", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
@@ -407,8 +448,7 @@ describe("LilbeePlugin", () => {
             expect(plugin.registerEvent).toHaveBeenCalledTimes(5);
         });
 
-        it("recreates API client with loaded serverUrl", async () => {
-            const { LilbeeClient } = await import("../src/api");
+        it("repoints API client to the loaded serverUrl in place", async () => {
             const plugin = await createPlugin();
             plugin.loadData = vi.fn().mockResolvedValue({
                 setupCompleted: true,
@@ -416,7 +456,7 @@ describe("LilbeePlugin", () => {
                 serverUrl: "http://custom:9999",
             });
             await plugin.onload();
-            expect(LilbeeClient).toHaveBeenCalledWith("http://custom:9999");
+            expect(plugin.api.setBaseUrl).toHaveBeenCalledWith("http://custom:9999");
         });
 
         it("skips managed server start when setupCompleted is false", async () => {
@@ -552,18 +592,16 @@ describe("LilbeePlugin", () => {
     });
 
     describe("saveSettings()", () => {
-        it("calls saveData and recreates the API client", async () => {
-            const { LilbeeClient } = await import("../src/api");
+        it("calls saveData and repoints the API client to the new URL", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            const callsBefore = (LilbeeClient as ReturnType<typeof vi.fn>).mock.calls.length;
+            (plugin.api.setBaseUrl as ReturnType<typeof vi.fn>).mockClear();
 
             plugin.settings.serverUrl = "http://newserver:8080";
             await plugin.saveSettings();
 
             expect(plugin.saveData).toHaveBeenCalledWith(expect.objectContaining({ ...plugin.settings }));
-            const callsAfter = (LilbeeClient as ReturnType<typeof vi.fn>).mock.calls.length;
-            expect(callsAfter).toBeGreaterThan(callsBefore);
+            expect(plugin.api.setBaseUrl).toHaveBeenCalledWith("http://newserver:8080");
         });
     });
 
@@ -863,10 +901,27 @@ describe("LilbeePlugin", () => {
     describe("commands", () => {
         async function getCommandCallback(plugin: Awaited<ReturnType<typeof createPlugin>>, id: string) {
             const calls = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls as Array<
-                [{ id: string; callback: () => void | Promise<void> }]
+                [{ id: string; callback?: () => void | Promise<void>; checkCallback?: (checking: boolean) => boolean }]
             >;
             const call = calls.find((c) => c[0].id === id);
-            return call?.[0].callback;
+            const cmd = call?.[0];
+            if (!cmd) return undefined;
+            // Server-dependent commands now gate on isLilbeeReady() via
+            // checkCallback. Mark the managed server live so the gate passes,
+            // then return an invoker that fires the command's action
+            // (checkCallback(false)) — falling back to a plain callback.
+            (plugin as unknown as { serverManager: unknown }).serverManager ??= {};
+            (plugin as unknown as { serverUnreachable: boolean }).serverUnreachable = false;
+            // checkCallback returns synchronously and detaches the action
+            // (void ...). Flush a macrotask so the detached async settles
+            // before the test asserts on its effects.
+            if (cmd.checkCallback) {
+                return async () => {
+                    cmd.checkCallback!(false);
+                    await new Promise((r) => setTimeout(r, 0));
+                };
+            }
+            return cmd.callback;
         }
 
         it("lilbee:search opens SearchModal", async () => {
@@ -1112,6 +1167,60 @@ describe("LilbeePlugin", () => {
             expect(ModelInfoModal).toHaveBeenCalled();
         });
 
+        function checkOf(plugin: Awaited<ReturnType<typeof createPlugin>>, id: string) {
+            const calls = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls as Array<
+                [{ id: string; checkCallback?: (checking: boolean) => boolean }]
+            >;
+            return calls.find((c) => c[0].id === id)?.[0].checkCallback;
+        }
+
+        it("server-dependent commands are hidden when the managed server is down", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            (plugin as unknown as { serverManager: unknown }).serverManager = null;
+            (plugin as unknown as { serverUnreachable: boolean }).serverUnreachable = false;
+            // Give add-file/folder a real active file so the gate, not the
+            // missing-file guard, is what hides them.
+            (plugin.app.workspace.getActiveFile as ReturnType<typeof vi.fn>) = vi.fn(
+                () => ({ path: "x.md", parent: { path: "" } }) as never,
+            );
+            for (const id of [
+                "lilbee:search",
+                "lilbee:chat",
+                "lilbee:add-file",
+                "lilbee:add-folder",
+                "lilbee:sync",
+                "lilbee:sync-retry-skipped",
+                "lilbee:sync-rebuild",
+                "lilbee:catalog",
+                "lilbee:model-picker-chat",
+                "lilbee:model-picker-embedding",
+                "lilbee:model-info-active-chat",
+                "lilbee:model-info-active-embedding",
+                "lilbee:crawl",
+                "lilbee:documents",
+            ]) {
+                expect(checkOf(plugin, id)!(true)).toBe(false);
+            }
+        });
+
+        it("server-dependent commands are available once the managed server is up", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            (plugin as unknown as { serverManager: unknown }).serverManager = {};
+            (plugin as unknown as { serverUnreachable: boolean }).serverUnreachable = false;
+            expect(checkOf(plugin, "lilbee:catalog")!(true)).toBe(true);
+        });
+
+        it("external mode gates commands on reachability, not a server-manager", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as unknown as { serverUnreachable: boolean }).serverUnreachable = false;
+            expect(checkOf(plugin, "lilbee:catalog")!(true)).toBe(true);
+            (plugin as unknown as { serverUnreachable: boolean }).serverUnreachable = true;
+            expect(checkOf(plugin, "lilbee:catalog")!(true)).toBe(false);
+        });
+
         it("lilbee:tasks calls activateTaskView", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -1186,6 +1295,20 @@ describe("LilbeePlugin", () => {
             expect(scheduleSpy).not.toHaveBeenCalled();
         });
 
+        it("a task-queue change schedules the hint, so the pill clears after an ingest finishes", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const scheduleSpy = vi.spyOn(plugin as any, "schedulePendingSyncHint").mockImplementation(() => {});
+            await plugin.onload();
+
+            // Adding a file fires a vault create event (pill appears), but the
+            // ingest finishing fires no vault event — only a task-queue change.
+            // The pill must re-count then or it would stay amber forever.
+            scheduleSpy.mockClear();
+            const id = plugin.taskQueue.enqueue("Adding files", "add");
+            plugin.taskQueue.complete(id!);
+            expect(scheduleSpy).toHaveBeenCalled();
+        });
+
         it("schedulePendingSyncHint debounces by 1000ms and cancels prior schedules", async () => {
             vi.useFakeTimers();
             const plugin = await createPlugin({ serverMode: "external" });
@@ -1208,7 +1331,7 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             const updateSpy = vi.spyOn(plugin, "updatePendingSyncHint").mockResolvedValue(undefined);
             (plugin as any).schedulePendingSyncHint();
-            plugin.syncHintEl = null;
+            plugin.statusBarEl = null;
             vi.advanceTimersByTime(2000);
             expect(updateSpy).not.toHaveBeenCalled();
             vi.useRealTimers();
@@ -1216,13 +1339,13 @@ describe("LilbeePlugin", () => {
     });
 
     describe("updatePendingSyncHint()", () => {
-        it("shows the hint with the count when vault has files the server doesn't know", async () => {
+        it("shows the sync pill with the count when the vault has unknown files", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "notes/a.md", name: "a.md", extension: "md" },
-                { path: "notes/b.pdf", name: "b.pdf", extension: "pdf" },
-                { path: "notes/c.txt", name: "c.txt", extension: "txt" },
+                { path: "lilbee/a.md", name: "a.md", extension: "md" },
+                { path: "lilbee/b.pdf", name: "b.pdf", extension: "pdf" },
+                { path: "lilbee/c.txt", name: "c.txt", extension: "txt" },
             ]);
             (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
                 documents: [{ filename: "a.md", chunk_count: 1, ingested_at: "" }],
@@ -1234,15 +1357,17 @@ describe("LilbeePlugin", () => {
 
             await plugin.updatePendingSyncHint();
 
-            expect(plugin.syncHintEl?.textContent).toBe("lilbee: 2 to sync");
-            expect(plugin.syncHintEl?.style.display).toBe("");
+            // The sync pill shows the count; the main status pill is untouched.
+            expect(plugin.syncPillEl?.textContent).toBe("⟳ 2");
+            expect(plugin.syncPillEl?.style.display).toBe("");
+            expect(plugin.statusBarEl?.textContent).not.toContain("to sync");
         });
 
-        it("hides the hint when count is zero", async () => {
+        it("hides the sync pill when nothing is pending", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "notes/a.md", name: "a.md", extension: "md" },
+                { path: "lilbee/a.md", name: "a.md", extension: "md" },
             ]);
             (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
                 documents: [{ filename: "a.md", chunk_count: 1, ingested_at: "" }],
@@ -1251,25 +1376,25 @@ describe("LilbeePlugin", () => {
                 offset: 0,
                 has_more: false,
             });
-            plugin.syncHintEl!.style.display = "";
+            plugin.syncPillEl!.style.display = "";
 
             await plugin.updatePendingSyncHint();
 
-            expect(plugin.syncHintEl?.style.display).toBe("none");
+            expect(plugin.syncPillEl?.style.display).toBe("none");
         });
 
-        it("filters out unsupported extensions, wiki paths, and lilbee/ paths", async () => {
+        it("counts only lilbee/ docs, skipping loose notes, unsupported files, and wiki pages", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.wikiSync = {
-                isWikiPath: (p: string) => p.startsWith("lilbee-wiki/"),
+                isWikiPath: (p: string) => p.startsWith("lilbee/wiki/"),
                 reconcile: vi.fn(),
             } as any;
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "notes/a.md", name: "a.md", extension: "md" },
-                { path: "img/b.png", name: "b.png", extension: "png" }, // unsupported
-                { path: "lilbee/c.md", name: "c.md", extension: "md" }, // server-managed
-                { path: "lilbee-wiki/d.md", name: "d.md", extension: "md" }, // wiki
+                { path: "lilbee/a.md", name: "a.md", extension: "md" }, // counts
+                { path: "lilbee/b.png", name: "b.png", extension: "png" }, // unsupported
+                { path: "notes/c.md", name: "c.md", extension: "md" }, // loose note, indexed via Add
+                { path: "lilbee/wiki/d.md", name: "d.md", extension: "md" }, // wiki
             ]);
             (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
                 documents: [],
@@ -1281,15 +1406,15 @@ describe("LilbeePlugin", () => {
 
             await plugin.updatePendingSyncHint();
 
-            expect(plugin.syncHintEl?.textContent).toBe("lilbee: 1 to sync");
+            expect(plugin.syncPillEl?.textContent).toBe("⟳ 1");
         });
 
         it("pages through listDocuments when has_more is true", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "notes/a.md", name: "a.md", extension: "md" },
-                { path: "notes/b.md", name: "b.md", extension: "md" },
+                { path: "lilbee/a.md", name: "a.md", extension: "md" },
+                { path: "lilbee/b.md", name: "b.md", extension: "md" },
             ]);
             const mock = plugin.api.listDocuments as ReturnType<typeof vi.fn>;
             mock.mockClear();
@@ -1310,73 +1435,92 @@ describe("LilbeePlugin", () => {
             await plugin.updatePendingSyncHint();
 
             expect(mock).toHaveBeenCalledTimes(2);
-            expect(plugin.syncHintEl?.style.display).toBe("none");
+            expect(plugin.syncPillEl?.style.display).toBe("none");
         });
 
-        it("hides the hint silently when listDocuments rejects (server offline)", async () => {
+        it("hides the sync pill when listDocuments rejects (server offline)", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "notes/a.md", name: "a.md", extension: "md" },
+                { path: "lilbee/a.md", name: "a.md", extension: "md" },
             ]);
             (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
 
             await plugin.updatePendingSyncHint();
 
-            expect(plugin.syncHintEl?.style.display).toBe("none");
+            expect(plugin.syncPillEl?.style.display).toBe("none");
         });
 
-        it("no-ops if syncHintEl is null", async () => {
+        it("renders the sync pill independently of the main status pill", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
-            plugin.syncHintEl = null;
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+                { path: "lilbee/a.md", name: "a.md", extension: "md" },
+                { path: "lilbee/b.md", name: "b.md", extension: "md" },
+            ]);
+            (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
+                documents: [],
+                total: 0,
+                limit: 100,
+                offset: 0,
+                has_more: false,
+            });
+            const fromQueueSpy = vi.spyOn(plugin as any, "updateStatusBarFromQueue");
+
+            await plugin.updatePendingSyncHint();
+
+            expect(fromQueueSpy).not.toHaveBeenCalled();
+            expect(plugin.syncPillEl?.textContent).toBe("⟳ 2");
+        });
+
+        it("no-ops if syncPillEl is null", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.syncPillEl = null;
             await expect(plugin.updatePendingSyncHint()).resolves.toBeUndefined();
         });
 
-        it("returns 0 silently when the vault adapter is gone (timer fired post-teardown)", async () => {
+        it("bails after the await if the pill was torn down mid-flight", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+                { path: "lilbee/a.md", name: "a.md", extension: "md" },
+            ]);
+            (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+                plugin.syncPillEl = null; // simulate onunload during the await
+                return { documents: [], total: 0, limit: 100, offset: 0, has_more: false };
+            });
+            await expect(plugin.updatePendingSyncHint()).resolves.toBeUndefined();
+        });
+
+        it("hides the sync pill when the vault adapter is gone (timer fired post-teardown)", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
             await expect(plugin.updatePendingSyncHint()).resolves.toBeUndefined();
-            expect(plugin.syncHintEl?.style.display).toBe("none");
+            expect(plugin.syncPillEl?.style.display).toBe("none");
+        });
+    });
+
+    describe("status-bar click routing", () => {
+        it("opens settings when the main status pill is clicked", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const settingsSpy = vi.spyOn(plugin, "openPluginSettings").mockImplementation(() => {});
+
+            (plugin.statusBarEl as any).trigger("click");
+
+            expect(settingsSpy).toHaveBeenCalled();
         });
 
-        it("hint click triggers sync", async () => {
+        it("triggers a sync when the sync pill is clicked", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             const triggerSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
 
-            (plugin.syncHintEl as any).trigger("click");
+            (plugin.syncPillEl as any).trigger("click");
 
             expect(triggerSpy).toHaveBeenCalled();
-        });
-    });
-
-    describe("markSyncHintRunning", () => {
-        it("sets data-running and shows in-progress text while sync runs, clears it after", async () => {
-            const plugin = await createPlugin({ serverMode: "external" });
-            await plugin.onload();
-
-            async function* noEvents() {}
-            plugin.api.syncStream = vi.fn().mockReturnValue(noEvents());
-
-            const seen: Array<string | null> = [];
-            const observer = setInterval(() => {
-                seen.push(plugin.syncHintEl?.getAttribute("data-running") ?? null);
-            }, 0);
-
-            await plugin.triggerSync();
-            clearInterval(observer);
-
-            expect(plugin.syncHintEl?.getAttribute("data-running")).toBeNull();
-        });
-
-        it("no-ops if syncHintEl is null", async () => {
-            const plugin = await createPlugin({ serverMode: "external" });
-            await plugin.onload();
-            plugin.syncHintEl = null;
-            expect(() => (plugin as any).markSyncHintRunning(true)).not.toThrow();
-            expect(() => (plugin as any).markSyncHintRunning(false)).not.toThrow();
         });
     });
 
@@ -2652,7 +2796,7 @@ describe("LilbeePlugin", () => {
             expect(plugin.taskQueue.completed.filter((t) => t.type === "setup").length).toBe(1);
         });
 
-        it("handles setup_progress with null total (indeterminate)", async () => {
+        it("shows the warmup on the crawl row without a fake download sub-task when there is no size estimate", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
@@ -2667,6 +2811,40 @@ describe("LilbeePlugin", () => {
                             total_bytes: null,
                             detail: "Downloading…",
                         },
+                    };
+                    yield { event: SSE_EVENT.SETUP_DONE, data: { component: "chromium", success: true, error: null } };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 0 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, 50);
+
+            // A warmup with no size estimate must not spawn a Chromium download
+            // sub-task (it would render a misleading 0 MB / indeterminate
+            // download); the stage surfaces on the crawl row instead, and the
+            // crawl still completes cleanly.
+            expect(plugin.taskQueue.completed.find((t) => t.type === "setup")).toBeUndefined();
+            expect(plugin.taskQueue.completed.some((t) => t.type === "crawl")).toBe(true);
+        });
+
+        it("renders an indeterminate detail when a sized setup download streams progress without a total", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    // A real install reports a size estimate up front (so the
+                    // download sub-task is created), but a later progress event
+                    // can still arrive without a total — formatSetupDetail must
+                    // fall back to the indeterminate label.
+                    yield {
+                        event: SSE_EVENT.SETUP_START,
+                        data: { component: "chromium", size_estimate_bytes: 150_000_000 },
+                    };
+                    yield {
+                        event: SSE_EVENT.SETUP_PROGRESS,
+                        data: { component: "chromium", downloaded_bytes: 5_000_000, total_bytes: null, detail: "" },
                     };
                     yield { event: SSE_EVENT.SETUP_DONE, data: { component: "chromium", success: true, error: null } };
                     yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 0 } };
@@ -3075,6 +3253,9 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             (plugin as any).startingServer = false;
             (plugin as any).serverUnreachable = false;
+            // Managed mode only flips to error after the server has been ready
+            // at least once — simulate a server that came up then went down.
+            (plugin as any).serverEverReady = true;
             (plugin as any).readCurrentToken = vi.fn(() => null);
             plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
             (plugin as any).missingTokenNoticeFired = false;
@@ -3082,6 +3263,18 @@ describe("LilbeePlugin", () => {
             Notice.clear();
             await (plugin as any).probeServerHealth();
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_TOKEN_MANAGED);
+        });
+
+        it("managed mode stays quiet (no error pill) while the server has never been ready", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            (plugin as any).startingServer = false;
+            (plugin as any).serverUnreachable = false;
+            (plugin as any).serverEverReady = false;
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
+            (plugin as any).healthFailureStreak = 5;
+            await (plugin as any).probeServerHealth();
+            expect((plugin.statusBarEl as any)?.textContent ?? "").not.toContain("error");
         });
 
         it("skips probing while a chat stream is in flight", async () => {
@@ -3278,6 +3471,22 @@ describe("LilbeePlugin", () => {
             const before = (plugin.statusBarEl as any)?.textContent;
             (plugin as any).handleRequestOutcome("starting");
             expect((plugin.statusBarEl as any)?.textContent).toBe(before);
+        });
+
+        it("managed mode does not flip to error on 'server_error' before the server has ever been ready", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            (plugin as any).serverEverReady = false;
+            (plugin as any).handleRequestOutcome("server_error");
+            expect((plugin.statusBarEl as any)?.textContent ?? "").not.toContain("error");
+        });
+
+        it("managed mode flips to error on 'server_error' once the server has been ready", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            (plugin as any).serverEverReady = true;
+            (plugin as any).handleRequestOutcome("server_error");
+            expect((plugin.statusBarEl as any)?.textContent).toContain("error");
         });
     });
 
@@ -4024,9 +4233,7 @@ describe("LilbeePlugin", () => {
             expect(mockEnsureBinary).toHaveBeenCalledTimes(1);
         });
 
-        it("handleServerStateChange ready updates api with current server URL", async () => {
-            const { LilbeeClient } = await import("../src/api");
-
+        it("handleServerStateChange ready repoints api to the current server URL", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
@@ -4034,11 +4241,10 @@ describe("LilbeePlugin", () => {
             const stateChange = mockServerOpts?.onStateChange;
             expect(stateChange).toBeDefined();
 
-            const callsBefore = (LilbeeClient as ReturnType<typeof vi.fn>).mock.calls.length;
+            (plugin.api.setBaseUrl as ReturnType<typeof vi.fn>).mockClear();
             stateChange("ready");
-            const callsAfter = (LilbeeClient as ReturnType<typeof vi.fn>).mock.calls.length;
 
-            expect(callsAfter).toBeGreaterThan(callsBefore);
+            expect(plugin.api.setBaseUrl).toHaveBeenCalled();
         });
 
         it("readCurrentToken returns null in managed mode when the server manager is missing", async () => {

@@ -202,6 +202,13 @@ export const MESSAGES = {
     LABEL_VAULT_ACTIVE_MINUTES: (n: number): string => (n === 1 ? "active 1 minute ago" : `active ${n} minutes ago`),
     LABEL_VAULT_ACTIVE_HOURS: (n: number): string => (n === 1 ? "active 1 hour ago" : `active ${n} hours ago`),
     LABEL_VAULT_ACTIVE_DAYS: (n: number): string => (n === 1 ? "active 1 day ago" : `active ${n} days ago`),
+    PLACEHOLDER_VAULT_FILTER: "Filter vaults…",
+    EMPTY_VAULT_FILTER: "No vaults match that filter.",
+    BUTTON_SWITCH: "Switch",
+    BUTTON_PREV_PAGE: "‹ Prev",
+    BUTTON_NEXT_PAGE: "Next ›",
+    LABEL_PAGE_STATUS: (page: number, total: number, count: number): string =>
+        `Page ${page} of ${total} · ${count} vault${count === 1 ? "" : "s"}`,
     NOTICE_RELEASED_FOR_VAULT: (vaultName: string): string =>
         `lilbee released — open "${vaultName}" in Obsidian to take it over.`,
     LABEL_SHARED_ROOT: "Shared lilbee directory",
@@ -479,8 +486,7 @@ export const MESSAGES = {
     STATUS_SYNCED: "lilbee: synced — {summary}",
     STATUS_SYNC_CANCELLED: "lilbee: sync cancelled",
     STATUS_SYNC_FAILED: "lilbee: sync failed",
-    STATUS_SYNC_IN_PROGRESS: "lilbee: syncing…",
-    STATUS_DOCS_PENDING_SYNC: (n: number) => `lilbee: ${n} to sync`,
+    STATUS_SYNC_PILL: (n: number) => `⟳ ${n}`,
     TOOLTIP_PENDING_SYNC_HINT: "Click to sync new documents",
     STATUS_STARTING_SERVER: "Starting server...",
     WIZARD_SETUP_HEAD: "Setting up lilbee",

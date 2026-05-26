@@ -103,8 +103,7 @@ describe("MESSAGES", () => {
             expect(MESSAGES.DESC_MODELS_HELP).toBe(
                 "Browse the catalog for available models. Requires the lilbee server.",
             );
-            expect(MESSAGES.STATUS_DOCS_PENDING_SYNC(3)).toBe("lilbee: 3 to sync");
-            expect(MESSAGES.STATUS_SYNC_IN_PROGRESS).toBe("lilbee: syncing…");
+            expect(MESSAGES.STATUS_SYNC_PILL(3)).toBe("⟳ 3");
             expect(MESSAGES.TOOLTIP_PENDING_SYNC_HINT).toBe("Click to sync new documents");
             expect(MESSAGES.DESC_RESULTS_COUNT).toBe(
                 "How many matching passages to return when you search or ask a question",
@@ -372,6 +371,13 @@ describe("MESSAGES", () => {
             expect(MESSAGES.WIZARD_LOCAL_ONLY_EXTERNAL).toContain("External mode talks to your existing");
             expect(MESSAGES.WIZARD_MODEL_HELP).toContain("This is the AI that answers your questions");
             expect(MESSAGES.WIZARD_SUMMARY_FILES).toBe("{count} files indexed");
+        });
+    });
+
+    describe("LABEL_PAGE_STATUS", () => {
+        it("pluralizes the count properly", () => {
+            expect(MESSAGES.LABEL_PAGE_STATUS(1, 1, 1)).toBe("Page 1 of 1 · 1 vault");
+            expect(MESSAGES.LABEL_PAGE_STATUS(1, 1, 2)).toBe("Page 1 of 1 · 2 vaults");
         });
     });
 

@@ -1,4 +1,12 @@
-import { type Menu, type MenuItem, Notice, Plugin, type TAbstractFile } from "obsidian";
+import {
+    type ItemView,
+    type Menu,
+    type MenuItem,
+    Notice,
+    Plugin,
+    type TAbstractFile,
+    type WorkspaceLeaf,
+} from "obsidian";
 import { LilbeeClient, SessionTokenError } from "./api";
 import type { RequestOutcome } from "./api";
 import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
@@ -79,6 +87,12 @@ const BYTES_PER_MB = 1_000_000;
 const PENDING_SYNC_HINT_DEBOUNCE_MS = 1000;
 
 const SUPPORTED_SYNC_EXTENSIONS = new Set(["md", "pdf", "txt", "html"]);
+
+// Vault-relative folder where managed mode stores lilbee's documents
+// (see configureManagedStorage). It is the only scope `Sync vault` reconciles.
+const MANAGED_DOCS_PREFIX = "lilbee/";
+
+const basename = (p: string): string => p.slice(p.lastIndexOf("/") + 1);
 
 function formatSetupDetail(downloaded: number, total: number | null): string {
     const dlMB = (downloaded / BYTES_PER_MB).toFixed(1);
@@ -185,7 +199,7 @@ export default class LilbeePlugin extends Plugin {
     api: LilbeeClient = new LilbeeClient("");
     activeModel = "";
     statusBarEl: HTMLElement | null = null;
-    syncHintEl: HTMLElement | null = null;
+    syncPillEl: HTMLElement | null = null;
     ribbonIconEl: HTMLElement | null = null;
     chatRibbonIconEl: HTMLElement | null = null;
     binaryManager: BinaryManager | null = null;
@@ -193,6 +207,7 @@ export default class LilbeePlugin extends Plugin {
     vaultRegistry: VaultRegistry | null = null;
     vaultId = "";
     syncController: AbortController | null = null;
+    private pendingSyncCount = 0;
     private pendingHintTimeout: ReturnType<typeof setTimeout> | null = null;
     private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
     private startingServer = false;
@@ -212,21 +227,44 @@ export default class LilbeePlugin extends Plugin {
     private chatInFlight = 0;
     // Counts consecutive failed probes against HEALTH_FAILURE_STREAK_THRESHOLD.
     private healthFailureStreak = 0;
+    // The managed server has reached READY at least once this session. Until
+    // it has, a failing health probe means "still coming up", not "error" —
+    // so a fresh install / first-run wizard doesn't flash a red error pill
+    // while the binary downloads and the server boots.
+    private serverEverReady = false;
 
     async onload(): Promise<void> {
         await this.loadSettings();
         this.wikiEnabled = this.settings.wikiEnabled;
+
+        // Sweep up status-bar items + ribbon icons that prior dead lilbee
+        // instances left behind. Each crashed/incompletely-unloaded reload
+        // accumulates more, so the corner ends up with multiple "lilbee:
+        // ready" / "lilbee: error" pills side by side until Obsidian
+        // restarts. Take a clean slate before adding our own. Guarded for
+        // node-environment tests where document is undefined.
+        if (typeof document !== "undefined") {
+            document.querySelectorAll(".status-bar-item.plugin-lilbee").forEach((el) => el.remove());
+            document.querySelectorAll(".lilbee-ribbon-icon").forEach((el) => el.remove());
+        }
 
         this.statusBarEl = this.addStatusBarItem();
         this.statusBarEl.style.cursor = "pointer";
         this.statusBarEl.setAttribute("aria-label", MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);
         this.statusBarEl.addEventListener("click", () => this.openPluginSettings());
 
-        this.syncHintEl = this.addStatusBarItem();
-        this.syncHintEl.addClass("lilbee-sync-hint");
-        this.syncHintEl.style.display = "none";
-        this.syncHintEl.setAttribute("aria-label", MESSAGES.TOOLTIP_PENDING_SYNC_HINT);
-        this.syncHintEl.addEventListener("click", () => void this.triggerSync());
+        // A separate, visually distinct sync pill (refresh glyph + count) that
+        // only appears when the vault has documents the server hasn't ingested.
+        // Keeping it off the main status pill lets the green "running" state
+        // stay clean and prominent; this pill is a sync affordance, not a
+        // second status icon. Clicking it triggers a sync.
+        this.syncPillEl = this.addStatusBarItem();
+        this.syncPillEl.addClass("lilbee-sync-pill");
+        this.syncPillEl.style.cursor = "pointer";
+        this.syncPillEl.style.display = "none";
+        this.syncPillEl.setAttribute("aria-label", MESSAGES.TOOLTIP_PENDING_SYNC_HINT);
+        this.syncPillEl.addEventListener("click", () => void this.triggerSync());
+
         this.chatRibbonIconEl = this.addRibbonIcon("messages-square", MESSAGES.LABEL_RIBBON_OPEN_CHAT, () =>
             this.activateChatView(),
         );
@@ -235,13 +273,30 @@ export default class LilbeePlugin extends Plugin {
             this.activateTaskView(),
         );
         this.ribbonIconEl.addClass("lilbee-ribbon-icon");
-        this.registerView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
-        this.registerView(VIEW_TYPE_TASKS, (leaf) => new TaskCenterView(leaf, this));
-        this.registerView(VIEW_TYPE_WIKI, (leaf) => new WikiView(leaf, this));
+        // Guard against Obsidian holding stale view registrations from a
+        // previous plugin instance that didn't unload cleanly (e.g. an
+        // onload that threw before registerView ran, or a disable that
+        // skipped its unregister callback). registerView throws on
+        // duplicate registration; wrap so the new instance still loads.
+        const safeRegisterView = (type: string, factory: (leaf: WorkspaceLeaf) => ItemView): void => {
+            try {
+                this.registerView(type, factory);
+            } catch (err) {
+                if (!(err instanceof Error) || !/existing view type/.test(err.message)) throw err;
+            }
+        };
+        safeRegisterView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
+        safeRegisterView(VIEW_TYPE_TASKS, (leaf) => new TaskCenterView(leaf, this));
+        safeRegisterView(VIEW_TYPE_WIKI, (leaf) => new WikiView(leaf, this));
         this.addSettingTab(new LilbeeSettingTab(this.app, this));
         this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
         this.taskQueue.onChange(() => this.updateRibbonFromQueue());
         this.taskQueue.onChange(() => this.schedulePersistHistory());
+        // Add/sync/crawl tasks completing is when the server's set of known
+        // documents changes, so re-count pending sync then. Vault file events
+        // alone miss it: adding a file fires a create event (pill appears),
+        // but nothing fires when the ingest finishes (pill would never clear).
+        this.taskQueue.onChange(() => this.schedulePendingSyncHint());
         this.registerCommands();
 
         this.registerEvent(
@@ -588,6 +643,7 @@ export default class LilbeePlugin extends Plugin {
                     this.configureApi(this.serverManager.serverUrl);
                 }
                 this.serverUnreachable = false;
+                this.serverEverReady = true;
                 this.setStatusReady();
                 this.refreshSettingsTab();
                 new Notice(MESSAGES.STATUS_READY, NOTICE_DURATION_MS);
@@ -633,9 +689,12 @@ export default class LilbeePlugin extends Plugin {
         return readSessionToken(dataRoot);
     }
 
-    /** Build a fresh API client for *baseUrl* and re-register all hooks. */
+    /** Point the API client at *baseUrl* and re-bind the hooks. Updates the
+     * existing client instance in place so any caller already mid-await on
+     * fetchWithRetry (waiting for the server to come up) sees the new URL
+     * land instead of being orphaned on a replaced reference. */
     private configureApi(baseUrl: string): void {
-        this.api = new LilbeeClient(baseUrl);
+        this.api.setBaseUrl(baseUrl);
         this.api.setTokenProvider(() => this.readCurrentToken());
         this.api.setToken(this.readCurrentToken());
         this.api.setOutcomeCallback((outcome) => this.handleRequestOutcome(outcome));
@@ -653,29 +712,58 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         if (outcome === "server_error" || outcome === "unreachable") {
+            // Before the managed server has ever reached READY, a failed
+            // request means it's still coming up — don't flash a red error.
+            if (this.settings.serverMode === SERVER_MODE.MANAGED && !this.serverEverReady) return;
             this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
             this.setStatusClass("lilbee-status-error");
         }
         // "starting" is a no-op — the existing startup UI already says so.
     }
 
+    /**
+     * Whether lilbee can actually serve requests right now. Managed mode
+     * needs a live server-manager that isn't flagged unreachable; external
+     * mode trusts the user's server until a probe says otherwise.
+     *
+     * Server-dependent commands gate their checkCallback on this so the
+     * command palette doesn't offer (and silently fail) catalog / chat /
+     * crawl / sync while the managed server is stopped — when it's down,
+     * the only lilbee command offered is the one that starts it.
+     */
+    private isLilbeeReady(): boolean {
+        if (this.settings.serverMode === SERVER_MODE.EXTERNAL) {
+            return !this.serverUnreachable;
+        }
+        return this.serverManager !== null && !this.serverUnreachable;
+    }
+
     private registerCommands(): void {
         this.addCommand({
             id: "lilbee:search",
             name: "Search knowledge base",
-            callback: () => new SearchModal(this.app, this).open(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) new SearchModal(this.app, this).open();
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:chat",
             name: "Open chat",
-            callback: () => this.activateChatView(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void this.activateChatView();
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:add-file",
             name: "Add current file to lilbee",
             checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
                 const file = this.app.workspace.getActiveFile();
                 if (!file) return false;
                 if (!checking) void this.addToLilbee(file);
@@ -687,6 +775,7 @@ export default class LilbeePlugin extends Plugin {
             id: "lilbee:add-folder",
             name: "Add current folder to lilbee",
             checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
                 const file = this.app.workspace.getActiveFile();
                 const folder = file?.parent;
                 if (!folder) return false;
@@ -698,65 +787,107 @@ export default class LilbeePlugin extends Plugin {
         this.addCommand({
             id: "lilbee:sync",
             name: MESSAGES.COMMAND_SYNC,
-            callback: () => this.triggerSync(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void this.triggerSync();
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:sync-retry-skipped",
             name: MESSAGES.COMMAND_SYNC_RETRY_SKIPPED,
-            callback: () => this.triggerSync({ retrySkipped: true }),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void this.triggerSync({ retrySkipped: true });
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:sync-rebuild",
             name: MESSAGES.COMMAND_SYNC_REBUILD,
-            callback: async () => {
-                const confirmModal = new ConfirmModal(this.app, MESSAGES.CONFIRM_SYNC_REBUILD);
-                confirmModal.open();
-                if (await confirmModal.result) void this.triggerSync({ forceRebuild: true });
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) {
+                    void (async () => {
+                        const confirmModal = new ConfirmModal(this.app, MESSAGES.CONFIRM_SYNC_REBUILD);
+                        confirmModal.open();
+                        if (await confirmModal.result) void this.triggerSync({ forceRebuild: true });
+                    })();
+                }
+                return true;
             },
         });
 
         this.addCommand({
             id: "lilbee:catalog",
             name: "Browse model catalog",
-            callback: () => new CatalogModal(this.app, this).open(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) new CatalogModal(this.app, this).open();
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:model-picker-chat",
             name: MESSAGES.COMMAND_MODEL_PICKER_CHAT,
-            callback: () => new ModelPickerModal(this.app, this, "chat").open(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) new ModelPickerModal(this.app, this, "chat").open();
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:model-picker-embedding",
             name: MESSAGES.COMMAND_MODEL_PICKER_EMBED,
-            callback: () => new ModelPickerModal(this.app, this, "embedding").open(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) new ModelPickerModal(this.app, this, "embedding").open();
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:model-info-active-chat",
             name: MESSAGES.COMMAND_MODEL_INFO_CHAT,
-            callback: () => this.openModelInfoForActiveTask("chat"),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void this.openModelInfoForActiveTask("chat");
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:model-info-active-embedding",
             name: MESSAGES.COMMAND_MODEL_INFO_EMBED,
-            callback: () => this.openModelInfoForActiveTask("embedding"),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void this.openModelInfoForActiveTask("embedding");
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:crawl",
             name: "Crawl web page",
-            callback: () => new CrawlModal(this.app, this).open(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) new CrawlModal(this.app, this).open();
+                return true;
+            },
         });
 
         this.addCommand({
             id: "lilbee:documents",
             name: "Browse documents",
-            callback: () => new DocumentsModal(this.app, this).open(),
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) new DocumentsModal(this.app, this).open();
+                return true;
+            },
         });
 
         this.addCommand({
@@ -892,7 +1023,14 @@ export default class LilbeePlugin extends Plugin {
             clearTimeout(this.pendingHintTimeout);
             this.pendingHintTimeout = null;
         }
-        this.syncHintEl = null;
+        // Tear down the status-bar items we own. addStatusBarItem returns
+        // DOM nodes that survive plugin unload if the plugin doesn't detach
+        // them explicitly, so a disable/enable cycle leaves stale duplicates
+        // in the bar that the new plugin instance then sits next to.
+        this.statusBarEl?.remove();
+        this.statusBarEl = null;
+        this.syncPillEl?.remove();
+        this.syncPillEl = null;
         this.taskQueue.dispose();
         void this.serverManager?.stop();
         this.vaultRegistry?.releaseLock(this.vaultId);
@@ -1001,6 +1139,8 @@ export default class LilbeePlugin extends Plugin {
             this.setStatusClass(null);
             return;
         }
+        // The main pill always shows running status, plainly and prominently.
+        // Pending-sync work lives on the separate sync pill, never here.
         const text =
             this.settings.serverMode === SERVER_MODE.EXTERNAL ? MESSAGES.STATUS_READY_EXTERNAL : MESSAGES.STATUS_READY;
         this.updateStatusBar(text);
@@ -1032,6 +1172,11 @@ export default class LilbeePlugin extends Plugin {
         }
         this.healthFailureStreak += 1;
         if (this.healthFailureStreak < HEALTH_FAILURE_STREAK_THRESHOLD) return;
+        // Managed mode, pre-first-ready (fresh install, wizard still
+        // downloading/booting): a failing probe is "starting", not "error".
+        // Don't paint a red pill. External mode reports errors normally —
+        // it points at a server the user already runs.
+        if (this.settings.serverMode === SERVER_MODE.MANAGED && !this.serverEverReady) return;
         if (this.serverUnreachable) return;
         this.serverUnreachable = true;
         this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
@@ -1596,9 +1741,9 @@ export default class LilbeePlugin extends Plugin {
         this.pendingHintTimeout = setTimeout(() => {
             this.pendingHintTimeout = null;
             // Bail if the plugin was unloaded between scheduling and firing.
-            // The syncHintEl guard inside updatePendingSyncHint covers this,
+            // The statusBarEl guard inside updatePendingSyncHint covers this,
             // but the explicit check here keeps the contract local.
-            if (!this.syncHintEl) return;
+            if (!this.statusBarEl) return;
             void this.updatePendingSyncHint();
         }, PENDING_SYNC_HINT_DEBOUNCE_MS);
     }
@@ -1609,18 +1754,25 @@ export default class LilbeePlugin extends Plugin {
         // setTimeout was still pending). Bail cleanly instead of crashing.
         const files = this.app?.vault?.getFiles?.();
         if (!Array.isArray(files)) return 0;
-        const vaultFiles = files
+        // Only count files inside lilbee's managed document folder
+        // (<vault>/lilbee/). That's the scope `Sync vault` actually
+        // reconciles. Loose vault notes live outside it and are indexed
+        // only via the explicit Add action (which copies them in), so
+        // counting them here would show a count that sync can never clear.
+        const docFiles = files
             .filter((f) => SUPPORTED_SYNC_EXTENSIONS.has(f.extension.toLowerCase()))
-            .filter((f) => !this.wikiSync?.isWikiPath(f.path) && !f.path.startsWith("lilbee/"));
+            .filter((f) => f.path.startsWith(MANAGED_DOCS_PREFIX) && !this.wikiSync?.isWikiPath(f.path));
         const known = new Set<string>();
         try {
             // Page through the documents endpoint so we count every known
-            // source, not just the first page.
+            // source, not just the first page. Match on basename: crawled
+            // sources keep a relative path (_web/.../index.md) while added
+            // files use a basename, so the basename is the common key.
             let offset = 0;
             const limit = 100;
             while (true) {
                 const page = await this.api.listDocuments(undefined, limit, offset);
-                for (const d of page.documents) known.add(d.filename);
+                for (const d of page.documents) known.add(basename(d.filename));
                 if (!page.has_more || page.documents.length === 0) break;
                 offset += page.documents.length;
             }
@@ -1628,18 +1780,22 @@ export default class LilbeePlugin extends Plugin {
             // Server offline — leave the hint hidden rather than guessing.
             return 0;
         }
-        return vaultFiles.filter((f) => !known.has(f.name)).length;
+        return docFiles.filter((f) => !known.has(f.name)).length;
     }
 
     async updatePendingSyncHint(): Promise<void> {
-        if (!this.syncHintEl) return;
+        if (!this.syncPillEl) return;
         const count = await this.countPendingSync();
-        if (!this.syncHintEl) return;
+        if (!this.syncPillEl) return;
+        // countPendingSync returns 0 when the server is unreachable, so the
+        // pill naturally hides when lilbee isn't up — the main status pill
+        // owns the running/stopped state, this one only the sync count.
+        this.pendingSyncCount = count;
         if (count > 0) {
-            this.syncHintEl.setText(MESSAGES.STATUS_DOCS_PENDING_SYNC(count));
-            this.syncHintEl.style.display = "";
+            this.syncPillEl.setText(MESSAGES.STATUS_SYNC_PILL(count));
+            this.syncPillEl.style.display = "";
         } else {
-            this.syncHintEl.style.display = "none";
+            this.syncPillEl.style.display = "none";
         }
     }
 
@@ -1746,12 +1902,18 @@ export default class LilbeePlugin extends Plugin {
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 switch (event.event) {
                     case SSE_EVENT.SETUP_START: {
-                        if (setupTaskId !== null) break;
-                        setupTaskId = this.taskQueue.enqueue("Chromium setup", TASK_TYPE.SETUP);
+                        // Always surface the preparing-crawler stage on the crawl task —
+                        // covers both the Chromium download and the first-run browser warmup.
                         this.taskQueue.update(taskId, -1, MESSAGES.STATUS_TASK_CRAWLER_PREPARING);
-                        if (setupTaskId !== null) {
-                            const d = event.data as SetupStartPayload;
-                            this.taskQueue.update(setupTaskId, 0, formatSetupDetail(0, d.size_estimate_bytes));
+                        // Only track a separate download sub-task for a real install (one
+                        // with a size estimate). The browser warmup has none and would
+                        // otherwise show a misleading "0 MB" download.
+                        const d = event.data as SetupStartPayload;
+                        if (d.size_estimate_bytes && setupTaskId === null) {
+                            setupTaskId = this.taskQueue.enqueue("Chromium setup", TASK_TYPE.SETUP);
+                            if (setupTaskId !== null) {
+                                this.taskQueue.update(setupTaskId, 0, formatSetupDetail(0, d.size_estimate_bytes));
+                            }
                         }
                         break;
                     }
@@ -1830,7 +1992,6 @@ export default class LilbeePlugin extends Plugin {
         }
         this.syncController = new AbortController();
         this.taskQueue.registerAbort(taskId, this.syncController);
-        this.markSyncHintRunning(true);
 
         try {
             const progress = new FileProgressTracker();
@@ -1913,19 +2074,7 @@ export default class LilbeePlugin extends Plugin {
             }
         } finally {
             this.syncController = null;
-            this.markSyncHintRunning(false);
             this.schedulePendingSyncHint();
-        }
-    }
-
-    private markSyncHintRunning(running: boolean): void {
-        if (!this.syncHintEl) return;
-        if (running) {
-            this.syncHintEl.setAttribute("data-running", "true");
-            this.syncHintEl.setText(MESSAGES.STATUS_SYNC_IN_PROGRESS);
-            this.syncHintEl.style.display = "";
-        } else {
-            this.syncHintEl.removeAttribute("data-running");
         }
     }
 }

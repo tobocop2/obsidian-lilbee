@@ -1199,10 +1199,58 @@ describe("ChatView.onOpen — model selector", () => {
         const container = view.containerEl.children[1] as unknown as MockElement;
         const select = container.find("lilbee-chat-model-select")!;
         const options = select.children.filter((c) => c.tagName === "OPTION");
-        // With empty catalog, all installed go under separator: separator + llama3 + phi3
+        // With empty featured catalog, the separator is suppressed
+        // (would otherwise become the dropdown's displayed value);
+        // only the Other-section options remain.
+        expect(options.length).toBe(2);
+        expect(options[0].textContent).toBe("llama3");
+        expect(options[1].textContent).toBe("phi3");
+    });
+
+    it("emits a separator between featured-installed and other-installed sections", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        // Override catalog so llama3 lives in the featured section; phi3 stays in Other.
+        plugin.api.catalog = vi.fn().mockImplementation((params?: { task?: string }) => {
+            if (params?.task === "chat") {
+                return Promise.resolve(
+                    ok({
+                        total: 1,
+                        limit: 50,
+                        offset: 0,
+                        models: [
+                            {
+                                hf_repo: "llama3",
+                                gguf_filename: "",
+                                display_name: "Llama 3",
+                                size_gb: 8,
+                                min_ram_gb: 16,
+                                description: "Chat",
+                                installed: true,
+                                source: "native",
+                                task: "chat",
+                                featured: true,
+                                downloads: 1,
+                                quality_tier: "good",
+                                param_count: "8B",
+                            },
+                        ],
+                        has_more: false,
+                    }),
+                );
+            }
+            return Promise.resolve(ok({ total: 0, limit: 50, offset: 0, models: [], has_more: false }));
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-chat-model-select")!;
+        const options = select.children.filter((c) => c.tagName === "OPTION");
         expect(options.length).toBe(3);
-        expect(options[0].disabled).toBe(true); // separator
-        expect(options[1].textContent).toBe("llama3");
+        expect(options[0].textContent).toContain("Llama 3");
+        expect(options[1].disabled).toBe(true);
         expect(options[2].textContent).toBe("phi3");
     });
 
