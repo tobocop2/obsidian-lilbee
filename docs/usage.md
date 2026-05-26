@@ -118,7 +118,7 @@ When using **managed mode**, the status bar shows `lilbee: ready`. When using **
 
 The models section lets you pick which AI models lilbee uses. There are two dropdowns:
 
-- **Chat model** — the AI that answers your questions. It reads the relevant passages from your documents and writes a response. You need a chat model selected to use the chat sidebar or the "Ask a question" command.
+- **Chat model** — the AI that answers your questions. It reads the relevant excerpts from your documents and writes a response. You need a chat model selected to use the chat sidebar or the "Ask a question" command.
 - **Vision model** — an optional model that can "see" images and scanned PDFs. If you have documents that are photographs, screenshots, or scanned pages without selectable text, a vision model converts them to text so they become searchable. Leave this set to "Disabled" if you don't need it.
 
 The plugin shows a curated list of recommended models for each type. If a model isn't downloaded yet, selecting it starts the download automatically — you'll see a progress bar. You can also:
