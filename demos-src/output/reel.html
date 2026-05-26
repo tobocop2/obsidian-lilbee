@@ -57,7 +57,7 @@
     { name: "settings", fresh: true,
       desc: "Open lilbee settings via the palette and scroll the full surface, top to bottom through the Advanced section." },
     { name: "first_start", fresh: false, noVideo: true,
-      desc: "From-scratch install: BRAT → enable lilbee → the setup wizard → first cited chat. The wizard (now fixed) walks fully — server mode, model pick, the Qwen3 0.6B + embeddinggemma downloads, sync, done — but the managed server ends with no usable chat model (the picked model isn't landing on disk / only an unusable alias registers), so the first chat 500s. Blocked on that managed-mode model-pull bug, not the wizard." },
+      desc: "From-scratch install: BRAT → enable lilbee → the setup wizard → first cited chat. The wizard walks fully and the server pull+set path is healthy (verified). The tape now waits for the model to actually finish installing before advancing (the earlier failure was a 180s wait racing a ~300s download). Remaining blocker is purely recording: the 639 MB Qwen3 0.6B download via the managed binary is slow/unreliable on camera (exceeded 10 min). Pre-caching the model makes it reliable." },
     { name: "multi_vault", fresh: false, noVideo: true,
       desc: "Being rewritten for the new model (#101): the cross-vault switcher is gone — lilbee now follows whichever vault Obsidian has open. The old switcher tape is dead; the new demo shows lilbee re-targeting as the open vault changes. Recording next on the open-vault-authoritative build." },
   ];
