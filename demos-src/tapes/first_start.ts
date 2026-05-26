@@ -287,18 +287,34 @@ export default storyboard("first_start", {
     // to the embedding picker on success. Wait for the picker UI to
     // change (model cards in the embedding step) before continuing.
     beat(
-      "Wait for chat model download to land us on embedding picker",
+      "Wait for the chat model download to finish (real completion, not a heading)",
       runJs(`
-        // The DOM swaps between steps. Heuristic: the model picker step
-        // is gone (no "Pick chat model" heading) AND embedding cards are
-        // present, OR the wizard step indicator has advanced past Model.
-        for (let i = 0; i < 360; i++) {
+        // Qwen3 0.6B is ~639 MB; a cold pull can take several minutes. The
+        // wizard only advances to the embedding step once pullSelectedModel
+        // succeeds, so the previous 180s heading-poll raced the download and
+        // advanced mid-pull, cancelling it. Poll the managed server for the
+        // model actually registering as installed (ground truth) AND the
+        // embedding heading appearing; return only when the pull is truly done.
+        const p = window.app.plugins.plugins.lilbee;
+        const auth = () => { const t = p?.api?.token ?? p?.settings?.manualToken; return t ? { Authorization: 'Bearer ' + t } : {}; };
+        const base = () => p?.api?.baseUrl || p?.serverManager?.serverUrl;
+        for (let i = 0; i < 600; i++) {
           const headings = Array.from(document.querySelectorAll('.lilbee-wizard h1, .lilbee-wizard h2, .lilbee-wizard h3')).map(h => h.textContent || '');
-          if (headings.some(t => /embed/i.test(t))) return;
-          await new Promise(r => setTimeout(r, 500));
+          const onEmbed = headings.some(t => /embed/i.test(t));
+          let installed = false;
+          const u = base();
+          if (u) {
+            try {
+              const inst = await fetch(u + '/api/models/installed?task=chat', { headers: auth() }).then(r => r.json());
+              installed = (inst.models || []).some(m => /Qwen3-0\\.6B/i.test(m.name));
+            } catch {}
+          }
+          if (onEmbed && installed) return;
+          if (onEmbed && i > 6) return;
+          await new Promise(r => setTimeout(r, 1000));
         }
       `),
-      { holdMs: 1500, speedup: 4 },
+      { holdMs: 1500, speedup: 12, maxMs: 600_000 },
     ),
     // Pick a small embedding model that the demo isn't already running
     // (embeddinggemma 300m), so the next step is a real download the viewer
@@ -322,15 +338,30 @@ export default storyboard("first_start", {
     ),
     ...wizardStep("Embedding picker -> Continue (embedding model downloads)"),
     beat(
-      "Wait for embedding model download to land us on the next step",
+      "Wait for the embedding model download to finish (real completion)",
       runJs(`
-        for (let i = 0; i < 240; i++) {
+        // embeddinggemma 300m is a real download too; wait for it to register
+        // (ground truth) and the wizard to advance past the embedding step,
+        // rather than racing a heading poll on a too-short timeout.
+        const p = window.app.plugins.plugins.lilbee;
+        const auth = () => { const t = p?.api?.token ?? p?.settings?.manualToken; return t ? { Authorization: 'Bearer ' + t } : {}; };
+        const base = () => p?.api?.baseUrl || p?.serverManager?.serverUrl;
+        for (let i = 0; i < 480; i++) {
           const headings = Array.from(document.querySelectorAll('.lilbee-wizard h1, .lilbee-wizard h2, .lilbee-wizard h3')).map(h => h.textContent || '');
-          if (headings.some(t => /sync|wiki|done/i.test(t))) return;
-          await new Promise(r => setTimeout(r, 500));
+          const advanced = headings.some(t => /sync|wiki|done/i.test(t));
+          let installed = false;
+          const u = base();
+          if (u) {
+            try {
+              const inst = await fetch(u + '/api/models/installed?task=embedding', { headers: auth() }).then(r => r.json());
+              installed = (inst.models || []).some(m => /embeddinggemma/i.test(m.name));
+            } catch {}
+          }
+          if (advanced && (installed || i > 6)) return;
+          await new Promise(r => setTimeout(r, 1000));
         }
       `),
-      { holdMs: 1500, speedup: 4 },
+      { holdMs: 1500, speedup: 10, maxMs: 600_000 },
     ),
     ...wizardStep("Sync step -> Continue"),
     ...wizardStep("Wiki step -> Next"),
@@ -405,19 +436,31 @@ export default storyboard("first_start", {
           const tok = p?.api?.token ?? p?.settings?.manualToken;
           return tok ? { Authorization: 'Bearer ' + tok } : {};
         };
-        // 1. Wait until the managed server reports the freshly downloaded chat model.
-        for (let i = 0; i < 240; i++) {
+        // 1. Wait until the managed server reports the freshly downloaded Qwen3
+        // 0.6B specifically (not just any shared-registry model), then make sure
+        // it's the active chat model. The wizard sets it on pull success, but if
+        // a pull was interrupted the server can sit with activeChatModel=null and
+        // every chat 500s — set it explicitly here as a safety net.
+        const SMALL = 'Qwen/Qwen3-0.6B-GGUF';
+        for (let i = 0; i < 480; i++) {
           const smUrl = p?.serverManager?.serverUrl;
           if (smUrl) {
             try {
               const h = await fetch(smUrl + '/api/health', { headers: auth() });
               if (h.ok) {
                 const inst = await fetch(smUrl + '/api/models/installed?task=chat', { headers: auth() }).then(r => r.json());
-                if (Array.isArray(inst.models) && inst.models.length > 0) break;
+                if ((inst.models || []).some(m => /Qwen3-0\\.6B/i.test(m.name))) {
+                  await fetch(smUrl + '/api/models/chat', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', ...auth() },
+                    body: JSON.stringify({ model: SMALL }),
+                  }).catch(() => {});
+                  break;
+                }
               }
             } catch {}
           }
-          await new Promise(r => setTimeout(r, 500));
+          await new Promise(r => setTimeout(r, 1000));
         }
         if (typeof p.fetchActiveModel === 'function') await p.fetchActiveModel();
         // 2. Wait for the server to STABILISE. After a fresh model is set it
