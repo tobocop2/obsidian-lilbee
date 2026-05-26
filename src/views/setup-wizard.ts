@@ -516,6 +516,14 @@ export class SetupWizard extends Modal {
                 headText.setText(message || MESSAGES.ERROR_START_SERVER);
                 return;
             }
+            // Reset header to its in-progress state so a retry after a failed
+            // attempt doesn't leave the stale error text/styling above freshly
+            // lit phase rows.
+            head.classList.remove("is-error", "is-ready");
+            spinner.style.display = "";
+            gate.style.display = "";
+            headText.setText(MESSAGES.WIZARD_SETUP_HEAD);
+
             const terminal = idx === order.length - 1;
             for (let i = 0; i < rows.length; i++) {
                 const { meta, row, label, detail } = rows[i];

@@ -2050,6 +2050,11 @@
     flex-shrink: 0;
 }
 
+.lilbee-wizard-phase-label {
+    flex: 1;
+    min-width: 0;
+}
+
 .lilbee-wizard-phase.is-done .lilbee-wizard-phase-dot {
     background-color: var(--text-success, #22c55e);
 }

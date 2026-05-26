@@ -374,7 +374,7 @@ export default class LilbeePlugin extends Plugin {
             if (!takeOver) {
                 new Notice(MESSAGES.NOTICE_TAKE_OVER_DECLINED(ownerName));
                 this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
-                onProgress?.({ phase: "error", message: MESSAGES.NOTICE_TAKE_OVER_DECLINED(ownerName) });
+                onProgress?.({ phase: MANAGED_PHASE.ERROR, message: MESSAGES.NOTICE_TAKE_OVER_DECLINED(ownerName) });
                 return false;
             }
             if (!(await this.terminateOwningProcess(owner))) {

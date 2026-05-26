@@ -539,6 +539,42 @@ describe("SetupWizard", () => {
             expect(nextBtn.disabled).toBe(false);
         });
 
+        it("managed mode: retry after a failed start clears the stale error header and advances", async () => {
+            const plugin = makePlugin({ serverManager: null });
+            let call = 0;
+            plugin.startManagedServer = vi
+                .fn()
+                .mockImplementation(async (onProgress?: (e: { phase: string; message: string }) => void) => {
+                    call += 1;
+                    if (call === 1) {
+                        onProgress?.({ phase: "error", message: "boom" });
+                    } else {
+                        onProgress?.({ phase: "downloading", message: "" });
+                        onProgress?.({ phase: "ready", message: "" });
+                    }
+                });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            const el = wizard.contentEl as unknown as MockElement;
+            const nextBtn = findButtons(el).find((b) => b.textContent === "Next")!;
+
+            // First attempt fails: stays on the Server step with an error header.
+            nextBtn.trigger("click");
+            await tick();
+            await tick();
+            expect(el.find("lilbee-wizard-setup-head-text")!.textContent).toBe("boom");
+            expect(el.find("lilbee-wizard-setup-head")!.classList.contains("is-error")).toBe(true);
+            expect(nextBtn.disabled).toBe(false);
+
+            // Retry succeeds: the header reset and the wizard advanced.
+            nextBtn.trigger("click");
+            await tick();
+            await tick();
+            const texts = collectTexts(el);
+            expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(true);
+        });
+
         it("external mode: Next checks health and advances", async () => {
             const plugin = makePlugin({
                 serverManager: null,
