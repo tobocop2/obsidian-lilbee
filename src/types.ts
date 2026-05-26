@@ -155,6 +155,20 @@ export const HARDWARE_FIT = {
     WONT_RUN: "wont_run",
 } as const satisfies Record<string, HardwareFit>;
 
+/**
+ * Whether the connected lilbee server can run a catalog model, derived from its
+ * architecture. `supported` is the common case (no badge); `unsupported` means
+ * the server's runtime can't load it (gate the download); `unknown` means the
+ * server couldn't classify the architecture (surface it, but don't block).
+ */
+export type ModelCompat = "supported" | "unsupported" | "unknown";
+
+export const MODEL_COMPAT = {
+    SUPPORTED: "supported",
+    UNSUPPORTED: "unsupported",
+    UNKNOWN: "unknown",
+} as const satisfies Record<string, ModelCompat>;
+
 export type DiscoverRail = "for_you" | "your_collection" | "fresh";
 
 export const DISCOVER_RAIL = {
@@ -467,6 +481,8 @@ export interface CatalogEntry {
     downloads: number;
     param_count: string;
     fit?: HardwareFit | null;
+    compat?: ModelCompat | null;
+    architecture?: string | null;
     size_variants?: SizeVariant[] | null;
 }
 
