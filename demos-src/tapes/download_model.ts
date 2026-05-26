@@ -101,10 +101,24 @@ export default storyboard("download_model", {
         const p = window.app.plugins.plugins.lilbee;
         const base = p.api?.baseUrl ?? p.settings.serverUrl;
         const h = { Authorization: "Bearer " + (p.api?.token ?? p.settings.manualToken ?? "") };
-        const inst = await fetch(base + "/api/models/installed?task=chat", { headers: h }).then(r => r.json()).catch(() => ({ models: [] }));
-        const smol = (inst.models || []).map(m => m.name).find(n => /SmolLM2-360M/i.test(n));
+        // The pull task can finish in the Task Center a moment before the server
+        // registers the model as installed; poll until SmolLM2 is settable.
+        let smol = null;
+        for (let i = 0; i < 60; i++) {
+          const inst = await fetch(base + "/api/models/installed?task=chat", { headers: h }).then(r => r.json()).catch(() => ({ models: [] }));
+          smol = (inst.models || []).map(m => m.name).find(n => /SmolLM2-360M/i.test(n));
+          if (smol) break;
+          await new Promise(r => setTimeout(r, 500));
+        }
+        // Set it and confirm the server actually switched (retry until chat_model
+        // reports SmolLM2), so the demo never streams from the pinned Qwen3 8B.
         if (smol) {
-          await fetch(base + "/api/models/chat", { method: "PUT", headers: { ...h, "Content-Type": "application/json" }, body: JSON.stringify({ model: smol }) }).catch(() => {});
+          for (let i = 0; i < 12; i++) {
+            await fetch(base + "/api/models/chat", { method: "PUT", headers: { ...h, "Content-Type": "application/json" }, body: JSON.stringify({ model: smol }) }).catch(() => {});
+            const cfg = await fetch(base + "/api/config", { headers: h }).then(r => r.json()).catch(() => ({}));
+            if (/SmolLM2-360M/i.test(cfg.chat_model || "")) break;
+            await new Promise(r => setTimeout(r, 400));
+          }
           if (typeof p.fetchActiveModel === "function") await p.fetchActiveModel();
         }
         const leaves = window.app.workspace.getLeavesOfType('lilbee-chat');
@@ -114,7 +128,7 @@ export default storyboard("download_model", {
         }
         await new Promise(r => setTimeout(r, 300));
       `),
-      { holdMs: 1000 },
+      { holdMs: 1000, speedup: 2 },
     ),
     // Switch to Chat mode (pure-LLM, no retrieval) with a real click on the
     // toggle so the viewer sees it — otherwise the question retrieves the car
@@ -123,6 +137,24 @@ export default storyboard("download_model", {
       "Click Chat mode in the toggle",
       clickSelector('.lilbee-chat-mode-btn:text-is("Chat")'),
       { holdMs: 1000 },
+    ),
+    // Confirm the server is in pure-chat mode before the on-camera send — the
+    // toggle's config update is async and otherwise races the send, which would
+    // stream a retrieval answer ("not in the context") instead of a direct one.
+    beat(
+      "Confirm Chat mode is active before asking",
+      runJs(`
+        const p = window.app.plugins.plugins.lilbee;
+        const base = p.api?.baseUrl ?? p.settings.serverUrl;
+        const h = { "Content-Type": "application/json", Authorization: "Bearer " + (p.api?.token ?? p.settings.manualToken ?? "") };
+        for (let i = 0; i < 20; i++) {
+          const cfg = await fetch(base + "/api/config", { headers: h }).then(r => r.json()).catch(() => ({}));
+          if (cfg.chat_mode === "chat") return;
+          await fetch(base + "/api/config", { method: "PATCH", headers: h, body: JSON.stringify({ chat_mode: "chat" }) }).catch(() => {});
+          await new Promise(r => setTimeout(r, 300));
+        }
+      `),
+      { holdMs: 300 },
     ),
     beat("Ask the new model a bounded question", fillChat("Explain what an API is in two sentences."), { holdMs: 600 }),
     beat(
