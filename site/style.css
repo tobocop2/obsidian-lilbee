@@ -1,21 +1,33 @@
 /* lilbee for Obsidian site
-   Refined dark CRT, in purple. Cool cream body on near-black, no scanline
-   overlay on copy, no flicker, larger type, sharper hierarchy. */
+   Obsidian dark mode. Same neutral near-black surfaces and violet accent as
+   the plugin in dark theme, so the site and the demo reels read as one piece.
+   Off-white body on near-black, violet accent, green for the local/trust note.
+   No purple-tinted background, no heavy glow: easy on the eyes. */
 
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap');
 
 :root {
-  --bg: #0f0d18;
-  --bg-elev: #16132a;
-  --bg-card: #1a1530;
-  --ink: #ece5f5;        /* primary readable cool cream */
-  --ink-2: #beb1d3;      /* secondary text */
-  --ink-3: #7b6f99;      /* tertiary / metadata */
-  --rule: #2a2342;
-  --rule-2: #3a3257;
-  --purple: #c4b5fd;
-  --purple-hot: #e0d6ff;
-  --green: #7be08c;
+  /* surfaces (Obsidian default dark: neutral, near-black, faint cool cast) */
+  --bg: #18181a;          /* background-primary */
+  --bg-elev: #141416;     /* background-secondary */
+  --bg-card: #202023;     /* raised surface: cards, modals */
+  --bg-sunken: #161618;   /* recessed: titlebars, reel letterbox */
+
+  /* text */
+  --ink: #e3e3e7;         /* text-normal */
+  --ink-2: #9a9aa3;       /* text-muted */
+  --ink-3: #6a6a73;       /* text-faint / metadata */
+
+  /* rules */
+  --rule: #29292e;        /* hairline border */
+  --rule-2: #3a3a41;      /* stronger border */
+
+  /* accents */
+  --accent: #a78bfa;      /* readable violet: links, headings */
+  --accent-hot: #c4b5fd;  /* lighter violet: hover */
+  --accent-deep: #7c3aed; /* Obsidian brand violet: glow, left borders */
+  --green: #5ed68a;       /* the "Installed" green from the catalog: trust accent */
+
   --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
 
   --content-w: 760px;
@@ -40,27 +52,28 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* a single soft purple wash, never on top of text */
+/* one very soft violet wash, kept off the copy column and low-opacity so it
+   adds depth without the eye-strain of a saturated glow */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(900px 600px at 70% -10%, rgba(196, 181, 253, 0.10), transparent 60%),
-    radial-gradient(700px 500px at 0% 100%, rgba(196, 181, 253, 0.06), transparent 65%);
+    radial-gradient(900px 600px at 82% -15%, rgba(124, 58, 237, 0.06), transparent 60%),
+    radial-gradient(700px 520px at -10% 100%, rgba(124, 58, 237, 0.04), transparent 65%);
   pointer-events: none;
   z-index: 0;
 }
 
 a {
-  color: var(--purple);
+  color: var(--accent);
   text-decoration: none;
   border-bottom: 1px solid transparent;
   transition: color 140ms, border-color 140ms;
 }
 a:hover {
-  color: var(--purple-hot);
-  border-bottom-color: var(--purple-hot);
+  color: var(--accent-hot);
+  border-bottom-color: var(--accent-hot);
 }
 
 pre { font: inherit; white-space: pre; }
@@ -68,6 +81,28 @@ pre { font: inherit; white-space: pre; }
 h1.sr {
   position: absolute; width: 1px; height: 1px;
   overflow: hidden; clip: rect(0, 0, 0, 0);
+}
+
+/* page-load: one quiet staggered settle, top to bottom ---------------- */
+@keyframes lb-rise {
+  from { opacity: 0; transform: translateY(9px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes lb-fade {
+  from { opacity: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .topstrip,
+  .main > section { animation: lb-rise 560ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .topstrip                       { animation-delay: 0ms; }
+  .main > section:nth-of-type(1)  { animation-delay: 90ms; }
+  .main > section:nth-of-type(2)  { animation-delay: 150ms; }
+  .main > section:nth-of-type(3)  { animation-delay: 210ms; }
+  .main > section:nth-of-type(4)  { animation-delay: 270ms; }
+  .main > section:nth-of-type(5)  { animation-delay: 330ms; }
+  .main > section:nth-of-type(6)  { animation-delay: 390ms; }
+  .main > section:nth-of-type(7)  { animation-delay: 450ms; }
+  .bee-art { animation: lb-fade 1100ms ease 260ms both; }
 }
 
 .layout {
@@ -111,10 +146,10 @@ h1.sr {
 .hero { margin: 2.2rem 0 2.4rem; }
 
 .wordmark {
-  color: var(--purple);
+  color: var(--accent);
   font-size: 14px;
   line-height: 1;
-  text-shadow: 0 0 18px rgba(196, 181, 253, 0.32);
+  text-shadow: 0 0 12px rgba(124, 58, 237, 0.22);
   margin-bottom: 0.5rem;
   display: block;
 }
@@ -135,7 +170,7 @@ h1.sr {
   margin-bottom: 0.9rem;
 }
 .tagline strong {
-  color: var(--purple);
+  color: var(--accent);
   font-weight: 500;
 }
 .tagline strong a { color: inherit; }
@@ -146,6 +181,32 @@ h1.sr {
   line-height: 1.65;
 }
 .tagline + .sub strong { color: var(--ink); font-weight: 500; }
+
+.surfaces {
+  margin-top: 1.15rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+.surfaces-label {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-right: 0.3rem;
+}
+.surface {
+  font-size: 12.5px;
+  letter-spacing: 0.03em;
+  color: var(--ink-2);
+  border: 1px solid var(--rule-2);
+  border-radius: 3px;
+  padding: 2px 9px;
+  transition: color 140ms, border-color 140ms;
+}
+.surface:hover { color: var(--accent-hot); border-color: var(--accent-hot); }
 
 .trust {
   margin-top: 1rem;
@@ -173,124 +234,124 @@ h1.sr {
 .label::before { content: ""; width: 12px; height: 1px; background: var(--rule-2); }
 .label::after  { content: ""; flex: 1; height: 1px; background: var(--rule); }
 
-/* preview demo ------------------------------------------------------- */
-.demo {
-  background: var(--bg-card);
-  border: 1px solid var(--rule-2);
-  border-radius: 4px;
-  padding: 0;
-  font-size: 13.5px;
+.lede {
+  font-size: 14.5px;
+  color: var(--ink-2);
   line-height: 1.6;
-  overflow: hidden;
+  max-width: 60ch;
+  margin-bottom: 1rem;
 }
-.demo .titlebar {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.55rem 0.95rem;
-  background: #130f24;
-  border-bottom: 1px solid var(--rule-2);
-  color: var(--ink-3);
-  font-size: 12px;
-}
-.demo .titlebar .title { color: var(--ink-2); }
-.demo .body {
-  padding: 0.85rem 1.05rem 1.1rem;
-}
-.demo .line { margin: 0.05rem 0; }
-.demo .prompt { color: var(--green); margin-right: 0.5em; }
-.demo .answer { color: var(--ink); }
-.demo sup { color: var(--purple); font-size: 0.78em; }
-.demo .rule {
-  color: var(--ink-3);
-  margin: 0.6rem 0 0.25rem;
-  font-size: 11px;
-  letter-spacing: 0.18em;
-}
-.demo .cite { color: var(--ink-3); font-size: 12.5px; }
-.demo .cite-link { color: var(--purple); }
-.demo .hint { color: var(--ink-3); font-size: 12.5px; }
-.demo .cursor {
+.lede kbd {
   display: inline-block;
-  width: 0.55em;
-  height: 1em;
-  background: var(--purple);
-  vertical-align: text-bottom;
-  margin-left: 2px;
-  animation: blink 1.05s steps(2, end) infinite;
-}
-@keyframes blink { 50% { opacity: 0; } }
-.demo-cap { font-size: 12.5px; color: var(--ink-3); margin-top: 0.6rem; }
-
-/* the difference — two-column comparison ----------------------------- */
-.shape { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.shape-box {
-  background: var(--bg-card);
-  border: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 0 0.35rem;
+  border: 1px solid var(--rule-2);
   border-radius: 3px;
-  padding: 1rem 1.1rem;
+  color: var(--ink-2);
+  background: var(--bg-card);
+  margin: 0 0.05rem;
+  vertical-align: 1px;
 }
-.shape-box.one { border-left: 2px solid var(--purple); }
-.shape-h {
+
+/* demo reel ---------------------------------------------------------- */
+.reel { margin: 0.3rem 0 1.4rem; }
+
+.reeltabs {
+  display: flex;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--rule-2);
+  margin-bottom: 1rem;
+}
+.reeltabs .reeltab {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: 3px 3px 0 0;
+  color: var(--ink-3);
+  padding: 0.5rem 0.9rem;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: color 140ms, background-color 140ms, border-color 140ms;
+}
+.reeltabs .reeltab:hover {
+  color: var(--ink);
+  background: rgba(124, 58, 237, 0.08);
+}
+.reeltabs .reeltab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.reeltabs .reeltab[aria-selected="true"] {
+  color: var(--accent);
+  background: rgba(124, 58, 237, 0.14);
+  border-color: var(--rule-2);
+  border-bottom-color: var(--accent);
+}
+
+.reelpane[hidden] { display: none; }
+
+.reel-frame {
+  background: var(--bg-sunken);
+  border: 1px solid var(--rule-2);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 22px 60px -26px rgba(0, 0, 0, 0.85);
+  /* hold the box at the recording's shape (1200x749) while the GIF streams
+     in, so a click never lands on an empty void */
+  aspect-ratio: 1200 / 749;
+  position: relative;
+}
+.reel-frame::before {
+  content: "loading recording.";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.18em;
+  color: var(--ink-3);
   text-transform: uppercase;
-  margin-bottom: 0.7rem;
+  background:
+    repeating-linear-gradient(135deg, transparent 0 8px, rgba(255, 255, 255, 0.014) 8px 16px),
+    var(--bg-sunken);
 }
-.shape-box.many .shape-h { color: var(--ink-3); }
-.shape-box.one .shape-h { color: var(--purple); }
-.shape-box ul { list-style: none; }
-.shape-box li {
+.reel-frame img {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  z-index: 1;
+}
+
+.reel-caption {
+  margin-top: 0.8rem;
   font-size: 13.5px;
   color: var(--ink-2);
-  line-height: 1.5;
-  padding-left: 1.1em;
-  position: relative;
-  margin: 0.4rem 0;
+  line-height: 1.6;
+  max-width: 64ch;
 }
-.shape-box li::before { content: "·"; position: absolute; left: 0; color: var(--ink-3); }
-.shape-box.one li::before { content: "→"; color: var(--purple); font-size: 0.85em; }
-.shape-note {
-  font-size: 12px;
-  color: var(--ink-3);
-  margin-top: 0.8rem;
-  padding-top: 0.6rem;
-  border-top: 1px solid var(--rule);
-}
-
-/* features grid — light cards ---------------------------------------- */
-.caps { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.cap {
+.reel-caption code {
   background: var(--bg-card);
   border: 1px solid var(--rule);
-  border-left: 2px solid var(--purple);
+  padding: 0 0.35rem;
   border-radius: 3px;
-  padding: 1.1rem 1.2rem;
-  transition: border-color 160ms, transform 160ms;
+  color: var(--ink);
+  font-size: 12.5px;
 }
-.cap:hover { border-color: var(--rule-2); border-left-color: var(--purple-hot); transform: translateY(-1px); }
-.cap h3 {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--purple);
-  letter-spacing: 0.01em;
-  margin-bottom: 0.5rem;
-  display: flex;
-  align-items: baseline;
-  gap: 0.55em;
-}
-.cap h3 .exp {
-  font-size: 9.5px;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+.reel-caption em { color: var(--accent); font-style: normal; font-weight: 500; }
+
+.reel-more {
+  margin-top: 1.1rem;
+  font-size: 12.5px;
   color: var(--ink-3);
-  border: 1px solid var(--rule-2);
-  border-radius: 3px;
-  padding: 0 0.4em;
 }
-.cap p { font-size: 14px; color: var(--ink-2); line-height: 1.65; }
-.cap p code { background: var(--bg); border: 1px solid var(--rule); padding: 0 0.35rem; border-radius: 3px; color: var(--ink); }
 
 /* install ------------------------------------------------------------ */
 .install {
@@ -310,6 +371,7 @@ h1.sr {
   padding: 0.7rem 0.4rem;
   color: var(--ink);
   font-weight: 500;
+  word-break: break-word;
 }
 .install .copy {
   font-family: var(--mono);
@@ -323,7 +385,7 @@ h1.sr {
   cursor: pointer;
   white-space: nowrap;
 }
-.install .copy:hover { color: var(--purple-hot); background: rgba(196, 181, 253, 0.07); }
+.install .copy:hover { color: var(--accent-hot); background: rgba(124, 58, 237, 0.09); }
 
 .steps { margin-top: 1rem; display: grid; gap: 0.55rem; }
 .step { display: flex; gap: 0.8rem; font-size: 14px; color: var(--ink-2); line-height: 1.6; }
@@ -332,7 +394,7 @@ h1.sr {
   width: 1.5em; height: 1.5em;
   border: 1px solid var(--rule-2);
   border-radius: 3px;
-  color: var(--purple);
+  color: var(--accent);
   font-size: 12px;
   display: inline-flex;
   align-items: center;
@@ -344,6 +406,77 @@ h1.sr {
 .extras { font-size: 13px; margin-top: 0.9rem; color: var(--ink-3); }
 .extras a { color: var(--ink-2); }
 
+/* the difference — two-column comparison ----------------------------- */
+.shape { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.shape-box {
+  background: var(--bg-card);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 1rem 1.1rem;
+}
+.shape-box.one { border-left: 2px solid var(--accent-deep); }
+.shape-h {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 0.7rem;
+}
+.shape-box.many .shape-h { color: var(--ink-3); }
+.shape-box.one .shape-h { color: var(--accent); }
+.shape-box ul { list-style: none; }
+.shape-box li {
+  font-size: 13.5px;
+  color: var(--ink-2);
+  line-height: 1.5;
+  padding-left: 1.1em;
+  position: relative;
+  margin: 0.4rem 0;
+}
+.shape-box li::before { content: "·"; position: absolute; left: 0; color: var(--ink-3); }
+.shape-box.one li::before { content: "→"; color: var(--accent); font-size: 0.85em; }
+.shape-note {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-top: 0.8rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+}
+
+/* features grid ------------------------------------------------------ */
+.caps { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.cap {
+  background: var(--bg-card);
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--accent-deep);
+  border-radius: 3px;
+  padding: 1.1rem 1.2rem;
+  transition: border-color 160ms, transform 160ms;
+}
+.cap:hover { border-color: var(--rule-2); border-left-color: var(--accent-hot); transform: translateY(-1px); }
+.cap h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.01em;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.55em;
+}
+.cap h3 .exp {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  border: 1px solid var(--rule-2);
+  border-radius: 3px;
+  padding: 0 0.4em;
+}
+.cap p { font-size: 14px; color: var(--ink-2); line-height: 1.65; }
+.cap p code { background: var(--bg); border: 1px solid var(--rule); padding: 0 0.35rem; border-radius: 3px; color: var(--ink); }
+
 /* go-deeper links ---------------------------------------------------- */
 .links { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 2.5rem; font-size: 14px; }
 .links a {
@@ -354,7 +487,7 @@ h1.sr {
   border-bottom: none;
   color: var(--ink);
 }
-.links a .num { color: var(--purple); width: 2.6em; flex: none; }
+.links a .num { color: var(--accent); width: 2.6em; flex: none; }
 .links a .dots {
   color: var(--rule-2);
   flex: 1;
@@ -366,7 +499,7 @@ h1.sr {
   color: var(--ink-3);
   font-size: 12.5px;
 }
-.links a:hover .num { color: var(--purple-hot); }
+.links a:hover .num { color: var(--accent-hot); }
 .links a:hover .desc { color: var(--ink); }
 
 /* footer ------------------------------------------------------------- */
@@ -402,8 +535,8 @@ footer .meta { text-align: right; font-size: 12px; }
 .bee-art pre {
   font-size: 7.5px;
   line-height: 1.1;
-  color: var(--purple);
-  text-shadow: 0 0 10px rgba(196, 181, 253, 0.2);
+  color: var(--accent);
+  text-shadow: 0 0 10px rgba(124, 58, 237, 0.18);
 }
 
 /* responsive --------------------------------------------------------- */
@@ -416,4 +549,5 @@ footer .meta { text-align: right; font-size: 12px; }
   .wordmark, .wordmark-sub { font-size: 9px; }
   .caps, .links, .shape { grid-template-columns: 1fr; }
   .tagline { font-size: 18px; }
+  .reeltabs .reeltab { padding: 0.45rem 0.6rem; font-size: 12px; }
 }
