@@ -767,8 +767,10 @@ export const ARCH = {
     X64: "x64",
 } as const;
 
+/** The CUDA build tags lilbee ships, newest first. */
+export type CudaTag = "cu121" | "cu124" | "cu125";
 /** Which lilbee server build is installed: the default (Vulkan/CPU) build or a CUDA build. */
-export type ServerVariant = "default" | "cu121" | "cu124" | "cu125";
+export type ServerVariant = "default" | CudaTag;
 export const SERVER_VARIANT = {
     DEFAULT: "default",
     CU121: "cu121",

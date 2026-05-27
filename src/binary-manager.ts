@@ -18,7 +18,7 @@ import {
 import { basename, join, resolve, dirname } from "path";
 import { createHash } from "crypto";
 import { promisify } from "util";
-import { ARCH, PLATFORM, SERVER_VARIANT, type ServerVariant } from "./types";
+import { ARCH, PLATFORM, SERVER_VARIANT, type CudaTag, type ServerVariant } from "./types";
 
 const execFileAsync = promisify(execFile);
 const statfsAsync = promisify(statfs);
@@ -71,7 +71,7 @@ function parseCudaCeiling(stdout: string): number | null {
 }
 
 /** Pick the newest CUDA build the driver supports, or null when it supports none we ship. */
-function pickCudaTag(ceiling: number): ServerVariant | null {
+function pickCudaTag(ceiling: number): CudaTag | null {
     if (ceiling >= 1205) return SERVER_VARIANT.CU125;
     if (ceiling >= 1204) return SERVER_VARIANT.CU124;
     if (ceiling >= 1201) return SERVER_VARIANT.CU121;
@@ -82,7 +82,7 @@ function pickCudaTag(ceiling: number): ServerVariant | null {
  * Detect the best CUDA build for this machine, or null to use the default build.
  * Returns null on macOS, when no NVIDIA driver is present, or on any detection failure.
  */
-export async function detectCudaTag(): Promise<ServerVariant | null> {
+export async function detectCudaTag(): Promise<CudaTag | null> {
     if (process.platform === PLATFORM.DARWIN) return null;
     const stdout = await runNvidiaSmi();
     if (stdout === null) return null;
@@ -91,7 +91,7 @@ export async function detectCudaTag(): Promise<ServerVariant | null> {
     return pickCudaTag(ceiling);
 }
 
-export function getPlatformAssetName(cudaTag?: ServerVariant | null): string {
+export function getPlatformAssetName(cudaTag?: CudaTag | null): string {
     const platform = process.platform;
     const arch = process.arch;
     const cuda = cudaTag ? `-${cudaTag}` : "";
@@ -120,10 +120,7 @@ export interface ReleaseInfo {
 }
 
 /** Choose the CUDA asset when detected and shipped; otherwise the default build. */
-function selectAsset(
-    data: GitHubRelease,
-    cudaTag: ServerVariant | null,
-): { variant: ServerVariant; asset: GitHubAsset } {
+function selectAsset(data: GitHubRelease, cudaTag: CudaTag | null): { variant: ServerVariant; asset: GitHubAsset } {
     if (cudaTag) {
         const cudaAsset = data.assets.find((a) => a.name === getPlatformAssetName(cudaTag));
         if (cudaAsset) return { variant: cudaTag, asset: cudaAsset };
