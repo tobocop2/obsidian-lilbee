@@ -219,6 +219,17 @@ h1.sr {
 }
 .trust strong { color: var(--green); font-weight: 500; }
 
+.dl-note {
+  margin-top: 0.8rem;
+  padding-left: 0.95rem;
+  border-left: 2px solid #d8a657;
+  color: var(--ink-2);
+  font-size: 13.5px;
+  line-height: 1.6;
+  max-width: 54ch;
+}
+.dl-note strong { color: #d8a657; font-weight: 500; }
+
 /* section labels ----------------------------------------------------- */
 .label {
   display: flex;
