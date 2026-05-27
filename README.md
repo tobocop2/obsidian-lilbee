@@ -22,7 +22,7 @@ This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives y
 
 Ask a question in plain English and lilbee answers from your vault, with citations that click straight back to the source line.
 
-![index the lilbee README, ask what lilbee is, and get a cited answer with a click-to-open source](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.gif)
+<p align="center"><img alt="index the lilbee README, ask what lilbee is, and get a cited answer with a click-to-open source" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.gif" width="640"></p>
 
 > **Tutorial reel:** every recording on this page (and a few extras) as videos with longer notes at [**obsidian.lilbee.sh/tutorial**](https://obsidian.lilbee.sh/tutorial).
 
@@ -60,7 +60,7 @@ A vault is already a curated set of documents: notes you've taken, PDFs you've c
 
 An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, from your own vault, shaped to your needs.
 
-![a sweep through the lilbee surfaces inside Obsidian: model catalog, settings, command palette](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/tour.gif)
+<p align="center"><img alt="a sweep through the lilbee surfaces inside Obsidian: model catalog, settings, command palette" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/tour.gif" width="640"></p>
 
 ## What you can do with it
 
@@ -70,7 +70,7 @@ Point lilbee at your vault and it builds a searchable library from every note, P
 
 Add a single file from the right-click menu or the command palette, or run **Sync vault** to index everything at once. Background jobs (sync, crawl, wiki build, model downloads) run in a **Task Center**, so you can keep asking questions while they work.
 
-![add a PDF and a README from the palette, watch the Task Center index them, then ask a cited question](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/add.gif)
+<p align="center"><img alt="add a PDF and a README from the palette, watch the Task Center index them, then ask a cited question" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/add.gif" width="640"></p>
 
 ### Verify every answer at the source
 
@@ -78,13 +78,13 @@ Every citation in a chat reply or wiki page is a live link. Click it and a Sourc
 
 This works for web pages too: crawl a docs site or a Wikipedia page into your vault, then search or chat with that copy offline, with citations back to the source.
 
-![crawl a Wikipedia page into the vault, ask a cited question, and jump to the cited section](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl.gif)
+<p align="center"><img alt="crawl a Wikipedia page into the vault, ask a cited question, and jump to the cited section" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl.gif" width="640"></p>
 
 ### Pick and tune your models
 
 Chat, embedding, vision, and reranking are separate roles, each with its own model. The Model Catalog (command palette or chat toolbar) browses featured picks or searches Hugging Face Hub, shows each model's size and memory before you pull, and flags ones that won't run on your hardware. Defaults are sensible out of the gate; Settings exposes the retrieval and generation knobs when you want to go deeper, each with a reset.
 
-![browse the model catalog inside Obsidian: Chat, Embed, Vision, Rerank tabs, search Hugging Face Hub](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/catalog.gif)
+<p align="center"><img alt="browse the model catalog inside Obsidian: Chat, Embed, Vision, Rerank tabs, search Hugging Face Hub" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/catalog.gif" width="640"></p>
 
 ### Documents, code, and scanned images
 
@@ -94,7 +94,7 @@ Your vault is full of more than markdown. lilbee handles the rest:
 - **Code** (150+ languages) is split along real functions and classes, not arbitrary line ranges.
 - **Scanned PDFs and photographed pages** are read with OCR, including a local vision model that keeps tables and layout intact. (A per-vault toggle in Settings.)
 
-![a scanned, image-only PDF read by a local vision model: the Task Center streams OCR page by page, then a cited answer reads the support number and publisher straight off the scanned cover](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/vision.gif)
+<p align="center"><img alt="a scanned, image-only PDF read by a local vision model: the Task Center streams OCR page by page, then a cited answer reads the support number and publisher straight off the scanned cover" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/vision.gif" width="640"></p>
 
 ### Cloud models, when you want them
 
@@ -118,7 +118,7 @@ The plugin reads everything you've indexed and writes a wiki about it. Pages com
 
 The plugin downloads and manages the [lilbee](https://lilbee.sh/) server automatically; nothing to install separately. The first launch fetches the right version for your platform and verifies it before starting. Wait for the status bar to show `lilbee: ready`, then open the chat.
 
-![first run on a fresh vault: install lilbee through BRAT, walk the setup wizard, and ask a question that gets a cited answer from your notes](https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first_start.gif)
+<p align="center"><img alt="first run on a fresh vault: install lilbee through BRAT, walk the setup wizard, and ask a question that gets a cited answer from your notes" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first_start.gif" width="640"></p>
 
 > **Hardware note:** the server runs on your CPU or GPU. A Mac with Apple Silicon (M1+) or a PC with an NVIDIA / AMD / Intel Arc GPU gives the best performance. 8 GB of RAM is the minimum; 16 to 32 GB is recommended. See [lilbee's hardware requirements](https://github.com/tobocop2/lilbee#hardware-requirements) for the full table.
 
