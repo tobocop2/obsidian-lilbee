@@ -36,6 +36,7 @@ import {
     type SetupDonePayload,
     type SetupProgressPayload,
     type SetupStartPayload,
+    type ServerVariant,
     type SyncDone,
     type SyncOptions,
     type TaskEntry,
@@ -506,6 +507,7 @@ export default class LilbeePlugin extends Plugin {
         try {
             const release = await getLatestRelease();
             this.setSharedLilbeeVersion(release.tag);
+            this.setSharedLilbeeVariant(release.variant);
         } catch {
             /* version tracking is best-effort */
         }
@@ -578,7 +580,12 @@ export default class LilbeePlugin extends Plugin {
 
     async checkForUpdate(): Promise<{ available: boolean; release?: ReleaseInfo }> {
         const release = await getLatestRelease();
-        if (checkForUpdate(this.getSharedLilbeeVersion(), release.tag)) {
+        const versionChanged = checkForUpdate(this.getSharedLilbeeVersion(), release.tag);
+        // A known installed variant that differs from the detected one means the
+        // hardware-appropriate build changed (e.g. an NVIDIA driver was added).
+        const installedVariant = this.getSharedLilbeeVariant();
+        const variantChanged = installedVariant !== "" && installedVariant !== release.variant;
+        if (versionChanged || variantChanged) {
             return { available: true, release };
         }
         return { available: false };
@@ -600,10 +607,11 @@ export default class LilbeePlugin extends Plugin {
 
         // Download the new binary (overwrites the old one)
         onProgress?.("Downloading...");
-        await this.binaryManager.download(release.assetUrl, onProgress);
+        await this.binaryManager.download(release.assetUrl, release.sizeBytes, onProgress);
 
-        // Save the new version
+        // Save the new version and the build variant we just installed
         this.setSharedLilbeeVersion(release.tag);
+        this.setSharedLilbeeVariant(release.variant);
 
         // Restart if in managed mode
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
@@ -1022,6 +1030,16 @@ export default class LilbeePlugin extends Plugin {
         const reg = this.vaultRegistry;
         if (!reg) return;
         reg.saveConfig({ ...reg.loadConfig(), lilbeeVersion: version });
+    }
+
+    getSharedLilbeeVariant(): ServerVariant | "" {
+        return this.vaultRegistry?.loadConfig().lilbeeVariant ?? "";
+    }
+
+    setSharedLilbeeVariant(variant: ServerVariant): void {
+        const reg = this.vaultRegistry;
+        if (!reg) return;
+        reg.saveConfig({ ...reg.loadConfig(), lilbeeVariant: variant });
     }
 
     getSharedHfToken(): string {

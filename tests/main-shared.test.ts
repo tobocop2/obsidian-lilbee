@@ -160,6 +160,32 @@ describe("Shared lilbee version round-trip", () => {
         expect(plugin.getSharedHfToken()).toBe("hf_x");
         expect(plugin.getSharedLilbeeVersion()).toBe("v0.5.1");
     });
+
+    it("getSharedLilbeeVariant returns empty when nothing is written", async () => {
+        const plugin = await createPlugin();
+        expect(plugin.getSharedLilbeeVariant()).toBe("");
+    });
+
+    it("setSharedLilbeeVariant persists and getSharedLilbeeVariant reads it back", async () => {
+        const plugin = await createPlugin();
+        plugin.setSharedLilbeeVariant("cu125");
+        expect(plugin.getSharedLilbeeVariant()).toBe("cu125");
+    });
+
+    it("setSharedLilbeeVariant is a no-op when registry is not initialised", async () => {
+        const plugin = await createPlugin();
+        (plugin as any).vaultRegistry = null;
+        plugin.setSharedLilbeeVariant("cu125");
+        expect(plugin.getSharedLilbeeVariant()).toBe("");
+    });
+
+    it("preserves version and variant alongside each other", async () => {
+        const plugin = await createPlugin();
+        plugin.setSharedLilbeeVersion("v0.5.1");
+        plugin.setSharedLilbeeVariant("cu124");
+        expect(plugin.getSharedLilbeeVersion()).toBe("v0.5.1");
+        expect(plugin.getSharedLilbeeVariant()).toBe("cu124");
+    });
 });
 
 describe("Shared HF token round-trip", () => {

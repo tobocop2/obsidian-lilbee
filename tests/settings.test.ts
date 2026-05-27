@@ -2155,7 +2155,9 @@ describe("managed mode settings", () => {
         (plugin as any).checkForUpdate = vi
             .fn()
             .mockResolvedValue({ available: true, release: { tag: "v0.2.0", assetUrl: "https://example.com" } });
-        (plugin as any).updateServer = vi.fn().mockRejectedValue(new Error("download failed"));
+        (plugin as any).updateServer = vi
+            .fn()
+            .mockRejectedValue(new Error("Not enough disk space for the lilbee server"));
         mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
@@ -2165,7 +2167,8 @@ describe("managed mode settings", () => {
         await buttonOnClicks[2]();
         await buttonOnClicks[2]();
 
-        expect(Notice.instances.some((n) => n.message.includes("update failed"))).toBe(true);
+        // The notice surfaces the actual reason (e.g. disk space), not just a generic failure.
+        expect(Notice.instances.some((n) => n.message.includes("Not enough disk space"))).toBe(true);
     });
 
     it("check for updates button shows error on failure", async () => {
