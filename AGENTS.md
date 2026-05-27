@@ -2,7 +2,7 @@
 
 ## Project
 
-Obsidian plugin for [lilbee](../../), a local RAG knowledge base. Communicates with the lilbee HTTP server (`lilbee serve`) over localhost. TypeScript, esbuild, Vitest.
+Obsidian plugin for [lilbee](../../), a local RAG knowledge base. In managed mode the plugin downloads and runs the lilbee server itself; in external mode it talks to a `lilbee serve` you run. Either way it communicates over localhost HTTP. TypeScript, esbuild, Vitest.
 
 ## Commands
 
@@ -19,16 +19,23 @@ From the repo root: `make plugin-build`, `make plugin-test`, `make plugin-dev`.
 
 ```
 src/
-  main.ts            # Plugin entry: lifecycle, commands, auto-sync
-  types.ts           # All interfaces + DEFAULT_SETTINGS + SSE_EVENT constants
+  main.ts            # Plugin entry: lifecycle, commands, ribbon, status bar, auto-sync
+  types.ts           # All interfaces + DEFAULT_SETTINGS + as-const constant sets
   api.ts             # LilbeeClient — typed HTTP client with SSE streaming
   settings.ts        # Settings tab + model management UI
-  ollama-detector.ts # Polls Ollama endpoint, emits state changes
-  server-manager.ts  # Spawns/stops managed lilbee server process
-  views/
-    results.ts       # Render helpers: document cards, source chips
-    search-modal.ts  # Search/ask modal (Modal)
-    chat-view.ts     # Chat sidebar (ItemView)
+  binary-manager.ts  # Downloads and verifies the lilbee server binary per platform
+  server-manager.ts  # Spawns/stops the managed server, discovers its auto-assigned port
+  session-token.ts   # Discovers / holds the server session token
+  vault-registry.ts  # Shared-install lock + per-vault registry (one server at a time)
+  task-queue.ts      # Background job queue that feeds the Task Center
+  wiki-sync.ts       # Mirrors wiki pages into the vault as markdown
+  storage-stats.ts   # Disk-usage reporting for the shared install
+  utils.ts, utils/   # Shared helpers (e.g. model-ref parsing)
+  locales/en.ts      # User-facing strings (MESSAGES)
+  components/         # Reusable render components (model cards, etc.)
+  views/             # Chat sidebar, search, model catalog, Task Center, wiki,
+                     # source preview, crawl, documents, setup wizard, status,
+                     # and the modals they use
 ```
 
 **Key design decisions:**
@@ -43,7 +50,7 @@ src/
 - **No `any`** — define interfaces in `types.ts`; use `unknown` + cast at SSE boundaries only.
 - **Null guards** — always check container elements exist before manipulating DOM.
 - **Error handling** — wrap all API calls in try/catch, show `new Notice(message)` on failure.
-- **Constants** — named constants for magic numbers (`MAX_EXCERPT_CHARS`, `SEARCH_DEBOUNCE_MS`). Use `as const` objects for string literal sets (`SSE_EVENT`, `JSON_HEADERS`, `SERVER_STATE`, `OLLAMA_STATE`). Never compare against raw string literals when a constant exists.
+- **Constants** — named constants for magic numbers (`MAX_EXCERPT_CHARS`, `SEARCH_DEBOUNCE_MS`). Use `as const` objects for string literal sets (`SSE_EVENT`, `JSON_HEADERS`, `SERVER_STATE`, `SERVER_MODE`, `MODEL_TASK`, `CAPABILITY`, `TASK_TYPE`, …, all in `types.ts`). Never compare against raw string literals when a constant exists.
 - **Obsidian DOM helpers** — use `createDiv()`, `createEl()`, `setText()`, `addClass()`. No `innerHTML`.
 - **Import order** — obsidian imports first, then local modules.
 - **Strict TypeScript** — `noImplicitAny`, `strictNullChecks` enabled in tsconfig.
@@ -171,14 +178,14 @@ expect(Notice.instances.map(n => n.message)).toContain("expected message");
 - Access private methods via `(instance as any).method()` when needed.
 - Call `Notice.clear()` in `beforeEach`.
 
-### Mocking Modules with Constants
-When a module exports both classes/functions AND `as const` objects, use `importOriginal` to preserve the constants:
+### Mocking Modules While Preserving Exports
+When you stub one export from a module but need its other exports (helpers, types, re-exported constants) to stay real, use `importOriginal`:
 ```typescript
-vi.mock("../src/ollama-detector", async (importOriginal) => {
-    const actual = await importOriginal<typeof import("../src/ollama-detector")>();
+vi.mock("../src/server-manager", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("../src/server-manager")>();
     return {
-        ...actual,  // preserves OLLAMA_STATE, OllamaState type
-        OllamaDetector: vi.fn().mockImplementation(() => ({ ... })),
+        ...actual,  // keep everything else the module exports
+        ServerManager: vi.fn().mockImplementation(() => ({ ... })),
     };
 });
 ```
@@ -201,7 +208,7 @@ esbuild bundles `src/main.ts` → `main.js` (CJS, ES2022). Externals: `obsidian`
 
 ## Server Dependency
 
-The plugin requires `lilbee serve` running on localhost (default port 7433). Without it, all API calls fail gracefully with user-visible Notice messages.
+The plugin needs a reachable lilbee server. In **managed mode** (default) it downloads the binary (`binary-manager.ts`), spawns it (`server-manager.ts`) on a port the OS assigns, and discovers that port and the session token from the server's data dir. In **external mode** the user runs `lilbee serve` themselves and points the plugin at its URL (default `http://127.0.0.1:7433`) plus a session token. When the server is unreachable, API calls fail gracefully with user-visible Notice messages and the status bar shows the error state.
 
 ## Dependencies & Abstractions
 
