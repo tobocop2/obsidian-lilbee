@@ -61,6 +61,10 @@ export type Beat = {
    * while this beat plays — used on beats that trigger the command palette
    * so viewers see which shortcut opened it. */
   keyHint?: string;
+  /** Narration caption shown at the bottom of the frame while this beat
+   * plays. Sticky: it stays on screen until the next beat that sets a
+   * caption, so a run of sub-step beats can share one explanation. */
+  caption?: string;
 };
 
 import type { LayoutName } from "./layouts.ts";
@@ -82,6 +86,9 @@ export type Storyboard = {
   preloadChatModel?: boolean;
   /** Skip the chat-model pin entirely. For demos that don't exercise chat. */
   skipModelPin?: boolean;
+  /** Skip the server-ready health gate. For demos where this vault has no
+   * server of its own (multi_vault: it is "serving" another vault). */
+  skipServerCheck?: boolean;
   /** Demo runs in a vault without lilbee installed (first_start). Skip pre-flight. */
   noLilbee?: boolean;
   /** When several Obsidian windows are open, pick the one whose vault path
@@ -110,6 +117,7 @@ export type StoryboardOptions = {
   clearChat?: boolean;
   preloadChatModel?: boolean;
   skipModelPin?: boolean;
+  skipServerCheck?: boolean;
   noLilbee?: boolean;
   vaultMatch?: string;
   postSpeedup?: number;
@@ -130,6 +138,7 @@ export function storyboard(name: string, opts: StoryboardOptions): Storyboard {
     clearChat: opts.clearChat,
     preloadChatModel: opts.preloadChatModel,
     skipModelPin: opts.skipModelPin,
+    skipServerCheck: opts.skipServerCheck,
     noLilbee: opts.noLilbee,
     vaultMatch: opts.vaultMatch,
     postSpeedup: opts.postSpeedup,
@@ -149,6 +158,7 @@ export function beat(
     speedup?: number;
     maxMs?: number;
     keyHint?: string;
+    caption?: string;
   } = {},
 ): Beat {
   return {
@@ -159,6 +169,7 @@ export function beat(
     speedup: options.speedup,
     maxMs: options.maxMs,
     keyHint: options.keyHint,
+    caption: options.caption,
   };
 }
 

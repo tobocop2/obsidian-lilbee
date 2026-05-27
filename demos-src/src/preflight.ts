@@ -58,6 +58,9 @@ export type PreflightOptions = {
   pinChatModel?: string;
   /** Skip the chat-model pin entirely. For demos that don't exercise chat. */
   skipModelPin?: boolean;
+  /** Skip the server-ready health gate + model preload. For a vault that has
+   * no server of its own (multi_vault is "serving" another vault). */
+  skipServerCheck?: boolean;
   /** Fire a cheap throwaway chat to warm up the model. Defaults to true for chat demos. */
   preloadChatModel?: boolean;
   /** This demo runs in a vault where the lilbee plugin isn't installed yet
@@ -141,6 +144,11 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
   // demo that pinned the fallback URL would pass preflight while the
   // chat-view's empty-baseUrl client failed with "Server is still
   // starting up". Requiring api.baseUrl removes that race.
+  //
+  // multi_vault has no server of its own (it is "serving" another vault),
+  // so skipServerCheck bypasses this gate; the model pin (3) and preload
+  // (9) are also off for that demo via skipModelPin/preloadChatModel.
+  if (!opts.skipServerCheck) {
   const health = await ctx.page.evaluate(async () => {
     const p = (globalThis as unknown as { app: { plugins: { plugins: { lilbee?: { settings: { serverUrl: string; manualToken?: string }; serverManager?: { serverUrl?: string }; configureApi?: (u: string) => void; api?: { baseUrl: string; token?: string | null } } } } } }).app.plugins.plugins.lilbee;
     if (!p) return { ok: false, reason: "plugin not loaded" };
@@ -168,6 +176,7 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
   });
   if (!(health as { ok: boolean }).ok) {
     throw new Error(`pre-flight: lilbee server not ready: ${JSON.stringify(health)}`);
+  }
   }
 
   // 2. Drain modals + lilbee leaves so layout apply lands clean

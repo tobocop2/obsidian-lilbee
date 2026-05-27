@@ -16,7 +16,8 @@ export type LayoutName =
   | "chat-and-tasks"
   | "blank"
   | "file-explorer-and-chat"
-  | "explorer-chat-tasks";
+  | "explorer-chat-tasks"
+  | "explorer-note-tasks";
 
 const SHARED_PRELUDE = `
   const app = window.app;
@@ -96,6 +97,24 @@ const LAYOUT_BODY: Record<LayoutName, string> = {
     const tasks = app.workspace.createLeafBySplit(chat, 'vertical', false);
     await tasks.setViewState({ type: 'lilbee-tasks', active: false });
     app.workspace.setActiveLeaf(chat);
+    await new Promise(r => setTimeout(r, 250));
+    sizeSplitChildren([7, 3]);
+  `,
+  "explorer-note-tasks": `
+    // File explorer left, a vault note in the main pane, Task Center to its
+    // right. No chat pane — used by multi_vault, where the chat would show a
+    // "not serving this vault" state before the switch.
+    setLeftCollapsed(false);
+    setRightCollapsed(true);
+    const explorer = app.workspace.getLeavesOfType('file-explorer')[0];
+    if (explorer) app.workspace.revealLeaf(explorer);
+    const md = app.vault.getMarkdownFiles().sort((a, b) => a.path.localeCompare(b.path));
+    const pick = md.find(f => /readme/i.test(f.path)) || md[0];
+    const note = app.workspace.getLeaf(true);
+    if (pick) await note.openFile(pick, { active: true });
+    const tasks = app.workspace.createLeafBySplit(note, 'vertical', false);
+    await tasks.setViewState({ type: 'lilbee-tasks', active: false });
+    app.workspace.setActiveLeaf(note);
     await new Promise(r => setTimeout(r, 250));
     sizeSplitChildren([7, 3]);
   `,

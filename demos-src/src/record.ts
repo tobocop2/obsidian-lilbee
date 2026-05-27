@@ -62,6 +62,7 @@ type BeatRecord = {
   cursor: { x: number; y: number } | null;
   speedup?: number;
   keyHint?: string;
+  caption?: string;
 };
 
 export async function record(storyboard: Storyboard): Promise<void> {
@@ -130,6 +131,7 @@ export async function record(storyboard: Storyboard): Promise<void> {
       clearChat: storyboard.clearChat,
       preloadChatModel: storyboard.preloadChatModel,
       skipModelPin: storyboard.skipModelPin,
+      skipServerCheck: storyboard.skipServerCheck,
       noLilbee: storyboard.noLilbee,
     });
 
@@ -197,7 +199,7 @@ export async function record(storyboard: Storyboard): Promise<void> {
       const hold = beat.holdMs ?? DEFAULT_HOLD_MS;
       await sleep(hold);
       const endedAt = Date.now() - recordingStartTime;
-      records.push({ index: i, label: beat.label, kind: beat.action.kind, startedAt, endedAt, cursor, speedup: beat.speedup, keyHint: beat.keyHint });
+      records.push({ index: i, label: beat.label, kind: beat.action.kind, startedAt, endedAt, cursor, speedup: beat.speedup, keyHint: beat.keyHint, caption: beat.caption });
       console.log(`beat ${i} [${beat.label}] ${beat.action.kind}: ${startedAt}-${endedAt} ms${cursor ? ` cursor=(${Math.round(cursor.x)},${Math.round(cursor.y)})` : ""}`);
     }
 
@@ -749,6 +751,16 @@ async function postProcess(opts: PostOptions): Promise<void> {
     keyHintPaths.set(kh, path);
   }
 
+  // Narration captions: one PNG per distinct caption text.
+  const beatCaptions = timeline.beats.filter((b) => !!b.caption);
+  const captionTexts = Array.from(new Set(beatCaptions.map((b) => b.caption as string)));
+  const captionPngPaths = new Map<string, string>();
+  for (const cap of captionTexts) {
+    const path = `${rawPath}.beatcap-${Buffer.from(cap).toString("hex").slice(0, 48)}.png`;
+    await renderBeatCaptionPng(cap, path);
+    captionPngPaths.set(cap, path);
+  }
+
   // The SCK capture is cursor-free, so draw a synthetic cursor from the
   // recorded trace: one PNG per output frame at 30fps (always present, never
   // flickers), the cropped size, aligned 1:1 with the trimmed video (both
@@ -778,6 +790,12 @@ async function postProcess(opts: PostOptions): Promise<void> {
   for (const kh of keyHints) {
     ffArgs.push("-i", keyHintPaths.get(kh) ?? "");
     keyHintInputIdx.set(kh, inputIdx);
+    inputIdx++;
+  }
+  const beatCaptionInputIdx = new Map<string, number>();
+  for (const cap of captionTexts) {
+    ffArgs.push("-i", captionPngPaths.get(cap) ?? "");
+    beatCaptionInputIdx.set(cap, inputIdx);
     inputIdx++;
   }
 
@@ -832,6 +850,33 @@ async function postProcess(opts: PostOptions): Promise<void> {
     if (!windows.length) continue;
     const next = `v_kh${keyHints.indexOf(kh)}`;
     chain.push(`[${lastLabel}][${keyHintInputIdx.get(kh)}:v]overlay=(W-w)/2:36:enable='${windows.join("+")}'[${next}]`);
+    lastLabel = next;
+  }
+
+  // Sticky narration captions, bottom-centre. Each caption shows from its
+  // beat's output start until the next captioned beat (or the end), so a run
+  // of sub-step beats shares one explanation without flicker.
+  const capStarts = beatCaptions
+    .map((b) => ({
+      text: b.caption as string,
+      outStart: inMsToOutSec(Math.max(0, timeline.ffmpegStartupGapMs + b.startedAt - trimStart), segments),
+    }))
+    .sort((a, b) => a.outStart - b.outStart);
+  const capWindowsByText = new Map<string, string[]>();
+  for (let i = 0; i < capStarts.length; i++) {
+    const start = capStarts[i].outStart;
+    const end = i + 1 < capStarts.length ? capStarts[i + 1].outStart : 1e6;
+    const expr = `between(t,${start.toFixed(3)},${end.toFixed(3)})`;
+    const arr = capWindowsByText.get(capStarts[i].text) ?? [];
+    arr.push(expr);
+    capWindowsByText.set(capStarts[i].text, arr);
+  }
+  let capIdx = 0;
+  for (const [text, windows] of capWindowsByText) {
+    const idx = beatCaptionInputIdx.get(text);
+    if (idx === undefined) continue;
+    const next = `v_cap${capIdx++}`;
+    chain.push(`[${lastLabel}][${idx}:v]overlay=(W-w)/2:H-h-52:enable='${windows.join("+")}'[${next}]`);
     lastLabel = next;
   }
 
@@ -944,6 +989,63 @@ img.save(out)
     const proc = spawn("python3", ["-c", py, text, outPath], { stdio: ["ignore", "ignore", "inherit"] });
     proc.on("error", rej);
     proc.on("exit", (code) => (code === 0 ? res() : rej(new Error(`caption render exit ${code}`))));
+  });
+}
+
+async function renderBeatCaptionPng(text: string, outPath: string): Promise<void> {
+  // Bottom-centre narration banner: white text, word-wrapped, on a wide
+  // translucent dark pill. Larger and wrappable (unlike the top-left global
+  // caption) so a full sentence of explanation reads cleanly.
+  const py = `
+import sys
+from PIL import Image, ImageDraw, ImageFont
+text = sys.argv[1]
+out = sys.argv[2]
+font_size = 30
+font = None
+for p in ["/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc", "/Library/Fonts/Arial.ttf"]:
+    try:
+        font = ImageFont.truetype(p, font_size)
+        break
+    except Exception:
+        continue
+if font is None:
+    font = ImageFont.load_default()
+measure = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
+max_text_w = 1100
+def line_w(s):
+    b = measure.textbbox((0, 0), s, font=font)
+    return b[2] - b[0]
+words = text.split()
+lines, cur = [], ""
+for w in words:
+    trial = (cur + " " + w).strip()
+    if line_w(trial) <= max_text_w or not cur:
+        cur = trial
+    else:
+        lines.append(cur)
+        cur = w
+if cur:
+    lines.append(cur)
+ascent, descent = font.getmetrics()
+line_h = ascent + descent
+gap = 6
+pad_x, pad_y = 26, 16
+text_w = max(line_w(l) for l in lines)
+text_h = line_h * len(lines) + gap * (len(lines) - 1)
+img = Image.new("RGBA", (text_w + 2 * pad_x, text_h + 2 * pad_y), (0, 0, 0, 165))
+d = ImageDraw.Draw(img)
+y = pad_y
+for l in lines:
+    lw = line_w(l)
+    d.text(((img.width - lw) / 2, y), l, fill=(255, 255, 255, 255), font=font)
+    y += line_h + gap
+img.save(out)
+`;
+  await new Promise<void>((res, rej) => {
+    const proc = spawn("python3", ["-c", py, text, outPath], { stdio: ["ignore", "ignore", "inherit"] });
+    proc.on("error", rej);
+    proc.on("exit", (code) => (code === 0 ? res() : rej(new Error(`beat caption render exit ${code}`))));
   });
 }
 
