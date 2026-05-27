@@ -181,6 +181,7 @@ describe("getLatestRelease", () => {
     it("prefers the CUDA build when a matching GPU is detected", async () => {
         restore = stubPlatform("linux", "x64");
         vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "CUDA Version: 12.5", stderr: "" });
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
         vi.spyOn(node, "requestUrl").mockResolvedValue(
             releaseResponse({
                 tag_name: "v1.0.0",
@@ -197,11 +198,13 @@ describe("getLatestRelease", () => {
             variant: "cu125",
             sizeBytes: 20,
         });
+        expect(warn).not.toHaveBeenCalled();
     });
 
-    it("falls back to the default build when the CUDA asset is missing from the release", async () => {
+    it("falls back to the default build (and warns) when the CUDA asset is missing from the release", async () => {
         restore = stubPlatform("linux", "x64");
         vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "CUDA Version: 12.5", stderr: "" });
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
         vi.spyOn(node, "requestUrl").mockResolvedValue(
             releaseResponse({
                 tag_name: "v1.0.0",
@@ -215,6 +218,7 @@ describe("getLatestRelease", () => {
             variant: "default",
             sizeBytes: 10,
         });
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("GPU detected (cu125)"));
     });
 
     it("throws when GitHub API returns error status", async () => {

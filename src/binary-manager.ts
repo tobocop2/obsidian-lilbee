@@ -124,6 +124,9 @@ function selectAsset(data: GitHubRelease, cudaTag: CudaTag | null): { variant: S
     if (cudaTag) {
         const cudaAsset = data.assets.find((a) => a.name === getPlatformAssetName(cudaTag));
         if (cudaAsset) return { variant: cudaTag, asset: cudaAsset };
+        console.warn(
+            `[lilbee] GPU detected (${cudaTag}) but ${data.tag_name} ships no matching build; using the default build instead.`,
+        );
     }
     const defaultName = getPlatformAssetName(null);
     const asset = data.assets.find((a) => a.name === defaultName);
