@@ -1,4 +1,5 @@
 import { App, Modal, Notice } from "obsidian";
+import type { Result } from "neverthrow";
 import type LilbeePlugin from "../main";
 import type { CatalogEntry, KeyStatus, ModelTask } from "../types";
 import { CATALOG_SOURCE, KEY_STATUS, MODEL_TASK } from "../types";
@@ -18,6 +19,11 @@ import { tagModalChrome } from "../utils";
 
 const SEARCH_DEBOUNCE_MS = 100;
 const PAGE_SIZE = 50;
+// A model set right after a pull can hit the server mid worker-reload and
+// return a transient error even though the model is applied. Retry the
+// (idempotent) set a few times before surfacing a failure.
+export const SET_MODEL_RETRIES = 4;
+export const SET_MODEL_RETRY_MS = 600;
 
 export type PickerScope = "chat" | "embedding";
 
@@ -206,10 +212,7 @@ export class ModelPickerModal extends Modal {
                 return;
             }
         }
-        const result =
-            this.pickerScope === "chat"
-                ? await this.plugin.api.setChatModel(row.hf_repo)
-                : await this.plugin.api.setEmbeddingModel(row.hf_repo);
+        const result = await this.setActiveModelWithRetry(row.hf_repo);
         if (result.isErr()) {
             new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", row.hf_repo));
             return;
@@ -219,6 +222,25 @@ export class ModelPickerModal extends Modal {
         this.plugin.refreshSettingsTab();
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(row.display_name));
         this.close();
+    }
+
+    /**
+     * Set the model, retrying on error. A set issued right after a pull can
+     * reach the server mid worker-reload and return a transient error even
+     * though the model is applied; the PUT is idempotent, so retry a few times
+     * before reporting failure. A successful retry also confirms the model
+     * took, so a transient not-ready response no longer surfaces as "Failed to
+     * set" while the model quietly activates.
+     */
+    private async setActiveModelWithRetry(repo: string): Promise<Result<void, Error>> {
+        const set = (m: string): Promise<Result<void, Error>> =>
+            this.pickerScope === "chat" ? this.plugin.api.setChatModel(m) : this.plugin.api.setEmbeddingModel(m);
+        let result = await set(repo);
+        for (let attempt = 0; attempt < SET_MODEL_RETRIES && result.isErr(); attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, SET_MODEL_RETRY_MS));
+            result = await set(repo);
+        }
+        return result;
     }
 }
 

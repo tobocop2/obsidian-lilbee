@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Notice, MockElement } from "../__mocks__/obsidian";
-import { ModelPickerModal, filterRowsByText } from "../../src/views/model-picker-modal";
+import { ModelPickerModal, filterRowsByText, SET_MODEL_RETRIES } from "../../src/views/model-picker-modal";
 import type { CatalogEntry } from "../../src/types";
 import { ok, err } from "neverthrow";
 import { TaskQueue } from "../../src/task-queue";
@@ -201,16 +201,44 @@ describe("ModelPickerModal", () => {
         expect(plugin.api.setChatModel).toHaveBeenCalledWith("openai/gpt-4o");
     });
 
-    it("surfaces a Notice when the underlying setModel call fails", async () => {
+    it("surfaces a Notice when the underlying setModel keeps failing", async () => {
         Notice.clear();
         const plugin = makePlugin([localRow({ display_name: "L1", hf_repo: "h/L1" })]);
         plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("boom")));
         const modal = await openPicker(plugin, "chat");
         vi.spyOn(modal, "close").mockImplementation(() => {});
         contentEl(modal).find("lilbee-model-picker-row")!.trigger("click");
-        await tick();
-        await tick();
-        expect(Notice.instances.length).toBeGreaterThan(0);
+        // The set retries before reporting failure; wait long enough for every
+        // retry delay to elapse, then give up.
+        await vi.waitFor(
+            () =>
+                expect(Notice.instances.map((n) => n.message)).toContain(
+                    MESSAGES.ERROR_SET_MODEL.replace("{model}", "h/L1"),
+                ),
+            { timeout: 6000, interval: 100 },
+        );
+        // Initial attempt plus every retry.
+        expect(plugin.api.setChatModel).toHaveBeenCalledTimes(SET_MODEL_RETRIES + 1);
+    });
+
+    it("retries a transient set failure and activates without an error toast", async () => {
+        Notice.clear();
+        const plugin = makePlugin([localRow({ display_name: "L1", hf_repo: "h/L1" })]);
+        // First set races the worker reload and errors; the retry succeeds.
+        plugin.api.setChatModel = vi
+            .fn()
+            .mockResolvedValueOnce(err(new Error("server is still starting up")))
+            .mockResolvedValue(ok(undefined));
+        const modal = await openPicker(plugin, "chat");
+        vi.spyOn(modal, "close").mockImplementation(() => {});
+        contentEl(modal).find("lilbee-model-picker-row")!.trigger("click");
+        await vi.waitFor(() =>
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_MODEL_ACTIVATED("L1")),
+        );
+        expect(plugin.api.setChatModel).toHaveBeenCalledTimes(2);
+        expect(Notice.instances.map((n) => n.message)).not.toContain(
+            MESSAGES.ERROR_SET_MODEL.replace("{model}", "h/L1"),
+        );
     });
 
     it("surfaces a Notice when /api/catalog returns an error", async () => {
