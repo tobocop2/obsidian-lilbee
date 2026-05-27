@@ -4,7 +4,7 @@ import { MockElement } from "../__mocks__/obsidian";
 import { SetupWizard, pickNativeChatModels, recommendedIndex } from "../../src/views/setup-wizard";
 import { getSystemMemoryGB } from "../../src/utils";
 import { SessionTokenError } from "../../src/api";
-import { SSE_EVENT, WIZARD_STEP } from "../../src/types";
+import { SSE_EVENT, WIZARD_STEP, LILBEE_REPO_URL } from "../../src/types";
 import { ok, err } from "neverthrow";
 import { MESSAGES } from "../../src/locales/en";
 import type { CatalogEntry, CatalogResponse } from "../../src/types";
@@ -287,6 +287,26 @@ describe("SetupWizard", () => {
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("How do you want to run lilbee?"))).toBe(true);
+        });
+
+        it("shows the lilbee source link in the server-setup panel", () => {
+            const plugin = makePlugin({
+                settings: { serverMode: "managed" },
+                serverManager: null,
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Get started")!
+                .trigger("click");
+
+            const source = el.find("lilbee-wizard-setup-source");
+            expect(source).toBeTruthy();
+            const link = source!.children.find((c) => c.tagName === "A");
+            expect(link?.textContent).toBe(MESSAGES.LINK_LILBEE_REPO);
+            expect(link?.getAttribute("href")).toBe(LILBEE_REPO_URL);
         });
 
         it("Get started skips server step when managed server is ready", () => {

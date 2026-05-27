@@ -778,6 +778,9 @@ export const SERVER_VARIANT = {
     CU125: "cu125",
 } as const satisfies Record<string, ServerVariant>;
 
+/** Source of the lilbee server binary; surfaced wherever the unsigned download is explained. */
+export const LILBEE_REPO_URL = "https://github.com/tobocop2/lilbee";
+
 export interface TaskEntry {
     id: string;
     name: string;

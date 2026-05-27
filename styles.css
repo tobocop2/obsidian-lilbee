@@ -2167,6 +2167,21 @@
     content: "⚠";
 }
 
+.lilbee-wizard-setup-source {
+    margin-top: var(--size-4-2, 8px);
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.lilbee-wizard-setup-source a {
+    color: var(--text-accent, var(--interactive-accent));
+    text-decoration: none;
+}
+
+.lilbee-wizard-setup-source a:hover {
+    text-decoration: underline;
+}
+
 .lilbee-wizard-actions {
     display: flex;
     gap: var(--size-4-2, 8px);

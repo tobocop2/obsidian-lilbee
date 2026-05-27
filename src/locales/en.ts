@@ -14,6 +14,8 @@ export const MESSAGES = {
     GATEKEEPER_STEP_3:
         "Reopen this vault (or run the lilbee command again). On the next launch, click Open when macOS asks.",
     GATEKEEPER_RETRY: "This is a one-time step. Once allowed, the server starts normally from then on.",
+    GATEKEEPER_SOURCE: "lilbee is open source. You can review the server's code or build it yourself:",
+    LINK_LILBEE_REPO: "github.com/tobocop2/lilbee",
     BUTTON_GOT_IT: "Got it",
     BUTTON_SKIP_SETUP: "Skip setup",
     BUTTON_GET_STARTED: "Get started",
@@ -482,6 +484,7 @@ export const MESSAGES = {
     WIZARD_SETUP_DOWNLOAD_HINT: "Downloading… up to ~1 min on first run.",
     WIZARD_SETUP_START_HINT: "Booting · waiting for the server to respond…",
     WIZARD_SETUP_GATE: "You can't continue until the server is ready.",
+    WIZARD_SETUP_SOURCE: "Server source:",
     WIZARD_EXTERNAL_TOKEN_HINT:
         "Paste the session token from your lilbee server (found with `lilbee token`). Required for the plugin to authenticate against a remote server.",
     PLACEHOLDER_MANUAL_TOKEN: "lilbee-…",

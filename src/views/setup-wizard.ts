@@ -4,6 +4,7 @@ import { SessionTokenError } from "../api";
 import type { BatchProgressPayload, CatalogEntry, ManagedServerProgressPhase, SSEEvent, SyncDone } from "../types";
 import {
     CATALOG_TAB,
+    LILBEE_REPO_URL,
     MANAGED_PHASE,
     SERVER_MODE,
     SERVER_STATE,
@@ -503,6 +504,10 @@ export class SetupWizard extends Modal {
         });
 
         const gate = panel.createDiv({ cls: "lilbee-wizard-setup-gate", text: MESSAGES.WIZARD_SETUP_GATE });
+
+        const source = panel.createDiv({ cls: "lilbee-wizard-setup-source", text: `${MESSAGES.WIZARD_SETUP_SOURCE} ` });
+        const sourceLink = source.createEl("a", { text: MESSAGES.LINK_LILBEE_REPO });
+        sourceLink.setAttribute("href", LILBEE_REPO_URL);
 
         const order = SERVER_SETUP_PHASES.map((m) => m.key);
         const setPhase = (phase: ManagedServerProgressPhase, message?: string): void => {

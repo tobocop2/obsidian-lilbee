@@ -1,5 +1,6 @@
 import { App, Modal } from "obsidian";
 import { MESSAGES } from "../locales/en";
+import { LILBEE_REPO_URL } from "../types";
 import { bindEscapeToClose } from "../utils";
 
 /** Explains how to allow the unsigned lilbee server after macOS Gatekeeper blocks it. */
@@ -23,6 +24,10 @@ export class GatekeeperModal extends Modal {
         steps.createEl("li", { text: MESSAGES.GATEKEEPER_STEP_3 });
 
         contentEl.createEl("p", { text: MESSAGES.GATEKEEPER_RETRY });
+
+        const source = contentEl.createEl("p", { text: `${MESSAGES.GATEKEEPER_SOURCE} ` });
+        const repoLink = source.createEl("a", { text: MESSAGES.LINK_LILBEE_REPO });
+        repoLink.setAttribute("href", LILBEE_REPO_URL);
 
         const actions = contentEl.createDiv({ cls: "lilbee-confirm-actions" });
         const gotItBtn = actions.createEl("button", { text: MESSAGES.BUTTON_GOT_IT, cls: "mod-cta" });
