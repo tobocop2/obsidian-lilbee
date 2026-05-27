@@ -1826,7 +1826,6 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "llama3";
-            plugin.activeModel = "llama3";
 
             async function* withFailed() {
                 yield {
@@ -4871,7 +4870,6 @@ describe("LilbeePlugin", () => {
 
             async function* throwStream() {
                 throw "string error";
-                yield;
             }
             plugin.api.wikiGenerate = vi.fn().mockReturnValue(throwStream());
 
@@ -4964,7 +4962,6 @@ describe("LilbeePlugin", () => {
 
             async function* failStream() {
                 throw new Error("prune failed");
-                yield;
             }
             plugin.api.wikiPrune = vi.fn().mockReturnValue(failStream());
 
@@ -4980,7 +4977,6 @@ describe("LilbeePlugin", () => {
 
             async function* throwStream() {
                 throw 42;
-                yield;
             }
             plugin.api.wikiPrune = vi.fn().mockReturnValue(throwStream());
 
