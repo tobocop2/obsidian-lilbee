@@ -82,7 +82,8 @@
       <div class="tutorial">
         <div class="tutorial-watch"><a class="tutorial-cta" href="tutorial/">▶&nbsp; watch the full tutorial reel</a></div>
         <div class="tutorialtabs" role="tablist" aria-label="Tutorial reel">
-          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-onlilbee" aria-controls="tutorial-pane-onlilbee" aria-selected="true"  tabindex="0">what is lilbee</button>
+          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-firststart" aria-controls="tutorial-pane-firststart" aria-selected="true"  tabindex="0">first run</button>
+          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-onlilbee" aria-controls="tutorial-pane-onlilbee" aria-selected="false" tabindex="-1">what is lilbee</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-ask"      aria-controls="tutorial-pane-ask"      aria-selected="false" tabindex="-1">ask &amp; cite</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-crawl"    aria-controls="tutorial-pane-crawl"    aria-selected="false" tabindex="-1">crawl</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-vision"   aria-controls="tutorial-pane-vision"   aria-selected="false" tabindex="-1">scanned PDF</button>
@@ -92,7 +93,14 @@
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-tour"     aria-controls="tutorial-pane-tour"     aria-selected="false" tabindex="-1">tour</button>
         </div>
 
-        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-onlilbee" aria-labelledby="tutorial-tab-onlilbee">
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-firststart" aria-labelledby="tutorial-tab-firststart">
+          <div class="tutorial-frame">
+            <img alt="first run on a fresh vault: install lilbee through BRAT, walk the setup wizard, then ask a question and get a cited answer from your notes" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first_start.gif">
+          </div>
+          <p class="tutorial-caption">Brand-new on a fresh vault: install lilbee through BRAT, walk the setup wizard (pick a chat model and an embedder), then ask your first question and get a cited answer from your own notes, with a click-through to the source.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-onlilbee" aria-labelledby="tutorial-tab-onlilbee" hidden>
           <div class="tutorial-frame">
             <img alt="index the lilbee README, then ask what lilbee is and get a cited answer" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.gif">
           </div>
