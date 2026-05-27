@@ -247,7 +247,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         new Notice(MESSAGES.NOTICE_UPDATED_TO(release.tag));
                         this.display();
                     } catch (err) {
-                        new Notice(MESSAGES.ERROR_FAILED_UPDATE);
+                        // Surface the reason (e.g. not enough disk space), not just a generic failure.
+                        new Notice(errorMessage(err, MESSAGES.ERROR_FAILED_UPDATE));
                         console.error("[lilbee] update failed:", err);
                         pendingRelease = null;
                         checkBtn.setButtonText(MESSAGES.BUTTON_CHECK_UPDATES);

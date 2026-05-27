@@ -75,6 +75,10 @@ vi.mock("../src/views/status-modal", () => ({
     StatusModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
 }));
 
+vi.mock("../src/views/gatekeeper-modal", () => ({
+    GatekeeperModal: vi.fn().mockImplementation(() => ({ open: mockGatekeeperOpen })),
+}));
+
 vi.mock("../src/views/setup-wizard", () => ({
     SetupWizard: vi.fn().mockImplementation(() => ({ open: vi.fn(), close: vi.fn() })),
 }));
@@ -107,6 +111,7 @@ vi.mock("../src/views/confirm-modal", () => ({
 const mockEnsureBinary = vi.fn().mockResolvedValue("/fake/bin/lilbee");
 const mockBinaryExists = vi.fn().mockReturnValue(true);
 const mockDownload = vi.fn().mockResolvedValue(undefined);
+const mockGatekeeperOpen = vi.fn();
 const mockServerStart = vi.fn().mockResolvedValue(undefined);
 const mockServerStop = vi.fn().mockResolvedValue(undefined);
 let mockServerOpts: any = null;
@@ -3869,6 +3874,21 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("string error"))).toBe(true);
         });
 
+        it("managed mode opens the Gatekeeper help modal when clearing quarantine fails", async () => {
+            mockGatekeeperOpen.mockClear();
+            // Simulate the download succeeding but xattr failing: the callback fires.
+            mockEnsureBinary.mockImplementationOnce(async (_onProgress, onQuarantineFailed) => {
+                onQuarantineFailed?.();
+                return "/fake/bin/lilbee";
+            });
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            expect(mockGatekeeperOpen).toHaveBeenCalled();
+        });
+
         it("managed mode shows start error Notice when serverManager.start fails", async () => {
             mockServerStart.mockRejectedValueOnce(new Error("port in use"));
 
@@ -4353,15 +4373,19 @@ describe("LilbeePlugin", () => {
             (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({
                 tag: "v0.5.1",
                 assetUrl: "https://example.com",
+                variant: "cu124",
+                sizeBytes: 100,
             });
 
             const plugin = await createPlugin({ serverMode: "managed" });
             const setSpy = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
+            const variantSpy = vi.spyOn(plugin as any, "setSharedLilbeeVariant").mockImplementation(() => {});
             vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("");
             await plugin.onload();
             await flush();
 
             expect(setSpy).toHaveBeenCalledWith("v0.5.1");
+            expect(variantSpy).toHaveBeenCalledWith("cu124");
         });
 
         it("does not overwrite existing shared lilbeeVersion on fresh download", async () => {
@@ -4765,6 +4789,47 @@ describe("LilbeePlugin", () => {
 
             const plugin = await createPlugin({ serverMode: "managed" });
             vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("v0.1.0");
+            await plugin.onload();
+            await flush();
+
+            const result = await plugin.checkForUpdate();
+            expect(result.available).toBe(false);
+        });
+
+        it("returns available: true when the installed build variant differs from the detected one", async () => {
+            const { getLatestRelease, checkForUpdate } = await import("../src/binary-manager");
+            (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({
+                tag: "v0.1.0",
+                assetUrl: "https://example.com",
+                variant: "cu125",
+                sizeBytes: 100,
+            });
+            (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(false); // same version
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("v0.1.0");
+            vi.spyOn(plugin as any, "getSharedLilbeeVariant").mockReturnValue("default");
+            await plugin.onload();
+            await flush();
+
+            const result = await plugin.checkForUpdate();
+            expect(result.available).toBe(true);
+            expect(result.release?.variant).toBe("cu125");
+        });
+
+        it("returns available: false when version and known variant both match", async () => {
+            const { getLatestRelease, checkForUpdate } = await import("../src/binary-manager");
+            (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({
+                tag: "v0.1.0",
+                assetUrl: "https://example.com",
+                variant: "cu125",
+                sizeBytes: 100,
+            });
+            (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("v0.1.0");
+            vi.spyOn(plugin as any, "getSharedLilbeeVariant").mockReturnValue("cu125");
             await plugin.onload();
             await flush();
 
@@ -5521,19 +5586,47 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             await flush();
             const setSpy = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
+            const variantSpy = vi.spyOn(plugin as any, "setSharedLilbeeVariant").mockImplementation(() => {});
 
             const progress: string[] = [];
-            await plugin.updateServer({ tag: "v0.3.0", assetUrl: "https://example.com/v0.3.0" }, (msg) =>
-                progress.push(msg),
+            await plugin.updateServer(
+                { tag: "v0.3.0", assetUrl: "https://example.com/v0.3.0", variant: "cu125", sizeBytes: 256 },
+                (msg) => progress.push(msg),
             );
 
             expect(mockServerStop).toHaveBeenCalled();
-            expect(mockDownload).toHaveBeenCalledWith("https://example.com/v0.3.0", expect.any(Function));
+            expect(mockDownload).toHaveBeenCalledWith(
+                "https://example.com/v0.3.0",
+                256,
+                expect.any(Function),
+                expect.any(Function),
+            );
             expect(setSpy).toHaveBeenCalledWith("v0.3.0");
+            expect(variantSpy).toHaveBeenCalledWith("cu125");
             expect(progress).toContain("Stopping server...");
             expect(progress).toContain("Downloading...");
             expect(progress).toContain("Starting server...");
             expect(progress).toContain("Update complete.");
+        });
+
+        it("opens the Gatekeeper help modal when an update can't clear quarantine", async () => {
+            mockGatekeeperOpen.mockClear();
+            mockDownload.mockImplementationOnce(async (_url, _size, _onProgress, onQuarantineFailed) => {
+                onQuarantineFailed?.();
+            });
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            await plugin.updateServer({
+                tag: "v0.3.0",
+                assetUrl: "https://example.com/v0.3.0",
+                variant: "default",
+                sizeBytes: 100,
+            });
+
+            expect(mockGatekeeperOpen).toHaveBeenCalled();
         });
 
         it("creates binaryManager if not present", async () => {
@@ -5543,7 +5636,12 @@ describe("LilbeePlugin", () => {
 
             expect(plugin.binaryManager).toBeNull();
 
-            await plugin.updateServer({ tag: "v0.3.0", assetUrl: "https://example.com" });
+            await plugin.updateServer({
+                tag: "v0.3.0",
+                assetUrl: "https://example.com",
+                variant: "default",
+                sizeBytes: 100,
+            });
 
             expect(plugin.binaryManager).not.toBeNull();
             expect(mockDownload).toHaveBeenCalled();
@@ -5556,7 +5654,12 @@ describe("LilbeePlugin", () => {
             const setSpy = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
 
             mockServerStart.mockClear();
-            await plugin.updateServer({ tag: "v0.3.0", assetUrl: "https://example.com" });
+            await plugin.updateServer({
+                tag: "v0.3.0",
+                assetUrl: "https://example.com",
+                variant: "default",
+                sizeBytes: 100,
+            });
 
             expect(mockServerStart).not.toHaveBeenCalled();
             expect(setSpy).toHaveBeenCalledWith("v0.3.0");

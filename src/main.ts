@@ -33,6 +33,7 @@ import {
     type ManagedServerProgressHandler,
     type ServerMode,
     type ServerState,
+    type ServerVariant,
     type SetupDonePayload,
     type SetupProgressPayload,
     type SetupStartPayload,
@@ -70,6 +71,7 @@ import { LintModal } from "./views/lint-modal";
 import { DraftModal } from "./views/draft-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { StatusModal } from "./views/status-modal";
+import { GatekeeperModal } from "./views/gatekeeper-modal";
 import { TaskQueue, FLASH_WINDOW_MS as TASK_FLASH_WINDOW_MS } from "./task-queue";
 import { WikiSync } from "./wiki-sync";
 
@@ -478,17 +480,20 @@ export default class LilbeePlugin extends Plugin {
         }
         let downloadNotice: Notice | undefined;
         try {
-            const path = await bm.ensureBinary((msg, url) => {
-                this.updateStatusBar(`lilbee: ${msg}`, DOT_STATE.PRIMARY);
-                onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: msg, url });
-                if (!downloadNotice && needsDownload) {
-                    const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
-                    downloadNotice = new Notice(text, NOTICE_PERMANENT);
-                } else if (downloadNotice) {
-                    const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
-                    downloadNotice.setMessage(text);
-                }
-            });
+            const path = await bm.ensureBinary(
+                (msg, url) => {
+                    this.updateStatusBar(`lilbee: ${msg}`, DOT_STATE.PRIMARY);
+                    onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: msg, url });
+                    if (!downloadNotice && needsDownload) {
+                        const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
+                        downloadNotice = new Notice(text, NOTICE_PERMANENT);
+                    } else if (downloadNotice) {
+                        const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
+                        downloadNotice.setMessage(text);
+                    }
+                },
+                () => this.showGatekeeperHelp(),
+            );
             downloadNotice?.hide();
             this.setStatusClass(null);
             return path;
@@ -501,11 +506,17 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    /** Tell the user how to allow the unsigned server when macOS Gatekeeper blocks it. */
+    private showGatekeeperHelp(): void {
+        new GatekeeperModal(this.app).open();
+    }
+
     private async recordLilbeeVersionAfterDownload(): Promise<void> {
         if (this.getSharedLilbeeVersion()) return;
         try {
             const release = await getLatestRelease();
             this.setSharedLilbeeVersion(release.tag);
+            this.setSharedLilbeeVariant(release.variant);
         } catch {
             /* version tracking is best-effort */
         }
@@ -578,7 +589,12 @@ export default class LilbeePlugin extends Plugin {
 
     async checkForUpdate(): Promise<{ available: boolean; release?: ReleaseInfo }> {
         const release = await getLatestRelease();
-        if (checkForUpdate(this.getSharedLilbeeVersion(), release.tag)) {
+        const versionChanged = checkForUpdate(this.getSharedLilbeeVersion(), release.tag);
+        // A known installed variant that differs from the detected one means the
+        // hardware-appropriate build changed (e.g. an NVIDIA driver was added).
+        const installedVariant = this.getSharedLilbeeVariant();
+        const variantChanged = installedVariant !== "" && installedVariant !== release.variant;
+        if (versionChanged || variantChanged) {
             return { available: true, release };
         }
         return { available: false };
@@ -600,10 +616,13 @@ export default class LilbeePlugin extends Plugin {
 
         // Download the new binary (overwrites the old one)
         onProgress?.("Downloading...");
-        await this.binaryManager.download(release.assetUrl, onProgress);
+        await this.binaryManager.download(release.assetUrl, release.sizeBytes, onProgress, () =>
+            this.showGatekeeperHelp(),
+        );
 
-        // Save the new version
+        // Save the new version and the build variant we just installed
         this.setSharedLilbeeVersion(release.tag);
+        this.setSharedLilbeeVariant(release.variant);
 
         // Restart if in managed mode
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
@@ -1022,6 +1041,16 @@ export default class LilbeePlugin extends Plugin {
         const reg = this.vaultRegistry;
         if (!reg) return;
         reg.saveConfig({ ...reg.loadConfig(), lilbeeVersion: version });
+    }
+
+    getSharedLilbeeVariant(): ServerVariant | "" {
+        return this.vaultRegistry?.loadConfig().lilbeeVariant ?? "";
+    }
+
+    setSharedLilbeeVariant(variant: ServerVariant): void {
+        const reg = this.vaultRegistry;
+        if (!reg) return;
+        reg.saveConfig({ ...reg.loadConfig(), lilbeeVariant: variant });
     }
 
     getSharedHfToken(): string {

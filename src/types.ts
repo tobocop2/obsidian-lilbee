@@ -346,11 +346,14 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
  */
 export interface SharedConfig {
     lilbeeVersion: string;
+    /** Which server build is installed. Empty when unknown (e.g. installed before variant tracking). */
+    lilbeeVariant: ServerVariant | "";
     hfToken: string;
 }
 
 export const DEFAULT_SHARED_CONFIG: SharedConfig = {
     lilbeeVersion: "",
+    lilbeeVariant: "",
     hfToken: "",
 };
 
@@ -763,6 +766,17 @@ export const ARCH = {
     ARM64: "arm64",
     X64: "x64",
 } as const;
+
+/** The CUDA build tags lilbee ships, newest first. */
+export type CudaTag = "cu121" | "cu124" | "cu125";
+/** Which lilbee server build is installed: the default (Vulkan/CPU) build or a CUDA build. */
+export type ServerVariant = "default" | CudaTag;
+export const SERVER_VARIANT = {
+    DEFAULT: "default",
+    CU121: "cu121",
+    CU124: "cu124",
+    CU125: "cu125",
+} as const satisfies Record<string, ServerVariant>;
 
 export interface TaskEntry {
     id: string;

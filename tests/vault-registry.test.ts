@@ -143,21 +143,25 @@ describe("VaultRegistry.loadConfig", () => {
     it("returns defaults when config file is missing", () => {
         mountFs(makeFs());
         const reg = new VaultRegistry("/r");
-        expect(reg.loadConfig()).toEqual({ lilbeeVersion: "", hfToken: "" });
+        expect(reg.loadConfig()).toEqual({ lilbeeVersion: "", lilbeeVariant: "", hfToken: "" });
     });
 
     it("merges defaults with persisted partial config", () => {
         const fs = makeFs();
         fs.write("/r/config.json", JSON.stringify({ lilbeeVersion: "v0.5.0" }));
         mountFs(fs);
-        expect(new VaultRegistry("/r").loadConfig()).toEqual({ lilbeeVersion: "v0.5.0", hfToken: "" });
+        expect(new VaultRegistry("/r").loadConfig()).toEqual({
+            lilbeeVersion: "v0.5.0",
+            lilbeeVariant: "",
+            hfToken: "",
+        });
     });
 
     it("returns defaults when config JSON is corrupt", () => {
         const fs = makeFs();
         fs.write("/r/config.json", "{not json");
         mountFs(fs);
-        expect(new VaultRegistry("/r").loadConfig()).toEqual({ lilbeeVersion: "", hfToken: "" });
+        expect(new VaultRegistry("/r").loadConfig()).toEqual({ lilbeeVersion: "", lilbeeVariant: "", hfToken: "" });
     });
 });
 
@@ -167,16 +171,20 @@ describe("VaultRegistry.saveConfig", () => {
     it("writes via a temp file then renames", () => {
         const fs = makeFs();
         mountFs(fs);
-        new VaultRegistry("/r").saveConfig({ lilbeeVersion: "v1", hfToken: "tok" });
+        new VaultRegistry("/r").saveConfig({ lilbeeVersion: "v1", lilbeeVariant: "cu125", hfToken: "tok" });
         expect(fs.exists("/r/config.json")).toBe(true);
         expect(fs.exists("/r/config.json.tmp")).toBe(false);
-        expect(JSON.parse(fs.read("/r/config.json"))).toEqual({ lilbeeVersion: "v1", hfToken: "tok" });
+        expect(JSON.parse(fs.read("/r/config.json"))).toEqual({
+            lilbeeVersion: "v1",
+            lilbeeVariant: "cu125",
+            hfToken: "tok",
+        });
     });
 
     it("creates the shared root directory if missing", () => {
         const fs = makeFs();
         mountFs(fs);
-        new VaultRegistry("/r").saveConfig({ lilbeeVersion: "", hfToken: "" });
+        new VaultRegistry("/r").saveConfig({ lilbeeVersion: "", lilbeeVariant: "", hfToken: "" });
         expect(fs.dirs.has("/r")).toBe(true);
     });
 });
