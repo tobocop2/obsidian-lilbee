@@ -5,6 +5,16 @@ export const MESSAGES = {
     LABEL_VAULT_ROOT: "Vault root",
     CONFIRM_SYNC_REBUILD:
         "Rebuilding the index drops every stored document and re-embeds your whole vault from scratch. This can take a while. Continue?",
+    GATEKEEPER_TITLE: "macOS blocked the lilbee server",
+    GATEKEEPER_INTRO:
+        "The lilbee server is an open-source binary that isn't code-signed, so macOS Gatekeeper quarantined it. The plugin tried to clear the quarantine flag automatically but couldn't. You can allow it in a few steps:",
+    GATEKEEPER_STEP_1: "Open System Settings → Privacy & Security.",
+    GATEKEEPER_STEP_2:
+        'Scroll to the Security section. You\'ll see a message that "lilbee" was blocked. Click "Allow Anyway".',
+    GATEKEEPER_STEP_3:
+        "Reopen this vault (or run the lilbee command again). On the next launch, click Open when macOS asks.",
+    GATEKEEPER_RETRY: "This is a one-time step. Once allowed, the server starts normally from then on.",
+    BUTTON_GOT_IT: "Got it",
     BUTTON_SKIP_SETUP: "Skip setup",
     BUTTON_GET_STARTED: "Get started",
     BUTTON_BACK: "Back",

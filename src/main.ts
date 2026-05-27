@@ -71,6 +71,7 @@ import { LintModal } from "./views/lint-modal";
 import { DraftModal } from "./views/draft-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { StatusModal } from "./views/status-modal";
+import { GatekeeperModal } from "./views/gatekeeper-modal";
 import { TaskQueue, FLASH_WINDOW_MS as TASK_FLASH_WINDOW_MS } from "./task-queue";
 import { WikiSync } from "./wiki-sync";
 
@@ -479,17 +480,20 @@ export default class LilbeePlugin extends Plugin {
         }
         let downloadNotice: Notice | undefined;
         try {
-            const path = await bm.ensureBinary((msg, url) => {
-                this.updateStatusBar(`lilbee: ${msg}`, DOT_STATE.PRIMARY);
-                onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: msg, url });
-                if (!downloadNotice && needsDownload) {
-                    const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
-                    downloadNotice = new Notice(text, NOTICE_PERMANENT);
-                } else if (downloadNotice) {
-                    const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
-                    downloadNotice.setMessage(text);
-                }
-            });
+            const path = await bm.ensureBinary(
+                (msg, url) => {
+                    this.updateStatusBar(`lilbee: ${msg}`, DOT_STATE.PRIMARY);
+                    onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: msg, url });
+                    if (!downloadNotice && needsDownload) {
+                        const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
+                        downloadNotice = new Notice(text, NOTICE_PERMANENT);
+                    } else if (downloadNotice) {
+                        const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
+                        downloadNotice.setMessage(text);
+                    }
+                },
+                () => this.showGatekeeperHelp(),
+            );
             downloadNotice?.hide();
             this.setStatusClass(null);
             return path;
@@ -500,6 +504,11 @@ export default class LilbeePlugin extends Plugin {
             onProgress?.({ phase: MANAGED_PHASE.ERROR, message: errorMessage(err, String(err)) });
             return null;
         }
+    }
+
+    /** Tell the user how to allow the unsigned server when macOS Gatekeeper blocks it. */
+    private showGatekeeperHelp(): void {
+        new GatekeeperModal(this.app).open();
     }
 
     private async recordLilbeeVersionAfterDownload(): Promise<void> {
@@ -607,7 +616,9 @@ export default class LilbeePlugin extends Plugin {
 
         // Download the new binary (overwrites the old one)
         onProgress?.("Downloading...");
-        await this.binaryManager.download(release.assetUrl, release.sizeBytes, onProgress);
+        await this.binaryManager.download(release.assetUrl, release.sizeBytes, onProgress, () =>
+            this.showGatekeeperHelp(),
+        );
 
         // Save the new version and the build variant we just installed
         this.setSharedLilbeeVersion(release.tag);

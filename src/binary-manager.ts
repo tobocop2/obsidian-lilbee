@@ -170,11 +170,14 @@ export class BinaryManager {
         return node.existsSync(this.binaryPath);
     }
 
-    async ensureBinary(onProgress?: (msg: string, url?: string) => void): Promise<string> {
+    async ensureBinary(
+        onProgress?: (msg: string, url?: string) => void,
+        onQuarantineFailed?: () => void,
+    ): Promise<string> {
         if (this.binaryExists()) return this.binaryPath;
         onProgress?.("Fetching latest release info...");
         const release = await getLatestRelease();
-        await this.download(release.assetUrl, release.sizeBytes, onProgress);
+        await this.download(release.assetUrl, release.sizeBytes, onProgress, onQuarantineFailed);
         return this.binaryPath;
     }
 
@@ -195,6 +198,7 @@ export class BinaryManager {
         assetUrl: string,
         sizeBytes: number,
         onProgress?: (msg: string, url?: string) => void,
+        onQuarantineFailed?: () => void,
     ): Promise<void> {
         if (!node.existsSync(this.binDir)) {
             node.mkdirSync(this.binDir, { recursive: true });
@@ -221,7 +225,9 @@ export class BinaryManager {
             try {
                 await node.execFile("xattr", ["-cr", dest]);
             } catch {
-                // xattr failure is non-fatal; the user may need to allow it in System Settings.
+                // Couldn't clear quarantine, so Gatekeeper will likely block this unsigned
+                // binary. Let the caller surface how to allow it; the download itself is fine.
+                onQuarantineFailed?.();
             }
         }
 

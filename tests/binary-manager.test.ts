@@ -463,19 +463,39 @@ describe("BinaryManager", () => {
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
             const execSpy = vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "", stderr: "" });
 
+            const onQuarantineFailed = vi.fn();
             const mgr = new BinaryManager("/plugins/lilbee/bin");
-            await mgr.download("https://example.com/dl", 1);
+            await mgr.download("https://example.com/dl", 1, undefined, onQuarantineFailed);
 
             expect(execSpy).toHaveBeenCalledWith("xattr", ["-cr", mgr.binaryPath]);
+            expect(onQuarantineFailed).not.toHaveBeenCalled();
         });
 
-        it("treats xattr failure as non-fatal on darwin", async () => {
+        it("treats xattr failure as non-fatal but signals it on darwin", async () => {
             restore = stubPlatform("darwin", "arm64");
             const data = new Uint8Array([1]);
 
             vi.spyOn(node, "existsSync").mockReturnValue(true);
             stubEnoughSpace();
             vi.spyOn(node, "requestUrl").mockResolvedValue(downloadResponse(data));
+            vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
+            vi.spyOn(node, "chmodSync").mockImplementation(() => {});
+            vi.spyOn(node, "execFile").mockRejectedValue(new Error("xattr not found"));
+
+            const onQuarantineFailed = vi.fn();
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
+            // The download still resolves; the caller is told quarantine couldn't be cleared.
+            await expect(
+                mgr.download("https://example.com/dl", 1, undefined, onQuarantineFailed),
+            ).resolves.toBeUndefined();
+            expect(onQuarantineFailed).toHaveBeenCalledTimes(1);
+        });
+
+        it("does not signal quarantine failure when the callback is omitted", async () => {
+            restore = stubPlatform("darwin", "arm64");
+            vi.spyOn(node, "existsSync").mockReturnValue(true);
+            stubEnoughSpace();
+            vi.spyOn(node, "requestUrl").mockResolvedValue(downloadResponse(new Uint8Array([1])));
             vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
             vi.spyOn(node, "execFile").mockRejectedValue(new Error("xattr not found"));
