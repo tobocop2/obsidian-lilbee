@@ -10,7 +10,7 @@ TAPES := tour chat add lilbee_on_lilbee crawl catalog settings command_palette m
 # GIF width (px). The webms are recorded at retina 3456×2158; the GIFs only
 # ever render at README / marketing-card width, so 720 keeps them sharp there
 # while cutting file size hard. The webms stay full resolution for the reel.
-GIF_WIDTH := 720
+GIF_WIDTH := 800
 GIF_FPS := 30
 GIF_COLORS := 256
 
@@ -40,8 +40,8 @@ demo-gifs: demo-record
 		[ -f "$$webm" ] || { echo "missing $$webm, skipping"; continue; }; \
 		echo "==> gififying $$tape"; \
 		ffmpeg -y -i "$$webm" -vf "fps=$(GIF_FPS),scale=$(GIF_WIDTH):-1:flags=lanczos,palettegen=max_colors=$(GIF_COLORS)" "$$pal" >/dev/null 2>&1; \
-		ffmpeg -y -i "$$webm" -i "$$pal" -lavfi "fps=$(GIF_FPS),scale=$(GIF_WIDTH):-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5" "$$gif" >/dev/null 2>&1; \
-		gifsicle -O3 --lossy=100 -b "$$gif" >/dev/null 2>&1; \
+		ffmpeg -y -i "$$webm" -i "$$pal" -lavfi "fps=$(GIF_FPS),scale=$(GIF_WIDTH):-1:flags=lanczos[x];[x][1:v]paletteuse=dither=none" "$$gif" >/dev/null 2>&1; \
+		gifsicle -O3 --lossy=30 -b "$$gif" >/dev/null 2>&1; \
 	done
 	@rm -rf demos/.gif-tmp
 
