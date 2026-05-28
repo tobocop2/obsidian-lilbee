@@ -197,6 +197,14 @@ export class ChatView extends ItemView {
             cls: "lilbee-embed-model-select lilbee-model-chip-select",
         }) as HTMLSelectElement;
         this.attachEmbeddingListener(this.embeddingSelectEl);
+        const embedBrowseBtn = embedChip.createEl("button", {
+            text: MESSAGES.BUTTON_BROWSE_MORE,
+            cls: "lilbee-embed-browse",
+        });
+        embedBrowseBtn.setAttribute("aria-label", MESSAGES.BUTTON_BROWSE_MORE);
+        embedBrowseBtn.addEventListener("click", () => {
+            new CatalogModal(this.app, this.plugin, MODEL_TASK.EMBEDDING).open();
+        });
 
         // Optional roles (Vision, Rerank) are chips in the same wrapping rail.
         this.optionalRailEl = rail.createDiv({ cls: "lilbee-model-rail-optional" });
@@ -433,11 +441,6 @@ export class ChatView extends ItemView {
             (option as HTMLOptionElement).value = activeModel;
             (option as HTMLOptionElement).selected = true;
         }
-
-        // Last entry opens the catalog — same affordance as the optional roles,
-        // so the standalone "Browse more" button isn't needed.
-        const browse = this.embeddingSelectEl.createEl("option", { text: MESSAGES.RAIL_BROWSE_CATALOG });
-        (browse as HTMLOptionElement).value = RAIL_BROWSE_KEY;
     }
 
     private fillSelectOptions(selectEl: HTMLSelectElement): void {
@@ -515,11 +518,6 @@ export class ChatView extends ItemView {
 
     private attachEmbeddingListener(el: HTMLSelectElement): void {
         el.addEventListener("change", () => {
-            if (el.value === RAIL_BROWSE_KEY) {
-                new CatalogModal(this.app, this.plugin, MODEL_TASK.EMBEDDING).open();
-                this.revertEmbeddingSelect(this.activeEmbeddingModel);
-                return;
-            }
             if (!el.value) return;
             const previous = this.activeEmbeddingModel;
             const modal = new ConfirmModal(this.plugin.app, MESSAGES.DESC_EMBEDDING_REINDEX_WARNING);

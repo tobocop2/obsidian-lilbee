@@ -3005,7 +3005,7 @@ describe("ChatView — embedding model selector", () => {
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION" && c.value !== "__lilbee_browse__");
+        const options = select.children.filter((c) => c.tagName === "OPTION");
         expect(options.length).toBe(1);
         expect(options[0].textContent).toBe("nomic-embed-text");
         expect(options[0].value).toBe("nomic-embed-text");
@@ -3019,7 +3019,7 @@ describe("ChatView — embedding model selector", () => {
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION" && c.value !== "__lilbee_browse__");
+        const options = select.children.filter((c) => c.tagName === "OPTION");
         expect(options[0].selected).toBe(true);
     });
 
@@ -3035,7 +3035,7 @@ describe("ChatView — embedding model selector", () => {
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION" && c.value !== "__lilbee_browse__");
+        const options = select.children.filter((c) => c.tagName === "OPTION");
         expect(options.length).toBe(1);
         expect(options[0].textContent).toBe("custom-embed");
         expect(options[0].selected).toBe(true);
@@ -3051,7 +3051,7 @@ describe("ChatView — embedding model selector", () => {
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION" && c.value !== "__lilbee_browse__");
+        const options = select.children.filter((c) => c.tagName === "OPTION");
         expect(options.length).toBe(1);
         expect(options[0].textContent).toBe("fallback-embed");
     });
@@ -3068,7 +3068,7 @@ describe("ChatView — embedding model selector", () => {
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION" && c.value !== "__lilbee_browse__");
+        const options = select.children.filter((c) => c.tagName === "OPTION");
         expect(options.length).toBe(0);
     });
 
@@ -3192,7 +3192,7 @@ describe("ChatView — embedding model selector", () => {
         expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
     });
 
-    it("embedding dropdown ends with Browse catalog…, which opens CatalogModal for embedding", async () => {
+    it("Browse more button opens CatalogModal pre-filtered to embedding", async () => {
         const { CatalogModal } = await import("../../src/views/catalog-modal");
         (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
         const plugin = makePlugin();
@@ -3201,18 +3201,12 @@ describe("ChatView — embedding model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        // The standalone "Browse more" button is gone — browse is now the last
-        // option in the embed dropdown, matching the optional roles.
-        expect(container.find("lilbee-embed-browse")).toBeNull();
-        const select = container.find("lilbee-embed-model-select")!;
-        const optionTexts = select.options.map((o) => o.textContent);
-        expect(optionTexts[optionTexts.length - 1]).toBe("Browse catalog…");
+        const browseBtn = container.find("lilbee-embed-browse")!;
+        expect(browseBtn).not.toBeNull();
+        expect(browseBtn.textContent).toBe(MESSAGES.BUTTON_BROWSE_MORE);
 
-        select.value = "__lilbee_browse__";
-        select.trigger("change");
+        browseBtn.trigger("click");
         expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "embedding");
-        // Selecting Browse must not trigger the reindex confirm or a model switch.
-        expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
     });
 
     it("shows connecting label on embedding select when offline", async () => {
@@ -3317,7 +3311,7 @@ describe("ChatView — embedding model selector", () => {
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION" && c.value !== "__lilbee_browse__");
+        const options = select.children.filter((c) => c.tagName === "OPTION");
         expect(options.length).toBe(1);
         expect(options[0].textContent).toBe("nomic-embed-text");
     });
@@ -3331,7 +3325,7 @@ describe("ChatView — embedding model selector", () => {
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION" && c.value !== "__lilbee_browse__");
+        const options = select.children.filter((c) => c.tagName === "OPTION");
         // Should still show models from catalog, just none marked active
         expect(options.length).toBe(1);
         expect(options[0].textContent).toBe("nomic-embed-text");
@@ -3378,7 +3372,7 @@ describe("ChatView — embedding model selector", () => {
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION" && c.value !== "__lilbee_browse__");
+        const options = select.children.filter((c) => c.tagName === "OPTION");
         expect(options.length).toBe(1);
         expect(options[0].textContent).toBe("fallback");
     });
@@ -3546,9 +3540,7 @@ describe("ChatView — role separation on main-screen selectors", () => {
         const chatOptionValues = chatSelect.children
             .map((c) => (c as any).value ?? c.textContent)
             .filter((v: string) => v !== "__separator__");
-        const embedOptionValues = embedSelect.children
-            .map((c) => (c as any).value ?? c.textContent)
-            .filter((v: string) => v !== "__lilbee_browse__");
+        const embedOptionValues = embedSelect.children.map((c) => (c as any).value ?? c.textContent);
 
         // Chat selector echoes models.chat.installed — including the contaminated names.
         // This proves the plugin delegates role filtering to the server (no client-side
