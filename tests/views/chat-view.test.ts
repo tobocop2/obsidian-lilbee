@@ -116,6 +116,8 @@ function makePlugin(): LilbeePlugin {
             }),
             setChatModel: vi.fn().mockResolvedValue(ok(undefined)),
             setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
+            setVisionModel: vi.fn().mockResolvedValue(ok(undefined)),
+            setRerankerModel: vi.fn().mockResolvedValue(ok(undefined)),
             pullModel: vi.fn(),
             catalog: vi.fn().mockImplementation((params?: { task?: string }) => {
                 if (params?.task === "chat") {
@@ -3868,5 +3870,225 @@ describe("ChatView.sendMessage — RateLimitedError", () => {
         await tick();
 
         expect(Notice.instances.some((n) => n.message.includes("Try again in a moment"))).toBe(true);
+    });
+});
+
+describe("ChatView — optional model rail (Vision, Rerank)", () => {
+    beforeEach(() => {
+        Notice.clear();
+        vi.clearAllMocks();
+    });
+
+    /** Drive vision/rerank installed lists + active models for the rail. */
+    function configureRoles(
+        plugin: LilbeePlugin,
+        opts: {
+            vision?: string[];
+            rerank?: string[];
+            visionActive?: string;
+            rerankActive?: string;
+        },
+    ): void {
+        (plugin.api as any).installedModels = vi.fn().mockImplementation((p?: { task?: string }) => {
+            if (p?.task === "vision")
+                return Promise.resolve({ models: (opts.vision ?? []).map((n) => ({ name: n, source: "native" })) });
+            if (p?.task === "rerank")
+                return Promise.resolve({ models: (opts.rerank ?? []).map((n) => ({ name: n, source: "native" })) });
+            if (p?.task === "chat") return Promise.resolve({ models: [{ name: "llama3", source: "native" }] });
+            return Promise.resolve({ models: [{ name: "nomic-embed-text", source: "native" }] });
+        });
+        (plugin.api as any).config = vi.fn().mockResolvedValue({
+            chat_model: "llama3",
+            embedding_model: "nomic-embed-text",
+            vision_model: opts.visionActive ?? null,
+            reranker_model: opts.rerankActive ?? null,
+        });
+    }
+
+    it("renders an OPTIONAL divider plus Vision and Rerank rows", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, {});
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        expect(container.find("lilbee-model-rail-divider")!.textContent).toBe("Optional");
+        const labels = container.findAll("lilbee-model-rail-label").map((l) => l.textContent);
+        expect(labels).toContain("Vision");
+        expect(labels).toContain("Rerank");
+    });
+
+    it("shows the on-ramp prompt and opens the catalog when Vision has no installed model", async () => {
+        const { CatalogModal } = await import("../../src/views/catalog-modal");
+        (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: [], rerank: [] });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const adds = container.findAll("lilbee-model-rail-add");
+        const visionAdd = adds.find((a) => a.textContent === "Add for scanned PDFs")!;
+        expect(visionAdd).toBeTruthy();
+        visionAdd.trigger("click");
+        expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "vision");
+    });
+
+    it("renders a Vision dropdown with a Browse catalog… entry when models are installed", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b", "qwen-vl"], visionActive: "llava-7b" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const select = container.find("lilbee-vision-model-select")!;
+        const optionTexts = select.options.map((o) => o.textContent);
+        expect(optionTexts.length).toBe(3);
+        expect(optionTexts[optionTexts.length - 1]).toBe("Browse catalog…");
+    });
+
+    it("fills the dot with is-active when a Vision model is active", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b"], visionActive: "llava-7b" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const visionDot = container.findAll("lilbee-model-rail-dot-vision")[0];
+        expect(visionDot.classList.contains("is-active")).toBe(true);
+    });
+
+    it("leaves the dot hollow (no is-active) when Vision is off", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b"], visionActive: "" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const visionDot = container.findAll("lilbee-model-rail-dot-vision")[0];
+        expect(visionDot.classList.contains("is-active")).toBe(false);
+    });
+
+    it("selecting a Vision model calls setVisionModel and refreshes", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b", "qwen-vl"], visionActive: "llava-7b" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const select = container.find("lilbee-vision-model-select")!;
+        select.value = "qwen-vl";
+        select.trigger("change");
+        await tick();
+
+        expect(plugin.api.setVisionModel).toHaveBeenCalledWith("qwen-vl");
+        expect(plugin.fetchActiveModel).toHaveBeenCalled();
+    });
+
+    it("selecting Browse catalog… from the Vision dropdown opens the catalog and resets the value", async () => {
+        const { CatalogModal } = await import("../../src/views/catalog-modal");
+        (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b"], visionActive: "llava-7b" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const select = container.find("lilbee-vision-model-select")!;
+        select.value = "__lilbee_browse__";
+        select.trigger("change");
+
+        expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "vision");
+        expect(plugin.api.setVisionModel).not.toHaveBeenCalled();
+        expect(select.value).toBe("llava-7b");
+    });
+
+    it("surfaces a Notice when setVisionModel fails", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b", "qwen-vl"], visionActive: "llava-7b" });
+        (plugin.api as any).setVisionModel = vi.fn().mockResolvedValue(err(new Error("boom")));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const select = container.find("lilbee-vision-model-select")!;
+        select.value = "qwen-vl";
+        select.trigger("change");
+        await tick();
+
+        expect(Notice.instances.some((n) => n.message.includes("Vision"))).toBe(true);
+    });
+
+    it("selecting a Rerank model calls setRerankerModel", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { rerank: ["bge-reranker", "jina-reranker"], rerankActive: "bge-reranker" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const select = container.find("lilbee-rerank-model-select")!;
+        select.value = "jina-reranker";
+        select.trigger("change");
+        await tick();
+
+        expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("jina-reranker");
+    });
+
+    it("Rerank on-ramp opens the catalog pre-filtered to rerank", async () => {
+        const { CatalogModal } = await import("../../src/views/catalog-modal");
+        (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+        const plugin = makePlugin();
+        configureRoles(plugin, { rerank: [] });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const adds = container.findAll("lilbee-model-rail-add");
+        const rerankAdd = adds.find((a) => a.textContent === "Add for sharper search")!;
+        rerankAdd.trigger("click");
+        expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "rerank");
+    });
+});
+
+describe("ChatView — optional rail edge cases", () => {
+    beforeEach(() => {
+        Notice.clear();
+        vi.clearAllMocks();
+    });
+
+    it("ignores a Vision change event with an empty value", async () => {
+        const plugin = makePlugin();
+        (plugin.api as any).installedModels = vi.fn().mockImplementation((p?: { task?: string }) => {
+            if (p?.task === "vision") return Promise.resolve({ models: [{ name: "llava-7b", source: "native" }] });
+            if (p?.task === "rerank") return Promise.resolve({ models: [] });
+            if (p?.task === "chat") return Promise.resolve({ models: [{ name: "llama3", source: "native" }] });
+            return Promise.resolve({ models: [{ name: "nomic-embed-text", source: "native" }] });
+        });
+        (plugin.api as any).config = vi.fn().mockResolvedValue({
+            chat_model: "llama3",
+            embedding_model: "nomic-embed-text",
+            vision_model: "llava-7b",
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const select = container.find("lilbee-vision-model-select")!;
+        select.value = "";
+        select.trigger("change");
+        await tick();
+
+        expect(plugin.api.setVisionModel).not.toHaveBeenCalled();
     });
 });

@@ -50,6 +50,47 @@ export const electronDialog = {
 
 export const VIEW_TYPE_CHAT = "lilbee-chat";
 
+/** Sentinel option value: selecting it opens the catalog instead of switching models. */
+const RAIL_BROWSE_KEY = "__lilbee_browse__";
+
+/** Static description of an optional rail role (Vision, Rerank). Dynamic state lives on the view. */
+interface OptionalRoleSpec {
+    key: "vision" | "rerank";
+    task: typeof MODEL_TASK.VISION | typeof MODEL_TASK.RERANK;
+    label: string;
+    dotClass: string;
+    selectClass: string;
+    addPrompt: string;
+    configKey: string;
+    setActive: (api: LilbeePlugin["api"], model: string) => Promise<{ isErr(): boolean }>;
+    failNotice: string;
+}
+
+const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
+    {
+        key: "vision",
+        task: MODEL_TASK.VISION,
+        label: MESSAGES.RAIL_LABEL_VISION,
+        dotClass: "lilbee-model-rail-dot-vision",
+        selectClass: "lilbee-vision-model-select",
+        addPrompt: MESSAGES.RAIL_ADD_VISION,
+        configKey: "vision_model",
+        setActive: (api, model) => api.setVisionModel(model),
+        failNotice: MESSAGES.RAIL_LABEL_VISION,
+    },
+    {
+        key: "rerank",
+        task: MODEL_TASK.RERANK,
+        label: MESSAGES.RAIL_LABEL_RERANK,
+        dotClass: "lilbee-model-rail-dot-rerank",
+        selectClass: "lilbee-rerank-model-select",
+        addPrompt: MESSAGES.RAIL_ADD_RERANK,
+        configKey: "reranker_model",
+        setActive: (api, model) => api.setRerankerModel(model),
+        failNotice: MESSAGES.RAIL_LABEL_RERANK,
+    },
+];
+
 function extractString(data: unknown, field: string): string {
     if (typeof data === "object" && data !== null && field in data) {
         return String((data as Record<string, unknown>)[field]);
@@ -82,6 +123,11 @@ export class ChatView extends ItemView {
     private ocrToggleEl: HTMLElement | null = null;
     private chatModeContainer: HTMLElement | null = null;
     private chatModeCurrent: ChatMode | null = null;
+    // Optional model roles (Vision, Rerank) surfaced in the rail. Keyed by the
+    // spec's `key`; data refreshed alongside the chat/embed selectors.
+    private optionalRailEl: HTMLElement | null = null;
+    private optionalInstalled: Record<string, InstalledModel[]> = { vision: [], rerank: [] };
+    private optionalActive: Record<string, string> = { vision: "", rerank: "" };
     private static readonly OFFLINE_THRESHOLD = 3;
     private retryTimer: ReturnType<typeof setTimeout> | null = null;
     private retryCount = 0;
@@ -155,6 +201,12 @@ export class ChatView extends ItemView {
         embedBrowseBtn.addEventListener("click", () => {
             new CatalogModal(this.app, this.plugin, MODEL_TASK.EMBEDDING).open();
         });
+
+        // Optional model roles (Vision, Rerank) under a divider — bb-72pq parity.
+        // Rows render on-ramps when no model is installed, dropdowns otherwise.
+        toolbar.createDiv({ cls: "lilbee-model-rail-divider", text: MESSAGES.RAIL_DIVIDER_OPTIONAL });
+        this.optionalRailEl = toolbar.createDiv({ cls: "lilbee-model-rail-optional" });
+        this.fillOptionalRoles();
 
         this.ocrToggleEl = toolbar.createDiv({ cls: "lilbee-ocr-toggle" });
         this.updateOcrToggle();
@@ -259,29 +311,41 @@ export class ChatView extends ItemView {
             this.plugin.api.installedModels({ task: MODEL_TASK.CHAT }).catch(() => ({ models: [] })),
             this.plugin.api.catalog({ task: MODEL_TASK.EMBEDDING }).catch(() => null),
             this.plugin.api.config().catch(() => null),
+            this.plugin.api.installedModels({ task: MODEL_TASK.VISION }).catch(() => ({ models: [] })),
+            this.plugin.api.installedModels({ task: MODEL_TASK.RERANK }).catch(() => ({ models: [] })),
         ])
-            .then(([chatCatalogResult, chatInstalled, embeddingResult, serverConfig]) => {
-                if (this.retryTimer) {
-                    clearTimeout(this.retryTimer);
-                    this.retryTimer = null;
-                }
-                this.retryCount = 0;
-                if (this.chatSelectEl) this.chatSelectEl.empty();
-                this.chatCatalogEntries = chatCatalogResult.isOk() ? chatCatalogResult.value.models : [];
-                this.chatInstalled = chatInstalled.models;
-                this.chatActive = serverConfig ? String(serverConfig["chat_model"] ?? "") : "";
-                if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl);
+            .then(
+                ([
+                    chatCatalogResult,
+                    chatInstalled,
+                    embeddingResult,
+                    serverConfig,
+                    visionInstalled,
+                    rerankInstalled,
+                ]) => {
+                    if (this.retryTimer) {
+                        clearTimeout(this.retryTimer);
+                        this.retryTimer = null;
+                    }
+                    this.retryCount = 0;
+                    if (this.chatSelectEl) this.chatSelectEl.empty();
+                    this.chatCatalogEntries = chatCatalogResult.isOk() ? chatCatalogResult.value.models : [];
+                    this.chatInstalled = chatInstalled.models;
+                    this.chatActive = serverConfig ? String(serverConfig["chat_model"] ?? "") : "";
+                    if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl);
 
-                this.fillEmbeddingSelector(embeddingResult, serverConfig);
-                this.renderChatModeToggle(serverConfig);
+                    this.fillEmbeddingSelector(embeddingResult, serverConfig);
+                    this.fillOptionalRoleData(visionInstalled.models, rerankInstalled.models, serverConfig);
+                    this.renderChatModeToggle(serverConfig);
 
-                if (this.chatInstalled.length === 0) {
-                    this.showEmptyState();
-                    this.retryTimer = setTimeout(() => this.fetchAndFillSelectors(), RETRY_INTERVAL_MS);
-                } else {
-                    this.hideEmptyState();
-                }
-            })
+                    if (this.chatInstalled.length === 0) {
+                        this.showEmptyState();
+                        this.retryTimer = setTimeout(() => this.fetchAndFillSelectors(), RETRY_INTERVAL_MS);
+                    } else {
+                        this.hideEmptyState();
+                    }
+                },
+            )
             .catch(() => {
                 this.retryCount++;
                 const connecting = this.retryCount < ChatView.OFFLINE_THRESHOLD;
@@ -478,6 +542,82 @@ export class ChatView extends ItemView {
                 new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
                 this.plugin.refreshSettingsTab();
                 void this.plugin.triggerSync();
+            });
+        });
+    }
+
+    /** Store the latest installed lists + active models for the optional roles, then re-render. */
+    private fillOptionalRoleData(
+        visionInstalled: InstalledModel[],
+        rerankInstalled: InstalledModel[],
+        serverConfig: Record<string, unknown> | null,
+    ): void {
+        this.optionalInstalled.vision = visionInstalled;
+        this.optionalInstalled.rerank = rerankInstalled;
+        this.optionalActive.vision = serverConfig ? String(serverConfig["vision_model"] ?? "") : "";
+        this.optionalActive.rerank = serverConfig ? String(serverConfig["reranker_model"] ?? "") : "";
+        this.fillOptionalRoles();
+    }
+
+    /** Rebuild the optional (Vision, Rerank) rail rows from current installed/active state. */
+    private fillOptionalRoles(): void {
+        /* v8 ignore next 2 */
+        if (!this.optionalRailEl) return;
+        this.optionalRailEl.empty();
+        for (const spec of OPTIONAL_ROLE_SPECS) {
+            this.renderOptionalRoleRow(this.optionalRailEl, spec);
+        }
+    }
+
+    private renderOptionalRoleRow(rail: HTMLElement, spec: OptionalRoleSpec): void {
+        const installed = this.optionalInstalled[spec.key];
+        const active = this.optionalActive[spec.key];
+        const row = rail.createDiv({ cls: "lilbee-model-rail-row is-optional" });
+        const dot = row.createDiv({ cls: `lilbee-model-rail-dot ${spec.dotClass}` });
+        if (active) dot.addClass("is-active");
+        row.createDiv({ cls: "lilbee-model-rail-label", text: spec.label });
+
+        if (installed.length === 0) {
+            // On-ramp: no model installed yet. Clicking opens the catalog
+            // pre-filtered to this role so the user can download one.
+            const add = row.createDiv({ cls: "lilbee-model-rail-add", text: spec.addPrompt });
+            add.addEventListener("click", () => {
+                new CatalogModal(this.app, this.plugin, spec.task).open();
+            });
+            return;
+        }
+
+        const select = row.createEl("select", {
+            cls: `lilbee-model-rail-value ${spec.selectClass}`,
+        }) as HTMLSelectElement;
+        for (const model of installed) {
+            const option = select.createEl("option", { text: displayLabelForRef(model.name) });
+            (option as HTMLOptionElement).value = model.name;
+            if (model.name === active) (option as HTMLOptionElement).selected = true;
+        }
+        const browse = select.createEl("option", { text: MESSAGES.RAIL_BROWSE_CATALOG });
+        (browse as HTMLOptionElement).value = RAIL_BROWSE_KEY;
+        this.attachOptionalRoleListener(select, spec);
+    }
+
+    private attachOptionalRoleListener(el: HTMLSelectElement, spec: OptionalRoleSpec): void {
+        el.addEventListener("change", () => {
+            if (el.value === RAIL_BROWSE_KEY) {
+                new CatalogModal(this.app, this.plugin, spec.task).open();
+                // Reset selection so reopening the catalog stays possible.
+                el.value = this.optionalActive[spec.key];
+                return;
+            }
+            if (!el.value) return;
+            void spec.setActive(this.plugin.api, el.value).then((result) => {
+                if (result.isErr()) {
+                    new Notice(MESSAGES.NOTICE_FAILED_UPDATE(spec.failNotice));
+                    return;
+                }
+                this.optionalActive[spec.key] = el.value;
+                this.fillOptionalRoles();
+                this.plugin.fetchActiveModel();
+                this.plugin.refreshSettingsTab();
             });
         });
     }
