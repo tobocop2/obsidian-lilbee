@@ -8,6 +8,7 @@ import {
     MANAGED_PHASE,
     SERVER_MODE,
     SERVER_STATE,
+    SETUP_OUTCOME,
     SSE_EVENT,
     WIZARD_STEP,
     ERROR_NAME,
@@ -391,20 +392,21 @@ export class SetupWizard extends Modal {
         const statusEl = step.createDiv({ cls: "lilbee-wizard-status" });
         const { panel, setPhase } = this.renderServerSetupPanel(step);
 
-        managedOption.addEventListener("click", () => {
+        const selectManaged = (): void => {
             mode = SERVER_MODE.MANAGED;
             managedOption.classList.add("selected");
             externalOption.classList.remove("selected");
             externalFields.style.display = "none";
             statusEl.textContent = "";
-        });
-
-        externalOption.addEventListener("click", () => {
+        };
+        const selectExternal = (): void => {
             mode = SERVER_MODE.EXTERNAL;
             externalOption.classList.add("selected");
             managedOption.classList.remove("selected");
             externalFields.style.display = "";
-        });
+        };
+        managedOption.addEventListener("click", selectManaged);
+        externalOption.addEventListener("click", selectExternal);
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
         const backBtn = actions.createEl("button", { text: MESSAGES.BUTTON_BACK });
@@ -417,7 +419,7 @@ export class SetupWizard extends Modal {
             if (mode === SERVER_MODE.MANAGED) {
                 this.plugin.settings.serverMode = SERVER_MODE.MANAGED;
                 nextBtn.disabled = true;
-                void this.startManagedAndAdvance(step, panel, setPhase, statusEl, nextBtn);
+                void this.startManagedAndAdvance(step, panel, setPhase, statusEl, nextBtn, selectExternal);
             } else {
                 this.plugin.settings.serverUrl = String(urlInput.value || "").trim() || "http://127.0.0.1:7433";
                 this.plugin.settings.manualToken = String(tokenInput.value || "").trim();
@@ -435,26 +437,44 @@ export class SetupWizard extends Modal {
         setPhase: (phase: ManagedServerProgressPhase, message?: string) => void,
         statusEl: HTMLElement,
         nextBtn: HTMLElement,
+        selectExternal: () => void,
     ): Promise<void> {
-        panel.style.display = "";
-        step.querySelector<HTMLElement>(".lilbee-wizard-rail")?.classList.add("is-active");
-        setPhase(MANAGED_PHASE.DOWNLOADING);
         statusEl.textContent = "";
 
-        // Hard gate: the wizard must not advance unless the server is actually
-        // serving. startManagedServer swallows download/start failures (it
-        // emits an error phase and resolves rather than throwing), so resolve
-        // alone is not proof of a live server — we only advance if no error
-        // phase was observed.
+        // The setup panel only reveals once the download/start actually begins,
+        // so it stays hidden behind the consent modal while the user decides.
+        let panelShown = false;
         let failed = false;
-        try {
-            await this.plugin.saveSettings();
-            if (!this.plugin.serverManager) {
-                await this.plugin.startManagedServer((event) => {
-                    setPhase(event.phase, event.message);
-                    if (event.phase === MANAGED_PHASE.ERROR) failed = true;
-                });
+        const onProgress = (event: { phase: ManagedServerProgressPhase; message?: string }): void => {
+            if (!panelShown) {
+                panel.style.display = "";
+                step.querySelector<HTMLElement>(".lilbee-wizard-rail")?.classList.add("is-active");
+                panelShown = true;
             }
+            setPhase(event.phase, event.message);
+            if (event.phase === MANAGED_PHASE.ERROR) failed = true;
+        };
+
+        try {
+            const outcome = await this.plugin.ensureManagedConsentThenStart(onProgress);
+
+            if (outcome.kind === SETUP_OUTCOME.SWITCHED_TO_EXTERNAL) {
+                // User chose External from the consent modal: reveal the
+                // external URL/token fields so they can finish via that path.
+                panel.style.display = "none";
+                selectExternal();
+                (nextBtn as HTMLButtonElement).disabled = false;
+                return;
+            }
+            if (outcome.kind === SETUP_OUTCOME.CANCELED) {
+                panel.style.display = "none";
+                (nextBtn as HTMLButtonElement).disabled = false;
+                return;
+            }
+
+            // STARTED. The gate swallows download/start failures (emits an error
+            // phase and resolves), so resolve alone is not proof of a live
+            // server — only advance if no error phase was observed.
             if (failed) {
                 statusEl.textContent = MESSAGES.ERROR_START_SERVER;
                 (nextBtn as HTMLButtonElement).disabled = false;
