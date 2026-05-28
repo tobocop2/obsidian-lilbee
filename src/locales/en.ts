@@ -839,13 +839,10 @@ export const MESSAGES = {
     NOTICE_SWITCHED_TO_EXTERNAL: "Switched to external mode. Set your server URL in Settings to connect.",
 
     // Chat-view model rail
-    RAIL_DIVIDER_OPTIONAL: "Optional",
     RAIL_LABEL_CHAT: "Chat",
     RAIL_LABEL_EMBED: "Embed",
     RAIL_LABEL_VISION: "Vision",
     RAIL_LABEL_RERANK: "Rerank",
-    RAIL_ADD_VISION: "Add for scanned PDFs",
-    RAIL_ADD_RERANK: "Add for sharper search",
     RAIL_BROWSE_CATALOG: "Browse catalog…",
 } as const;
 

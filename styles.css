@@ -137,12 +137,23 @@
 
 .lilbee-chat-toolbar {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     gap: var(--size-4-2, 8px);
     padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
     border-bottom: 1px solid var(--background-modifier-border);
     background-color: var(--background-secondary);
     flex-shrink: 0;
+}
+
+/* Control strip beneath the model rail: mode toggle(s) on the left, save/clear
+   on the right, set off by a hairline. */
+.lilbee-chat-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    padding-top: var(--size-4-2, 8px);
+    border-top: 1px solid var(--background-modifier-border);
 }
 
 .lilbee-chat-toolbar button {
@@ -260,7 +271,9 @@
     height: 8px;
     border-radius: 50%;
     background-color: var(--text-muted);
-    transition: box-shadow 200ms ease, background-color 200ms ease;
+    transition:
+        box-shadow 200ms ease,
+        background-color 200ms ease;
 }
 
 .lilbee-server-dot.is-ready {
@@ -478,7 +491,9 @@
 }
 
 @keyframes lilbee-spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .lilbee-empty-state {
@@ -705,8 +720,12 @@
     margin-left: 8px;
 }
 
-.lilbee-health-ok { color: var(--text-success); }
-.lilbee-health-error { color: var(--text-error); }
+.lilbee-health-ok {
+    color: var(--text-success);
+}
+.lilbee-health-error {
+    color: var(--text-error);
+}
 
 .lilbee-status-downloading {
     color: var(--text-on-accent) !important;
@@ -717,8 +736,13 @@
 }
 
 @keyframes lilbee-pill-breathe {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.72; }
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.72;
+    }
 }
 
 .lilbee-health-dot {
@@ -728,7 +752,9 @@
     border-radius: 50%;
     background-color: var(--text-muted);
     vertical-align: middle;
-    transition: box-shadow 200ms ease, background-color 200ms ease;
+    transition:
+        box-shadow 200ms ease,
+        background-color 200ms ease;
 }
 
 .lilbee-health-dot.is-ok {
@@ -876,7 +902,6 @@
     font-size: var(--font-small, 13px);
 }
 
-
 /* Card Grid Layout — Editorial Spec
  * Cards present a model the way a magazine specimen sheet would: a left rail
  * (3px) signals hardware fit, the name owns the top, monospace specs read as
@@ -902,7 +927,10 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    transition: border-color 160ms ease, transform 160ms ease, background-color 160ms ease;
+    transition:
+        border-color 160ms ease,
+        transform 160ms ease,
+        background-color 160ms ease;
 }
 
 .lilbee-model-card:hover {
@@ -910,14 +938,24 @@
     transform: translateY(-1px);
 }
 
-.lilbee-model-card.is-fits { --rail: var(--color-green, #4cb37b); }
-.lilbee-model-card.is-tight { --rail: var(--color-orange, #d49340); }
-.lilbee-model-card.is-wont-run { --rail: var(--color-red, #c8392f); }
+.lilbee-model-card.is-fits {
+    --rail: var(--color-green, #4cb37b);
+}
+.lilbee-model-card.is-tight {
+    --rail: var(--color-orange, #d49340);
+}
+.lilbee-model-card.is-wont-run {
+    --rail: var(--color-red, #c8392f);
+}
 
 /* Unsupported models read as dimmed so they're visually de-emphasised against
  * runnable ones; hover lifts the dim a little so the card stays inspectable. */
-.lilbee-model-card.is-unsupported { opacity: 0.55; }
-.lilbee-model-card.is-unsupported:hover { opacity: 0.85; }
+.lilbee-model-card.is-unsupported {
+    opacity: 0.55;
+}
+.lilbee-model-card.is-unsupported:hover {
+    opacity: 0.85;
+}
 
 .lilbee-model-card.is-selected {
     --rail: var(--interactive-accent);
@@ -967,7 +1005,9 @@
     font-style: italic;
     line-height: 1;
     padding: 0;
-    transition: color 120ms ease, background-color 120ms ease;
+    transition:
+        color 120ms ease,
+        background-color 120ms ease;
 }
 
 .lilbee-model-card-info:hover {
@@ -998,10 +1038,22 @@
     line-height: 1.5;
 }
 
-.lilbee-tag-task.is-chat { color: color-mix(in srgb, var(--interactive-accent) 80%, white); background: color-mix(in srgb, var(--interactive-accent) 14%, transparent); }
-.lilbee-tag-task.is-embed { color: color-mix(in srgb, var(--color-green, #4cb37b) 90%, white); background: color-mix(in srgb, var(--color-green, #4cb37b) 14%, transparent); }
-.lilbee-tag-task.is-vision { color: color-mix(in srgb, var(--color-orange, #d49340) 90%, white); background: color-mix(in srgb, var(--color-orange, #d49340) 14%, transparent); }
-.lilbee-tag-task.is-rerank { color: rgb(136, 200, 231); background: color-mix(in srgb, rgb(56, 160, 212) 14%, transparent); }
+.lilbee-tag-task.is-chat {
+    color: color-mix(in srgb, var(--interactive-accent) 80%, white);
+    background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+}
+.lilbee-tag-task.is-embed {
+    color: color-mix(in srgb, var(--color-green, #4cb37b) 90%, white);
+    background: color-mix(in srgb, var(--color-green, #4cb37b) 14%, transparent);
+}
+.lilbee-tag-task.is-vision {
+    color: color-mix(in srgb, var(--color-orange, #d49340) 90%, white);
+    background: color-mix(in srgb, var(--color-orange, #d49340) 14%, transparent);
+}
+.lilbee-tag-task.is-rerank {
+    color: rgb(136, 200, 231);
+    background: color-mix(in srgb, rgb(56, 160, 212) 14%, transparent);
+}
 
 .lilbee-tag-featured {
     background: var(--interactive-accent);
@@ -1136,10 +1188,15 @@
     font-weight: 600;
     letter-spacing: 0.02em;
     cursor: pointer;
-    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+    transition:
+        background-color 120ms ease,
+        border-color 120ms ease,
+        color 120ms ease;
 }
 
-.lilbee-btn:hover { background: var(--background-modifier-hover); }
+.lilbee-btn:hover {
+    background: var(--background-modifier-hover);
+}
 
 .lilbee-btn-primary {
     background: var(--interactive-accent);
@@ -1240,7 +1297,6 @@
     font-style: italic;
 }
 
-
 /* Section Headings */
 
 .lilbee-catalog-section-heading {
@@ -1303,8 +1359,12 @@
     background: var(--background-modifier-hover);
 }
 
-.lilbee-catalog-list-row.is-unsupported { opacity: 0.55; }
-.lilbee-catalog-list-row.is-unsupported:hover { opacity: 0.85; }
+.lilbee-catalog-list-row.is-unsupported {
+    opacity: 0.55;
+}
+.lilbee-catalog-list-row.is-unsupported:hover {
+    opacity: 0.85;
+}
 
 .lilbee-catalog-list-col-name .lilbee-tag-compat {
     margin-left: 6px;
@@ -1682,12 +1742,24 @@
     animation: lilbee-pulse 1.4s infinite;
 }
 
-.lilbee-thinking-dot:nth-child(2) { animation-delay: 0.2s; }
-.lilbee-thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+.lilbee-thinking-dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+.lilbee-thinking-dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
 
 @keyframes lilbee-pulse {
-    0%, 80%, 100% { opacity: 0.5; transform: scale(0.8); }
-    40% { opacity: 1; transform: scale(1); }
+    0%,
+    80%,
+    100% {
+        opacity: 0.5;
+        transform: scale(0.8);
+    }
+    40% {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 /* Server Defaults (read-only config display) */
@@ -1728,14 +1800,30 @@
     padding: var(--size-4-4, 16px) var(--size-4-4, 16px) var(--size-4-4, 16px) var(--size-4-6, 24px);
 }
 
-.lilbee-wizard-step[data-step="welcome"]   { --wizard-step-color: var(--lilbee-color-setup); }
-.lilbee-wizard-step[data-step="server"]    { --wizard-step-color: var(--interactive-accent); }
-.lilbee-wizard-step[data-step="model"]     { --wizard-step-color: var(--lilbee-color-pull); }
-.lilbee-wizard-step[data-step="embedding"] { --wizard-step-color: var(--lilbee-color-download); }
-.lilbee-wizard-step[data-step="vision"]    { --wizard-step-color: var(--lilbee-color-vision); }
-.lilbee-wizard-step[data-step="sync"]      { --wizard-step-color: var(--lilbee-color-sync); }
-.lilbee-wizard-step[data-step="wiki"]      { --wizard-step-color: var(--lilbee-color-wiki); }
-.lilbee-wizard-step[data-step="done"]      { --wizard-step-color: var(--text-success, #22c55e); }
+.lilbee-wizard-step[data-step="welcome"] {
+    --wizard-step-color: var(--lilbee-color-setup);
+}
+.lilbee-wizard-step[data-step="server"] {
+    --wizard-step-color: var(--interactive-accent);
+}
+.lilbee-wizard-step[data-step="model"] {
+    --wizard-step-color: var(--lilbee-color-pull);
+}
+.lilbee-wizard-step[data-step="embedding"] {
+    --wizard-step-color: var(--lilbee-color-download);
+}
+.lilbee-wizard-step[data-step="vision"] {
+    --wizard-step-color: var(--lilbee-color-vision);
+}
+.lilbee-wizard-step[data-step="sync"] {
+    --wizard-step-color: var(--lilbee-color-sync);
+}
+.lilbee-wizard-step[data-step="wiki"] {
+    --wizard-step-color: var(--lilbee-color-wiki);
+}
+.lilbee-wizard-step[data-step="done"] {
+    --wizard-step-color: var(--text-success, #22c55e);
+}
 
 /* Left-edge rail — mirrors Task Center's .lilbee-task-rail, same radius, same
  * width, same pulse keyframe. Becomes the direct visual bridge to the Task
@@ -1791,14 +1879,30 @@
     transition: all 250ms ease;
 }
 
-.lilbee-wizard-step-slot[data-step="welcome"]   .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-setup); }
-.lilbee-wizard-step-slot[data-step="server"]    .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--interactive-accent); }
-.lilbee-wizard-step-slot[data-step="model"]     .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-pull); }
-.lilbee-wizard-step-slot[data-step="embedding"] .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-download); }
-.lilbee-wizard-step-slot[data-step="vision"]    .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-vision); }
-.lilbee-wizard-step-slot[data-step="sync"]      .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-sync); }
-.lilbee-wizard-step-slot[data-step="wiki"]      .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--lilbee-color-wiki); }
-.lilbee-wizard-step-slot[data-step="done"]      .lilbee-wizard-step-circle.is-active { --wizard-step-color: var(--text-success, #22c55e); }
+.lilbee-wizard-step-slot[data-step="welcome"] .lilbee-wizard-step-circle.is-active {
+    --wizard-step-color: var(--lilbee-color-setup);
+}
+.lilbee-wizard-step-slot[data-step="server"] .lilbee-wizard-step-circle.is-active {
+    --wizard-step-color: var(--interactive-accent);
+}
+.lilbee-wizard-step-slot[data-step="model"] .lilbee-wizard-step-circle.is-active {
+    --wizard-step-color: var(--lilbee-color-pull);
+}
+.lilbee-wizard-step-slot[data-step="embedding"] .lilbee-wizard-step-circle.is-active {
+    --wizard-step-color: var(--lilbee-color-download);
+}
+.lilbee-wizard-step-slot[data-step="vision"] .lilbee-wizard-step-circle.is-active {
+    --wizard-step-color: var(--lilbee-color-vision);
+}
+.lilbee-wizard-step-slot[data-step="sync"] .lilbee-wizard-step-circle.is-active {
+    --wizard-step-color: var(--lilbee-color-sync);
+}
+.lilbee-wizard-step-slot[data-step="wiki"] .lilbee-wizard-step-circle.is-active {
+    --wizard-step-color: var(--lilbee-color-wiki);
+}
+.lilbee-wizard-step-slot[data-step="done"] .lilbee-wizard-step-circle.is-active {
+    --wizard-step-color: var(--text-success, #22c55e);
+}
 
 .lilbee-wizard-step-circle.is-active {
     background-color: var(--wizard-step-color, var(--interactive-accent));
@@ -1905,7 +2009,11 @@
     padding: 14px 16px;
     margin-bottom: var(--size-4-2, 8px);
     cursor: pointer;
-    transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+    transition:
+        border-color 150ms ease,
+        background-color 150ms ease,
+        box-shadow 150ms ease,
+        transform 150ms ease;
     background-color: var(--background-secondary);
 }
 
@@ -2043,7 +2151,10 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     cursor: pointer;
-    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+    transition:
+        background-color 150ms ease,
+        border-color 150ms ease,
+        color 150ms ease;
     flex-shrink: 0;
 }
 
@@ -2320,7 +2431,9 @@
     font-size: var(--font-text-size, 15px);
     outline: none;
     box-sizing: border-box;
-    transition: border-color 150ms ease, box-shadow 150ms ease;
+    transition:
+        border-color 150ms ease,
+        box-shadow 150ms ease;
     font-variant-numeric: tabular-nums;
 }
 
@@ -2403,7 +2516,9 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
     user-select: none;
-    transition: color 150ms ease, background-color 150ms ease;
+    transition:
+        color 150ms ease,
+        background-color 150ms ease;
 }
 
 .lilbee-wizard-wiki-tradeoffs > summary::marker {
@@ -2431,7 +2546,6 @@
 .lilbee-wizard-url-input:focus {
     border-color: var(--interactive-accent);
 }
-
 
 .lilbee-tasks-container {
     display: flex;
@@ -2508,7 +2622,9 @@
     margin-bottom: 6px;
     background-color: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
-    transition: border-color 150ms ease, background-color 400ms ease;
+    transition:
+        border-color 150ms ease,
+        background-color 400ms ease;
     position: relative;
     overflow: hidden;
 }
@@ -2531,7 +2647,8 @@
 }
 
 @keyframes lilbee-rail-pulse {
-    0%, 100% {
+    0%,
+    100% {
         background-color: var(--interactive-accent);
         opacity: 1;
     }
@@ -2597,8 +2714,15 @@
 }
 
 @keyframes lilbee-dot-pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.5; transform: scale(0.85); }
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.5;
+        transform: scale(0.85);
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2677,14 +2801,38 @@
     flex-shrink: 0;
 }
 
-.lilbee-task-badge-sync { background-color: color-mix(in srgb, var(--lilbee-color-sync) 12%, transparent); color: var(--lilbee-color-sync); }
-.lilbee-task-badge-add { background-color: color-mix(in srgb, var(--lilbee-color-add) 12%, transparent); color: var(--lilbee-color-add); }
-.lilbee-task-badge-pull { background-color: color-mix(in srgb, var(--lilbee-color-pull) 12%, transparent); color: var(--lilbee-color-pull); }
-.lilbee-task-badge-crawl { background-color: color-mix(in srgb, var(--lilbee-color-crawl) 12%, transparent); color: var(--lilbee-color-crawl); }
-.lilbee-task-badge-download { background-color: color-mix(in srgb, var(--lilbee-color-download) 12%, transparent); color: var(--lilbee-color-download); }
-.lilbee-task-badge-wiki { background-color: color-mix(in srgb, var(--lilbee-color-wiki) 12%, transparent); color: var(--lilbee-color-wiki); }
-.lilbee-task-badge-delete { background-color: color-mix(in srgb, var(--lilbee-color-delete) 12%, transparent); color: var(--lilbee-color-delete); }
-.lilbee-task-badge-setup { background-color: color-mix(in srgb, var(--lilbee-color-setup) 12%, transparent); color: var(--lilbee-color-setup); }
+.lilbee-task-badge-sync {
+    background-color: color-mix(in srgb, var(--lilbee-color-sync) 12%, transparent);
+    color: var(--lilbee-color-sync);
+}
+.lilbee-task-badge-add {
+    background-color: color-mix(in srgb, var(--lilbee-color-add) 12%, transparent);
+    color: var(--lilbee-color-add);
+}
+.lilbee-task-badge-pull {
+    background-color: color-mix(in srgb, var(--lilbee-color-pull) 12%, transparent);
+    color: var(--lilbee-color-pull);
+}
+.lilbee-task-badge-crawl {
+    background-color: color-mix(in srgb, var(--lilbee-color-crawl) 12%, transparent);
+    color: var(--lilbee-color-crawl);
+}
+.lilbee-task-badge-download {
+    background-color: color-mix(in srgb, var(--lilbee-color-download) 12%, transparent);
+    color: var(--lilbee-color-download);
+}
+.lilbee-task-badge-wiki {
+    background-color: color-mix(in srgb, var(--lilbee-color-wiki) 12%, transparent);
+    color: var(--lilbee-color-wiki);
+}
+.lilbee-task-badge-delete {
+    background-color: color-mix(in srgb, var(--lilbee-color-delete) 12%, transparent);
+    color: var(--lilbee-color-delete);
+}
+.lilbee-task-badge-setup {
+    background-color: color-mix(in srgb, var(--lilbee-color-setup) 12%, transparent);
+    color: var(--lilbee-color-setup);
+}
 
 .lilbee-task-name {
     font-size: var(--font-small, 13px);
@@ -2770,12 +2918,18 @@
 }
 
 @keyframes lilbee-task-indeterminate {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
 }
 
 .side-dock-ribbon-action.lilbee-ribbon-icon svg {
-    transition: color 180ms ease, filter 220ms ease;
+    transition:
+        color 180ms ease,
+        filter 220ms ease;
 }
 
 .side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-active svg {
@@ -2784,7 +2938,8 @@
 }
 
 @keyframes lilbee-ribbon-icon-pulse {
-    0%, 100% {
+    0%,
+    100% {
         filter: drop-shadow(0 0 2px color-mix(in srgb, var(--interactive-accent) 55%, transparent));
     }
     50% {
@@ -3204,11 +3359,21 @@
     color: #fff;
 }
 
-.lilbee-lint-valid { background-color: #22c55e; }
-.lilbee-lint-stale { background-color: #eab308; }
-.lilbee-lint-deleted { background-color: #ef4444; }
-.lilbee-lint-missing { background-color: #f97316; }
-.lilbee-lint-model { background-color: #3b82f6; }
+.lilbee-lint-valid {
+    background-color: #22c55e;
+}
+.lilbee-lint-stale {
+    background-color: #eab308;
+}
+.lilbee-lint-deleted {
+    background-color: #ef4444;
+}
+.lilbee-lint-missing {
+    background-color: #f97316;
+}
+.lilbee-lint-model {
+    background-color: #3b82f6;
+}
 
 .lilbee-lint-detail {
     color: var(--text-muted);
@@ -3285,7 +3450,6 @@
     flex-direction: column;
     height: 100%;
 }
-
 
 .lilbee-preview-header {
     font-family: var(--font-monospace);
@@ -3375,7 +3539,6 @@
     color: var(--text-on-accent, var(--text-normal));
     border-left: 3px solid var(--text-error);
 }
-
 
 /* tui-quality-sweep additions —
    Banner, Local|Frontier tabs, frontier rows, key-status pills, model picker. */
@@ -3768,85 +3931,91 @@
 }
 
 /* ============================================================
-   Optional model rail (Vision, Rerank) — bb-72pq parity
+   Model rail — four roles as content-sized chips that wrap (bb-72pq parity)
    ============================================================ */
-.lilbee-model-rail-divider {
-    font-size: 9.5px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: var(--text-faint);
-    padding: 6px 4px 2px;
-}
-
-.lilbee-model-rail-optional {
+.lilbee-model-rail {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.lilbee-model-rail-row {
-    display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
-    padding: 4px 4px;
-    border-radius: 6px;
+    gap: 6px;
 }
 
-.lilbee-model-rail-row:hover {
-    background: var(--background-modifier-hover);
+/* The optional container holds the Vision/Rerank chips but participates in the
+   rail's flex flow directly, so all four chips wrap together as one group. */
+.lilbee-model-rail-optional {
+    display: contents;
 }
 
-.lilbee-model-rail-dot {
-    width: 9px;
-    height: 9px;
+/* A chip: colored dot · label · model picker. Sizes to its content; off roles
+   stay compact instead of stretching. */
+.lilbee-model-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 1 auto;
+    min-width: 0;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 7px;
+    padding: 3px 7px;
+}
+
+.lilbee-model-chip.is-off {
+    border-style: dashed;
+}
+
+.lilbee-model-chip-dot {
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     flex: 0 0 auto;
     border: 1.5px solid var(--text-faint);
     background: transparent;
 }
 
-.lilbee-model-rail-dot.is-active {
+.lilbee-model-chip-dot.is-active {
     border-color: transparent;
 }
 
-.lilbee-model-rail-dot-vision.is-active {
+.lilbee-model-chip-dot.is-chat.is-active {
+    background: var(--lilbee-color-pull);
+}
+.lilbee-model-chip-dot.is-embed.is-active {
+    background: #2dd4bf;
+}
+.lilbee-model-chip-dot.is-vision.is-active {
     background: var(--lilbee-color-vision);
 }
-
-.lilbee-model-rail-dot-rerank.is-active {
+.lilbee-model-chip-dot.is-rerank.is-active {
     background: #f59e0b;
 }
 
-.lilbee-model-rail-label {
-    width: 48px;
-    flex: 0 0 auto;
+.lilbee-model-chip-label {
     font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    color: var(--text-muted);
-}
-
-.lilbee-model-rail-value {
-    flex: 1;
-    min-width: 0;
-    font-size: 12px;
-}
-
-.lilbee-model-rail-add {
-    flex: 1;
-    min-width: 0;
-    font-size: 11.5px;
-    color: var(--text-muted);
-    border: 1px dashed var(--background-modifier-border);
-    border-radius: 6px;
-    padding: 4px 8px;
-    cursor: pointer;
-    transition: color 120ms ease, border-color 120ms ease;
-}
-
-.lilbee-model-rail-row.is-optional .lilbee-model-rail-add:hover {
-    border-color: var(--lilbee-color-vision);
+    font-weight: 600;
     color: var(--text-normal);
+    flex: 0 0 auto;
+}
+
+.lilbee-model-chip.is-off .lilbee-model-chip-label {
+    color: var(--text-faint);
+}
+
+/* The select shows just the model name, borderless inside the chip, and
+   truncates — overriding the 150px cap the old horizontal toolbar used. */
+.lilbee-model-chip-select {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 130px;
+    font-size: 11px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 0;
+}
+
+.lilbee-model-chip .lilbee-embed-browse {
+    flex: 0 0 auto;
 }
 
 /* ============================================================
@@ -3878,8 +4047,15 @@
 }
 
 @keyframes lilbee-consent-pulse {
-    0%, 100% { opacity: 0.55; transform: scale(1); }
-    50% { opacity: 1; transform: scale(1.08); }
+    0%,
+    100% {
+        opacity: 0.55;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.08);
+    }
 }
 
 .lilbee-managed-consent-bee-mark {
@@ -3926,7 +4102,9 @@
 .lilbee-managed-consent-card-managed {
     border-color: rgba(124, 58, 237, 0.65);
     background: linear-gradient(180deg, rgba(124, 58, 237, 0.1), rgba(124, 58, 237, 0.02));
-    box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.25), 0 8px 26px rgba(124, 58, 237, 0.18);
+    box-shadow:
+        0 0 0 1px rgba(124, 58, 237, 0.25),
+        0 8px 26px rgba(124, 58, 237, 0.18);
     cursor: default;
 }
 
