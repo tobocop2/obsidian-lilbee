@@ -3766,3 +3766,304 @@
     font-size: var(--font-smallest, 10px);
     overflow-wrap: anywhere;
 }
+
+/* ============================================================
+   Optional model rail (Vision, Rerank) — bb-72pq parity
+   ============================================================ */
+.lilbee-model-rail-divider {
+    font-size: 9.5px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    padding: 6px 4px 2px;
+}
+
+.lilbee-model-rail-optional {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.lilbee-model-rail-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 4px;
+    border-radius: 6px;
+}
+
+.lilbee-model-rail-row:hover {
+    background: var(--background-modifier-hover);
+}
+
+.lilbee-model-rail-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    border: 1.5px solid var(--text-faint);
+    background: transparent;
+}
+
+.lilbee-model-rail-dot.is-active {
+    border-color: transparent;
+}
+
+.lilbee-model-rail-dot-vision.is-active {
+    background: var(--lilbee-color-vision);
+}
+
+.lilbee-model-rail-dot-rerank.is-active {
+    background: #f59e0b;
+}
+
+.lilbee-model-rail-label {
+    width: 48px;
+    flex: 0 0 auto;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--text-muted);
+}
+
+.lilbee-model-rail-value {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+}
+
+.lilbee-model-rail-add {
+    flex: 1;
+    min-width: 0;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    border: 1px dashed var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: color 120ms ease, border-color 120ms ease;
+}
+
+.lilbee-model-rail-row.is-optional .lilbee-model-rail-add:hover {
+    border-color: var(--lilbee-color-vision);
+    color: var(--text-normal);
+}
+
+/* ============================================================
+   Managed-mode consent modal
+   ============================================================ */
+.lilbee-managed-consent {
+    --consent-accent: #7c3aed;
+}
+
+.lilbee-managed-consent-head {
+    text-align: center;
+    padding: 4px 4px 0;
+}
+
+.lilbee-managed-consent-bee {
+    position: relative;
+    width: 46px;
+    height: 46px;
+    margin: 0 auto 12px;
+}
+
+.lilbee-managed-consent-bee-glow {
+    position: absolute;
+    inset: -14px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(124, 58, 237, 0.55), rgba(124, 58, 237, 0) 68%);
+    filter: blur(2px);
+    animation: lilbee-consent-pulse 3.4s ease-in-out infinite;
+}
+
+@keyframes lilbee-consent-pulse {
+    0%, 100% { opacity: 0.55; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.08); }
+}
+
+.lilbee-managed-consent-bee-mark {
+    position: relative;
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+    background: linear-gradient(145deg, #2a2150, #1c1830);
+    border: 1px solid rgba(124, 58, 237, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--consent-accent);
+}
+
+.lilbee-managed-consent-title {
+    font-size: 18px;
+    font-weight: 650;
+    color: var(--text-normal);
+}
+
+.lilbee-managed-consent-subtitle {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.lilbee-managed-consent-paths {
+    display: flex;
+    gap: 12px;
+    padding: 18px 0 6px;
+}
+
+.lilbee-managed-consent-card {
+    flex: 1;
+    border-radius: 10px;
+    padding: 14px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    position: relative;
+    cursor: pointer;
+}
+
+.lilbee-managed-consent-card-managed {
+    border-color: rgba(124, 58, 237, 0.65);
+    background: linear-gradient(180deg, rgba(124, 58, 237, 0.1), rgba(124, 58, 237, 0.02));
+    box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.25), 0 8px 26px rgba(124, 58, 237, 0.18);
+    cursor: default;
+}
+
+.lilbee-managed-consent-pill {
+    position: absolute;
+    top: -9px;
+    left: 14px;
+    font-size: 9.5px;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    background: var(--consent-accent);
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 9px;
+    font-weight: 700;
+}
+
+.lilbee-managed-consent-card h4 {
+    margin: 2px 0 6px;
+    font-size: 14px;
+    color: var(--text-normal);
+}
+
+.lilbee-managed-consent-card-desc {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-muted);
+    margin: 0 0 11px;
+}
+
+.lilbee-managed-consent-prov {
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: var(--font-monospace);
+}
+
+.lilbee-managed-consent-prov-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 9.5px;
+    letter-spacing: 1.1px;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 6px;
+    font-family: var(--font-interface);
+}
+
+.lilbee-managed-consent-gh {
+    display: inline-flex;
+    width: 13px;
+    height: 13px;
+    color: var(--text-faint);
+}
+
+.lilbee-managed-consent-prov-repo {
+    font-size: 12px;
+    color: var(--text-normal);
+    font-weight: 600;
+}
+
+.lilbee-managed-consent-prov-repo a {
+    color: inherit;
+    text-decoration: none;
+    border-bottom: 1px dotted var(--text-faint);
+}
+
+.lilbee-managed-consent-prov-at {
+    color: var(--consent-accent);
+    font-weight: 500;
+}
+
+.lilbee-managed-consent-prov-asset {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.lilbee-managed-consent-prov-asset-size {
+    color: var(--text-faint);
+}
+
+.lilbee-managed-consent-prov-notes {
+    display: inline-block;
+    margin-top: 7px;
+    font-size: 10.5px;
+    color: var(--consent-accent);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--consent-accent);
+    font-family: var(--font-interface);
+}
+
+.lilbee-managed-consent-prov-pending,
+.lilbee-managed-consent-prov-failed {
+    font-size: 11px;
+    color: var(--text-faint);
+}
+
+.lilbee-managed-consent-card-ins {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-top: 8px;
+}
+
+.lilbee-managed-consent-install-link {
+    color: var(--consent-accent);
+    border-bottom: 1px dotted var(--consent-accent);
+}
+
+.lilbee-managed-consent-card-hint {
+    font-size: 10.5px;
+    color: var(--text-faint);
+    margin-top: 6px;
+}
+
+.lilbee-managed-consent-foot {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 14px 0 4px;
+    justify-content: flex-end;
+}
+
+.lilbee-managed-consent-btn-cancel {
+    margin-right: auto;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12.5px;
+    cursor: pointer;
+    padding: 8px 4px;
+}
+
+.lilbee-managed-consent-btn-download {
+    display: inline-flex;
+    gap: 7px;
+    align-items: center;
+}
