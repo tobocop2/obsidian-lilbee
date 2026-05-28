@@ -223,14 +223,26 @@ export default storyboard("first_start", {
     ),
     ...wizardStep("Welcome -> Get started", "lilbee's setup wizard walks you through first-time setup."),
     ...wizardStep(
-      "Server mode -> Next (Managed downloads server binary)",
+      "Server mode -> Next (Managed)",
       "Managed mode: lilbee downloads and runs its own local server for you.",
     ),
-    // The wizard's "Server mode → Next" calls startManagedServer (downloads the
-    // binary, starts the process) and advances to the model picker. The picker's
-    // cards load via the catalog API then re-render once for a RAM-fit pass, so
-    // wait for the Qwen3 0.6B card to render and settle, then click it with the
-    // cursor.
+    // "Server mode → Next" in Managed now opens the consent modal before any
+    // download: it shows exactly what's being fetched (repo, release, asset,
+    // size). Let it resolve its GitHub provenance, then confirm the download —
+    // which starts the server and advances the wizard to the model picker.
+    beat(
+      "Wait for the managed-server consent modal",
+      waitForSelector(".lilbee-managed-consent"),
+      { holdMs: 1800, caption: "lilbee shows exactly what it downloads — straight from the lilbee GitHub release." },
+    ),
+    beat(
+      "Confirm the managed server download",
+      clickSelector(".lilbee-managed-consent-btn-download"),
+      { holdMs: 1500, caption: "One click: lilbee fetches the server and manages it for you." },
+    ),
+    // After consent the wizard advances to the model picker. The cards load via
+    // the catalog API then re-render once for a RAM-fit pass, so wait for the
+    // Qwen3 0.6B card to render and settle, then click it with the cursor.
     beat(
       "Wait for the model picker's Qwen3 0.6B card",
       waitForSelector('.lilbee-wizard-models [data-repo*="Qwen3-0.6B"]'),
