@@ -816,6 +816,37 @@ export const MESSAGES = {
     WIZARD_FILE_PICKER_DISK: "Files from disk",
     WIZARD_FOLDER_PICKER_DISK: "Folder from disk",
     WIZARD_CRAWL_WEB: "Crawl web page",
+
+    // Managed-mode consent modal
+    MANAGED_CONSENT_TITLE: "How should lilbee run?",
+    MANAGED_CONSENT_SUBTITLE: "lilbee indexes your vault from a local server. Pick who runs it.",
+    MANAGED_CONSENT_PILL_RECOMMENDED: "Recommended",
+    MANAGED_CONSENT_CARD_MANAGED_TITLE: "Managed",
+    MANAGED_CONSENT_CARD_MANAGED_DESC:
+        "This plugin downloads the server and handles start, stop, and updates. Nothing else to install.",
+    MANAGED_CONSENT_CARD_EXTERNAL_TITLE: "External",
+    MANAGED_CONSENT_CARD_EXTERNAL_DESC: "You run lilbee serve yourself. The plugin connects to it.",
+    MANAGED_CONSENT_CARD_EXTERNAL_HINT: "For advanced / custom setups",
+    MANAGED_CONSENT_INSTALL_LINK: "Install instructions",
+    MANAGED_CONSENT_PROV_LABEL: "Source · verified",
+    MANAGED_CONSENT_PROV_PENDING: "Fetching release info…",
+    MANAGED_CONSENT_PROV_FAILED: "(release info unavailable)",
+    MANAGED_CONSENT_PROV_RELEASE_NOTES: "View release notes ↗",
+    MANAGED_CONSENT_PROV_ONE_TIME: "one-time",
+    MANAGED_CONSENT_BTN_CANCEL: "Cancel",
+    MANAGED_CONSENT_BTN_DOWNLOAD: "↓ Download & manage server",
+    NOTICE_SERVER_DOWNLOAD_CANCELED: "Server download canceled.",
+    NOTICE_SWITCHED_TO_EXTERNAL: "Switched to external mode. Follow the install instructions to run lilbee yourself.",
+
+    // Chat-view model rail
+    RAIL_DIVIDER_OPTIONAL: "Optional",
+    RAIL_LABEL_CHAT: "Chat",
+    RAIL_LABEL_EMBED: "Embed",
+    RAIL_LABEL_VISION: "Vision",
+    RAIL_LABEL_RERANK: "Rerank",
+    RAIL_ADD_VISION: "Add for scanned PDFs",
+    RAIL_ADD_RERANK: "Add for sharper search",
+    RAIL_BROWSE_CATALOG: "Browse catalog…",
 } as const;
 
 export const FILTERS = {
