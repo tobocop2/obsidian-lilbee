@@ -273,6 +273,8 @@ async function runAction(ctx: ObsidianContext, action: Action, beat: Beat): Prom
   switch (action.kind) {
     case "clickSelector":
       return await cursorClickSelector(ctx, action.selector, beat);
+    case "hoverSelector":
+      return await cursorActOnSelector(ctx, action.selector, beat, undefined, "hover");
     case "rightClickSelector":
       return await cursorRightClickSelector(ctx, action.selector, beat);
     case "clickMenuItem":
@@ -375,7 +377,7 @@ async function cursorActOnSelector(
   selector: string,
   beat: Beat,
   textIs: string | undefined,
-  button: "left" | "right",
+  button: "left" | "right" | "hover",
 ): Promise<{ x: number; y: number }> {
   // Support Playwright-style :has-text("...") and :text-is("...") sugar
   // by extracting the text and matching against textContent in the
@@ -396,6 +398,11 @@ async function cursorActOnSelector(
   if (!coord) throw new Error(`cannot resolve selector for beat '${beat.label}': ${selector}`);
   await moveToCoord(coord.x, coord.y, coord.cursor);
   await sleep(HOVER_BEFORE_CLICK_MS);
+  if (button === "hover") {
+    // No click — leave the cursor parked on the element so Obsidian's
+    // aria-label tooltip surfaces during the beat's hold.
+    return coord;
+  }
   if (button === "right") {
     // Real OS right-click via pyautogui so Obsidian's native context
     // menu opens on screen for the recording. Playwright's in-page
