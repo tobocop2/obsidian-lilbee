@@ -2654,6 +2654,37 @@ describe("ChatView.createToolbar — model chips", () => {
         // The OCR eye toggle was removed from the chat view.
         expect(container.find("lilbee-ocr-toggle")).toBeNull();
     });
+
+    it("every role chip and both mode buttons carry an explanatory tooltip (aria-label)", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        // chat_mode must be set for the Search/Chat toggle to render.
+        plugin.api.config = vi.fn().mockResolvedValue({
+            chat_model: "llama3",
+            embedding_model: "nomic-embed-text",
+            chat_mode: "search",
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const chips = container.findAll("lilbee-model-chip");
+        for (const chip of chips) {
+            expect((chip.attributes["aria-label"] ?? "").length).toBeGreaterThan(0);
+        }
+        // The four role tooltips are distinct and name the role's purpose.
+        const labels = chips.map((c) => c.attributes["aria-label"]);
+        expect(labels.some((l) => /Chat model/.test(l))).toBe(true);
+        expect(labels.some((l) => /Embedding model/.test(l))).toBe(true);
+        expect(labels.some((l) => /Vision model/.test(l))).toBe(true);
+        expect(labels.some((l) => /Reranker/.test(l))).toBe(true);
+
+        const modeBtns = container.findAll("lilbee-chat-mode-btn");
+        expect(modeBtns.length).toBe(2);
+        expect(modeBtns[0].attributes["aria-label"]).toMatch(/Search your vault/);
+        expect(modeBtns[1].attributes["aria-label"]).toMatch(/Chat with the model/);
+    });
 });
 
 describe("ChatView — offline retry", () => {

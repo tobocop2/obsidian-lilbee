@@ -63,6 +63,7 @@ interface OptionalRoleSpec {
     dotClass: string;
     selectClass: string;
     disabledLabel: string;
+    tooltip: string;
     configKey: string;
     setActive: (api: LilbeePlugin["api"], model: string) => Promise<{ isErr(): boolean }>;
     failNotice: string;
@@ -76,6 +77,7 @@ const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
         dotClass: "is-vision",
         selectClass: "lilbee-vision-model-select",
         disabledLabel: MESSAGES.LABEL_VISION_DISABLED,
+        tooltip: MESSAGES.TOOLTIP_ROLE_VISION,
         configKey: "vision_model",
         setActive: (api, model) => api.setVisionModel(model),
         failNotice: MESSAGES.RAIL_LABEL_VISION,
@@ -87,6 +89,7 @@ const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
         dotClass: "is-rerank",
         selectClass: "lilbee-rerank-model-select",
         disabledLabel: MESSAGES.LABEL_RERANKER_DISABLED,
+        tooltip: MESSAGES.TOOLTIP_ROLE_RERANK,
         configKey: "reranker_model",
         setActive: (api, model) => api.setRerankerModel(model),
         failNotice: MESSAGES.RAIL_LABEL_RERANK,
@@ -183,6 +186,7 @@ export class ChatView extends ItemView {
         const rail = toolbar.createDiv({ cls: "lilbee-model-rail" });
 
         const chatChip = rail.createDiv({ cls: "lilbee-model-chip lilbee-toolbar-group" });
+        chatChip.setAttribute("aria-label", MESSAGES.TOOLTIP_ROLE_CHAT);
         chatChip.createSpan({ cls: "lilbee-model-chip-dot is-chat is-active" });
         chatChip.createSpan({ cls: "lilbee-model-chip-label", text: MESSAGES.RAIL_LABEL_CHAT });
         this.chatSelectEl = chatChip.createEl("select", {
@@ -191,6 +195,7 @@ export class ChatView extends ItemView {
         this.attachChatListener(this.chatSelectEl);
 
         const embedChip = rail.createDiv({ cls: "lilbee-model-chip lilbee-toolbar-group lilbee-toolbar-group-embed" });
+        embedChip.setAttribute("aria-label", MESSAGES.TOOLTIP_ROLE_EMBED);
         embedChip.createSpan({ cls: "lilbee-model-chip-dot is-embed is-active" });
         embedChip.createSpan({ cls: "lilbee-model-chip-label", text: MESSAGES.RAIL_LABEL_EMBED });
         this.embeddingSelectEl = embedChip.createEl("select", {
@@ -374,15 +379,16 @@ export class ChatView extends ItemView {
         const embeddingModel = typeof serverConfig?.embedding_model === "string" ? serverConfig.embedding_model : "";
         const noEmbedding = embeddingModel === "";
 
-        const segments: { mode: ChatMode; label: string }[] = [
-            { mode: CHAT_MODE.SEARCH, label: MESSAGES.LABEL_CHAT_MODE_SEARCH },
-            { mode: CHAT_MODE.CHAT, label: MESSAGES.LABEL_CHAT_MODE_CHAT },
+        const segments: { mode: ChatMode; label: string; tooltip: string }[] = [
+            { mode: CHAT_MODE.SEARCH, label: MESSAGES.LABEL_CHAT_MODE_SEARCH, tooltip: MESSAGES.TOOLTIP_MODE_SEARCH },
+            { mode: CHAT_MODE.CHAT, label: MESSAGES.LABEL_CHAT_MODE_CHAT, tooltip: MESSAGES.TOOLTIP_MODE_CHAT },
         ];
         for (const seg of segments) {
             const btn = this.chatModeContainer.createEl("button", {
                 text: seg.label,
                 cls: `lilbee-chat-mode-btn${seg.mode === rawMode ? " active" : ""}`,
             });
+            btn.setAttribute("aria-label", seg.tooltip);
             if (noEmbedding) {
                 btn.disabled = true;
                 btn.setAttribute("title", MESSAGES.TOOLTIP_CHAT_MODE_NEEDS_EMBEDDING);
@@ -588,6 +594,7 @@ export class ChatView extends ItemView {
         const active = this.optionalActive[spec.key];
         const options = this.optionalRoleOptions(spec);
         const chip = rail.createDiv({ cls: "lilbee-model-chip lilbee-model-chip-optional" });
+        chip.setAttribute("aria-label", spec.tooltip);
         if (!active) chip.addClass("is-off");
         const dot = chip.createSpan({ cls: `lilbee-model-chip-dot ${spec.dotClass}` });
         if (active) dot.addClass("is-active");
