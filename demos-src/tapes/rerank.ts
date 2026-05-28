@@ -16,7 +16,7 @@
  * Empirically verified: embedding rank of the answer = 12/14; rerank OFF excludes
  * it from the cited context, rerank ON includes it.
  */
-import { beat, clickSelector, clickSend, fillChat, key, runJs, storyboard } from "../src/lib.ts";
+import { beat, clickSelector, clickSend, fillChat, key, runJs, storyboard, waitChatIdle } from "../src/lib.ts";
 
 const QUESTION = "How do I turn off the daytime running lights on my Crown Victoria?";
 const CHAT_MODEL = "hugging-quants/Llama-3.2-1B-Instruct-Q8_0-GGUF/llama-3.2-1b-instruct-q8_0.gguf";
@@ -46,23 +46,14 @@ const setRole = (role: "chat" | "reranker", model: string) =>
     if (typeof p.fetchActiveModel === "function") await p.fetchActiveModel();
   `);
 
-// Send the question, then wait for the answer to finish streaming (Send button
-// flips Stop → Send when done).
+// Send the question, then wait for the answer to finish streaming. waitChatIdle
+// matches the other chat tapes; speedup 8 fast-forwards the big latencies here —
+// a cold model load (Llama 3.2 1B / bge-reranker spin up on first use) plus
+// retrieval and token generation.
 const ask = (label: string, caption: string) => [
   beat("Type the question", fillChat(QUESTION), { holdMs: 700 }),
   beat(label, clickSend(), { holdMs: 800, caption }),
-  beat(
-    "Wait for the answer",
-    runJs(`
-      const send = document.querySelector('.lilbee-chat-send');
-      for (let i = 0; i < 240; i++) {
-        const t = (send?.textContent || '').toLowerCase();
-        if (t.includes('send') && i > 4) return;
-        await new Promise(r => setTimeout(r, 500));
-      }
-    `),
-    { holdMs: 3000, speedup: 3, maxMs: 150_000 },
-  ),
+  beat("Stream the answer", waitChatIdle(180_000), { holdMs: 1600, speedup: 8 }),
 ];
 
 export default storyboard("rerank", {
