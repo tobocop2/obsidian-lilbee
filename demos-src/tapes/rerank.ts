@@ -47,13 +47,14 @@ const setRole = (role: "chat" | "reranker", model: string) =>
   `);
 
 // Send the question, then wait for the answer to finish streaming. waitChatIdle
-// matches the other chat tapes; speedup 8 fast-forwards the big latencies here —
-// a cold model load (Llama 3.2 1B / bge-reranker spin up on first use) plus
-// retrieval and token generation.
+// + speedup 4 matches the other chat tapes. Measured latencies on this hardware:
+// ~4s rerank-off (Llama-1B cold load + retrieve + generate), ~6s rerank-on
+// (bge-reranker cold load + rerank + generate), ~3s warm — so speedup 4
+// fast-forwards the stream while the final answer holds long enough to read.
 const ask = (label: string, caption: string) => [
   beat("Type the question", fillChat(QUESTION), { holdMs: 700 }),
   beat(label, clickSend(), { holdMs: 800, caption }),
-  beat("Stream the answer", waitChatIdle(180_000), { holdMs: 1600, speedup: 8 }),
+  beat("Stream the answer", waitChatIdle(180_000), { holdMs: 1600, speedup: 4 }),
 ];
 
 export default storyboard("rerank", {
