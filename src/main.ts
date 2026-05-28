@@ -9,7 +9,7 @@ import {
 } from "obsidian";
 import { LilbeeClient, SessionTokenError } from "./api";
 import type { RequestOutcome } from "./api";
-import { BinaryManager, getLatestRelease, checkForUpdate, node, LILBEE_INSTALL_DOCS_URL } from "./binary-manager";
+import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
@@ -320,7 +320,11 @@ export default class LilbeePlugin extends Plugin {
         // actually ready yet (empty catalog, failed reads).
         if (this.settings.setupCompleted) {
             if (this.settings.serverMode === SERVER_MODE.MANAGED) {
-                void this.ensureManagedConsentThenStart();
+                void this.ensureManagedConsentThenStart().then((outcome) => {
+                    // If the user opts into external mode from the consent modal,
+                    // drop them on the plugin's external-server settings.
+                    if (outcome.kind === SETUP_OUTCOME.SWITCHED_TO_EXTERNAL) this.openPluginSettings();
+                });
             } else {
                 this.configureApi(this.settings.serverUrl);
                 this.setStatusReady();
@@ -431,10 +435,12 @@ export default class LilbeePlugin extends Plugin {
             this.settings.serverMode = SERVER_MODE.EXTERNAL;
             this.previousServerMode = SERVER_MODE.EXTERNAL;
             await this.persistAll();
-            window.open(LILBEE_INSTALL_DOCS_URL, "_blank");
             this.configureApi(this.settings.serverUrl);
             this.setStatusReady();
             new Notice(MESSAGES.NOTICE_SWITCHED_TO_EXTERNAL);
+            // Navigation to the external server settings is the caller's job:
+            // onload opens the plugin Settings tab; the wizard reveals its own
+            // inline URL/token fields. The gate itself never leaves the app.
             return { kind: SETUP_OUTCOME.SWITCHED_TO_EXTERNAL };
         }
         new Notice(MESSAGES.NOTICE_SERVER_DOWNLOAD_CANCELED);

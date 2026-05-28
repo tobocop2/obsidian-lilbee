@@ -52,7 +52,6 @@ export const node = {
 
 export const GITHUB_REPO = "tobocop2/lilbee";
 export const LILBEE_GITHUB_REPO_URL = `https://github.com/${GITHUB_REPO}`;
-export const LILBEE_INSTALL_DOCS_URL = `${LILBEE_GITHUB_REPO_URL}#install`;
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 
 /** Run `nvidia-smi` and return its stdout, or null if it is absent or fails. */

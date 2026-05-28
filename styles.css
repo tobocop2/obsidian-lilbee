@@ -4033,7 +4033,7 @@
     margin-top: 8px;
 }
 
-.lilbee-managed-consent-install-link {
+.lilbee-managed-consent-configure-link {
     color: var(--consent-accent);
     border-bottom: 1px dotted var(--consent-accent);
 }

@@ -141,7 +141,6 @@ vi.mock("../src/binary-manager", () => ({
     checkForUpdate: vi.fn(),
     GITHUB_REPO: "tobocop2/lilbee",
     LILBEE_GITHUB_REPO_URL: "https://github.com/tobocop2/lilbee",
-    LILBEE_INSTALL_DOCS_URL: "https://github.com/tobocop2/lilbee#install",
     node: {
         spawn: vi.fn(),
         execFile: vi.fn(),
@@ -3890,7 +3889,7 @@ describe("LilbeePlugin", () => {
             expect(outcome).toEqual({ kind: "started", mode: "managed" });
         });
 
-        it("external outcome flips serverMode, opens the install URL, and does not start the server", async () => {
+        it("external outcome flips serverMode, configures the API, and does not start or open a browser", async () => {
             const openSpy = vi.fn();
             vi.stubGlobal("window", { open: openSpy } as unknown as Window);
             try {
@@ -3904,13 +3903,27 @@ describe("LilbeePlugin", () => {
                 const outcome = await plugin.ensureManagedConsentThenStart();
 
                 expect(plugin.settings.serverMode).toBe("external");
-                expect(openSpy).toHaveBeenCalledWith(expect.stringContaining("github.com/tobocop2/lilbee"), "_blank");
+                // The gate must NOT navigate to a browser — external mode is
+                // configured in-app, not via the GitHub install page.
+                expect(openSpy).not.toHaveBeenCalled();
                 expect(mockServerStart).not.toHaveBeenCalled();
                 expect(outcome).toEqual({ kind: "switched-to-external" });
                 expect(Notice.instances.some((n) => n.message.includes("external mode"))).toBe(true);
             } finally {
                 vi.unstubAllGlobals();
             }
+        });
+
+        it("onload opens the plugin Settings when the user switches to external from the consent modal", async () => {
+            mockBinaryExists.mockReturnValue(false);
+            mockConsentResult = { kind: "external" };
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const settingsSpy = vi.spyOn(plugin, "openPluginSettings").mockImplementation(() => {});
+            await plugin.onload();
+            await flush();
+
+            expect(settingsSpy).toHaveBeenCalled();
+            expect(plugin.settings.serverMode).toBe("external");
         });
 
         it("cancel outcome fires a Notice and leaves managed mode without starting", async () => {

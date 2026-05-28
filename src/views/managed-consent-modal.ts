@@ -158,8 +158,8 @@ export class ManagedConsentModal extends Modal {
         const ins = card.createDiv({ cls: "lilbee-managed-consent-card-ins" });
         ins.createSpan({ text: "→ " });
         ins.createSpan({
-            cls: "lilbee-managed-consent-install-link",
-            text: MESSAGES.MANAGED_CONSENT_INSTALL_LINK,
+            cls: "lilbee-managed-consent-configure-link",
+            text: MESSAGES.MANAGED_CONSENT_CONFIGURE_LINK,
         });
         card.createDiv({
             cls: "lilbee-managed-consent-card-hint",

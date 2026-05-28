@@ -827,7 +827,7 @@ export const MESSAGES = {
     MANAGED_CONSENT_CARD_EXTERNAL_TITLE: "External",
     MANAGED_CONSENT_CARD_EXTERNAL_DESC: "You run lilbee serve yourself. The plugin connects to it.",
     MANAGED_CONSENT_CARD_EXTERNAL_HINT: "For advanced / custom setups",
-    MANAGED_CONSENT_INSTALL_LINK: "Install instructions",
+    MANAGED_CONSENT_CONFIGURE_LINK: "Set your server URL in Settings",
     MANAGED_CONSENT_PROV_LABEL: "Source · verified",
     MANAGED_CONSENT_PROV_PENDING: "Fetching release info…",
     MANAGED_CONSENT_PROV_FAILED: "(release info unavailable)",
@@ -836,7 +836,7 @@ export const MESSAGES = {
     MANAGED_CONSENT_BTN_CANCEL: "Cancel",
     MANAGED_CONSENT_BTN_DOWNLOAD: "↓ Download & manage server",
     NOTICE_SERVER_DOWNLOAD_CANCELED: "Server download canceled.",
-    NOTICE_SWITCHED_TO_EXTERNAL: "Switched to external mode. Follow the install instructions to run lilbee yourself.",
+    NOTICE_SWITCHED_TO_EXTERNAL: "Switched to external mode. Set your server URL in Settings to connect.",
 
     // Chat-view model rail
     RAIL_DIVIDER_OPTIONAL: "Optional",
