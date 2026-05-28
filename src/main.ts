@@ -9,7 +9,7 @@ import {
 } from "obsidian";
 import { LilbeeClient, SessionTokenError } from "./api";
 import type { RequestOutcome } from "./api";
-import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
+import { BinaryManager, getLatestRelease, checkForUpdate, node, LILBEE_INSTALL_DOCS_URL } from "./binary-manager";
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
@@ -20,9 +20,11 @@ import {
     DOT_STATE,
     ERROR_NAME,
     LOCK_STATE,
+    MANAGED_CONSENT_RESULT,
     MANAGED_PHASE,
     SERVER_MODE,
     SERVER_STATE,
+    SETUP_OUTCOME,
     SSE_EVENT,
     TASK_STATUS,
     TASK_TYPE,
@@ -32,6 +34,7 @@ import {
     type LilbeeSettings,
     type ManagedServerProgressHandler,
     type ServerMode,
+    type SetupOutcome,
     type ServerState,
     type ServerVariant,
     type SetupDonePayload,
@@ -58,6 +61,7 @@ import {
     withIdleTimeout,
 } from "./utils";
 import { CatalogModal } from "./views/catalog-modal";
+import { ManagedConsentModal } from "./views/managed-consent-modal";
 import { ModelInfoModal } from "./views/model-info-modal";
 import { ModelPickerModal } from "./views/model-picker-modal";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
@@ -316,7 +320,7 @@ export default class LilbeePlugin extends Plugin {
         // actually ready yet (empty catalog, failed reads).
         if (this.settings.setupCompleted) {
             if (this.settings.serverMode === SERVER_MODE.MANAGED) {
-                void this.startManagedServer();
+                void this.ensureManagedConsentThenStart();
             } else {
                 this.configureApi(this.settings.serverUrl);
                 this.setStatusReady();
@@ -395,6 +399,46 @@ export default class LilbeePlugin extends Plugin {
         } finally {
             this.startingServer = false;
         }
+    }
+
+    /**
+     * Gate run before a first-time managed binary download. When the binary is
+     * already present we start straight away; otherwise we ask for consent and
+     * route on the user's choice (download / switch-to-external / cancel).
+     */
+    async ensureManagedConsentThenStart(onProgress?: ManagedServerProgressHandler): Promise<SetupOutcome> {
+        const registry = this.vaultRegistry;
+        if (!registry) return { kind: SETUP_OUTCOME.CANCELED };
+
+        const binaryPresent = new BinaryManager(sharedBinDir(registry.sharedRoot)).binaryExists();
+        if (binaryPresent) {
+            await this.startManagedServer(onProgress);
+            return { kind: SETUP_OUTCOME.STARTED, mode: SERVER_MODE.MANAGED };
+        }
+
+        // The gate owns the server lifecycle for each outcome, so it persists
+        // directly via persistAll() rather than saveSettings() — the latter
+        // would fire its own startManagedServer on a mode switch and race ours.
+        const result = await new ManagedConsentModal(this.app).openConsent();
+        if (result.kind === MANAGED_CONSENT_RESULT.DOWNLOAD) {
+            this.settings.serverMode = SERVER_MODE.MANAGED;
+            this.previousServerMode = SERVER_MODE.MANAGED;
+            await this.persistAll();
+            await this.startManagedServer(onProgress);
+            return { kind: SETUP_OUTCOME.STARTED, mode: SERVER_MODE.MANAGED };
+        }
+        if (result.kind === MANAGED_CONSENT_RESULT.EXTERNAL) {
+            this.settings.serverMode = SERVER_MODE.EXTERNAL;
+            this.previousServerMode = SERVER_MODE.EXTERNAL;
+            await this.persistAll();
+            window.open(LILBEE_INSTALL_DOCS_URL, "_blank");
+            this.configureApi(this.settings.serverUrl);
+            this.setStatusReady();
+            new Notice(MESSAGES.NOTICE_SWITCHED_TO_EXTERNAL);
+            return { kind: SETUP_OUTCOME.SWITCHED_TO_EXTERNAL };
+        }
+        new Notice(MESSAGES.NOTICE_SERVER_DOWNLOAD_CANCELED);
+        return { kind: SETUP_OUTCOME.CANCELED };
     }
 
     private buildServerManager(binaryPath: string, registry: VaultRegistry, sharedRoot: string): ServerManager {
