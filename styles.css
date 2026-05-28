@@ -4014,23 +4014,12 @@
     padding: 0;
 }
 
-/* Inside the Embed chip, "Browse more" is a subtle inline action, not a second
-   bordered pill — so the chip doesn't read as double-wide next to the others. */
-.lilbee-model-chip .lilbee-embed-browse {
+/* "Browse more" is pushed to the far right of the rail (margin-left:auto) so it
+   reads as a rail-level action, separate from the four model chips. */
+.lilbee-rail-browse {
+    margin-left: auto;
     flex: 0 0 auto;
-    border: none;
-    background: transparent;
-    padding: 0 2px;
-    margin-left: 2px;
-    font-size: 10px;
-    color: var(--text-faint);
-    border-left: 1px solid var(--background-modifier-border);
-    border-radius: 0;
-}
-
-.lilbee-model-chip .lilbee-embed-browse:hover {
-    background: transparent;
-    color: var(--text-normal);
+    align-self: center;
 }
 
 /* ============================================================

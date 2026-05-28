@@ -3192,7 +3192,7 @@ describe("ChatView — embedding model selector", () => {
         expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
     });
 
-    it("Browse more button opens CatalogModal pre-filtered to embedding", async () => {
+    it("rail-level Browse more button opens the full catalog", async () => {
         const { CatalogModal } = await import("../../src/views/catalog-modal");
         (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
         const plugin = makePlugin();
@@ -3201,12 +3201,16 @@ describe("ChatView — embedding model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const browseBtn = container.find("lilbee-embed-browse")!;
+        // Browse more is a rail-level action at the far right, not inside the Embed chip.
+        const browseBtn = container.find("lilbee-rail-browse")!;
         expect(browseBtn).not.toBeNull();
         expect(browseBtn.textContent).toBe(MESSAGES.BUTTON_BROWSE_MORE);
+        const embedChip = container.find("lilbee-toolbar-group-embed")!;
+        expect(embedChip.find("lilbee-embed-browse")).toBeNull();
 
         browseBtn.trigger("click");
-        expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "embedding");
+        // No task filter — opens the catalog's Discover view across all roles.
+        expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin);
     });
 
     it("shows connecting label on embedding select when offline", async () => {

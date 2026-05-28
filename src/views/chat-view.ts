@@ -197,18 +197,21 @@ export class ChatView extends ItemView {
             cls: "lilbee-embed-model-select lilbee-model-chip-select",
         }) as HTMLSelectElement;
         this.attachEmbeddingListener(this.embeddingSelectEl);
-        const embedBrowseBtn = embedChip.createEl("button", {
-            text: MESSAGES.BUTTON_BROWSE_MORE,
-            cls: "lilbee-embed-browse",
-        });
-        embedBrowseBtn.setAttribute("aria-label", MESSAGES.BUTTON_BROWSE_MORE);
-        embedBrowseBtn.addEventListener("click", () => {
-            new CatalogModal(this.app, this.plugin, MODEL_TASK.EMBEDDING).open();
-        });
 
         // Optional roles (Vision, Rerank) are chips in the same wrapping rail.
         this.optionalRailEl = rail.createDiv({ cls: "lilbee-model-rail-optional" });
         this.fillOptionalRoles();
+
+        // "Browse more" sits at the far right of the rail and opens the full
+        // model catalog (all roles) — not tied to any one chip.
+        const railBrowseBtn = rail.createEl("button", {
+            text: MESSAGES.BUTTON_BROWSE_MORE,
+            cls: "lilbee-embed-browse lilbee-rail-browse",
+        });
+        railBrowseBtn.setAttribute("aria-label", MESSAGES.BUTTON_BROWSE_MORE);
+        railBrowseBtn.addEventListener("click", () => {
+            new CatalogModal(this.app, this.plugin).open();
+        });
 
         // Controls (line 2): mode toggles on the left, save/clear on the right.
         const actions = toolbar.createDiv({ cls: "lilbee-chat-toolbar-actions" });
