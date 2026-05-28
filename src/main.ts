@@ -1565,7 +1565,7 @@ export default class LilbeePlugin extends Plugin {
             const progress = new FileProgressTracker();
             let syncResult: SyncDone | null = null;
             const controller = this.syncController;
-            const rawStream = this.api.addFiles(paths, true, this.settings.enableOcr, controller.signal);
+            const rawStream = this.api.addFiles(paths, true, controller.signal);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };
@@ -2045,7 +2045,7 @@ export default class LilbeePlugin extends Plugin {
             const progress = new FileProgressTracker();
             let syncResult: SyncDone | null = null;
             const controller = this.syncController;
-            const rawStream = this.api.syncStream(this.settings.enableOcr, controller.signal, options);
+            const rawStream = this.api.syncStream(controller.signal, options);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };

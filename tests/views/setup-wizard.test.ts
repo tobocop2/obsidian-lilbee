@@ -1477,7 +1477,7 @@ describe("SetupWizard", () => {
         it("Back from sync cancels and returns to model picker", async () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             let abortSignal: AbortSignal | null = null;
-            plugin.api.syncStream = vi.fn().mockImplementation((_force: boolean, signal?: AbortSignal) => {
+            plugin.api.syncStream = vi.fn().mockImplementation((signal?: AbortSignal) => {
                 abortSignal = signal ?? null;
                 return (async function* () {
                     yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 100 } };
@@ -1500,7 +1500,7 @@ describe("SetupWizard", () => {
         it("Skip setup aborts sync and closes wizard", async () => {
             let _abortSignal: AbortSignal | null = null;
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.syncStream = vi.fn().mockImplementation((_opts: any, signal?: AbortSignal) => {
+            plugin.api.syncStream = vi.fn().mockImplementation((signal?: AbortSignal) => {
                 _abortSignal = signal ?? null;
                 return (async function* () {
                     yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 100 } };
@@ -1940,8 +1940,8 @@ describe("SetupWizard", () => {
         it("aborts sync controller on close", async () => {
             let capturedSignal: AbortSignal | null = null;
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.syncStream = vi.fn().mockImplementation((_enableOcr: boolean | null, signal: AbortSignal) => {
-                capturedSignal = signal;
+            plugin.api.syncStream = vi.fn().mockImplementation((signal?: AbortSignal) => {
+                capturedSignal = signal ?? null;
                 return (async function* () {
                     yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 100 } };
                     await new Promise(() => {});

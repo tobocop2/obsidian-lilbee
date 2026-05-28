@@ -1014,10 +1014,7 @@ export class SetupWizard extends Modal {
         this.syncController = new AbortController();
         try {
             let lastEvent: SSEEvent | null = null;
-            for await (const event of this.plugin.api.syncStream(
-                this.plugin.settings.enableOcr,
-                this.syncController.signal,
-            )) {
+            for await (const event of this.plugin.api.syncStream(this.syncController.signal)) {
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number; file?: string };
                     const pct = d.total_files > 0 ? Math.round((d.current_file / d.total_files) * 100) : 0;

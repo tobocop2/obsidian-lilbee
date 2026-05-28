@@ -316,7 +316,6 @@ export interface LilbeeSettings {
     searchChunkType: SearchChunkType;
     wikiSyncToVault: boolean;
     wikiVaultFolder: string;
-    enableOcr: boolean | null;
     manualToken: string;
     /**
      * Store lilbee's managed content (crawls, imported files) inside the vault
@@ -356,7 +355,6 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     searchChunkType: "raw",
     wikiSyncToVault: false,
     wikiVaultFolder: "lilbee-wiki",
-    enableOcr: null,
     manualToken: "",
     storeContentInVault: true,
     lastCatalogTab: "discover",

@@ -762,7 +762,7 @@ describe("LilbeePlugin", () => {
 
             await plugin.triggerSync({ retrySkipped: true });
 
-            const opts = (plugin.api.syncStream as ReturnType<typeof vi.fn>).mock.calls[0][2];
+            const opts = (plugin.api.syncStream as ReturnType<typeof vi.fn>).mock.calls[0][1];
             expect(opts).toEqual({ retrySkipped: true });
             expect(plugin.taskQueue.completed[0]!.name).toBe(MESSAGES.COMMAND_SYNC_RETRY_SKIPPED);
         });
@@ -776,7 +776,7 @@ describe("LilbeePlugin", () => {
 
             await plugin.triggerSync({ forceRebuild: true });
 
-            const opts = (plugin.api.syncStream as ReturnType<typeof vi.fn>).mock.calls[0][2];
+            const opts = (plugin.api.syncStream as ReturnType<typeof vi.fn>).mock.calls[0][1];
             expect(opts).toEqual({ forceRebuild: true });
             expect(plugin.taskQueue.completed[0]!.name).toBe(MESSAGES.COMMAND_SYNC_REBUILD);
         });
@@ -1591,7 +1591,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/notes/test.md"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -1940,26 +1939,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/lilbee/imports/doc.pdf", "/test/vault/lilbee/imports/notes.md"],
                 true,
-                null,
-                expect.any(AbortSignal),
-            );
-        });
-
-        it("passes enableOcr setting when set", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            plugin.activeModel = "llama3";
-            plugin.settings.enableOcr = true;
-
-            async function* noEvents() {}
-            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
-
-            await plugin.addExternalFiles(["/home/user/scan.pdf"]);
-
-            expect(plugin.api.addFiles).toHaveBeenCalledWith(
-                ["/test/vault/lilbee/imports/scan.pdf"],
-                true,
-                true,
                 expect.any(AbortSignal),
             );
         });
@@ -2178,7 +2157,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/existing.pdf"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -2202,7 +2180,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/lilbee/imports/good.pdf"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -2242,7 +2219,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/lilbee/imports/doc-1.pdf"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -2291,7 +2267,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/lilbee/imports/Makefile-1"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -2338,7 +2313,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["C:\\Users\\me\\vault\\notes\\already-here.md"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -2372,7 +2346,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/lilbee/imports/notes-folder"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -2402,7 +2375,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/lilbee/imports/doc.pdf", "/test/vault/lilbee/imports/folder"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -2432,7 +2404,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/lilbee/imports/good.pdf"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });

@@ -264,36 +264,25 @@ describe("addFiles()", () => {
         expect(events[0].event).toBe("done");
     });
 
-    it("includes enable_ocr when provided", async () => {
+    it("sets force when requested", async () => {
         fetchMock.mockResolvedValue(sseResponse([]));
 
-        await collect(client.addFiles(["/vault/doc.pdf"], true, true));
+        await collect(client.addFiles(["/vault/doc.pdf"], true));
 
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
         expect(body.force).toBe(true);
-        expect(body.enable_ocr).toBe(true);
     });
 
     it("includes ocr_timeout when provided", async () => {
         fetchMock.mockResolvedValue(sseResponse([]));
 
-        await collect(client.addFiles(["/vault/doc.pdf"], false, true, undefined, 30));
+        await collect(client.addFiles(["/vault/doc.pdf"], false, undefined, 30));
 
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-        expect(body.enable_ocr).toBe(true);
         expect(body.ocr_timeout).toBe(30);
     });
 
-    it("omits enable_ocr when null", async () => {
-        fetchMock.mockResolvedValue(sseResponse([]));
-
-        await collect(client.addFiles(["/vault/a.md"], false, null));
-
-        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-        expect(body.enable_ocr).toBeUndefined();
-    });
-
-    it("omits enable_ocr when not provided", async () => {
+    it("never sends a legacy enable_ocr flag", async () => {
         fetchMock.mockResolvedValue(sseResponse([]));
 
         await collect(client.addFiles(["/vault/a.md"]));
@@ -319,19 +308,10 @@ describe("syncStream()", () => {
         expect(events[0].event).toBe("progress");
     });
 
-    it("sends enable_ocr true when requested", async () => {
+    it("never sends a legacy enable_ocr flag", async () => {
         fetchMock.mockResolvedValue(sseResponse([]));
 
-        await collect(client.syncStream(true));
-
-        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-        expect(body.enable_ocr).toBe(true);
-    });
-
-    it("omits enable_ocr when null", async () => {
-        fetchMock.mockResolvedValue(sseResponse([]));
-
-        await collect(client.syncStream(null));
+        await collect(client.syncStream());
 
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
         expect(body.enable_ocr).toBeUndefined();
@@ -340,7 +320,7 @@ describe("syncStream()", () => {
     it("sends force_rebuild true when the forceRebuild option is set", async () => {
         fetchMock.mockResolvedValue(sseResponse([]));
 
-        await collect(client.syncStream(undefined, undefined, { forceRebuild: true }));
+        await collect(client.syncStream(undefined, { forceRebuild: true }));
 
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
         expect(body.force_rebuild).toBe(true);
@@ -349,25 +329,25 @@ describe("syncStream()", () => {
     it("sends retry_skipped true when the retrySkipped option is set", async () => {
         fetchMock.mockResolvedValue(sseResponse([]));
 
-        await collect(client.syncStream(undefined, undefined, { retrySkipped: true }));
+        await collect(client.syncStream(undefined, { retrySkipped: true }));
 
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
         expect(body.retry_skipped).toBe(true);
     });
 
-    it("can send both recovery flags alongside enable_ocr", async () => {
+    it("can send both recovery flags together", async () => {
         fetchMock.mockResolvedValue(sseResponse([]));
 
-        await collect(client.syncStream(true, undefined, { forceRebuild: true, retrySkipped: true }));
+        await collect(client.syncStream(undefined, { forceRebuild: true, retrySkipped: true }));
 
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-        expect(body).toEqual({ enable_ocr: true, force_rebuild: true, retry_skipped: true });
+        expect(body).toEqual({ force_rebuild: true, retry_skipped: true });
     });
 
     it("omits the recovery flags when they are false", async () => {
         fetchMock.mockResolvedValue(sseResponse([]));
 
-        await collect(client.syncStream(undefined, undefined, { forceRebuild: false, retrySkipped: false }));
+        await collect(client.syncStream(undefined, { forceRebuild: false, retrySkipped: false }));
 
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
         expect(body.force_rebuild).toBeUndefined();
