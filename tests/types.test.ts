@@ -41,8 +41,8 @@ describe("DEFAULT_SETTINGS", () => {
         expect(DEFAULT_SETTINGS.serverUrl).toBe("http://127.0.0.1:7433");
     });
 
-    it("has topK of 5", () => {
-        expect(DEFAULT_SETTINGS.topK).toBe(5);
+    it("has topK of 12 (matches the server default)", () => {
+        expect(DEFAULT_SETTINGS.topK).toBe(12);
     });
 
     it("has wikiEnabled defaulting to false", () => {

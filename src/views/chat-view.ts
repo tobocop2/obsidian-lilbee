@@ -187,6 +187,7 @@ export class ChatView extends ItemView {
 
         const chatChip = rail.createDiv({ cls: "lilbee-model-chip lilbee-toolbar-group" });
         chatChip.setAttribute("aria-label", MESSAGES.TOOLTIP_ROLE_CHAT);
+        chatChip.setAttribute("aria-label-position", "top");
         chatChip.createSpan({ cls: "lilbee-model-chip-dot is-chat is-active" });
         chatChip.createSpan({ cls: "lilbee-model-chip-label", text: MESSAGES.RAIL_LABEL_CHAT });
         this.chatSelectEl = chatChip.createEl("select", {
@@ -196,6 +197,7 @@ export class ChatView extends ItemView {
 
         const embedChip = rail.createDiv({ cls: "lilbee-model-chip lilbee-toolbar-group lilbee-toolbar-group-embed" });
         embedChip.setAttribute("aria-label", MESSAGES.TOOLTIP_ROLE_EMBED);
+        embedChip.setAttribute("aria-label-position", "top");
         embedChip.createSpan({ cls: "lilbee-model-chip-dot is-embed is-active" });
         embedChip.createSpan({ cls: "lilbee-model-chip-label", text: MESSAGES.RAIL_LABEL_EMBED });
         this.embeddingSelectEl = embedChip.createEl("select", {
@@ -389,6 +391,7 @@ export class ChatView extends ItemView {
                 cls: `lilbee-chat-mode-btn${seg.mode === rawMode ? " active" : ""}`,
             });
             btn.setAttribute("aria-label", seg.tooltip);
+            btn.setAttribute("aria-label-position", "top");
             if (noEmbedding) {
                 btn.disabled = true;
                 btn.setAttribute("title", MESSAGES.TOOLTIP_CHAT_MODE_NEEDS_EMBEDDING);
@@ -595,6 +598,7 @@ export class ChatView extends ItemView {
         const options = this.optionalRoleOptions(spec);
         const chip = rail.createDiv({ cls: "lilbee-model-chip lilbee-model-chip-optional" });
         chip.setAttribute("aria-label", spec.tooltip);
+        chip.setAttribute("aria-label-position", "top");
         if (!active) chip.addClass("is-off");
         const dot = chip.createSpan({ cls: `lilbee-model-chip-dot ${spec.dotClass}` });
         if (active) dot.addClass("is-active");

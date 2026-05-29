@@ -342,7 +342,9 @@ export interface LilbeeSettings {
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
     serverUrl: "http://127.0.0.1:7433",
-    topK: 5,
+    // Match the server's default retrieval depth (core config top_k = 12) so the
+    // plugin and a bare `lilbee serve` behave identically out of the box.
+    topK: 12,
     maxDistance: 0.9,
     adaptiveThreshold: false,
     serverMode: "managed",

@@ -584,7 +584,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             plugin.loadData = vi.fn().mockResolvedValue(null);
             await plugin.loadSettings();
-            expect(plugin.settings.topK).toBe(5);
+            expect(plugin.settings.topK).toBe(12);
             expect(plugin.settings.serverMode).toBe("managed");
         });
     });
