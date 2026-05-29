@@ -1013,16 +1013,23 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.renderEmbeddingFallback(container);
                     return;
                 }
-                // Settings dropdown lists installed embedding models only — discovery
-                // and downloads happen via Browse catalog, which the button on the
-                // right of this row opens.
-                const models = result.value.models.filter((m) => m.task === MODEL_TASK.EMBEDDING && m.installed);
+                // Settings dropdown lists installed local embedding models plus
+                // always-on hosted ones (e.g. an Ollama embedding model), matching
+                // the chat/vision/reranker pickers. Discovery and downloads happen
+                // via Browse catalog, which the button on the right of this row opens.
+                const catalogEntries = result.value.models;
+                const localInstalled = catalogEntries.filter(
+                    (m) => m.task === MODEL_TASK.EMBEDDING && m.installed && !HOSTED_SOURCES.has(m.source),
+                );
                 new Setting(container)
                     .setName(MESSAGES.LABEL_EMBEDDING_MODEL)
                     .setDesc(MESSAGES.DESC_EMBEDDING_MODEL)
                     .addDropdown((dropdown) => {
-                        for (const model of models) {
+                        for (const model of localInstalled) {
                             dropdown.addOption(model.hf_repo, model.display_name);
+                        }
+                        for (const [ref, label] of hostedOptions(catalogEntries)) {
+                            dropdown.addOption(ref, label);
                         }
                         dropdown.onChange(async (value) => {
                             if (!value) return;

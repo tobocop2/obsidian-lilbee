@@ -2448,6 +2448,60 @@ describe("managed mode settings", () => {
             expect(plugin.api.catalog).toHaveBeenCalledWith({ task: "embedding" });
         });
 
+        it("surfaces hosted ollama embedding models with a provider label", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 2,
+                    limit: 20,
+                    offset: 0,
+                    has_more: false,
+                    models: [
+                        {
+                            hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF",
+                            display_name: "nomic-embed-text",
+                            installed: true,
+                            task: "embedding",
+                            source: "native",
+                        },
+                        {
+                            hf_repo: "ollama/nomic-embed-text:latest",
+                            display_name: "nomic-embed-text:latest",
+                            installed: true,
+                            task: "embedding",
+                            source: "ollama",
+                            provider: "Ollama",
+                        },
+                    ],
+                }),
+            );
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+
+            const options: Array<[string, string]> = [];
+            const origAddDropdown = Setting.prototype.addDropdown;
+            Setting.prototype.addDropdown = function (cb: (dropdown: any) => void) {
+                const fakeDropdown = {
+                    addOption: (value: string, label: string) => {
+                        options.push([value, label]);
+                        return fakeDropdown;
+                    },
+                    setValue: () => fakeDropdown,
+                    onChange: () => fakeDropdown,
+                };
+                cb(fakeDropdown);
+                return this;
+            };
+            await (tab as any).loadEmbeddingDropdown(container);
+            await new Promise((r) => setTimeout(r, 0));
+            Setting.prototype.addDropdown = origAddDropdown;
+
+            // Native row shows plain; the ollama row is explicitly tagged [Ollama].
+            expect(options).toContainEqual(["nomic-ai/nomic-embed-text-v1.5-GGUF", "nomic-embed-text"]);
+            expect(options).toContainEqual(["ollama/nomic-embed-text:latest", "nomic-embed-text:latest [Ollama]"]);
+        });
+
         it("embedding dropdown onChange sets model and triggers sync", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
