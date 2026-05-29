@@ -242,28 +242,6 @@ function makeSource(overrides: Partial<Source> = {}): Source {
     };
 }
 
-// Auto-close every ChatView opened during a test so its reconnect retry timer
-// (armed whenever no models are installed or the server is unreachable, then
-// re-armed every RETRY_INTERVAL_MS) is always cleared. Most tests open a view
-// without closing it; a leaked real timer that fires after the test re-enters
-// fetchAndFillSelectors on a torn-down view and throws on detached DOM — which
-// surfaces only on a slow CI run where the file outlives the retry interval.
-const openChatViews = new Set<ChatView>();
-const realChatViewOnOpen = ChatView.prototype.onOpen;
-beforeEach(() => {
-    ChatView.prototype.onOpen = function (this: ChatView): Promise<void> {
-        openChatViews.add(this);
-        return realChatViewOnOpen.call(this);
-    };
-});
-afterEach(async () => {
-    ChatView.prototype.onOpen = realChatViewOnOpen;
-    for (const view of openChatViews) {
-        await view.onClose();
-    }
-    openChatViews.clear();
-});
-
 describe("VIEW_TYPE_CHAT", () => {
     it("equals 'lilbee-chat'", () => {
         expect(VIEW_TYPE_CHAT).toBe("lilbee-chat");

@@ -4,7 +4,18 @@ export default defineConfig({
     test: {
         globals: true,
         environment: "node",
-        exclude: ["**/node_modules/**", "**/.worktrees/**", "**/.claude/**", "**/*.bak/**", "**/tests.bak/**"],
+        // integration.test.ts performs a real network binary download and is run
+        // by its own job (vitest.integration.config.ts, 180s timeout). Running it
+        // here too made the unit suite double-execute it and let its slow download
+        // skew parallel worker scheduling on CI. Keep the unit run hermetic.
+        exclude: [
+            "**/node_modules/**",
+            "**/.worktrees/**",
+            "**/.claude/**",
+            "**/*.bak/**",
+            "**/tests.bak/**",
+            "**/integration.test.ts",
+        ],
         coverage: {
             provider: "v8",
             include: ["src/**/*.ts"],
