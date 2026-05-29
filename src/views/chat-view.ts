@@ -50,6 +50,52 @@ export const electronDialog = {
 
 export const VIEW_TYPE_CHAT = "lilbee-chat";
 
+/** Sentinel option value: selecting it opens the catalog instead of switching models. */
+const RAIL_BROWSE_KEY = "__lilbee_browse__";
+/** Option value that turns an optional role off (matches the server's empty model ref). */
+const RAIL_DISABLED_KEY = "";
+
+/** Static description of an optional rail role (Vision, Rerank). Dynamic state lives on the view. */
+interface OptionalRoleSpec {
+    key: "vision" | "rerank";
+    task: typeof MODEL_TASK.VISION | typeof MODEL_TASK.RERANK;
+    label: string;
+    dotClass: string;
+    selectClass: string;
+    disabledLabel: string;
+    tooltip: string;
+    configKey: string;
+    setActive: (api: LilbeePlugin["api"], model: string) => Promise<{ isErr(): boolean }>;
+    failNotice: string;
+}
+
+const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
+    {
+        key: "vision",
+        task: MODEL_TASK.VISION,
+        label: MESSAGES.RAIL_LABEL_VISION,
+        dotClass: "is-vision",
+        selectClass: "lilbee-vision-model-select",
+        disabledLabel: MESSAGES.LABEL_VISION_DISABLED,
+        tooltip: MESSAGES.TOOLTIP_ROLE_VISION,
+        configKey: "vision_model",
+        setActive: (api, model) => api.setVisionModel(model),
+        failNotice: MESSAGES.RAIL_LABEL_VISION,
+    },
+    {
+        key: "rerank",
+        task: MODEL_TASK.RERANK,
+        label: MESSAGES.RAIL_LABEL_RERANK,
+        dotClass: "is-rerank",
+        selectClass: "lilbee-rerank-model-select",
+        disabledLabel: MESSAGES.LABEL_RERANKER_DISABLED,
+        tooltip: MESSAGES.TOOLTIP_ROLE_RERANK,
+        configKey: "reranker_model",
+        setActive: (api, model) => api.setRerankerModel(model),
+        failNotice: MESSAGES.RAIL_LABEL_RERANK,
+    },
+];
+
 function extractString(data: unknown, field: string): string {
     if (typeof data === "object" && data !== null && field in data) {
         return String((data as Record<string, unknown>)[field]);
@@ -79,9 +125,15 @@ export class ChatView extends ItemView {
     private embeddingSelectEl: HTMLSelectElement | null = null;
     private embeddingModels: CatalogEntry[] = [];
     private activeEmbeddingModel = "";
-    private ocrToggleEl: HTMLElement | null = null;
     private chatModeContainer: HTMLElement | null = null;
     private chatModeCurrent: ChatMode | null = null;
+    // Optional model roles (Vision, Rerank) surfaced in the rail. Keyed by the
+    // spec's `key`; data refreshed alongside the chat/embed selectors. Options
+    // come from the per-task catalog (so only role-capable models show), exactly
+    // like the Settings model manager.
+    private optionalRailEl: HTMLElement | null = null;
+    private optionalCatalog: Record<string, CatalogEntry[]> = { vision: [], rerank: [] };
+    private optionalActive: Record<string, string> = { vision: "", rerank: "" };
     private static readonly OFFLINE_THRESHOLD = 3;
     private retryTimer: ReturnType<typeof setTimeout> | null = null;
     private retryCount = 0;
@@ -127,40 +179,49 @@ export class ChatView extends ItemView {
     private createToolbar(container: HTMLElement): void {
         const toolbar = container.createDiv({ cls: "lilbee-chat-toolbar" });
 
-        const chatGroup = toolbar.createDiv({ cls: "lilbee-toolbar-group" });
-        const chatIcon = chatGroup.createDiv({ cls: "lilbee-toolbar-icon" });
-        setIcon(chatIcon, "message-circle");
-        chatIcon.setAttribute("title", MESSAGES.LABEL_CHAT_MODEL_ICON);
+        // Model rail (line 1): the four roles as content-sized chips that wrap
+        // when the panel is narrow. Each chip is a colored dot (filled = on,
+        // hollow = off) + a clear label + the model picker. All four read the
+        // same way — bb-72pq parity, no role is icon-only.
+        const rail = toolbar.createDiv({ cls: "lilbee-model-rail" });
 
-        this.chatSelectEl = chatGroup.createEl("select", {
-            cls: "lilbee-chat-model-select",
+        const chatChip = rail.createDiv({ cls: "lilbee-model-chip lilbee-toolbar-group" });
+        chatChip.setAttribute("aria-label", MESSAGES.TOOLTIP_ROLE_CHAT);
+        chatChip.createSpan({ cls: "lilbee-model-chip-dot is-chat is-active" });
+        chatChip.createSpan({ cls: "lilbee-model-chip-label", text: MESSAGES.RAIL_LABEL_CHAT });
+        this.chatSelectEl = chatChip.createEl("select", {
+            cls: "lilbee-chat-model-select lilbee-model-chip-select",
         }) as HTMLSelectElement;
         this.attachChatListener(this.chatSelectEl);
 
-        const embedGroup = toolbar.createDiv({ cls: "lilbee-toolbar-group lilbee-toolbar-group-embed" });
-        const embedIcon = embedGroup.createDiv({ cls: "lilbee-toolbar-icon" });
-        setIcon(embedIcon, "database");
-        embedIcon.setAttribute("title", MESSAGES.LABEL_EMBEDDING_MODEL_ICON);
-
-        this.embeddingSelectEl = embedGroup.createEl("select", {
-            cls: "lilbee-embed-model-select",
+        const embedChip = rail.createDiv({ cls: "lilbee-model-chip lilbee-toolbar-group lilbee-toolbar-group-embed" });
+        embedChip.setAttribute("aria-label", MESSAGES.TOOLTIP_ROLE_EMBED);
+        embedChip.createSpan({ cls: "lilbee-model-chip-dot is-embed is-active" });
+        embedChip.createSpan({ cls: "lilbee-model-chip-label", text: MESSAGES.RAIL_LABEL_EMBED });
+        this.embeddingSelectEl = embedChip.createEl("select", {
+            cls: "lilbee-embed-model-select lilbee-model-chip-select",
         }) as HTMLSelectElement;
         this.attachEmbeddingListener(this.embeddingSelectEl);
 
-        const embedBrowseBtn = embedGroup.createEl("button", {
+        // Optional roles (Vision, Rerank) are chips in the same wrapping rail.
+        this.optionalRailEl = rail.createDiv({ cls: "lilbee-model-rail-optional" });
+        this.fillOptionalRoles();
+
+        // "Browse more" sits at the far right of the rail and opens the full
+        // model catalog (all roles) — not tied to any one chip.
+        const railBrowseBtn = rail.createEl("button", {
             text: MESSAGES.BUTTON_BROWSE_MORE,
-            cls: "lilbee-embed-browse",
+            cls: "lilbee-embed-browse lilbee-rail-browse",
         });
-        embedBrowseBtn.setAttribute("aria-label", MESSAGES.BUTTON_BROWSE_MORE);
-        embedBrowseBtn.addEventListener("click", () => {
-            new CatalogModal(this.app, this.plugin, MODEL_TASK.EMBEDDING).open();
+        railBrowseBtn.setAttribute("aria-label", MESSAGES.BUTTON_BROWSE_MORE);
+        railBrowseBtn.addEventListener("click", () => {
+            new CatalogModal(this.app, this.plugin).open();
         });
 
-        this.ocrToggleEl = toolbar.createDiv({ cls: "lilbee-ocr-toggle" });
-        this.updateOcrToggle();
-        this.ocrToggleEl.addEventListener("click", () => this.cycleOcr());
+        // Controls (line 2): mode toggles on the left, save/clear on the right.
+        const actions = toolbar.createDiv({ cls: "lilbee-chat-toolbar-actions" });
 
-        this.chatModeContainer = toolbar.createDiv({ cls: "lilbee-chat-mode-container" });
+        this.chatModeContainer = actions.createDiv({ cls: "lilbee-chat-mode-container" });
 
         this.fetchAndFillSelectors();
 
@@ -170,7 +231,7 @@ export class ChatView extends ItemView {
             this.plugin.settings.searchChunkType = "all";
         }
         if (wikiEnabled) {
-            const modeGroup = toolbar.createDiv({ cls: "lilbee-search-mode" });
+            const modeGroup = actions.createDiv({ cls: "lilbee-search-mode" });
             const modes: { value: SearchChunkType; label: string }[] = [
                 { value: "all", label: MESSAGES.LABEL_SEARCH_ALL },
                 { value: "wiki", label: MESSAGES.LABEL_SEARCH_WIKI },
@@ -190,14 +251,14 @@ export class ChatView extends ItemView {
             }
         }
 
-        toolbar.createDiv({ cls: "lilbee-toolbar-spacer" });
+        actions.createDiv({ cls: "lilbee-toolbar-spacer" });
 
-        const saveBtn = toolbar.createEl("button", { cls: "lilbee-chat-save" });
+        const saveBtn = actions.createEl("button", { cls: "lilbee-chat-save" });
         setIcon(saveBtn, "save");
         saveBtn.setAttribute("aria-label", MESSAGES.LABEL_SAVE_VAULT);
         saveBtn.addEventListener("click", () => this.saveToVault());
 
-        const clearBtn = toolbar.createEl("button", { cls: "lilbee-chat-clear" });
+        const clearBtn = actions.createEl("button", { cls: "lilbee-chat-clear" });
         setIcon(clearBtn, "eraser");
         clearBtn.setAttribute("aria-label", MESSAGES.BUTTON_CLEAR_CHAT);
         clearBtn.addEventListener("click", () => this.clearChat());
@@ -259,8 +320,10 @@ export class ChatView extends ItemView {
             this.plugin.api.installedModels({ task: MODEL_TASK.CHAT }).catch(() => ({ models: [] })),
             this.plugin.api.catalog({ task: MODEL_TASK.EMBEDDING }).catch(() => null),
             this.plugin.api.config().catch(() => null),
+            this.plugin.api.catalog({ task: MODEL_TASK.VISION }).catch(() => null),
+            this.plugin.api.catalog({ task: MODEL_TASK.RERANK }).catch(() => null),
         ])
-            .then(([chatCatalogResult, chatInstalled, embeddingResult, serverConfig]) => {
+            .then(([chatCatalogResult, chatInstalled, embeddingResult, serverConfig, visionCatalog, rerankCatalog]) => {
                 if (this.retryTimer) {
                     clearTimeout(this.retryTimer);
                     this.retryTimer = null;
@@ -273,6 +336,11 @@ export class ChatView extends ItemView {
                 if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl);
 
                 this.fillEmbeddingSelector(embeddingResult, serverConfig);
+                this.fillOptionalRoleData(
+                    visionCatalog && visionCatalog.isOk() ? visionCatalog.value.models : [],
+                    rerankCatalog && rerankCatalog.isOk() ? rerankCatalog.value.models : [],
+                    serverConfig,
+                );
                 this.renderChatModeToggle(serverConfig);
 
                 if (this.chatInstalled.length === 0) {
@@ -311,15 +379,16 @@ export class ChatView extends ItemView {
         const embeddingModel = typeof serverConfig?.embedding_model === "string" ? serverConfig.embedding_model : "";
         const noEmbedding = embeddingModel === "";
 
-        const segments: { mode: ChatMode; label: string }[] = [
-            { mode: CHAT_MODE.SEARCH, label: MESSAGES.LABEL_CHAT_MODE_SEARCH },
-            { mode: CHAT_MODE.CHAT, label: MESSAGES.LABEL_CHAT_MODE_CHAT },
+        const segments: { mode: ChatMode; label: string; tooltip: string }[] = [
+            { mode: CHAT_MODE.SEARCH, label: MESSAGES.LABEL_CHAT_MODE_SEARCH, tooltip: MESSAGES.TOOLTIP_MODE_SEARCH },
+            { mode: CHAT_MODE.CHAT, label: MESSAGES.LABEL_CHAT_MODE_CHAT, tooltip: MESSAGES.TOOLTIP_MODE_CHAT },
         ];
         for (const seg of segments) {
             const btn = this.chatModeContainer.createEl("button", {
                 text: seg.label,
                 cls: `lilbee-chat-mode-btn${seg.mode === rawMode ? " active" : ""}`,
             });
+            btn.setAttribute("aria-label", seg.tooltip);
             if (noEmbedding) {
                 btn.disabled = true;
                 btn.setAttribute("title", MESSAGES.TOOLTIP_CHAT_MODE_NEEDS_EMBEDDING);
@@ -482,6 +551,99 @@ export class ChatView extends ItemView {
         });
     }
 
+    /** Store the latest per-task catalog + active model for the optional roles, then re-render. */
+    private fillOptionalRoleData(
+        visionCatalog: CatalogEntry[],
+        rerankCatalog: CatalogEntry[],
+        serverConfig: Record<string, unknown> | null,
+    ): void {
+        this.optionalCatalog.vision = visionCatalog;
+        this.optionalCatalog.rerank = rerankCatalog;
+        this.optionalActive.vision = serverConfig ? String(serverConfig["vision_model"] ?? "") : "";
+        this.optionalActive.rerank = serverConfig ? String(serverConfig["reranker_model"] ?? "") : "";
+        this.fillOptionalRoles();
+    }
+
+    /** Rebuild the optional (Vision, Rerank) rail rows from current catalog/active state. */
+    private fillOptionalRoles(): void {
+        /* v8 ignore next 2 */
+        if (!this.optionalRailEl) return;
+        this.optionalRailEl.empty();
+        for (const spec of OPTIONAL_ROLE_SPECS) {
+            this.renderOptionalRoleRow(this.optionalRailEl, spec);
+        }
+    }
+
+    /**
+     * Selectable models for a role: local installed builds + hosted (LiteLLM)
+     * entries — mirroring the Settings model manager so only role-capable
+     * models appear. Un-installed catalog builds are reached via "Browse catalog".
+     */
+    private optionalRoleOptions(spec: OptionalRoleSpec): { value: string; label: string }[] {
+        const entries = this.optionalCatalog[spec.key];
+        const localInstalled = entries.filter((e) => e.source !== CATALOG_SOURCE.FRONTIER && e.installed);
+        const hosted = entries.filter((e) => e.source === CATALOG_SOURCE.FRONTIER);
+        const options = localInstalled.map((e) => ({ value: e.hf_repo, label: e.display_name }));
+        for (const e of hosted) {
+            options.push({ value: e.hf_repo, label: `${e.display_name} — ${MESSAGES.LABEL_VISION_HOSTED_GROUP}` });
+        }
+        return options;
+    }
+
+    private renderOptionalRoleRow(rail: HTMLElement, spec: OptionalRoleSpec): void {
+        const active = this.optionalActive[spec.key];
+        const options = this.optionalRoleOptions(spec);
+        const chip = rail.createDiv({ cls: "lilbee-model-chip lilbee-model-chip-optional" });
+        chip.setAttribute("aria-label", spec.tooltip);
+        if (!active) chip.addClass("is-off");
+        const dot = chip.createSpan({ cls: `lilbee-model-chip-dot ${spec.dotClass}` });
+        if (active) dot.addClass("is-active");
+        chip.createSpan({ cls: "lilbee-model-chip-label", text: spec.label });
+
+        const select = chip.createEl("select", {
+            cls: `lilbee-model-chip-select ${spec.selectClass}`,
+        }) as HTMLSelectElement;
+        // "Disabled" turns the role off (model ref ""); the role stays visible
+        // even with nothing installed, and "Browse catalog" downloads one.
+        const disabled = select.createEl("option", { text: spec.disabledLabel });
+        (disabled as HTMLOptionElement).value = RAIL_DISABLED_KEY;
+        if (!active) (disabled as HTMLOptionElement).selected = true;
+
+        const activeRepo = extractHfRepo(active);
+        for (const opt of options) {
+            const option = select.createEl("option", { text: opt.label });
+            (option as HTMLOptionElement).value = opt.value;
+            if (opt.value === active || opt.value === activeRepo) {
+                (option as HTMLOptionElement).selected = true;
+            }
+        }
+        const browse = select.createEl("option", { text: MESSAGES.RAIL_BROWSE_CATALOG });
+        (browse as HTMLOptionElement).value = RAIL_BROWSE_KEY;
+        this.attachOptionalRoleListener(select, spec);
+    }
+
+    private attachOptionalRoleListener(el: HTMLSelectElement, spec: OptionalRoleSpec): void {
+        el.addEventListener("change", () => {
+            if (el.value === RAIL_BROWSE_KEY) {
+                new CatalogModal(this.app, this.plugin, spec.task).open();
+                // Reset selection so reopening the catalog stays possible.
+                el.value = this.optionalActive[spec.key];
+                return;
+            }
+            // el.value === "" disables the role; any other value activates it.
+            void spec.setActive(this.plugin.api, el.value).then((result) => {
+                if (result.isErr()) {
+                    new Notice(MESSAGES.NOTICE_FAILED_UPDATE(spec.failNotice));
+                    return;
+                }
+                this.optionalActive[spec.key] = el.value;
+                this.fillOptionalRoles();
+                this.plugin.fetchActiveModel();
+                this.plugin.refreshSettingsTab();
+            });
+        });
+    }
+
     private revertEmbeddingSelect(previousValue: string): void {
         if (!this.embeddingSelectEl) return;
         // HTMLSelectElement.value is a no-op if no option matches — which
@@ -555,39 +717,6 @@ export class ChatView extends ItemView {
         }
         this.plugin.fetchActiveModel();
         this.refreshModelSelector();
-    }
-
-    private cycleOcr(): void {
-        const current = this.plugin.settings.enableOcr;
-        if (current === null) {
-            this.plugin.settings.enableOcr = true;
-        } else if (current === true) {
-            this.plugin.settings.enableOcr = false;
-        } else {
-            this.plugin.settings.enableOcr = null;
-        }
-        void this.plugin.saveSettings();
-        this.updateOcrToggle();
-    }
-
-    private updateOcrToggle(): void {
-        if (!this.ocrToggleEl) return;
-        this.ocrToggleEl.empty();
-        const iconEl = this.ocrToggleEl.createDiv({ cls: "lilbee-toolbar-icon" });
-        setIcon(iconEl, "eye");
-
-        const state = this.plugin.settings.enableOcr;
-        this.ocrToggleEl.classList.remove("is-auto", "is-on", "is-off");
-        if (state === null) {
-            this.ocrToggleEl.classList.add("is-auto");
-            this.ocrToggleEl.setAttribute("title", MESSAGES.LABEL_OCR_AUTO);
-        } else if (state === true) {
-            this.ocrToggleEl.classList.add("is-on");
-            this.ocrToggleEl.setAttribute("title", MESSAGES.LABEL_OCR_ON);
-        } else {
-            this.ocrToggleEl.classList.add("is-off");
-            this.ocrToggleEl.setAttribute("title", MESSAGES.LABEL_OCR_OFF);
-        }
     }
 
     private refreshModelSelector(): void {

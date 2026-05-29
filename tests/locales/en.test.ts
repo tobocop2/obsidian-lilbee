@@ -55,9 +55,6 @@ describe("MESSAGES", () => {
             expect(MESSAGES.LABEL_SIZE).toBe("Size");
             expect(MESSAGES.LABEL_DESCRIPTION).toBe("Description");
             expect(MESSAGES.LABEL_CHAT_MODEL).toBe("Chat Model");
-            expect(MESSAGES.LABEL_OCR_AUTO).toBe("OCR: Auto");
-            expect(MESSAGES.LABEL_OCR_ON).toBe("OCR: On");
-            expect(MESSAGES.LABEL_OCR_OFF).toBe("OCR: Off");
             expect(MESSAGES.LABEL_REASONING).toBe("Reasoning");
             expect(MESSAGES.LABEL_SOURCES).toBe("Sources");
             expect(MESSAGES.LABEL_OUR_PICKS).toBe("Our picks");

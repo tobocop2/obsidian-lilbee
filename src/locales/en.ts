@@ -70,9 +70,6 @@ export const MESSAGES = {
     LABEL_MIN_RAM: "Minimum RAM:",
     LABEL_DESCRIPTION: "Description",
     LABEL_CHAT_MODEL: "Chat Model",
-    LABEL_OCR_AUTO: "OCR: Auto",
-    LABEL_OCR_ON: "OCR: On",
-    LABEL_OCR_OFF: "OCR: Off",
     LABEL_ACTIVE_MODEL: "Active",
     LABEL_REASONING: "Reasoning",
     LABEL_SOURCES: "Sources",
@@ -134,6 +131,12 @@ export const MESSAGES = {
     COMMAND_MODEL_PICKER_EMBED: "Pick embedding model",
     DESC_CHAT_MODE: "Search uses your documents and returns citations. Chat is a general assistant with no retrieval.",
     TOOLTIP_CHAT_MODE_NEEDS_EMBEDDING: "Configure an embedding model to enable Search.",
+    TOOLTIP_MODE_SEARCH: "Search your vault — finds relevant passages and answers with citations.",
+    TOOLTIP_MODE_CHAT: "Chat with the model directly — no vault retrieval.",
+    TOOLTIP_ROLE_CHAT: "Chat model — writes the answers.",
+    TOOLTIP_ROLE_EMBED: "Embedding model — indexes your notes so search can find them.",
+    TOOLTIP_ROLE_VISION: "Vision model — reads scanned or image-only PDFs. Optional.",
+    TOOLTIP_ROLE_RERANK: "Reranker — reorders search hits for sharper relevance. Optional.",
     LABEL_GEN_TEMPERATURE: "Creativity",
     LABEL_GEN_TOP_P: "Top P",
     LABEL_GEN_TOP_K: "Top K (sampling)",
@@ -816,6 +819,34 @@ export const MESSAGES = {
     WIZARD_FILE_PICKER_DISK: "Files from disk",
     WIZARD_FOLDER_PICKER_DISK: "Folder from disk",
     WIZARD_CRAWL_WEB: "Crawl web page",
+
+    // Managed-mode consent modal
+    MANAGED_CONSENT_TITLE: "How should lilbee run?",
+    MANAGED_CONSENT_SUBTITLE: "lilbee indexes your vault from a local server. Pick who runs it.",
+    MANAGED_CONSENT_PILL_RECOMMENDED: "Recommended",
+    MANAGED_CONSENT_CARD_MANAGED_TITLE: "Managed",
+    MANAGED_CONSENT_CARD_MANAGED_DESC:
+        "This plugin downloads the server and handles start, stop, and updates. Nothing else to install.",
+    MANAGED_CONSENT_CARD_EXTERNAL_TITLE: "External",
+    MANAGED_CONSENT_CARD_EXTERNAL_DESC: "You run lilbee serve yourself. The plugin connects to it.",
+    MANAGED_CONSENT_CARD_EXTERNAL_HINT: "For advanced / custom setups",
+    MANAGED_CONSENT_CONFIGURE_LINK: "Set your server URL in Settings",
+    MANAGED_CONSENT_PROV_LABEL: "Source · verified",
+    MANAGED_CONSENT_PROV_PENDING: "Fetching release info…",
+    MANAGED_CONSENT_PROV_FAILED: "(release info unavailable)",
+    MANAGED_CONSENT_PROV_RELEASE_NOTES: "View release notes ↗",
+    MANAGED_CONSENT_PROV_ONE_TIME: "one-time",
+    MANAGED_CONSENT_BTN_CANCEL: "Cancel",
+    MANAGED_CONSENT_BTN_DOWNLOAD: "↓ Download & manage server",
+    NOTICE_SERVER_DOWNLOAD_CANCELED: "Server download canceled.",
+    NOTICE_SWITCHED_TO_EXTERNAL: "Switched to external mode. Set your server URL in Settings to connect.",
+
+    // Chat-view model rail
+    RAIL_LABEL_CHAT: "Chat",
+    RAIL_LABEL_EMBED: "Embed",
+    RAIL_LABEL_VISION: "Vision",
+    RAIL_LABEL_RERANK: "Rerank",
+    RAIL_BROWSE_CATALOG: "Browse catalog…",
 } as const;
 
 export const FILTERS = {

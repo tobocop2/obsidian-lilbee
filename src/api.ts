@@ -364,12 +364,10 @@ export class LilbeeClient {
     async *addFiles(
         paths: string[],
         force = false,
-        enableOcr?: boolean | null,
         signal?: AbortSignal,
         ocrTimeout?: number | null,
     ): AsyncGenerator<SSEEvent> {
         const body: Record<string, unknown> = { paths, force };
-        if (enableOcr !== undefined && enableOcr !== null) body.enable_ocr = enableOcr;
         if (ocrTimeout !== undefined && ocrTimeout !== null) body.ocr_timeout = ocrTimeout;
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/add`,
@@ -383,13 +381,8 @@ export class LilbeeClient {
         yield* this.parseSSE(res);
     }
 
-    async *syncStream(
-        enableOcr?: boolean | null,
-        signal?: AbortSignal,
-        options?: SyncOptions,
-    ): AsyncGenerator<SSEEvent> {
+    async *syncStream(signal?: AbortSignal, options?: SyncOptions): AsyncGenerator<SSEEvent> {
         const body: Record<string, unknown> = {};
-        if (enableOcr !== undefined && enableOcr !== null) body.enable_ocr = enableOcr;
         if (options?.forceRebuild) body.force_rebuild = true;
         if (options?.retrySkipped) body.retry_skipped = true;
         const res = await this.fetchWithRetry(

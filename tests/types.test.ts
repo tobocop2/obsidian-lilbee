@@ -61,7 +61,6 @@ describe("DEFAULT_SETTINGS", () => {
             "manualToken",
             "maxDistance",
             "searchChunkType",
-            "enableOcr",
             "serverMode",
             "serverUrl",
             "setupCompleted",

@@ -50,7 +50,8 @@ export const node = {
     fetch: globalThis.fetch.bind(globalThis) as typeof globalThis.fetch,
 };
 
-const GITHUB_REPO = "tobocop2/lilbee";
+export const GITHUB_REPO = "tobocop2/lilbee";
+export const LILBEE_GITHUB_REPO_URL = `https://github.com/${GITHUB_REPO}`;
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 
 /** Run `nvidia-smi` and return its stdout, or null if it is absent or fails. */

@@ -83,6 +83,20 @@ vi.mock("../src/views/setup-wizard", () => ({
     SetupWizard: vi.fn().mockImplementation(() => ({ open: vi.fn(), close: vi.fn() })),
 }));
 
+// Controllable consent-modal result for the managed-mode gate tests. Default
+// "download" so the gate proceeds to startManagedServer when the binary is
+// absent; per-test overrides exercise the external / cancel branches.
+let mockConsentResult: { kind: "download" | "external" | "cancel" } = { kind: "download" };
+const mockConsentOpen = vi.fn();
+vi.mock("../src/views/managed-consent-modal", () => ({
+    ManagedConsentModal: vi.fn().mockImplementation(() => ({
+        openConsent: () => {
+            mockConsentOpen();
+            return Promise.resolve(mockConsentResult);
+        },
+    })),
+}));
+
 vi.mock("../src/views/wiki-view", () => ({
     VIEW_TYPE_WIKI: "lilbee-wiki",
     WikiView: vi.fn().mockImplementation(() => ({ refresh: vi.fn() })),
@@ -125,6 +139,8 @@ vi.mock("../src/binary-manager", () => ({
     })),
     getLatestRelease: vi.fn(),
     checkForUpdate: vi.fn(),
+    GITHUB_REPO: "tobocop2/lilbee",
+    LILBEE_GITHUB_REPO_URL: "https://github.com/tobocop2/lilbee",
     node: {
         spawn: vi.fn(),
         execFile: vi.fn(),
@@ -234,6 +250,8 @@ describe("LilbeePlugin", () => {
         vi.useRealTimers();
         mockLastStderr = "";
         mockConfirmModalResult = true;
+        mockBinaryExists.mockReturnValue(true);
+        mockConsentResult = { kind: "download" };
     });
 
     afterEach(() => {
@@ -744,7 +762,7 @@ describe("LilbeePlugin", () => {
 
             await plugin.triggerSync({ retrySkipped: true });
 
-            const opts = (plugin.api.syncStream as ReturnType<typeof vi.fn>).mock.calls[0][2];
+            const opts = (plugin.api.syncStream as ReturnType<typeof vi.fn>).mock.calls[0][1];
             expect(opts).toEqual({ retrySkipped: true });
             expect(plugin.taskQueue.completed[0]!.name).toBe(MESSAGES.COMMAND_SYNC_RETRY_SKIPPED);
         });
@@ -758,7 +776,7 @@ describe("LilbeePlugin", () => {
 
             await plugin.triggerSync({ forceRebuild: true });
 
-            const opts = (plugin.api.syncStream as ReturnType<typeof vi.fn>).mock.calls[0][2];
+            const opts = (plugin.api.syncStream as ReturnType<typeof vi.fn>).mock.calls[0][1];
             expect(opts).toEqual({ forceRebuild: true });
             expect(plugin.taskQueue.completed[0]!.name).toBe(MESSAGES.COMMAND_SYNC_REBUILD);
         });
@@ -1573,7 +1591,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/notes/test.md"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -1922,26 +1939,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/lilbee/imports/doc.pdf", "/test/vault/lilbee/imports/notes.md"],
                 true,
-                null,
-                expect.any(AbortSignal),
-            );
-        });
-
-        it("passes enableOcr setting when set", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            plugin.activeModel = "llama3";
-            plugin.settings.enableOcr = true;
-
-            async function* noEvents() {}
-            plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
-
-            await plugin.addExternalFiles(["/home/user/scan.pdf"]);
-
-            expect(plugin.api.addFiles).toHaveBeenCalledWith(
-                ["/test/vault/lilbee/imports/scan.pdf"],
-                true,
-                true,
                 expect.any(AbortSignal),
             );
         });
@@ -2160,7 +2157,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/existing.pdf"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -2184,7 +2180,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/lilbee/imports/good.pdf"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -2224,7 +2219,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/lilbee/imports/doc-1.pdf"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -2273,7 +2267,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/lilbee/imports/Makefile-1"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -2320,7 +2313,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["C:\\Users\\me\\vault\\notes\\already-here.md"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -2354,7 +2346,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/lilbee/imports/notes-folder"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -2384,7 +2375,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/lilbee/imports/doc.pdf", "/test/vault/lilbee/imports/folder"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -2414,7 +2404,6 @@ describe("LilbeePlugin", () => {
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/lilbee/imports/good.pdf"],
                 true,
-                null,
                 expect.any(AbortSignal),
             );
         });
@@ -3840,6 +3829,113 @@ describe("LilbeePlugin", () => {
         });
     });
 
+    describe("ensureManagedConsentThenStart() gate", () => {
+        it("skips the modal and starts directly when the binary already exists", async () => {
+            mockBinaryExists.mockReturnValue(true);
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            mockServerStart.mockClear();
+            mockConsentOpen.mockClear();
+
+            const outcome = await plugin.ensureManagedConsentThenStart();
+
+            expect(mockConsentOpen).not.toHaveBeenCalled();
+            expect(mockServerStart).toHaveBeenCalled();
+            expect(outcome).toEqual({ kind: "started", mode: "managed" });
+        });
+
+        it("opens the modal when the binary is missing; download outcome starts the server", async () => {
+            mockBinaryExists.mockReturnValue(false);
+            mockConsentResult = { kind: "download" };
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            mockServerStart.mockClear();
+            mockConsentOpen.mockClear();
+
+            const outcome = await plugin.ensureManagedConsentThenStart();
+
+            expect(mockConsentOpen).toHaveBeenCalledTimes(1);
+            expect(mockServerStart).toHaveBeenCalled();
+            expect(plugin.settings.serverMode).toBe("managed");
+            expect(outcome).toEqual({ kind: "started", mode: "managed" });
+        });
+
+        it("external outcome flips serverMode, configures the API, and does not start or open a browser", async () => {
+            const openSpy = vi.fn();
+            vi.stubGlobal("window", { open: openSpy } as unknown as Window);
+            try {
+                mockBinaryExists.mockReturnValue(false);
+                mockConsentResult = { kind: "external" };
+                const plugin = await createPlugin({ serverMode: "managed" });
+                await plugin.onload();
+                await flush();
+                mockServerStart.mockClear();
+
+                const outcome = await plugin.ensureManagedConsentThenStart();
+
+                expect(plugin.settings.serverMode).toBe("external");
+                // The gate must NOT navigate to a browser — external mode is
+                // configured in-app, not via the GitHub install page.
+                expect(openSpy).not.toHaveBeenCalled();
+                expect(mockServerStart).not.toHaveBeenCalled();
+                expect(outcome).toEqual({ kind: "switched-to-external" });
+                expect(Notice.instances.some((n) => n.message.includes("external mode"))).toBe(true);
+            } finally {
+                vi.unstubAllGlobals();
+            }
+        });
+
+        it("onload opens the plugin Settings when the user switches to external from the consent modal", async () => {
+            mockBinaryExists.mockReturnValue(false);
+            mockConsentResult = { kind: "external" };
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const settingsSpy = vi.spyOn(plugin, "openPluginSettings").mockImplementation(() => {});
+            await plugin.onload();
+            await flush();
+
+            expect(settingsSpy).toHaveBeenCalled();
+            expect(plugin.settings.serverMode).toBe("external");
+        });
+
+        it("cancel outcome fires a Notice and leaves managed mode without starting", async () => {
+            mockBinaryExists.mockReturnValue(false);
+            mockConsentResult = { kind: "cancel" };
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            mockServerStart.mockClear();
+
+            const outcome = await plugin.ensureManagedConsentThenStart();
+
+            expect(mockServerStart).not.toHaveBeenCalled();
+            expect(outcome).toEqual({ kind: "canceled" });
+            expect(Notice.instances.some((n) => n.message.includes("Server download canceled"))).toBe(true);
+        });
+
+        it("returns canceled when there is no vault registry", async () => {
+            mockBinaryExists.mockReturnValue(false);
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as any).vaultRegistry = null;
+            mockConsentOpen.mockClear();
+
+            const outcome = await plugin.ensureManagedConsentThenStart();
+
+            expect(mockConsentOpen).not.toHaveBeenCalled();
+            expect(outcome).toEqual({ kind: "canceled" });
+        });
+
+        it("startManagedServer never opens the consent modal (gate owns that)", async () => {
+            mockBinaryExists.mockReturnValue(false);
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            mockConsentOpen.mockClear();
+
+            await plugin.startManagedServer();
+
+            expect(mockConsentOpen).not.toHaveBeenCalled();
+        });
+    });
+
     describe("managed server mode", () => {
         it("onload in managed mode creates binaryManager and serverManager", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
@@ -3967,7 +4063,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("downloading state sets lilbee-status-downloading class", async () => {
-            mockBinaryExists.mockReturnValueOnce(false);
+            mockBinaryExists.mockReturnValue(false);
             mockEnsureBinary.mockImplementationOnce(async () => "/fake/bin/lilbee");
 
             const plugin = await createPlugin({ serverMode: "managed" });
@@ -4089,7 +4185,8 @@ describe("LilbeePlugin", () => {
         });
 
         it("shows download Notice with URL when binary is missing", async () => {
-            mockBinaryExists.mockReturnValueOnce(false);
+            // Missing-binary flow checks binaryExists twice (consent gate + download UI).
+            mockBinaryExists.mockReturnValue(false);
             mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
                 cb?.("Downloading...", "https://example.com/dl");
                 cb?.("Download complete.", "https://example.com/dl");
@@ -4108,7 +4205,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("shows download Notice without URL when url is not provided", async () => {
-            mockBinaryExists.mockReturnValueOnce(false);
+            mockBinaryExists.mockReturnValue(false);
             mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
                 cb?.("Fetching latest release info...");
                 cb?.("Still going...");
@@ -4136,7 +4233,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("hides download Notice on ensureBinary failure", async () => {
-            mockBinaryExists.mockReturnValueOnce(false);
+            mockBinaryExists.mockReturnValue(false);
             mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
                 cb?.("Downloading...", "https://example.com/dl");
                 throw new Error("network error");
@@ -4368,7 +4465,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("saves version on fresh download when shared lilbeeVersion is empty", async () => {
-            mockBinaryExists.mockReturnValueOnce(false);
+            mockBinaryExists.mockReturnValue(false);
             const { getLatestRelease } = await import("../src/binary-manager");
             (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({
                 tag: "v0.5.1",
@@ -4389,7 +4486,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("does not overwrite existing shared lilbeeVersion on fresh download", async () => {
-            mockBinaryExists.mockReturnValueOnce(false);
+            mockBinaryExists.mockReturnValue(false);
 
             const plugin = await createPlugin({ serverMode: "managed" });
             const setSpy = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});

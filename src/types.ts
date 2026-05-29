@@ -268,6 +268,31 @@ export const SERVER_MODE = {
     EXTERNAL: "external",
 } as const satisfies Record<string, ServerMode>;
 
+/** Three-way result of the managed-mode consent modal. */
+export type ManagedConsentResultKind = "download" | "external" | "cancel";
+
+export type ManagedConsentResult = { kind: "download" } | { kind: "external" } | { kind: "cancel" };
+
+export const MANAGED_CONSENT_RESULT = {
+    DOWNLOAD: "download",
+    EXTERNAL: "external",
+    CANCEL: "cancel",
+} as const satisfies Record<string, ManagedConsentResultKind>;
+
+/** Outcome of the consent-then-start gate the plugin runs before a managed binary download. */
+export type SetupOutcomeKind = "started" | "switched-to-external" | "canceled";
+
+export type SetupOutcome =
+    | { kind: "started"; mode: ServerMode }
+    | { kind: "switched-to-external" }
+    | { kind: "canceled" };
+
+export const SETUP_OUTCOME = {
+    STARTED: "started",
+    SWITCHED_TO_EXTERNAL: "switched-to-external",
+    CANCELED: "canceled",
+} as const satisfies Record<string, SetupOutcomeKind>;
+
 export type SearchChunkType = "all" | "wiki" | "raw";
 
 export const SEARCH_CHUNK_TYPE = {
@@ -291,7 +316,6 @@ export interface LilbeeSettings {
     searchChunkType: SearchChunkType;
     wikiSyncToVault: boolean;
     wikiVaultFolder: string;
-    enableOcr: boolean | null;
     manualToken: string;
     /**
      * Store lilbee's managed content (crawls, imported files) inside the vault
@@ -331,7 +355,6 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     searchChunkType: "raw",
     wikiSyncToVault: false,
     wikiVaultFolder: "lilbee-wiki",
-    enableOcr: null,
     manualToken: "",
     storeContentInVault: true,
     lastCatalogTab: "discover",
