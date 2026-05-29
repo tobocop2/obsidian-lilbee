@@ -9,7 +9,16 @@ import {
     WorkspaceLeaf,
 } from "obsidian";
 import type LilbeePlugin from "../main";
-import { CHAT_MODE, CONFIG_KEY, HOSTED_SOURCES, MODEL_TASK, SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
+import {
+    CATALOG_SOURCE,
+    CHAT_MODE,
+    CONFIG_KEY,
+    HOSTED_SOURCES,
+    MODEL_TASK,
+    SSE_EVENT,
+    TASK_TYPE,
+    ERROR_NAME,
+} from "../types";
 import type { CatalogEntry, ChatMode, InstalledModel, Message, SearchChunkType, Source, SSEEvent } from "../types";
 import { RateLimitedError } from "../api";
 
@@ -30,7 +39,7 @@ import {
     noticeForResultError,
     getRelevantSystemMemoryGB,
 } from "../utils";
-import { hostedOptions } from "./catalog-helpers";
+import { hostedOptions, isUsableHostedRow } from "./catalog-helpers";
 
 interface OpenDialogResult {
     canceled: boolean;
@@ -502,7 +511,7 @@ export class ChatView extends ItemView {
         }
         for (const m of otherInstalled) {
             const source = sourceMap.get(m.name);
-            const suffix = source && source !== "native" ? ` [${source}]` : "";
+            const suffix = source && source !== CATALOG_SOURCE.NATIVE ? ` [${source}]` : "";
             const option = selectEl.createEl("option", { text: `${displayLabelForRef(m.name)}${suffix}` });
             (option as HTMLOptionElement).value = m.name;
             if (m.name === this.chatActive) {
@@ -598,8 +607,8 @@ export class ChatView extends ItemView {
      */
     private optionalRoleOptions(spec: OptionalRoleSpec): { value: string; label: string }[] {
         const entries = this.optionalCatalog[spec.key];
-        const localInstalled = entries.filter((e) => e.source !== CATALOG_SOURCE.FRONTIER && e.installed);
-        const hosted = entries.filter((e) => e.source === CATALOG_SOURCE.FRONTIER);
+        const localInstalled = entries.filter((e) => !HOSTED_SOURCES.has(e.source) && e.installed);
+        const hosted = entries.filter(isUsableHostedRow);
         const options = localInstalled.map((e) => ({ value: e.hf_repo, label: e.display_name }));
         for (const e of hosted) {
             options.push({ value: e.hf_repo, label: `${e.display_name} — ${MESSAGES.LABEL_VISION_HOSTED_GROUP}` });

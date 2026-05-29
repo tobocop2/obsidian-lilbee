@@ -43,13 +43,15 @@ describe("CATALOG_SOURCE", () => {
         expect(CATALOG_SOURCE.NATIVE).toBe("native");
         expect(CATALOG_SOURCE.FRONTIER).toBe("frontier");
         expect(CATALOG_SOURCE.OLLAMA).toBe("ollama");
+        expect(CATALOG_SOURCE.LM_STUDIO).toBe("lm_studio");
     });
 
-    it("HOSTED_SOURCES holds the two hosted sources only", () => {
+    it("HOSTED_SOURCES holds frontier plus the local servers", () => {
         expect(HOSTED_SOURCES.has(CATALOG_SOURCE.FRONTIER)).toBe(true);
         expect(HOSTED_SOURCES.has(CATALOG_SOURCE.OLLAMA)).toBe(true);
+        expect(HOSTED_SOURCES.has(CATALOG_SOURCE.LM_STUDIO)).toBe(true);
         expect(HOSTED_SOURCES.has(CATALOG_SOURCE.NATIVE)).toBe(false);
-        expect(HOSTED_SOURCES.size).toBe(2);
+        expect(HOSTED_SOURCES.size).toBe(3);
     });
 });
 

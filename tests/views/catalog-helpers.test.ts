@@ -60,6 +60,10 @@ describe("catalog-helpers", () => {
             expect(hasReadyHostedRow([row({ source: CATALOG_SOURCE.OLLAMA })])).toBe(true);
         });
 
+        it("treats lm_studio rows as always ready (no key needed)", () => {
+            expect(hasReadyHostedRow([row({ source: CATALOG_SOURCE.LM_STUDIO })])).toBe(true);
+        });
+
         it("returns false on an empty list", () => {
             expect(hasReadyHostedRow([])).toBe(false);
         });
@@ -107,6 +111,18 @@ describe("catalog-helpers", () => {
         it("omits the provider suffix when a hosted row carries none", () => {
             const rows = [row({ source: CATALOG_SOURCE.OLLAMA, hf_repo: "ollama/l", display_name: "Llama" })];
             expect(hostedOptions(rows)).toEqual([["ollama/l", "Llama"]]);
+        });
+
+        it("lists lm_studio rows alongside ollama (both local servers, no key)", () => {
+            const rows = [
+                row({
+                    source: CATALOG_SOURCE.LM_STUDIO,
+                    hf_repo: "lm_studio/qwen",
+                    display_name: "Qwen",
+                    provider: "LM Studio",
+                }),
+            ];
+            expect(hostedOptions(rows)).toEqual([["lm_studio/qwen", "Qwen [LM Studio]"]]);
         });
     });
 

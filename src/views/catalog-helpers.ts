@@ -1,6 +1,6 @@
 import type { App } from "obsidian";
 import type { CatalogEntry, CatalogTab, KeyStatus, ModelTask } from "../types";
-import { CATALOG_SOURCE, CATALOG_TAB, HOSTED_SOURCES, KEY_STATUS, MODEL_TASK } from "../types";
+import { CATALOG_TAB, HOSTED_SOURCES, KEY_STATUS, MODEL_TASK } from "../types";
 import { MESSAGES } from "../locales/en";
 
 const DISCOVER_RAIL_LIMIT = 12;
@@ -22,7 +22,7 @@ export const KEY_STATUS_PILL_CLASS = {
     NEEDS_KEY: "lilbee-key-status-pill-needs-key",
 } as const;
 
-/** Hosted rows (frontier + ollama): selectable, no download. */
+/** Hosted rows (frontier + local servers): selectable, no download. */
 export function hostedRowsOnly(rows: CatalogEntry[]): CatalogEntry[] {
     return rows.filter((row) => HOSTED_SOURCES.has(row.source));
 }
@@ -32,19 +32,21 @@ export function localRowsOnly(rows: CatalogEntry[]): CatalogEntry[] {
     return rows.filter((row) => !HOSTED_SOURCES.has(row.source));
 }
 
-/** Hosted row is usable when frontier has a ready key, or it's Ollama (no key). */
-export function hasReadyHostedRow(rows: CatalogEntry[]): boolean {
-    return rows.some(
-        (row) =>
-            row.source === CATALOG_SOURCE.OLLAMA ||
-            (row.source === CATALOG_SOURCE.FRONTIER && row.key_status === KEY_STATUS.READY),
-    );
+/** A hosted row is usable unless it's a frontier model still missing its key.
+ * Local servers (Ollama, LM Studio) report `key_status` null, so they always pass. */
+export function isUsableHostedRow(row: CatalogEntry): boolean {
+    return HOSTED_SOURCES.has(row.source) && row.key_status !== KEY_STATUS.MISSING_KEY;
 }
 
-/** Selectable hosted rows: ollama (always) + frontier with a ready key. Returns [ref, label]. */
+/** True when at least one hosted row is ready to select right now. */
+export function hasReadyHostedRow(rows: CatalogEntry[]): boolean {
+    return rows.some(isUsableHostedRow);
+}
+
+/** Selectable hosted rows: local servers always, frontier only with a ready key. Returns [ref, label]. */
 export function hostedOptions(rows: CatalogEntry[]): Array<[string, string]> {
-    return hostedRowsOnly(rows)
-        .filter((e) => e.source === CATALOG_SOURCE.OLLAMA || e.key_status === KEY_STATUS.READY)
+    return rows
+        .filter(isUsableHostedRow)
         .map((e) => [e.hf_repo, `${e.display_name}${e.provider ? ` [${e.provider}]` : ""}`]);
 }
 

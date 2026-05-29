@@ -44,6 +44,10 @@ describe("displayLabelForRef", () => {
         expect(displayLabelForRef("ollama/qwen3:8b")).toBe("qwen3:8b");
     });
 
+    it("returns the segment after lm_studio/", () => {
+        expect(displayLabelForRef("lm_studio/qwen2.5-7b-instruct")).toBe("qwen2.5-7b-instruct");
+    });
+
     it("returns the segment after openai/", () => {
         expect(displayLabelForRef("openai/gpt-4o")).toBe("gpt-4o");
     });

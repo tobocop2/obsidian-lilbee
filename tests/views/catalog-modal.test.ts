@@ -1382,7 +1382,7 @@ describe("CatalogModal", () => {
         it("hides the Frontier tab when no frontier rows have key_status=ready", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(
-                ok(makeCatalogResponse([makeEntry({ source: "local" }), makeFrontierEntry()])),
+                ok(makeCatalogResponse([makeEntry({ source: "native" }), makeFrontierEntry()])),
             );
             const modal = await openModal(plugin);
             const content = contentEl(modal);
@@ -1396,7 +1396,7 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(
                 ok(
                     makeCatalogResponse([
-                        makeEntry({ source: "local" }),
+                        makeEntry({ source: "native" }),
                         makeFrontierEntry({
                             ...({ key_status: "ready" } as Partial<CatalogEntry>),
                         }),
@@ -1414,7 +1414,7 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(
                 ok(
                     makeCatalogResponse([
-                        makeEntry({ source: "local", display_name: "Local model" }),
+                        makeEntry({ source: "native", display_name: "Local model" }),
                         makeFrontierEntry({ display_name: "Frontier model" }),
                     ]),
                 ),
@@ -1534,7 +1534,7 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(
                 ok(
                     makeCatalogResponse([
-                        makeEntry({ source: "local", display_name: "Local-A" }),
+                        makeEntry({ source: "native", display_name: "Local-A" }),
                         makeFrontierEntry({ ...({ key_status: "ready" } as Partial<CatalogEntry>) }),
                     ]),
                 ),
@@ -1622,7 +1622,7 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(
                 ok(
                     makeCatalogResponse([
-                        makeEntry({ source: "local", display_name: "Local-A" }),
+                        makeEntry({ source: "native", display_name: "Local-A" }),
                         makeFrontierEntry({ ...({ key_status: "ready" } as Partial<CatalogEntry>) }),
                     ]),
                 ),

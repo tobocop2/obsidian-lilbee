@@ -184,7 +184,7 @@ export class ModelPickerModal extends Modal {
             /* v8 ignore next */
             const provider = row.provider ?? "";
             renderProviderPill(nameRow, provider);
-            // Ollama needs no API key, so it carries a provider pill only.
+            // Local servers (Ollama, LM Studio) need no API key — provider pill only.
             if (row.source === CATALOG_SOURCE.FRONTIER) {
                 renderKeyStatusPill(nameRow, row.key_status ?? KEY_STATUS.MISSING_KEY);
             }

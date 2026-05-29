@@ -114,18 +114,21 @@ export const CHAT_MODE = {
     CHAT: "chat",
 } as const satisfies Record<string, ChatMode>;
 
-export type CatalogSource = "native" | "frontier" | "ollama";
+export type CatalogSource = "native" | "frontier" | "ollama" | "lm_studio";
 
 export const CATALOG_SOURCE = {
     NATIVE: "native",
     FRONTIER: "frontier",
     OLLAMA: "ollama",
+    LM_STUDIO: "lm_studio",
 } as const satisfies Record<string, CatalogSource>;
 
-/** Sources rendered in the shared "hosted" area: selectable, no download. */
+/** Sources rendered in the shared "hosted" area: selectable, no download.
+ * Frontier (cloud API key) plus the local servers (Ollama, LM Studio). */
 export const HOSTED_SOURCES: ReadonlySet<CatalogSource> = new Set<CatalogSource>([
     CATALOG_SOURCE.FRONTIER,
     CATALOG_SOURCE.OLLAMA,
+    CATALOG_SOURCE.LM_STUDIO,
 ]);
 
 export type KeyStatus = "ready" | "missing_key";
@@ -519,9 +522,9 @@ export interface CatalogEntry {
     compat?: ModelCompat | null;
     architecture?: string | null;
     size_variants?: SizeVariant[] | null;
-    /** Hosted rows (frontier/ollama) carry their serving provider. */
+    /** Hosted rows (frontier + local servers) carry their serving provider. */
     provider?: string;
-    /** Set on frontier rows; `null` for ollama (no API key needed), absent on older servers. */
+    /** Set on frontier rows; `null` for local servers (no API key), absent on older servers. */
     key_status?: KeyStatus | null;
 }
 

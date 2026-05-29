@@ -581,7 +581,7 @@ export class CatalogModal extends Modal {
         const nameEl = rowEl.createSpan({ cls: "lilbee-frontier-row-name", text: row.display_name });
         const provider = row.provider ?? "";
         renderProviderPill(nameEl, provider);
-        // Ollama rows need no API key, so they carry a provider pill only.
+        // Local-server rows (Ollama, LM Studio) need no API key — provider pill only.
         const keyStatus: KeyStatus = row.key_status ?? KEY_STATUS.MISSING_KEY;
         if (row.source === CATALOG_SOURCE.FRONTIER) {
             renderKeyStatusPill(nameEl, keyStatus);
