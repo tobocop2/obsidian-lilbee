@@ -46,7 +46,7 @@ function makeCatalogResponse(models: CatalogEntry[] = []): CatalogResponse {
 }
 
 function makePlugin(overrides: Record<string, unknown> = {}) {
-    return {
+    const plugin: Record<string, unknown> = {
         app: new App(),
         settings: {
             serverUrl: "http://127.0.0.1:7433",
@@ -82,6 +82,16 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         openCockpit: vi.fn().mockResolvedValue(undefined),
         ...overrides,
     };
+    // Default consent gate: delegate to startManagedServer (so per-test
+    // progress mocks still drive the wizard panel) and report a managed start.
+    // Tests exercising the external / cancel branches override this.
+    if (!("ensureManagedConsentThenStart" in overrides)) {
+        plugin.ensureManagedConsentThenStart = vi.fn(async (onProgress?: unknown) => {
+            await (plugin.startManagedServer as (p?: unknown) => Promise<void>)(onProgress);
+            return { kind: "started", mode: "managed" };
+        });
+    }
+    return plugin;
 }
 
 function collectTexts(el: MockElement): string[] {
@@ -398,7 +408,7 @@ describe("SetupWizard", () => {
             expect(options[0].classList.contains("selected")).toBe(false);
         });
 
-        it("managed mode: Next starts server and advances", async () => {
+        it("managed mode: Next runs the consent gate, starts the server, and advances", async () => {
             const plugin = makePlugin({ serverManager: null });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
             wizard.open();
@@ -410,7 +420,9 @@ describe("SetupWizard", () => {
             await tick();
             await tick();
 
-            expect(plugin.saveSettings).toHaveBeenCalled();
+            // The gate now owns persistence + the server start; the wizard no
+            // longer calls saveSettings directly.
+            expect(plugin.ensureManagedConsentThenStart).toHaveBeenCalled();
             expect(plugin.startManagedServer).toHaveBeenCalled();
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(true);
@@ -431,6 +443,50 @@ describe("SetupWizard", () => {
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
             expect(texts.some((t) => t.includes("Failed to start server"))).toBe(true);
+        });
+
+        it("managed mode: External chosen in the consent modal reveals the external fields without advancing", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                ensureManagedConsentThenStart: vi.fn().mockResolvedValue({ kind: "switched-to-external" }),
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const nextBtn = findButtons(el).find((b) => b.textContent === "Next")!;
+            nextBtn.trigger("click");
+            await tick();
+            await tick();
+
+            // External fields revealed; Next re-enabled; did not advance to Model.
+            expect(el.find("lilbee-wizard-external-fields")!.style.display).toBe("");
+            expect((nextBtn as unknown as { disabled: boolean }).disabled).toBe(false);
+            const texts = collectTexts(el);
+            expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(false);
+            expect(plugin.startManagedServer).not.toHaveBeenCalled();
+        });
+
+        it("managed mode: Cancel in the consent modal leaves the wizard on the server step with Next re-enabled", async () => {
+            const plugin = makePlugin({
+                serverManager: null,
+                ensureManagedConsentThenStart: vi.fn().mockResolvedValue({ kind: "canceled" }),
+            });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const nextBtn = findButtons(el).find((b) => b.textContent === "Next")!;
+            nextBtn.trigger("click");
+            await tick();
+            await tick();
+
+            expect((nextBtn as unknown as { disabled: boolean }).disabled).toBe(false);
+            const texts = collectTexts(el);
+            expect(texts.some((t) => t.includes("Pick a chat model"))).toBe(false);
+            expect(plugin.startManagedServer).not.toHaveBeenCalled();
         });
 
         // The wizard passes a progress handler to startManagedServer so users
@@ -1421,7 +1477,7 @@ describe("SetupWizard", () => {
         it("Back from sync cancels and returns to model picker", async () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             let abortSignal: AbortSignal | null = null;
-            plugin.api.syncStream = vi.fn().mockImplementation((_force: boolean, signal?: AbortSignal) => {
+            plugin.api.syncStream = vi.fn().mockImplementation((signal?: AbortSignal) => {
                 abortSignal = signal ?? null;
                 return (async function* () {
                     yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 100 } };
@@ -1444,7 +1500,7 @@ describe("SetupWizard", () => {
         it("Skip setup aborts sync and closes wizard", async () => {
             let _abortSignal: AbortSignal | null = null;
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.syncStream = vi.fn().mockImplementation((_opts: any, signal?: AbortSignal) => {
+            plugin.api.syncStream = vi.fn().mockImplementation((signal?: AbortSignal) => {
                 _abortSignal = signal ?? null;
                 return (async function* () {
                     yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 100 } };
@@ -1884,8 +1940,8 @@ describe("SetupWizard", () => {
         it("aborts sync controller on close", async () => {
             let capturedSignal: AbortSignal | null = null;
             const plugin = makePlugin({ settings: { serverMode: "external" } });
-            plugin.api.syncStream = vi.fn().mockImplementation((_enableOcr: boolean | null, signal: AbortSignal) => {
-                capturedSignal = signal;
+            plugin.api.syncStream = vi.fn().mockImplementation((signal?: AbortSignal) => {
+                capturedSignal = signal ?? null;
                 return (async function* () {
                     yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 100 } };
                     await new Promise(() => {});

@@ -116,6 +116,8 @@ function makePlugin(): LilbeePlugin {
             }),
             setChatModel: vi.fn().mockResolvedValue(ok(undefined)),
             setEmbeddingModel: vi.fn().mockResolvedValue(ok(undefined)),
+            setVisionModel: vi.fn().mockResolvedValue(ok(undefined)),
+            setRerankerModel: vi.fn().mockResolvedValue(ok(undefined)),
             pullModel: vi.fn(),
             catalog: vi.fn().mockImplementation((params?: { task?: string }) => {
                 if (params?.task === "chat") {
@@ -1981,7 +1983,7 @@ describe("VaultFilePickerModal", () => {
 });
 
 describe("ChatView — toolbar groups and tooltips", () => {
-    it("groups chat icon+select in first toolbar group", async () => {
+    it("groups chat dot+label+select in the first model chip", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
@@ -1989,102 +1991,20 @@ describe("ChatView — toolbar groups and tooltips", () => {
         const container = view.containerEl.children[1] as unknown as MockElement;
         const groups = container.findAll("lilbee-toolbar-group");
         expect(groups.length).toBe(2);
-        const chatGroup = groups[0];
-        expect(chatGroup.find("lilbee-toolbar-icon")).not.toBeNull();
-        expect(chatGroup.find("lilbee-chat-model-select")).not.toBeNull();
+        const chatChip = groups[0];
+        expect(chatChip.find("lilbee-model-chip-dot")).not.toBeNull();
+        expect(chatChip.find("lilbee-model-chip-label")!.textContent).toBe("Chat");
+        expect(chatChip.find("lilbee-chat-model-select")).not.toBeNull();
     });
 
-    it("toolbar has OCR toggle element", async () => {
+    it("each role chip carries a clear text label", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const ocrToggle = container.find("lilbee-ocr-toggle");
-        expect(ocrToggle).not.toBeNull();
-    });
-
-    it("OCR toggle shows Auto state by default", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const ocrToggle = container.find("lilbee-ocr-toggle")!;
-        expect(ocrToggle.classList.contains("is-auto")).toBe(true);
-        expect(ocrToggle.attributes["title"]).toBe(MESSAGES.LABEL_OCR_AUTO);
-    });
-
-    it("OCR toggle cycles Auto -> On -> Off -> Auto", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const ocrToggle = container.find("lilbee-ocr-toggle")!;
-
-        // Auto -> On
-        await ocrToggle.trigger("click");
-        expect(plugin.settings.enableOcr).toBe(true);
-        expect(ocrToggle.classList.contains("is-on")).toBe(true);
-        expect(ocrToggle.attributes["title"]).toBe(MESSAGES.LABEL_OCR_ON);
-
-        // On -> Off
-        await ocrToggle.trigger("click");
-        expect(plugin.settings.enableOcr).toBe(false);
-        expect(ocrToggle.classList.contains("is-off")).toBe(true);
-        expect(ocrToggle.attributes["title"]).toBe(MESSAGES.LABEL_OCR_OFF);
-
-        // Off -> Auto
-        await ocrToggle.trigger("click");
-        expect(plugin.settings.enableOcr).toBeNull();
-        expect(ocrToggle.classList.contains("is-auto")).toBe(true);
-        expect(ocrToggle.attributes["title"]).toBe(MESSAGES.LABEL_OCR_AUTO);
-    });
-
-    it("OCR toggle persists to settings", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const ocrToggle = container.find("lilbee-ocr-toggle")!;
-
-        await ocrToggle.trigger("click");
-        expect(plugin.saveSettings).toHaveBeenCalled();
-    });
-
-    it("updateOcrToggle no-ops when ocrToggleEl is null", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        (view as any).ocrToggleEl = null;
-        // Should not throw
-        (view as any).updateOcrToggle();
-    });
-
-    it("OCR toggle has eye icon", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const ocrToggle = container.find("lilbee-ocr-toggle")!;
-        const icon = ocrToggle.find("lilbee-toolbar-icon");
-        expect(icon).not.toBeNull();
-        expect(icon!.attributes["data-icon"]).toBe("eye");
-    });
-
-    it("chat icon has title tooltip", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const groups = container.findAll("lilbee-toolbar-group");
-        const chatIcon = groups[0].find("lilbee-toolbar-icon")!;
-        expect(chatIcon.attributes["title"]).toBe("Chat model");
+        const labels = container.findAll("lilbee-model-chip-label").map((l) => l.textContent);
+        expect(labels).toEqual(["Chat", "Embed", "Vision", "Rerank"]);
     });
 
     it("spacer div separates groups from buttons", async () => {
@@ -2291,97 +2211,6 @@ describe("ChatView — branch coverage for guards", () => {
         await tick();
 
         globalThis.requestAnimationFrame = origRAF;
-    });
-});
-
-describe("ChatView.onOpen — OCR toggle", () => {
-    it("creates an OCR toggle element in the toolbar", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const toggle = container.find("lilbee-ocr-toggle");
-        expect(toggle).not.toBeNull();
-    });
-
-    it("defaults to Auto state with is-auto class", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        plugin.settings.enableOcr = null;
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const toggle = container.find("lilbee-ocr-toggle")!;
-        expect(toggle.classList.contains("is-auto")).toBe(true);
-        expect(toggle.attributes["title"]).toBe("OCR: Auto");
-    });
-
-    it("cycles null -> true -> false -> null on click", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        plugin.settings.enableOcr = null;
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const toggle = container.find("lilbee-ocr-toggle")!;
-
-        // Click 1: null -> true
-        toggle.trigger("click");
-        expect(plugin.settings.enableOcr).toBe(true);
-        expect(toggle.classList.contains("is-on")).toBe(true);
-        expect(toggle.attributes["title"]).toBe("OCR: On");
-
-        // Click 2: true -> false
-        toggle.trigger("click");
-        expect(plugin.settings.enableOcr).toBe(false);
-        expect(toggle.classList.contains("is-off")).toBe(true);
-        expect(toggle.attributes["title"]).toBe("OCR: Off");
-
-        // Click 3: false -> null
-        toggle.trigger("click");
-        expect(plugin.settings.enableOcr).toBe(null);
-        expect(toggle.classList.contains("is-auto")).toBe(true);
-        expect(toggle.attributes["title"]).toBe("OCR: Auto");
-    });
-
-    it("persists OCR state via saveSettings on click", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        plugin.settings.enableOcr = null;
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const toggle = container.find("lilbee-ocr-toggle")!;
-
-        toggle.trigger("click");
-        await tick();
-
-        expect(plugin.saveSettings).toHaveBeenCalled();
-    });
-
-    it("renders with is-on class when enableOcr is true", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        plugin.settings.enableOcr = true;
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const toggle = container.find("lilbee-ocr-toggle")!;
-        expect(toggle.classList.contains("is-on")).toBe(true);
-        expect(toggle.attributes["title"]).toBe("OCR: On");
-    });
-
-    it("renders with is-off class when enableOcr is false", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        plugin.settings.enableOcr = false;
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const toggle = container.find("lilbee-ocr-toggle")!;
-        expect(toggle.classList.contains("is-off")).toBe(true);
-        expect(toggle.attributes["title"]).toBe("OCR: Off");
     });
 });
 
@@ -2861,8 +2690,8 @@ describe("ChatView.createToolbar — search mode buttons", () => {
     });
 });
 
-describe("ChatView.createToolbar — toolbar icons", () => {
-    it("renders message-circle and database icons inside toolbar groups", async () => {
+describe("ChatView.createToolbar — model chips", () => {
+    it("chat and embed chips carry colored dots and labels (no role icons)", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
@@ -2870,15 +2699,43 @@ describe("ChatView.createToolbar — toolbar icons", () => {
         const container = view.containerEl.children[1] as unknown as MockElement;
         const groups = container.findAll("lilbee-toolbar-group");
         expect(groups.length).toBe(2);
-        const chatIcon = groups[0].find("lilbee-toolbar-icon")!;
-        expect(chatIcon.attributes["data-icon"]).toBe("message-circle");
-        expect(chatIcon.attributes["title"]).toBe("Chat model");
-        const embedIcon = groups[1].find("lilbee-toolbar-icon")!;
-        expect(embedIcon.attributes["data-icon"]).toBe("database");
-        expect(embedIcon.attributes["title"]).toBe("Embed");
-        // OCR toggle is a separate element, not in a toolbar-group
-        const ocrToggle = container.find("lilbee-ocr-toggle");
-        expect(ocrToggle).not.toBeNull();
+        expect(groups[0].find("is-chat")).not.toBeNull();
+        expect(groups[0].find("lilbee-model-chip-label")!.textContent).toBe("Chat");
+        expect(groups[1].find("is-embed")).not.toBeNull();
+        expect(groups[1].find("lilbee-model-chip-label")!.textContent).toBe("Embed");
+        // The OCR eye toggle was removed from the chat view.
+        expect(container.find("lilbee-ocr-toggle")).toBeNull();
+    });
+
+    it("every role chip and both mode buttons carry an explanatory tooltip (aria-label)", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        // chat_mode must be set for the Search/Chat toggle to render.
+        plugin.api.config = vi.fn().mockResolvedValue({
+            chat_model: "llama3",
+            embedding_model: "nomic-embed-text",
+            chat_mode: "search",
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const chips = container.findAll("lilbee-model-chip");
+        for (const chip of chips) {
+            expect((chip.attributes["aria-label"] ?? "").length).toBeGreaterThan(0);
+        }
+        // The four role tooltips are distinct and name the role's purpose.
+        const labels = chips.map((c) => c.attributes["aria-label"]);
+        expect(labels.some((l) => /Chat model/.test(l))).toBe(true);
+        expect(labels.some((l) => /Embedding model/.test(l))).toBe(true);
+        expect(labels.some((l) => /Vision model/.test(l))).toBe(true);
+        expect(labels.some((l) => /Reranker/.test(l))).toBe(true);
+
+        const modeBtns = container.findAll("lilbee-chat-mode-btn");
+        expect(modeBtns.length).toBe(2);
+        expect(modeBtns[0].attributes["aria-label"]).toMatch(/Search your vault/);
+        expect(modeBtns[1].attributes["aria-label"]).toMatch(/Chat with the model/);
     });
 });
 
@@ -3418,7 +3275,7 @@ describe("ChatView — embedding model selector", () => {
         expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
     });
 
-    it("Browse more button opens CatalogModal pre-filtered to embedding", async () => {
+    it("rail-level Browse more button opens the full catalog", async () => {
         const { CatalogModal } = await import("../../src/views/catalog-modal");
         (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
         const plugin = makePlugin();
@@ -3427,12 +3284,16 @@ describe("ChatView — embedding model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const browseBtn = container.find("lilbee-embed-browse")!;
+        // Browse more is a rail-level action at the far right, not inside the Embed chip.
+        const browseBtn = container.find("lilbee-rail-browse")!;
         expect(browseBtn).not.toBeNull();
         expect(browseBtn.textContent).toBe(MESSAGES.BUTTON_BROWSE_MORE);
+        const embedChip = container.find("lilbee-toolbar-group-embed")!;
+        expect(embedChip.find("lilbee-embed-browse")).toBeNull();
 
         browseBtn.trigger("click");
-        expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "embedding");
+        // No task filter — opens the catalog's Discover view across all roles.
+        expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin);
     });
 
     it("shows connecting label on embedding select when offline", async () => {
@@ -3920,5 +3781,256 @@ describe("ChatView.sendMessage — RateLimitedError", () => {
         await tick();
 
         expect(Notice.instances.some((n) => n.message.includes("Try again in a moment"))).toBe(true);
+    });
+});
+
+describe("ChatView — optional model rail (Vision, Rerank)", () => {
+    beforeEach(() => {
+        Notice.clear();
+        vi.clearAllMocks();
+    });
+
+    function entry(name: string, task: string, source = "native") {
+        return {
+            hf_repo: name,
+            gguf_filename: "",
+            display_name: name,
+            size_gb: 1,
+            min_ram_gb: 1,
+            description: "",
+            quality_tier: "good",
+            installed: true,
+            source,
+            task,
+            featured: true,
+            downloads: 1,
+            param_count: "",
+        };
+    }
+
+    /** Drive vision/rerank catalogs (role-filtered, like the server) + active models. */
+    function configureRoles(
+        plugin: LilbeePlugin,
+        opts: { vision?: string[]; rerank?: string[]; visionActive?: string; rerankActive?: string },
+    ): void {
+        (plugin.api as any).catalog = vi.fn().mockImplementation((p?: { task?: string }) => {
+            const models =
+                p?.task === "vision"
+                    ? (opts.vision ?? []).map((n) => entry(n, "vision"))
+                    : p?.task === "rerank"
+                      ? (opts.rerank ?? []).map((n) => entry(n, "rerank"))
+                      : p?.task === "chat"
+                        ? []
+                        : [entry("nomic-embed-text", "embedding")];
+            return Promise.resolve(ok({ total: models.length, limit: 50, offset: 0, models, has_more: false }));
+        });
+        (plugin.api as any).config = vi.fn().mockResolvedValue({
+            chat_model: "llama3",
+            embedding_model: "nomic-embed-text",
+            vision_model: opts.visionActive ?? null,
+            reranker_model: opts.rerankActive ?? null,
+        });
+    }
+
+    it("renders Vision and Rerank chips (no divider) with labels", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, {});
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        expect(container.find("lilbee-model-rail-divider")).toBeNull();
+        const labels = container.findAll("lilbee-model-chip-label").map((l) => l.textContent);
+        expect(labels).toContain("Chat");
+        expect(labels).toContain("Embed");
+        expect(labels).toContain("Vision");
+        expect(labels).toContain("Rerank");
+    });
+
+    it("Vision chip with no installed model still shows a select with Disabled + Browse", async () => {
+        const { CatalogModal } = await import("../../src/views/catalog-modal");
+        (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: [], rerank: [] });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const select = container.find("lilbee-vision-model-select")!;
+        const optionTexts = select.options.map((o) => o.textContent);
+        expect(optionTexts).toEqual(["(disabled)", "Browse catalog…"]);
+        select.value = "__lilbee_browse__";
+        select.trigger("change");
+        expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "vision");
+    });
+
+    it("renders a Vision dropdown with Disabled + models + Browse when installed", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b", "qwen-vl"], visionActive: "llava-7b" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const select = container.find("lilbee-vision-model-select")!;
+        const optionTexts = select.options.map((o) => o.textContent);
+        expect(optionTexts).toEqual(["(disabled)", "llava-7b", "qwen-vl", "Browse catalog…"]);
+    });
+
+    it("includes hosted (LiteLLM) vision models with a Hosted suffix", async () => {
+        const plugin = makePlugin();
+        (plugin.api as any).catalog = vi.fn().mockImplementation((p?: { task?: string }) => {
+            const models =
+                p?.task === "vision"
+                    ? [entry("llava-7b", "vision"), entry("gpt-4o", "vision", "frontier")]
+                    : p?.task === "chat"
+                      ? []
+                      : p?.task === "rerank"
+                        ? []
+                        : [entry("nomic-embed-text", "embedding")];
+            return Promise.resolve(ok({ total: models.length, limit: 50, offset: 0, models, has_more: false }));
+        });
+        (plugin.api as any).config = vi.fn().mockResolvedValue({
+            chat_model: "llama3",
+            embedding_model: "nomic-embed-text",
+            vision_model: "llava-7b",
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const optionTexts = container.find("lilbee-vision-model-select")!.options.map((o) => o.textContent);
+        expect(optionTexts).toContain("llava-7b");
+        expect(optionTexts.some((t) => t.includes("gpt-4o") && t.includes("Hosted"))).toBe(true);
+    });
+
+    it("fills the dot with is-active when a Vision model is active", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b"], visionActive: "llava-7b" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const visionDot = container.findAll("is-vision")[0];
+        expect(visionDot.classList.contains("is-active")).toBe(true);
+    });
+
+    it("leaves the dot hollow (no is-active) and marks the chip off when Vision is disabled", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b"], visionActive: "" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const visionDot = container.findAll("is-vision")[0];
+        expect(visionDot.classList.contains("is-active")).toBe(false);
+        const visionSelect = container.find("lilbee-vision-model-select")!;
+        expect(visionSelect.value).toBe("");
+    });
+
+    it("selecting a Vision model calls setVisionModel and refreshes", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b", "qwen-vl"], visionActive: "llava-7b" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const select = container.find("lilbee-vision-model-select")!;
+        select.value = "qwen-vl";
+        select.trigger("change");
+        await tick();
+
+        expect(plugin.api.setVisionModel).toHaveBeenCalledWith("qwen-vl");
+        expect(plugin.fetchActiveModel).toHaveBeenCalled();
+    });
+
+    it("selecting Disabled turns Vision off via setVisionModel('')", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b"], visionActive: "llava-7b" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const select = container.find("lilbee-vision-model-select")!;
+        select.value = "";
+        select.trigger("change");
+        await tick();
+
+        expect(plugin.api.setVisionModel).toHaveBeenCalledWith("");
+    });
+
+    it("selecting Browse catalog… from the Vision dropdown opens the catalog and resets the value", async () => {
+        const { CatalogModal } = await import("../../src/views/catalog-modal");
+        (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b"], visionActive: "llava-7b" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const select = container.find("lilbee-vision-model-select")!;
+        select.value = "__lilbee_browse__";
+        select.trigger("change");
+
+        expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "vision");
+        expect(plugin.api.setVisionModel).not.toHaveBeenCalled();
+        expect(select.value).toBe("llava-7b");
+    });
+
+    it("surfaces a Notice when setVisionModel fails", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { vision: ["llava-7b", "qwen-vl"], visionActive: "llava-7b" });
+        (plugin.api as any).setVisionModel = vi.fn().mockResolvedValue(err(new Error("boom")));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const select = container.find("lilbee-vision-model-select")!;
+        select.value = "qwen-vl";
+        select.trigger("change");
+        await tick();
+
+        expect(Notice.instances.some((n) => n.message.includes("Vision"))).toBe(true);
+    });
+
+    it("selecting a Rerank model calls setRerankerModel", async () => {
+        const plugin = makePlugin();
+        configureRoles(plugin, { rerank: ["bge-reranker", "jina-reranker"], rerankActive: "bge-reranker" });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const select = container.find("lilbee-rerank-model-select")!;
+        select.value = "jina-reranker";
+        select.trigger("change");
+        await tick();
+
+        expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("jina-reranker");
+    });
+
+    it("Rerank chip Browse catalog… opens the catalog pre-filtered to rerank", async () => {
+        const { CatalogModal } = await import("../../src/views/catalog-modal");
+        (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+        const plugin = makePlugin();
+        configureRoles(plugin, { rerank: [] });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        const select = container.find("lilbee-rerank-model-select")!;
+        select.value = "__lilbee_browse__";
+        select.trigger("change");
+        expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "rerank");
     });
 });

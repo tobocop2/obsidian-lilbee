@@ -20,9 +20,11 @@ import {
     DOT_STATE,
     ERROR_NAME,
     LOCK_STATE,
+    MANAGED_CONSENT_RESULT,
     MANAGED_PHASE,
     SERVER_MODE,
     SERVER_STATE,
+    SETUP_OUTCOME,
     SSE_EVENT,
     TASK_STATUS,
     TASK_TYPE,
@@ -32,6 +34,7 @@ import {
     type LilbeeSettings,
     type ManagedServerProgressHandler,
     type ServerMode,
+    type SetupOutcome,
     type ServerState,
     type ServerVariant,
     type SetupDonePayload,
@@ -58,6 +61,7 @@ import {
     withIdleTimeout,
 } from "./utils";
 import { CatalogModal } from "./views/catalog-modal";
+import { ManagedConsentModal } from "./views/managed-consent-modal";
 import { ModelInfoModal } from "./views/model-info-modal";
 import { ModelPickerModal } from "./views/model-picker-modal";
 import { ChatView, VIEW_TYPE_CHAT } from "./views/chat-view";
@@ -316,7 +320,11 @@ export default class LilbeePlugin extends Plugin {
         // actually ready yet (empty catalog, failed reads).
         if (this.settings.setupCompleted) {
             if (this.settings.serverMode === SERVER_MODE.MANAGED) {
-                void this.startManagedServer();
+                void this.ensureManagedConsentThenStart().then((outcome) => {
+                    // If the user opts into external mode from the consent modal,
+                    // drop them on the plugin's external-server settings.
+                    if (outcome.kind === SETUP_OUTCOME.SWITCHED_TO_EXTERNAL) this.openPluginSettings();
+                });
             } else {
                 this.configureApi(this.settings.serverUrl);
                 this.setStatusReady();
@@ -395,6 +403,48 @@ export default class LilbeePlugin extends Plugin {
         } finally {
             this.startingServer = false;
         }
+    }
+
+    /**
+     * Gate run before a first-time managed binary download. When the binary is
+     * already present we start straight away; otherwise we ask for consent and
+     * route on the user's choice (download / switch-to-external / cancel).
+     */
+    async ensureManagedConsentThenStart(onProgress?: ManagedServerProgressHandler): Promise<SetupOutcome> {
+        const registry = this.vaultRegistry;
+        if (!registry) return { kind: SETUP_OUTCOME.CANCELED };
+
+        const binaryPresent = new BinaryManager(sharedBinDir(registry.sharedRoot)).binaryExists();
+        if (binaryPresent) {
+            await this.startManagedServer(onProgress);
+            return { kind: SETUP_OUTCOME.STARTED, mode: SERVER_MODE.MANAGED };
+        }
+
+        // The gate owns the server lifecycle for each outcome, so it persists
+        // directly via persistAll() rather than saveSettings() — the latter
+        // would fire its own startManagedServer on a mode switch and race ours.
+        const result = await new ManagedConsentModal(this.app).openConsent();
+        if (result.kind === MANAGED_CONSENT_RESULT.DOWNLOAD) {
+            this.settings.serverMode = SERVER_MODE.MANAGED;
+            this.previousServerMode = SERVER_MODE.MANAGED;
+            await this.persistAll();
+            await this.startManagedServer(onProgress);
+            return { kind: SETUP_OUTCOME.STARTED, mode: SERVER_MODE.MANAGED };
+        }
+        if (result.kind === MANAGED_CONSENT_RESULT.EXTERNAL) {
+            this.settings.serverMode = SERVER_MODE.EXTERNAL;
+            this.previousServerMode = SERVER_MODE.EXTERNAL;
+            await this.persistAll();
+            this.configureApi(this.settings.serverUrl);
+            this.setStatusReady();
+            new Notice(MESSAGES.NOTICE_SWITCHED_TO_EXTERNAL);
+            // Navigation to the external server settings is the caller's job:
+            // onload opens the plugin Settings tab; the wizard reveals its own
+            // inline URL/token fields. The gate itself never leaves the app.
+            return { kind: SETUP_OUTCOME.SWITCHED_TO_EXTERNAL };
+        }
+        new Notice(MESSAGES.NOTICE_SERVER_DOWNLOAD_CANCELED);
+        return { kind: SETUP_OUTCOME.CANCELED };
     }
 
     private buildServerManager(binaryPath: string, registry: VaultRegistry, sharedRoot: string): ServerManager {
@@ -1515,7 +1565,7 @@ export default class LilbeePlugin extends Plugin {
             const progress = new FileProgressTracker();
             let syncResult: SyncDone | null = null;
             const controller = this.syncController;
-            const rawStream = this.api.addFiles(paths, true, this.settings.enableOcr, controller.signal);
+            const rawStream = this.api.addFiles(paths, true, controller.signal);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };
@@ -1995,7 +2045,7 @@ export default class LilbeePlugin extends Plugin {
             const progress = new FileProgressTracker();
             let syncResult: SyncDone | null = null;
             const controller = this.syncController;
-            const rawStream = this.api.syncStream(this.settings.enableOcr, controller.signal, options);
+            const rawStream = this.api.syncStream(controller.signal, options);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };
