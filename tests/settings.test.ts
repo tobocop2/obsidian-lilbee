@@ -1061,6 +1061,44 @@ describe("LilbeeSettingTab", () => {
             expect(opts[0][1]).not.toContain("[");
         });
 
+        it("includes a ready hosted (frontier) model that is not on disk", () => {
+            const plugin = makePlugin();
+            const tab = makeTab(plugin);
+            const entries = [
+                chatEntry({
+                    hf_repo: "gemini/gemini-2.0-flash",
+                    display_name: "gemini-2.0-flash",
+                    source: "frontier",
+                    provider: "Gemini",
+                    key_status: "ready",
+                    installed: true,
+                }),
+            ];
+            const opts: Array<[string, string]> = (tab as any).buildChatOptions(entries, []);
+            const keys = opts.map(([k]) => k);
+            expect(keys).toContain("gemini/gemini-2.0-flash");
+            const label = opts.find(([k]) => k === "gemini/gemini-2.0-flash")?.[1];
+            expect(label).toContain("[Gemini]");
+        });
+
+        it("does not duplicate a hosted model already present in the installed registry", () => {
+            const plugin = makePlugin();
+            const tab = makeTab(plugin);
+            const entries = [
+                chatEntry({
+                    hf_repo: "ollama/qwen3:8b",
+                    display_name: "qwen3:8b",
+                    source: "ollama",
+                    provider: "Ollama",
+                    installed: true,
+                }),
+            ];
+            const installed: InstalledModel[] = [{ name: "ollama/qwen3:8b", source: "ollama" }];
+            const opts: Array<[string, string]> = (tab as any).buildChatOptions(entries, installed);
+            const occurrences = opts.filter(([k]) => k === "ollama/qwen3:8b");
+            expect(occurrences).toHaveLength(1);
+        });
+
         it("falls back to empty active when catalog fetch errors", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: LLAMA_REF });
@@ -4454,12 +4492,14 @@ describe("managed mode settings", () => {
                             min_ram_gb: 0,
                             description: "",
                             quality_tier: "",
-                            installed: false,
+                            installed: true,
                             source: "frontier",
                             task: "rerank",
                             featured: false,
                             downloads: 0,
                             param_count: "",
+                            provider: "Cohere",
+                            key_status: "ready",
                         },
                     ],
                     has_more: false,
@@ -4905,12 +4945,14 @@ describe("managed mode settings", () => {
                             min_ram_gb: 0,
                             description: "",
                             quality_tier: "",
-                            installed: false,
+                            installed: true,
                             source: "frontier",
                             task: "rerank",
                             featured: false,
                             downloads: 0,
                             param_count: "",
+                            provider: "Cohere",
+                            key_status: "ready",
                         },
                     ],
                     has_more: false,
@@ -5703,9 +5745,11 @@ describe("managed mode settings", () => {
                             min_ram_gb: 0,
                             description: "",
                             quality_tier: "",
-                            installed: false,
+                            installed: true,
                             source: "frontier",
                             task: "vision",
+                            provider: "OpenAI",
+                            key_status: "ready",
                         },
                     ],
                     has_more: false,

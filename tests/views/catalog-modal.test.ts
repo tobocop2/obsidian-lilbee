@@ -1567,12 +1567,12 @@ describe("CatalogModal", () => {
                 .find((b) => b.textContent === MESSAGES.TAB_FRONTIER)!
                 .trigger("click");
             await tick();
-            expect((modal as any).currentTab).toBe("frontier");
+            expect((modal as any).currentTab).toBe("hosted");
             // Simulate a refetch that returns no ready rows (e.g. user revoked the key).
             (modal as any).entries = [
                 makeFrontierEntry({ ...({ key_status: "missing_key" } as Partial<CatalogEntry>) }),
             ];
-            (modal as any).updateFrontierTabVisibility();
+            (modal as any).updateHostedTabVisibility();
             expect((modal as any).currentTab).toBe("local");
         });
 
@@ -1690,7 +1690,7 @@ describe("CatalogModal", () => {
                 .trigger("click");
             await tick();
             await tick();
-            (modal as any).currentTab = "frontier";
+            (modal as any).currentTab = "hosted";
             // Now click Embed — sub-toggle should reset to local.
             plugin.api.catalog.mockClear();
             findButtons(content)

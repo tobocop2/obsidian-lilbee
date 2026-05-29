@@ -4,9 +4,10 @@ import {
     deepLinkToApiKeySettings,
     forYouRail,
     freshRail,
-    frontierRowsOnly,
     groupByProvider,
-    hasReadyFrontierRow,
+    hasReadyHostedRow,
+    hostedOptions,
+    hostedRowsOnly,
     KEY_STATUS_PILL_CLASS,
     localRowsOnly,
     renderKeyStatusPill,
@@ -15,7 +16,7 @@ import {
     taskToTabId,
     yourCollectionRail,
 } from "../../src/views/catalog-helpers";
-import { CATALOG_TAB } from "../../src/types";
+import { CATALOG_SOURCE, CATALOG_TAB, KEY_STATUS } from "../../src/types";
 import type { CatalogEntry } from "../../src/types";
 
 function row(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
@@ -28,7 +29,7 @@ function row(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
         description: "",
         quality_tier: "",
         installed: false,
-        source: "local",
+        source: "native",
         task: "chat",
         featured: false,
         downloads: 0,
@@ -38,43 +39,74 @@ function row(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
 }
 
 describe("catalog-helpers", () => {
-    describe("hasReadyFrontierRow", () => {
+    describe("hasReadyHostedRow", () => {
         it("returns true when a frontier row has key_status=ready", () => {
             const rows = [
-                row({ source: "local" }),
-                row({
-                    source: "frontier",
-                    ...({ key_status: "ready" } as Partial<CatalogEntry>),
-                }),
+                row({ source: CATALOG_SOURCE.NATIVE }),
+                row({ source: CATALOG_SOURCE.FRONTIER, key_status: KEY_STATUS.READY }),
             ];
-            expect(hasReadyFrontierRow(rows)).toBe(true);
+            expect(hasReadyHostedRow(rows)).toBe(true);
         });
 
-        it("returns false when no frontier row is ready", () => {
+        it("returns false when the only frontier row is missing its key", () => {
             const rows = [
-                row({ source: "local" }),
-                row({
-                    source: "frontier",
-                    ...({ key_status: "missing_key" } as Partial<CatalogEntry>),
-                }),
+                row({ source: CATALOG_SOURCE.NATIVE }),
+                row({ source: CATALOG_SOURCE.FRONTIER, key_status: KEY_STATUS.MISSING_KEY }),
             ];
-            expect(hasReadyFrontierRow(rows)).toBe(false);
+            expect(hasReadyHostedRow(rows)).toBe(false);
+        });
+
+        it("treats ollama rows as always ready (no key needed)", () => {
+            expect(hasReadyHostedRow([row({ source: CATALOG_SOURCE.OLLAMA })])).toBe(true);
         });
 
         it("returns false on an empty list", () => {
-            expect(hasReadyFrontierRow([])).toBe(false);
+            expect(hasReadyHostedRow([])).toBe(false);
         });
     });
 
-    describe("frontierRowsOnly / localRowsOnly", () => {
-        it("partitions rows by source value", () => {
+    describe("hostedRowsOnly / localRowsOnly", () => {
+        it("partitions rows by hosted vs native source", () => {
             const rows = [
-                row({ source: "local", display_name: "L1" }),
-                row({ source: "frontier", display_name: "F1" }),
-                row({ source: "local", display_name: "L2" }),
+                row({ source: CATALOG_SOURCE.NATIVE, display_name: "L1" }),
+                row({ source: CATALOG_SOURCE.FRONTIER, display_name: "F1" }),
+                row({ source: CATALOG_SOURCE.OLLAMA, display_name: "O1" }),
+                row({ source: CATALOG_SOURCE.NATIVE, display_name: "L2" }),
             ];
-            expect(frontierRowsOnly(rows).map((r) => r.display_name)).toEqual(["F1"]);
+            expect(hostedRowsOnly(rows).map((r) => r.display_name)).toEqual(["F1", "O1"]);
             expect(localRowsOnly(rows).map((r) => r.display_name)).toEqual(["L1", "L2"]);
+        });
+    });
+
+    describe("hostedOptions", () => {
+        it("includes ollama always and frontier only with a ready key", () => {
+            const rows = [
+                row({ source: CATALOG_SOURCE.NATIVE, hf_repo: "n/r", display_name: "N" }),
+                row({
+                    source: CATALOG_SOURCE.FRONTIER,
+                    hf_repo: "gemini/g",
+                    display_name: "Gemini Flash",
+                    provider: "Gemini",
+                    key_status: KEY_STATUS.READY,
+                }),
+                row({
+                    source: CATALOG_SOURCE.FRONTIER,
+                    hf_repo: "openai/x",
+                    display_name: "GPT",
+                    provider: "OpenAI",
+                    key_status: KEY_STATUS.MISSING_KEY,
+                }),
+                row({ source: CATALOG_SOURCE.OLLAMA, hf_repo: "ollama/l", display_name: "Llama", provider: "Ollama" }),
+            ];
+            expect(hostedOptions(rows)).toEqual([
+                ["gemini/g", "Gemini Flash [Gemini]"],
+                ["ollama/l", "Llama [Ollama]"],
+            ]);
+        });
+
+        it("omits the provider suffix when a hosted row carries none", () => {
+            const rows = [row({ source: CATALOG_SOURCE.OLLAMA, hf_repo: "ollama/l", display_name: "Llama" })];
+            expect(hostedOptions(rows)).toEqual([["ollama/l", "Llama"]]);
         });
     });
 

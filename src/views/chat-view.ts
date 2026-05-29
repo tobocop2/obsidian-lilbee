@@ -9,7 +9,7 @@ import {
     WorkspaceLeaf,
 } from "obsidian";
 import type LilbeePlugin from "../main";
-import { CATALOG_SOURCE, CHAT_MODE, CONFIG_KEY, MODEL_TASK, SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
+import { CHAT_MODE, CONFIG_KEY, HOSTED_SOURCES, MODEL_TASK, SSE_EVENT, TASK_TYPE, ERROR_NAME } from "../types";
 import type { CatalogEntry, ChatMode, InstalledModel, Message, SearchChunkType, Source, SSEEvent } from "../types";
 import { RateLimitedError } from "../api";
 
@@ -30,6 +30,7 @@ import {
     noticeForResultError,
     getRelevantSystemMemoryGB,
 } from "../utils";
+import { hostedOptions } from "./catalog-helpers";
 
 interface OpenDialogResult {
     canceled: boolean;
@@ -391,10 +392,23 @@ export class ChatView extends ItemView {
         // Featured rows that have an installed quant.
         const featuredInstalled = this.chatCatalogEntries.filter((e) => installedRepos.has(e.hf_repo));
         for (const entry of featuredInstalled) {
-            const sourceTag = entry.source && entry.source !== CATALOG_SOURCE.LOCAL ? ` [${entry.source}]` : "";
+            const sourceTag = HOSTED_SOURCES.has(entry.source) ? ` [${entry.provider ?? entry.source}]` : "";
             const option = selectEl.createEl("option", { text: `${entry.display_name}${sourceTag}` });
             (option as HTMLOptionElement).value = entry.hf_repo;
             if (entry.hf_repo === activeRepo) {
+                (option as HTMLOptionElement).selected = true;
+            }
+        }
+
+        // Hosted rows (frontier/ollama) are selectable even when absent from the
+        // installed registry — ollama always, frontier with a ready key. Skip any
+        // already emitted above as an installed featured row (an ollama model can
+        // be both hosted and registered as installed).
+        for (const [ref, label] of hostedOptions(this.chatCatalogEntries)) {
+            if (installedRepos.has(ref)) continue;
+            const option = selectEl.createEl("option", { text: label });
+            (option as HTMLOptionElement).value = ref;
+            if (ref === activeRepo) {
                 (option as HTMLOptionElement).selected = true;
             }
         }

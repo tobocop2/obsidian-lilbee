@@ -1,6 +1,6 @@
 import type { App } from "obsidian";
 import type { CatalogEntry, CatalogTab, KeyStatus, ModelTask } from "../types";
-import { CATALOG_SOURCE, CATALOG_TAB, KEY_STATUS, MODEL_TASK } from "../types";
+import { CATALOG_SOURCE, CATALOG_TAB, HOSTED_SOURCES, KEY_STATUS, MODEL_TASK } from "../types";
 import { MESSAGES } from "../locales/en";
 
 const DISCOVER_RAIL_LIMIT = 12;
@@ -22,31 +22,36 @@ export const KEY_STATUS_PILL_CLASS = {
     NEEDS_KEY: "lilbee-key-status-pill-needs-key",
 } as const;
 
-/** Catalog modal and model picker hide frontier rows entirely until this is true. */
-export function hasReadyFrontierRow(rows: CatalogEntry[]): boolean {
-    for (const row of rows) {
-        if (
-            row.source === CATALOG_SOURCE.FRONTIER &&
-            (row as CatalogEntry & { key_status?: KeyStatus }).key_status === KEY_STATUS.READY
-        ) {
-            return true;
-        }
-    }
-    return false;
+/** Hosted rows (frontier + ollama): selectable, no download. */
+export function hostedRowsOnly(rows: CatalogEntry[]): CatalogEntry[] {
+    return rows.filter((row) => HOSTED_SOURCES.has(row.source));
 }
 
-export function frontierRowsOnly(rows: CatalogEntry[]): CatalogEntry[] {
-    return rows.filter((row) => row.source === CATALOG_SOURCE.FRONTIER);
-}
-
+/** Everything that isn't hosted — native catalog rows the server can download. */
 export function localRowsOnly(rows: CatalogEntry[]): CatalogEntry[] {
-    return rows.filter((row) => row.source !== CATALOG_SOURCE.FRONTIER);
+    return rows.filter((row) => !HOSTED_SOURCES.has(row.source));
+}
+
+/** Hosted row is usable when frontier has a ready key, or it's Ollama (no key). */
+export function hasReadyHostedRow(rows: CatalogEntry[]): boolean {
+    return rows.some(
+        (row) =>
+            row.source === CATALOG_SOURCE.OLLAMA ||
+            (row.source === CATALOG_SOURCE.FRONTIER && row.key_status === KEY_STATUS.READY),
+    );
+}
+
+/** Selectable hosted rows: ollama (always) + frontier with a ready key. Returns [ref, label]. */
+export function hostedOptions(rows: CatalogEntry[]): Array<[string, string]> {
+    return hostedRowsOnly(rows)
+        .filter((e) => e.source === CATALOG_SOURCE.OLLAMA || e.key_status === KEY_STATUS.READY)
+        .map((e) => [e.hf_repo, `${e.display_name}${e.provider ? ` [${e.provider}]` : ""}`]);
 }
 
 export function groupByProvider(rows: CatalogEntry[]): [string, CatalogEntry[]][] {
     const groups = new Map<string, CatalogEntry[]>();
     for (const row of rows) {
-        const provider = (row as CatalogEntry & { provider?: string }).provider ?? "";
+        const provider = row.provider ?? "";
         const existing = groups.get(provider);
         if (existing) {
             existing.push(row);

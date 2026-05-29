@@ -3,10 +3,10 @@ import type LilbeePlugin from "./main";
 import type { ReleaseInfo } from "./binary-manager";
 import {
     CAPABILITY,
-    CATALOG_SOURCE,
     CHAT_MODE,
     CONFIG_KEY,
     DEFAULT_SETTINGS,
+    HOSTED_SOURCES,
     MODEL_TASK,
     SERVER_MODE,
     SERVER_STATE,
@@ -19,6 +19,7 @@ import { formatBytes, reportForVault } from "./storage-stats";
 import { MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import { CatalogModal } from "./views/catalog-modal";
+import { hostedOptions } from "./views/catalog-helpers";
 import { ConfirmModal } from "./views/confirm-modal";
 import { ConfirmPullModal } from "./views/confirm-pull-modal";
 import { SetupWizard } from "./views/setup-wizard";
@@ -1104,12 +1105,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const opts: Array<[string, string]> = [[RERANKER_DISABLED_KEY, MESSAGES.LABEL_RERANKER_DISABLED]];
         // Settings dropdown lists installed local rerankers + always-on hosted rerankers.
         // Discovery and downloads happen via the Browse catalog button.
-        const localInstalled = catalogEntries.filter((e) => e.source !== CATALOG_SOURCE.FRONTIER && isInstalled(e));
-        const hosted = catalogEntries.filter((e) => e.source === CATALOG_SOURCE.FRONTIER);
+        const localInstalled = catalogEntries.filter((e) => !HOSTED_SOURCES.has(e.source) && isInstalled(e));
         for (const e of localInstalled) opts.push([e.hf_repo, e.display_name]);
-        if (hosted.length > 0) {
-            for (const e of hosted)
-                opts.push([e.hf_repo, `${e.display_name} — ${MESSAGES.LABEL_RERANKER_HOSTED_GROUP}`]);
+        for (const [ref, label] of hostedOptions(catalogEntries)) {
+            opts.push([ref, `${label} — ${MESSAGES.LABEL_RERANKER_HOSTED_GROUP}`]);
         }
         return opts;
     }
@@ -1124,7 +1123,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         if (
             value === RERANKER_DISABLED_KEY ||
             installedRepos.has(value) ||
-            catalogEntry?.source === CATALOG_SOURCE.FRONTIER
+            (catalogEntry !== undefined && HOSTED_SOURCES.has(catalogEntry.source))
         ) {
             await this.applyRerankerSelection(value);
             return;
@@ -1251,12 +1250,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
         // Settings dropdown lists installed local vision models + hosted ones.
         // Discovery and downloads happen via the Browse catalog button.
         const localInstalled = catalogEntries.filter(
-            (e) => e.source !== CATALOG_SOURCE.FRONTIER && installedRepos.has(e.hf_repo),
+            (e) => !HOSTED_SOURCES.has(e.source) && installedRepos.has(e.hf_repo),
         );
-        const hosted = catalogEntries.filter((e) => e.source === CATALOG_SOURCE.FRONTIER);
         for (const e of localInstalled) opts.push([e.hf_repo, e.display_name]);
-        if (hosted.length > 0) {
-            for (const e of hosted) opts.push([e.hf_repo, `${e.display_name} — ${MESSAGES.LABEL_VISION_HOSTED_GROUP}`]);
+        for (const [ref, label] of hostedOptions(catalogEntries)) {
+            opts.push([ref, `${label} — ${MESSAGES.LABEL_VISION_HOSTED_GROUP}`]);
         }
         return opts;
     }
@@ -1271,7 +1269,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         if (
             value === VISION_DISABLED_KEY ||
             installedRepos.has(value) ||
-            catalogEntry?.source === CATALOG_SOURCE.FRONTIER
+            (catalogEntry !== undefined && HOSTED_SOURCES.has(catalogEntry.source))
         ) {
             await this.applyVisionSelection(value);
             return;
@@ -1993,8 +1991,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const opts: Array<[string, string]> = [];
         const featuredInstalled = catalogEntries.filter((e) => installedRepos.has(e.hf_repo));
         for (const entry of featuredInstalled) {
-            const sourceTag = entry.source && entry.source !== CATALOG_SOURCE.LOCAL ? ` [${entry.source}]` : "";
+            const sourceTag = HOSTED_SOURCES.has(entry.source) ? ` [${entry.provider ?? entry.source}]` : "";
             opts.push([entry.hf_repo, `${entry.display_name}${sourceTag}`]);
+        }
+        // Hosted rows are selectable even when absent from the installed
+        // registry — ollama always, frontier with a ready key. Skip any already
+        // emitted above as an installed featured row.
+        for (const [ref, label] of hostedOptions(catalogEntries)) {
+            if (!installedRepos.has(ref)) opts.push([ref, label]);
         }
         const featuredRepos = new Set(catalogEntries.map((e) => e.hf_repo));
         const otherInstalled = installed

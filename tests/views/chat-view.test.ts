@@ -1325,6 +1325,58 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onClose();
     });
 
+    it("lists a ready hosted (frontier) model and marks it selected when active", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        // Active chat model is the hosted ref; it is NOT in the installed registry.
+        plugin.activeModel = "gemini/gemini-2.0-flash";
+        plugin.api.config = vi.fn().mockResolvedValue({ chat_model: "gemini/gemini-2.0-flash" });
+        plugin.api.catalog = vi.fn().mockImplementation((p?: { task?: string }) => {
+            if (p?.task === "chat") {
+                return Promise.resolve(
+                    ok({
+                        total: 1,
+                        limit: 50,
+                        offset: 0,
+                        has_more: false,
+                        models: [
+                            {
+                                hf_repo: "gemini/gemini-2.0-flash",
+                                gguf_filename: "",
+                                display_name: "gemini-2.0-flash",
+                                size_gb: 0,
+                                min_ram_gb: 0,
+                                description: "",
+                                installed: true,
+                                source: "frontier",
+                                task: "chat",
+                                featured: false,
+                                downloads: 0,
+                                quality_tier: "",
+                                param_count: "",
+                                provider: "Gemini",
+                                key_status: "ready",
+                            },
+                        ],
+                    }),
+                );
+            }
+            return Promise.resolve(ok({ total: 0, limit: 50, offset: 0, has_more: false, models: [] }));
+        });
+        plugin.api.installedModels = vi.fn().mockResolvedValue({ models: [] });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const c = view.containerEl.children[1] as unknown as MockElement;
+        const select = c.find("lilbee-chat-model-select")!;
+        const options = select.children.filter((ch) => ch.tagName === "OPTION");
+        const hosted = options.find((o) => o.textContent === "gemini-2.0-flash [Gemini]")!;
+        expect(hosted).toBeDefined();
+        expect((hosted as any).selected).toBe(true);
+        await view.onClose();
+    });
+
     it("shows (connecting...) option on both selects when listModels fails", async () => {
         vi.useFakeTimers();
         Notice.clear();

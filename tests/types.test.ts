@@ -8,6 +8,8 @@ import {
     DOWNLOAD_PANEL,
     LOCK_STATE,
     SHARED_PATH,
+    CATALOG_SOURCE,
+    HOSTED_SOURCES,
 } from "../src/types";
 import type {
     Excerpt,
@@ -35,6 +37,21 @@ import type {
     ConfigUpdateResponse,
     EmbeddingModelResponse,
 } from "../src/types";
+
+describe("CATALOG_SOURCE", () => {
+    it("matches the server wire vocabulary", () => {
+        expect(CATALOG_SOURCE.NATIVE).toBe("native");
+        expect(CATALOG_SOURCE.FRONTIER).toBe("frontier");
+        expect(CATALOG_SOURCE.OLLAMA).toBe("ollama");
+    });
+
+    it("HOSTED_SOURCES holds the two hosted sources only", () => {
+        expect(HOSTED_SOURCES.has(CATALOG_SOURCE.FRONTIER)).toBe(true);
+        expect(HOSTED_SOURCES.has(CATALOG_SOURCE.OLLAMA)).toBe(true);
+        expect(HOSTED_SOURCES.has(CATALOG_SOURCE.NATIVE)).toBe(false);
+        expect(HOSTED_SOURCES.size).toBe(2);
+    });
+});
 
 describe("DEFAULT_SETTINGS", () => {
     it("has the correct serverUrl", () => {

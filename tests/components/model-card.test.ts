@@ -154,17 +154,39 @@ describe("renderModelCard", () => {
             expect(card.find("lilbee-tag-featured")).toBeNull();
         });
 
-        it("renders a provider tag for non-local sources", () => {
+        it("renders a provider tag for hosted sources, preferring the provider label", () => {
             const c = container();
-            const card = renderModelCard(c, makeEntry({ source: "frontier" }), {}) as unknown as MockElement;
+            const card = renderModelCard(
+                c,
+                makeEntry({ source: "frontier", provider: "Gemini" }),
+                {},
+            ) as unknown as MockElement;
             const tag = card.find("lilbee-tag-provider");
             expect(tag).not.toBeNull();
-            expect(tag?.textContent).toBe("frontier");
+            expect(tag?.textContent).toBe("Gemini");
         });
 
-        it("omits the provider tag for local sources", () => {
+        it("renders a provider tag for ollama rows", () => {
             const c = container();
-            const card = renderModelCard(c, makeEntry({ source: "local" }), {}) as unknown as MockElement;
+            const card = renderModelCard(
+                c,
+                makeEntry({ source: "ollama", provider: "Ollama" }),
+                {},
+            ) as unknown as MockElement;
+            const tag = card.find("lilbee-tag-provider");
+            expect(tag).not.toBeNull();
+            expect(tag?.textContent).toBe("Ollama");
+        });
+
+        it("falls back to the source name when a hosted row carries no provider", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry({ source: "frontier" }), {}) as unknown as MockElement;
+            expect(card.find("lilbee-tag-provider")?.textContent).toBe("frontier");
+        });
+
+        it("omits the provider tag for native sources", () => {
+            const c = container();
+            const card = renderModelCard(c, makeEntry({ source: "native" }), {}) as unknown as MockElement;
             expect(card.find("lilbee-tag-provider")).toBeNull();
         });
     });
