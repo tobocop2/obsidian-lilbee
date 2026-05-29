@@ -1061,6 +1061,44 @@ describe("LilbeeSettingTab", () => {
             expect(opts[0][1]).not.toContain("[");
         });
 
+        it("includes a ready hosted (frontier) model that is not on disk", () => {
+            const plugin = makePlugin();
+            const tab = makeTab(plugin);
+            const entries = [
+                chatEntry({
+                    hf_repo: "gemini/gemini-2.0-flash",
+                    display_name: "gemini-2.0-flash",
+                    source: "frontier",
+                    provider: "Gemini",
+                    key_status: "ready",
+                    installed: true,
+                }),
+            ];
+            const opts: Array<[string, string]> = (tab as any).buildChatOptions(entries, []);
+            const keys = opts.map(([k]) => k);
+            expect(keys).toContain("gemini/gemini-2.0-flash");
+            const label = opts.find(([k]) => k === "gemini/gemini-2.0-flash")?.[1];
+            expect(label).toContain("[Gemini]");
+        });
+
+        it("does not duplicate a hosted model already present in the installed registry", () => {
+            const plugin = makePlugin();
+            const tab = makeTab(plugin);
+            const entries = [
+                chatEntry({
+                    hf_repo: "ollama/qwen3:8b",
+                    display_name: "qwen3:8b",
+                    source: "ollama",
+                    provider: "Ollama",
+                    installed: true,
+                }),
+            ];
+            const installed: InstalledModel[] = [{ name: "ollama/qwen3:8b", source: "ollama" }];
+            const opts: Array<[string, string]> = (tab as any).buildChatOptions(entries, installed);
+            const occurrences = opts.filter(([k]) => k === "ollama/qwen3:8b");
+            expect(occurrences).toHaveLength(1);
+        });
+
         it("falls back to empty active when catalog fetch errors", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: LLAMA_REF });
@@ -2408,6 +2446,60 @@ describe("managed mode settings", () => {
 
             // The embedding dropdown is rendered via loadEmbeddingDropdown — just verify catalog was called
             expect(plugin.api.catalog).toHaveBeenCalledWith({ task: "embedding" });
+        });
+
+        it("surfaces hosted ollama embedding models with a provider label", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
+                ok({
+                    total: 2,
+                    limit: 20,
+                    offset: 0,
+                    has_more: false,
+                    models: [
+                        {
+                            hf_repo: "nomic-ai/nomic-embed-text-v1.5-GGUF",
+                            display_name: "nomic-embed-text",
+                            installed: true,
+                            task: "embedding",
+                            source: "native",
+                        },
+                        {
+                            hf_repo: "ollama/nomic-embed-text:latest",
+                            display_name: "nomic-embed-text:latest",
+                            installed: true,
+                            task: "embedding",
+                            source: "ollama",
+                            provider: "Ollama",
+                        },
+                    ],
+                }),
+            );
+            const container = new MockElement("div") as unknown as HTMLElement;
+            const tab = makeTab(plugin);
+
+            const options: Array<[string, string]> = [];
+            const origAddDropdown = Setting.prototype.addDropdown;
+            Setting.prototype.addDropdown = function (cb: (dropdown: any) => void) {
+                const fakeDropdown = {
+                    addOption: (value: string, label: string) => {
+                        options.push([value, label]);
+                        return fakeDropdown;
+                    },
+                    setValue: () => fakeDropdown,
+                    onChange: () => fakeDropdown,
+                };
+                cb(fakeDropdown);
+                return this;
+            };
+            await (tab as any).loadEmbeddingDropdown(container);
+            await new Promise((r) => setTimeout(r, 0));
+            Setting.prototype.addDropdown = origAddDropdown;
+
+            // Native row shows plain; the ollama row is explicitly tagged [Ollama].
+            expect(options).toContainEqual(["nomic-ai/nomic-embed-text-v1.5-GGUF", "nomic-embed-text"]);
+            expect(options).toContainEqual(["ollama/nomic-embed-text:latest", "nomic-embed-text:latest [Ollama]"]);
         });
 
         it("embedding dropdown onChange sets model and triggers sync", async () => {
@@ -4454,12 +4546,14 @@ describe("managed mode settings", () => {
                             min_ram_gb: 0,
                             description: "",
                             quality_tier: "",
-                            installed: false,
+                            installed: true,
                             source: "frontier",
                             task: "rerank",
                             featured: false,
                             downloads: 0,
                             param_count: "",
+                            provider: "Cohere",
+                            key_status: "ready",
                         },
                     ],
                     has_more: false,
@@ -4905,12 +4999,14 @@ describe("managed mode settings", () => {
                             min_ram_gb: 0,
                             description: "",
                             quality_tier: "",
-                            installed: false,
+                            installed: true,
                             source: "frontier",
                             task: "rerank",
                             featured: false,
                             downloads: 0,
                             param_count: "",
+                            provider: "Cohere",
+                            key_status: "ready",
                         },
                     ],
                     has_more: false,
@@ -5703,9 +5799,11 @@ describe("managed mode settings", () => {
                             min_ram_gb: 0,
                             description: "",
                             quality_tier: "",
-                            installed: false,
+                            installed: true,
                             source: "frontier",
                             task: "vision",
+                            provider: "OpenAI",
+                            key_status: "ready",
                         },
                     ],
                     has_more: false,

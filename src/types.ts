@@ -114,12 +114,22 @@ export const CHAT_MODE = {
     CHAT: "chat",
 } as const satisfies Record<string, ChatMode>;
 
-export type CatalogSource = "local" | "frontier";
+export type CatalogSource = "native" | "frontier" | "ollama" | "lm_studio";
 
 export const CATALOG_SOURCE = {
-    LOCAL: "local",
+    NATIVE: "native",
     FRONTIER: "frontier",
+    OLLAMA: "ollama",
+    LM_STUDIO: "lm_studio",
 } as const satisfies Record<string, CatalogSource>;
+
+/** Sources rendered in the shared "hosted" area: selectable, no download.
+ * Frontier (cloud API key) plus the local servers (Ollama, LM Studio). */
+export const HOSTED_SOURCES: ReadonlySet<CatalogSource> = new Set<CatalogSource>([
+    CATALOG_SOURCE.FRONTIER,
+    CATALOG_SOURCE.OLLAMA,
+    CATALOG_SOURCE.LM_STUDIO,
+]);
 
 export type KeyStatus = "ready" | "missing_key";
 
@@ -503,7 +513,7 @@ export interface CatalogEntry {
     description: string;
     quality_tier: string;
     installed: boolean;
-    source: string;
+    source: CatalogSource;
     task: ModelTask;
     featured: boolean;
     downloads: number;
@@ -512,26 +522,11 @@ export interface CatalogEntry {
     compat?: ModelCompat | null;
     architecture?: string | null;
     size_variants?: SizeVariant[] | null;
+    /** Hosted rows (frontier + local servers) carry their serving provider. */
+    provider?: string;
+    /** Set on frontier rows; `null` for local servers (no API key), absent on older servers. */
+    key_status?: KeyStatus | null;
 }
-
-export interface LocalCatalogRow extends CatalogEntry {
-    source: "local";
-}
-
-export interface FrontierCatalogRow {
-    hf_repo: string;
-    display_name: string;
-    description: string;
-    task: ModelTask;
-    source: "frontier";
-    provider: string;
-    key_status: KeyStatus;
-    is_curated: boolean;
-    context_window: number;
-    modality: string;
-}
-
-export type CatalogRow = LocalCatalogRow | FrontierCatalogRow;
 
 export interface CatalogResponse {
     total: number;

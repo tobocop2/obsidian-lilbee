@@ -1,14 +1,14 @@
 import { App, Modal, Notice } from "obsidian";
 import type { Result } from "neverthrow";
 import type LilbeePlugin from "../main";
-import type { CatalogEntry, KeyStatus, ModelTask } from "../types";
-import { CATALOG_SOURCE, KEY_STATUS, MODEL_TASK } from "../types";
+import type { CatalogEntry, ModelTask } from "../types";
+import { CATALOG_SOURCE, HOSTED_SOURCES, KEY_STATUS, MODEL_TASK } from "../types";
 import { MESSAGES } from "../locales/en";
 import {
     deepLinkToApiKeySettings,
-    frontierRowsOnly,
     groupByProvider,
-    hasReadyFrontierRow,
+    hasReadyHostedRow,
+    hostedRowsOnly,
     localRowsOnly,
     renderKeyStatusPill,
     renderProviderPill,
@@ -141,8 +141,8 @@ export class ModelPickerModal extends Modal {
 
     private applyFilterAndRender(): void {
         const local = localRowsOnly(this.allRows);
-        const frontier = hasReadyFrontierRow(this.allRows) ? frontierRowsOnly(this.allRows) : [];
-        const visible = [...local, ...frontier];
+        const hosted = hasReadyHostedRow(this.allRows) ? hostedRowsOnly(this.allRows) : [];
+        const visible = [...local, ...hosted];
         this.filteredRows = filterRowsByText(visible, this.filterText);
         this.highlightedIndex = 0;
         this.renderList();
@@ -156,8 +156,8 @@ export class ModelPickerModal extends Modal {
             this.listEl.createDiv({ cls: "lilbee-model-picker-empty", text: MESSAGES.MODEL_PICKER_EMPTY });
             return;
         }
-        const local = this.filteredRows.filter((r) => r.source !== CATALOG_SOURCE.FRONTIER);
-        const frontier = this.filteredRows.filter((r) => r.source === CATALOG_SOURCE.FRONTIER);
+        const local = this.filteredRows.filter((r) => !HOSTED_SOURCES.has(r.source));
+        const hosted = this.filteredRows.filter((r) => HOSTED_SOURCES.has(r.source));
         if (local.length > 0) {
             this.listEl.createDiv({
                 cls: "lilbee-model-picker-section-header",
@@ -165,7 +165,7 @@ export class ModelPickerModal extends Modal {
             });
             for (const row of local) this.renderRow(this.listEl, row);
         }
-        for (const [provider, group] of groupByProvider(frontier)) {
+        for (const [provider, group] of groupByProvider(hosted)) {
             this.listEl.createDiv({ cls: "lilbee-model-picker-section-header", text: provider });
             for (const row of group) this.renderRow(this.listEl, row);
         }
@@ -180,13 +180,14 @@ export class ModelPickerModal extends Modal {
             renderPill(nameRow, MESSAGES.LABEL_INSTALLED, PILL_CLS.INSTALLED);
         }
         renderFitChip(nameRow, row.fit);
-        if (row.source === CATALOG_SOURCE.FRONTIER) {
-            const frontier = row as CatalogEntry & { provider?: string; key_status?: KeyStatus };
-            /* v8 ignore next 2 */
-            const provider = frontier.provider ?? "";
-            const keyStatus = frontier.key_status ?? KEY_STATUS.MISSING_KEY;
+        if (HOSTED_SOURCES.has(row.source)) {
+            /* v8 ignore next */
+            const provider = row.provider ?? "";
             renderProviderPill(nameRow, provider);
-            renderKeyStatusPill(nameRow, keyStatus);
+            // Local servers (Ollama, LM Studio) need no API key — provider pill only.
+            if (row.source === CATALOG_SOURCE.FRONTIER) {
+                renderKeyStatusPill(nameRow, row.key_status ?? KEY_STATUS.MISSING_KEY);
+            }
         }
         if (row.size_gb > 0) {
             rowEl.createDiv({
@@ -201,12 +202,11 @@ export class ModelPickerModal extends Modal {
 
     private async activateRow(row: CatalogEntry): Promise<void> {
         if (row.source === CATALOG_SOURCE.FRONTIER) {
-            const frontier = row as CatalogEntry & { provider?: string; key_status?: KeyStatus };
             /* v8 ignore next */
-            const keyStatus = frontier.key_status ?? KEY_STATUS.MISSING_KEY;
+            const keyStatus = row.key_status ?? KEY_STATUS.MISSING_KEY;
             if (keyStatus === KEY_STATUS.MISSING_KEY) {
                 /* v8 ignore next */
-                const provider = frontier.provider ?? "";
+                const provider = row.provider ?? "";
                 this.close();
                 deepLinkToApiKeySettings(this.app, provider);
                 return;

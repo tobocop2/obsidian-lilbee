@@ -3,7 +3,7 @@
 // ("ollama/qwen3:8b", "openai/gpt-4o", …), and opaque strings. The helpers
 // below convert them for display or unwrap them for catalog comparison.
 
-const PROVIDER_PREFIXES = ["ollama/", "openai/", "anthropic/", "gemini/", "cohere/"];
+const PROVIDER_PREFIXES = ["ollama/", "lm_studio/", "openai/", "anthropic/", "gemini/", "cohere/"];
 
 const STRIP_SUFFIXES = [/-GGUF$/i, /-Instruct$/i, /-Chat$/i, /-v\d+(\.\d+)*$/i, /-\d{4}$/];
 

@@ -1,5 +1,5 @@
 import type { CatalogEntry, HardwareFit, ModelCardOptions } from "../types";
-import { CATALOG_SOURCE, HARDWARE_FIT, MODEL_COMPAT, MODEL_TASK } from "../types";
+import { HARDWARE_FIT, HOSTED_SOURCES, MODEL_COMPAT, MODEL_TASK } from "../types";
 import { MESSAGES } from "../locales/en";
 import { formatAbbreviatedCount } from "../utils";
 
@@ -76,8 +76,8 @@ function renderCardTags(card: HTMLElement, entry: CatalogEntry): void {
     if (entry.featured) {
         tags.createEl("span", { text: MESSAGES.LABEL_PICK, cls: "lilbee-tag lilbee-tag-featured" });
     }
-    if (entry.source && entry.source !== CATALOG_SOURCE.LOCAL) {
-        tags.createEl("span", { text: entry.source, cls: "lilbee-tag lilbee-tag-provider" });
+    if (HOSTED_SOURCES.has(entry.source)) {
+        tags.createEl("span", { text: entry.provider ?? entry.source, cls: "lilbee-tag lilbee-tag-provider" });
     }
     renderCompatTag(tags, entry);
 }

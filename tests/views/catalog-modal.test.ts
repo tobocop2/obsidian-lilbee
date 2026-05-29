@@ -1382,7 +1382,7 @@ describe("CatalogModal", () => {
         it("hides the Frontier tab when no frontier rows have key_status=ready", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(
-                ok(makeCatalogResponse([makeEntry({ source: "local" }), makeFrontierEntry()])),
+                ok(makeCatalogResponse([makeEntry({ source: "native" }), makeFrontierEntry()])),
             );
             const modal = await openModal(plugin);
             const content = contentEl(modal);
@@ -1396,7 +1396,7 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(
                 ok(
                     makeCatalogResponse([
-                        makeEntry({ source: "local" }),
+                        makeEntry({ source: "native" }),
                         makeFrontierEntry({
                             ...({ key_status: "ready" } as Partial<CatalogEntry>),
                         }),
@@ -1414,7 +1414,7 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(
                 ok(
                     makeCatalogResponse([
-                        makeEntry({ source: "local", display_name: "Local model" }),
+                        makeEntry({ source: "native", display_name: "Local model" }),
                         makeFrontierEntry({ display_name: "Frontier model" }),
                     ]),
                 ),
@@ -1534,7 +1534,7 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(
                 ok(
                     makeCatalogResponse([
-                        makeEntry({ source: "local", display_name: "Local-A" }),
+                        makeEntry({ source: "native", display_name: "Local-A" }),
                         makeFrontierEntry({ ...({ key_status: "ready" } as Partial<CatalogEntry>) }),
                     ]),
                 ),
@@ -1567,12 +1567,12 @@ describe("CatalogModal", () => {
                 .find((b) => b.textContent === MESSAGES.TAB_FRONTIER)!
                 .trigger("click");
             await tick();
-            expect((modal as any).currentTab).toBe("frontier");
+            expect((modal as any).currentTab).toBe("hosted");
             // Simulate a refetch that returns no ready rows (e.g. user revoked the key).
             (modal as any).entries = [
                 makeFrontierEntry({ ...({ key_status: "missing_key" } as Partial<CatalogEntry>) }),
             ];
-            (modal as any).updateFrontierTabVisibility();
+            (modal as any).updateHostedTabVisibility();
             expect((modal as any).currentTab).toBe("local");
         });
 
@@ -1622,7 +1622,7 @@ describe("CatalogModal", () => {
             plugin.api.catalog.mockResolvedValue(
                 ok(
                     makeCatalogResponse([
-                        makeEntry({ source: "local", display_name: "Local-A" }),
+                        makeEntry({ source: "native", display_name: "Local-A" }),
                         makeFrontierEntry({ ...({ key_status: "ready" } as Partial<CatalogEntry>) }),
                     ]),
                 ),
@@ -1690,7 +1690,7 @@ describe("CatalogModal", () => {
                 .trigger("click");
             await tick();
             await tick();
-            (modal as any).currentTab = "frontier";
+            (modal as any).currentTab = "hosted";
             // Now click Embed — sub-toggle should reset to local.
             plugin.api.catalog.mockClear();
             findButtons(content)

@@ -16,7 +16,7 @@ function localRow(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
         description: "",
         quality_tier: "balanced",
         installed: true,
-        source: "local",
+        source: "native",
         task: "chat",
         featured: false,
         downloads: 0,
@@ -138,6 +138,28 @@ describe("ModelPickerModal", () => {
             .findAll("lilbee-model-picker-section-header")
             .map((h) => h.textContent);
         expect(headers).toEqual([MESSAGES.MODEL_PICKER_LOCAL_HEADING, "OpenAI", "Anthropic"]);
+    });
+
+    it("renders ollama rows with a provider pill and no key pill, and defaults a key-less frontier row to Needs key", async () => {
+        const keylessFrontier = {
+            ...localRow({ display_name: "Keyless", hf_repo: "openai/keyless", source: "frontier" }),
+            provider: "OpenAI",
+            // key_status intentionally omitted to exercise the `?? missing_key` fallback.
+        } as CatalogEntry;
+        const ollama = {
+            ...localRow({ display_name: "Llama", hf_repo: "ollama/llama3", source: "ollama" }),
+            provider: "Ollama",
+        } as CatalogEntry;
+        const plugin = makePlugin([keylessFrontier, ollama]);
+        const modal = await openPicker(plugin);
+        await tick();
+        const content = contentEl(modal);
+        // Ollama always surfaces the hosted set (no key needed).
+        expect(content.findAll("lilbee-provider-pill").map((p) => p.textContent)).toEqual(["OpenAI", "Ollama"]);
+        // Only the frontier row carries a key-status pill; it defaults to Needs key.
+        const keyPills = content.findAll("lilbee-key-status-pill");
+        expect(keyPills).toHaveLength(1);
+        expect(keyPills[0].textContent).toBe(MESSAGES.PILL_KEY_NEEDS_KEY);
     });
 
     it("clicking a Local row calls setChatModel and closes the modal", async () => {

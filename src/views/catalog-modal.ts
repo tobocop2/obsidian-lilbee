@@ -1,14 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import type {
-    CatalogEntry,
-    CatalogSource,
-    CatalogTab,
-    CatalogViewMode,
-    KeyStatus,
-    ModelTask,
-    ModelSize,
-} from "../types";
+import type { CatalogEntry, CatalogTab, CatalogViewMode, KeyStatus, ModelTask, ModelSize } from "../types";
 import {
     CATALOG_SOURCE,
     CATALOG_TAB,
@@ -42,9 +34,9 @@ import {
     deepLinkToApiKeySettings,
     forYouRail,
     freshRail,
-    frontierRowsOnly,
     groupByProvider,
-    hasReadyFrontierRow,
+    hasReadyHostedRow,
+    hostedRowsOnly,
     localRowsOnly,
     renderKeyStatusPill,
     renderProviderPill,
@@ -61,6 +53,16 @@ const DRAWER_FOCUS_DEBOUNCE_MS = 30;
 type TaskFilter = (typeof FILTERS.TASK)[keyof typeof FILTERS.TASK];
 type SizeFilter = "" | typeof FILTERS.SIZE.SMALL | typeof FILTERS.SIZE.MEDIUM | typeof FILTERS.SIZE.LARGE;
 type SortFilter = (typeof FILTERS.SORT)[keyof typeof FILTERS.SORT];
+
+/**
+ * The catalog modal's task tabs carry a local/hosted sub-toggle. View-only
+ * state distinct from the wire `CatalogSource`: "hosted" spans frontier + ollama.
+ */
+type SubTab = "local" | "hosted";
+const SUB_TAB = {
+    LOCAL: "local",
+    HOSTED: "hosted",
+} as const satisfies Record<string, SubTab>;
 
 const TASK_SECTION_LABEL: Record<ModelTask, string> = {
     [MODEL_TASK.CHAT]: MESSAGES.LABEL_SECTION_CHAT,
@@ -106,9 +108,9 @@ export class CatalogModal extends Modal {
     private viewToggleBtn: HTMLElement | null = null;
     private debouncedSearch: () => void;
     private cancelDebouncedSearch: () => void;
-    private currentTab: CatalogSource = CATALOG_SOURCE.LOCAL;
+    private currentTab: SubTab = SUB_TAB.LOCAL;
     private subTabBarEl: HTMLElement | null = null;
-    private frontierTabBtn: HTMLElement | null = null;
+    private hostedTabBtn: HTMLElement | null = null;
     private activeTab: CatalogTab;
     private mainTabBarEl: HTMLElement | null = null;
     private bodyEl: HTMLElement | null = null;
@@ -245,8 +247,8 @@ export class CatalogModal extends Modal {
         }
         this.plugin.settings.lastCatalogTab = tab;
         void this.plugin.saveSettings();
-        // Reset to the local sub-tab when leaving a task tab — frontier state shouldn't persist.
-        this.currentTab = CATALOG_SOURCE.LOCAL;
+        // Reset to the local sub-tab when leaving a task tab — hosted state shouldn't persist.
+        this.currentTab = SUB_TAB.LOCAL;
         this.applyTabToFilter();
         this.updateSubTabBarVisibility();
         this.updateViewToggleVisibility();
@@ -272,15 +274,15 @@ export class CatalogModal extends Modal {
             cls: "lilbee-catalog-tab lilbee-catalog-tab-active",
         });
         localBtn.setAttribute("aria-selected", "true");
-        localBtn.addEventListener("click", () => this.switchSubTab(CATALOG_SOURCE.LOCAL));
+        localBtn.addEventListener("click", () => this.switchSubTab(SUB_TAB.LOCAL));
 
-        this.frontierTabBtn = this.subTabBarEl.createEl("button", {
+        this.hostedTabBtn = this.subTabBarEl.createEl("button", {
             text: MESSAGES.TAB_FRONTIER,
             cls: "lilbee-catalog-tab",
         });
-        this.frontierTabBtn.setAttribute("aria-selected", "false");
-        this.frontierTabBtn.style.display = "none";
-        this.frontierTabBtn.addEventListener("click", () => this.switchSubTab(CATALOG_SOURCE.FRONTIER));
+        this.hostedTabBtn.setAttribute("aria-selected", "false");
+        this.hostedTabBtn.style.display = "none";
+        this.hostedTabBtn.addEventListener("click", () => this.switchSubTab(SUB_TAB.HOSTED));
         this.updateSubTabBarVisibility();
     }
 
@@ -291,32 +293,32 @@ export class CatalogModal extends Modal {
         this.subTabBarEl.style.display = showSubTabs ? "" : "none";
     }
 
-    private switchSubTab(tab: CatalogSource): void {
+    private switchSubTab(tab: SubTab): void {
         if (this.currentTab === tab) return;
         this.currentTab = tab;
         /* v8 ignore next 2 */
         if (!this.subTabBarEl) return;
         for (const btn of Array.from(this.subTabBarEl.children) as HTMLElement[]) {
             const isActive =
-                (tab === CATALOG_SOURCE.LOCAL && btn.textContent === MESSAGES.TAB_LOCAL) ||
-                (tab === CATALOG_SOURCE.FRONTIER && btn.textContent === MESSAGES.TAB_FRONTIER);
+                (tab === SUB_TAB.LOCAL && btn.textContent === MESSAGES.TAB_LOCAL) ||
+                (tab === SUB_TAB.HOSTED && btn.textContent === MESSAGES.TAB_FRONTIER);
             btn.toggleClass("lilbee-catalog-tab-active", isActive);
             btn.setAttribute("aria-selected", isActive ? "true" : "false");
         }
         this.renderResults();
     }
 
-    private updateFrontierTabVisibility(): void {
+    private updateHostedTabVisibility(): void {
         /* v8 ignore next 2 */
-        if (!this.frontierTabBtn) return;
-        const showFrontier = tabIdToTask(this.activeTab) !== null && hasReadyFrontierRow(this.entries);
-        if (showFrontier) {
-            this.frontierTabBtn.style.display = "";
+        if (!this.hostedTabBtn) return;
+        const showHosted = tabIdToTask(this.activeTab) !== null && hasReadyHostedRow(this.entries);
+        if (showHosted) {
+            this.hostedTabBtn.style.display = "";
             return;
         }
-        this.frontierTabBtn.style.display = "none";
-        // Bounce the user home if a refetch revoked the only ready frontier row.
-        if (this.currentTab === CATALOG_SOURCE.FRONTIER) this.switchSubTab(CATALOG_SOURCE.LOCAL);
+        this.hostedTabBtn.style.display = "none";
+        // Bounce the user home if a refetch revoked the only ready hosted row.
+        if (this.currentTab === SUB_TAB.HOSTED) this.switchSubTab(SUB_TAB.LOCAL);
     }
 
     onClose(): void {
@@ -444,7 +446,7 @@ export class CatalogModal extends Modal {
             this.entries.push(...filtered);
             this.offset += response.models.length;
 
-            this.updateFrontierTabVisibility();
+            this.updateHostedTabVisibility();
             this.renderResults();
         } finally {
             this.isFetching = false;
@@ -464,8 +466,8 @@ export class CatalogModal extends Modal {
             return;
         }
 
-        if (this.currentTab === CATALOG_SOURCE.FRONTIER) {
-            this.renderFrontierResults();
+        if (this.currentTab === SUB_TAB.HOSTED) {
+            this.renderHostedResults();
             return;
         }
         this.renderTaskTabLocal();
@@ -550,14 +552,14 @@ export class CatalogModal extends Modal {
         }
     }
 
-    private renderFrontierResults(): void {
+    private renderHostedResults(): void {
         /* v8 ignore next 2 */
         if (!this.resultsEl) return;
         // Sub-toggle is only visible on task tabs, so taskForTab is always non-null here.
         const taskForTab = tabIdToTask(this.activeTab);
-        const allFrontier = frontierRowsOnly(this.entries);
+        const allHosted = hostedRowsOnly(this.entries);
         /* v8 ignore next 2 */
-        const rows = taskForTab === null ? allFrontier : allFrontier.filter((r) => r.task === taskForTab);
+        const rows = taskForTab === null ? allHosted : allHosted.filter((r) => r.task === taskForTab);
         if (rows.length === 0) {
             this.resultsEl.createDiv({
                 cls: "lilbee-catalog-empty",
@@ -569,29 +571,32 @@ export class CatalogModal extends Modal {
             this.resultsEl.createDiv({ cls: "lilbee-catalog-section-heading", text: provider });
             const list = this.resultsEl.createDiv({ cls: "lilbee-catalog-frontier-list" });
             for (const row of group) {
-                this.renderFrontierRow(list, row);
+                this.renderHostedRow(list, row);
             }
         }
     }
 
-    private renderFrontierRow(parent: HTMLElement, row: CatalogEntry): void {
+    private renderHostedRow(parent: HTMLElement, row: CatalogEntry): void {
         const rowEl = parent.createDiv({ cls: "lilbee-frontier-row" });
         const nameEl = rowEl.createSpan({ cls: "lilbee-frontier-row-name", text: row.display_name });
-        const provider = (row as CatalogEntry & { provider?: string }).provider ?? "";
-        const keyStatus = (row as CatalogEntry & { key_status?: KeyStatus }).key_status ?? KEY_STATUS.MISSING_KEY;
+        const provider = row.provider ?? "";
         renderProviderPill(nameEl, provider);
-        renderKeyStatusPill(nameEl, keyStatus);
+        // Local-server rows (Ollama, LM Studio) need no API key — provider pill only.
+        const keyStatus: KeyStatus = row.key_status ?? KEY_STATUS.MISSING_KEY;
+        if (row.source === CATALOG_SOURCE.FRONTIER) {
+            renderKeyStatusPill(nameEl, keyStatus);
+        }
         rowEl.addEventListener("click", () => {
-            if (keyStatus === KEY_STATUS.MISSING_KEY) {
+            if (row.source === CATALOG_SOURCE.FRONTIER && keyStatus === KEY_STATUS.MISSING_KEY) {
                 this.close();
                 deepLinkToApiKeySettings(this.app, provider);
                 return;
             }
-            void this.handleUseFrontier(row);
+            void this.handleUseHosted(row);
         });
     }
 
-    private async handleUseFrontier(row: CatalogEntry): Promise<void> {
+    private async handleUseHosted(row: CatalogEntry): Promise<void> {
         const result = await this.setActiveFor(row);
         if (result.isErr()) {
             new Notice(noticeForResultError(result.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", row.hf_repo)));
