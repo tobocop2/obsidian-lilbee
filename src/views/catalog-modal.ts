@@ -12,17 +12,6 @@ import {
     CATALOG_VIEW_MODE,
     ERROR_NAME,
 } from "../types";
-
-/**
- * The catalog modal's task tabs carry a local/hosted sub-toggle. This is a
- * view-only state distinct from the wire `CatalogSource`: "hosted" spans both
- * frontier and ollama rows.
- */
-type SubTab = "local" | "hosted";
-const SUB_TAB = {
-    LOCAL: "local",
-    HOSTED: "hosted",
-} as const satisfies Record<string, SubTab>;
 import { MESSAGES, FILTERS, CATALOG_FILTERS } from "../locales/en";
 import { extractHfRepo, nativeModelRef } from "../utils/model-ref";
 import { ConfirmModal } from "./confirm-modal";
@@ -64,6 +53,16 @@ const DRAWER_FOCUS_DEBOUNCE_MS = 30;
 type TaskFilter = (typeof FILTERS.TASK)[keyof typeof FILTERS.TASK];
 type SizeFilter = "" | typeof FILTERS.SIZE.SMALL | typeof FILTERS.SIZE.MEDIUM | typeof FILTERS.SIZE.LARGE;
 type SortFilter = (typeof FILTERS.SORT)[keyof typeof FILTERS.SORT];
+
+/**
+ * The catalog modal's task tabs carry a local/hosted sub-toggle. View-only
+ * state distinct from the wire `CatalogSource`: "hosted" spans frontier + ollama.
+ */
+type SubTab = "local" | "hosted";
+const SUB_TAB = {
+    LOCAL: "local",
+    HOSTED: "hosted",
+} as const satisfies Record<string, SubTab>;
 
 const TASK_SECTION_LABEL: Record<ModelTask, string> = {
     [MODEL_TASK.CHAT]: MESSAGES.LABEL_SECTION_CHAT,
