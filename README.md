@@ -91,7 +91,7 @@ Chat, embedding, vision, and reranking are separate roles, each with its own mod
 
 ### Already running Ollama or LM Studio? Keep them.
 
-**lilbee now works with [Ollama](https://ollama.com/) and [LM Studio](https://lmstudio.ai/).** Managing models for you is the default and the simplest path: lilbee downloads, runs, and updates them itself, no second app to think about. But you don't have to switch model managers to use lilbee.
+**lilbee has its own model manager and multi-GPU fleet, built on llama.cpp.** Downloading, running, and updating models for you is the default and the simplest path, with no second app to think about. Battle-tested managers are supported too, so you don't have to switch model managers to use lilbee.
 
 If your models already live in Ollama or LM Studio, point lilbee at the running server and they show up right in the same Chat / Embed / Vision / Rerank pickers, next to lilbee's own models and any cloud models, each labeled by where it runs. You keep managing them in the app you already use; lilbee just uses them. Pick whichever fits how you already work, and mix all three freely.
 
