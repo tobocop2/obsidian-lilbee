@@ -111,6 +111,12 @@ The plugin reads everything you've indexed and writes a wiki about it. Pages com
 
 </details>
 
+### Already using Ollama or LM Studio?
+
+lilbee manages models for you out of the box — it downloads, runs, and updates them itself, so the simplest path is to let it. But if you already keep your models in [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/), lilbee works with both. Point it at a running Ollama or LM Studio server and its models show up in the same pickers, next to the ones lilbee manages and any cloud models. They're ready to use right away, labeled by where they run; you go on managing them in that app and lilbee just uses them. Pick whichever fits how you already work.
+
+<br>
+
 ## Quick start
 
 1. Install **[BRAT](https://github.com/TfTHacker/obsidian42-brat)** in Obsidian (Settings → Community plugins → Browse → search "BRAT" → Install → Enable).
