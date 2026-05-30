@@ -53,6 +53,7 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 - **Verify in one click.** Every citation opens a Source Preview scrolled to the exact spot: surrounding paragraphs visible, cited lines highlighted.
 - **Reads more than markdown.** PDFs, Office files, ebooks, CSV / TSV / JSON / YAML, 150+ programming languages, plus OCR for scans and photographed pages.
 - **Your models, your machine.** Browse a built-in model catalog straight from Hugging Face Hub, pull one with a click, run it locally. No account needed.
+- **Already on Ollama or LM Studio? Keep them.** lilbee manages models for you by default, but it also works with both, so you never have to switch model managers. Their models appear in the same pickers, alongside lilbee's own.
 - **Runs on your computer.** Server, models, index, and vault all stay local; cloud models are opt-in per role, with a persistent indicator when one is active.
 - **An auto-generated wiki** *(experimental)*: linked markdown pages written from what you've indexed, citation-checked before publish, landing in your vault's graph alongside your own notes.
 
@@ -88,6 +89,12 @@ Chat, embedding, vision, and reranking are separate roles, each with its own mod
 
 <p align="center"><img alt="browse the model catalog inside Obsidian: Chat, Embed, Vision, Rerank tabs, search Hugging Face Hub" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/catalog.gif" width="640"></p>
 
+### Already running Ollama or LM Studio? Keep them.
+
+**lilbee now works with [Ollama](https://ollama.com/) and [LM Studio](https://lmstudio.ai/).** Managing models for you is the default and the simplest path: lilbee downloads, runs, and updates them itself, no second app to think about. But you don't have to switch model managers to use lilbee.
+
+If your models already live in Ollama or LM Studio, point lilbee at the running server and they show up right in the same Chat / Embed / Vision / Rerank pickers, next to lilbee's own models and any cloud models, each labeled by where it runs. You keep managing them in the app you already use; lilbee just uses them. Pick whichever fits how you already work, and mix all three freely.
+
 ### Documents, code, and scanned images
 
 Your vault is full of more than markdown. lilbee handles the rest:
@@ -110,12 +117,6 @@ By default everything stays on your machine: server, models, index, vault. For a
 The plugin reads everything you've indexed and writes a wiki about it. Pages compound across sources instead of one-per-document, so concepts and entities that recur get their own page with citations from every source that mentions them. They live in a configurable vault folder (default `lilbee/`) as ordinary markdown with `[[wiki links]]`, so Obsidian's graph view picks them up. Every section is citation-verified and scored for embedding faithfulness before publish; low-confidence pages land in a drafts queue with a review modal (accept, reject, or edit inline), and a lint command surfaces stale or broken citations by page.
 
 </details>
-
-### Already using Ollama or LM Studio?
-
-lilbee manages models for you out of the box — it downloads, runs, and updates them itself, so the simplest path is to let it. But if you already keep your models in [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/), lilbee works with both. Point it at a running Ollama or LM Studio server and its models show up in the same pickers, next to the ones lilbee manages and any cloud models. They're ready to use right away, labeled by where they run; you go on managing them in that app and lilbee just uses them. Pick whichever fits how you already work.
-
-<br>
 
 ## Quick start
 
