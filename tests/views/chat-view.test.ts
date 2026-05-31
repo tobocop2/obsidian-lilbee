@@ -60,6 +60,10 @@ vi.mock("../../src/views/confirm-modal", () => ({
         close: vi.fn(),
     })),
 }));
+const { setupWizardOpen } = vi.hoisted(() => ({ setupWizardOpen: vi.fn() }));
+vi.mock("../../src/views/setup-wizard", () => ({
+    SetupWizard: vi.fn().mockImplementation(() => ({ open: setupWizardOpen })),
+}));
 import type { SSEEvent, Source } from "../../src/types";
 import { TaskQueue } from "../../src/task-queue";
 
@@ -1040,6 +1044,49 @@ describe("ChatView.sendMessage — error event", () => {
         const history = (view as any).history;
         expect(history.length).toBe(1);
         expect(history[0].role).toBe("user");
+    });
+});
+
+describe("ChatView.sendMessage — model-unavailable error routes to setup", () => {
+    it("opens the SetupWizard and notifies when the error reports the provider is unavailable", async () => {
+        Notice.clear();
+        setupWizardOpen.mockClear();
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.ERROR, data: { message: "connection refused", code: "connection" } },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "hello";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+
+        expect(setupWizardOpen).toHaveBeenCalledTimes(1);
+        expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_MODEL_UNAVAILABLE_SETUP)).toBe(true);
+    });
+
+    it("does not open the SetupWizard for an ordinary chat error", async () => {
+        Notice.clear();
+        setupWizardOpen.mockClear();
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([{ event: SSE_EVENT.ERROR, data: "something went wrong" }]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "hello";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+
+        expect(setupWizardOpen).not.toHaveBeenCalled();
     });
 });
 

@@ -36,9 +36,12 @@ import {
     percentFromSse,
     errorMessage,
     extractSseErrorMessage,
+    extractSseErrorCode,
+    isModelUnavailableError,
     noticeForResultError,
     getRelevantSystemMemoryGB,
 } from "../utils";
+import { SetupWizard } from "./setup-wizard";
 import { hostedOptions, isUsableHostedRow } from "./catalog-helpers";
 
 interface OpenDialogResult {
@@ -896,6 +899,10 @@ export class ChatView extends ItemView {
                     text: MESSAGES.ERROR_STREAM(errMsg),
                 });
                 new Notice(MESSAGES.ERROR_STREAM(errMsg));
+                if (isModelUnavailableError(extractSseErrorCode(event.data), errMsg)) {
+                    new Notice(MESSAGES.NOTICE_MODEL_UNAVAILABLE_SETUP);
+                    new SetupWizard(this.app, this.plugin).open();
+                }
                 break;
             }
         }

@@ -549,6 +549,7 @@ export const MESSAGES = {
     ERROR_SERVER_UNREACHABLE: "Could not connect to lilbee server. Is it running?",
     ERROR_STREAM: (msg: string) => `lilbee: ${msg}`,
     ERROR_CHAT_FAILED: (reason: string) => `Chat failed: ${reason}`,
+    NOTICE_MODEL_UNAVAILABLE_SETUP: "Your model isn't available. Opening setup so you can pick a working one.",
     ERROR_RATE_LIMITED: (retryAfterSeconds: number | null) =>
         retryAfterSeconds !== null
             ? `lilbee is busy with another request. Try again in ${retryAfterSeconds} seconds.`

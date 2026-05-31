@@ -5,6 +5,8 @@ import {
     ensureUrlScheme,
     errorMessage,
     extractServerErrorDetail,
+    extractSseErrorCode,
+    isModelUnavailableError,
     formatBytes,
     formatRate,
     formatElapsed,
@@ -308,6 +310,46 @@ describe("isRoleMismatchDetail", () => {
         // a generic "see PUT /api/models/ for options") must NOT be misclassified as a
         // role-mismatch. The sentinel is the `Set it via PUT /api/models/` prefix.
         expect(isRoleMismatchDetail("Auth failed — see PUT /api/models/ docs for the right endpoint.")).toBe(false);
+    });
+});
+
+describe("extractSseErrorCode", () => {
+    it("returns the string code from a structured error payload", () => {
+        expect(extractSseErrorCode({ message: "down", code: "connection" })).toBe("connection");
+    });
+
+    it("returns null when the payload has no code", () => {
+        expect(extractSseErrorCode({ message: "down" })).toBeNull();
+    });
+
+    it("returns null when code is not a string", () => {
+        expect(extractSseErrorCode({ message: "down", code: 503 })).toBeNull();
+    });
+
+    it("returns null for a bare-string payload", () => {
+        expect(extractSseErrorCode("something went wrong")).toBeNull();
+    });
+
+    it("returns null for a non-object payload", () => {
+        expect(extractSseErrorCode(null)).toBeNull();
+    });
+});
+
+describe("isModelUnavailableError", () => {
+    it.each(["connection", "server", "not_found"])("treats the %s code as model-unavailable", (code) => {
+        expect(isModelUnavailableError(code, "")).toBe(true);
+    });
+
+    it("treats the litellm-missing message as model-unavailable even without a code", () => {
+        expect(isModelUnavailableError(null, "Remote and API models need the lilbee[litellm] extra.")).toBe(true);
+    });
+
+    it("does not route auth errors to setup (API key is a settings problem)", () => {
+        expect(isModelUnavailableError("auth", "missing key")).toBe(false);
+    });
+
+    it("returns false for an unrelated error with no marker", () => {
+        expect(isModelUnavailableError(null, "the model produced no output")).toBe(false);
     });
 });
 

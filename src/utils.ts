@@ -247,6 +247,45 @@ export function isRoleMismatchDetail(detail: string): boolean {
 }
 
 /**
+ * SSE error `code` values (server-side `ProviderErrorKind`) that mean the
+ * configured model or its backend can't be reached or resolved: the local
+ * model server (Ollama / LM Studio) is down, or the model no longer exists.
+ * `auth` is excluded — a missing API key is a settings problem, not something
+ * the model-pull setup wizard resolves.
+ */
+const MODEL_UNAVAILABLE_CODES: ReadonlySet<string> = new Set(["connection", "server", "not_found"]);
+
+/**
+ * Sentinel in the server's error message when the optional `litellm` extra
+ * isn't installed, which makes every remote (Ollama/LM Studio/API) model
+ * unusable. The server emits this without a structured `code`, so it is
+ * matched on the install-hint substring it always carries.
+ */
+const LITELLM_MISSING_MARKER = "lilbee[litellm]";
+
+/**
+ * Pull the structured `code` out of an SSE `error` payload, or null when the
+ * payload is a bare string, has no `code`, or `code` isn't a string.
+ */
+export function extractSseErrorCode(data: unknown): string | null {
+    if (data && typeof data === "object" && "code" in data) {
+        const code = (data as { code?: unknown }).code;
+        if (typeof code === "string") return code;
+    }
+    return null;
+}
+
+/**
+ * True when a chat error means the configured model/provider is unavailable
+ * (local server down, model not found, or the litellm extra missing) rather
+ * than a transient or content failure. Such errors route the user to setup.
+ */
+export function isModelUnavailableError(code: string | null, message: string): boolean {
+    if (code !== null && MODEL_UNAVAILABLE_CODES.has(code)) return true;
+    return message.includes(LITELLM_MISSING_MARKER);
+}
+
+/**
  * Compute a percent (0–100) from a server SSE progress payload.
  * Accepts `{percent, current, total}` shape and prefers `percent` if present;
  * otherwise derives from `current/total`. Returns undefined when neither is usable
