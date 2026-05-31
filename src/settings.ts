@@ -1754,8 +1754,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         this.renderRerankCandidatesField(details);
 
-        const litellmContainer = details.createDiv({ cls: "lilbee-litellm-container" });
-
         const llmSetting = new Setting(details)
             .setName(MESSAGES.LABEL_LLM_PROVIDER)
             .setDesc(MESSAGES.DESC_LLM_PROVIDER)
@@ -1769,7 +1767,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         try {
                             await this.plugin.api.updateConfig({ llm_provider: value });
                             new Notice(MESSAGES.NOTICE_LLM_UPDATED);
-                            litellmContainer.style.display = value === "litellm" ? "" : "none";
                         } catch {
                             new Notice(MESSAGES.NOTICE_FAILED_LLM);
                         }
@@ -1842,26 +1839,46 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 text.inputEl.type = "password";
             });
 
-        litellmContainer.style.display = "none";
-        const litellmSetting = new Setting(litellmContainer)
-            .setName(MESSAGES.LABEL_LITELLM_BASE_URL)
-            .setDesc(MESSAGES.DESC_LITELLM_BASE_URL)
-            .addText((text) => {
-                text.setPlaceholder("http://localhost:11434")
-                    .setValue("")
-                    .onChange(async (value) => {
-                        const trimmed = value.trim();
-                        if (trimmed === "") return;
-                        try {
-                            await this.plugin.api.updateConfig({ litellm_base_url: trimmed });
-                            new Notice(MESSAGES.NOTICE_LITELLM_UPDATED);
-                        } catch {
-                            new Notice(MESSAGES.NOTICE_FAILED_LITELLM);
-                        }
-                    });
-                this.serverConfigInputs.set("litellm_base_url", text.inputEl as unknown as HTMLInputElement);
-            });
-        this.appendResetAffordance(litellmSetting, "litellm_base_url", MESSAGES.LABEL_LITELLM_BASE_URL);
+        const localServerFields: {
+            label: string;
+            desc: string;
+            configKey: string;
+            placeholder: string;
+        }[] = [
+            {
+                label: MESSAGES.LABEL_OLLAMA_BASE_URL,
+                desc: MESSAGES.DESC_OLLAMA_BASE_URL,
+                configKey: "ollama_base_url",
+                placeholder: "http://localhost:11434",
+            },
+            {
+                label: MESSAGES.LABEL_LM_STUDIO_BASE_URL,
+                desc: MESSAGES.DESC_LM_STUDIO_BASE_URL,
+                configKey: "lm_studio_base_url",
+                placeholder: "http://localhost:1234/v1",
+            },
+        ];
+        for (const field of localServerFields) {
+            const setting = new Setting(details)
+                .setName(field.label)
+                .setDesc(field.desc)
+                .addText((text) => {
+                    text.setPlaceholder(field.placeholder)
+                        .setValue("")
+                        .onChange(async (value) => {
+                            const trimmed = value.trim();
+                            if (trimmed === "") return;
+                            try {
+                                await this.plugin.api.updateConfig({ [field.configKey]: trimmed });
+                                new Notice(MESSAGES.NOTICE_LOCAL_SERVER_URL_UPDATED);
+                            } catch {
+                                new Notice(MESSAGES.NOTICE_FAILED_LOCAL_SERVER_URL);
+                            }
+                        });
+                    this.serverConfigInputs.set(field.configKey, text.inputEl as unknown as HTMLInputElement);
+                });
+            this.appendResetAffordance(setting, field.configKey, field.label);
+        }
 
         const cockpitSetting = new Setting(details)
             .setName(MESSAGES.LABEL_AUTO_OPEN_COCKPIT)
