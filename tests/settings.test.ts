@@ -466,8 +466,9 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
             // sharedRoot + 9 generation + 5 retrieval-advanced + 4 ingest + 2 worker-pool
-            // + 10 crawling + wikiVaultFolder + rerank_candidates + hfToken + litellm = 35
-            expect(textOnChanges.length).toBe(35);
+            // + 10 crawling + wikiVaultFolder + rerank_candidates + hfToken
+            // + ollama URL + lm_studio URL = 36
+            expect(textOnChanges.length).toBe(36);
         });
     });
 
@@ -3725,17 +3726,28 @@ describe("managed mode settings", () => {
         });
     });
 
-    describe("LiteLLM base URL onChange", () => {
-        const LITELLM_IDX = 34;
+    describe("Local server URL onChange", () => {
+        const OLLAMA_IDX = 34;
+        const LM_STUDIO_IDX = 35;
 
-        it("calls updateConfig on non-empty value", async () => {
+        it("calls updateConfig with ollama_base_url on non-empty value", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[LITELLM_IDX]("http://localhost:4000");
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ litellm_base_url: "http://localhost:4000" });
+            await textOnChanges[OLLAMA_IDX]("http://localhost:4000");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ ollama_base_url: "http://localhost:4000" });
+        });
+
+        it("calls updateConfig with lm_studio_base_url on non-empty value", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await textOnChanges[LM_STUDIO_IDX]("http://localhost:1234/v1");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ lm_studio_base_url: "http://localhost:1234/v1" });
         });
 
         it("skips empty value", async () => {
@@ -3744,7 +3756,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[LITELLM_IDX]("  ");
+            await textOnChanges[OLLAMA_IDX]("  ");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -3755,8 +3767,10 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[LITELLM_IDX]("http://localhost:4000");
-            expect(Notice.instances.some((n: any) => n.message.includes("failed to update LiteLLM URL"))).toBe(true);
+            await textOnChanges[OLLAMA_IDX]("http://localhost:4000");
+            expect(Notice.instances.some((n: any) => n.message.includes("failed to update local server URL"))).toBe(
+                true,
+            );
         });
     });
 
@@ -4121,7 +4135,7 @@ describe("managed mode settings", () => {
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_provider: "litellm" });
         });
 
-        it("hides litellm container when provider is not litellm", async () => {
+        it("calls updateConfig when provider is set to auto", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
@@ -4168,7 +4182,8 @@ describe("managed mode settings", () => {
 
             // Layout (text-input order via addText): 0=port, 1-9=gen, 10-14=retrieval-advanced,
             // 15-18=ingest, 19-20=worker-pool, 21-30=crawling, 31=wikiVaultFolder,
-            // 32=rerank_candidates, 33-35=apiKeys (openai, anthropic, gemini), 36=hfToken, 37=litellm.
+            // 32=rerank_candidates, 33-35=apiKeys (openai, anthropic, gemini), 36=hfToken,
+            // 37=ollama URL, 38=lm_studio URL.
             expect(inputs[33].type).toBe("password");
             expect(inputs[34].type).toBe("password");
             expect(inputs[35].type).toBe("password");

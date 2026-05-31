@@ -149,8 +149,11 @@ describe("MESSAGES", () => {
             expect(MESSAGES.DESC_HF_TOKEN).toBe(
                 "Needed for some models. Get one free at huggingface.co/settings/tokens",
             );
-            expect(MESSAGES.DESC_LITELLM_BASE_URL).toBe(
-                "The URL of your external AI service. Only needed when using the External backend.",
+            expect(MESSAGES.DESC_OLLAMA_BASE_URL).toBe(
+                "Where your Ollama server is listening. Leave blank for the default (http://localhost:11434).",
+            );
+            expect(MESSAGES.DESC_LM_STUDIO_BASE_URL).toBe(
+                "Where your LM Studio server is listening. Leave blank for the default (http://localhost:1234/v1).",
             );
             expect(MESSAGES.DESC_WIKI_PRUNE_RAW).toBe(
                 "After wiki summaries are created, remove the original text chunks that were summarized",

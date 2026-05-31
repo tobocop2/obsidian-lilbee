@@ -254,7 +254,8 @@ export const MESSAGES = {
     LABEL_GEMINI_API_KEY: "Gemini API key",
     DESC_GEMINI_API_KEY: "For Gemini models via litellm",
     LABEL_HF_TOKEN: "HuggingFace token",
-    LABEL_LITELLM_BASE_URL: "External AI endpoint",
+    LABEL_OLLAMA_BASE_URL: "Ollama URL",
+    LABEL_LM_STUDIO_BASE_URL: "LM Studio URL",
     LABEL_DELETE_MODEL: "Delete model",
     LABEL_GENERATION_HELP: "Fine-tune AI responses. Defaults work well for most users.",
     LABEL_ADVANCED_HELP:
@@ -418,7 +419,10 @@ export const MESSAGES = {
     DESC_LLM_PROVIDER_EXTERNAL: "External (OpenAI, Claude, etc.)",
     DESC_API_KEY: "Your API key for external AI services (OpenAI, Anthropic, etc.). Stored securely on the server.",
     DESC_HF_TOKEN: "Needed for some models. Get one free at huggingface.co/settings/tokens",
-    DESC_LITELLM_BASE_URL: "The URL of your external AI service. Only needed when using the External backend.",
+    DESC_OLLAMA_BASE_URL:
+        "Where your Ollama server is listening. Leave blank for the default (http://localhost:11434).",
+    DESC_LM_STUDIO_BASE_URL:
+        "Where your LM Studio server is listening. Leave blank for the default (http://localhost:1234/v1).",
     DESC_REINDEX_WARNING: "Changing {field} will require re-indexing all documents. Continue?",
     DESC_EMBEDDING_REINDEX_WARNING: "Changing the embedding model will require re-indexing all documents. Continue?",
 
@@ -585,8 +589,8 @@ export const MESSAGES = {
     NOTICE_FAILED_SAVE_KEY: "lilbee: failed to save API key",
     NOTICE_LLM_UPDATED: "lilbee: LLM provider updated",
     NOTICE_FAILED_LLM: "lilbee: failed to update LLM provider",
-    NOTICE_LITELLM_UPDATED: "lilbee: LiteLLM URL updated",
-    NOTICE_FAILED_LITELLM: "lilbee: failed to update LiteLLM URL",
+    NOTICE_LOCAL_SERVER_URL_UPDATED: "lilbee: local server URL updated",
+    NOTICE_FAILED_LOCAL_SERVER_URL: "lilbee: failed to update local server URL",
     NOTICE_EMBEDDING_UPDATED: "lilbee: embedding model updated",
     NOTICE_FAILED_EMBEDDING: "lilbee: failed to update embedding model",
     NOTICE_UPDATED_TO: (version: string) => `lilbee: updated to ${version}`,
