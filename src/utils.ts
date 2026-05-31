@@ -246,6 +246,28 @@ export function isRoleMismatchDetail(detail: string): boolean {
     return detail.includes("Set it via PUT /api/models/");
 }
 
+// Server error codes meaning the model or its backend is unreachable or gone.
+// `auth` is excluded: a missing API key is a settings issue, not a setup one.
+const MODEL_UNAVAILABLE_CODES: ReadonlySet<string> = new Set(["connection", "server", "not_found"]);
+
+// Substring the server includes when the optional litellm extra is missing.
+const LITELLM_MISSING_MARKER = "lilbee[litellm]";
+
+/** The structured `code` from an SSE error payload, or null. */
+export function extractSseErrorCode(data: unknown): string | null {
+    if (data && typeof data === "object" && "code" in data) {
+        const code = (data as { code?: unknown }).code;
+        if (typeof code === "string") return code;
+    }
+    return null;
+}
+
+/** Whether a chat error means the model/provider is unavailable, so the user is routed to setup. */
+export function isModelUnavailableError(code: string | null, message: string): boolean {
+    if (code !== null && MODEL_UNAVAILABLE_CODES.has(code)) return true;
+    return message.includes(LITELLM_MISSING_MARKER);
+}
+
 /**
  * Compute a percent (0–100) from a server SSE progress payload.
  * Accepts `{percent, current, total}` shape and prefers `percent` if present;

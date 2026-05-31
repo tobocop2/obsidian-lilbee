@@ -52,6 +52,7 @@ src/
 - **Error handling** — wrap all API calls in try/catch, show `new Notice(message)` on failure.
 - **Constants** — named constants for magic numbers (`MAX_EXCERPT_CHARS`, `SEARCH_DEBOUNCE_MS`). Use `as const` objects for string literal sets (`SSE_EVENT`, `JSON_HEADERS`, `SERVER_STATE`, `SERVER_MODE`, `MODEL_TASK`, `CAPABILITY`, `TASK_TYPE`, …, all in `types.ts`). Never compare against raw string literals when a constant exists.
 - **Obsidian DOM helpers** — use `createDiv()`, `createEl()`, `setText()`, `addClass()`. No `innerHTML`.
+- **Comments state what, not a story** — a comment names a non-obvious invariant or constraint in one line. Cut the narration and justification: not "the server emits this without a code, so it's matched on the substring it always carries", just "substring the server includes when the litellm extra is missing". Avoid multi-sentence comment blocks that explain the reasoning behind the code; prefer a clear name and no comment. Same for JSDoc: describe what a function is, not the chain of consequences that motivated it.
 - **Import order** — obsidian imports first, then local modules.
 - **Strict TypeScript** — `noImplicitAny`, `strictNullChecks` enabled in tsconfig.
 
