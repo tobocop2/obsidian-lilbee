@@ -105,7 +105,7 @@ export const MESSAGES = {
     LABEL_CHAT_MODE_SEARCH: "Search",
     LABEL_CHAT_MODE_CHAT: "Chat",
     TAB_LOCAL: "Local",
-    TAB_FRONTIER: "Frontier",
+    TAB_FRONTIER: "Hosted",
     TAB_DISCOVER: "Discover",
     TAB_CHAT_MODELS: "Chat",
     TAB_EMBED_MODELS: "Embed",
