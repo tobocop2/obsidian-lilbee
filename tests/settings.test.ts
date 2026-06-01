@@ -2168,6 +2168,36 @@ describe("managed mode settings", () => {
         expect(Notice.instances.some((n) => n.message.includes("updated to v0.2.0"))).toBe(true);
     });
 
+    it("update progress panel surfaces the phase message and the total download size", async () => {
+        Notice.clear();
+
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
+        (plugin as any).checkForUpdate = vi.fn().mockResolvedValue({
+            available: true,
+            release: { tag: "v0.2.0", assetUrl: "https://example.com", variant: "default", sizeBytes: 266000000 },
+        });
+        (plugin as any).updateServer = vi
+            .fn()
+            .mockImplementation(async (_release: any, onProgress?: (msg: string) => void) => {
+                onProgress?.("Downloading...");
+            });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        // Stop the post-update re-render so the in-progress panel persists for assertion.
+        const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
+
+        await buttonOnClicks[2](); // check → sets pendingRelease
+        await buttonOnClicks[2](); // update → drives the progress panel
+
+        const panel = tab.containerEl.find("lilbee-update-progress")!;
+        expect(panel.style.display).toBe("");
+        expect(panel.find("lilbee-update-progress-phase")!.textContent).toBe("Downloading...");
+        expect(panel.find("lilbee-update-progress-size")!.textContent).toBe("Updating to v0.2.0 · 266 MB download");
+        displaySpy.mockRestore();
+    });
+
     it("update button does not add duplicate click handlers", async () => {
         Notice.clear();
 
@@ -2191,9 +2221,10 @@ describe("managed mode settings", () => {
         Notice.clear();
 
         const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
-        (plugin as any).checkForUpdate = vi
-            .fn()
-            .mockResolvedValue({ available: true, release: { tag: "v0.2.0", assetUrl: "https://example.com" } });
+        (plugin as any).checkForUpdate = vi.fn().mockResolvedValue({
+            available: true,
+            release: { tag: "v0.2.0", assetUrl: "https://example.com", variant: "default", sizeBytes: 262144000 },
+        });
         (plugin as any).updateServer = vi
             .fn()
             .mockRejectedValue(new Error("Not enough disk space for the lilbee server"));
@@ -2208,6 +2239,8 @@ describe("managed mode settings", () => {
 
         // The notice surfaces the actual reason (e.g. disk space), not just a generic failure.
         expect(Notice.instances.some((n) => n.message.includes("Not enough disk space"))).toBe(true);
+        // A failed update collapses the progress panel rather than leaving a dead bar up.
+        expect(tab.containerEl.find("lilbee-update-progress")!.style.display).toBe("none");
     });
 
     it("check for updates button shows error on failure", async () => {

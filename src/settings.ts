@@ -1,4 +1,4 @@
-import { App, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
+import { App, ButtonComponent, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
 import type { ReleaseInfo } from "./binary-manager";
 import {
@@ -56,6 +56,13 @@ const CREDENTIAL_FIELDS = new Set([
 ]);
 
 export { SEPARATOR_KEY, SEPARATOR_LABEL };
+
+/** Elements of the managed-server update progress panel. */
+interface UpdateProgressEls {
+    panel: HTMLElement;
+    phase: HTMLElement;
+    size: HTMLElement;
+}
 
 export class LilbeeSettingTab extends PluginSettingTab {
     plugin: LilbeePlugin;
@@ -234,26 +241,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setName(MESSAGES.LABEL_SERVER_VERSION)
             .setDesc(this.plugin.getSharedLilbeeVersion() || MESSAGES.DESC_SERVER_VERSION_UNKNOWN);
 
+        const progress = this.renderUpdateProgress(containerEl);
+
         let pendingRelease: ReleaseInfo | null = null;
         updateSetting.addButton((checkBtn) =>
             checkBtn.setButtonText(MESSAGES.BUTTON_CHECK_UPDATES).onClick(async () => {
                 if (pendingRelease) {
-                    const release = pendingRelease;
-                    checkBtn.setDisabled(true);
-                    checkBtn.setButtonText(MESSAGES.STATUS_DOWNLOADING);
-                    try {
-                        await this.plugin.updateServer(release, (msg) => {
-                            checkBtn.setButtonText(msg);
-                        });
-                        new Notice(MESSAGES.NOTICE_UPDATED_TO(release.tag));
-                        this.display();
-                    } catch (err) {
-                        // Surface the reason (e.g. not enough disk space), not just a generic failure.
-                        new Notice(errorMessage(err, MESSAGES.ERROR_FAILED_UPDATE));
-                        console.error("[lilbee] update failed:", err);
+                    if (!(await this.runServerUpdate(pendingRelease, checkBtn, progress))) {
                         pendingRelease = null;
-                        checkBtn.setButtonText(MESSAGES.BUTTON_CHECK_UPDATES);
-                        checkBtn.setDisabled(false);
                     }
                     return;
                 }
@@ -285,6 +280,43 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 }
             }),
         );
+    }
+
+    /** Indeterminate progress panel for the managed-server update; hidden until an update runs. */
+    private renderUpdateProgress(containerEl: HTMLElement): UpdateProgressEls {
+        const panel = containerEl.createDiv({ cls: "lilbee-update-progress" });
+        panel.style.display = "none";
+        const bar = panel.createDiv({ cls: "lilbee-progress-bar-container" });
+        bar.createDiv({ cls: "lilbee-progress-bar lilbee-wizard-progress-fill lilbee-wizard-progress-indeterminate" });
+        const phase = panel.createDiv({ cls: "lilbee-update-progress-phase" });
+        const size = panel.createDiv({ cls: "lilbee-update-progress-size" });
+        return { panel, phase, size };
+    }
+
+    /** Download and install a server update, surfacing phase + total download size. Returns false on failure. */
+    private async runServerUpdate(
+        release: ReleaseInfo,
+        checkBtn: ButtonComponent,
+        progress: UpdateProgressEls,
+    ): Promise<boolean> {
+        checkBtn.setDisabled(true);
+        checkBtn.setButtonText(MESSAGES.STATUS_DOWNLOADING);
+        progress.panel.style.display = "";
+        progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatBytes(release.sizeBytes)));
+        try {
+            await this.plugin.updateServer(release, (msg) => progress.phase.setText(msg));
+            new Notice(MESSAGES.NOTICE_UPDATED_TO(release.tag));
+            this.display();
+            return true;
+        } catch (err) {
+            // errorMessage carries the server's reason, e.g. insufficient disk space.
+            new Notice(errorMessage(err, MESSAGES.ERROR_FAILED_UPDATE));
+            console.error("[lilbee] update failed:", err);
+            progress.panel.style.display = "none";
+            checkBtn.setButtonText(MESSAGES.BUTTON_CHECK_UPDATES);
+            checkBtn.setDisabled(false);
+            return false;
+        }
     }
 
     private renderSharedRootSetting(containerEl: HTMLElement): void {

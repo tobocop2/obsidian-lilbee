@@ -2135,6 +2135,31 @@
     min-width: 200px;
 }
 
+/* Managed-server update: indeterminate bar + phase/size text in the settings tab. */
+.lilbee-update-progress {
+    margin: var(--size-4-2, 8px) 0 var(--size-4-4, 16px);
+}
+
+.lilbee-update-progress .lilbee-progress-bar-container {
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    background-color: var(--background-modifier-border);
+}
+
+.lilbee-update-progress-phase {
+    font-size: var(--font-small, 13px);
+    color: var(--text-normal);
+    margin-top: var(--size-4-2, 8px);
+    font-variant-numeric: tabular-nums;
+}
+
+.lilbee-update-progress-size {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
 /* Task Center CTA: styled like a task-type chip, colored by step. Visible
  * the moment a download starts so the user knows their next move if they
  * want to step out of the wizard. */

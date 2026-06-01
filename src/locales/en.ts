@@ -461,6 +461,7 @@ export const MESSAGES = {
     TITLE_RECOMMENDED: "Recommended",
 
     STATUS_DOWNLOADING: "lilbee: downloading...",
+    STATUS_UPDATE_SIZE: (tag: string, size: string) => `Updating to ${tag} · ${size} download`,
     STATUS_STARTING: "lilbee: starting...",
     STATUS_READY: "lilbee: ready",
     STATUS_READY_EXTERNAL: "lilbee: ready [external]",
