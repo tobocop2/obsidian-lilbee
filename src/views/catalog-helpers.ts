@@ -1,6 +1,6 @@
 import type { App } from "obsidian";
-import type { CatalogEntry, CatalogTab, KeyStatus, ModelTask } from "../types";
-import { CATALOG_TAB, HOSTED_SOURCES, KEY_STATUS, MODEL_TASK } from "../types";
+import type { CatalogEntry, CatalogSource, CatalogTab, KeyStatus, ModelTask } from "../types";
+import { CATALOG_SOURCE, CATALOG_TAB, HOSTED_SOURCES, KEY_STATUS, MODEL_TASK } from "../types";
 import { MESSAGES } from "../locales/en";
 
 const DISCOVER_RAIL_LIMIT = 12;
@@ -43,13 +43,29 @@ export function hasReadyHostedRow(rows: CatalogEntry[]): boolean {
     return rows.some(isUsableHostedRow);
 }
 
-/** Selectable hosted rows: local servers always, frontier only with a ready key. Returns [ref, label]. */
+/** Local-server sources (Ollama, LM Studio) lead hosted listings; frontier trails. Lower sorts first. */
+function hostedSourceRank(source: CatalogSource): number {
+    return source === CATALOG_SOURCE.FRONTIER ? 1 : 0;
+}
+
+/** Local-first, then provider, then name — deterministic ordering for hosted rows. */
+function compareHostedRows(a: CatalogEntry, b: CatalogEntry): number {
+    const rankDiff = hostedSourceRank(a.source) - hostedSourceRank(b.source);
+    if (rankDiff !== 0) return rankDiff;
+    const providerDiff = (a.provider ?? "").localeCompare(b.provider ?? "");
+    if (providerDiff !== 0) return providerDiff;
+    return a.display_name.localeCompare(b.display_name);
+}
+
+/** Selectable hosted rows, local-first: local servers always, frontier only with a ready key. Returns [ref, label]. */
 export function hostedOptions(rows: CatalogEntry[]): Array<[string, string]> {
     return rows
         .filter(isUsableHostedRow)
+        .sort(compareHostedRows)
         .map((e) => [e.hf_repo, `${e.display_name}${e.provider ? ` [${e.provider}]` : ""}`]);
 }
 
+/** Hosted rows grouped by provider, local-server groups before frontier, providers alphabetical within a rank. */
 export function groupByProvider(rows: CatalogEntry[]): [string, CatalogEntry[]][] {
     const groups = new Map<string, CatalogEntry[]>();
     for (const row of rows) {
@@ -61,7 +77,12 @@ export function groupByProvider(rows: CatalogEntry[]): [string, CatalogEntry[]][
             groups.set(provider, [row]);
         }
     }
-    return [...groups.entries()];
+    // Each provider maps to one source, so rank the group by its first row's source.
+    return [...groups.entries()].sort(([aProvider, aRows], [bProvider, bRows]) => {
+        const rankDiff = hostedSourceRank(aRows[0].source) - hostedSourceRank(bRows[0].source);
+        if (rankDiff !== 0) return rankDiff;
+        return aProvider.localeCompare(bProvider);
+    });
 }
 
 export function renderProviderPill(parent: HTMLElement, provider: string): HTMLElement {

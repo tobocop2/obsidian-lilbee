@@ -83,7 +83,7 @@ describe("catalog-helpers", () => {
     });
 
     describe("hostedOptions", () => {
-        it("includes ollama always and frontier only with a ready key", () => {
+        it("includes ollama always and frontier only with a ready key, local server first", () => {
             const rows = [
                 row({ source: CATALOG_SOURCE.NATIVE, hf_repo: "n/r", display_name: "N" }),
                 row({
@@ -103,14 +103,57 @@ describe("catalog-helpers", () => {
                 row({ source: CATALOG_SOURCE.OLLAMA, hf_repo: "ollama/l", display_name: "Llama", provider: "Ollama" }),
             ];
             expect(hostedOptions(rows)).toEqual([
-                ["gemini/g", "Gemini Flash [Gemini]"],
                 ["ollama/l", "Llama [Ollama]"],
+                ["gemini/g", "Gemini Flash [Gemini]"],
+            ]);
+        });
+
+        it("orders local servers ahead of frontier, then by provider, then by name", () => {
+            const rows = [
+                row({
+                    source: CATALOG_SOURCE.FRONTIER,
+                    hf_repo: "openai/b",
+                    display_name: "GPT-B",
+                    provider: "OpenAI",
+                    key_status: KEY_STATUS.READY,
+                }),
+                row({
+                    source: CATALOG_SOURCE.FRONTIER,
+                    hf_repo: "openai/a",
+                    display_name: "GPT-A",
+                    provider: "OpenAI",
+                    key_status: KEY_STATUS.READY,
+                }),
+                row({
+                    source: CATALOG_SOURCE.FRONTIER,
+                    hf_repo: "gemini/g",
+                    display_name: "Gemini",
+                    provider: "Gemini",
+                    key_status: KEY_STATUS.READY,
+                }),
+                row({ source: CATALOG_SOURCE.LM_STUDIO, hf_repo: "lm/q", display_name: "Qwen", provider: "LM Studio" }),
+                row({ source: CATALOG_SOURCE.OLLAMA, hf_repo: "ollama/l", display_name: "Llama", provider: "Ollama" }),
+            ];
+            expect(hostedOptions(rows).map(([ref]) => ref)).toEqual([
+                "lm/q", // local: "LM Studio" < "Ollama"
+                "ollama/l",
+                "gemini/g", // frontier: "Gemini" < "OpenAI"
+                "openai/a", // same provider → by name "GPT-A" < "GPT-B"
+                "openai/b",
             ]);
         });
 
         it("omits the provider suffix when a hosted row carries none", () => {
             const rows = [row({ source: CATALOG_SOURCE.OLLAMA, hf_repo: "ollama/l", display_name: "Llama" })];
             expect(hostedOptions(rows)).toEqual([["ollama/l", "Llama"]]);
+        });
+
+        it("falls back to name ordering when provider-less rows of the same source are compared", () => {
+            const rows = [
+                row({ source: CATALOG_SOURCE.OLLAMA, hf_repo: "ollama/z", display_name: "Zeta" }),
+                row({ source: CATALOG_SOURCE.OLLAMA, hf_repo: "ollama/a", display_name: "Alpha" }),
+            ];
+            expect(hostedOptions(rows).map(([ref]) => ref)).toEqual(["ollama/a", "ollama/z"]);
         });
 
         it("lists lm_studio rows alongside ollama (both local servers, no key)", () => {
@@ -127,32 +170,30 @@ describe("catalog-helpers", () => {
     });
 
     describe("groupByProvider", () => {
-        it("groups by provider preserving first-seen ordering", () => {
+        it("groups by provider, alphabetical within the same source rank", () => {
             const rows = [
-                row({
-                    source: "frontier",
-                    display_name: "a",
-                    ...({ provider: "OpenAI" } as Partial<CatalogEntry>),
-                }),
-                row({
-                    source: "frontier",
-                    display_name: "b",
-                    ...({ provider: "Anthropic" } as Partial<CatalogEntry>),
-                }),
-                row({
-                    source: "frontier",
-                    display_name: "c",
-                    ...({ provider: "OpenAI" } as Partial<CatalogEntry>),
-                }),
+                row({ source: CATALOG_SOURCE.FRONTIER, display_name: "a", provider: "OpenAI" }),
+                row({ source: CATALOG_SOURCE.FRONTIER, display_name: "b", provider: "Anthropic" }),
+                row({ source: CATALOG_SOURCE.FRONTIER, display_name: "c", provider: "OpenAI" }),
             ];
             const grouped = groupByProvider(rows);
-            expect(grouped.map(([p]) => p)).toEqual(["OpenAI", "Anthropic"]);
-            expect(grouped[0][1].map((r) => r.display_name)).toEqual(["a", "c"]);
-            expect(grouped[1][1].map((r) => r.display_name)).toEqual(["b"]);
+            expect(grouped.map(([p]) => p)).toEqual(["Anthropic", "OpenAI"]);
+            expect(grouped[0][1].map((r) => r.display_name)).toEqual(["b"]);
+            expect(grouped[1][1].map((r) => r.display_name)).toEqual(["a", "c"]);
+        });
+
+        it("ranks local-server groups (Ollama, LM Studio) ahead of frontier groups", () => {
+            const rows = [
+                row({ source: CATALOG_SOURCE.FRONTIER, display_name: "g", provider: "Gemini" }),
+                row({ source: CATALOG_SOURCE.OLLAMA, display_name: "l", provider: "Ollama" }),
+                row({ source: CATALOG_SOURCE.FRONTIER, display_name: "x", provider: "OpenAI" }),
+                row({ source: CATALOG_SOURCE.LM_STUDIO, display_name: "q", provider: "LM Studio" }),
+            ];
+            expect(groupByProvider(rows).map(([p]) => p)).toEqual(["LM Studio", "Ollama", "Gemini", "OpenAI"]);
         });
 
         it("treats missing provider as empty-string group", () => {
-            const rows = [row({ source: "frontier", display_name: "a" })];
+            const rows = [row({ source: CATALOG_SOURCE.FRONTIER, display_name: "a" })];
             const grouped = groupByProvider(rows);
             expect(grouped[0][0]).toBe("");
         });

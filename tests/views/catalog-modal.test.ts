@@ -1458,6 +1458,35 @@ describe("CatalogModal", () => {
             expect(content.findAll("lilbee-key-status-pill-needs-key").length).toBe(1);
         });
 
+        it("Hosted tab renders local-server provider headings ahead of frontier ones", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(
+                ok(
+                    makeCatalogResponse([
+                        makeFrontierEntry({
+                            hf_repo: "openai/gpt-4o",
+                            display_name: "gpt-4o",
+                            ...({ provider: "OpenAI", key_status: "ready" } as Partial<CatalogEntry>),
+                        }),
+                        makeEntry({
+                            source: "ollama",
+                            hf_repo: "ollama/llama3",
+                            display_name: "llama3",
+                            provider: "Ollama",
+                        }),
+                    ]),
+                ),
+            );
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            findButtons(content)
+                .find((b) => b.textContent === MESSAGES.TAB_FRONTIER)!
+                .trigger("click");
+            await tick();
+            const sectionHeadings = content.findAll("lilbee-catalog-section-heading").map((h) => h.textContent);
+            expect(sectionHeadings).toEqual(["Ollama", "OpenAI"]);
+        });
+
         it("clicking a Ready frontier row sets that model active and closes the modal", async () => {
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(

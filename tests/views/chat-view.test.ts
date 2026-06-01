@@ -1374,6 +1374,72 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onClose();
     });
 
+    it("orders the rail's hosted options local-server first (Ollama ahead of frontier)", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.catalog = vi.fn().mockImplementation((p?: { task?: string }) => {
+            if (p?.task === "chat") {
+                return Promise.resolve(
+                    ok({
+                        total: 2,
+                        limit: 50,
+                        offset: 0,
+                        has_more: false,
+                        models: [
+                            {
+                                hf_repo: "gemini/flash",
+                                gguf_filename: "",
+                                display_name: "Gemini Flash",
+                                size_gb: 0,
+                                min_ram_gb: 0,
+                                description: "",
+                                installed: false,
+                                source: "frontier",
+                                task: "chat",
+                                featured: false,
+                                downloads: 0,
+                                quality_tier: "",
+                                param_count: "",
+                                provider: "Gemini",
+                                key_status: "ready",
+                            },
+                            {
+                                hf_repo: "ollama/llama3",
+                                gguf_filename: "",
+                                display_name: "Llama 3",
+                                size_gb: 0,
+                                min_ram_gb: 0,
+                                description: "",
+                                installed: false,
+                                source: "ollama",
+                                task: "chat",
+                                featured: false,
+                                downloads: 0,
+                                quality_tier: "",
+                                param_count: "",
+                                provider: "Ollama",
+                            },
+                        ],
+                    }),
+                );
+            }
+            return Promise.resolve(ok({ total: 0, limit: 50, offset: 0, has_more: false, models: [] }));
+        });
+        plugin.api.installedModels = vi.fn().mockResolvedValue({ models: [] });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const c = view.containerEl.children[1] as unknown as MockElement;
+        const select = c.find("lilbee-chat-model-select")!;
+        const labels = select.children.filter((ch) => ch.tagName === "OPTION").map((o) => o.textContent);
+        const idxOllama = labels.indexOf("Llama 3 [Ollama]");
+        const idxFrontier = labels.indexOf("Gemini Flash [Gemini]");
+        expect(idxOllama).toBeGreaterThanOrEqual(0);
+        expect(idxFrontier).toBeGreaterThan(idxOllama);
+        await view.onClose();
+    });
+
     it("lists a ready hosted (frontier) model and marks it selected when active", async () => {
         Notice.clear();
         const plugin = makePlugin();
