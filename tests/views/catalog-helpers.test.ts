@@ -298,6 +298,20 @@ describe("catalog-helpers", () => {
             expect(result.length).toBe(2);
         });
 
+        it("forYouRail keeps non-chat before chat when ordering swaps and ties on task", () => {
+            // a=embedding (?:1), b=chat (?0) with preferChat active → chat floats up,
+            // and the two embedding rows tie on task so the comparator falls through
+            // to the downloads tiebreak (aChat === bChat branch).
+            const rows = [
+                row({ hf_repo: "f/embed-a", featured: true, task: "embedding", downloads: 5 }),
+                row({ hf_repo: "f/chat", featured: true, task: "chat", downloads: 0 }),
+                row({ hf_repo: "f/embed-b", featured: true, task: "embedding", downloads: 9 }),
+                row({ hf_repo: "f/embed-c", featured: true, task: "embedding", downloads: 1 }),
+            ];
+            const result = forYouRail(rows, "active/ref");
+            expect(result.map((r) => r.hf_repo)).toEqual(["f/chat", "f/embed-b", "f/embed-a", "f/embed-c"]);
+        });
+
         it("forYouRail falls back to download order when no active chat ref", () => {
             const rows = [
                 row({ hf_repo: "f/low", featured: true, task: "embedding", downloads: 5 }),

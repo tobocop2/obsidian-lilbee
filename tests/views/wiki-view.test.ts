@@ -5,9 +5,11 @@ import type LilbeePlugin from "../../src/main";
 import type { WikiPage, WikiPageDetail } from "../../src/types";
 
 vi.mock("../../src/views/citation-modal", () => ({
-    CitationModal: vi.fn().mockImplementation(() => ({
-        open: vi.fn(),
-    })),
+    CitationModal: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+        };
+    }),
 }));
 
 const tick = () => new Promise((r) => setTimeout(r, 0));

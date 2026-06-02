@@ -456,6 +456,36 @@ describe("ModelPickerModal", () => {
         }
     });
 
+    it("onClose is a no-op when no filter debounce timer is pending", async () => {
+        const plugin = makePlugin([localRow()]);
+        const modal = await openPicker(plugin, "chat");
+        expect((modal as any).filterTimer).toBeNull();
+        expect(() => modal.close()).not.toThrow();
+    });
+
+    it("the scope Enter handler activates the highlighted row", async () => {
+        const plugin = makePlugin([
+            localRow({ display_name: "L1", hf_repo: "h/1" }),
+            localRow({ display_name: "L2", hf_repo: "h/2" }),
+        ]);
+        const modal = await openPicker(plugin, "chat");
+        vi.spyOn(modal, "close").mockImplementation(() => {});
+        await tick();
+        (modal as any).highlightedIndex = 1;
+        const inst = modal as unknown as { scope: { trigger: (key: string) => void } };
+        inst.scope.trigger("Enter");
+        await tick();
+        await tick();
+        expect(plugin.api.setChatModel).toHaveBeenCalledWith("h/2");
+    });
+
+    it("omits the Installed pill when the row is not installed", async () => {
+        const plugin = makePlugin([localRow({ display_name: "Not-Installed", installed: false })]);
+        const modal = await openPicker(plugin);
+        const row = contentEl(modal).find("lilbee-model-picker-row")!;
+        expect(row.find("lilbee-pill-installed")).toBeNull();
+    });
+
     it("moveHighlight is a no-op when the filtered list is empty", async () => {
         const plugin = makePlugin([]);
         const modal = await openPicker(plugin);

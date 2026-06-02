@@ -9,7 +9,7 @@ import type { LilbeeClient } from "../../src/api";
 // class (which needs the Modal base + app plumbing).
 const previewInstances: Array<{ app: unknown; api: unknown; source: Source; open: ReturnType<typeof vi.fn> }> = [];
 vi.mock("../../src/views/source-preview-modal", () => ({
-    SourcePreviewModal: vi.fn().mockImplementation((app: unknown, api: unknown, source: Source) => {
+    SourcePreviewModal: vi.fn().mockImplementation(function (app: unknown, api: unknown, source: Source) {
         const inst = { app, api, source, open: vi.fn() };
         previewInstances.push(inst);
         return inst;

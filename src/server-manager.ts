@@ -128,6 +128,7 @@ export class ServerManager {
                 this.setState(SERVER_STATE.ERROR);
                 this.restartTimer = setTimeout(() => {
                     this.restartTimer = null;
+                    /* v8 ignore next -- stop() clears this timer before setting stopping, so the false branch is unreachable */
                     if (!this.stopping) void this.start();
                 }, SERVER_MANAGER_CONFIG.CRASH_RESTART_DELAY_MS);
                 return;
@@ -172,6 +173,7 @@ export class ServerManager {
     private async waitForReady(): Promise<void> {
         for (let i = 0; i < SERVER_MANAGER_CONFIG.HEALTH_POLL_MAX_ATTEMPTS; i++) {
             const url = this.serverUrl;
+            /* v8 ignore next -- waitForReady runs only after waitForPortFile sets the port, so url is always non-empty */
             if (url) {
                 try {
                     const res = await node.fetch(`${url}/api/health`);

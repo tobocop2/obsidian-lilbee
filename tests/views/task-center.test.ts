@@ -582,6 +582,31 @@ describe("TaskCenterView — subscribe/unsubscribe", () => {
         expect(clearSpy).toHaveBeenCalled();
     });
 
+    it("onClose is a no-op for the refresh interval when none is set", async () => {
+        const plugin = makePlugin();
+        const view = new TaskCenterView(makeLeaf(), plugin);
+        // Never opened, so refreshInterval is null; onClose must skip clearInterval.
+        expect((view as any).refreshInterval).toBeNull();
+        await expect(view.onClose()).resolves.toBeUndefined();
+        expect((view as any).refreshInterval).toBeNull();
+    });
+
+    it("the refresh interval callback re-renders on each tick", async () => {
+        vi.useFakeTimers();
+        try {
+            const plugin = makePlugin();
+            const view = new TaskCenterView(makeLeaf(), plugin);
+            await view.onOpen();
+            const renderSpy = vi.spyOn(view as any, "render");
+            // Advance past one 30s idle-refresh tick; the interval callback fires render().
+            await vi.advanceTimersByTimeAsync(30_000);
+            expect(renderSpy).toHaveBeenCalled();
+            await view.onClose();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it("retunes refresh interval to 1s while active tasks exist", async () => {
         const plugin = makePlugin();
         const view = new TaskCenterView(makeLeaf(), plugin);

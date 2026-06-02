@@ -6,6 +6,7 @@ import {
     errorMessage,
     extractServerErrorDetail,
     extractSseErrorCode,
+    extractSseErrorMessage,
     isModelUnavailableError,
     formatBytes,
     formatRate,
@@ -192,6 +193,42 @@ describe("withIdleTimeout", () => {
         const out: number[] = [];
         for await (const v of withIdleTimeout(gen(), 1000, vi.fn())) out.push(v);
         expect(out).toEqual([1]);
+    });
+
+    it("skips the clearTimeout call when clearTimeout is not a function", async () => {
+        // Mirrors vitest's fake-timer lifecycle leaving clearTimeout undefined
+        // across test-file boundaries — the generator must still yield cleanly.
+        const original = globalThis.clearTimeout;
+        // @ts-expect-error intentionally removing clearTimeout to exercise the guard
+        globalThis.clearTimeout = undefined;
+        try {
+            async function* gen() {
+                yield "x";
+            }
+            const out: string[] = [];
+            for await (const v of withIdleTimeout(gen(), 1000, vi.fn())) out.push(v);
+            expect(out).toEqual(["x"]);
+        } finally {
+            globalThis.clearTimeout = original;
+        }
+    });
+});
+
+describe("extractSseErrorMessage", () => {
+    it("returns a bare-string payload verbatim", () => {
+        expect(extractSseErrorMessage("boom", "fallback")).toBe("boom");
+    });
+
+    it("returns the message field from an object payload", () => {
+        expect(extractSseErrorMessage({ message: "from object" }, "fallback")).toBe("from object");
+    });
+
+    it("falls back when the message field is not a string", () => {
+        expect(extractSseErrorMessage({ message: 42 }, "fallback")).toBe("fallback");
+    });
+
+    it("falls back for a payload with no message field", () => {
+        expect(extractSseErrorMessage({ other: "x" }, "fallback")).toBe("fallback");
     });
 });
 

@@ -81,12 +81,14 @@ vi.mock("../src/binary-manager", () => {
     };
     return {
         node: nodeMock,
-        BinaryManager: vi.fn().mockImplementation(() => ({
-            binaryExists: vi.fn().mockReturnValue(true),
-            binaryPath: "/fake/bin/lilbee",
-            ensureBinary: vi.fn().mockResolvedValue("/fake/bin/lilbee"),
-            download: vi.fn().mockResolvedValue(undefined),
-        })),
+        BinaryManager: vi.fn().mockImplementation(function () {
+            return {
+                binaryExists: vi.fn().mockReturnValue(true),
+                binaryPath: "/fake/bin/lilbee",
+                ensureBinary: vi.fn().mockResolvedValue("/fake/bin/lilbee"),
+                download: vi.fn().mockResolvedValue(undefined),
+            };
+        }),
         getLatestRelease: vi.fn().mockResolvedValue({ tag: "v0.5.1", assetUrl: "https://example.com" }),
         checkForUpdate: vi.fn(() => false),
     };
@@ -94,23 +96,25 @@ vi.mock("../src/binary-manager", () => {
 
 vi.mock("../src/server-manager", () => {
     return {
-        ServerManager: vi.fn().mockImplementation((opts: any) => ({
-            start: vi.fn().mockResolvedValue(undefined),
-            stop: vi.fn().mockResolvedValue(undefined),
-            restart: vi.fn(),
-            get serverUrl() {
-                return "http://127.0.0.1:54321";
-            },
-            get dataDir() {
-                return opts.dataDir;
-            },
-            get state() {
-                return "ready";
-            },
-            get lastStderr() {
-                return "";
-            },
-        })),
+        ServerManager: vi.fn().mockImplementation(function (opts: any) {
+            return {
+                start: vi.fn().mockResolvedValue(undefined),
+                stop: vi.fn().mockResolvedValue(undefined),
+                restart: vi.fn(),
+                get serverUrl() {
+                    return "http://127.0.0.1:54321";
+                },
+                get dataDir() {
+                    return opts.dataDir;
+                },
+                get state() {
+                    return "ready";
+                },
+                get lastStderr() {
+                    return "";
+                },
+            };
+        }),
     };
 });
 

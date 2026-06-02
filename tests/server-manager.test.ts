@@ -182,6 +182,20 @@ describe("ServerManager", () => {
             expect(mgr.state).toBe("error");
         });
 
+        it("ignores a port file whose contents are not a valid port and times out", async () => {
+            // The file exists but holds garbage (e.g. a partial write); the port
+            // is never accepted, so start() falls through to the error state.
+            readFileSyncSpy.mockReturnValue("not-a-port");
+            const mgr = new ServerManager(defaultOpts());
+
+            const startPromise = mgr.start();
+            await vi.advanceTimersByTimeAsync(120_000);
+            await startPromise;
+
+            expect(mgr.serverUrl).toBe("");
+            expect(mgr.state).toBe("error");
+        }, 15_000);
+
         it("no-ops when child already exists", async () => {
             const mgr = new ServerManager(defaultOpts());
             const p1 = mgr.start();

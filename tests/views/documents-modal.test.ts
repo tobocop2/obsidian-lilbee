@@ -6,13 +6,15 @@ import type { DocumentEntry, DocumentsResponse } from "../../src/types";
 
 let mockConfirmResult = true;
 vi.mock("../../src/views/confirm-modal", () => ({
-    ConfirmModal: vi.fn().mockImplementation(() => ({
-        open: vi.fn(),
-        get result() {
-            return Promise.resolve(mockConfirmResult);
-        },
-        close: vi.fn(),
-    })),
+    ConfirmModal: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+            get result() {
+                return Promise.resolve(mockConfirmResult);
+            },
+            close: vi.fn(),
+        };
+    }),
 }));
 
 function makeDoc(overrides: Partial<DocumentEntry> = {}): DocumentEntry {
@@ -333,7 +335,8 @@ describe("DocumentsModal", () => {
 
     it("does not fetch when not near the bottom", async () => {
         const plugin = makePlugin();
-        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc()], 40));
+        // has_more true so onScroll passes the guard and reaches the position check.
+        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc()], 40, true));
         const app = new App();
         const modal = new DocumentsModal(app as any, plugin as any);
         modal.open();
@@ -496,6 +499,29 @@ describe("DocumentsModal", () => {
         (modal as any).removeBtn = null;
         (modal as any).updateRemoveBtn();
         // Should not throw
+    });
+
+    it("resetAndFetch skips empty() when resultsEl is null", async () => {
+        const plugin = makePlugin();
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        (modal as any).resultsEl = null;
+        expect(() => (modal as any).resetAndFetch()).not.toThrow();
+        await vi.runAllTimersAsync();
+        expect(plugin.api.listDocuments).toHaveBeenCalled();
+    });
+
+    it("renderRow omits the date title when ingested_at is empty", async () => {
+        const plugin = makePlugin();
+        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc({ filename: "a.md", ingested_at: "" })]));
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const dateCell = el.find("lilbee-documents-row-date")!;
+        expect(dateCell.attributes["title"]).toBeUndefined();
     });
 
     it("renderRow returns early when resultsEl is null", () => {

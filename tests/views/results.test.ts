@@ -7,11 +7,13 @@ import type { LilbeeClient } from "../../src/api";
 // depending on the real modal's DOM structure.
 const previewOpens: Array<{ source: Source }> = [];
 vi.mock("../../src/views/source-preview-modal", () => ({
-    SourcePreviewModal: vi.fn().mockImplementation((_app: unknown, _api: unknown, source: Source) => ({
-        open: () => {
-            previewOpens.push({ source });
-        },
-    })),
+    SourcePreviewModal: vi.fn().mockImplementation(function (_app: unknown, _api: unknown, source: Source) {
+        return {
+            open: () => {
+                previewOpens.push({ source });
+            },
+        };
+    }),
 }));
 
 import { renderAggregatedSourceChips, renderDocumentResult, renderSourceChip } from "../../src/views/results";

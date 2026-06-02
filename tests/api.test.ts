@@ -651,6 +651,20 @@ describe("pullModel()", () => {
                 body: JSON.stringify({ url: "https://example.com", depth: 0, max_pages: null }),
             });
         });
+
+        it("omits depth and max_pages from the body when they are not passed", async () => {
+            fetchMock.mockResolvedValue(
+                sseResponse(['event: crawl_done\ndata: {"pages_crawled":1,"files_written":1}\n\n']),
+            );
+
+            await collect(client.crawl("https://example.com"));
+
+            expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/crawl`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: "https://example.com" }),
+            });
+        });
     });
 
     describe("config()", () => {
@@ -1140,6 +1154,38 @@ describe("fetchWithRetry()", () => {
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    it("aborts a non-stream request that exceeds the default timeout", async () => {
+        vi.useFakeTimers();
+        try {
+            // fetch never settles on its own; it rejects only when its signal aborts,
+            // which is exactly what the timeout's abort() callback triggers.
+            const aborted: boolean[] = [];
+            fetchMock.mockImplementation(
+                (_url: string, init: RequestInit) =>
+                    new Promise((_resolve, reject) => {
+                        init.signal?.addEventListener("abort", () => {
+                            aborted.push(true);
+                            reject(new Error("The operation was aborted"));
+                        });
+                    }),
+            );
+
+            const resultPromise = client.health();
+            // Advance past the 15s timeout for each attempt plus the retry backoffs.
+            await vi.advanceTimersByTimeAsync(15_000);
+            await vi.advanceTimersByTimeAsync(500);
+            await vi.advanceTimersByTimeAsync(15_000);
+            await vi.advanceTimersByTimeAsync(1000);
+            await vi.advanceTimersByTimeAsync(15_000);
+            const result = await resultPromise;
+
+            expect(aborted.length).toBeGreaterThan(0);
+            expect(result.isErr()).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it("skips timeout for SSE stream requests", async () => {
         fetchMock.mockResolvedValue(sseResponse(["event: done\ndata: {}\n\n"]));
 
@@ -1229,6 +1275,23 @@ describe("fetchWithRetry() — token provider + 401/403 retry", () => {
         expect(e).toBeInstanceOf(SessionTokenError);
         expect((e as SessionTokenError).status).toBe(401);
         expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("still surfaces SessionTokenError with empty detail when reading the 401 body fails", async () => {
+        const c = new LilbeeClient(BASE_URL);
+        c.setToken("old");
+        // No token provider, and res.text() rejects — the .catch fallback yields "".
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 401,
+            text: () => Promise.reject(new Error("body read failed")),
+        } as unknown as Response);
+        const result = await c.health();
+        expect(result.isErr()).toBe(true);
+        const e = result._unsafeUnwrapErr();
+        expect(e).toBeInstanceOf(SessionTokenError);
+        expect((e as SessionTokenError).status).toBe(401);
+        expect((e as SessionTokenError).message).toContain("");
     });
 
     it("skips auth retry when provider returns null — surfaces SessionTokenError", async () => {

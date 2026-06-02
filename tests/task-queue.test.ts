@@ -229,6 +229,17 @@ describe("TaskQueue", () => {
             expect(active2).not.toBeNull();
             expect(active2!.id).toBe(id2);
         });
+
+        it("completing a still-queued task leaves the active task untouched", () => {
+            const id1 = queue.enqueue("Task 1", TASK_TYPE.SYNC)!;
+            const id2 = queue.enqueue("Task 2", TASK_TYPE.SYNC)!;
+            // id1 is active, id2 is queued. Completing the queued one must not
+            // clear the active slot held by id1.
+            queue.complete(id2);
+
+            expect(queue.active!.id).toBe(id1);
+            expect(queue.completed.map((t) => t.id)).toContain(id2);
+        });
     });
 
     describe("fail()", () => {
@@ -356,6 +367,17 @@ describe("TaskQueue", () => {
             const listener = vi.fn();
             const unsubscribe = queue.onChange(listener);
 
+            unsubscribe();
+            queue.enqueue("Task", TASK_TYPE.SYNC);
+
+            expect(listener).not.toHaveBeenCalled();
+        });
+
+        it("unsubscribe is idempotent — a second call is a no-op", () => {
+            const listener = vi.fn();
+            const unsubscribe = queue.onChange(listener);
+
+            unsubscribe();
             unsubscribe();
             queue.enqueue("Task", TASK_TYPE.SYNC);
 
@@ -512,6 +534,16 @@ describe("TaskQueue", () => {
         });
 
         it("returns null from active when no tasks enqueued", () => {
+            expect(queue.active).toBeNull();
+            expect(queue.activeAll).toHaveLength(0);
+        });
+
+        it("skips the emptied active slot left behind after a task finishes", () => {
+            // Completing the only task sets activeIds[type] = null but keeps the
+            // type key, so the getters must skip the null entry rather than crash.
+            const id = queue.enqueue("Task", TASK_TYPE.SYNC)!;
+            queue.complete(id);
+
             expect(queue.active).toBeNull();
             expect(queue.activeAll).toHaveLength(0);
         });

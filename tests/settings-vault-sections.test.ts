@@ -15,12 +15,14 @@ const mockGetLatestRelease = vi.fn();
 const mockCheckForUpdate = vi.fn();
 
 vi.mock("../src/binary-manager", () => ({
-    BinaryManager: vi.fn().mockImplementation(() => ({
-        ensureBinary: mockEnsureBinary,
-        binaryExists: mockBinaryExists,
-        binaryPath: "/fake/bin/lilbee",
-        download: mockDownload,
-    })),
+    BinaryManager: vi.fn().mockImplementation(function () {
+        return {
+            ensureBinary: mockEnsureBinary,
+            binaryExists: mockBinaryExists,
+            binaryPath: "/fake/bin/lilbee",
+            download: mockDownload,
+        };
+    }),
     getLatestRelease: (...args: any[]) => mockGetLatestRelease(...args),
     checkForUpdate: (...args: any[]) => mockCheckForUpdate(...args),
     node: {
@@ -48,13 +50,25 @@ vi.mock("../src/binary-manager", () => ({
     },
 }));
 
-vi.mock("../src/views/catalog-modal", () => ({ CatalogModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })) }));
-vi.mock("../src/views/setup-wizard", () => ({ SetupWizard: vi.fn().mockImplementation(() => ({ open: vi.fn() })) }));
+vi.mock("../src/views/catalog-modal", () => ({
+    CatalogModal: vi.fn().mockImplementation(function () {
+        return { open: vi.fn() };
+    }),
+}));
+vi.mock("../src/views/setup-wizard", () => ({
+    SetupWizard: vi.fn().mockImplementation(function () {
+        return { open: vi.fn() };
+    }),
+}));
 vi.mock("../src/views/confirm-modal", () => ({
-    ConfirmModal: vi.fn().mockImplementation(() => ({ open: vi.fn(), result: Promise.resolve(true) })),
+    ConfirmModal: vi.fn().mockImplementation(function () {
+        return { open: vi.fn(), result: Promise.resolve(true) };
+    }),
 }));
 vi.mock("../src/views/confirm-pull-modal", () => ({
-    ConfirmPullModal: vi.fn().mockImplementation(() => ({ open: vi.fn(), result: Promise.resolve(true) })),
+    ConfirmPullModal: vi.fn().mockImplementation(function () {
+        return { open: vi.fn(), result: Promise.resolve(true) };
+    }),
 }));
 
 function makePlugin(settings: Partial<LilbeeSettings> = {}, registry: any = null) {

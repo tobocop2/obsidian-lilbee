@@ -44,37 +44,45 @@ vi.mock("../src/binary-manager", () => ({
 
 let mockConfirmResult = true;
 vi.mock("../src/views/confirm-pull-modal", () => ({
-    ConfirmPullModal: vi.fn().mockImplementation(() => ({
-        open: vi.fn(),
-        get result() {
-            return Promise.resolve(mockConfirmResult);
-        },
-        close: vi.fn(),
-    })),
+    ConfirmPullModal: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+            get result() {
+                return Promise.resolve(mockConfirmResult);
+            },
+            close: vi.fn(),
+        };
+    }),
 }));
 
 vi.mock("../src/views/catalog-modal", () => ({
-    CatalogModal: vi.fn().mockImplementation(() => ({
-        open: vi.fn(),
-    })),
+    CatalogModal: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+        };
+    }),
 }));
 
 vi.mock("../src/views/setup-wizard", () => ({
-    SetupWizard: vi.fn().mockImplementation(() => ({
-        open: vi.fn(),
-        close: vi.fn(),
-    })),
+    SetupWizard: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+            close: vi.fn(),
+        };
+    }),
 }));
 
 let mockGenericConfirmResult = true;
 vi.mock("../src/views/confirm-modal", () => ({
-    ConfirmModal: vi.fn().mockImplementation(() => ({
-        open: vi.fn(),
-        get result() {
-            return Promise.resolve(mockGenericConfirmResult);
-        },
-        close: vi.fn(),
-    })),
+    ConfirmModal: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+            get result() {
+                return Promise.resolve(mockGenericConfirmResult);
+            },
+            close: vi.fn(),
+        };
+    }),
 }));
 
 function makePlugin(overrides: Partial<LilbeeSettings> & { lilbeeVersion?: string; hfToken?: string } = {}) {
@@ -637,6 +645,21 @@ describe("LilbeeSettingTab", () => {
             expect(plugin.settings.generalSystemPrompt).toBe("You are a friendly tutor.");
             expect(plugin.saveSettings).toHaveBeenCalled();
         });
+
+        it("tolerates a config with system prompts when their inputs were never registered", async () => {
+            // loadServerDefaults can run before the prompt inputs are captured;
+            // the placeholder updates must be skipped rather than crash.
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                rag_system_prompt: "cited answers",
+                general_system_prompt: "no-doc answers",
+            });
+            const tab = makeTab(plugin);
+            (tab as any).serverConfigInputs.clear();
+
+            expect(() => (tab as any).loadServerDefaults()).not.toThrow();
+            await new Promise((r) => setTimeout(r, 0));
+        });
     });
 
     describe("chat_mode dropdown", () => {
@@ -719,6 +742,20 @@ describe("LilbeeSettingTab", () => {
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
             await dropdownOnChanges[1]("chat");
             expect(Notice.instances.some((n) => n.message.includes("Chat mode"))).toBe(true);
+        });
+
+        it("reveals the row without touching missing dropdown/select refs", () => {
+            // Guards the case where applyChatModeFromConfig runs before the dropdown
+            // controls were captured — the row is shown but no ref is dereferenced.
+            const plugin = makePlugin();
+            const tab = makeTab(plugin);
+            const settingEl = new MockElement("div");
+            (tab as any).chatModeSettingEl = settingEl;
+            (tab as any).chatModeDropdown = null;
+            (tab as any).chatModeSelectEl = null;
+
+            expect(() => (tab as any).applyChatModeFromConfig({ chat_mode: "chat" })).not.toThrow();
+            expect((settingEl as unknown as { style: { display: string } }).style.display).toBe("");
         });
     });
 
@@ -1044,6 +1081,24 @@ describe("LilbeeSettingTab", () => {
             (tab as any).renderChatPicker(container, LLAMA_REF, entries, installed);
         });
 
+        it("sorts the 'Other installed' group alphabetically by name", () => {
+            const plugin = makePlugin();
+            const tab = makeTab(plugin);
+            const entries = [chatEntry({ installed: true })];
+            const installed: InstalledModel[] = [
+                { name: LLAMA_REF, source: "native" },
+                { name: "ollama/zephyr:7b", source: "ollama" },
+                { name: "ollama/aya:8b", source: "ollama" },
+            ];
+            const opts: Array<[string, string]> = (tab as any).buildChatOptions(entries, installed);
+            const keys = opts.map(([k]) => k);
+            // The two non-featured installed models appear after the separator, sorted.
+            const ayaIdx = keys.indexOf("ollama/aya:8b");
+            const zephyrIdx = keys.indexOf("ollama/zephyr:7b");
+            expect(ayaIdx).toBeGreaterThan(-1);
+            expect(zephyrIdx).toBeGreaterThan(ayaIdx);
+        });
+
         it("appends provider source tag for non-local featured entries", () => {
             const plugin = makePlugin();
             const tab = makeTab(plugin);
@@ -1237,6 +1292,25 @@ describe("LilbeeSettingTab", () => {
 
             expect(plugin.api.setChatModel).toHaveBeenCalledWith("");
             expect(plugin.activeModel).toBe("");
+        });
+
+        it("keeps the active model when clearing it on the server fails after deletion", async () => {
+            const plugin = makePlugin();
+            (plugin as any).activeModel = LLAMA_REF;
+            (plugin.api.deleteModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+            // The model was deleted on disk, but the follow-up "clear chat model"
+            // call fails — the cached activeModel must be left untouched.
+            (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(err(new Error("clear failed")));
+            mockChatPicker(plugin);
+
+            const { tab, deleteBtn } = setupDeleteButton(plugin, LLAMA_REF);
+            tab.containerEl.querySelector = vi.fn().mockReturnValue(null);
+
+            await (deleteBtn as unknown as MockElement).trigger("click");
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("");
+            expect(plugin.activeModel).toBe(LLAMA_REF);
         });
 
         it("delete failure shows error notice and re-enables button", async () => {
@@ -1800,6 +1874,34 @@ describe("LilbeeSettingTab", () => {
 
             expect((statusEl as unknown as MockElement).classList.contains("lilbee-health-error")).toBe(false);
             expect((statusEl as unknown as MockElement).classList.contains("lilbee-health-ok")).toBe(true);
+        });
+
+        it("aborts the probe and shows the error dot when the endpoint hangs past the timeout", async () => {
+            vi.useFakeTimers();
+            try {
+                // fetch settles only when its signal aborts — the timeout callback fires abort().
+                globalThis.fetch = vi.fn(
+                    (_url: string, init: RequestInit) =>
+                        new Promise((_resolve, reject) => {
+                            init.signal?.addEventListener("abort", () =>
+                                reject(new Error("The operation was aborted")),
+                            );
+                        }),
+                ) as unknown as typeof globalThis.fetch;
+                const plugin = makePlugin();
+                const tab = makeTab(plugin);
+                const statusEl = new MockElement("span") as unknown as HTMLSpanElement;
+
+                const promise = tab.checkEndpoint("http://localhost:7433/api/health", statusEl);
+                await vi.advanceTimersByTimeAsync(5000);
+                await promise;
+
+                const dot = (statusEl as unknown as MockElement).find("lilbee-health-dot");
+                expect(dot!.classList.contains("is-error")).toBe(true);
+                expect((statusEl as unknown as MockElement).classList.contains("lilbee-health-error")).toBe(true);
+            } finally {
+                vi.useRealTimers();
+            }
         });
     });
 
@@ -5891,6 +5993,66 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
 
             expect(values[0]).toBe("");
+        });
+    });
+
+    describe("reranker / vision change — unknown value and non-progress/error events", () => {
+        function rerankEntry(): CatalogEntry {
+            return chatEntry({
+                hf_repo: "BAAI/bge-reranker-large",
+                display_name: "BGE Reranker Large",
+                source: "native",
+                task: "rerank" as any,
+                installed: false,
+            });
+        }
+
+        it("reranker change ignores a value that is neither disabled, installed, nor in the catalog", async () => {
+            const plugin = makePlugin();
+            const tab = makeTab(plugin);
+
+            await (tab as any).handleRerankerChange("ghost/unknown-model", [rerankEntry()], []);
+
+            expect(plugin.api.setRerankerModel).not.toHaveBeenCalled();
+            expect(plugin.api.pullModel).not.toHaveBeenCalled();
+        });
+
+        it("vision change ignores a value that is neither disabled, installed, nor in the catalog", async () => {
+            const plugin = makePlugin();
+            const tab = makeTab(plugin);
+
+            await (tab as any).handleVisionChange("ghost/unknown-model", [rerankEntry()], []);
+
+            expect(plugin.api.setVisionModel).not.toHaveBeenCalled();
+            expect(plugin.api.pullModel).not.toHaveBeenCalled();
+        });
+
+        it("reranker pull completes when the stream yields a non-progress, non-error event", async () => {
+            const plugin = makePlugin();
+            async function* donePull() {
+                yield { event: SSE_EVENT.DONE, data: null };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(donePull());
+            const tab = makeTab(plugin);
+            const taskId = plugin.taskQueue.enqueue("Pull", "pull" as any)!;
+
+            const ok = await (tab as any).streamRerankerPull(taskId, rerankEntry(), new AbortController().signal);
+
+            expect(ok).toBe(true);
+        });
+
+        it("vision pull completes when the stream yields a non-progress, non-error event", async () => {
+            const plugin = makePlugin();
+            async function* donePull() {
+                yield { event: SSE_EVENT.DONE, data: null };
+            }
+            (plugin.api.pullModel as ReturnType<typeof vi.fn>).mockReturnValue(donePull());
+            const tab = makeTab(plugin);
+            const taskId = plugin.taskQueue.enqueue("Pull", "pull" as any)!;
+
+            const ok = await (tab as any).streamVisionPull(taskId, rerankEntry(), new AbortController().signal);
+
+            expect(ok).toBe(true);
         });
     });
 

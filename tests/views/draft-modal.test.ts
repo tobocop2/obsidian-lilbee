@@ -6,13 +6,15 @@ import type { DraftInfoResponse, DraftPendingKind } from "../../src/types";
 
 let mockConfirmResult = true;
 vi.mock("../../src/views/confirm-modal", () => ({
-    ConfirmModal: vi.fn().mockImplementation(() => ({
-        open: vi.fn(),
-        get result() {
-            return Promise.resolve(mockConfirmResult);
-        },
-        close: vi.fn(),
-    })),
+    ConfirmModal: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+            get result() {
+                return Promise.resolve(mockConfirmResult);
+            },
+            close: vi.fn(),
+        };
+    }),
 }));
 
 const tick = () => new Promise((r) => setTimeout(r, 0));

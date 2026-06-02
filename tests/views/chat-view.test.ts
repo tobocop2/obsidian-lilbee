@@ -27,42 +27,52 @@ import { MESSAGES } from "../../src/locales/en";
 
 const mockChatViewConfirmResult = true;
 vi.mock("../../src/views/confirm-pull-modal", () => ({
-    ConfirmPullModal: vi.fn().mockImplementation(() => ({
-        open: vi.fn(),
-        get result() {
-            return Promise.resolve(mockChatViewConfirmResult);
-        },
-        close: vi.fn(),
-    })),
+    ConfirmPullModal: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+            get result() {
+                return Promise.resolve(mockChatViewConfirmResult);
+            },
+            close: vi.fn(),
+        };
+    }),
 }));
 
 vi.mock("../../src/views/crawl-modal", () => ({
-    CrawlModal: vi.fn().mockImplementation(() => ({
-        open: vi.fn(),
-        result: Promise.resolve(true),
-        close: vi.fn(),
-    })),
+    CrawlModal: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+            result: Promise.resolve(true),
+            close: vi.fn(),
+        };
+    }),
 }));
 
 vi.mock("../../src/views/catalog-modal", () => ({
-    CatalogModal: vi.fn().mockImplementation(() => ({
-        open: vi.fn(),
-    })),
+    CatalogModal: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+        };
+    }),
 }));
 
 let confirmModalResult = true;
 vi.mock("../../src/views/confirm-modal", () => ({
-    ConfirmModal: vi.fn().mockImplementation(() => ({
-        open: vi.fn(),
-        get result() {
-            return Promise.resolve(confirmModalResult);
-        },
-        close: vi.fn(),
-    })),
+    ConfirmModal: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+            get result() {
+                return Promise.resolve(confirmModalResult);
+            },
+            close: vi.fn(),
+        };
+    }),
 }));
 const { setupWizardOpen } = vi.hoisted(() => ({ setupWizardOpen: vi.fn() }));
 vi.mock("../../src/views/setup-wizard", () => ({
-    SetupWizard: vi.fn().mockImplementation(() => ({ open: setupWizardOpen })),
+    SetupWizard: vi.fn().mockImplementation(function () {
+        return { open: setupWizardOpen };
+    }),
 }));
 import type { SSEEvent, Source } from "../../src/types";
 import { TaskQueue } from "../../src/task-queue";
@@ -4145,5 +4155,209 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         select.value = "__lilbee_browse__";
         select.trigger("change");
         expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "rerank");
+    });
+});
+
+describe("ChatView — null-element guard branches", () => {
+    it("fetchAndFillSelectors skips selector fills when chatSelectEl is null", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        // Null both selects so the success-path guards (347/351) take the false branch.
+        (view as any).chatSelectEl = null;
+        (view as any).embeddingSelectEl = null;
+        (view as any).fetchAndFillSelectors();
+        await tick();
+        // No throw, and a successful fetch leaves retryCount at 0.
+        expect((view as any).retryCount).toBe(0);
+    });
+
+    it("fetchAndFillSelectors catch path skips selectors when both are null", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        // Force the Promise.all chain to reject so the catch (372/376) runs.
+        (plugin.api as any).catalog = vi.fn().mockRejectedValue(new Error("boom"));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        (view as any).chatSelectEl = null;
+        (view as any).embeddingSelectEl = null;
+        const before = (view as any).retryCount;
+        (view as any).fetchAndFillSelectors();
+        await tick();
+        // Catch ran (retryCount incremented) without touching the null selects.
+        expect((view as any).retryCount).toBeGreaterThan(before);
+        // Stop the retry timer the catch scheduled.
+        const t = (view as any).retryTimer;
+        if (t) clearTimeout(t);
+    });
+
+    it("refreshModelSelector no-ops the empties when both selects are null", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        (view as any).chatSelectEl = null;
+        (view as any).embeddingSelectEl = null;
+        const spy = vi.spyOn(view as any, "fetchAndFillSelectors").mockImplementation(() => {});
+        (view as any).refreshModelSelector();
+        expect(spy).toHaveBeenCalled();
+    });
+
+    it("clearChat no-ops when messagesEl is null", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        (view as any).history = [{ role: "user", content: "hi" }];
+        (view as any).messagesEl = null;
+        (view as any).clearChat();
+        expect((view as any).history).toHaveLength(0);
+    });
+
+    it("sendMessage tolerates null sendBtn and textareaEl through start and finally", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: "hi" },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        // Null the controls so the start (768/769) and finally (843/846) guards
+        // take their false branches; messagesEl stays so the body still runs.
+        (view as any).sendBtn = null;
+        (view as any).textareaEl = null;
+        await (view as any).sendMessage("hello");
+        await done;
+        await tick();
+        expect((view as any).sending).toBe(false);
+    });
+
+    it("sendMessage scrollToBottom no-ops when messagesEl becomes null mid-stream", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: "hi" },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const messagesEl = (view as any).messagesEl as MockElement;
+        const sendPromise = (view as any).sendMessage("hi");
+        // Drop messagesEl so the deferred scrollToBottom (797) hits its false branch.
+        (view as any).messagesEl = null;
+        await sendPromise;
+        await done;
+        await tick();
+        await tick();
+        // The user bubble was still appended before messagesEl was nulled.
+        expect(messagesEl.findAll("lilbee-chat-message").length).toBeGreaterThan(0);
+    });
+});
+
+describe("ChatView — pull stream non-error events", () => {
+    it("autoPullAndSet ignores SSE events that are neither progress nor error", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        // Stream yields a DONE-like event that is neither PROGRESS nor ERROR,
+        // exercising the else-if false branch (711).
+        const { mockFn } = makeStream([{ event: SSE_EVENT.DONE, data: {} }]);
+        plugin.api.pullModel = mockFn;
+        plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const entry = {
+            hf_repo: "acme/model",
+            display_name: "Acme",
+            size_gb: 1,
+            min_ram_gb: 1,
+        };
+        await (view as any).autoPullAndSet(entry);
+        await tick();
+        // Pull completed and the model was activated despite no progress events.
+        expect(plugin.api.setChatModel).toHaveBeenCalledWith("acme/model");
+    });
+});
+
+describe("ChatView — confirm-pull declined", () => {
+    it("does not auto-pull when the user declines the confirm modal", async () => {
+        Notice.clear();
+        const { ConfirmPullModal } = await import("../../src/views/confirm-pull-modal");
+        (ConfirmPullModal as unknown as ReturnType<typeof vi.fn>).mockImplementationOnce(function () {
+            return {
+                open: vi.fn(),
+                get result() {
+                    return Promise.resolve(false);
+                },
+                close: vi.fn(),
+            };
+        });
+        const plugin = makePlugin();
+        mockChatPicker(plugin, {
+            active: "llama3",
+            installed: ["llama3"],
+            catalog: [
+                {
+                    name: "acme/uninstalled",
+                    size_gb: 1,
+                    min_ram_gb: 1,
+                    description: "x",
+                    installed: false,
+                },
+            ],
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        const autoPullSpy = vi.spyOn(view as any, "autoPullAndSet").mockResolvedValue(undefined);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const select = container.find("lilbee-chat-model-select")!;
+        select.value = "acme/uninstalled";
+        select.trigger("change");
+        await tick();
+        await tick();
+        // confirmed === false → autoPullAndSet must not run (539 false branch).
+        expect(autoPullSpy).not.toHaveBeenCalled();
+    });
+});
+
+describe("ChatView — vault file picker enqueues the chosen file", () => {
+    it("choosing a vault file calls plugin.addToLilbee", async () => {
+        Notice.clear();
+        // The menu mock fires every item's onClick, including the native picker.
+        const dialogSpy = vi
+            .spyOn(electronDialog, "showOpenDialog")
+            .mockResolvedValue({ canceled: true, filePaths: [] });
+        const plugin = makePlugin();
+        (plugin as any).addToLilbee = vi.fn().mockResolvedValue(undefined);
+        (plugin as any).addExternalFiles = vi.fn().mockResolvedValue(undefined);
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+
+        // The vault menu item runs `new VaultFilePickerModal(app, cb).open()`.
+        // setPlaceholder runs in the constructor, so use it to capture the instance.
+        const captured: VaultFilePickerModal[] = [];
+        const spy = vi.spyOn(VaultFilePickerModal.prototype, "setPlaceholder").mockImplementation(function (
+            this: VaultFilePickerModal,
+        ) {
+            captured.push(this);
+        });
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        container.find("lilbee-chat-add-file")!.trigger("click", { clientX: 0, clientY: 0 } as MouseEvent);
+
+        expect(captured).toHaveLength(1);
+        const file = { path: "notes/a.md", name: "a.md" } as any;
+        captured[0].onChooseItem(file, undefined as any);
+        // The arrow (file) => this.enqueueAddFile(file) runs enqueueAddFile → addToLilbee.
+        expect((plugin as any).addToLilbee).toHaveBeenCalledWith(file);
+        spy.mockRestore();
+        dialogSpy.mockRestore();
     });
 });

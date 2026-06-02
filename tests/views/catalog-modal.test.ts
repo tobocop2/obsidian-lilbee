@@ -11,22 +11,26 @@ import { MESSAGES } from "../../src/locales/en";
 let mockConfirmResult = true;
 let mockConfirmRemoveResult = true;
 vi.mock("../../src/views/confirm-pull-modal", () => ({
-    ConfirmPullModal: vi.fn().mockImplementation(() => ({
-        open: vi.fn(),
-        get result() {
-            return Promise.resolve(mockConfirmResult);
-        },
-        close: vi.fn(),
-    })),
+    ConfirmPullModal: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+            get result() {
+                return Promise.resolve(mockConfirmResult);
+            },
+            close: vi.fn(),
+        };
+    }),
 }));
 vi.mock("../../src/views/confirm-modal", () => ({
-    ConfirmModal: vi.fn().mockImplementation(() => ({
-        open: vi.fn(),
-        get result() {
-            return Promise.resolve(mockConfirmRemoveResult);
-        },
-        close: vi.fn(),
-    })),
+    ConfirmModal: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+            get result() {
+                return Promise.resolve(mockConfirmRemoveResult);
+            },
+            close: vi.fn(),
+        };
+    }),
 }));
 
 function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
@@ -535,6 +539,62 @@ describe("CatalogModal", () => {
                 .map((r) => r.findAll("lilbee-catalog-list-col-name")[0].textContent);
             expect(rows[0]).toBe("B"); // 5 downloads sorts before 100
         });
+
+        it("CTA banner button switches to list view", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const ctaBtn = findButtons(content.find("lilbee-view-toggle-cta")!)[0];
+            ctaBtn.trigger("click");
+            await tick();
+            expect(content.find("lilbee-catalog-list")).not.toBeNull();
+        });
+
+        it("list-view Use button activates the model via setChatModel", async () => {
+            const plugin = makePlugin();
+            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            content.find("lilbee-catalog-view-toggle")!.trigger("click");
+            await tick();
+            content.find("lilbee-catalog-use")!.trigger("click");
+            await tick();
+            await tick();
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("Qwen/Qwen3-8B-GGUF");
+        });
+
+        it("list-view Remove button deletes the model via deleteModel", async () => {
+            const plugin = makePlugin();
+            plugin.api.deleteModel = vi.fn().mockResolvedValue(ok({ deleted: true, model: "", freed_gb: 1 }));
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry({ installed: true })])));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            content.find("lilbee-catalog-view-toggle")!.trigger("click");
+            await tick();
+            content.find("lilbee-catalog-remove")!.trigger("click");
+            await tick();
+            await tick();
+            expect(plugin.api.deleteModel).toHaveBeenCalledWith("Qwen/Qwen3-8B-GGUF", "native");
+        });
+
+        it("list-view Pull button pulls the model via pullModel", async () => {
+            const plugin = makePlugin();
+            plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
+                yield { event: SSE_EVENT.PROGRESS, data: { percent: 100 } };
+            });
+            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            content.find("lilbee-catalog-view-toggle")!.trigger("click");
+            await tick();
+            content.find("lilbee-catalog-pull")!.trigger("click");
+            await tick();
+            await tick();
+            expect(plugin.api.pullModel).toHaveBeenCalled();
+        });
     });
 
     describe("filters and search", () => {
@@ -734,6 +794,24 @@ describe("CatalogModal", () => {
             await tick();
             await tick();
             expect(plugin.api.pullModel).not.toHaveBeenCalled();
+        });
+
+        it("ignores SSE events that are neither progress nor error", async () => {
+            const plugin = makePlugin();
+            plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+            // A DONE-like event is neither PROGRESS nor ERROR → else-if false branch.
+            plugin.api.pullModel = vi.fn().mockImplementation(async function* () {
+                yield { event: SSE_EVENT.DONE, data: {} };
+            });
+            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            const modal = await openModal(plugin);
+            const content = contentEl(modal);
+            const pullBtn = findButtons(content).find((b) => b.textContent === MESSAGES.BUTTON_PULL)!;
+            pullBtn.trigger("click");
+            await tick();
+            await tick();
+            // Loop completed without failing; the task finishes and the model activates.
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
 
         it("updates task progress from SSE progress events", async () => {
@@ -2204,6 +2282,29 @@ describe("CatalogModal", () => {
             } as unknown as KeyboardEvent);
             expect(openSpy).toHaveBeenCalled();
             openSpy.mockRestore();
+        });
+    });
+
+    describe("null-element guard branches", () => {
+        it("switchMainTab tolerates a null mainTabBarEl", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin, CATALOG_TAB.DISCOVER);
+            (modal as unknown as { mainTabBarEl: unknown }).mainTabBarEl = null;
+            // Switching to a different tab with no tab bar must not throw (241 false branch).
+            (modal as unknown as { switchMainTab(t: CatalogTab): void }).switchMainTab(CATALOG_TAB.CHAT);
+            await tick();
+            expect((modal as unknown as { activeTab: string }).activeTab).toBe(CATALOG_TAB.CHAT);
+        });
+
+        it("resetAndFetch tolerates a null resultsEl", async () => {
+            const plugin = makePlugin();
+            const modal = await openModal(plugin);
+            (modal as unknown as { resultsEl: unknown }).resultsEl = null;
+            plugin.api.catalog.mockClear();
+            // resetAndFetch must not throw when resultsEl is null (415 false branch).
+            (modal as unknown as { resetAndFetch(): void }).resetAndFetch();
+            await tick();
+            expect(plugin.api.catalog).toHaveBeenCalled();
         });
     });
 });

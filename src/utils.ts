@@ -302,8 +302,8 @@ export function getSystemMemoryGB(): number | null {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const os = require("os") as { totalmem(): number };
         return Math.round(os.totalmem() / (1024 * 1024 * 1024));
-        /* v8 ignore next 3 */
     } catch {
+        /* v8 ignore next -- os is always available in Node/Electron; the require failure is defensive */
         return null;
     }
 }

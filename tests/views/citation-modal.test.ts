@@ -5,11 +5,13 @@ import type { Source } from "../../src/types";
 
 const previewOpens: Array<{ source: Source }> = [];
 vi.mock("../../src/views/source-preview-modal", () => ({
-    SourcePreviewModal: vi.fn().mockImplementation((_app: unknown, _api: unknown, source: Source) => ({
-        open: () => {
-            previewOpens.push({ source });
-        },
-    })),
+    SourcePreviewModal: vi.fn().mockImplementation(function (_app: unknown, _api: unknown, source: Source) {
+        return {
+            open: () => {
+                previewOpens.push({ source });
+            },
+        };
+    }),
 }));
 
 import { CitationModal } from "../../src/views/citation-modal";

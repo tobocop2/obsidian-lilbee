@@ -187,8 +187,10 @@ export class TaskQueue {
 
         if (task.status === TASK_STATUS.QUEUED) {
             const q = this.queues.get(task.type);
+            /* v8 ignore next -- a queued task always has its type queue, created on enqueue */
             if (q) {
                 const idx = q.indexOf(id);
+                /* v8 ignore next -- a queued task is always present in its own queue */
                 if (idx >= 0) q.splice(idx, 1);
             }
             this.tasks.delete(id);
@@ -197,6 +199,7 @@ export class TaskQueue {
             return;
         }
 
+        /* v8 ignore next -- a live task is either QUEUED (handled above) or ACTIVE; terminal states are removed from tasks */
         if (task.status === TASK_STATUS.ACTIVE) {
             this.aborts.get(id)?.abort();
             task.status = TASK_STATUS.CANCELLED;
@@ -236,6 +239,7 @@ export class TaskQueue {
         for (const id of this.activeIds.values()) {
             if (id) {
                 const task = this.tasks.get(id);
+                /* v8 ignore next -- a non-null active id always has a backing task entry */
                 if (task) return task;
             }
         }
@@ -255,6 +259,7 @@ export class TaskQueue {
         for (const id of this.activeIds.values()) {
             if (id) {
                 const task = this.tasks.get(id);
+                /* v8 ignore next -- a non-null active id always has a backing task entry */
                 if (task) result.push(task);
             }
         }
@@ -266,6 +271,7 @@ export class TaskQueue {
         for (const q of this.queues.values()) {
             for (const id of q) {
                 const task = this.tasks.get(id);
+                /* v8 ignore next -- queued ids always have a backing task entry */
                 if (task) result.push(task);
             }
         }

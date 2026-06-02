@@ -39,6 +39,7 @@ export class ConfirmModal extends Modal {
     private decide(confirmed: boolean): void {
         if (this.decided) return;
         this.decided = true;
+        /* v8 ignore next -- `decided` guards re-entry, so `_resolve` is always set here */
         if (this._resolve) {
             const resolve = this._resolve;
             this._resolve = null;

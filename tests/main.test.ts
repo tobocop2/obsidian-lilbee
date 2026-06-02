@@ -14,73 +14,95 @@ vi.mock("../src/api", () => ({
             this.status = status;
         }
     },
-    LilbeeClient: vi.fn().mockImplementation(() => ({
-        status: vi.fn(),
-        syncStream: vi.fn(),
-        search: vi.fn(),
-        ask: vi.fn(),
-        chatStream: vi.fn(),
-        listModels: vi.fn().mockRejectedValue(new Error("offline")),
-        pullModel: vi.fn(),
-        setChatModel: vi.fn(),
-        setToken: vi.fn(),
-        setTokenProvider: vi.fn(),
-        setOutcomeCallback: vi.fn(),
-        setBaseUrl: vi.fn(),
-        health: vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} }),
-        // Default config matches the test vault layout so the fire-and-forget
-        // configureManagedStorage() in startManagedServer() hits the early
-        // no-op exit instead of throwing on a missing method.
-        config: vi.fn().mockResolvedValue({ documents_dir: "/test/vault/lilbee", vault_base: "/test/vault" }),
-        addFiles: vi.fn(),
-        crawl: vi.fn(),
-        wikiLint: vi.fn(),
-        wikiGenerate: vi.fn(),
-        wikiPrune: vi.fn(),
-        listDocuments: vi.fn(),
-    })),
+    LilbeeClient: vi.fn().mockImplementation(function () {
+        return {
+            status: vi.fn(),
+            syncStream: vi.fn(),
+            search: vi.fn(),
+            ask: vi.fn(),
+            chatStream: vi.fn(),
+            listModels: vi.fn().mockRejectedValue(new Error("offline")),
+            pullModel: vi.fn(),
+            setChatModel: vi.fn(),
+            setToken: vi.fn(),
+            setTokenProvider: vi.fn(),
+            setOutcomeCallback: vi.fn(),
+            setBaseUrl: vi.fn(),
+            health: vi.fn().mockResolvedValue({ isErr: () => false, isOk: () => true, value: {} }),
+            // Default config matches the test vault layout so the fire-and-forget
+            // configureManagedStorage() in startManagedServer() hits the early
+            // no-op exit instead of throwing on a missing method.
+            config: vi.fn().mockResolvedValue({ documents_dir: "/test/vault/lilbee", vault_base: "/test/vault" }),
+            addFiles: vi.fn(),
+            crawl: vi.fn(),
+            wikiLint: vi.fn(),
+            wikiGenerate: vi.fn(),
+            wikiPrune: vi.fn(),
+            listDocuments: vi.fn(),
+        };
+    }),
 }));
 
 // We also need to mock the views to avoid loading heavy deps
 vi.mock("../src/views/chat-view", () => ({
     VIEW_TYPE_CHAT: "lilbee-chat",
-    ChatView: vi.fn().mockImplementation(() => ({})),
+    ChatView: vi.fn().mockImplementation(function () {
+        return {};
+    }),
 }));
 
 vi.mock("../src/views/search-modal", () => ({
-    SearchModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
+    SearchModal: vi.fn().mockImplementation(function () {
+        return { open: vi.fn() };
+    }),
 }));
 
 vi.mock("../src/views/catalog-modal", () => ({
-    CatalogModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
+    CatalogModal: vi.fn().mockImplementation(function () {
+        return { open: vi.fn() };
+    }),
 }));
 
 vi.mock("../src/views/model-picker-modal", () => ({
-    ModelPickerModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
+    ModelPickerModal: vi.fn().mockImplementation(function () {
+        return { open: vi.fn() };
+    }),
 }));
 
 vi.mock("../src/views/model-info-modal", () => ({
-    ModelInfoModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
+    ModelInfoModal: vi.fn().mockImplementation(function () {
+        return { open: vi.fn() };
+    }),
 }));
 
 vi.mock("../src/views/crawl-modal", () => ({
-    CrawlModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
+    CrawlModal: vi.fn().mockImplementation(function () {
+        return { open: vi.fn() };
+    }),
 }));
 
 vi.mock("../src/views/documents-modal", () => ({
-    DocumentsModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
+    DocumentsModal: vi.fn().mockImplementation(function () {
+        return { open: vi.fn() };
+    }),
 }));
 
 vi.mock("../src/views/status-modal", () => ({
-    StatusModal: vi.fn().mockImplementation(() => ({ open: vi.fn() })),
+    StatusModal: vi.fn().mockImplementation(function () {
+        return { open: vi.fn() };
+    }),
 }));
 
 vi.mock("../src/views/gatekeeper-modal", () => ({
-    GatekeeperModal: vi.fn().mockImplementation(() => ({ open: mockGatekeeperOpen })),
+    GatekeeperModal: vi.fn().mockImplementation(function () {
+        return { open: mockGatekeeperOpen };
+    }),
 }));
 
 vi.mock("../src/views/setup-wizard", () => ({
-    SetupWizard: vi.fn().mockImplementation(() => ({ open: vi.fn(), close: vi.fn() })),
+    SetupWizard: vi.fn().mockImplementation(function () {
+        return { open: vi.fn(), close: vi.fn() };
+    }),
 }));
 
 // Controllable consent-modal result for the managed-mode gate tests. Default
@@ -89,37 +111,42 @@ vi.mock("../src/views/setup-wizard", () => ({
 let mockConsentResult: { kind: "download" | "external" | "cancel" } = { kind: "download" };
 const mockConsentOpen = vi.fn();
 vi.mock("../src/views/managed-consent-modal", () => ({
-    ManagedConsentModal: vi.fn().mockImplementation(() => ({
-        openConsent: () => {
-            mockConsentOpen();
-            return Promise.resolve(mockConsentResult);
-        },
-    })),
+    ManagedConsentModal: vi.fn().mockImplementation(function () {
+        return {
+            openConsent: () => {
+                mockConsentOpen();
+                return Promise.resolve(mockConsentResult);
+            },
+        };
+    }),
 }));
 
 vi.mock("../src/views/wiki-view", () => ({
     VIEW_TYPE_WIKI: "lilbee-wiki",
-    WikiView: vi.fn().mockImplementation(() => ({ refresh: vi.fn() })),
+    WikiView: vi.fn().mockImplementation(function () {
+        return { refresh: vi.fn() };
+    }),
 }));
 
 const mockLintModalOpen = vi.fn();
 vi.mock("../src/views/lint-modal", () => ({
-    LintModal: vi.fn().mockImplementation(() => ({ open: mockLintModalOpen })),
+    LintModal: vi.fn().mockImplementation(function () {
+        return { open: mockLintModalOpen };
+    }),
 }));
 
 const mockDraftModalOpen = vi.fn();
 vi.mock("../src/views/draft-modal", () => ({
-    DraftModal: vi.fn().mockImplementation(() => ({ open: mockDraftModalOpen })),
+    DraftModal: vi.fn().mockImplementation(function () {
+        return { open: mockDraftModalOpen };
+    }),
 }));
 
 let mockConfirmModalResult = true;
+// Implementation is (re)applied in beforeEach: vitest 4 drops a factory mock's
+// persisted implementation once a test spies on the export and restores it.
 vi.mock("../src/views/confirm-modal", () => ({
-    ConfirmModal: vi.fn().mockImplementation(() => ({
-        open: vi.fn(),
-        get result() {
-            return Promise.resolve(mockConfirmModalResult);
-        },
-    })),
+    ConfirmModal: vi.fn(),
 }));
 
 const mockEnsureBinary = vi.fn().mockResolvedValue("/fake/bin/lilbee");
@@ -131,12 +158,14 @@ const mockServerStop = vi.fn().mockResolvedValue(undefined);
 let mockServerOpts: any = null;
 
 vi.mock("../src/binary-manager", () => ({
-    BinaryManager: vi.fn().mockImplementation(() => ({
-        ensureBinary: mockEnsureBinary,
-        binaryPath: "/fake/bin/lilbee",
-        binaryExists: mockBinaryExists,
-        download: mockDownload,
-    })),
+    BinaryManager: vi.fn().mockImplementation(function () {
+        return {
+            ensureBinary: mockEnsureBinary,
+            binaryPath: "/fake/bin/lilbee",
+            binaryExists: mockBinaryExists,
+            download: mockDownload,
+        };
+    }),
     getLatestRelease: vi.fn(),
     checkForUpdate: vi.fn(),
     GITHUB_REPO: "tobocop2/lilbee",
@@ -180,7 +209,7 @@ vi.mock("../src/binary-manager", () => ({
 
 let mockLastStderr = "";
 vi.mock("../src/server-manager", () => ({
-    ServerManager: vi.fn().mockImplementation((opts: any) => {
+    ServerManager: vi.fn().mockImplementation(function (opts: any) {
         mockServerOpts = opts;
         return {
             start: mockServerStart,
@@ -250,6 +279,14 @@ describe("LilbeePlugin", () => {
         vi.useRealTimers();
         mockLastStderr = "";
         mockConfirmModalResult = true;
+        vi.mocked(ConfirmModal).mockImplementation(function () {
+            return {
+                open: vi.fn(),
+                get result() {
+                    return Promise.resolve(mockConfirmModalResult);
+                },
+            } as unknown as ConfirmModal;
+        });
         mockBinaryExists.mockReturnValue(true);
         mockConsentResult = { kind: "download" };
     });
@@ -1608,7 +1645,7 @@ describe("LilbeePlugin", () => {
             });
 
             const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
-            mockConfirm.mockImplementation((_app: unknown, _msg: string) => {
+            mockConfirm.mockImplementation(function (_app: unknown, _msg: string) {
                 const inst = { open: vi.fn(), result: Promise.resolve(true), close: vi.fn() };
                 return inst as unknown as ConfirmModal;
             });
@@ -1635,7 +1672,7 @@ describe("LilbeePlugin", () => {
             });
 
             const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
-            mockConfirm.mockImplementation((_app: unknown, _msg: string) => {
+            mockConfirm.mockImplementation(function (_app: unknown, _msg: string) {
                 const inst = { open: vi.fn(), result: Promise.resolve(false), close: vi.fn() };
                 return inst as unknown as ConfirmModal;
             });
@@ -1660,7 +1697,7 @@ describe("LilbeePlugin", () => {
             });
             let capturedMessage = "";
             const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
-            mockConfirm.mockImplementation((_app: unknown, msg: string) => {
+            mockConfirm.mockImplementation(function (_app: unknown, msg: string) {
                 capturedMessage = msg;
                 const inst = { open: vi.fn(), result: Promise.resolve(false), close: vi.fn() };
                 return inst as unknown as ConfirmModal;
@@ -2052,7 +2089,7 @@ describe("LilbeePlugin", () => {
             });
 
             const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
-            mockConfirm.mockImplementation((_app: unknown, _msg: string) => {
+            mockConfirm.mockImplementation(function (_app: unknown, _msg: string) {
                 const inst = { open: vi.fn(), result: Promise.resolve(true), close: vi.fn() };
                 return inst as unknown as ConfirmModal;
             });
@@ -2079,7 +2116,7 @@ describe("LilbeePlugin", () => {
             });
 
             const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
-            mockConfirm.mockImplementation((_app: unknown, _msg: string) => {
+            mockConfirm.mockImplementation(function (_app: unknown, _msg: string) {
                 const inst = { open: vi.fn(), result: Promise.resolve(false), close: vi.fn() };
                 return inst as unknown as ConfirmModal;
             });
@@ -5948,6 +5985,341 @@ describe("LilbeePlugin", () => {
             );
             await plugin.configureManagedStorage();
             expect(updateConfig).toHaveBeenCalled();
+        });
+    });
+
+    describe("vitest4 coverage backfill", () => {
+        it("registered view factories construct a view for each registered type", async () => {
+            const { ChatView } = await import("../src/views/chat-view");
+            const { WikiView } = await import("../src/views/wiki-view");
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const factories = (plugin.registerView as ReturnType<typeof vi.fn>).mock.calls;
+            const leaf = new WorkspaceLeaf();
+            const views = factories.map(([, factory]) => factory(leaf));
+            expect(views.every((v: unknown) => v != null)).toBe(true);
+            expect(ChatView).toHaveBeenCalledWith(leaf, plugin);
+            expect(WikiView).toHaveBeenCalledWith(leaf, plugin);
+        });
+
+        it("configureApi wires a token provider and outcome callback that reach the plugin", async () => {
+            const plugin = await createPlugin({ serverMode: "external", serverUrl: "http://127.0.0.1:7433" });
+            await plugin.onload();
+            let tokenProvider: (() => string | null) | undefined;
+            let outcomeCallback: ((outcome: string) => void) | undefined;
+            plugin.api.setTokenProvider = vi.fn((cb: () => string | null) => {
+                tokenProvider = cb;
+            });
+            plugin.api.setOutcomeCallback = vi.fn((cb: (outcome: string) => void) => {
+                outcomeCallback = cb;
+            });
+            const tokenSpy = vi.spyOn(plugin as any, "readCurrentToken").mockReturnValue("tok-123");
+            const outcomeSpy = vi.spyOn(plugin as any, "handleRequestOutcome");
+
+            (plugin as any).configureApi("http://127.0.0.1:9000");
+
+            expect(tokenProvider!()).toBe("tok-123");
+            expect(tokenSpy).toHaveBeenCalled();
+            outcomeCallback!("ok");
+            expect(outcomeSpy).toHaveBeenCalledWith("ok");
+        });
+
+        it("server-ready state reconfigures the API at the manager URL when a server manager is present", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+            (plugin as any).serverManager = { serverUrl: "http://127.0.0.1:55555" };
+            (plugin.api.setBaseUrl as ReturnType<typeof vi.fn>).mockClear();
+            (plugin as any).handleServerStateChange("ready");
+            expect(plugin.api.setBaseUrl).toHaveBeenCalledWith("http://127.0.0.1:55555");
+        });
+
+        it("server-ready state with no server manager skips reconfiguring the API", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+            (plugin as any).serverManager = null;
+            (plugin.api.setBaseUrl as ReturnType<typeof vi.fn>).mockClear();
+            (plugin as any).handleServerStateChange("ready");
+            expect(plugin.api.setBaseUrl).not.toHaveBeenCalled();
+        });
+
+        it("server-dependent command checkCallbacks return true in check mode without firing their actions", async () => {
+            const { SearchModal } = await import("../src/views/search-modal");
+            const { CatalogModal } = await import("../src/views/catalog-modal");
+            const { CrawlModal } = await import("../src/views/crawl-modal");
+            const { DocumentsModal } = await import("../src/views/documents-modal");
+            const { ModelPickerModal } = await import("../src/views/model-picker-modal");
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin as unknown as { serverUnreachable: boolean }).serverUnreachable = false;
+            (plugin.app.workspace.getActiveFile as ReturnType<typeof vi.fn>) = vi.fn(
+                () => ({ path: "x.md", name: "x.md", parent: { path: "" } }) as never,
+            );
+            const calls = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls as Array<
+                [{ id: string; checkCallback?: (checking: boolean) => boolean }]
+            >;
+            const check = (id: string) => calls.find((c) => c[0].id === id)?.[0].checkCallback;
+            for (const id of [
+                "lilbee:search",
+                "lilbee:chat",
+                "lilbee:add-file",
+                "lilbee:add-folder",
+                "lilbee:sync",
+                "lilbee:sync-retry-skipped",
+                "lilbee:sync-rebuild",
+                "lilbee:catalog",
+                "lilbee:model-picker-chat",
+                "lilbee:model-picker-embedding",
+                "lilbee:model-info-active-chat",
+                "lilbee:model-info-active-embedding",
+                "lilbee:crawl",
+                "lilbee:documents",
+            ]) {
+                expect(check(id)!(true)).toBe(true);
+            }
+            // Check mode must not open any modal — the action side is gated on !checking.
+            expect(SearchModal).not.toHaveBeenCalled();
+            expect(CatalogModal).not.toHaveBeenCalled();
+            expect(CrawlModal).not.toHaveBeenCalled();
+            expect(DocumentsModal).not.toHaveBeenCalled();
+            expect(ModelPickerModal).not.toHaveBeenCalled();
+        });
+
+        it("saveSettings switching to managed from external starts the managed server", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
+            plugin.settings.serverMode = "managed";
+            (plugin as any).previousServerMode = "external";
+            await plugin.saveSettings();
+            expect(startSpy).toHaveBeenCalled();
+        });
+
+        it("saveSettings already in managed mode does not restart the managed server", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+            const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
+            plugin.settings.serverMode = "managed";
+            (plugin as any).previousServerMode = "managed";
+            await plugin.saveSettings();
+            expect(startSpy).not.toHaveBeenCalled();
+        });
+
+        it("startHealthProbe schedules a probe that runs on the interval", async () => {
+            vi.useFakeTimers();
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const probeSpy = vi.spyOn(plugin as any, "probeServerHealth").mockResolvedValue(undefined);
+            (plugin as any).healthProbeHandle = null;
+            (plugin as any).startHealthProbe();
+            await vi.advanceTimersByTimeAsync(120_000);
+            expect(probeSpy).toHaveBeenCalled();
+            vi.useRealTimers();
+        });
+
+        it("activateWikiView opens a wiki view in a fresh right leaf", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            const leaf = new WorkspaceLeaf();
+            leaf.setViewState = vi.fn().mockResolvedValue(undefined);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(leaf);
+            await plugin.activateWikiView();
+            expect(leaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-wiki", active: true });
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+        });
+
+        it("activateWikiView is a no-op when no right leaf is available", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
+            (plugin.app.workspace.revealLeaf as ReturnType<typeof vi.fn>).mockClear();
+            await plugin.activateWikiView();
+            expect(plugin.app.workspace.revealLeaf).not.toHaveBeenCalled();
+        });
+
+        it("runAdd ignores stream events it has no handler for and still completes", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            async function* withUnhandled() {
+                yield { event: SSE_EVENT.PROGRESS, data: { file: "x", current: 1, total: 1 } };
+                yield { event: SSE_EVENT.DONE, data: { added: ["x.md"], updated: [], removed: [], failed: [] } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withUnhandled());
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            expect(plugin.taskQueue.completed.some((t) => t.status === "done")).toBe(true);
+        });
+
+        it("addExternalFiles stores a retry that re-runs the external add", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            async function* withError() {
+                yield { event: SSE_EVENT.ERROR, data: { message: "boom" } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withError());
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+            const failed = plugin.taskQueue.completed.find((t) => t.status === "failed");
+            expect(failed?.retry).toBeDefined();
+            const addSpy = vi.spyOn(plugin, "addExternalFiles").mockResolvedValue(undefined);
+            await failed!.retry!();
+            expect(addSpy).toHaveBeenCalledWith(["/home/user/doc.pdf"]);
+        });
+
+        it("addToLilbee stores a retry that re-adds the same file", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            const file = { path: "notes/a.md", name: "a.md" };
+            async function* withError() {
+                yield { event: SSE_EVENT.ERROR, data: { message: "boom" } };
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(withError());
+            await (plugin as any).addToLilbee(file);
+            const failed = plugin.taskQueue.completed.find((t) => t.status === "failed");
+            expect(failed?.retry).toBeDefined();
+            const addSpy = vi.spyOn(plugin as any, "addToLilbee").mockResolvedValue(undefined);
+            await failed!.retry!();
+            expect(addSpy).toHaveBeenCalledWith(file);
+        });
+
+        it("runAdd aborts the stream and reports an idle error when the server stalls", async () => {
+            vi.useFakeTimers();
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            async function* hangs(): AsyncGenerator<never> {
+                await new Promise<void>(() => {});
+            }
+            plugin.api.addFiles = vi.fn().mockReturnValue(hangs());
+            const run = (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await vi.advanceTimersByTimeAsync(120_000);
+            await run;
+            vi.useRealTimers();
+            expect(Notice.instances.some((n) => n.message === MESSAGES.ERROR_STREAM_IDLE)).toBe(true);
+        });
+
+        it("triggerSync ignores DONE payloads that don't parse and completes the task", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            async function* withUnparseableDone() {
+                yield { event: SSE_EVENT.DONE, data: { not_a_sync_result: true } };
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(withUnparseableDone());
+            await plugin.triggerSync();
+            expect(plugin.taskQueue.completed.some((t) => t.status === "done")).toBe(true);
+            expect(Notice.instances.length).toBe(0);
+        });
+
+        it("triggerSync aborts the stream and reports an idle error when the server stalls", async () => {
+            vi.useFakeTimers();
+            const plugin = await createPlugin();
+            await plugin.onload();
+            async function* hangs(): AsyncGenerator<never> {
+                await new Promise<void>(() => {});
+            }
+            plugin.api.syncStream = vi.fn().mockReturnValue(hangs());
+            const run = plugin.triggerSync();
+            await vi.advanceTimersByTimeAsync(120_000);
+            await run;
+            vi.useRealTimers();
+            expect(Notice.instances.some((n) => n.message === MESSAGES.ERROR_STREAM_IDLE)).toBe(true);
+        });
+
+        it("runCrawl aborts the stream and fails the task when the server stalls", async () => {
+            vi.useFakeTimers();
+            const plugin = await createPlugin();
+            await plugin.onload();
+            async function* hangs(): AsyncGenerator<never> {
+                await new Promise<void>(() => {});
+            }
+            plugin.api.crawl = vi.fn().mockReturnValue(hangs());
+            const run = plugin.runCrawl("https://example.com", 0, 50);
+            await vi.advanceTimersByTimeAsync(120_000);
+            await run;
+            vi.useRealTimers();
+            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+        });
+
+        it("runCrawl surfaces a sized setup with no room left in the queue without a sub-task", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const realEnqueue = plugin.taskQueue.enqueue.bind(plugin.taskQueue);
+            vi.spyOn(plugin.taskQueue, "enqueue").mockImplementation((name, type, retry) => {
+                if (name === "Chromium setup") return null;
+                return realEnqueue(name, type, retry);
+            });
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.SETUP_START,
+                        data: { component: "chromium", size_estimate_bytes: 180_000_000 },
+                    };
+                    yield { event: SSE_EVENT.SETUP_DONE, data: { component: "chromium", success: true, error: null } };
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 0 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+            await plugin.runCrawl("https://example.com", 0, 50);
+            expect(plugin.taskQueue.completed.filter((t) => t.type === "setup").length).toBe(0);
+            expect(plugin.taskQueue.completed.some((t) => t.type === "crawl" && t.status === "done")).toBe(true);
+        });
+
+        it("runCrawl fails the crawl row on setup failure when the setup sub-task was never queued", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const realEnqueue = plugin.taskQueue.enqueue.bind(plugin.taskQueue);
+            vi.spyOn(plugin.taskQueue, "enqueue").mockImplementation((name, type, retry) => {
+                if (name === "Chromium setup") return null;
+                return realEnqueue(name, type, retry);
+            });
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield {
+                        event: SSE_EVENT.SETUP_START,
+                        data: { component: "chromium", size_estimate_bytes: 180_000_000 },
+                    };
+                    yield {
+                        event: SSE_EVENT.SETUP_DONE,
+                        data: { component: "chromium", success: false, error: "no disk" },
+                    };
+                })(),
+            );
+            const syncSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+            await plugin.runCrawl("https://example.com", 0, 50);
+            expect(plugin.taskQueue.completed.filter((t) => t.type === "setup").length).toBe(0);
+            const crawl = plugin.taskQueue.completed.find((t) => t.type === "crawl");
+            expect(crawl?.status).toBe("failed");
+            expect(syncSpy).not.toHaveBeenCalled();
+        });
+
+        it("runWikiGenerate ignores unrelated stream events before completing", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            async function* genStream() {
+                yield { event: SSE_EVENT.PROGRESS, data: {} };
+                yield { event: SSE_EVENT.WIKI_GENERATE_DONE, data: { slug: "test" } };
+            }
+            plugin.api.wikiGenerate = vi.fn().mockReturnValue(genStream());
+            await plugin.runWikiGenerate("notes/foo.md");
+            expect(plugin.taskQueue.completed.some((t) => t.status === "done")).toBe(true);
+        });
+
+        it("runWikiPrune ignores unrelated stream events before completing", async () => {
+            mockConfirmModalResult = true;
+            const plugin = await createPlugin();
+            await plugin.onload();
+            async function* pruneStream() {
+                yield { event: SSE_EVENT.PROGRESS, data: {} };
+                yield { event: SSE_EVENT.WIKI_PRUNE_DONE, data: { archived: 1 } };
+            }
+            plugin.api.wikiPrune = vi.fn().mockReturnValue(pruneStream());
+            await plugin.runWikiPrune();
+            expect(plugin.taskQueue.completed.some((t) => t.status === "done")).toBe(true);
         });
     });
 });

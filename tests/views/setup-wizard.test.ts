@@ -3,6 +3,7 @@ import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { SetupWizard, pickNativeChatModels, recommendedIndex } from "../../src/views/setup-wizard";
 import { getSystemMemoryGB } from "../../src/utils";
+import * as utils from "../../src/utils";
 import { SessionTokenError } from "../../src/api";
 import { SSE_EVENT, WIZARD_STEP, LILBEE_REPO_URL } from "../../src/types";
 import { ok, err } from "neverthrow";
@@ -10,10 +11,12 @@ import { MESSAGES } from "../../src/locales/en";
 import type { CatalogEntry, CatalogResponse } from "../../src/types";
 
 vi.mock("../../src/views/catalog-modal", () => ({
-    CatalogModal: vi.fn().mockImplementation(() => ({
-        open: vi.fn(),
-        close: vi.fn(),
-    })),
+    CatalogModal: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+            close: vi.fn(),
+        };
+    }),
 }));
 
 function makeEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
@@ -2212,6 +2215,30 @@ describe("SetupWizard", () => {
             expect(recommendedIndex(models, 16)).toBe(1);
         });
 
+        it("keeps the larger installed model when a smaller installed one follows", () => {
+            // Second installed model has a smaller RAM floor than the running
+            // best, so the `>= bestRam` check is false and index 0 stays best.
+            const models = [
+                {
+                    name: "big-installed",
+                    size_gb: 5,
+                    min_ram_gb: 8,
+                    description: "",
+                    source: "native" as const,
+                    installed: true,
+                },
+                {
+                    name: "small-installed",
+                    size_gb: 0.5,
+                    min_ram_gb: 4,
+                    description: "",
+                    source: "native" as const,
+                    installed: true,
+                },
+            ];
+            expect(recommendedIndex(models, 16)).toBe(0);
+        });
+
         it("returns the first installed model when memGB is null", () => {
             const models = [
                 {
@@ -3135,6 +3162,117 @@ describe("SetupWizard", () => {
             const el = wizard.contentEl as unknown as MockElement;
             const texts = collectTexts(el);
             expect(texts.some((t) => t === MESSAGES.WIZARD_WIKI_TRADEOFFS_LABEL)).toBe(true);
+        });
+    });
+
+    describe("uncovered branch coverage", () => {
+        it("model picker omits the RAM banner when system memory is unknown", async () => {
+            const spy = vi.spyOn(utils, "getSystemMemoryGB").mockReturnValue(null);
+            try {
+                const plugin = makePlugin({ settings: { serverMode: "external" } });
+                plugin.api.catalog = vi.fn().mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
+                const wizard = new SetupWizard(plugin.app as any, plugin as any);
+                wizard.open();
+                (wizard as any).step = 2;
+                (wizard as any).renderStep();
+                await tick();
+                const el = wizard.contentEl as unknown as MockElement;
+                // memGB === null → the RAM info paragraph (656 false branch) is skipped.
+                expect(el.find("lilbee-wizard-system-info")).toBeNull();
+            } finally {
+                spy.mockRestore();
+            }
+        });
+
+        it("pullSelectedModel ignores SSE events that are neither progress nor error", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.DONE, data: {} };
+                })(),
+            );
+            plugin.api.setChatModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedModel = makeEntry({ hf_repo: "acme/chat", installed: false });
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullSelectedModel(btn, el, el, el, el, el);
+            // The non-progress/non-error event (786 false) is skipped; activation still runs.
+            expect(plugin.api.setChatModel).toHaveBeenCalledWith("acme/chat");
+        });
+
+        it("pullEmbeddingModel ignores SSE events that are neither progress nor error", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.pullModel = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.DONE, data: {} };
+                })(),
+            );
+            plugin.api.setEmbeddingModel = vi.fn().mockResolvedValue(ok(undefined));
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    await new Promise(() => {});
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).selectedEmbedding = makeEntry({
+                hf_repo: "acme/embed",
+                task: "embedding",
+                installed: false,
+            });
+            const el = new MockElement("div") as unknown as HTMLElement;
+            const btn = new MockElement("button") as unknown as HTMLElement;
+            await (wizard as any).pullEmbeddingModel(btn, el, el, el, el, el);
+            // 952 false branch skipped; activation still runs.
+            expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("acme/embed");
+        });
+
+        it("sync EMBED event without a file name leaves the label unchanged", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.EMBED, data: {} };
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: { added: [], updated: [], removed: [], unchanged: 0, failed: [] },
+                    };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+            // EMBED with no `file` (1033 false) is a no-op; sync still finishes to wiki.
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Wiki (optional, experimental)"))).toBe(true);
+        });
+
+        it("sync that ends without a DONE event still advances and leaves syncResult unset", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            plugin.api.syncStream = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: 1 } };
+                })(),
+            );
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 4;
+            (wizard as any).renderStep();
+            await tick();
+            await tick();
+            // lastEvent is FILE_START, not DONE (1045 false) → syncResult stays null.
+            expect((wizard as any).syncResult ?? null).toBeNull();
+            const texts = collectTexts(wizard.contentEl as unknown as MockElement);
+            expect(texts.some((t) => t.includes("Wiki (optional, experimental)"))).toBe(true);
         });
     });
 });
