@@ -604,6 +604,7 @@ export class CatalogModal extends Modal {
         }
         this.plugin.fetchActiveModel();
         this.plugin.refreshSettingsTab();
+        this.plugin.refreshOpenChatRails();
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(this.activatedRefFor(row)));
         this.close();
     }
@@ -848,6 +849,7 @@ export class CatalogModal extends Modal {
 
         this.plugin.fetchActiveModel();
         this.plugin.refreshSettingsTab();
+        this.plugin.refreshOpenChatRails();
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(this.activatedRefFor(entry)));
         this.resetAndFetch();
     }
@@ -950,6 +952,7 @@ export class CatalogModal extends Modal {
 
         this.plugin.fetchActiveModel();
         this.plugin.refreshSettingsTab();
+        this.plugin.refreshOpenChatRails();
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(this.activatedRefFor(entry)));
         this.resetAndFetch();
     }

@@ -5,6 +5,7 @@ import { SSE_EVENT } from "../src/types";
 import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
 import { ConfirmModal } from "../src/views/confirm-modal";
+import { ChatView } from "../src/views/chat-view";
 vi.mock("../src/api", () => ({
     SessionTokenError: class SessionTokenError extends Error {
         readonly status: number;
@@ -735,6 +736,23 @@ describe("LilbeePlugin", () => {
             plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
 
             await expect((plugin as any).activateChatView()).resolves.not.toThrow();
+        });
+    });
+
+    describe("refreshOpenChatRails()", () => {
+        it("refreshes ChatView rails and skips non-chat views", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const refreshRail = vi.fn();
+            const chatView = Object.assign(Object.create(ChatView.prototype), { refreshRail });
+            const otherView = {};
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([{ view: chatView }, { view: otherView }]);
+
+            (plugin as any).refreshOpenChatRails();
+
+            expect(plugin.app.workspace.getLeavesOfType).toHaveBeenCalledWith("lilbee-chat");
+            expect(refreshRail).toHaveBeenCalledTimes(1);
         });
     });
 

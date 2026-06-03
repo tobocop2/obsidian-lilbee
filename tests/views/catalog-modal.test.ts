@@ -76,6 +76,7 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         saveSettings: vi.fn().mockResolvedValue(undefined),
         fetchActiveModel: vi.fn(),
         refreshSettingsTab: vi.fn(),
+        refreshOpenChatRails: vi.fn(),
         taskQueue: new TaskQueue(),
         ...overrides,
     };
