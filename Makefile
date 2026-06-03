@@ -5,7 +5,7 @@
 # OBSIDIAN_LILBEE_REPO_ROOT (passed in by the wrapper) points at the main
 # checkout so demo recordings can reference paths there if needed.
 
-TAPES := tour chat add lilbee_on_lilbee crawl catalog settings command_palette multi_vault first_start
+TAPES := tour chat add lilbee_on_lilbee crawl catalog settings command_palette multi_vault first_start models rerank
 
 # GIF width (px). The webms are recorded at retina 3456×2158; the GIFs only
 # ever render at README / marketing-card width, so 720 keeps them sharp there

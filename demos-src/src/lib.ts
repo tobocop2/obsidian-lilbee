@@ -22,6 +22,7 @@
 export type Action =
   | { kind: "clickRibbon"; target: "chat" | "tasks" }
   | { kind: "clickSelector"; selector: string }
+  | { kind: "hoverSelector"; selector: string }
   | { kind: "rightClickSelector"; selector: string }
   | { kind: "clickMenuItem"; name: string }
   | { kind: "openSettings" }
@@ -177,6 +178,8 @@ export function beat(
 
 export const clickRibbon = (target: "chat" | "tasks"): Action => ({ kind: "clickRibbon", target });
 export const clickSelector = (selector: string): Action => ({ kind: "clickSelector", selector });
+/** Move the cursor onto an element without clicking — used to reveal its tooltip. */
+export const hoverSelector = (selector: string): Action => ({ kind: "hoverSelector", selector });
 export const rightClickSelector = (selector: string): Action => ({ kind: "rightClickSelector", selector });
 export const clickMenuItem = (name: string): Action => ({ kind: "clickMenuItem", name });
 export const openSettings = (): Action => ({ kind: "openSettings" });
