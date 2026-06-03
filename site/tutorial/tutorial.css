@@ -4,8 +4,14 @@
 .tutorial-toc .toc-label { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-deep); }
 .tutorial-toc ol { margin: 0.7rem 0 0; padding-left: 1.5rem; }
 .tutorial-toc li { margin: 0.28rem 0; color: var(--ink-3); }
+.tutorial-toc .toc-group { margin: 0.85rem 0 0.15rem -1.5rem; list-style: none; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-deep); }
+.tutorial-toc .toc-group:first-child { margin-top: 0; }
+.tutorial-group { margin: 3.2rem 0 1rem; padding-top: 1.5rem; border-top: 1px solid var(--rule); font-size: 13px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-deep); scroll-margin-top: 1.5rem; }
+.tutorial-group:first-of-type { margin-top: 0.8rem; padding-top: 0; border-top: none; }
 .tutorial-section { margin: 2.4rem 0 2.9rem; scroll-margin-top: 1.5rem; }
-.tutorial-section h2 { margin: 0 0 0.45rem; font-size: 15px; font-weight: 500; letter-spacing: 0.02em; color: var(--accent); }
+.tutorial-section h3 { margin: 0 0 0.45rem; font-size: 15px; font-weight: 500; letter-spacing: 0.02em; color: var(--accent); }
+.tutorial-group a, .tutorial-section h3 a, .tutorial-toc .toc-group a { color: inherit; text-decoration: none; }
+.tutorial-group a:hover, .tutorial-section h3 a:hover, .tutorial-toc .toc-group a:hover { text-decoration: underline; }
 .tutorial-section p { margin: 0.3rem 0 0.9rem; max-width: 82ch; color: var(--ink-2); font-size: 13px; line-height: 1.6; }
 .tutorial-clip { background: #000; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
 .tutorial-clip video { display: block; width: 100%; background: #000; }

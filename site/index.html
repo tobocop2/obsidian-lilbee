@@ -83,24 +83,24 @@
       <div class="tutorial">
         <div class="tutorial-watch"><a class="tutorial-cta" href="tutorial/">▶&nbsp; watch the full tutorial reel</a></div>
         <div class="tutorialtabs" role="tablist" aria-label="Tutorial reel">
-          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-rerank"    aria-controls="tutorial-pane-rerank"    aria-selected="true"  tabindex="0">reranking</button>
-          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-ollama"    aria-controls="tutorial-pane-ollama"    aria-selected="false" tabindex="-1">Ollama</button>
-          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-gemini"    aria-controls="tutorial-pane-gemini"    aria-selected="false" tabindex="-1">Gemini</button>
-          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-lmstudio"  aria-controls="tutorial-pane-lmstudio"  aria-selected="false" tabindex="-1">LM Studio</button>
-          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-multipart" aria-controls="tutorial-pane-multipart" aria-selected="false" tabindex="-1">multi-part</button>
-          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-vision"    aria-controls="tutorial-pane-vision"    aria-selected="false" tabindex="-1">scanned PDF</button>
-          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-onlilbee"  aria-controls="tutorial-pane-onlilbee"  aria-selected="false" tabindex="-1">what is lilbee</button>
+          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-onlilbee"  aria-controls="tutorial-pane-onlilbee"  aria-selected="true"  tabindex="0">what is lilbee</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-ask"       aria-controls="tutorial-pane-ask"       aria-selected="false" tabindex="-1">ask &amp; cite</button>
+          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-vision"    aria-controls="tutorial-pane-vision"    aria-selected="false" tabindex="-1">scanned PDF</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-crawl"     aria-controls="tutorial-pane-crawl"     aria-selected="false" tabindex="-1">crawl</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-catalog"   aria-controls="tutorial-pane-catalog"   aria-selected="false" tabindex="-1">catalog</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-download"  aria-controls="tutorial-pane-download"  aria-selected="false" tabindex="-1">download a model</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-models"    aria-controls="tutorial-pane-models"    aria-selected="false" tabindex="-1">model rail</button>
+          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-ollama"    aria-controls="tutorial-pane-ollama"    aria-selected="false" tabindex="-1">Ollama</button>
+          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-lmstudio"  aria-controls="tutorial-pane-lmstudio"  aria-selected="false" tabindex="-1">LM Studio</button>
+          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-gemini"    aria-controls="tutorial-pane-gemini"    aria-selected="false" tabindex="-1">Gemini</button>
+          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-multipart" aria-controls="tutorial-pane-multipart" aria-selected="false" tabindex="-1">multi-part</button>
+          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-rerank"    aria-controls="tutorial-pane-rerank"    aria-selected="false" tabindex="-1">reranking</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-firststart" aria-controls="tutorial-pane-firststart" aria-selected="false" tabindex="-1">first run</button>
-          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-tour"      aria-controls="tutorial-pane-tour"      aria-selected="false" tabindex="-1">tour</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-settings"  aria-controls="tutorial-pane-settings"  aria-selected="false" tabindex="-1">settings</button>
+          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-tour"      aria-controls="tutorial-pane-tour"      aria-selected="false" tabindex="-1">tour</button>
         </div>
 
-        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-rerank" aria-labelledby="tutorial-tab-rerank">
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-rerank" aria-labelledby="tutorial-tab-rerank" hidden>
           <div class="tutorial-clip">
             <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/rerank.webm" controls loop muted autoplay playsinline preload="metadata"></video>
           </div>
@@ -142,7 +142,7 @@
           <p class="tutorial-caption">A scanned, image-only PDF read by a local vision model. The Task Center streams the OCR page by page, then a cited answer reads the support number and publisher straight off the scanned cover, a detail only OCR could surface.</p>
         </div>
 
-        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-onlilbee" aria-labelledby="tutorial-tab-onlilbee" hidden>
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-onlilbee" aria-labelledby="tutorial-tab-onlilbee">
           <div class="tutorial-clip">
             <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.webm" controls loop muted autoplay playsinline preload="metadata"></video>
           </div>
