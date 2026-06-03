@@ -31,6 +31,9 @@ const DEFAULT_LEAD_IN_MS = 500;
 const DEFAULT_TAIL_MS = 1500;
 const DEFAULT_HOLD_MS = 800;
 const HOVER_BEFORE_CLICK_MS = 350;
+// Letterbox band (retina px) added below the window so narration captions sit
+// under the app instead of over the chat. Sized to fit a two-line caption.
+const CAPTION_BAND_PX = 168;
 // Hard ceiling for a single runJs beat. A storyboard that awaits an
 // open SSE stream (e.g. addToLilbee) would otherwise hang forever while
 // ffmpeg captures a static screen. If a beat exceeds this, abort the
@@ -807,11 +810,17 @@ async function postProcess(opts: PostOptions): Promise<void> {
   }
 
   const chain: string[] = [];
-  chain.push(`[0:v]crop=${cropW}:${cropH}:${cropX}:${cropY}[v_crop]`);
+  // SCK captures the Obsidian window directly, so the raw frame IS the window
+  // (origin 0,0). Crop to the window size from 0,0 (cropX/cropY are kept only for
+  // translating the cursor trace from screen coords to window-relative below).
+  chain.push(`[0:v]crop=${cropW}:${cropH}:0:0[v_crop]`);
   // Overlay the synthetic cursor at full rate, before the speedup split, so
   // it's decimated together with the screen during sped-up segments.
   chain.push(`[v_crop][${haloInputIdx}:v]overlay=0:0:eof_action=pass[v_crop_h]`);
-  chain.push(`[v_crop_h]split=${segments.length}${segments.map((_, i) => `[c${i}]`).join("")}`);
+  // Add a black band below the window so narration captions render under the
+  // app, never over the chat.
+  chain.push(`[v_crop_h]pad=${cropW}:${cropH + CAPTION_BAND_PX}:0:0:black[v_pad]`);
+  chain.push(`[v_pad]split=${segments.length}${segments.map((_, i) => `[c${i}]`).join("")}`);
   const segOuts: string[] = [];
   for (let i = 0; i < segments.length; i++) {
     const s = segments[i];
@@ -883,7 +892,7 @@ async function postProcess(opts: PostOptions): Promise<void> {
     const idx = beatCaptionInputIdx.get(text);
     if (idx === undefined) continue;
     const next = `v_cap${capIdx++}`;
-    chain.push(`[${lastLabel}][${idx}:v]overlay=(W-w)/2:H-h-52:enable='${windows.join("+")}'[${next}]`);
+    chain.push(`[${lastLabel}][${idx}:v]overlay=(W-w)/2:${cropH}+(${CAPTION_BAND_PX}-h)/2:enable='${windows.join("+")}'[${next}]`);
     lastLabel = next;
   }
 

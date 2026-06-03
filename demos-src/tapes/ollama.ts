@@ -1,102 +1,95 @@
 /**
- * ollama demo: lilbee drives a model Ollama is already serving — no native
- * download. Show the provenance (the catalog's Hosted sub-tab groups the
- * Ollama-served models under their provider pill), pin that model as the chat
- * model, then ask a cited question about the Crown Victoria manual. The answer
- * streams from the Ollama model and still cites the manual at the source.
+ * ollama demo: a fresh vault (empty index). Pick a model Ollama already serves
+ * for BOTH roles — embedding and chat — from the catalog's Hosted tab, so it's
+ * clear Ollama powers the whole pipeline. Then add the Crown Victoria manual:
+ * lilbee embeds it with Ollama's embedder (real chunk-embedding progress in the
+ * Task Center, fast-forwarded). Ask a cited question — the answer streams from
+ * the Ollama chat model and still cites the manual; the citation opens the
+ * source preview to the page it came from.
  *
- * Mirror of lmstudio.ts — same arc, different local server — matching the
- * sibling lilbee repo's tui-ollama-document / tui-lmstudio-document pair.
+ * Selecting a Hosted model closes the catalog, so the reel opens it twice (once
+ * per role). Mirror of lmstudio.ts — same arc, different local server.
  *
  * Environment this tape assumes (verify before recording):
- *  - Ollama running on its default URL (http://localhost:11434) with the model
- *    below pulled. `ollama list` should show it.
- *  - The lilbee server's Ollama URL left at the default so its catalog surfaces
- *    the Ollama models as Hosted rows (GET /api/models lists `ollama/...`).
- *  - The Crown Victoria manual is already ingested in the demo corpus (the
- *    add/tour demos use it), so the towing question retrieves and cites it.
+ *  - Ollama serving qwen3:4b and nomic-embed-text:v1.5; warm the chat model.
+ *  - The DB is reset EMPTY and rebuilt before recording, so the on-camera add
+ *    adopts Ollama's embedder cleanly. NO frontier key is set.
  */
-import {
-  beat,
-  clickSelector,
-  clickSourceFile,
-  clickSend,
-  fillChat,
-  key,
-  runJs,
-  sleep,
-  storyboard,
-  type_,
-  waitChatIdle,
-} from "../src/lib.ts";
+import { beat, clickSelector, clickSourceFile, clickSend, fillChat, key, runJs, sleep, storyboard, type_, waitChatIdle } from "../src/lib.ts";
 
-// Ollama exposes models under the `ollama/<tag>` ref. qwen3:0.6b is the small,
-// fast model pulled on this machine; swap to whatever `ollama list` shows.
-const CHAT_MODEL = "ollama/qwen3:0.6b";
+const PDF_VAULT_FILE = "Crown Victoria Owner's Manual.pdf";
+const OLLAMA_EMBED = "nomic-embed-text:v1.5"; // Ollama embedding row (colon form, vs lm_studio's dashed name)
+const OLLAMA_CHAT = "qwen3:4b"; // Ollama chat row (colon form)
 const QUESTION = "I'm prepping this car to tow my boat. What does the manual say I need to check?";
 
-// PUT a model into the chat role via the server API the plugin already talks
-// to, then refresh the rail so the pill reflects it. Same helper shape as
-// rerank.ts.
-const setChatModel = (model: string) =>
-  runJs(`
-    const p = window.app.plugins.plugins.lilbee;
-    const base = p.api?.baseUrl ?? p.settings.serverUrl;
-    const h = { "Content-Type": "application/json", Authorization: "Bearer " + (p.api?.token ?? p.settings.manualToken ?? "") };
-    await fetch(base + "/api/models/chat", { method: "PUT", headers: h, body: JSON.stringify({ model: ${JSON.stringify(model)} }) }).catch(() => {});
-    if (typeof p.fetchActiveModel === "function") await p.fetchActiveModel();
-  `);
+const openCatalog = runJs(`window.app.commands.executeCommandById("command-palette:open");`);
 
 export default storyboard("ollama", {
   window: [1400, 900],
   layout: "explorer-chat-tasks",
-  // We pick the chat model ourselves (an Ollama-served one), so skip the
-  // default native pin and the native preload.
-  skipModelPin: true,
+  clearTaskCenter: true,
+  pinChatModel: "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf",
   preloadChatModel: false,
-  clearTaskCenter: false,
   clearChat: true,
   beats: [
-    beat("Opening hold on the clean workspace", sleep(300)),
-
-    beat("Use the model Ollama is serving", setChatModel(CHAT_MODEL), {
-      holdMs: 700,
-      caption: "lilbee can drive any model Ollama already serves — no native download.",
+    beat("Opening hold — fresh vault, native models in the rail", sleep(400), {
+      caption: "A fresh vault — nothing indexed yet.",
     }),
-
-    // Provenance: open the catalog and switch to the Hosted sub-tab, where the
-    // Ollama-served models are grouped under their provider pill.
-    beat("Open the command palette", runJs(`window.app.commands.executeCommandById("command-palette:open");`), {
+    // Catalog open #1: pick the Ollama embedder (selecting closes the catalog).
+    beat("Open the command palette", openCatalog, { holdMs: 600, keyHint: "⌘P" }),
+    beat("Filter to the catalog command", type_("Browse model catalog"), { holdMs: 900 }),
+    beat("Open the catalog", key("enter"), { holdMs: 800 }),
+    beat("Embedding tab", clickSelector('.lilbee-catalog-main-tab-bar button:has-text("Embed")'), { holdMs: 500 }),
+    beat("Hosted models", clickSelector('.lilbee-catalog-sub-tab-bar button:has-text("Hosted")'), {
       holdMs: 600,
-      keyHint: "⌘P",
+      caption: "Ollama serves an embedding model — pick it for indexing.",
     }),
-    beat("Filter to the catalog command", type_("Browse model catalog"), { holdMs: 1000 }),
-    beat("Open the catalog", key("enter"), { holdMs: 900 }),
-    beat("Chat tab", clickSelector('.lilbee-catalog-main-tab-bar button:text-is("Chat")'), { holdMs: 600 }),
-    beat("Switch to Hosted models", clickSelector(".lilbee-catalog-sub-tab-bar button:nth-child(2)"), {
-      holdMs: 900,
-      caption: "Models served by Ollama show up here, tagged with their provider.",
+    beat("Use the Ollama embedder", clickSelector(`.lilbee-frontier-row:has-text("${OLLAMA_EMBED}")`), { holdMs: 1100 }),
+    // Catalog open #2: pick the Ollama chat model.
+    beat("Open the command palette", openCatalog, { holdMs: 500, keyHint: "⌘P" }),
+    beat("Filter to the catalog command", type_("Browse model catalog"), { holdMs: 800 }),
+    beat("Open the catalog", key("enter"), { holdMs: 700 }),
+    beat("Chat tab", clickSelector('.lilbee-catalog-main-tab-bar button:has-text("Chat")'), { holdMs: 500 }),
+    beat("Hosted models", clickSelector('.lilbee-catalog-sub-tab-bar button:has-text("Hosted")'), { holdMs: 500 }),
+    beat("Use the Ollama chat model", clickSelector(`.lilbee-frontier-row:has-text("${OLLAMA_CHAT}")`), {
+      holdMs: 1200,
+      caption: "And the chat model — now Ollama drives both embedding and chat.",
     }),
+    // Add the manual — it embeds with Ollama's model now.
     beat(
-      "Linger on the Ollama provider pill",
+      "Open the Crown Vic Owner's Manual",
       runJs(`
-        const pill = Array.from(document.querySelectorAll('.lilbee-provider-pill'))
-          .find((p) => /ollama/i.test(p.textContent || ''));
-        (pill?.closest('.lilbee-frontier-row') ?? pill)?.scrollIntoView({ block: 'center' });
+        await window.app.workspace.openLinkText(${JSON.stringify(PDF_VAULT_FILE)}, '', 'tab');
+        await new Promise(r => setTimeout(r, 250));
       `),
-      { holdMs: 2400 },
+      { holdMs: 900, caption: "Add the Crown Victoria owner's manual." },
     ),
-    beat("Close the catalog", key("escape"), { holdMs: 600 }),
-
-    // Ask the towing question against the already-ingested manual.
+    beat("Open the command palette", openCatalog, { holdMs: 500, keyHint: "⌘P" }),
+    beat("Filter to the Add command", type_("Add current file"), { holdMs: 1100 }),
+    beat("Run it — the manual ingests via Ollama's embedder", key("enter"), { holdMs: 700 }),
     beat(
-      "Activate a clean chat panel",
+      "Task Center fills with chunk-embedding progress",
       runJs(`
+        const tq = window.app.plugins.plugins.lilbee.taskQueue;
+        let sawActive = false;
+        for (let i = 0; i < 300; i++) {
+          const busy = tq.activeAll.length + tq.queued.length;
+          if (busy > 0) sawActive = true;
+          if (sawActive && busy === 0) return;
+          await new Promise(r => setTimeout(r, 500));
+        }
+      `),
+      { holdMs: 1000, speedup: 4, caption: "lilbee chunks and embeds it with Ollama — fast-forwarding the ingest." },
+    ),
+    // Back to the chat panel and ask the cited question.
+    beat(
+      "Close the PDF and activate the chat panel",
+      runJs(`
+        for (const leaf of window.app.workspace.getLeavesOfType('pdf')) leaf.detach();
+        for (const leaf of window.app.workspace.getLeavesOfType('markdown')) leaf.detach();
         const leaves = window.app.workspace.getLeavesOfType('lilbee-chat');
         if (leaves[0]) window.app.workspace.revealLeaf(leaves[0]);
-        await new Promise(r => setTimeout(r, 350));
-        const ta = document.querySelector('textarea.lilbee-chat-textarea');
-        if (ta) ta.focus();
+        await new Promise(r => setTimeout(r, 400));
       `),
       { holdMs: 600 },
     ),
@@ -117,7 +110,7 @@ export default storyboard("ollama", {
       holdMs: 600,
       caption: "The answer streams from the Ollama model — and still cites the manual.",
     }),
-    beat("Stream the cited answer", waitChatIdle(180_000), { holdMs: 1400, speedup: 4 }),
+    beat("Stream the cited answer", waitChatIdle(180_000), { holdMs: 1600, speedup: 4 }),
     beat(
       "Expand sources",
       runJs(`document.querySelectorAll('.lilbee-chat-sources details').forEach(d => d.open = true);`),

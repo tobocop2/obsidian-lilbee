@@ -1,30 +1,27 @@
 /**
- * lmstudio demo: a fresh vault (empty index). Pick a model LM Studio already
- * serves for BOTH roles — embedding and chat — from the catalog's Hosted tab, so
- * it's clear LM Studio powers the whole pipeline. Then add the Crown Victoria
- * manual: lilbee embeds it with LM Studio's embedder (real chunk-embedding
- * progress in the Task Center, fast-forwarded). Ask a cited question — the answer
- * streams from the LM Studio chat model and still cites the manual; the citation
- * opens the source preview to the page it came from.
+ * gemini demo: a fresh vault. lilbee also drives hosted frontier models when you
+ * bring your own key. Open the catalog's Hosted tab, search for a free-tier
+ * Gemini model and pick it as the chat model, then add the Crown Victoria manual
+ * (embedded locally with the native embedder) and ask a cited question. The
+ * answer comes from Gemini and still cites the manual.
  *
- * Selecting a Hosted model closes the catalog, so the reel opens it twice (once
- * per role). Mirror of ollama.ts — same arc, different local server.
+ * Embedding stays native here — this reel is about the hosted CHAT model (the
+ * ollama/lmstudio reels show a local server powering both roles). Selecting a
+ * Hosted model closes the catalog.
  *
  * Environment this tape assumes (verify before recording):
- *  - LM Studio's local server running with qwen/qwen3-4b-2507 and
- *    text-embedding-nomic-embed-text-v1.5; warm the chat model.
- *  - The DB is reset EMPTY and rebuilt before recording. NO frontier key is set.
+ *  - A Gemini API key IS configured (the catalog's Hosted tab lists Gemini),
+ *    gemini-2.5-flash reachable free-tier. DB reset EMPTY before recording.
  */
 import { beat, clickSelector, clickSourceFile, clickSend, fillChat, key, runJs, sleep, storyboard, type_, waitChatIdle } from "../src/lib.ts";
 
 const PDF_VAULT_FILE = "Crown Victoria Owner's Manual.pdf";
-const LM_EMBED = "text-embedding-nomic-embed-text-v1.5"; // LM Studio embedding row
-const LM_CHAT = "qwen3-4b-2507"; // LM Studio chat row (dash form, vs ollama's qwen3:4b)
+const GEMINI_CHAT = "gemini-2.5-flash";
 const QUESTION = "I'm prepping this car to tow my boat. What does the manual say I need to check?";
 
 const openCatalog = runJs(`window.app.commands.executeCommandById("command-palette:open");`);
 
-export default storyboard("lmstudio", {
+export default storyboard("gemini", {
   window: [1400, 900],
   layout: "explorer-chat-tasks",
   clearTaskCenter: true,
@@ -32,30 +29,32 @@ export default storyboard("lmstudio", {
   preloadChatModel: false,
   clearChat: true,
   beats: [
-    beat("Opening hold — fresh vault, native models in the rail", sleep(400), {
+    beat("Opening hold — fresh vault, native model in the rail", sleep(400), {
       caption: "A fresh vault — nothing indexed yet.",
     }),
-    // Catalog open #1: pick the LM Studio embedder (selecting closes the catalog).
+    // Pick a hosted Gemini chat model from the catalog's Hosted tab.
     beat("Open the command palette", openCatalog, { holdMs: 600, keyHint: "⌘P" }),
     beat("Filter to the catalog command", type_("Browse model catalog"), { holdMs: 900 }),
     beat("Open the catalog", key("enter"), { holdMs: 800 }),
-    beat("Embedding tab", clickSelector('.lilbee-catalog-main-tab-bar button:has-text("Embed")'), { holdMs: 500 }),
+    beat("Chat tab", clickSelector('.lilbee-catalog-main-tab-bar button:has-text("Chat")'), { holdMs: 500 }),
     beat("Hosted models", clickSelector('.lilbee-catalog-sub-tab-bar button:has-text("Hosted")'), {
       holdMs: 600,
-      caption: "LM Studio serves an embedding model — pick it for indexing.",
+      caption: "With your own key, hosted frontier models show up under Hosted too.",
     }),
-    beat("Use the LM Studio embedder", clickSelector(`.lilbee-frontier-row:has-text("${LM_EMBED}")`), { holdMs: 1100 }),
-    // Catalog open #2: pick the LM Studio chat model.
-    beat("Open the command palette", openCatalog, { holdMs: 500, keyHint: "⌘P" }),
-    beat("Filter to the catalog command", type_("Browse model catalog"), { holdMs: 800 }),
-    beat("Open the catalog", key("enter"), { holdMs: 700 }),
-    beat("Chat tab", clickSelector('.lilbee-catalog-main-tab-bar button:has-text("Chat")'), { holdMs: 500 }),
-    beat("Hosted models", clickSelector('.lilbee-catalog-sub-tab-bar button:has-text("Hosted")'), { holdMs: 500 }),
-    beat("Use the LM Studio chat model", clickSelector(`.lilbee-frontier-row:has-text("${LM_CHAT}")`), {
-      holdMs: 1200,
-      caption: "And the chat model — now LM Studio drives both embedding and chat.",
+    beat("Search the catalog", clickSelector(".lilbee-catalog-search"), { holdMs: 400 }),
+    beat(
+      "Type the model name",
+      runJs(`
+        const s = document.querySelector(".lilbee-catalog-search");
+        if (s) { s.value = ${JSON.stringify(GEMINI_CHAT)}; s.dispatchEvent(new Event("input", { bubbles: true })); }
+      `),
+      { holdMs: 1500 },
+    ),
+    beat("Use the Gemini model", clickSelector(`.lilbee-frontier-row:has-text("${GEMINI_CHAT}")`), {
+      holdMs: 1300,
+      caption: "Pick a free-tier Gemini model — now Gemini drives the chat.",
     }),
-    // Add the manual — it embeds with LM Studio's model now.
+    // Add the manual (embedded locally with the native embedder).
     beat(
       "Open the Crown Vic Owner's Manual",
       runJs(`
@@ -66,7 +65,7 @@ export default storyboard("lmstudio", {
     ),
     beat("Open the command palette", openCatalog, { holdMs: 500, keyHint: "⌘P" }),
     beat("Filter to the Add command", type_("Add current file"), { holdMs: 1100 }),
-    beat("Run it — the manual ingests via LM Studio's embedder", key("enter"), { holdMs: 700 }),
+    beat("Run it — the manual ingests", key("enter"), { holdMs: 700 }),
     beat(
       "Task Center fills with chunk-embedding progress",
       runJs(`
@@ -79,7 +78,7 @@ export default storyboard("lmstudio", {
           await new Promise(r => setTimeout(r, 500));
         }
       `),
-      { holdMs: 1000, speedup: 4, caption: "lilbee chunks and embeds it with LM Studio — fast-forwarding the ingest." },
+      { holdMs: 1000, speedup: 4, caption: "lilbee chunks and embeds it locally — fast-forwarding the ingest." },
     ),
     beat(
       "Close the PDF and activate the chat panel",
@@ -107,7 +106,7 @@ export default storyboard("lmstudio", {
     ),
     beat("Send", clickSend(), {
       holdMs: 600,
-      caption: "The answer streams from the LM Studio model — and still cites the manual.",
+      caption: "The answer comes from Gemini — and still cites your manual.",
     }),
     beat("Stream the cited answer", waitChatIdle(180_000), { holdMs: 1600, speedup: 4 }),
     beat(
