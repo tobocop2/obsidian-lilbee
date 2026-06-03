@@ -83,17 +83,41 @@ This works for web pages too: crawl a docs site or a Wikipedia page into your va
 
 <p align="center"><img alt="crawl a Wikipedia page into the vault, ask a cited question, and jump to the cited section" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl.gif" width="640"></p>
 
+### Ask for several things at once
+
+Put more than one question in a single prompt and lilbee answers each from wherever it lives in your library, with a separate citation per fact.
+
+<p align="center"><img alt="one multi-part question, a bulb part number and the engine firing order, answered in a single reply with a citation for each fact" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/multipart.gif" width="640"></p>
+
 ### Pick and tune your models
 
 Chat, embedding, vision, and reranking are separate roles, each with its own model. The Model Catalog (command palette or chat toolbar) browses featured picks or searches Hugging Face Hub, shows each model's size and memory before you pull, and flags ones that won't run on your hardware. Defaults are sensible out of the gate; Settings exposes the retrieval and generation knobs when you want to go deeper, each with a reset.
 
 <p align="center"><img alt="browse the model catalog inside Obsidian: Chat, Embed, Vision, Rerank tabs, search Hugging Face Hub" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/catalog.gif" width="640"></p>
 
+Each role sits on the chat rail, so you can see what's active and switch it mid-conversation. Hover a pill to see what that role does.
+
+<p align="center"><img alt="the model rail's four roles, chat, embedding, vision, and reranking, each with a tooltip, plus the Search and Chat mode toggle" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/models.gif" width="640"></p>
+
+### Reranking, before and after
+
+Reranking is an optional role that re-scores retrieved passages with a cross-encoder before the model answers. When the note that holds the answer is worded around the cause rather than your keywords, plain vector search can rank it too low to make the cut; reranking pulls it back into context. Here's the same question with reranking off, then on; the answer flips from wrong to right.
+
+<p align="center"><img alt="the same question asked with reranking off then on: off returns the wrong fix, on promotes the right note and the answer corrects itself" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/rerank.gif" width="640"></p>
+
 ### Already running Ollama or LM Studio? Keep them.
 
 **lilbee has its own model manager and multi-GPU fleet, built on llama.cpp.** Downloading, running, and updating models for you is the default and the simplest path, with no second app to think about. Battle-tested managers are supported too, so you don't have to switch model managers to use lilbee.
 
 If your models already live in Ollama or LM Studio, point lilbee at the running server and they show up right in the same Chat / Embed / Vision / Rerank pickers, next to lilbee's own models and any cloud models, each labeled by where it runs. You keep managing them in the app you already use; lilbee just uses them. Pick whichever fits how you already work, and mix all three freely.
+
+Pick one of your Ollama models for embedding and another for chat from the catalog's Hosted tab, and the whole pipeline runs on Ollama:
+
+<p align="center"><img alt="point lilbee at a running Ollama server and pick its models for both embedding and chat from the Hosted tab, then add a PDF and get a cited answer served by Ollama" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/ollama.gif" width="640"></p>
+
+The same flow works with LM Studio's local server:
+
+<p align="center"><img alt="the same flow with LM Studio's local server: its embedder and chat model picked from the Hosted tab, indexing a PDF and answering with citations" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/lmstudio.gif" width="640"></p>
 
 ### Documents, code, and scanned images
 
@@ -108,6 +132,10 @@ Your vault is full of more than markdown. lilbee handles the rest:
 ### Cloud models, when you want them
 
 By default everything stays on your machine: server, models, index, vault. For a role where a cloud model genuinely helps (vision OCR, long-context summarization), Settings → Advanced lets you key in an API endpoint for that role only while the rest stay local. A persistent indicator shows whenever a cloud model is the active backend, so it's clear when chunks are leaving the machine.
+
+With your own key, hosted frontier models appear under the catalog's Hosted tab too. Pick a free-tier Gemini model for chat, keep embedding local, and the answer comes from Gemini while still citing your own documents:
+
+<p align="center"><img alt="pick a free-tier Gemini model for chat from the Hosted tab while embedding stays local, then get an answer from Gemini that still cites your manual" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/gemini.gif" width="640"></p>
 
 ## Experimental
 
