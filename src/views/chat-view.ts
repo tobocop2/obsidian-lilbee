@@ -755,6 +755,12 @@ export class ChatView extends ItemView {
         this.fetchAndFillSelectors();
     }
 
+    // Re-sync the rail pills with the server's active models, for callers
+    // outside this view (e.g. the catalog) that switch a model.
+    refreshRail(): void {
+        this.refreshModelSelector();
+    }
+
     private clearChat(): void {
         this.history = [];
         if (this.messagesEl) this.messagesEl.empty();

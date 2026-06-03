@@ -4207,6 +4207,17 @@ describe("ChatView — null-element guard branches", () => {
         expect(spy).toHaveBeenCalled();
     });
 
+    it("refreshRail re-syncs the rail via refreshModelSelector", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const spy = vi.spyOn(view as any, "refreshModelSelector").mockImplementation(() => {});
+        view.refreshRail();
+        expect(spy).toHaveBeenCalled();
+    });
+
     it("clearChat no-ops when messagesEl is null", async () => {
         Notice.clear();
         const plugin = makePlugin();

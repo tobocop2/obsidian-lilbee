@@ -1704,6 +1704,15 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    // Re-sync the model rail in every open chat view after a model is switched
+    // elsewhere (e.g. the catalog), so the pills don't show a stale selection.
+    refreshOpenChatRails(): void {
+        for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)) {
+            const view = leaf.view;
+            if (view instanceof ChatView) view.refreshRail();
+        }
+    }
+
     async activateWikiView(): Promise<void> {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_WIKI);
         if (existing.length > 0) {
