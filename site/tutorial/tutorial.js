@@ -1,6 +1,7 @@
 const GH = "https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/";
 const groups = [
   {
+    id: "what-it-is",
     heading: "What it is",
     reels: [
       { id: "what-is-lilbee", name: "what_is_lilbee", title: "What is lilbee", desc: "Add lilbee's own README to your library and watch it ingest, then ask “what is lilbee in one sentence?” and get a cited answer straight from the README. The citation opens it at the source." },
@@ -8,6 +9,7 @@ const groups = [
     ],
   },
   {
+    id: "feed-it-anything",
     heading: "Feed it anything",
     reels: [
       { id: "scanned-pdf", name: "vision", title: "Scanned PDFs, read by OCR", desc: "A scanned, image-only PDF read by a local vision model. The Task Center streams the OCR page by page, then a cited answer reads the support number and publisher straight off the scanned cover, a detail only OCR could surface." },
@@ -15,6 +17,7 @@ const groups = [
     ],
   },
   {
+    id: "models-managed-for-you",
     heading: "Models, managed for you",
     reels: [
       { id: "catalog", name: "catalog", title: "Model catalog", desc: "Browse the model catalog without leaving Obsidian: Chat, Embed, Vision, and Rerank tabs, each pulled live from Hugging Face Hub. Models that won't run on your hardware are flagged before you pull." },
@@ -23,6 +26,7 @@ const groups = [
     ],
   },
   {
+    id: "bring-your-own-models",
     heading: "Bring your own models",
     reels: [
       { id: "ollama", name: "ollama", title: "Use your Ollama models for both roles", desc: "Already running Ollama? Point lilbee at it and pick one of its models for embedding and another for chat, straight from the catalog's Hosted tab, so it's clear Ollama powers both halves of the pipeline. Add the Crown Victoria manual, watch it index in the Task Center, then ask a question and get a cited answer served end to end by Ollama." },
@@ -31,6 +35,7 @@ const groups = [
     ],
   },
   {
+    id: "answer-quality",
     heading: "Answer quality",
     reels: [
       { id: "multipart", name: "multipart", title: "Multi-part questions, each fact cited", desc: "One prompt, two unrelated facts from different sections of a manual, a bulb part number and the engine's firing order. A local model answers both in a single reply and cites each one to the page it came from." },
@@ -38,6 +43,7 @@ const groups = [
     ],
   },
   {
+    id: "set-up-and-tune",
     heading: "Set up &amp; tune",
     reels: [
       { id: "first-start", name: "first_start", title: "First run: install to first cited answer", desc: "Brand-new to lilbee, on a fresh vault. Install it through BRAT, walk the setup wizard (pick a chat model and an embedder, run the first sync), then ask a question and get a cited answer from your own notes, with a click-through to the source. The whole onboarding in one take." },
@@ -49,10 +55,11 @@ const groups = [
 const toc = document.getElementById("tutorial-toc");
 const list = document.getElementById("demos");
 for (const g of groups) {
-  toc.insertAdjacentHTML("beforeend", '<li class="toc-group">' + g.heading + "</li>");
+  toc.insertAdjacentHTML("beforeend", '<li class="toc-group"><a href="#' + g.id + '">' + g.heading + "</a></li>");
   const groupHeading = document.createElement("h2");
   groupHeading.className = "tutorial-group";
-  groupHeading.innerHTML = g.heading;
+  groupHeading.id = g.id;
+  groupHeading.innerHTML = '<a href="#' + g.id + '">' + g.heading + "</a>";
   list.appendChild(groupHeading);
   for (const d of g.reels) {
     toc.insertAdjacentHTML("beforeend", '<li><a href="#' + d.id + '">' + d.title + "</a></li>");
@@ -60,7 +67,7 @@ for (const g of groups) {
     sec.className = "tutorial-section";
     sec.id = d.id;
     sec.innerHTML =
-      "<h3>" + d.title + "</h3>" +
+      '<h3><a href="#' + d.id + '">' + d.title + "</a></h3>" +
       "<p>" + d.desc + "</p>" +
       '<div class="tutorial-clip"><video src="' + GH + d.name + '.webm" controls loop muted autoplay playsinline preload="metadata"></video></div>';
     list.appendChild(sec);
