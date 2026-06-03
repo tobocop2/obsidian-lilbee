@@ -38,7 +38,7 @@ jobs:
 
       - name: Run Gitleaks
         if: always()
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -70,7 +70,7 @@ jobs:
     # and others, catching CVEs that npm's advisory feed may lag on. Also
     # scans the GitHub Actions workflow files. Suppressions live in
     # osv-scanner.toml at the repo root.
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.5
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.8
     permissions:
       contents: read
       security-events: write
