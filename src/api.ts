@@ -11,8 +11,14 @@ import type {
     DocumentsResponse,
     GenerationOptions,
     InstalledResponse,
+    MemoryFlagsResponse,
+    MemoryItem,
+    MemoryKind,
+    MemoryListResponse,
+    MemoryRemoveResponse,
     Message,
     ModelShowResponse,
+    RememberResponse,
     ModelsResponse,
     ModelTask,
     SearchChunkType,
@@ -333,6 +339,38 @@ export class LilbeeClient {
             method: "POST",
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ question, history, top_k: topK ?? 0 }),
+        });
+        return res.json();
+    }
+
+    async listMemories(): Promise<MemoryItem[]> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/memories`);
+        const data = (await res.json()) as MemoryListResponse;
+        return data.memories;
+    }
+
+    async remember(text: string, kind: MemoryKind, shared = false): Promise<RememberResponse> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/memories`, {
+            method: "POST",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ text, kind, shared }),
+        });
+        return res.json();
+    }
+
+    async setMemoryShared(id: string, shared: boolean): Promise<MemoryFlagsResponse> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/memories/${encodeURIComponent(id)}`, {
+            method: "PATCH",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ shared }),
+        });
+        return res.json();
+    }
+
+    async forgetMemory(id: string): Promise<MemoryRemoveResponse> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/memories/${encodeURIComponent(id)}`, {
+            method: "DELETE",
+            headers: { ...this.authHeaders() },
         });
         return res.json();
     }

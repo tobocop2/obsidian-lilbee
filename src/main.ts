@@ -71,6 +71,8 @@ import { SearchModal } from "./views/search-modal";
 import { SetupWizard } from "./views/setup-wizard";
 import { TaskCenterView, VIEW_TYPE_TASKS } from "./views/task-center";
 import { WikiView, VIEW_TYPE_WIKI } from "./views/wiki-view";
+import { MemoriesView, VIEW_TYPE_MEMORIES } from "./views/memories-view";
+import { RememberModal } from "./views/remember-modal";
 import { LintModal } from "./views/lint-modal";
 import { DraftModal } from "./views/draft-modal";
 import { ConfirmModal } from "./views/confirm-modal";
@@ -292,6 +294,7 @@ export default class LilbeePlugin extends Plugin {
         safeRegisterView(VIEW_TYPE_CHAT, (leaf) => new ChatView(leaf, this));
         safeRegisterView(VIEW_TYPE_TASKS, (leaf) => new TaskCenterView(leaf, this));
         safeRegisterView(VIEW_TYPE_WIKI, (leaf) => new WikiView(leaf, this));
+        safeRegisterView(VIEW_TYPE_MEMORIES, (leaf) => new MemoriesView(leaf, this));
         this.addSettingTab(new LilbeeSettingTab(this.app, this));
         this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
         this.taskQueue.onChange(() => this.updateRibbonFromQueue());
@@ -362,7 +365,7 @@ export default class LilbeePlugin extends Plugin {
 
     /** Collapse multiple lilbee-chat / -tasks / -wiki leaves to one of each. */
     private dedupeLilbeeLeaves(): void {
-        for (const type of [VIEW_TYPE_CHAT, VIEW_TYPE_TASKS, VIEW_TYPE_WIKI]) {
+        for (const type of [VIEW_TYPE_CHAT, VIEW_TYPE_TASKS, VIEW_TYPE_WIKI, VIEW_TYPE_MEMORIES]) {
             const leaves = this.app.workspace.getLeavesOfType(type);
             for (let i = 1; i < leaves.length; i++) leaves[i].detach();
         }
@@ -822,6 +825,26 @@ export default class LilbeePlugin extends Plugin {
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) void this.activateChatView();
+                return true;
+            },
+        });
+
+        this.addCommand({
+            id: "lilbee:open-memories",
+            name: "Open memories",
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void this.activateMemoriesView();
+                return true;
+            },
+        });
+
+        this.addCommand({
+            id: "lilbee:remember",
+            name: "Remember…",
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) new RememberModal(this.app, this).open();
                 return true;
             },
         });
@@ -1677,6 +1700,25 @@ export default class LilbeePlugin extends Plugin {
     refreshOpenWikiViews(): void {
         for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_WIKI)) {
             (leaf.view as WikiView).refresh();
+        }
+    }
+
+    async activateMemoriesView(): Promise<void> {
+        const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMORIES);
+        if (existing.length > 0) {
+            this.app.workspace.revealLeaf(existing[0]);
+            return;
+        }
+        const leaf = this.app.workspace.getRightLeaf(false);
+        if (leaf) {
+            await leaf.setViewState({ type: VIEW_TYPE_MEMORIES, active: true });
+            this.app.workspace.revealLeaf(leaf);
+        }
+    }
+
+    refreshMemoryViews(): void {
+        for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMORIES)) {
+            void (leaf.view as MemoriesView).reload();
         }
     }
 

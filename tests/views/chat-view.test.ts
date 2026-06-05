@@ -176,6 +176,7 @@ function makePlugin(): LilbeePlugin {
         triggerSync: vi.fn().mockResolvedValue(undefined),
         notifyChatStart: vi.fn(),
         notifyChatEnd: vi.fn(),
+        refreshMemoryViews: vi.fn(),
         taskQueue: new TaskQueue(),
         app: {
             vault: {
@@ -4370,5 +4371,52 @@ describe("ChatView — vault file picker enqueues the chosen file", () => {
         expect((plugin as any).addToLilbee).toHaveBeenCalledWith(file);
         spy.mockRestore();
         dialogSpy.mockRestore();
+    });
+});
+
+describe("ChatView.sendMessage — memory_extracted", () => {
+    async function sendWith(events: SSEEvent[]): Promise<LilbeePlugin> {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream(events);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        container.find("lilbee-chat-textarea")!.value = "remember this";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+        return plugin;
+    }
+
+    it("notifies and refreshes memory views when a turn auto-saves memories", async () => {
+        const plugin = await sendWith([
+            { event: SSE_EVENT.DONE, data: {} },
+            { event: SSE_EVENT.MEMORY_EXTRACTED, data: { count: 2, items: [] } },
+        ]);
+        expect(Notice.instances.map((n) => n.message)).toContain("Noted 2 memories to review in Memories.");
+        expect(
+            (plugin as unknown as { refreshMemoryViews: ReturnType<typeof vi.fn> }).refreshMemoryViews,
+        ).toHaveBeenCalled();
+    });
+
+    it("uses the singular noun for a single extracted memory", async () => {
+        await sendWith([
+            { event: SSE_EVENT.DONE, data: {} },
+            { event: SSE_EVENT.MEMORY_EXTRACTED, data: { count: 1, items: [] } },
+        ]);
+        expect(Notice.instances.map((n) => n.message)).toContain("Noted 1 memory to review in Memories.");
+    });
+
+    it("does nothing when the extracted count is zero", async () => {
+        const plugin = await sendWith([
+            { event: SSE_EVENT.DONE, data: {} },
+            { event: SSE_EVENT.MEMORY_EXTRACTED, data: { count: 0, items: [] } },
+        ]);
+        expect(Notice.instances.map((n) => n.message)).not.toContain("Noted 0 memories to review in Memories.");
+        expect(
+            (plugin as unknown as { refreshMemoryViews: ReturnType<typeof vi.fn> }).refreshMemoryViews,
+        ).not.toHaveBeenCalled();
     });
 });
