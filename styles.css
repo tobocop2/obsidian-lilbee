@@ -180,16 +180,6 @@
     min-width: 0;
 }
 
-/* Native selects size to their widest option, which bloats the toolbar; cap
-   and shrink them so the row fits and the selected value truncates gracefully. */
-.lilbee-chat-model-select,
-.lilbee-embed-model-select {
-    min-width: 0;
-    max-width: 150px;
-    flex-shrink: 1;
-    text-overflow: ellipsis;
-}
-
 .lilbee-embed-browse {
     font-size: var(--font-smallest, 10px);
     padding: 2px 6px;
@@ -4026,17 +4016,53 @@
     color: var(--text-faint);
 }
 
-/* The select shows just the model name, borderless inside the chip, and
-   truncates — overriding the 150px cap the old horizontal toolbar used. */
-.lilbee-model-chip-select {
+/* Chip trigger: current model name + caret, borderless; opens an in-window menu.
+   button-prefixed to outrank Obsidian's button:not(.clickable-icon) defaults. */
+button.lilbee-model-chip-select {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     flex: 0 1 auto;
     min-width: 0;
     max-width: 130px;
+    height: auto;
     font-size: 11px;
-    background: transparent;
+    font-weight: 400;
+    background-color: transparent;
     border: none;
+    box-shadow: none;
     color: var(--text-muted);
     padding: 0;
+    cursor: pointer;
+}
+
+button.lilbee-model-chip-select:hover {
+    background-color: transparent;
+    box-shadow: none;
+    color: var(--text-normal);
+}
+
+/* Restore the focus ring the base rule's box-shadow reset would otherwise suppress. */
+button.lilbee-model-chip-select:focus-visible {
+    box-shadow: 0 0 0 3px var(--background-modifier-border-focus);
+}
+
+.lilbee-model-chip-select-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lilbee-model-chip-select-caret {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--text-faint);
+}
+
+.lilbee-model-chip-select-caret .svg-icon {
+    width: 10px;
+    height: 10px;
 }
 
 /* "Browse more" is pushed to the far right of the rail (margin-left:auto) so it

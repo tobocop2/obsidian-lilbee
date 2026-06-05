@@ -32,7 +32,6 @@ import type {
 import { RateLimitedError } from "../api";
 
 import { renderAggregatedSourceChips } from "./results";
-import { SEPARATOR_KEY, SEPARATOR_LABEL } from "../settings";
 import { displayLabelForRef, extractHfRepo } from "../utils/model-ref";
 import { ConfirmPullModal } from "./confirm-pull-modal";
 import { ConfirmModal } from "./confirm-modal";
@@ -77,13 +76,25 @@ const RAIL_BROWSE_KEY = "__lilbee_browse__";
 /** Option value that turns an optional role off (matches the server's empty model ref). */
 const RAIL_DISABLED_KEY = "";
 
+/** One pickable entry in a rail role's menu. */
+interface RailOption {
+    value: string;
+    label: string;
+    checked: boolean;
+}
+
+/** Label shown on a chip trigger: the checked option, else the first (matching a native select). */
+function railTriggerLabel(options: RailOption[]): string {
+    return (options.find((o) => o.checked) ?? options[0])?.label ?? "";
+}
+
 /** Static description of an optional rail role (Vision, Rerank). Dynamic state lives on the view. */
 interface OptionalRoleSpec {
     key: "vision" | "rerank";
     task: typeof MODEL_TASK.VISION | typeof MODEL_TASK.RERANK;
     label: string;
     dotClass: string;
-    selectClass: string;
+    triggerClass: string;
     disabledLabel: string;
     tooltip: string;
     configKey: string;
@@ -97,7 +108,7 @@ const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
         task: MODEL_TASK.VISION,
         label: MESSAGES.RAIL_LABEL_VISION,
         dotClass: "is-vision",
-        selectClass: "lilbee-vision-model-select",
+        triggerClass: "lilbee-vision-model-select",
         disabledLabel: MESSAGES.LABEL_VISION_DISABLED,
         tooltip: MESSAGES.TOOLTIP_ROLE_VISION,
         configKey: "vision_model",
@@ -109,7 +120,7 @@ const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
         task: MODEL_TASK.RERANK,
         label: MESSAGES.RAIL_LABEL_RERANK,
         dotClass: "is-rerank",
-        selectClass: "lilbee-rerank-model-select",
+        triggerClass: "lilbee-rerank-model-select",
         disabledLabel: MESSAGES.LABEL_RERANKER_DISABLED,
         tooltip: MESSAGES.TOOLTIP_ROLE_RERANK,
         configKey: "reranker_model",
@@ -143,8 +154,8 @@ export class ChatView extends ItemView {
     private chatCatalogEntries: CatalogEntry[] = [];
     private chatInstalled: InstalledModel[] = [];
     private chatActive = "";
-    private chatSelectEl: HTMLSelectElement | null = null;
-    private embeddingSelectEl: HTMLSelectElement | null = null;
+    private chatTriggerTextEl: HTMLElement | null = null;
+    private embeddingTriggerTextEl: HTMLElement | null = null;
     private embeddingModels: CatalogEntry[] = [];
     private activeEmbeddingModel = "";
     private chatModeContainer: HTMLElement | null = null;
@@ -212,20 +223,18 @@ export class ChatView extends ItemView {
         chatChip.setAttribute("aria-label-position", "top");
         chatChip.createSpan({ cls: "lilbee-model-chip-dot is-chat is-active" });
         chatChip.createSpan({ cls: "lilbee-model-chip-label", text: MESSAGES.RAIL_LABEL_CHAT });
-        this.chatSelectEl = chatChip.createEl("select", {
-            cls: "lilbee-chat-model-select lilbee-model-chip-select",
-        }) as HTMLSelectElement;
-        this.attachChatListener(this.chatSelectEl);
+        this.chatTriggerTextEl = this.createRailTrigger(chatChip, "lilbee-chat-model-select", (event) =>
+            this.openChatMenu(event),
+        );
 
         const embedChip = rail.createDiv({ cls: "lilbee-model-chip lilbee-toolbar-group lilbee-toolbar-group-embed" });
         embedChip.setAttribute("aria-label", MESSAGES.TOOLTIP_ROLE_EMBED);
         embedChip.setAttribute("aria-label-position", "top");
         embedChip.createSpan({ cls: "lilbee-model-chip-dot is-embed is-active" });
         embedChip.createSpan({ cls: "lilbee-model-chip-label", text: MESSAGES.RAIL_LABEL_EMBED });
-        this.embeddingSelectEl = embedChip.createEl("select", {
-            cls: "lilbee-embed-model-select lilbee-model-chip-select",
-        }) as HTMLSelectElement;
-        this.attachEmbeddingListener(this.embeddingSelectEl);
+        this.embeddingTriggerTextEl = this.createRailTrigger(embedChip, "lilbee-embed-model-select", (event) =>
+            this.openEmbeddingMenu(event),
+        );
 
         // Optional roles (Vision, Rerank) are chips in the same wrapping rail.
         this.optionalRailEl = rail.createDiv({ cls: "lilbee-model-rail-optional" });
@@ -353,11 +362,10 @@ export class ChatView extends ItemView {
                     this.retryTimer = null;
                 }
                 this.retryCount = 0;
-                if (this.chatSelectEl) this.chatSelectEl.empty();
                 this.chatCatalogEntries = chatCatalogResult.isOk() ? chatCatalogResult.value.models : [];
                 this.chatInstalled = chatInstalled.models;
                 this.chatActive = serverConfig ? String(serverConfig["chat_model"] ?? "") : "";
-                if (this.chatSelectEl) this.fillSelectOptions(this.chatSelectEl);
+                this.chatTriggerTextEl?.setText(railTriggerLabel(this.chatOptionGroups().flat()));
 
                 this.fillEmbeddingSelector(embeddingResult, serverConfig);
                 this.fillOptionalRoleData(
@@ -378,14 +386,13 @@ export class ChatView extends ItemView {
                 this.retryCount++;
                 const connecting = this.retryCount < ChatView.OFFLINE_THRESHOLD;
                 const label = connecting ? MESSAGES.LABEL_CONNECTING : MESSAGES.LABEL_OFFLINE;
-                if (this.chatSelectEl) {
-                    this.chatSelectEl.empty();
-                    this.chatSelectEl.createEl("option", { text: label });
-                }
-                if (this.embeddingSelectEl) {
-                    this.embeddingSelectEl.empty();
-                    this.embeddingSelectEl.createEl("option", { text: label });
-                }
+                // Clear option state so the menus offer nothing while unreachable.
+                this.chatCatalogEntries = [];
+                this.chatInstalled = [];
+                this.embeddingModels = [];
+                this.activeEmbeddingModel = "";
+                this.chatTriggerTextEl?.setText(label);
+                this.embeddingTriggerTextEl?.setText(label);
                 if (this.retryCount === ChatView.OFFLINE_THRESHOLD) {
                     new Notice(MESSAGES.ERROR_SERVER_UNREACHABLE);
                 }
@@ -452,141 +459,182 @@ export class ChatView extends ItemView {
         embeddingResult: import("neverthrow").Result<import("../types").CatalogResponse, Error> | null,
         serverConfig: Record<string, unknown> | null,
     ): void {
-        if (!this.embeddingSelectEl) return;
-        this.embeddingSelectEl.empty();
-
-        const activeModel = serverConfig ? String(serverConfig["embedding_model"] ?? "") : "";
-        this.activeEmbeddingModel = activeModel;
-
-        const models =
+        this.activeEmbeddingModel = serverConfig ? String(serverConfig["embedding_model"] ?? "") : "";
+        this.embeddingModels =
             embeddingResult && embeddingResult.isOk() ? embeddingResult.value.models.filter((m) => m.installed) : [];
-        this.embeddingModels = models;
-
-        for (const model of models) {
-            const option = this.embeddingSelectEl.createEl("option", { text: model.display_name });
-            (option as HTMLOptionElement).value = model.hf_repo;
-            if (model.hf_repo === extractHfRepo(activeModel)) {
-                (option as HTMLOptionElement).selected = true;
-            }
-        }
-
-        if (models.length === 0 && activeModel) {
-            const option = this.embeddingSelectEl.createEl("option", { text: displayLabelForRef(activeModel) });
-            (option as HTMLOptionElement).value = activeModel;
-            (option as HTMLOptionElement).selected = true;
-        }
+        this.embeddingTriggerTextEl?.setText(railTriggerLabel(this.embeddingOptions()));
     }
 
-    private fillSelectOptions(selectEl: HTMLSelectElement): void {
-        const sourceMap = new Map(this.chatInstalled.map((m) => [m.name, m.source]));
+    /** Embedding menu entries: installed builds, or the bare active ref when none are installed. */
+    private embeddingOptions(): RailOption[] {
+        const activeRepo = extractHfRepo(this.activeEmbeddingModel);
+        const options = this.embeddingModels.map((m) => ({
+            value: m.hf_repo,
+            label: m.display_name,
+            checked: m.hf_repo === activeRepo,
+        }));
+        if (options.length === 0 && this.activeEmbeddingModel) {
+            options.push({
+                value: this.activeEmbeddingModel,
+                label: displayLabelForRef(this.activeEmbeddingModel),
+                checked: true,
+            });
+        }
+        return options;
+    }
+
+    /** Chat menu entries: [featured installed + hosted rows, other installed builds]. */
+    private chatOptionGroups(): RailOption[][] {
+        return [this.chatPrimaryOptions(), this.chatOtherOptions()];
+    }
+
+    /** Featured rows that have an installed quant, then hosted rows not already listed. */
+    private chatPrimaryOptions(): RailOption[] {
         const installedRepos = new Set(this.chatInstalled.map((m) => extractHfRepo(m.name)));
         const activeRepo = extractHfRepo(this.chatActive);
-
-        // Featured rows that have an installed quant.
-        const featuredInstalled = this.chatCatalogEntries.filter((e) => installedRepos.has(e.hf_repo));
-        for (const entry of featuredInstalled) {
+        const primary: RailOption[] = [];
+        for (const entry of this.chatCatalogEntries.filter((e) => installedRepos.has(e.hf_repo))) {
             const sourceTag = HOSTED_SOURCES.has(entry.source) ? ` [${entry.provider ?? entry.source}]` : "";
-            const option = selectEl.createEl("option", { text: `${entry.display_name}${sourceTag}` });
-            (option as HTMLOptionElement).value = entry.hf_repo;
-            if (entry.hf_repo === activeRepo) {
-                (option as HTMLOptionElement).selected = true;
-            }
+            primary.push({
+                value: entry.hf_repo,
+                label: `${entry.display_name}${sourceTag}`,
+                checked: entry.hf_repo === activeRepo,
+            });
         }
-
         // Hosted rows (frontier/ollama) are selectable even when absent from the
         // installed registry — ollama always, frontier with a ready key. Skip any
         // already emitted above as an installed featured row (an ollama model can
         // be both hosted and registered as installed).
         for (const [ref, label] of hostedOptions(this.chatCatalogEntries)) {
             if (installedRepos.has(ref)) continue;
-            const option = selectEl.createEl("option", { text: label });
-            (option as HTMLOptionElement).value = ref;
-            if (ref === activeRepo) {
-                (option as HTMLOptionElement).selected = true;
-            }
+            primary.push({ value: ref, label, checked: ref === activeRepo });
         }
-
-        // Anything installed that isn't in the featured catalog (manually pulled, ollama/, openai/, …).
-        const featuredRepos = new Set(this.chatCatalogEntries.map((e) => e.hf_repo));
-        const otherInstalled = this.chatInstalled
-            .filter((m) => !featuredRepos.has(extractHfRepo(m.name)))
-            .sort((a, b) => a.name.localeCompare(b.name));
-        // Only emit the separator when it's actually dividing two
-        // sections. Without this guard, an empty featured catalog (e.g.
-        // server still warming up) lets the separator be the first
-        // option, which browsers render as the dropdown's displayed
-        // value — "—— Other... ——" instead of the real active model.
-        if (featuredInstalled.length > 0 && otherInstalled.length > 0) {
-            const sep = selectEl.createEl("option", { text: SEPARATOR_LABEL });
-            (sep as HTMLOptionElement).value = SEPARATOR_KEY;
-            (sep as HTMLOptionElement).disabled = true;
-        }
-        for (const m of otherInstalled) {
-            const source = sourceMap.get(m.name);
-            const suffix = source && source !== CATALOG_SOURCE.NATIVE ? ` [${source}]` : "";
-            const option = selectEl.createEl("option", { text: `${displayLabelForRef(m.name)}${suffix}` });
-            (option as HTMLOptionElement).value = m.name;
-            if (m.name === this.chatActive) {
-                (option as HTMLOptionElement).selected = true;
-            }
-        }
+        return primary;
     }
 
-    private attachChatListener(el: HTMLSelectElement): void {
-        el.addEventListener("change", () => {
-            if (!el.value || el.value === SEPARATOR_KEY) return;
-            const uninstalled = this.chatCatalogEntries.find((e) => e.hf_repo === el.value && !e.installed);
-            if (uninstalled) {
-                const modal = new ConfirmPullModal(this.plugin.app, {
-                    displayName: uninstalled.display_name,
-                    sizeGb: uninstalled.size_gb,
-                    minRamGb: uninstalled.min_ram_gb,
-                    systemMemGb: getRelevantSystemMemoryGB(this.plugin.settings.serverMode),
-                });
-                modal.open();
-                void modal.result.then((confirmed) => {
-                    if (confirmed) {
-                        void this.autoPullAndSet(uninstalled);
-                    }
-                });
+    /** Installed builds that aren't in the featured catalog (manually pulled, ollama/, openai/, …). */
+    private chatOtherOptions(): RailOption[] {
+        const sourceMap = new Map(this.chatInstalled.map((m) => [m.name, m.source]));
+        const featuredRepos = new Set(this.chatCatalogEntries.map((e) => e.hf_repo));
+        return this.chatInstalled
+            .filter((m) => !featuredRepos.has(extractHfRepo(m.name)))
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((m) => {
+                const source = sourceMap.get(m.name);
+                const suffix = source && source !== CATALOG_SOURCE.NATIVE ? ` [${source}]` : "";
+                return {
+                    value: m.name,
+                    label: `${displayLabelForRef(m.name)}${suffix}`,
+                    checked: m.name === this.chatActive,
+                };
+            });
+    }
+
+    private openChatMenu(event: MouseEvent): void {
+        this.openRailMenu(event, this.chatTriggerTextEl, this.chatOptionGroups(), (value) =>
+            this.handleChatSelection(value),
+        );
+    }
+
+    private handleChatSelection(value: string): void {
+        const uninstalled = this.chatCatalogEntries.find((e) => e.hf_repo === value && !e.installed);
+        if (uninstalled) {
+            const modal = new ConfirmPullModal(this.plugin.app, {
+                displayName: uninstalled.display_name,
+                sizeGb: uninstalled.size_gb,
+                minRamGb: uninstalled.min_ram_gb,
+                systemMemGb: getRelevantSystemMemoryGB(this.plugin.settings.serverMode),
+            });
+            modal.open();
+            void modal.result.then((confirmed) => {
+                if (confirmed) {
+                    void this.autoPullAndSet(uninstalled);
+                }
+            });
+            return;
+        }
+        void this.plugin.api.setChatModel(value).then((result) => {
+            if (result.isOk()) {
+                // Keep the menu's checkmark in sync without waiting for a refetch.
+                this.chatActive = value;
+                this.plugin.activeModel = value;
+                this.plugin.fetchActiveModel();
+                this.plugin.refreshSettingsTab();
+            } else {
+                new Notice(MESSAGES.ERROR_SWITCH_MODEL);
+            }
+        });
+    }
+
+    private openEmbeddingMenu(event: MouseEvent): void {
+        this.openRailMenu(event, this.embeddingTriggerTextEl, [this.embeddingOptions()], (value) =>
+            this.handleEmbeddingSelection(value),
+        );
+    }
+
+    private handleEmbeddingSelection(value: string): void {
+        const previous = this.activeEmbeddingModel;
+        const modal = new ConfirmModal(this.plugin.app, MESSAGES.DESC_EMBEDDING_REINDEX_WARNING);
+        modal.open();
+        void modal.result.then(async (confirmed) => {
+            if (!confirmed) {
+                this.revertEmbeddingTrigger(previous);
                 return;
             }
-            this.plugin.api.setChatModel(el.value).then((result) => {
-                if (result.isOk()) {
-                    this.plugin.activeModel = el.value;
-                    this.plugin.fetchActiveModel();
-                    this.plugin.refreshSettingsTab();
-                } else {
-                    new Notice(MESSAGES.ERROR_SWITCH_MODEL);
-                }
-            });
+            const result = await this.plugin.api.setEmbeddingModel(value);
+            if (result.isErr()) {
+                new Notice(noticeForResultError(result.error, MESSAGES.NOTICE_FAILED_EMBEDDING));
+                this.revertEmbeddingTrigger(previous);
+                return;
+            }
+            this.activeEmbeddingModel = value;
+            new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
+            new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
+            this.plugin.refreshSettingsTab();
+            void this.plugin.triggerSync();
         });
     }
 
-    private attachEmbeddingListener(el: HTMLSelectElement): void {
-        el.addEventListener("change", () => {
-            if (!el.value) return;
-            const previous = this.activeEmbeddingModel;
-            const modal = new ConfirmModal(this.plugin.app, MESSAGES.DESC_EMBEDDING_REINDEX_WARNING);
-            modal.open();
-            void modal.result.then(async (confirmed) => {
-                if (!confirmed) {
-                    this.revertEmbeddingSelect(previous);
-                    return;
-                }
-                const result = await this.plugin.api.setEmbeddingModel(el.value);
-                if (result.isErr()) {
-                    new Notice(noticeForResultError(result.error, MESSAGES.NOTICE_FAILED_EMBEDDING));
-                    this.revertEmbeddingSelect(previous);
-                    return;
-                }
-                this.activeEmbeddingModel = el.value;
-                new Notice(MESSAGES.NOTICE_EMBEDDING_UPDATED);
-                new Notice(MESSAGES.NOTICE_REINDEX_REQUIRED);
-                this.plugin.refreshSettingsTab();
-                void this.plugin.triggerSync();
-            });
+    /** Chip trigger button: current model text + caret; click opens the role's menu. */
+    private createRailTrigger(
+        chip: HTMLElement,
+        cls: string,
+        onOpen: (event: MouseEvent, textEl: HTMLElement) => void,
+    ): HTMLElement {
+        const trigger = chip.createEl("button", { cls: `lilbee-model-chip-select ${cls}` });
+        const text = trigger.createSpan({ cls: "lilbee-model-chip-select-text" });
+        setIcon(trigger.createSpan({ cls: "lilbee-model-chip-select-caret" }), "chevron-down");
+        trigger.addEventListener("click", (event) => onOpen(event, text));
+        return text;
+    }
+
+    /** In-window menu of rail options; the checked entry is the active one. */
+    private openRailMenu(
+        event: MouseEvent,
+        textEl: HTMLElement | null,
+        groups: RailOption[][],
+        onPick: (value: string) => void,
+    ): void {
+        const nonEmpty = groups.filter((group) => group.length > 0);
+        if (nonEmpty.length === 0) return;
+        const menu = new Menu();
+        nonEmpty.forEach((group, index) => {
+            if (index > 0) menu.addSeparator();
+            for (const opt of group) {
+                menu.addItem((item) => {
+                    item.setTitle(opt.label)
+                        .setChecked(opt.checked)
+                        .onClick(() => {
+                            // Re-picking the active item is a no-op (matches a native select's change event).
+                            if (opt.checked) return;
+                            // Browse opens the catalog; the chip keeps showing the current model.
+                            if (opt.value !== RAIL_BROWSE_KEY) textEl?.setText(opt.label);
+                            onPick(opt.value);
+                        });
+                });
+            }
         });
+        this.showMenu(menu, event);
     }
 
     /** Store the latest per-task catalog + active model for the optional roles, then re-render. */
@@ -628,9 +676,22 @@ export class ChatView extends ItemView {
         return options;
     }
 
+    /** Full menu entry list for an optional role: Disabled, role-capable models, Browse catalog. */
+    private optionalRoleMenuOptions(spec: OptionalRoleSpec): RailOption[] {
+        const active = this.optionalActive[spec.key];
+        const activeRepo = extractHfRepo(active);
+        // "Disabled" turns the role off (model ref ""); the role stays visible
+        // even with nothing installed, and "Browse catalog" downloads one.
+        const options: RailOption[] = [{ value: RAIL_DISABLED_KEY, label: spec.disabledLabel, checked: !active }];
+        for (const opt of this.optionalRoleOptions(spec)) {
+            options.push({ ...opt, checked: opt.value === active || opt.value === activeRepo });
+        }
+        options.push({ value: RAIL_BROWSE_KEY, label: MESSAGES.RAIL_BROWSE_CATALOG, checked: false });
+        return options;
+    }
+
     private renderOptionalRoleRow(rail: HTMLElement, spec: OptionalRoleSpec): void {
         const active = this.optionalActive[spec.key];
-        const options = this.optionalRoleOptions(spec);
         const chip = rail.createDiv({ cls: "lilbee-model-chip lilbee-model-chip-optional" });
         chip.setAttribute("aria-label", spec.tooltip);
         chip.setAttribute("aria-label-position", "top");
@@ -639,59 +700,39 @@ export class ChatView extends ItemView {
         if (active) dot.addClass("is-active");
         chip.createSpan({ cls: "lilbee-model-chip-label", text: spec.label });
 
-        const select = chip.createEl("select", {
-            cls: `lilbee-model-chip-select ${spec.selectClass}`,
-        }) as HTMLSelectElement;
-        // "Disabled" turns the role off (model ref ""); the role stays visible
-        // even with nothing installed, and "Browse catalog" downloads one.
-        const disabled = select.createEl("option", { text: spec.disabledLabel });
-        (disabled as HTMLOptionElement).value = RAIL_DISABLED_KEY;
-        if (!active) (disabled as HTMLOptionElement).selected = true;
-
-        const activeRepo = extractHfRepo(active);
-        for (const opt of options) {
-            const option = select.createEl("option", { text: opt.label });
-            (option as HTMLOptionElement).value = opt.value;
-            if (opt.value === active || opt.value === activeRepo) {
-                (option as HTMLOptionElement).selected = true;
-            }
-        }
-        const browse = select.createEl("option", { text: MESSAGES.RAIL_BROWSE_CATALOG });
-        (browse as HTMLOptionElement).value = RAIL_BROWSE_KEY;
-        this.attachOptionalRoleListener(select, spec);
+        const textEl = this.createRailTrigger(chip, spec.triggerClass, (event, text) =>
+            this.openRailMenu(event, text, [this.optionalRoleMenuOptions(spec)], (value) =>
+                this.handleOptionalRoleSelection(spec, value),
+            ),
+        );
+        textEl.setText(railTriggerLabel(this.optionalRoleMenuOptions(spec)));
     }
 
-    private attachOptionalRoleListener(el: HTMLSelectElement, spec: OptionalRoleSpec): void {
-        el.addEventListener("change", () => {
-            if (el.value === RAIL_BROWSE_KEY) {
-                new CatalogModal(this.app, this.plugin, spec.task).open();
-                // Reset selection so reopening the catalog stays possible.
-                el.value = this.optionalActive[spec.key];
+    private handleOptionalRoleSelection(spec: OptionalRoleSpec, value: string): void {
+        if (value === RAIL_BROWSE_KEY) {
+            new CatalogModal(this.app, this.plugin, spec.task).open();
+            return;
+        }
+        // RAIL_DISABLED_KEY disables the role; any other value activates it.
+        void spec.setActive(this.plugin.api, value).then((result) => {
+            if (result.isErr()) {
+                new Notice(MESSAGES.NOTICE_FAILED_UPDATE(spec.failNotice));
                 return;
             }
-            // el.value === "" disables the role; any other value activates it.
-            void spec.setActive(this.plugin.api, el.value).then((result) => {
-                if (result.isErr()) {
-                    new Notice(MESSAGES.NOTICE_FAILED_UPDATE(spec.failNotice));
-                    return;
-                }
-                this.optionalActive[spec.key] = el.value;
-                this.fillOptionalRoles();
-                this.plugin.fetchActiveModel();
-                this.plugin.refreshSettingsTab();
-            });
+            this.optionalActive[spec.key] = value;
+            this.fillOptionalRoles();
+            this.plugin.fetchActiveModel();
+            this.plugin.refreshSettingsTab();
         });
     }
 
-    private revertEmbeddingSelect(previousValue: string): void {
-        if (!this.embeddingSelectEl) return;
-        // HTMLSelectElement.value is a no-op if no option matches — which
-        // silently blanks the picker. Guard so the previous value only wins
-        // when it actually exists in the current option set; otherwise fall
-        // back to a server refresh so the picker can't get stuck empty.
-        const hasOption = Array.from(this.embeddingSelectEl.options).some((opt) => opt.value === previousValue);
-        if (hasOption) {
-            this.embeddingSelectEl.value = previousValue;
+    private revertEmbeddingTrigger(previousValue: string): void {
+        if (!this.embeddingTriggerTextEl) return;
+        // Restore the previous label only when that value still exists in the
+        // option set; otherwise fall back to a server refresh.
+        const option = this.embeddingOptions().find((opt) => opt.value === previousValue);
+        if (option) {
+            this.embeddingTriggerTextEl.setText(option.label);
             return;
         }
         void this.fetchAndFillSelectors();
@@ -755,19 +796,13 @@ export class ChatView extends ItemView {
             this.plugin.refreshSettingsTab();
         }
         this.plugin.fetchActiveModel();
-        this.refreshModelSelector();
-    }
-
-    private refreshModelSelector(): void {
-        if (this.chatSelectEl) this.chatSelectEl.empty();
-        if (this.embeddingSelectEl) this.embeddingSelectEl.empty();
         this.fetchAndFillSelectors();
     }
 
     // Re-sync the rail pills with the server's active models, for callers
     // outside this view (e.g. the catalog) that switch a model.
     refreshRail(): void {
-        this.refreshModelSelector();
+        this.fetchAndFillSelectors();
     }
 
     private clearChat(): void {
@@ -973,11 +1008,11 @@ export class ChatView extends ItemView {
                     new CrawlModal(this.app, this.plugin).open();
                 });
         });
-        // Belt-and-braces ESC dismissal. Obsidian's Menu is supposed to close
-        // on ESC, but in QA the popover stayed open — the textarea kept
-        // focus, so the keypress never reached the menu. Routing the ESC
-        // listener through the document with capture=true catches it before
-        // any input handler can swallow it.
+        this.showMenu(menu, event);
+    }
+
+    /** Show a menu with capture-phase ESC dismissal (a focused input can otherwise swallow the keypress). */
+    private showMenu(menu: Menu, event: MouseEvent): void {
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") {
                 e.preventDefault();
@@ -986,6 +1021,13 @@ export class ChatView extends ItemView {
         };
         document.addEventListener("keydown", onKey, true);
         menu.onHide(() => document.removeEventListener("keydown", onKey, true));
+        // Keyboard-synthesized clicks (detail 0) carry no coordinates; anchor to the trigger instead.
+        const trigger = event.detail === 0 ? (event.currentTarget as HTMLElement | null) : null;
+        if (trigger) {
+            const rect = trigger.getBoundingClientRect();
+            menu.showAtPosition({ x: rect.left, y: rect.bottom });
+            return;
+        }
         menu.showAtMouseEvent(event);
     }
 

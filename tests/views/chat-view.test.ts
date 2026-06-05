@@ -17,7 +17,7 @@ if (typeof globalThis.document === "undefined") {
     };
 }
 
-import { Notice, WorkspaceLeaf } from "../__mocks__/obsidian";
+import { Menu, MockMenuItem, MockMenuSeparator, Notice, WorkspaceLeaf } from "../__mocks__/obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal, electronDialog } from "../../src/views/chat-view";
 import { ok, err } from "neverthrow";
@@ -76,6 +76,7 @@ vi.mock("../../src/views/setup-wizard", () => ({
 }));
 import type { SSEEvent, Source } from "../../src/types";
 import { TaskQueue } from "../../src/task-queue";
+import { displayLabelForRef } from "../../src/utils/model-ref";
 
 function makeLeaf(): WorkspaceLeaf {
     return new WorkspaceLeaf();
@@ -105,6 +106,32 @@ function makeStream(events: SSEEvent[]): {
 /** Flush one macrotask tick so async chains settle. */
 function tick(): Promise<void> {
     return new Promise((r) => setTimeout(r, 0));
+}
+
+beforeEach(() => {
+    Menu.clear();
+});
+
+/** Click a rail chip trigger and return the Menu it opened (null when no menu was shown). */
+function openRailMenu(container: MockElement, triggerCls: string): Menu | null {
+    const before = Menu.instances.length;
+    container.find(triggerCls)!.trigger("click", { clientX: 0, clientY: 0 } as MouseEvent);
+    return Menu.instances.length > before ? Menu.instances[Menu.instances.length - 1] : null;
+}
+
+/** Titles of a menu's clickable items, separators excluded. */
+function menuTitles(menu: Menu | null): string[] {
+    return menu?.menuItems.map((i) => i.title) ?? [];
+}
+
+/** Open a chip's menu and click the item with the given title. */
+function pickRailItem(container: MockElement, triggerCls: string, title: string): void {
+    openRailMenu(container, triggerCls)!.itemTitled(title)!.click();
+}
+
+/** Text shown on a chip trigger. */
+function triggerText(container: MockElement, triggerCls: string): string {
+    return container.find(triggerCls)!.find("lilbee-model-chip-select-text")!.textContent;
 }
 
 function makePlugin(): LilbeePlugin {
@@ -321,7 +348,7 @@ describe("ChatView.onOpen — DOM structure", () => {
         expect(addBtn!.attributes["data-icon"]).toBe("paperclip");
     });
 
-    it("creates toolbar groups for icon+select pairs", () => {
+    it("creates toolbar groups for the chat and embed chips", () => {
         const groups = container.findAll("lilbee-toolbar-group");
         expect(groups.length).toBe(2);
     });
@@ -1239,18 +1266,18 @@ describe("ChatView.clearChat — via toolbar button", () => {
 });
 
 describe("ChatView.onOpen — model selector", () => {
-    it("creates a select element with class lilbee-chat-model-select", async () => {
+    it("creates a trigger button with class lilbee-chat-model-select", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select");
-        expect(select).not.toBeNull();
-        expect(select!.tagName).toBe("SELECT");
+        const trigger = container.find("lilbee-chat-model-select");
+        expect(trigger).not.toBeNull();
+        expect(trigger!.tagName).toBe("BUTTON");
     });
 
-    it("populates options from listModels API with catalog+Other pattern", async () => {
+    it("populates menu items from listModels API with catalog+Other pattern", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
@@ -1258,14 +1285,11 @@ describe("ChatView.onOpen — model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION");
-        // With empty featured catalog, the separator is suppressed
-        // (would otherwise become the dropdown's displayed value);
-        // only the Other-section options remain.
-        expect(options.length).toBe(2);
-        expect(options[0].textContent).toBe("llama3");
-        expect(options[1].textContent).toBe("phi3");
+        const menu = openRailMenu(container, "lilbee-chat-model-select")!;
+        // With an empty featured catalog only the Other-section items remain,
+        // and no separator is emitted.
+        expect(menuTitles(menu)).toEqual(["llama3", "phi3"]);
+        expect(menu.items.some((i) => i instanceof MockMenuSeparator)).toBe(false);
     });
 
     it("emits a separator between featured-installed and other-installed sections", async () => {
@@ -1307,12 +1331,11 @@ describe("ChatView.onOpen — model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION");
-        expect(options.length).toBe(3);
-        expect(options[0].textContent).toContain("Llama 3");
-        expect(options[1].disabled).toBe(true);
-        expect(options[2].textContent).toBe("phi3");
+        const menu = openRailMenu(container, "lilbee-chat-model-select")!;
+        expect(menu.items.length).toBe(3);
+        expect((menu.items[0] as MockMenuItem).title).toContain("Llama 3");
+        expect(menu.items[1]).toBeInstanceOf(MockMenuSeparator);
+        expect((menu.items[2] as MockMenuItem).title).toBe("phi3");
     });
 
     it("appends provider suffix for non-native installed models", async () => {
@@ -1329,9 +1352,7 @@ describe("ChatView.onOpen — model selector", () => {
         await tick();
 
         const c = view.containerEl.children[1] as unknown as MockElement;
-        const select = c.find("lilbee-chat-model-select")!;
-        const options = select.children.filter((ch) => ch.tagName === "OPTION");
-        const labels = options.map((o) => o.textContent);
+        const labels = menuTitles(openRailMenu(c, "lilbee-chat-model-select"));
         expect(labels).toContain("llama3");
         expect(labels).toContain("phi3 [ollama]");
         await view.onClose();
@@ -1378,9 +1399,7 @@ describe("ChatView.onOpen — model selector", () => {
         await tick();
 
         const c = view.containerEl.children[1] as unknown as MockElement;
-        const select = c.find("lilbee-chat-model-select")!;
-        const options = select.children.filter((ch) => ch.tagName === "OPTION");
-        const labels = options.map((o) => o.textContent);
+        const labels = menuTitles(openRailMenu(c, "lilbee-chat-model-select"));
         expect(labels).toContain("qwen3:8b [ollama]");
         await view.onClose();
     });
@@ -1442,8 +1461,7 @@ describe("ChatView.onOpen — model selector", () => {
         await tick();
 
         const c = view.containerEl.children[1] as unknown as MockElement;
-        const select = c.find("lilbee-chat-model-select")!;
-        const labels = select.children.filter((ch) => ch.tagName === "OPTION").map((o) => o.textContent);
+        const labels = menuTitles(openRailMenu(c, "lilbee-chat-model-select"));
         const idxOllama = labels.indexOf("Llama 3 [Ollama]");
         const idxFrontier = labels.indexOf("Gemini Flash [Gemini]");
         expect(idxOllama).toBeGreaterThanOrEqual(0);
@@ -1451,7 +1469,7 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onClose();
     });
 
-    it("lists a ready hosted (frontier) model and marks it selected when active", async () => {
+    it("lists a ready hosted (frontier) model and marks it checked when active", async () => {
         Notice.clear();
         const plugin = makePlugin();
         // Active chat model is the hosted ref; it is NOT in the installed registry.
@@ -1495,15 +1513,15 @@ describe("ChatView.onOpen — model selector", () => {
         await tick();
 
         const c = view.containerEl.children[1] as unknown as MockElement;
-        const select = c.find("lilbee-chat-model-select")!;
-        const options = select.children.filter((ch) => ch.tagName === "OPTION");
-        const hosted = options.find((o) => o.textContent === "gemini-2.0-flash [Gemini]")!;
-        expect(hosted).toBeDefined();
-        expect((hosted as any).selected).toBe(true);
+        const hosted = openRailMenu(c, "lilbee-chat-model-select")!.itemTitled("gemini-2.0-flash [Gemini]");
+        expect(hosted).not.toBeNull();
+        expect(hosted!.checked).toBe(true);
+        // The chip shows the active hosted model.
+        expect(triggerText(c, "lilbee-chat-model-select")).toBe("gemini-2.0-flash [Gemini]");
         await view.onClose();
     });
 
-    it("shows (connecting...) option on both selects when listModels fails", async () => {
+    it("shows (connecting...) on both triggers when listModels fails", async () => {
         vi.useFakeTimers();
         Notice.clear();
         const plugin = makePlugin();
@@ -1515,15 +1533,16 @@ describe("ChatView.onOpen — model selector", () => {
         await vi.advanceTimersByTimeAsync(0);
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const chatSelect = container.find("lilbee-chat-model-select")!;
-        const chatOptions = chatSelect.children.filter((c) => c.tagName === "OPTION");
-        expect(chatOptions.some((o) => o.textContent === "(connecting...)")).toBe(true);
+        expect(triggerText(container, "lilbee-chat-model-select")).toBe("(connecting...)");
+        expect(triggerText(container, "lilbee-embed-model-select")).toBe("(connecting...)");
+        // No options while unreachable — clicking the chip opens nothing.
+        expect(openRailMenu(container, "lilbee-chat-model-select")).toBeNull();
 
         await view.onClose();
         vi.useRealTimers();
     });
 
-    it("change event calls setChatModel and updates activeModel", async () => {
+    it("picking a menu item calls setChatModel and updates activeModel", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
@@ -1531,15 +1550,16 @@ describe("ChatView.onOpen — model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
+        pickRailItem(container, "lilbee-chat-model-select", "phi3");
         await tick();
 
         expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
+        expect(plugin.activeModel).toBe("phi3");
+        // The chip label updates to the picked model.
+        expect(triggerText(container, "lilbee-chat-model-select")).toBe("phi3");
     });
 
-    it("change event shows Notice on setChatModel failure", async () => {
+    it("handleChatSelection shows Notice on setChatModel failure", async () => {
         Notice.clear();
         const plugin = makePlugin();
         plugin.api.setChatModel = vi.fn().mockResolvedValue(err(new Error("fail")));
@@ -1547,10 +1567,7 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onOpen();
         await tick();
 
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "bad-model";
-        select.trigger("change");
+        (view as any).handleChatSelection("bad-model");
         await tick();
 
         expect(Notice.instances.some((n) => n.message.includes("failed to switch"))).toBe(true);
@@ -1563,10 +1580,7 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onOpen();
         await tick();
 
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
+        (view as any).handleChatSelection("phi3");
         await tick();
 
         expect(plugin.refreshSettingsTab).toHaveBeenCalled();
@@ -1580,16 +1594,13 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onOpen();
         await tick();
 
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "bad-model";
-        select.trigger("change");
+        (view as any).handleChatSelection("bad-model");
         await tick();
 
         expect(plugin.refreshSettingsTab).not.toHaveBeenCalled();
     });
 
-    it("change event does nothing when value is empty", async () => {
+    it("keyboard activation (detail 0) anchors the menu to the chip instead of the mouse", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
@@ -1597,31 +1608,18 @@ describe("ChatView.onOpen — model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "";
-        select.trigger("change");
-        await tick();
+        const keyboardClick = {
+            detail: 0,
+            currentTarget: { getBoundingClientRect: () => ({ left: 12, bottom: 34 }) },
+        } as unknown as MouseEvent;
+        container.find("lilbee-chat-model-select")!.trigger("click", keyboardClick);
 
-        expect(plugin.api.setChatModel).not.toHaveBeenCalled();
+        const menu = Menu.instances[Menu.instances.length - 1];
+        expect(menu.visible).toBe(true);
+        expect(menu.position).toEqual({ x: 12, y: 34 });
     });
 
-    it("change event does nothing when value is separator key", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        await tick();
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "__separator__";
-        select.trigger("change");
-        await tick();
-
-        expect(plugin.api.setChatModel).not.toHaveBeenCalled();
-    });
-
-    it("excludes uninstalled catalog models from dropdown options", async () => {
+    it("excludes uninstalled catalog models from menu items", async () => {
         Notice.clear();
         const plugin = makePlugin();
         mockChatPicker(plugin, {
@@ -1638,9 +1636,7 @@ describe("ChatView.onOpen — model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        const options = select.children.filter((c: MockElement) => c.tagName === "OPTION");
-        const labels = options.map((o: MockElement) => o.textContent);
+        const labels = menuTitles(openRailMenu(container, "lilbee-chat-model-select"));
         expect(labels).toContain("llama3");
         expect(labels).not.toContain("phi3 (not installed)");
         expect(labels).not.toContain("phi3");
@@ -1668,10 +1664,7 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onOpen();
         await tick();
 
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
+        (view as any).handleChatSelection("phi3");
         await tick();
         // Allow async IIFE to complete
         await new Promise((r) => setTimeout(r, 50));
@@ -1703,10 +1696,7 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onOpen();
         await tick();
 
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
+        (view as any).handleChatSelection("phi3");
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
@@ -1735,10 +1725,7 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onOpen();
         await tick();
 
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
+        (view as any).handleChatSelection("phi3");
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
@@ -1766,10 +1753,7 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onOpen();
         await tick();
 
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
+        (view as any).handleChatSelection("phi3");
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
@@ -1797,10 +1781,7 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onOpen();
         await tick();
 
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
+        (view as any).handleChatSelection("phi3");
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
@@ -1829,10 +1810,7 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onOpen();
         await tick();
 
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
+        (view as any).handleChatSelection("phi3");
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
@@ -1861,10 +1839,7 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onOpen();
         await tick();
 
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
+        (view as any).handleChatSelection("phi3");
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
@@ -1895,10 +1870,7 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onOpen();
         await tick();
 
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
+        (view as any).handleChatSelection("phi3");
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
@@ -1926,10 +1898,7 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onOpen();
         await tick();
 
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
+        (view as any).handleChatSelection("phi3");
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
@@ -1960,10 +1929,7 @@ describe("ChatView.onOpen — model selector", () => {
         await view.onOpen();
         await tick();
 
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
+        (view as any).handleChatSelection("phi3");
         await tick();
         await new Promise((r) => setTimeout(r, 50));
 
@@ -2107,7 +2073,7 @@ describe("VaultFilePickerModal", () => {
 });
 
 describe("ChatView — toolbar groups and tooltips", () => {
-    it("groups chat dot+label+select in the first model chip", async () => {
+    it("groups chat dot+label+trigger in the first model chip", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
@@ -2178,6 +2144,9 @@ describe("ChatView.onOpen — add file button opens menu", () => {
         const container = view.containerEl.children[1] as unknown as MockElement;
         const addBtn = container.find("lilbee-chat-add-file")!;
         addBtn.trigger("click", { clientX: 0, clientY: 0 } as MouseEvent);
+        const menu = Menu.instances[Menu.instances.length - 1];
+        menu.itemTitled(MESSAGES.WIZARD_FILE_PICKER_DISK)!.click();
+        menu.itemTitled(MESSAGES.WIZARD_FOLDER_PICKER_DISK)!.click();
         await tick();
         await tick();
 
@@ -2195,6 +2164,7 @@ describe("ChatView.onOpen — add file button opens menu", () => {
         const container = view.containerEl.children[1] as unknown as MockElement;
         const addBtn = container.find("lilbee-chat-add-file")!;
         addBtn.trigger("click", { clientX: 0, clientY: 0 } as MouseEvent);
+        Menu.instances[Menu.instances.length - 1].itemTitled(MESSAGES.WIZARD_FILE_PICKER_DISK)!.click();
         await tick();
 
         expect((plugin as any).addExternalFiles).not.toHaveBeenCalled();
@@ -2211,9 +2181,27 @@ describe("ChatView.onOpen — add file button opens menu", () => {
         const container = view.containerEl.children[1] as unknown as MockElement;
         const addBtn = container.find("lilbee-chat-add-file")!;
         addBtn.trigger("click", { clientX: 0, clientY: 0 } as MouseEvent);
+        Menu.instances[Menu.instances.length - 1].itemTitled(MESSAGES.WIZARD_FILE_PICKER_DISK)!.click();
         await tick();
 
         expect(Notice.instances.some((n) => n.message.includes("could not open file picker"))).toBe(true);
+    });
+
+    it("crawl web menu item opens the CrawlModal", async () => {
+        Notice.clear();
+        const { CrawlModal } = await import("../../src/views/crawl-modal");
+        (CrawlModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        container.find("lilbee-chat-add-file")!.trigger("click", { clientX: 0, clientY: 0 } as MouseEvent);
+        const crawlItem = Menu.instances[Menu.instances.length - 1].itemTitled(MESSAGES.WIZARD_CRAWL_WEB)!;
+        expect(crawlItem.icon).toBe("globe");
+        crawlItem.click();
+
+        expect(CrawlModal).toHaveBeenCalled();
     });
 
     it("uog: ESC keydown dismisses the paperclip menu", async () => {
@@ -2253,6 +2241,7 @@ describe("ChatView.onOpen — add file button opens menu", () => {
 
             const escRemoval = removeEvents.find(([type]) => type === "keydown");
             expect(escRemoval).toBeDefined();
+            expect(Menu.instances[Menu.instances.length - 1].visible).toBe(false);
         } finally {
             document.addEventListener = origAdd as typeof document.addEventListener;
             document.removeEventListener = origRemove as typeof document.removeEventListener;
@@ -2670,10 +2659,7 @@ describe("ChatView.onClose — aborts both controllers", () => {
         await view.onOpen();
         await tick();
 
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        (select as any).value = "phi3";
-        select.trigger("change");
+        (view as any).handleChatSelection("phi3");
         await tick();
 
         // pullController should be set
@@ -2900,17 +2886,13 @@ describe("ChatView — offline retry", () => {
         await vi.advanceTimersByTimeAsync(0);
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const chatSelect = container.find("lilbee-chat-model-select")!;
-        const chatOptions = chatSelect.children.filter((c) => c.tagName === "OPTION");
-        expect(chatOptions.some((o) => o.textContent === "(connecting...)")).toBe(true);
+        expect(triggerText(container, "lilbee-chat-model-select")).toBe("(connecting...)");
 
         // Server comes back online; the 5s retry hits the new mocks.
         online = true;
         await vi.advanceTimersByTimeAsync(5000);
 
-        const updatedOptions = chatSelect.children.filter((c) => c.tagName === "OPTION");
-        expect(updatedOptions.some((o) => o.textContent === "llama3")).toBe(true);
-        expect(updatedOptions.some((o) => o.textContent === "(connecting...)")).toBe(false);
+        expect(triggerText(container, "lilbee-chat-model-select")).toBe("llama3");
 
         await view.onClose();
     });
@@ -3000,7 +2982,7 @@ describe("ChatView — offline retry", () => {
         expect((view as any).retryCount).toBe(0);
     });
 
-    it("clears existing options before retry", async () => {
+    it("keeps a single connecting label across retries", async () => {
         const plugin = makePlugin();
         plugin.api.catalog = vi.fn().mockRejectedValue(new Error("offline"));
         plugin.api.installedModels = vi.fn().mockRejectedValue(new Error("offline"));
@@ -3011,22 +2993,11 @@ describe("ChatView — offline retry", () => {
         await vi.advanceTimersByTimeAsync(0);
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const chatSelect = container.find("lilbee-chat-model-select")!;
+        expect(triggerText(container, "lilbee-chat-model-select")).toBe("(connecting...)");
 
-        // After first failure: exactly one (connecting...) option
-        let connectingOptions = chatSelect.children.filter(
-            (c) => c.tagName === "OPTION" && c.textContent === "(connecting...)",
-        );
-        expect(connectingOptions.length).toBe(1);
-
-        // Advance past retry — second failure
+        // Advance past retry — second failure; label unchanged, not duplicated.
         await vi.advanceTimersByTimeAsync(5000);
-
-        // Still exactly one (connecting...) option (not duplicated)
-        connectingOptions = chatSelect.children.filter(
-            (c) => c.tagName === "OPTION" && c.textContent === "(connecting...)",
-        );
-        expect(connectingOptions.length).toBe(1);
+        expect(triggerText(container, "lilbee-chat-model-select")).toBe("(connecting...)");
 
         await view.onClose();
     });
@@ -3041,20 +3012,18 @@ describe("ChatView — offline retry", () => {
         await view.onOpen();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const chatSelect = container.find("lilbee-chat-model-select")!;
 
         // Failure 1 — connecting
         await vi.advanceTimersByTimeAsync(0);
-        expect(chatSelect.children.some((c) => c.textContent === "(connecting...)")).toBe(true);
+        expect(triggerText(container, "lilbee-chat-model-select")).toBe("(connecting...)");
 
         // Failure 2 — still connecting
         await vi.advanceTimersByTimeAsync(5000);
-        expect(chatSelect.children.some((c) => c.textContent === "(connecting...)")).toBe(true);
+        expect(triggerText(container, "lilbee-chat-model-select")).toBe("(connecting...)");
 
         // Failure 3 — switches to offline
         await vi.advanceTimersByTimeAsync(5000);
-        expect(chatSelect.children.some((c) => c.textContent === "(offline)")).toBe(true);
-        expect(chatSelect.children.some((c) => c.textContent === "(connecting...)")).toBe(false);
+        expect(triggerText(container, "lilbee-chat-model-select")).toBe("(offline)");
 
         await view.onClose();
     });
@@ -3096,9 +3065,7 @@ describe("ChatView — offline retry", () => {
         expect((view as any).retryTimer).toBeNull();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const chatSelect = container.find("lilbee-chat-model-select")!;
-        const options = chatSelect.children.filter((c) => c.tagName === "OPTION");
-        expect(options.some((o) => o.textContent === "llama3")).toBe(true);
+        expect(menuTitles(openRailMenu(container, "lilbee-chat-model-select"))).toContain("llama3");
 
         await view.onClose();
     });
@@ -3194,40 +3161,36 @@ describe("ChatView — embedding model selector", () => {
         confirmModalResult = true;
     });
 
-    it("creates an embedding select element with class lilbee-embed-model-select", async () => {
+    it("creates an embedding trigger button with class lilbee-embed-model-select", async () => {
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select");
-        expect(select).not.toBeNull();
-        expect(select!.tagName).toBe("SELECT");
+        const trigger = container.find("lilbee-embed-model-select");
+        expect(trigger).not.toBeNull();
+        expect(trigger!.tagName).toBe("BUTTON");
     });
 
-    it("populates embedding options from catalog API", async () => {
+    it("populates embedding menu items from catalog API", async () => {
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION");
-        expect(options.length).toBe(1);
-        expect(options[0].textContent).toBe("nomic-embed-text");
-        expect(options[0].value).toBe("nomic-embed-text");
+        expect(menuTitles(openRailMenu(container, "lilbee-embed-model-select"))).toEqual(["nomic-embed-text"]);
     });
 
-    it("marks the active embedding model as selected", async () => {
+    it("marks the active embedding model as checked and shows it on the chip", async () => {
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION");
-        expect(options[0].selected).toBe(true);
+        const menu = openRailMenu(container, "lilbee-embed-model-select")!;
+        expect(menu.itemTitled("nomic-embed-text")!.checked).toBe(true);
+        expect(triggerText(container, "lilbee-embed-model-select")).toBe("nomic-embed-text");
     });
 
     it("shows fallback option from config when catalog is empty", async () => {
@@ -3241,11 +3204,10 @@ describe("ChatView — embedding model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION");
-        expect(options.length).toBe(1);
-        expect(options[0].textContent).toBe("custom-embed");
-        expect(options[0].selected).toBe(true);
+        const menu = openRailMenu(container, "lilbee-embed-model-select")!;
+        expect(menuTitles(menu)).toEqual(["custom-embed"]);
+        expect(menu.itemTitled("custom-embed")!.checked).toBe(true);
+        expect(triggerText(container, "lilbee-embed-model-select")).toBe("custom-embed");
     });
 
     it("shows fallback option when catalog returns error", async () => {
@@ -3257,13 +3219,10 @@ describe("ChatView — embedding model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION");
-        expect(options.length).toBe(1);
-        expect(options[0].textContent).toBe("fallback-embed");
+        expect(menuTitles(openRailMenu(container, "lilbee-embed-model-select"))).toEqual(["fallback-embed"]);
     });
 
-    it("shows no options when catalog is empty and config has no embedding_model", async () => {
+    it("shows no menu when catalog is empty and config has no embedding_model", async () => {
         const plugin = makePlugin();
         plugin.api.catalog = vi
             .fn()
@@ -3274,22 +3233,21 @@ describe("ChatView — embedding model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION");
-        expect(options.length).toBe(0);
+        expect(openRailMenu(container, "lilbee-embed-model-select")).toBeNull();
+        expect(triggerText(container, "lilbee-embed-model-select")).toBe("");
     });
 
     it("shows confirmation modal when embedding model is changed", async () => {
         const { ConfirmModal } = await import("../../src/views/confirm-modal");
         const plugin = makePlugin();
+        // Active embedding differs from the picked item so the pick is a real change.
+        plugin.api.config = vi.fn().mockResolvedValue({ chat_model: "llama3", embedding_model: "previous-embed" });
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select")!;
-        (select as any).value = "nomic-embed-text";
-        select.trigger("change");
+        pickRailItem(container, "lilbee-embed-model-select", "nomic-embed-text");
         await tick();
 
         expect(ConfirmModal).toHaveBeenCalled();
@@ -3297,14 +3255,13 @@ describe("ChatView — embedding model selector", () => {
 
     it("calls setEmbeddingModel and shows notices on confirm", async () => {
         const plugin = makePlugin();
+        plugin.api.config = vi.fn().mockResolvedValue({ chat_model: "llama3", embedding_model: "previous-embed" });
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select")!;
-        (select as any).value = "nomic-embed-text";
-        select.trigger("change");
+        pickRailItem(container, "lilbee-embed-model-select", "nomic-embed-text");
         await tick();
 
         expect(plugin.api.setEmbeddingModel).toHaveBeenCalledWith("nomic-embed-text");
@@ -3319,21 +3276,43 @@ describe("ChatView — embedding model selector", () => {
     it("4u1: embedding setEmbeddingModel failure does NOT refresh the Settings tab", async () => {
         Notice.clear();
         const plugin = makePlugin();
+        plugin.api.config = vi.fn().mockResolvedValue({ chat_model: "llama3", embedding_model: "previous-embed" });
         plugin.api.setEmbeddingModel = vi.fn().mockResolvedValue(err(new Error("nope")));
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select")!;
-        (select as any).value = "nomic-embed-text";
-        select.trigger("change");
+        pickRailItem(container, "lilbee-embed-model-select", "nomic-embed-text");
         await tick();
 
         expect(plugin.refreshSettingsTab).not.toHaveBeenCalled();
     });
 
-    it("reverts dropdown on cancel", async () => {
+    /** Simulate picking a value absent from the menu: optimistic label, then the handler. */
+    function pickEmbeddingValue(view: ChatView, value: string): void {
+        (view as any).embeddingTriggerTextEl.setText(value);
+        (view as any).handleEmbeddingSelection(value);
+    }
+
+    it("re-picking the active embedding model is a no-op (no confirm, no API call)", async () => {
+        const { ConfirmModal } = await import("../../src/views/confirm-modal");
+        (ConfirmModal as unknown as ReturnType<typeof vi.fn>).mockClear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        // "nomic-embed-text" is the active (checked) item.
+        pickRailItem(container, "lilbee-embed-model-select", "nomic-embed-text");
+        await tick();
+
+        expect(ConfirmModal).not.toHaveBeenCalled();
+        expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
+    });
+
+    it("reverts the chip label on cancel", async () => {
         confirmModalResult = false;
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
@@ -3341,16 +3320,14 @@ describe("ChatView — embedding model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select")!;
-        (select as any).value = "other-model";
-        select.trigger("change");
+        pickEmbeddingValue(view, "other-model");
         await tick();
 
         expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
-        expect(select.value).toBe("nomic-embed-text");
+        expect(triggerText(container, "lilbee-embed-model-select")).toBe("nomic-embed-text");
     });
 
-    it("reverts dropdown and shows notice on setEmbeddingModel failure", async () => {
+    it("reverts the chip label and shows notice on setEmbeddingModel failure", async () => {
         const plugin = makePlugin();
         plugin.api.setEmbeddingModel = vi.fn().mockResolvedValue(err(new Error("fail")));
         const view = new ChatView(makeLeaf(), plugin);
@@ -3358,16 +3335,14 @@ describe("ChatView — embedding model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select")!;
-        (select as any).value = "other-model";
-        select.trigger("change");
+        pickEmbeddingValue(view, "other-model");
         await tick();
 
         expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_EMBEDDING)).toBe(true);
-        expect(select.value).toBe("nomic-embed-text");
+        expect(triggerText(container, "lilbee-embed-model-select")).toBe("nomic-embed-text");
     });
 
-    it("reverts dropdown and shows notice on setEmbeddingModel network error", async () => {
+    it("reverts the chip label and shows notice on setEmbeddingModel network error", async () => {
         const plugin = makePlugin();
         plugin.api.setEmbeddingModel = vi.fn().mockResolvedValue(err(new Error("network")));
         const view = new ChatView(makeLeaf(), plugin);
@@ -3375,28 +3350,11 @@ describe("ChatView — embedding model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select")!;
-        (select as any).value = "other-model";
-        select.trigger("change");
+        pickEmbeddingValue(view, "other-model");
         await tick();
 
         expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_EMBEDDING)).toBe(true);
-        expect(select.value).toBe("nomic-embed-text");
-    });
-
-    it("does nothing when change value is empty", async () => {
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        await tick();
-
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select")!;
-        (select as any).value = "";
-        select.trigger("change");
-        await tick();
-
-        expect(plugin.api.setEmbeddingModel).not.toHaveBeenCalled();
+        expect(triggerText(container, "lilbee-embed-model-select")).toBe("nomic-embed-text");
     });
 
     it("rail-level Browse more button opens the full catalog", async () => {
@@ -3431,15 +3389,13 @@ describe("ChatView — embedding model selector", () => {
         await vi.advanceTimersByTimeAsync(0);
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const embedSelect = container.find("lilbee-embed-model-select")!;
-        const options = embedSelect.children.filter((c) => c.tagName === "OPTION");
-        expect(options.some((o) => o.textContent === "(connecting...)")).toBe(true);
+        expect(triggerText(container, "lilbee-embed-model-select")).toBe("(connecting...)");
 
         await view.onClose();
         vi.useRealTimers();
     });
 
-    it("shows offline label on embedding select after threshold", async () => {
+    it("shows offline label on embedding trigger after threshold", async () => {
         vi.useFakeTimers();
         const plugin = makePlugin();
         plugin.api.catalog = vi.fn().mockRejectedValue(new Error("offline"));
@@ -3456,9 +3412,7 @@ describe("ChatView — embedding model selector", () => {
         await vi.advanceTimersByTimeAsync(5000);
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const embedSelect = container.find("lilbee-embed-model-select")!;
-        const options = embedSelect.children.filter((c) => c.tagName === "OPTION");
-        expect(options.some((o) => o.textContent === "(offline)")).toBe(true);
+        expect(triggerText(container, "lilbee-embed-model-select")).toBe("(offline)");
 
         await view.onClose();
         vi.useRealTimers();
@@ -3521,10 +3475,7 @@ describe("ChatView — embedding model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION");
-        expect(options.length).toBe(1);
-        expect(options[0].textContent).toBe("nomic-embed-text");
+        expect(menuTitles(openRailMenu(container, "lilbee-embed-model-select"))).toEqual(["nomic-embed-text"]);
     });
 
     it("handles null config gracefully", async () => {
@@ -3535,23 +3486,22 @@ describe("ChatView — embedding model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION");
         // Should still show models from catalog, just none marked active
-        expect(options.length).toBe(1);
-        expect(options[0].textContent).toBe("nomic-embed-text");
+        const menu = openRailMenu(container, "lilbee-embed-model-select")!;
+        expect(menuTitles(menu)).toEqual(["nomic-embed-text"]);
+        expect(menu.itemTitled("nomic-embed-text")!.checked).toBe(false);
     });
 
-    it("revertEmbeddingSelect no-ops when embeddingSelectEl is null", async () => {
+    it("revertEmbeddingTrigger no-ops when embeddingTriggerTextEl is null", async () => {
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
-        (view as any).embeddingSelectEl = null;
+        (view as any).embeddingTriggerTextEl = null;
         // Should not throw
-        (view as any).revertEmbeddingSelect("test");
+        (view as any).revertEmbeddingTrigger("test");
     });
 
-    it("revertEmbeddingSelect falls back to a server refresh when the previous value is not in options", async () => {
+    it("revertEmbeddingTrigger falls back to a server refresh when the previous value is not in options", async () => {
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -3561,7 +3511,7 @@ describe("ChatView — embedding model selector", () => {
             .spyOn(view as unknown as { fetchAndFillSelectors: () => Promise<void> }, "fetchAndFillSelectors")
             .mockResolvedValue();
 
-        (view as any).revertEmbeddingSelect("totally-unknown-model");
+        (view as any).revertEmbeddingTrigger("totally-unknown-model");
 
         expect(fetchSpy).toHaveBeenCalled();
     });
@@ -3582,17 +3532,15 @@ describe("ChatView — embedding model selector", () => {
         await tick();
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-embed-model-select")!;
-        const options = select.children.filter((c) => c.tagName === "OPTION");
-        expect(options.length).toBe(1);
-        expect(options[0].textContent).toBe("fallback");
+        expect(menuTitles(openRailMenu(container, "lilbee-embed-model-select"))).toEqual(["fallback"]);
+        expect(triggerText(container, "lilbee-embed-model-select")).toBe("fallback");
     });
 
-    it("fillEmbeddingSelector with null embeddingSelectEl is a no-op", async () => {
+    it("fillEmbeddingSelector with null embeddingTriggerTextEl does not throw", async () => {
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
-        (view as any).embeddingSelectEl = null;
+        (view as any).embeddingTriggerTextEl = null;
         // Should not throw
         (view as any).fillEmbeddingSelector(null, null);
     });
@@ -3745,29 +3693,20 @@ describe("ChatView — role separation on main-screen selectors", () => {
         expect(plugin.api.catalog).toHaveBeenCalledWith({ task: "embedding" });
 
         const container = view.containerEl.children[1] as unknown as MockElement;
-        const chatSelect = container.find("lilbee-chat-model-select")!;
-        const embedSelect = container.find("lilbee-embed-model-select")!;
+        const chatItems = menuTitles(openRailMenu(container, "lilbee-chat-model-select"));
+        const embedItems = menuTitles(openRailMenu(container, "lilbee-embed-model-select"));
 
-        const chatOptionValues = chatSelect.children
-            .map((c) => (c as any).value ?? c.textContent)
-            .filter((v: string) => v !== "__separator__");
-        const embedOptionValues = embedSelect.children.map((c) => (c as any).value ?? c.textContent);
-
-        // Chat selector echoes models.chat.installed — including the contaminated names.
-        // This proves the plugin delegates role filtering to the server (no client-side
-        // re-filter that could drift out of sync with the server contract). Using sorted
-        // equality pins BOTH directions: no entries dropped, no entries added. If the
-        // plugin later adds a client-side filter, this fails. Order is normalized because
-        // the dropdown renders entries sorted — the invariant is the set, not the order.
-        expect([...chatOptionValues].sort()).toEqual(
-            ["llama3", "Qwen/Qwen2-VL-7B-Instruct", "BAAI/bge-reranker-v2-m3"].sort(),
+        // Set equality (sorted, order-independent): the chat menu echoes
+        // models.chat.installed verbatim — role filtering belongs to the server.
+        expect([...chatItems].sort()).toEqual(
+            ["llama3", "Qwen/Qwen2-VL-7B-Instruct", "BAAI/bge-reranker-v2-m3"].map(displayLabelForRef).sort(),
         );
-        expect(chatOptionValues).toHaveLength(3);
+        expect(chatItems).toHaveLength(3);
 
-        // Embedding selector is populated from catalog({task: EMBEDDING}), which the
+        // Embedding menu is populated from catalog({task: EMBEDDING}), which the
         // server scopes to embedding models. If the plugin were reading from listModels
         // or a broader catalog call, vision/reranker names could leak here.
-        expect(embedOptionValues).toEqual(["nomic-embed-text"]);
+        expect(embedItems).toEqual(["nomic-embed-text"]);
     });
 });
 
@@ -3972,7 +3911,7 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         expect(labels).toContain("Rerank");
     });
 
-    it("Vision chip with no installed model still shows a select with Disabled + Browse", async () => {
+    it("Vision chip with no installed model still shows a menu with Disabled + Browse", async () => {
         const { CatalogModal } = await import("../../src/views/catalog-modal");
         (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
         const plugin = makePlugin();
@@ -3982,15 +3921,13 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         await tick();
         const container = view.containerEl.children[1] as unknown as MockElement;
 
-        const select = container.find("lilbee-vision-model-select")!;
-        const optionTexts = select.options.map((o) => o.textContent);
-        expect(optionTexts).toEqual(["(disabled)", "Browse catalog…"]);
-        select.value = "__lilbee_browse__";
-        select.trigger("change");
+        const menu = openRailMenu(container, "lilbee-vision-model-select")!;
+        expect(menuTitles(menu)).toEqual(["(disabled)", "Browse catalog…"]);
+        menu.itemTitled("Browse catalog…")!.click();
         expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "vision");
     });
 
-    it("renders a Vision dropdown with Disabled + models + Browse when installed", async () => {
+    it("renders a Vision menu with Disabled + models + Browse when installed", async () => {
         const plugin = makePlugin();
         configureRoles(plugin, { vision: ["llava-7b", "qwen-vl"], visionActive: "llava-7b" });
         const view = new ChatView(makeLeaf(), plugin);
@@ -3998,9 +3935,10 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         await tick();
         const container = view.containerEl.children[1] as unknown as MockElement;
 
-        const select = container.find("lilbee-vision-model-select")!;
-        const optionTexts = select.options.map((o) => o.textContent);
-        expect(optionTexts).toEqual(["(disabled)", "llava-7b", "qwen-vl", "Browse catalog…"]);
+        const menu = openRailMenu(container, "lilbee-vision-model-select")!;
+        expect(menuTitles(menu)).toEqual(["(disabled)", "llava-7b", "qwen-vl", "Browse catalog…"]);
+        expect(menu.itemTitled("llava-7b")!.checked).toBe(true);
+        expect(triggerText(container, "lilbee-vision-model-select")).toBe("llava-7b");
     });
 
     it("includes hosted (LiteLLM) vision models with a Hosted suffix", async () => {
@@ -4026,9 +3964,9 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         await tick();
         const container = view.containerEl.children[1] as unknown as MockElement;
 
-        const optionTexts = container.find("lilbee-vision-model-select")!.options.map((o) => o.textContent);
-        expect(optionTexts).toContain("llava-7b");
-        expect(optionTexts.some((t) => t.includes("gpt-4o") && t.includes("Hosted"))).toBe(true);
+        const titles = menuTitles(openRailMenu(container, "lilbee-vision-model-select"));
+        expect(titles).toContain("llava-7b");
+        expect(titles.some((t) => t.includes("gpt-4o") && t.includes("Hosted"))).toBe(true);
     });
 
     it("fills the dot with is-active when a Vision model is active", async () => {
@@ -4053,11 +3991,12 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
 
         const visionDot = container.findAll("is-vision")[0];
         expect(visionDot.classList.contains("is-active")).toBe(false);
-        const visionSelect = container.find("lilbee-vision-model-select")!;
-        expect(visionSelect.value).toBe("");
+        // The chip shows the disabled label, and the menu checks Disabled.
+        expect(triggerText(container, "lilbee-vision-model-select")).toBe("(disabled)");
+        expect(openRailMenu(container, "lilbee-vision-model-select")!.itemTitled("(disabled)")!.checked).toBe(true);
     });
 
-    it("selecting a Vision model calls setVisionModel and refreshes", async () => {
+    it("picking a Vision model calls setVisionModel and refreshes", async () => {
         const plugin = makePlugin();
         configureRoles(plugin, { vision: ["llava-7b", "qwen-vl"], visionActive: "llava-7b" });
         const view = new ChatView(makeLeaf(), plugin);
@@ -4065,16 +4004,14 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         await tick();
         const container = view.containerEl.children[1] as unknown as MockElement;
 
-        const select = container.find("lilbee-vision-model-select")!;
-        select.value = "qwen-vl";
-        select.trigger("change");
+        pickRailItem(container, "lilbee-vision-model-select", "qwen-vl");
         await tick();
 
         expect(plugin.api.setVisionModel).toHaveBeenCalledWith("qwen-vl");
         expect(plugin.fetchActiveModel).toHaveBeenCalled();
     });
 
-    it("selecting Disabled turns Vision off via setVisionModel('')", async () => {
+    it("picking Disabled turns Vision off via setVisionModel('')", async () => {
         const plugin = makePlugin();
         configureRoles(plugin, { vision: ["llava-7b"], visionActive: "llava-7b" });
         const view = new ChatView(makeLeaf(), plugin);
@@ -4082,15 +4019,13 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         await tick();
         const container = view.containerEl.children[1] as unknown as MockElement;
 
-        const select = container.find("lilbee-vision-model-select")!;
-        select.value = "";
-        select.trigger("change");
+        pickRailItem(container, "lilbee-vision-model-select", "(disabled)");
         await tick();
 
         expect(plugin.api.setVisionModel).toHaveBeenCalledWith("");
     });
 
-    it("selecting Browse catalog… from the Vision dropdown opens the catalog and resets the value", async () => {
+    it("picking Browse catalog… from the Vision menu opens the catalog and keeps the chip label", async () => {
         const { CatalogModal } = await import("../../src/views/catalog-modal");
         (CatalogModal as unknown as ReturnType<typeof vi.fn>).mockClear();
         const plugin = makePlugin();
@@ -4100,13 +4035,11 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         await tick();
         const container = view.containerEl.children[1] as unknown as MockElement;
 
-        const select = container.find("lilbee-vision-model-select")!;
-        select.value = "__lilbee_browse__";
-        select.trigger("change");
+        pickRailItem(container, "lilbee-vision-model-select", "Browse catalog…");
 
         expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "vision");
         expect(plugin.api.setVisionModel).not.toHaveBeenCalled();
-        expect(select.value).toBe("llava-7b");
+        expect(triggerText(container, "lilbee-vision-model-select")).toBe("llava-7b");
     });
 
     it("surfaces a Notice when setVisionModel fails", async () => {
@@ -4118,15 +4051,13 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         await tick();
         const container = view.containerEl.children[1] as unknown as MockElement;
 
-        const select = container.find("lilbee-vision-model-select")!;
-        select.value = "qwen-vl";
-        select.trigger("change");
+        pickRailItem(container, "lilbee-vision-model-select", "qwen-vl");
         await tick();
 
         expect(Notice.instances.some((n) => n.message.includes("Vision"))).toBe(true);
     });
 
-    it("selecting a Rerank model calls setRerankerModel", async () => {
+    it("picking a Rerank model calls setRerankerModel", async () => {
         const plugin = makePlugin();
         configureRoles(plugin, { rerank: ["bge-reranker", "jina-reranker"], rerankActive: "bge-reranker" });
         const view = new ChatView(makeLeaf(), plugin);
@@ -4134,9 +4065,7 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         await tick();
         const container = view.containerEl.children[1] as unknown as MockElement;
 
-        const select = container.find("lilbee-rerank-model-select")!;
-        select.value = "jina-reranker";
-        select.trigger("change");
+        pickRailItem(container, "lilbee-rerank-model-select", "jina-reranker");
         await tick();
 
         expect(plugin.api.setRerankerModel).toHaveBeenCalledWith("jina-reranker");
@@ -4152,69 +4081,54 @@ describe("ChatView — optional model rail (Vision, Rerank)", () => {
         await tick();
         const container = view.containerEl.children[1] as unknown as MockElement;
 
-        const select = container.find("lilbee-rerank-model-select")!;
-        select.value = "__lilbee_browse__";
-        select.trigger("change");
+        pickRailItem(container, "lilbee-rerank-model-select", "Browse catalog…");
         expect(CatalogModal).toHaveBeenCalledWith(expect.anything(), plugin, "rerank");
     });
 });
 
 describe("ChatView — null-element guard branches", () => {
-    it("fetchAndFillSelectors skips selector fills when chatSelectEl is null", async () => {
+    it("fetchAndFillSelectors skips trigger updates when both trigger text els are null", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         await tick();
-        // Null both selects so the success-path guards (347/351) take the false branch.
-        (view as any).chatSelectEl = null;
-        (view as any).embeddingSelectEl = null;
+        // Null both triggers so the success-path optional chains take the false branch.
+        (view as any).chatTriggerTextEl = null;
+        (view as any).embeddingTriggerTextEl = null;
         (view as any).fetchAndFillSelectors();
         await tick();
         // No throw, and a successful fetch leaves retryCount at 0.
         expect((view as any).retryCount).toBe(0);
     });
 
-    it("fetchAndFillSelectors catch path skips selectors when both are null", async () => {
+    it("fetchAndFillSelectors catch path skips triggers when both are null", async () => {
         Notice.clear();
         const plugin = makePlugin();
-        // Force the Promise.all chain to reject so the catch (372/376) runs.
+        // Force the Promise.all chain to reject so the catch runs.
         (plugin.api as any).catalog = vi.fn().mockRejectedValue(new Error("boom"));
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         await tick();
-        (view as any).chatSelectEl = null;
-        (view as any).embeddingSelectEl = null;
+        (view as any).chatTriggerTextEl = null;
+        (view as any).embeddingTriggerTextEl = null;
         const before = (view as any).retryCount;
         (view as any).fetchAndFillSelectors();
         await tick();
-        // Catch ran (retryCount incremented) without touching the null selects.
+        // Catch ran (retryCount incremented) without touching the null triggers.
         expect((view as any).retryCount).toBeGreaterThan(before);
         // Stop the retry timer the catch scheduled.
         const t = (view as any).retryTimer;
         if (t) clearTimeout(t);
     });
 
-    it("refreshModelSelector no-ops the empties when both selects are null", async () => {
+    it("refreshRail re-syncs the rail via fetchAndFillSelectors", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
         await tick();
-        (view as any).chatSelectEl = null;
-        (view as any).embeddingSelectEl = null;
         const spy = vi.spyOn(view as any, "fetchAndFillSelectors").mockImplementation(() => {});
-        (view as any).refreshModelSelector();
-        expect(spy).toHaveBeenCalled();
-    });
-
-    it("refreshRail re-syncs the rail via refreshModelSelector", async () => {
-        Notice.clear();
-        const plugin = makePlugin();
-        const view = new ChatView(makeLeaf(), plugin);
-        await view.onOpen();
-        await tick();
-        const spy = vi.spyOn(view as any, "refreshModelSelector").mockImplementation(() => {});
         view.refreshRail();
         expect(spy).toHaveBeenCalled();
     });
@@ -4328,13 +4242,10 @@ describe("ChatView — confirm-pull declined", () => {
         const autoPullSpy = vi.spyOn(view as any, "autoPullAndSet").mockResolvedValue(undefined);
         await view.onOpen();
         await tick();
-        const container = view.containerEl.children[1] as unknown as MockElement;
-        const select = container.find("lilbee-chat-model-select")!;
-        select.value = "acme/uninstalled";
-        select.trigger("change");
+        (view as any).handleChatSelection("acme/uninstalled");
         await tick();
         await tick();
-        // confirmed === false → autoPullAndSet must not run (539 false branch).
+        // confirmed === false → autoPullAndSet must not run.
         expect(autoPullSpy).not.toHaveBeenCalled();
     });
 });
@@ -4342,13 +4253,8 @@ describe("ChatView — confirm-pull declined", () => {
 describe("ChatView — vault file picker enqueues the chosen file", () => {
     it("choosing a vault file calls plugin.addToLilbee", async () => {
         Notice.clear();
-        // The menu mock fires every item's onClick, including the native picker.
-        const dialogSpy = vi
-            .spyOn(electronDialog, "showOpenDialog")
-            .mockResolvedValue({ canceled: true, filePaths: [] });
         const plugin = makePlugin();
         (plugin as any).addToLilbee = vi.fn().mockResolvedValue(undefined);
-        (plugin as any).addExternalFiles = vi.fn().mockResolvedValue(undefined);
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
 
@@ -4363,6 +4269,7 @@ describe("ChatView — vault file picker enqueues the chosen file", () => {
 
         const container = view.containerEl.children[1] as unknown as MockElement;
         container.find("lilbee-chat-add-file")!.trigger("click", { clientX: 0, clientY: 0 } as MouseEvent);
+        Menu.instances[Menu.instances.length - 1].itemTitled(MESSAGES.WIZARD_FILE_PICKER_VAULT)!.click();
 
         expect(captured).toHaveLength(1);
         const file = { path: "notes/a.md", name: "a.md" } as any;
@@ -4370,7 +4277,6 @@ describe("ChatView — vault file picker enqueues the chosen file", () => {
         // The arrow (file) => this.enqueueAddFile(file) runs enqueueAddFile → addToLilbee.
         expect((plugin as any).addToLilbee).toHaveBeenCalledWith(file);
         spy.mockRestore();
-        dialogSpy.mockRestore();
     });
 });
 
