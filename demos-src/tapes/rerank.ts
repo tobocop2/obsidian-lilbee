@@ -29,7 +29,7 @@
  * Requires the server pre-seeded with ONLY the 8 Crown Vic Build notes (the
  * other reels use the manual). The setup beats below pin top_k/context/expansion.
  */
-import { beat, clickSelector, clickSend, fillChat, key, runJs, storyboard, waitChatIdle } from "../src/lib.ts";
+import { beat, clickSend, fillChat, runJs, storyboard, waitChatIdle } from "../src/lib.ts";
 
 const QUESTION =
   "At idle with the light bar and laptop running, the radio resets and the headlights dim. What is the fix on this build?";
@@ -102,13 +102,24 @@ export default storyboard("rerank", {
       `),
       { holdMs: 200 },
     ),
-    // Turn reranking on via the rail pill.
-    beat("Open the Rerank picker", clickSelector(".lilbee-rerank-model-select"), {
-      holdMs: 800,
-      caption: "Turn reranking on — a cross-encoder re-scores the candidates by true relevance.",
-    }),
-    beat("Highlight the reranker", key("down"), { holdMs: 500 }),
-    beat("Choose it", key("enter"), { holdMs: 900 }),
+    // Turn reranking on by flipping the rail pill directly. A native <select>
+    // opens an OS popup the window capture can't see, so click-then-arrow-keys
+    // reads as the cursor sitting on the pill doing nothing; setting the value +
+    // change updates the visible pill instantly and fires the plugin's handler.
+    beat(
+      "Turn reranking on",
+      runJs(`
+        const sel = document.querySelector(".lilbee-rerank-model-select");
+        if (sel) {
+          const o = [...sel.options].find(o => /bge/i.test(o.text));
+          if (o) { sel.value = o.value; sel.dispatchEvent(new Event("change", { bubbles: true })); }
+        }
+      `),
+      {
+        holdMs: 900,
+        caption: "Turn reranking on — a cross-encoder re-scores the candidates by true relevance.",
+      },
+    ),
     beat("Ensure the reranker is active", setReranker(RERANK_MODEL), { holdMs: 700 }),
     // The first rerank call loads the cross-encoder; that cold call skips the
     // rerank pass, so warm it with a hidden throwaway query before the visible

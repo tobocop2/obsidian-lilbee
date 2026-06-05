@@ -76,6 +76,9 @@ export type Storyboard = {
   layout: LayoutName;
   /** Doc names to remove from the corpus before recording (so ingest demos start fresh). */
   freshIngest?: string[];
+  /** Empty the whole index before recording, for a fresh-vault demo that adds a
+   * doc on camera: the Add is a clean first ingest and retrieval sees only it. */
+  emptyIndex?: boolean;
   /** HF repo of a model to uninstall before recording, so a download demo
    * triggers a real pull on every take. */
   freshModel?: string;
@@ -113,6 +116,7 @@ export type StoryboardOptions = {
   window?: [number, number];
   layout?: LayoutName;
   freshIngest?: string[];
+  emptyIndex?: boolean;
   freshModel?: string;
   clearTaskCenter?: boolean;
   clearChat?: boolean;
@@ -134,6 +138,7 @@ export function storyboard(name: string, opts: StoryboardOptions): Storyboard {
     window: { w: opts.window?.[0] ?? 1400, h: opts.window?.[1] ?? 900 },
     layout: opts.layout ?? "chat-and-tasks",
     freshIngest: opts.freshIngest,
+    emptyIndex: opts.emptyIndex,
     freshModel: opts.freshModel,
     clearTaskCenter: opts.clearTaskCenter,
     clearChat: opts.clearChat,
