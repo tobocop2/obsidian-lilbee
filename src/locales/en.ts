@@ -574,6 +574,17 @@ export const MESSAGES = {
     NOTICE_SESSION_TOKEN_INVALID_MANAGED:
         "lilbee: managed server rejected its own token — restart the server from Settings → Switch to managed server, or open Status for logs",
     NOTICE_QUEUE_FULL: "lilbee: too many tasks queued — wait for some to finish",
+    LABEL_DATASET_FILTER: "lilbee dataset",
+    LABEL_DATASET_IMPORT_TASK: "Importing dataset",
+    STATUS_DATASET_IMPORTING: "Re-embedding pages…",
+    NOTICE_DATASET_EXPORTED: (path: string) => `lilbee: exported dataset to ${path}`,
+    ERROR_DATASET_EXPORT: (msg: string) => `lilbee: export failed — ${msg}`,
+    ERROR_DATASET_READ: (msg: string) => `lilbee: could not read dataset — ${msg}`,
+    ERROR_DATASET_TOO_LARGE:
+        "lilbee: dataset exceeds the 10 MB upload limit — use `lilbee import` from the CLI for larger files",
+    NOTICE_DATASET_IMPORTED: (sources: number, pages: number, chunks: number) =>
+        `lilbee: imported ${sources} source(s), ${pages} page(s), ${chunks} chunk(s)`,
+    ERROR_DATASET_IMPORT: (msg: string) => `lilbee: import failed — ${msg}`,
     NOTICE_MODEL_ACTIVATED_FULL: (model: string) => `lilbee: ${model} pulled and activated`,
     NOTICE_SET_MODEL: (type: string, model: string) => `${type} set to ${model}`,
     NOTICE_FAILED_SET_MODEL: (type: string) => `Failed to set ${type} model`,
@@ -621,6 +632,8 @@ export const MESSAGES = {
     COMMAND_SYNC: "Sync vault",
     COMMAND_SYNC_RETRY_SKIPPED: "Retry skipped documents",
     COMMAND_SYNC_REBUILD: "Rebuild index",
+    COMMAND_EXPORT_DATASET: "Export dataset",
+    COMMAND_IMPORT_DATASET: "Import dataset",
     COMMAND_CATALOG: "Browse model catalog",
     COMMAND_CRAWL: "Crawl web page",
     COMMAND_DOCUMENTS: "Browse documents",

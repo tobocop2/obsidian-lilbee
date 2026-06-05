@@ -10,6 +10,7 @@ import {
 import { LilbeeClient, SessionTokenError } from "./api";
 import type { RequestOutcome } from "./api";
 import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
+import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
@@ -906,6 +907,26 @@ export default class LilbeePlugin extends Plugin {
                         if (await confirmModal.result) void this.triggerSync({ forceRebuild: true });
                     })();
                 }
+                return true;
+            },
+        });
+
+        this.addCommand({
+            id: "lilbee:export-dataset",
+            name: MESSAGES.COMMAND_EXPORT_DATASET,
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void exportDatasetToDisk(this.api);
+                return true;
+            },
+        });
+
+        this.addCommand({
+            id: "lilbee:import-dataset",
+            name: MESSAGES.COMMAND_IMPORT_DATASET,
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void importDatasetFromDisk(this.api, this.taskQueue);
                 return true;
             },
         });
