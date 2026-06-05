@@ -5,6 +5,7 @@ import {
     CAPABILITY,
     CHAT_MODE,
     CONFIG_KEY,
+    MEMORY_CONFIG_KEY,
     DEFAULT_SETTINGS,
     HOSTED_SOURCES,
     MODEL_TASK,
@@ -68,6 +69,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     plugin: LilbeePlugin;
     private serverConfigInputs: Map<string, HTMLInputElement> = new Map();
     private serverConfigToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
+    private memoryToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private serverConfigTextAreas: Map<string, HTMLTextAreaElement> = new Map();
     // Rows hidden until loadServerDefaults sees a defined value for the matching cfg key.
     private serverConfigHideableEls: Map<string, HTMLElement> = new Map();
@@ -107,6 +109,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderModelsSection(containerEl);
         this.renderSearchRetrievalSettings(containerEl);
         this.renderGenerationSettings(containerEl);
+        this.renderMemorySection(containerEl);
         this.renderRetrievalAdvanced(containerEl);
         this.renderIngestSettings(containerEl);
         this.renderWorkerPoolSettings(containerEl);
@@ -923,6 +926,51 @@ export class LilbeeSettingTab extends PluginSettingTab {
             { integer: false, min: 0 },
         );
         this.appendResetAffordance(visionBudgetSetting, "vision_load_budget_s", MESSAGES.LABEL_VISION_LOAD_BUDGET);
+    }
+
+    private renderMemorySection(containerEl: HTMLElement): void {
+        const section = containerEl.createDiv({ cls: "lilbee-settings-section" });
+        section.createEl("h3", { text: MESSAGES.LABEL_MEMORY_SECTION });
+        this.plugin.api
+            .config()
+            .then((cfg) => {
+                this.renderMemoryToggle(
+                    section,
+                    MEMORY_CONFIG_KEY.ENABLED,
+                    cfg[MEMORY_CONFIG_KEY.ENABLED] === true,
+                    MESSAGES.LABEL_MEMORY_ENABLED,
+                    MESSAGES.DESC_MEMORY_ENABLED,
+                );
+                this.renderMemoryToggle(
+                    section,
+                    MEMORY_CONFIG_KEY.AUTO_EXTRACT,
+                    cfg[MEMORY_CONFIG_KEY.AUTO_EXTRACT] === true,
+                    MESSAGES.LABEL_MEMORY_AUTO_EXTRACT,
+                    MESSAGES.DESC_MEMORY_AUTO_EXTRACT,
+                );
+            })
+            .catch((err) => {
+                if (noticeServerUnreachableIfApplicable(err)) return;
+                new Notice(MESSAGES.NOTICE_MEMORY_CONFIG_FAILED);
+            });
+    }
+
+    private renderMemoryToggle(section: HTMLElement, key: string, initial: boolean, name: string, desc: string): void {
+        new Setting(section)
+            .setName(name)
+            .setDesc(desc)
+            .addToggle((toggle) => {
+                toggle.setValue(initial);
+                toggle.onChange(async (value) => {
+                    try {
+                        await this.plugin.api.updateConfig({ [key]: value });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
+                    }
+                });
+                this.memoryToggles.set(key, toggle);
+            });
     }
 
     private renderRetrievalAdvanced(containerEl: HTMLElement): void {

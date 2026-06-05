@@ -311,6 +311,56 @@ export const SEARCH_CHUNK_TYPE = {
     RAW: "raw",
 } as const satisfies Record<string, SearchChunkType>;
 
+export type MemoryKind = "fact" | "preference";
+
+export const MEMORY_KIND = {
+    FACT: "fact",
+    PREFERENCE: "preference",
+} as const satisfies Record<string, MemoryKind>;
+
+export interface MemoryItem {
+    id: string;
+    kind: MemoryKind;
+    shared: boolean;
+    text: string;
+}
+
+export interface MemoryListResponse {
+    memories: MemoryItem[];
+}
+
+export interface RememberResponse {
+    id: string;
+    kind: MemoryKind;
+}
+
+export interface MemoryFlagsResponse {
+    id: string;
+    updated: boolean;
+}
+
+export interface MemoryRemoveResponse {
+    removed: string;
+}
+
+export interface MemoryExtractedItem {
+    id: string;
+    kind: MemoryKind;
+    text: string;
+}
+
+/** Payload of the `memory_extracted` SSE event the server emits after an auto-extract chat turn. */
+export interface MemoryExtractedData {
+    count: number;
+    items: MemoryExtractedItem[];
+}
+
+/** Server config keys for the memory subsystem (read/written via /api/config). */
+export const MEMORY_CONFIG_KEY = {
+    ENABLED: "memory_enabled",
+    AUTO_EXTRACT: "memory_auto_extract",
+} as const;
+
 export interface LilbeeSettings {
     serverUrl: string;
     topK: number;
@@ -456,6 +506,7 @@ export const SSE_EVENT = {
     SETUP_DONE: "setup_done",
     ALREADY_INGESTING: "already_ingesting",
     BATCH_PROGRESS: "batch_progress",
+    MEMORY_EXTRACTED: "memory_extracted",
 } as const;
 
 export interface SetupStartPayload {

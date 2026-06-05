@@ -19,7 +19,16 @@ import {
     TASK_TYPE,
     ERROR_NAME,
 } from "../types";
-import type { CatalogEntry, ChatMode, InstalledModel, Message, SearchChunkType, Source, SSEEvent } from "../types";
+import type {
+    CatalogEntry,
+    ChatMode,
+    InstalledModel,
+    MemoryExtractedData,
+    Message,
+    SearchChunkType,
+    Source,
+    SSEEvent,
+} from "../types";
 import { RateLimitedError } from "../api";
 
 import { renderAggregatedSourceChips } from "./results";
@@ -908,6 +917,14 @@ export class ChatView extends ItemView {
                 if (isModelUnavailableError(extractSseErrorCode(event.data), errMsg)) {
                     new Notice(MESSAGES.NOTICE_MODEL_UNAVAILABLE_SETUP);
                     new SetupWizard(this.app, this.plugin).open();
+                }
+                break;
+            }
+            case SSE_EVENT.MEMORY_EXTRACTED: {
+                const extracted = event.data as MemoryExtractedData;
+                if (extracted.count > 0) {
+                    new Notice(MESSAGES.MEMORY_EXTRACTED_NOTICE(extracted.count));
+                    this.plugin.refreshMemoryViews();
                 }
                 break;
             }

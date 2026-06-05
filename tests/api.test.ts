@@ -147,6 +147,79 @@ describe("chat()", () => {
     });
 });
 
+describe("memory methods", () => {
+    it("listMemories() GETs /api/memories and unwraps the array", async () => {
+        const items = [{ id: "a1", kind: "fact", shared: false, text: "likes rust" }];
+        fetchMock.mockResolvedValue(jsonResponse({ memories: items }));
+
+        const result = await client.listMemories();
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/memories`, expect.objectContaining({}));
+        expect(result).toEqual(items);
+    });
+
+    it("remember() POSTs text, kind, and shared", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ id: "n1", kind: "preference" }));
+
+        const result = await client.remember("use british english", "preference", true);
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/memories`,
+            expect.objectContaining({
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: "use british english", kind: "preference", shared: true }),
+            }),
+        );
+        expect(result).toEqual({ id: "n1", kind: "preference" });
+    });
+
+    it("remember() defaults shared to false", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ id: "n2", kind: "fact" }));
+
+        await client.remember("deadline is march", "fact");
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.shared).toBe(false);
+    });
+
+    it("setMemoryShared() PATCHes the shared flag for the id", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ id: "a1", updated: true }));
+
+        const result = await client.setMemoryShared("a1", true);
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/memories/a1`,
+            expect.objectContaining({
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ shared: true }),
+            }),
+        );
+        expect(result).toEqual({ id: "a1", updated: true });
+    });
+
+    it("forgetMemory() DELETEs the id and returns the removed id", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ removed: "a1" }));
+
+        const result = await client.forgetMemory("a1");
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/memories/a1`,
+            expect.objectContaining({ method: "DELETE" }),
+        );
+        expect(result).toEqual({ removed: "a1" });
+    });
+
+    it("forgetMemory() URL-encodes the id", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ removed: "a/b" }));
+
+        await client.forgetMemory("a/b");
+
+        expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/api/memories/a%2Fb`);
+    });
+});
+
 describe("chatStream()", () => {
     it("POSTs to /api/chat/stream and yields SSE events", async () => {
         fetchMock.mockResolvedValue(sseResponse(['event: token\ndata: "chunk"\n\n']));

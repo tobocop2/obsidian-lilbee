@@ -4274,3 +4274,112 @@
     gap: 7px;
     align-items: center;
 }
+
+/* Memories view */
+.lilbee-memories-container {
+    padding: 8px 12px;
+}
+
+.lilbee-memories-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.lilbee-memories-add {
+    flex: 0 0 auto;
+    cursor: pointer;
+}
+
+.lilbee-memories-search {
+    width: 100%;
+    margin-bottom: 8px;
+}
+
+.lilbee-memories-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.lilbee-memories-empty {
+    color: var(--text-muted);
+    padding: 12px 4px;
+    font-size: 0.9em;
+}
+
+.lilbee-memory-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: var(--background-secondary);
+}
+
+.lilbee-memory-kind {
+    flex: 0 0 auto;
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+}
+
+.lilbee-memory-kind-preference {
+    color: var(--text-accent);
+}
+
+.lilbee-memory-text {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lilbee-memory-share,
+.lilbee-memory-delete {
+    flex: 0 0 auto;
+    cursor: pointer;
+}
+
+.lilbee-memory-share.is-shared {
+    color: var(--text-accent);
+}
+
+/* Remember modal */
+.lilbee-remember-modal .lilbee-remember-label {
+    display: block;
+    margin: 8px 0 4px;
+    font-weight: 600;
+}
+
+.lilbee-remember-text {
+    width: 100%;
+    min-height: 80px;
+    resize: vertical;
+}
+
+.lilbee-remember-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.lilbee-remember-kind {
+    flex: 0 0 auto;
+}
+
+.lilbee-remember-shared.is-active {
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+}
+
+.lilbee-remember-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+}

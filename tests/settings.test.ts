@@ -3,8 +3,9 @@ import { App, Notice, Setting } from "obsidian";
 import { MockElement } from "./__mocks__/obsidian";
 import { LilbeeSettingTab, SEPARATOR_KEY } from "../src/settings";
 import type { CatalogEntry, CatalogResponse, InstalledModel, LilbeeSettings } from "../src/types";
-import { DEFAULT_SETTINGS, MODEL_TASK, SSE_EVENT } from "../src/types";
+import { DEFAULT_SETTINGS, MEMORY_CONFIG_KEY, MODEL_TASK, SSE_EVENT } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
+import { ServerStartingError } from "../src/api";
 import { ok, err } from "neverthrow";
 import { TaskQueue } from "../src/task-queue";
 import { ConfirmPullModal } from "../src/views/confirm-pull-modal";
@@ -6676,5 +6677,62 @@ describe("managed mode settings", () => {
             await textOnChanges[GPU_FRACTION_IDX]("0.5");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ gpu_memory_fraction: 0.5 });
         });
+    });
+});
+
+describe("LilbeeSettingTab.renderMemorySection", () => {
+    const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+    beforeEach(() => Notice.clear());
+
+    it("renders the memory section and PATCHes config on toggle change", async () => {
+        const plugin = makePlugin();
+        plugin.api.config = vi.fn().mockResolvedValue({ memory_enabled: true, memory_auto_extract: false });
+        const tab = makeTab(plugin);
+        const container = new MockElement() as unknown as HTMLElement;
+
+        (tab as any).renderMemorySection(container);
+        await flush();
+
+        expect((container as unknown as MockElement).find("lilbee-settings-section")).not.toBeNull();
+
+        await (tab as any).memoryToggles.get(MEMORY_CONFIG_KEY.ENABLED).triggerChange(false);
+        expect(plugin.api.updateConfig).toHaveBeenCalledWith({ memory_enabled: false });
+
+        await (tab as any).memoryToggles.get(MEMORY_CONFIG_KEY.AUTO_EXTRACT).triggerChange(true);
+        expect(plugin.api.updateConfig).toHaveBeenCalledWith({ memory_auto_extract: true });
+    });
+
+    it("notifies when a memory config update fails", async () => {
+        const plugin = makePlugin();
+        plugin.api.config = vi.fn().mockResolvedValue({ memory_enabled: false });
+        plugin.api.updateConfig = vi.fn().mockRejectedValue(new Error("nope"));
+        const tab = makeTab(plugin);
+        (tab as any).renderMemorySection(new MockElement() as unknown as HTMLElement);
+        await flush();
+
+        await (tab as any).memoryToggles.get(MEMORY_CONFIG_KEY.ENABLED).triggerChange(true);
+        await flush();
+        expect(Notice.instances.map((n) => n.message)).toContain(
+            MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_MEMORY_ENABLED),
+        );
+    });
+
+    it("shows a config-failed notice when the config fetch errors", async () => {
+        const plugin = makePlugin();
+        plugin.api.config = vi.fn().mockRejectedValue(new Error("boom"));
+        const tab = makeTab(plugin);
+        (tab as any).renderMemorySection(new MockElement() as unknown as HTMLElement);
+        await flush();
+        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_MEMORY_CONFIG_FAILED);
+    });
+
+    it("stays silent when the server is still starting", async () => {
+        const plugin = makePlugin();
+        plugin.api.config = vi.fn().mockRejectedValue(new ServerStartingError());
+        const tab = makeTab(plugin);
+        (tab as any).renderMemorySection(new MockElement() as unknown as HTMLElement);
+        await flush();
+        expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_MEMORY_CONFIG_FAILED);
     });
 });

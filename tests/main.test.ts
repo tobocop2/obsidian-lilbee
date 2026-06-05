@@ -375,11 +375,11 @@ describe("LilbeePlugin", () => {
             expect(startSpy).toHaveBeenCalled();
         });
 
-        it("adds all twenty-two commands", async () => {
+        it("adds all twenty-four commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(22);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(24);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("lilbee:model-picker-chat");
             expect(allIds).toContain("lilbee:model-picker-embedding");
@@ -736,6 +736,81 @@ describe("LilbeePlugin", () => {
             plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
 
             await expect((plugin as any).activateChatView()).resolves.not.toThrow();
+        });
+    });
+
+    describe("memory commands and views", () => {
+        function findCmd(plugin: any, id: string) {
+            return (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find((c: any[]) => c[0].id === id)![0];
+        }
+
+        it("open-memories and remember commands are gated on readiness", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(false);
+            expect(findCmd(plugin, "lilbee:open-memories").checkCallback(true)).toBe(false);
+            expect(findCmd(plugin, "lilbee:remember").checkCallback(true)).toBe(false);
+        });
+
+        it("open-memories command activates the memories view", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
+            const activate = vi.spyOn(plugin as any, "activateMemoriesView").mockResolvedValue(undefined);
+            expect(findCmd(plugin, "lilbee:open-memories").checkCallback(true)).toBe(true);
+            findCmd(plugin, "lilbee:open-memories").checkCallback(false);
+            expect(activate).toHaveBeenCalled();
+        });
+
+        it("remember command opens the Remember modal", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
+            const { RememberModal } = await import("../src/views/remember-modal");
+            const openSpy = vi.spyOn(RememberModal.prototype, "open").mockImplementation(() => {});
+            expect(findCmd(plugin, "lilbee:remember").checkCallback(true)).toBe(true);
+            expect(openSpy).not.toHaveBeenCalled();
+            findCmd(plugin, "lilbee:remember").checkCallback(false);
+            expect(openSpy).toHaveBeenCalled();
+            openSpy.mockRestore();
+        });
+
+        it("activateMemoriesView reveals an existing leaf", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const leaf = new WorkspaceLeaf(plugin.app as any);
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([leaf]);
+            await (plugin as any).activateMemoriesView();
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+            expect(plugin.app.workspace.getRightLeaf).not.toHaveBeenCalled();
+        });
+
+        it("activateMemoriesView opens a new right-leaf when none exists", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            const leaf = new WorkspaceLeaf(plugin.app as any);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(leaf);
+            await (plugin as any).activateMemoriesView();
+            expect(leaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-memories", active: true });
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+        });
+
+        it("activateMemoriesView does not crash when no right leaf is available", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
+            await expect((plugin as any).activateMemoriesView()).resolves.not.toThrow();
+        });
+
+        it("refreshMemoryViews reloads each open memories view", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const reload = vi.fn();
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([{ view: { reload } }]);
+            (plugin as any).refreshMemoryViews();
+            expect(reload).toHaveBeenCalled();
         });
     });
 
