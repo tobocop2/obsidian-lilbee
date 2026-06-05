@@ -52,23 +52,7 @@ import {
 } from "../utils";
 import { SetupWizard } from "./setup-wizard";
 import { hostedOptions, isUsableHostedRow } from "./catalog-helpers";
-
-interface OpenDialogResult {
-    canceled: boolean;
-    filePaths: string[];
-}
-
-/** Thin wrapper around Electron's dialog — exported for test stubbing. */
-export const electronDialog = {
-    /* v8 ignore start -- requires Electron runtime */
-    showOpenDialog(opts: Record<string, unknown>): Promise<OpenDialogResult> {
-        const electron = require("electron") as {
-            remote: { dialog: { showOpenDialog(o: Record<string, unknown>): Promise<OpenDialogResult> } };
-        };
-        return electron.remote.dialog.showOpenDialog(opts);
-    },
-    /* v8 ignore stop */
-};
+import { electronDialog } from "../utils/file-dialog";
 
 export const VIEW_TYPE_CHAT = "lilbee-chat";
 
