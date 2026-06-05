@@ -36,6 +36,16 @@ function sseResponse(chunks: string[]): Response {
     } as unknown as Response;
 }
 
+/** Build a fake fetch response whose body is raw bytes. */
+function bytesResponse(buffer: ArrayBuffer): Response {
+    return {
+        ok: true,
+        text: () => Promise.resolve(""),
+        arrayBuffer: () => Promise.resolve(buffer),
+        body: null,
+    } as unknown as Response;
+}
+
 /** Drain an async generator into an array. */
 async function collect<T>(gen: AsyncGenerator<T>): Promise<T[]> {
     const results: T[] = [];
@@ -678,6 +688,50 @@ describe("pullModel()", () => {
                 }),
             );
             expect(result.removed).toBe(2);
+        });
+    });
+
+    describe("exportDataset()", () => {
+        it("GETs /api/export with the format and returns the bytes", async () => {
+            const bytes = new TextEncoder().encode("PAR1").buffer;
+            fetchMock.mockResolvedValue(bytesResponse(bytes));
+
+            const result = await client.exportDataset("parquet");
+
+            const url = new URL(fetchMock.mock.calls[0][0]);
+            expect(url.pathname).toBe("/api/export");
+            expect(url.searchParams.get("format")).toBe("parquet");
+            expect(url.searchParams.get("source")).toBeNull();
+            expect(result).toBe(bytes);
+        });
+
+        it("includes the source filter when provided", async () => {
+            fetchMock.mockResolvedValue(bytesResponse(new ArrayBuffer(0)));
+
+            await client.exportDataset("jsonl", "doc.pdf");
+
+            const url = new URL(fetchMock.mock.calls[0][0]);
+            expect(url.searchParams.get("format")).toBe("jsonl");
+            expect(url.searchParams.get("source")).toBe("doc.pdf");
+        });
+    });
+
+    describe("importDataset()", () => {
+        it("POSTs raw bytes to /api/import and returns the summary", async () => {
+            const data = { sources: ["doc.pdf"], pages: 2, chunks: 4 };
+            fetchMock.mockResolvedValue(jsonResponse(data));
+            const body = new Uint8Array([1, 2, 3]);
+
+            const result = await client.importDataset(body, "parquet");
+
+            const [calledUrl, init] = fetchMock.mock.calls[0];
+            const url = new URL(calledUrl);
+            expect(url.pathname).toBe("/api/import");
+            expect(url.searchParams.get("format")).toBe("parquet");
+            expect(init.method).toBe("POST");
+            expect(init.headers["Content-Type"]).toBe("application/octet-stream");
+            expect(init.body).toBe(body);
+            expect(result).toEqual(data);
         });
     });
 

@@ -535,6 +535,7 @@ export interface BatchProgressPayload {
 }
 
 export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+export const OCTET_STREAM_HEADERS = { "Content-Type": "application/octet-stream" } as const;
 
 /** MIME content types referenced across click dispatch + preview rendering. */
 export const CONTENT_TYPE = {
@@ -608,6 +609,19 @@ export interface DocumentsResponse {
     limit: number;
     offset: number;
     has_more: boolean;
+}
+
+export type DatasetFormat = "parquet" | "jsonl";
+
+export const DATASET_FORMAT = {
+    PARQUET: "parquet",
+    JSONL: "jsonl",
+} as const satisfies Record<string, DatasetFormat>;
+
+export interface DatasetImportResponse {
+    sources: string[];
+    pages: number;
+    chunks: number;
 }
 
 export interface ConfigUpdateResponse {
@@ -768,7 +782,7 @@ export const DOT_STATE = {
     MUTED: "muted",
 } as const satisfies Record<string, DotState>;
 
-export type TaskType = "sync" | "add" | "pull" | "crawl" | "download" | "wiki" | "delete" | "setup";
+export type TaskType = "sync" | "add" | "pull" | "crawl" | "download" | "wiki" | "delete" | "setup" | "import";
 
 export const TASK_TYPE = {
     SYNC: "sync",
@@ -779,6 +793,7 @@ export const TASK_TYPE = {
     WIKI: "wiki",
     DELETE: "delete",
     SETUP: "setup",
+    IMPORT: "import",
 } as const satisfies Record<string, TaskType>;
 
 export type ModelTask = "chat" | "vision" | "embedding" | "rerank";
@@ -825,6 +840,7 @@ export const BACKGROUND_TASK_TYPES: ReadonlySet<TaskType> = new Set<TaskType>([
     TASK_TYPE.DOWNLOAD,
     TASK_TYPE.WIKI,
     TASK_TYPE.DELETE,
+    TASK_TYPE.IMPORT,
 ]);
 
 export const PLATFORM = {
