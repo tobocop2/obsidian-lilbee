@@ -106,6 +106,8 @@ interface GitHubAsset {
     name: string;
     browser_download_url: string;
     size: number;
+    /** GitHub-computed "sha256:<hex>" of the uploaded asset, or null on older releases. */
+    digest: string | null;
 }
 
 interface GitHubRelease {
@@ -118,6 +120,8 @@ export interface ReleaseInfo {
     assetUrl: string;
     variant: ServerVariant;
     sizeBytes: number;
+    /** GitHub-reported "sha256:<hex>" of the asset, verified against the download bytes. */
+    digest: string | null;
 }
 
 /** Choose the CUDA asset when detected and shipped; otherwise the default build. */
@@ -143,7 +147,13 @@ export async function getLatestRelease(): Promise<ReleaseInfo> {
     if (res.status >= 400) throw new Error(`GitHub API responded ${res.status}`);
     const data = res.json as GitHubRelease;
     const { variant, asset } = selectAsset(data, await detectCudaTag());
-    return { tag: data.tag_name, assetUrl: asset.browser_download_url, variant, sizeBytes: asset.size };
+    return {
+        tag: data.tag_name,
+        assetUrl: asset.browser_download_url,
+        variant,
+        sizeBytes: asset.size,
+        digest: asset.digest,
+    };
 }
 
 export function checkForUpdate(currentVersion: string, latestTag: string): boolean {
@@ -178,7 +188,7 @@ export class BinaryManager {
         if (this.binaryExists()) return this.binaryPath;
         onProgress?.("Fetching latest release info...");
         const release = await getLatestRelease();
-        await this.download(release.assetUrl, release.sizeBytes, onProgress, onQuarantineFailed);
+        await this.download(release.assetUrl, release.sizeBytes, release.digest, onProgress, onQuarantineFailed);
         return this.binaryPath;
     }
 
@@ -195,9 +205,20 @@ export class BinaryManager {
         }
     }
 
+    /** Reject the download unless its SHA256 matches the digest GitHub reports for the asset. */
+    private verifyDigest(data: Buffer, expectedDigest: string | null): void {
+        const actual = `sha256:${node.createHash("sha256").update(data).digest("hex")}`;
+        if (actual !== (expectedDigest ?? "").toLowerCase()) {
+            throw new Error(
+                "The downloaded lilbee server could not be verified against its checksum and was discarded. Please try again.",
+            );
+        }
+    }
+
     async download(
         assetUrl: string,
         sizeBytes: number,
+        expectedDigest: string | null,
         onProgress?: (msg: string, url?: string) => void,
         onQuarantineFailed?: () => void,
     ): Promise<void> {
@@ -210,9 +231,12 @@ export class BinaryManager {
         const res = await node.requestUrl({ url: assetUrl });
         if (res.status >= 400) throw new Error(`Download failed: ${res.status}`);
 
+        const data = Buffer.from(res.arrayBuffer);
+        this.verifyDigest(data, expectedDigest);
+
         const dest = this.binaryPath;
         try {
-            node.writeFileSync(dest, Buffer.from(res.arrayBuffer));
+            node.writeFileSync(dest, data);
             if (process.platform !== PLATFORM.WIN32) {
                 node.chmodSync(dest, 0o755);
             }

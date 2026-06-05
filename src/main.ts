@@ -666,7 +666,7 @@ export default class LilbeePlugin extends Plugin {
 
         // Download the new binary (overwrites the old one)
         onProgress?.("Downloading...");
-        await this.binaryManager.download(release.assetUrl, release.sizeBytes, onProgress, () =>
+        await this.binaryManager.download(release.assetUrl, release.sizeBytes, release.digest, onProgress, () =>
             this.showGatekeeperHelp(),
         );
 
