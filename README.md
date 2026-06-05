@@ -188,6 +188,8 @@ Settings → BRAT → Beta Plugin List → click the edit (pencil) icon next to 
 
 The plugin tracks the installed lilbee server version. Go to Settings → lilbee → **Check for updates**. If a newer release is available the button changes to **Update to vX.Y.Z**: one click stops the running server, downloads the new version, verifies it, and restarts.
 
+This updates only the lilbee **server**, never the plugin itself. The plugin's own code is updated through Obsidian like any other community plugin; the **Check for updates** button only manages the separate server it downloads. Each server download is checked against the SHA256 digest GitHub publishes for the release before it runs, so a corrupted or tampered download is discarded instead of executed.
+
 ## Documentation
 
 See **[Usage Guide](docs/usage.md)** for the full reference: every command, every setting, the chat toolbar, supported formats, troubleshooting, and advanced configuration. For the underlying engine (what it indexes, how retrieval works, model formats, hardware requirements), see [lilbee](https://lilbee.sh/).
