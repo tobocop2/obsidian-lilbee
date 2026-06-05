@@ -31,9 +31,10 @@ const DEFAULT_LEAD_IN_MS = 500;
 const DEFAULT_TAIL_MS = 1500;
 const DEFAULT_HOLD_MS = 800;
 const HOVER_BEFORE_CLICK_MS = 350;
-// Letterbox band (retina px) added below the window so narration captions sit
-// under the app instead of over the chat. Sized to fit a two-line caption.
-const CAPTION_BAND_PX = 168;
+// Bottom margin (retina px) between the window edge and the narration caption
+// pill, which now overlays the app itself instead of a letterbox band. Tuned to
+// float just above the chat input row rather than over it.
+const CAPTION_MARGIN_PX = 190;
 // Hard ceiling for a single runJs beat. A storyboard that awaits an
 // open SSE stream (e.g. addToLilbee) would otherwise hang forever while
 // ffmpeg captures a static screen. If a beat exceeds this, abort the
@@ -817,10 +818,7 @@ async function postProcess(opts: PostOptions): Promise<void> {
   // Overlay the synthetic cursor at full rate, before the speedup split, so
   // it's decimated together with the screen during sped-up segments.
   chain.push(`[v_crop][${haloInputIdx}:v]overlay=0:0:eof_action=pass[v_crop_h]`);
-  // Add a black band below the window so narration captions render under the
-  // app, never over the chat.
-  chain.push(`[v_crop_h]pad=${cropW}:${cropH + CAPTION_BAND_PX}:0:0:black[v_pad]`);
-  chain.push(`[v_pad]split=${segments.length}${segments.map((_, i) => `[c${i}]`).join("")}`);
+  chain.push(`[v_crop_h]split=${segments.length}${segments.map((_, i) => `[c${i}]`).join("")}`);
   const segOuts: string[] = [];
   for (let i = 0; i < segments.length; i++) {
     const s = segments[i];
@@ -869,9 +867,9 @@ async function postProcess(opts: PostOptions): Promise<void> {
     lastLabel = next;
   }
 
-  // Sticky narration captions, bottom-centre. Each caption shows from its
-  // beat's output start until the next captioned beat (or the end), so a run
-  // of sub-step beats shares one explanation without flicker.
+  // Sticky narration captions, overlaid bottom-centre on the app itself. Each
+  // caption shows from its beat's output start until the next captioned beat
+  // (or the end), so a run of sub-step beats shares one explanation w/o flicker.
   const capStarts = beatCaptions
     .map((b) => ({
       text: b.caption as string,
@@ -892,7 +890,7 @@ async function postProcess(opts: PostOptions): Promise<void> {
     const idx = beatCaptionInputIdx.get(text);
     if (idx === undefined) continue;
     const next = `v_cap${capIdx++}`;
-    chain.push(`[${lastLabel}][${idx}:v]overlay=(W-w)/2:${cropH}+(${CAPTION_BAND_PX}-h)/2:enable='${windows.join("+")}'[${next}]`);
+    chain.push(`[${lastLabel}][${idx}:v]overlay=(W-w)/2:H-h-${CAPTION_MARGIN_PX}:enable='${windows.join("+")}'[${next}]`);
     lastLabel = next;
   }
 
@@ -1009,15 +1007,15 @@ img.save(out)
 }
 
 async function renderBeatCaptionPng(text: string, outPath: string): Promise<void> {
-  // Bottom-centre narration banner: white text, word-wrapped, on a wide
-  // translucent dark pill. Larger and wrappable (unlike the top-left global
-  // caption) so a full sentence of explanation reads cleanly.
+  // Bottom-centre narration subtitle overlaid on the app: white text,
+  // word-wrapped, on a rounded translucent pill with a soft drop shadow so it
+  // stays legible over chat content without a letterbox band.
   const py = `
 import sys
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 text = sys.argv[1]
 out = sys.argv[2]
-font_size = 30
+font_size = 34
 font = None
 for p in ["/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc", "/Library/Fonts/Arial.ttf"]:
     try:
@@ -1045,13 +1043,21 @@ if cur:
     lines.append(cur)
 ascent, descent = font.getmetrics()
 line_h = ascent + descent
-gap = 6
-pad_x, pad_y = 26, 16
+gap = 8
+pad_x, pad_y = 34, 20
+radius = 24
 text_w = max(line_w(l) for l in lines)
 text_h = line_h * len(lines) + gap * (len(lines) - 1)
-img = Image.new("RGBA", (text_w + 2 * pad_x, text_h + 2 * pad_y), (0, 0, 0, 165))
+box_w = text_w + 2 * pad_x
+box_h = text_h + 2 * pad_y
+m = 28  # transparent margin so the blurred shadow has room
+img = Image.new("RGBA", (box_w + 2 * m, box_h + 2 * m), (0, 0, 0, 0))
+shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+ImageDraw.Draw(shadow).rounded_rectangle([m, m + 6, m + box_w, m + box_h + 6], radius=radius, fill=(0, 0, 0, 150))
+img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(14)))
 d = ImageDraw.Draw(img)
-y = pad_y
+d.rounded_rectangle([m, m, m + box_w, m + box_h], radius=radius, fill=(16, 16, 20, 214), outline=(255, 255, 255, 28), width=1)
+y = m + pad_y
 for l in lines:
     lw = line_w(l)
     d.text(((img.width - lw) / 2, y), l, fill=(255, 255, 255, 255), font=font)
