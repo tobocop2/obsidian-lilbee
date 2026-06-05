@@ -51,6 +51,12 @@ export type PreflightOptions = {
   ctx: ObsidianContext;
   layout: LayoutName;
   freshIngest?: string[];
+  /** Empty the whole index before recording. For a "fresh vault" demo that adds
+   * a document on camera: the on-camera Add becomes a genuine first ingest (no
+   * "already indexed" prompt) and retrieval sees only what the demo adds. Leaves
+   * the embedder untouched, so the store must already be bound to the embedder
+   * the demo records with (native nomic for the all-local reels). */
+  emptyIndex?: boolean;
   /** HF repo to uninstall before recording so a download demo pulls fresh. */
   freshModel?: string;
   clearTaskCenter?: boolean;
@@ -231,7 +237,27 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
   });
   }
 
-  // 4. Fresh ingest cleanup
+  // 4. Empty the whole index (fresh-vault demos add a doc on camera; this makes
+  // that Add a clean first ingest and keeps retrieval to just what's added).
+  // delete_files:true so the managed copy is gone too — the vault originals stay.
+  if (opts.emptyIndex) {
+    await ctx.page.evaluate(async () => {
+      const p = (globalThis as unknown as { app: { plugins: { plugins: { lilbee: { settings: { serverUrl: string; manualToken?: string }; api?: { baseUrl: string; token?: string | null } } } } } }).app.plugins.plugins.lilbee;
+      const base = p.api?.baseUrl ?? p.settings.serverUrl;
+      const auth = { "Content-Type": "application/json", Authorization: "Bearer " + (p.api?.token ?? p.settings.manualToken ?? "") };
+      const r = await fetch(base + "/api/documents", { headers: auth }).then((res) => res.json()).catch(() => ({ documents: [] }));
+      const names = Array.isArray(r.documents) ? r.documents.map((d: { filename: string }) => d.filename) : [];
+      if (names.length) {
+        await fetch(base + "/api/documents/remove", {
+          method: "POST",
+          headers: auth,
+          body: JSON.stringify({ names, delete_files: true }),
+        }).catch(() => {});
+      }
+    });
+  }
+
+  // 4a. Fresh ingest cleanup
   for (const name of freshIngest) {
     await ctx.page.evaluate(
       async ([n]) => {

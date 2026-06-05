@@ -25,6 +25,9 @@ export default storyboard("multipart", {
   window: [1400, 900],
   layout: "explorer-chat-tasks",
   clearTaskCenter: true,
+  // Fresh vault: empty the index first so the on-camera Add is a genuine first
+  // ingest (no "already indexed" prompt) and retrieval sees only the manual.
+  emptyIndex: true,
   // Qwen3 8B is the answering model; preload so the on-camera answer is warm.
   pinChatModel: "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf",
   preloadChatModel: true,

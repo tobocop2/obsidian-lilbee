@@ -130,6 +130,7 @@ export async function record(storyboard: Storyboard): Promise<void> {
       ctx,
       layout: storyboard.layout,
       freshIngest: storyboard.freshIngest,
+      emptyIndex: storyboard.emptyIndex,
       freshModel: storyboard.freshModel,
       clearTaskCenter: storyboard.clearTaskCenter,
       clearChat: storyboard.clearChat,
