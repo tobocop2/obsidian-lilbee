@@ -1,5 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import type { StatsFs } from "fs";
+import { createHash } from "crypto";
 import {
     node,
     getPlatformAssetName,
@@ -33,6 +34,11 @@ function releaseResponse(json: unknown) {
 /** Build a fake requestUrl response for binary download. */
 function downloadResponse(data: Uint8Array) {
     return { status: 200, json: {}, arrayBuffer: data.buffer, headers: {} };
+}
+
+/** The GitHub-style "sha256:<hex>" digest of some bytes. */
+function sha256Digest(data: Uint8Array): string {
+    return `sha256:${createHash("sha256").update(Buffer.from(data)).digest("hex")}`;
 }
 
 /** A statfs result with `freeBytes` available (block size 1 keeps the math simple). */
@@ -166,7 +172,14 @@ describe("getLatestRelease", () => {
         vi.spyOn(node, "requestUrl").mockResolvedValue(
             releaseResponse({
                 tag_name: "v1.0.0",
-                assets: [{ name: "lilbee-linux-x86_64", browser_download_url: "https://e/dl", size: 1234 }],
+                assets: [
+                    {
+                        name: "lilbee-linux-x86_64",
+                        browser_download_url: "https://e/dl",
+                        size: 1234,
+                        digest: "sha256:aaa",
+                    },
+                ],
             }),
         );
 
@@ -175,6 +188,7 @@ describe("getLatestRelease", () => {
             assetUrl: "https://e/dl",
             variant: "default",
             sizeBytes: 1234,
+            digest: "sha256:aaa",
         });
     });
 
@@ -186,8 +200,18 @@ describe("getLatestRelease", () => {
             releaseResponse({
                 tag_name: "v1.0.0",
                 assets: [
-                    { name: "lilbee-linux-x86_64", browser_download_url: "https://e/cpu", size: 10 },
-                    { name: "lilbee-linux-x86_64-cu125", browser_download_url: "https://e/cu125", size: 20 },
+                    {
+                        name: "lilbee-linux-x86_64",
+                        browser_download_url: "https://e/cpu",
+                        size: 10,
+                        digest: "sha256:cpu",
+                    },
+                    {
+                        name: "lilbee-linux-x86_64-cu125",
+                        browser_download_url: "https://e/cu125",
+                        size: 20,
+                        digest: "sha256:cu125",
+                    },
                 ],
             }),
         );
@@ -197,6 +221,7 @@ describe("getLatestRelease", () => {
             assetUrl: "https://e/cu125",
             variant: "cu125",
             sizeBytes: 20,
+            digest: "sha256:cu125",
         });
         expect(warn).not.toHaveBeenCalled();
     });
@@ -208,7 +233,14 @@ describe("getLatestRelease", () => {
         vi.spyOn(node, "requestUrl").mockResolvedValue(
             releaseResponse({
                 tag_name: "v1.0.0",
-                assets: [{ name: "lilbee-linux-x86_64", browser_download_url: "https://e/cpu", size: 10 }],
+                assets: [
+                    {
+                        name: "lilbee-linux-x86_64",
+                        browser_download_url: "https://e/cpu",
+                        size: 10,
+                        digest: "sha256:cpu",
+                    },
+                ],
             }),
         );
 
@@ -217,6 +249,7 @@ describe("getLatestRelease", () => {
             assetUrl: "https://e/cpu",
             variant: "default",
             sizeBytes: 10,
+            digest: "sha256:cpu",
         });
         expect(warn).toHaveBeenCalledWith(expect.stringContaining("GPU detected (cu125)"));
     });
@@ -329,6 +362,7 @@ describe("BinaryManager", () => {
                                 name: "lilbee-macos-arm64",
                                 browser_download_url: "https://example.com/dl",
                                 size: 3,
+                                digest: sha256Digest(data),
                             },
                         ],
                     }),
@@ -361,7 +395,7 @@ describe("BinaryManager", () => {
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
 
             const mgr = new BinaryManager("/plugins/lilbee/bin");
-            await mgr.download("https://example.com/dl", 2);
+            await mgr.download("https://example.com/dl", 2, sha256Digest(data));
 
             expect(node.mkdirSync).toHaveBeenCalledWith(expect.stringContaining("bin"), { recursive: true });
         });
@@ -378,7 +412,7 @@ describe("BinaryManager", () => {
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
 
             const mgr = new BinaryManager("/plugins/lilbee/bin");
-            await mgr.download("https://example.com/dl", 2);
+            await mgr.download("https://example.com/dl", 2, sha256Digest(data));
 
             expect(node.mkdirSync).not.toHaveBeenCalled();
         });
@@ -392,7 +426,7 @@ describe("BinaryManager", () => {
 
             const mgr = new BinaryManager("/plugins/lilbee/bin");
             // A 1 GB asset needs ~1.5 GB; the message reports GB for the requirement and MB for the free space.
-            await expect(mgr.download("https://example.com/dl", 1024 ** 3)).rejects.toThrow(
+            await expect(mgr.download("https://example.com/dl", 1024 ** 3, null)).rejects.toThrow(
                 /need about 1\.5 GB free, but only 500 MB is available/,
             );
             expect(reqSpy).not.toHaveBeenCalled();
@@ -411,7 +445,7 @@ describe("BinaryManager", () => {
 
             const onProgress = vi.fn();
             const mgr = new BinaryManager("/plugins/lilbee/bin");
-            await mgr.download("https://example.com/dl", 6, onProgress);
+            await mgr.download("https://example.com/dl", 6, sha256Digest(data), onProgress);
 
             expect(node.writeFileSync).toHaveBeenCalledWith(mgr.binaryPath, expect.any(Buffer));
             const writtenBuffer = (node.writeFileSync as ReturnType<typeof vi.fn>).mock.calls[0][1] as Buffer;
@@ -432,7 +466,9 @@ describe("BinaryManager", () => {
             const unlinkSpy = vi.spyOn(node, "unlinkSync").mockImplementation(() => {});
 
             const mgr = new BinaryManager("/plugins/lilbee/bin");
-            await expect(mgr.download("https://example.com/dl", 2)).rejects.toThrow("ENOSPC");
+            await expect(
+                mgr.download("https://example.com/dl", 2, sha256Digest(new Uint8Array([1, 2]))),
+            ).rejects.toThrow("ENOSPC");
             expect(unlinkSpy).toHaveBeenCalledWith(mgr.binaryPath);
         });
 
@@ -448,7 +484,9 @@ describe("BinaryManager", () => {
             const unlinkSpy = vi.spyOn(node, "unlinkSync").mockImplementation(() => {});
 
             const mgr = new BinaryManager("/plugins/lilbee/bin");
-            await expect(mgr.download("https://example.com/dl", 1)).rejects.toThrow("boom");
+            await expect(mgr.download("https://example.com/dl", 1, sha256Digest(new Uint8Array([1])))).rejects.toThrow(
+                "boom",
+            );
             expect(unlinkSpy).not.toHaveBeenCalled();
         });
 
@@ -465,7 +503,7 @@ describe("BinaryManager", () => {
 
             const onQuarantineFailed = vi.fn();
             const mgr = new BinaryManager("/plugins/lilbee/bin");
-            await mgr.download("https://example.com/dl", 1, undefined, onQuarantineFailed);
+            await mgr.download("https://example.com/dl", 1, sha256Digest(data), undefined, onQuarantineFailed);
 
             expect(execSpy).toHaveBeenCalledWith("xattr", ["-cr", mgr.binaryPath]);
             expect(onQuarantineFailed).not.toHaveBeenCalled();
@@ -486,7 +524,7 @@ describe("BinaryManager", () => {
             const mgr = new BinaryManager("/plugins/lilbee/bin");
             // The download still resolves; the caller is told quarantine couldn't be cleared.
             await expect(
-                mgr.download("https://example.com/dl", 1, undefined, onQuarantineFailed),
+                mgr.download("https://example.com/dl", 1, sha256Digest(data), undefined, onQuarantineFailed),
             ).resolves.toBeUndefined();
             expect(onQuarantineFailed).toHaveBeenCalledTimes(1);
         });
@@ -501,7 +539,9 @@ describe("BinaryManager", () => {
             vi.spyOn(node, "execFile").mockRejectedValue(new Error("xattr not found"));
 
             const mgr = new BinaryManager("/plugins/lilbee/bin");
-            await expect(mgr.download("https://example.com/dl", 1)).resolves.toBeUndefined();
+            await expect(
+                mgr.download("https://example.com/dl", 1, sha256Digest(new Uint8Array([1]))),
+            ).resolves.toBeUndefined();
         });
 
         it("skips chmod on win32", async () => {
@@ -515,7 +555,7 @@ describe("BinaryManager", () => {
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
 
             const mgr = new BinaryManager("/plugins/lilbee/bin");
-            await mgr.download("https://example.com/dl", 1);
+            await mgr.download("https://example.com/dl", 1, sha256Digest(data));
 
             expect(node.chmodSync).not.toHaveBeenCalled();
         });
@@ -532,7 +572,7 @@ describe("BinaryManager", () => {
             const execSpy = vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "", stderr: "" });
 
             const mgr = new BinaryManager("/plugins/lilbee/bin");
-            await mgr.download("https://example.com/dl", 1);
+            await mgr.download("https://example.com/dl", 1, sha256Digest(data));
 
             expect(execSpy).not.toHaveBeenCalled();
         });
@@ -549,7 +589,7 @@ describe("BinaryManager", () => {
             });
 
             const mgr = new BinaryManager("/plugins/lilbee/bin");
-            await expect(mgr.download("https://example.com/dl", 1)).rejects.toThrow("Download failed: 404");
+            await expect(mgr.download("https://example.com/dl", 1, null)).rejects.toThrow("Download failed: 404");
         });
 
         it("works without onProgress callback", async () => {
@@ -563,7 +603,55 @@ describe("BinaryManager", () => {
             vi.spyOn(node, "chmodSync").mockImplementation(() => {});
 
             const mgr = new BinaryManager("/plugins/lilbee/bin");
-            await expect(mgr.download("https://example.com/dl", 1)).resolves.toBeUndefined();
+            await expect(mgr.download("https://example.com/dl", 1, sha256Digest(data))).resolves.toBeUndefined();
         });
+    });
+});
+
+describe("BinaryManager.download digest verification", () => {
+    let restore: () => void;
+    afterEach(() => restore?.());
+
+    function stubDownload(data: Uint8Array) {
+        vi.spyOn(node, "existsSync").mockReturnValue(true);
+        stubEnoughSpace();
+        vi.spyOn(node, "requestUrl").mockResolvedValue(downloadResponse(data));
+        vi.spyOn(node, "chmodSync").mockImplementation(() => {});
+    }
+
+    it("writes the binary when the digest matches the downloaded bytes", async () => {
+        restore = stubPlatform("linux", "x64");
+        const data = new Uint8Array([1, 2, 3, 4]);
+        stubDownload(data);
+        const writeSpy = vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
+
+        const mgr = new BinaryManager("/plugins/lilbee/bin");
+        await mgr.download("https://example.com/dl", 4, sha256Digest(data));
+
+        expect(writeSpy).toHaveBeenCalledWith(mgr.binaryPath, expect.any(Buffer));
+    });
+
+    it("rejects and writes nothing when the digest does not match the bytes", async () => {
+        restore = stubPlatform("linux", "x64");
+        const data = new Uint8Array([1, 2, 3, 4]);
+        stubDownload(data);
+        const writeSpy = vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
+
+        const mgr = new BinaryManager("/plugins/lilbee/bin");
+        await expect(
+            mgr.download("https://example.com/dl", 4, sha256Digest(new Uint8Array([9, 9, 9]))),
+        ).rejects.toThrow(/checksum/i);
+        expect(writeSpy).not.toHaveBeenCalled();
+    });
+
+    it("rejects and writes nothing when the release provides no digest", async () => {
+        restore = stubPlatform("linux", "x64");
+        const data = new Uint8Array([1, 2, 3, 4]);
+        stubDownload(data);
+        const writeSpy = vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
+
+        const mgr = new BinaryManager("/plugins/lilbee/bin");
+        await expect(mgr.download("https://example.com/dl", 4, null)).rejects.toThrow(/checksum/i);
+        expect(writeSpy).not.toHaveBeenCalled();
     });
 });

@@ -5742,7 +5742,13 @@ describe("LilbeePlugin", () => {
 
             const progress: string[] = [];
             await plugin.updateServer(
-                { tag: "v0.3.0", assetUrl: "https://example.com/v0.3.0", variant: "cu125", sizeBytes: 256 },
+                {
+                    tag: "v0.3.0",
+                    assetUrl: "https://example.com/v0.3.0",
+                    variant: "cu125",
+                    sizeBytes: 256,
+                    digest: "sha256:test",
+                },
                 (msg) => progress.push(msg),
             );
 
@@ -5750,6 +5756,7 @@ describe("LilbeePlugin", () => {
             expect(mockDownload).toHaveBeenCalledWith(
                 "https://example.com/v0.3.0",
                 256,
+                "sha256:test",
                 expect.any(Function),
                 expect.any(Function),
             );
@@ -5763,7 +5770,7 @@ describe("LilbeePlugin", () => {
 
         it("opens the Gatekeeper help modal when an update can't clear quarantine", async () => {
             mockGatekeeperOpen.mockClear();
-            mockDownload.mockImplementationOnce(async (_url, _size, _onProgress, onQuarantineFailed) => {
+            mockDownload.mockImplementationOnce(async (_url, _size, _digest, _onProgress, onQuarantineFailed) => {
                 onQuarantineFailed?.();
             });
 
@@ -5776,6 +5783,7 @@ describe("LilbeePlugin", () => {
                 assetUrl: "https://example.com/v0.3.0",
                 variant: "default",
                 sizeBytes: 100,
+                digest: "sha256:test",
             });
 
             expect(mockGatekeeperOpen).toHaveBeenCalled();
