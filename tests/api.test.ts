@@ -717,12 +717,16 @@ describe("pullModel()", () => {
     });
 
     describe("importDataset()", () => {
-        it("POSTs raw bytes to /api/import and returns the summary", async () => {
-            const data = { sources: ["doc.pdf"], pages: 2, chunks: 4 };
-            fetchMock.mockResolvedValue(jsonResponse(data));
+        it("POSTs raw bytes to /api/import and streams SSE progress then done", async () => {
+            fetchMock.mockResolvedValue(
+                sseResponse([
+                    'event: embed\ndata: {"file":"doc.pdf","chunk":1,"total_chunks":1}\n\n',
+                    'event: done\ndata: {"command":"import","sources":["doc.pdf"],"pages":2,"chunks":4}\n\n',
+                ]),
+            );
             const body = new Uint8Array([1, 2, 3]);
 
-            const result = await client.importDataset(body, "parquet");
+            const events = await collect(client.importDataset(body, "parquet"));
 
             const [calledUrl, init] = fetchMock.mock.calls[0];
             const url = new URL(calledUrl);
@@ -731,7 +735,8 @@ describe("pullModel()", () => {
             expect(init.method).toBe("POST");
             expect(init.headers["Content-Type"]).toBe("application/octet-stream");
             expect(init.body).toBe(body);
-            expect(result).toEqual(data);
+            expect(events.map((e) => e.event)).toEqual(["embed", "done"]);
+            expect(events[1].data).toEqual({ command: "import", sources: ["doc.pdf"], pages: 2, chunks: 4 });
         });
     });
 

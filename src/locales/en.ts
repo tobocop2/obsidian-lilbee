@@ -577,6 +577,7 @@ export const MESSAGES = {
     LABEL_DATASET_FILTER: "lilbee dataset",
     LABEL_DATASET_IMPORT_TASK: "Importing dataset",
     STATUS_DATASET_IMPORTING: "Re-embedding pages…",
+    STATUS_DATASET_EMBEDDING: (file: string) => `Re-embedding ${file}…`,
     NOTICE_DATASET_EXPORTED: (path: string) => `lilbee: exported dataset to ${path}`,
     ERROR_DATASET_EXPORT: (msg: string) => `lilbee: export failed — ${msg}`,
     ERROR_DATASET_READ: (msg: string) => `lilbee: could not read dataset — ${msg}`,

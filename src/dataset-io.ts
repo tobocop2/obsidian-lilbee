@@ -1,35 +1,27 @@
 import { Notice } from "obsidian";
 import type { LilbeeClient } from "./api";
 import type { TaskQueue } from "./task-queue";
-import { DATASET_FORMAT, TASK_TYPE, type DatasetFormat } from "./types";
+import { DATASET_FORMAT, SSE_EVENT, TASK_TYPE, type DatasetFormat, type DatasetImportResponse } from "./types";
 import { MESSAGES } from "./locales/en";
 import { node } from "./binary-manager";
 import { electronDialog } from "./utils/file-dialog";
+import { extractServerErrorDetail, extractSseErrorMessage } from "./utils";
 
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 const IMPORT_PROGRESS_PCT = 50;
 const JSONL_EXTENSION = ".jsonl";
 const DEFAULT_EXPORT_NAME = "pages.parquet";
 const DATASET_EXTENSIONS = ["parquet", "jsonl"];
-const SERVER_ERROR_PATTERN = /^Server responded \d+: (.*)$/s;
 
 /** Pick the dataset format from a file path's extension (defaults to parquet). */
 function formatFromPath(path: string): DatasetFormat {
     return path.toLowerCase().endsWith(JSONL_EXTENSION) ? DATASET_FORMAT.JSONL : DATASET_FORMAT.PARQUET;
 }
 
-/** Extract the server's user-facing `detail` from a thrown HTTP error message. */
+/** Prefer the server's user-facing `detail` over the raw thrown HTTP error message. */
 export function datasetErrorMessage(err: unknown): string {
     if (!(err instanceof Error)) return String(err);
-    const match = SERVER_ERROR_PATTERN.exec(err.message);
-    if (!match) return err.message;
-    try {
-        const body = JSON.parse(match[1]) as { detail?: unknown };
-        if (typeof body.detail === "string") return body.detail;
-    } catch {
-        /* not JSON — fall through to the raw body */
-    }
-    return match[1];
+    return extractServerErrorDetail(err.message) ?? err.message;
 }
 
 export async function exportDatasetToDisk(api: LilbeeClient): Promise<void> {
@@ -79,9 +71,27 @@ async function runImport(
     }
     taskQueue.update(taskId, IMPORT_PROGRESS_PCT, MESSAGES.STATUS_DATASET_IMPORTING);
     try {
-        const result = await api.importDataset(data, format);
+        let summary: DatasetImportResponse | null = null;
+        for await (const event of api.importDataset(data, format)) {
+            if (event.event === SSE_EVENT.EMBED) {
+                const detail = (event.data as { file?: string }).file ?? "";
+                taskQueue.update(taskId, IMPORT_PROGRESS_PCT, MESSAGES.STATUS_DATASET_EMBEDDING(detail));
+            } else if (event.event === SSE_EVENT.ERROR) {
+                const message = extractSseErrorMessage(event.data, MESSAGES.ERROR_UNKNOWN);
+                taskQueue.fail(taskId, message);
+                new Notice(MESSAGES.ERROR_DATASET_IMPORT(message));
+                return;
+            } else if (event.event === SSE_EVENT.DONE) {
+                summary = event.data as DatasetImportResponse;
+            }
+        }
+        if (summary === null) {
+            taskQueue.fail(taskId, MESSAGES.ERROR_UNKNOWN);
+            new Notice(MESSAGES.ERROR_DATASET_IMPORT(MESSAGES.ERROR_UNKNOWN));
+            return;
+        }
         taskQueue.complete(taskId);
-        new Notice(MESSAGES.NOTICE_DATASET_IMPORTED(result.sources.length, result.pages, result.chunks));
+        new Notice(MESSAGES.NOTICE_DATASET_IMPORTED(summary.sources.length, summary.pages, summary.chunks));
     } catch (err) {
         const message = datasetErrorMessage(err);
         taskQueue.fail(taskId, message);

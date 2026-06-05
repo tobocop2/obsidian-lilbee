@@ -20,6 +20,17 @@ const showOpenDialog = electronDialog.showOpenDialog as ReturnType<typeof vi.fn>
 const writeFileSync = node.writeFileSync as unknown as ReturnType<typeof vi.fn>;
 const readFileSync = node.readFileSync as unknown as ReturnType<typeof vi.fn>;
 
+async function* sseEvents(
+    events: { event: string; data: unknown }[],
+): AsyncGenerator<{ event: string; data: unknown }> {
+    for (const e of events) yield e;
+}
+
+async function* sseThrows(err: Error): AsyncGenerator<{ event: string; data: unknown }> {
+    throw err;
+    yield { event: "", data: null };
+}
+
 function fakeApi(overrides: Partial<LilbeeClient> = {}): LilbeeClient {
     return {
         exportDataset: vi.fn(),
@@ -64,14 +75,14 @@ describe("datasetErrorMessage()", () => {
         expect(datasetErrorMessage(err)).toBe("Source not found: x.pdf");
     });
 
-    it("returns the raw body when it is not JSON", () => {
+    it("falls back to the full message when the body is not JSON", () => {
         const err = new Error("Server responded 500: upstream exploded");
-        expect(datasetErrorMessage(err)).toBe("upstream exploded");
+        expect(datasetErrorMessage(err)).toBe("Server responded 500: upstream exploded");
     });
 
-    it("returns the raw body when JSON has no string detail", () => {
+    it("falls back to the full message when JSON has no string detail", () => {
         const err = new Error('Server responded 400: {"other":1}');
-        expect(datasetErrorMessage(err)).toBe('{"other":1}');
+        expect(datasetErrorMessage(err)).toBe('Server responded 400: {"other":1}');
     });
 });
 
@@ -158,16 +169,24 @@ describe("importDatasetFromDisk()", () => {
         expect(api.importDataset).not.toHaveBeenCalled();
     });
 
-    it("imports, completes the task, and notifies on success", async () => {
+    it("streams embed progress, completes the task, and notifies on success", async () => {
         showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ["/tmp/pages.jsonl"] });
         const data = { byteLength: 3 } as unknown as Buffer;
         readFileSync.mockReturnValue(data);
-        const summary = { sources: ["doc.pdf"], pages: 2, chunks: 5 };
-        const api = fakeApi({ importDataset: vi.fn().mockResolvedValue(summary) });
+        const api = fakeApi({
+            importDataset: vi.fn(() =>
+                sseEvents([
+                    { event: "embed", data: { file: "doc.pdf", chunk: 1, total_chunks: 1 } },
+                    { event: "embed", data: {} },
+                    { event: "message", data: "noise" },
+                    { event: "done", data: { command: "import", sources: ["doc.pdf"], pages: 2, chunks: 5 } },
+                ]),
+            ),
+        });
         const { queue, update, complete } = fakeQueue("task-1");
         await importDatasetFromDisk(api, queue);
         expect(api.importDataset).toHaveBeenCalledWith(data, "jsonl");
-        expect(update).toHaveBeenCalledWith("task-1", 50, MESSAGES.STATUS_DATASET_IMPORTING);
+        expect(update).toHaveBeenCalledWith("task-1", 50, MESSAGES.STATUS_DATASET_EMBEDDING("doc.pdf"));
         expect(complete).toHaveBeenCalledWith("task-1");
         expect(messages()).toContain(MESSAGES.NOTICE_DATASET_IMPORTED(1, 2, 5));
     });
@@ -182,14 +201,38 @@ describe("importDatasetFromDisk()", () => {
         expect(api.importDataset).not.toHaveBeenCalled();
     });
 
-    it("fails the task and surfaces the server detail on import error", async () => {
+    it("fails the task on a server error event", async () => {
         showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ["/tmp/pages.parquet"] });
         readFileSync.mockReturnValue({ byteLength: 3 } as unknown as Buffer);
-        const err = new Error('Server responded 400: {"detail":"embedding model mismatch"}');
-        const api = fakeApi({ importDataset: vi.fn().mockRejectedValue(err) });
+        const api = fakeApi({
+            importDataset: vi.fn(() => sseEvents([{ event: "error", data: { message: "embedding model mismatch" } }])),
+        });
         const { queue, fail } = fakeQueue("task-1");
         await importDatasetFromDisk(api, queue);
         expect(fail).toHaveBeenCalledWith("task-1", "embedding model mismatch");
         expect(messages()).toContain(MESSAGES.ERROR_DATASET_IMPORT("embedding model mismatch"));
+    });
+
+    it("fails the task when the stream ends without a done event", async () => {
+        showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ["/tmp/pages.parquet"] });
+        readFileSync.mockReturnValue({ byteLength: 3 } as unknown as Buffer);
+        const api = fakeApi({
+            importDataset: vi.fn(() => sseEvents([{ event: "embed", data: { file: "doc.pdf" } }])),
+        });
+        const { queue, fail } = fakeQueue("task-1");
+        await importDatasetFromDisk(api, queue);
+        expect(fail).toHaveBeenCalledWith("task-1", MESSAGES.ERROR_UNKNOWN);
+        expect(messages()).toContain(MESSAGES.ERROR_DATASET_IMPORT(MESSAGES.ERROR_UNKNOWN));
+    });
+
+    it("fails the task and surfaces the server detail when the request throws", async () => {
+        showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ["/tmp/pages.parquet"] });
+        readFileSync.mockReturnValue({ byteLength: 3 } as unknown as Buffer);
+        const err = new Error('Server responded 401: {"detail":"bad token"}');
+        const api = fakeApi({ importDataset: vi.fn(() => sseThrows(err)) });
+        const { queue, fail } = fakeQueue("task-1");
+        await importDatasetFromDisk(api, queue);
+        expect(fail).toHaveBeenCalledWith("task-1", "bad token");
+        expect(messages()).toContain(MESSAGES.ERROR_DATASET_IMPORT("bad token"));
     });
 });

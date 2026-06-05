@@ -8,7 +8,6 @@ import type {
     ConfigResponse,
     ConfigUpdateResponse,
     DatasetFormat,
-    DatasetImportResponse,
     DocumentResult,
     DocumentsResponse,
     GenerationOptions,
@@ -543,16 +542,20 @@ export class LilbeeClient {
         return res.arrayBuffer();
     }
 
-    /** Upload a per-page text dataset; the server re-embeds it under the current model. */
-    async importDataset(data: ArrayBuffer | Uint8Array, format: DatasetFormat): Promise<DatasetImportResponse> {
+    /** Upload a per-page text dataset; the server re-embeds it and streams SSE progress. */
+    async *importDataset(data: ArrayBuffer | Uint8Array, format: DatasetFormat): AsyncGenerator<SSEEvent> {
         const qs = new URLSearchParams({ format });
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/import?${qs}`, {
-            method: "POST",
-            headers: { ...OCTET_STREAM_HEADERS, ...this.authHeaders() },
-            // Raw bytes — an ArrayBufferView is a valid fetch body at this serialization boundary.
-            body: data as BodyInit,
-        });
-        return res.json();
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/import?${qs}`,
+            {
+                method: "POST",
+                headers: { ...OCTET_STREAM_HEADERS, ...this.authHeaders() },
+                // Raw bytes — an ArrayBufferView is a valid fetch body at this serialization boundary.
+                body: data as BodyInit,
+            },
+            { stream: true },
+        );
+        yield* this.parseSSE(res);
     }
 
     async *crawl(
