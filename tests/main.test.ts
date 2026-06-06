@@ -6,6 +6,11 @@ import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
 import { ConfirmModal } from "../src/views/confirm-modal";
 import { ChatView } from "../src/views/chat-view";
+import { exportDatasetToDisk, importDatasetFromDisk } from "../src/dataset-io";
+vi.mock("../src/dataset-io", () => ({
+    exportDatasetToDisk: vi.fn().mockResolvedValue(undefined),
+    importDatasetFromDisk: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("../src/api", () => ({
     SessionTokenError: class SessionTokenError extends Error {
         readonly status: number;
@@ -375,11 +380,11 @@ describe("LilbeePlugin", () => {
             expect(startSpy).toHaveBeenCalled();
         });
 
-        it("adds all twenty-four commands", async () => {
+        it("adds all twenty-six commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(24);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(26);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("lilbee:model-picker-chat");
             expect(allIds).toContain("lilbee:model-picker-embedding");
@@ -394,6 +399,8 @@ describe("LilbeePlugin", () => {
             expect(ids).toContain("lilbee:sync");
             expect(ids).toContain("lilbee:sync-retry-skipped");
             expect(ids).toContain("lilbee:sync-rebuild");
+            expect(ids).toContain("lilbee:export-dataset");
+            expect(ids).toContain("lilbee:import-dataset");
             expect(ids).toContain("lilbee:catalog");
             expect(ids).toContain("lilbee:crawl");
             expect(ids).toContain("lilbee:documents");
@@ -469,6 +476,38 @@ describe("LilbeePlugin", () => {
             )![0];
             cmd.checkCallback(false);
             expect(addSpy).toHaveBeenCalledWith(folder);
+        });
+
+        it("export-dataset command is gated on readiness and invokes exportDatasetToDisk", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "lilbee:export-dataset",
+            )![0];
+            vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValueOnce(false);
+            expect(cmd.checkCallback(true)).toBe(false);
+            expect(cmd.checkCallback(true)).toBe(true);
+            expect(exportDatasetToDisk).not.toHaveBeenCalled();
+            expect(cmd.checkCallback(false)).toBe(true);
+            expect(exportDatasetToDisk).toHaveBeenCalledWith((plugin as any).api);
+        });
+
+        it("import-dataset command is gated on readiness and invokes importDatasetFromDisk", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "lilbee:import-dataset",
+            )![0];
+            vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValueOnce(false);
+            expect(cmd.checkCallback(true)).toBe(false);
+            expect(cmd.checkCallback(true)).toBe(true);
+            expect(importDatasetFromDisk).not.toHaveBeenCalled();
+            expect(cmd.checkCallback(false)).toBe(true);
+            expect(importDatasetFromDisk).toHaveBeenCalledWith(
+                (plugin as any).app,
+                (plugin as any).api,
+                (plugin as any).taskQueue,
+            );
         });
 
         it("sets status bar text to 'lilbee: ready [external]' in external mode", async () => {

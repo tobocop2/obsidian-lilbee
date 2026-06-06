@@ -19,7 +19,8 @@ if (typeof globalThis.document === "undefined") {
 
 import { Notice, WorkspaceLeaf } from "../__mocks__/obsidian";
 import { MockElement } from "../__mocks__/obsidian";
-import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal, electronDialog } from "../../src/views/chat-view";
+import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal } from "../../src/views/chat-view";
+import { electronDialog } from "../../src/utils/file-dialog";
 import { ok, err } from "neverthrow";
 import type LilbeePlugin from "../../src/main";
 import { SSE_EVENT } from "../../src/types";

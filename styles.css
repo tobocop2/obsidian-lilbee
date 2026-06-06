@@ -11,6 +11,7 @@
     --lilbee-color-wiki: #10b981;
     --lilbee-color-delete: #ef4444;
     --lilbee-color-setup: #8b5cf6;
+    --lilbee-color-import: #14b8a6;
     --lilbee-color-vision: #ec4899;
 }
 
@@ -2857,6 +2858,10 @@
 .lilbee-task-badge-setup {
     background-color: color-mix(in srgb, var(--lilbee-color-setup) 12%, transparent);
     color: var(--lilbee-color-setup);
+}
+.lilbee-task-badge-import {
+    background-color: color-mix(in srgb, var(--lilbee-color-import) 12%, transparent);
+    color: var(--lilbee-color-import);
 }
 
 .lilbee-task-name {

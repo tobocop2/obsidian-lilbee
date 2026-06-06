@@ -1,4 +1,4 @@
-import { CAPABILITY, JSON_HEADERS, SEARCH_CHUNK_TYPE, SSE_EVENT, ERROR_NAME } from "./types";
+import { CAPABILITY, JSON_HEADERS, OCTET_STREAM_HEADERS, SEARCH_CHUNK_TYPE, SSE_EVENT, ERROR_NAME } from "./types";
 import { ok, err, Result } from "neverthrow";
 
 import type {
@@ -7,6 +7,7 @@ import type {
     CatalogResponse,
     ConfigResponse,
     ConfigUpdateResponse,
+    DatasetFormat,
     DocumentResult,
     DocumentsResponse,
     GenerationOptions,
@@ -529,6 +530,32 @@ export class LilbeeClient {
             body: JSON.stringify({ names, delete_files: deleteFiles }),
         });
         return res.json();
+    }
+
+    /** Download the per-page text dataset as raw bytes (parquet or jsonl). */
+    async exportDataset(format: DatasetFormat, source?: string): Promise<ArrayBuffer> {
+        const qs = new URLSearchParams({ format });
+        if (source) qs.set("source", source);
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/export?${qs}`, {
+            headers: this.authHeaders(),
+        });
+        return res.arrayBuffer();
+    }
+
+    /** Upload a per-page text dataset; the server re-embeds it and streams SSE progress. */
+    async *importDataset(data: ArrayBuffer | Uint8Array, format: DatasetFormat): AsyncGenerator<SSEEvent> {
+        const qs = new URLSearchParams({ format });
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/import?${qs}`,
+            {
+                method: "POST",
+                headers: { ...OCTET_STREAM_HEADERS, ...this.authHeaders() },
+                // Raw bytes — an ArrayBufferView is a valid fetch body at this serialization boundary.
+                body: data as BodyInit,
+            },
+            { stream: true },
+        );
+        yield* this.parseSSE(res);
     }
 
     async *crawl(
