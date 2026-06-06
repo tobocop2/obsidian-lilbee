@@ -219,6 +219,7 @@ export default class LilbeePlugin extends Plugin {
     private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
     private startingServer = false;
     private serverStartFailed = false;
+    private unloaded = false;
     taskQueue: TaskQueue = new TaskQueue();
     /** Paths whose most-recent add failed — retry skips the reindex confirm. */
     private failedAddPaths = new Set<string>();
@@ -388,6 +389,8 @@ export default class LilbeePlugin extends Plugin {
             const binaryPath = await this.ensureBinaryWithUi(onProgress);
             if (binaryPath === null) return;
             await this.recordLilbeeVersionAfterDownload();
+            // A spawn after unload would leak a server no plugin instance tracks.
+            if (this.unloaded) return;
 
             try {
                 this.serverManager = this.buildServerManager(binaryPath, registry, sharedRoot);
@@ -1101,6 +1104,7 @@ export default class LilbeePlugin extends Plugin {
     }
 
     onunload(): void {
+        this.unloaded = true;
         if (this.pendingHintTimeout) {
             clearTimeout(this.pendingHintTimeout);
             this.pendingHintTimeout = null;

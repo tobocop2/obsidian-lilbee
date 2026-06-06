@@ -177,6 +177,8 @@ describe("ServerManager", () => {
 
             const startPromise = mgr.start();
             await vi.advanceTimersByTimeAsync(120_000);
+            // The failure path stops the child; advance past the stop grace period.
+            await vi.advanceTimersByTimeAsync(6_000);
             await startPromise;
 
             expect(mgr.state).toBe("error");
@@ -190,6 +192,7 @@ describe("ServerManager", () => {
 
             const startPromise = mgr.start();
             await vi.advanceTimersByTimeAsync(120_000);
+            await vi.advanceTimersByTimeAsync(6_000);
             await startPromise;
 
             expect(mgr.serverUrl).toBe("");
@@ -215,6 +218,7 @@ describe("ServerManager", () => {
             const startPromise = mgr.start();
             // 120 attempts * 1000ms each = 120000ms
             await vi.advanceTimersByTimeAsync(120_000);
+            await vi.advanceTimersByTimeAsync(6_000);
             await startPromise;
 
             expect(mgr.state).toBe("error");
@@ -226,9 +230,44 @@ describe("ServerManager", () => {
 
             const startPromise = mgr.start();
             await vi.advanceTimersByTimeAsync(120_000);
+            await vi.advanceTimersByTimeAsync(6_000);
             await startPromise;
 
             expect(mgr.state).toBe("error");
+        }, 15_000);
+
+        it("removes a stale port file before spawning so the old port is never adopted", async () => {
+            const mgr = new ServerManager(defaultOpts());
+
+            const startPromise = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await startPromise;
+
+            expect(unlinkSyncSpy).toHaveBeenCalledWith("/tmp/data/data/server.port");
+            // Cleanup happens before the child is spawned.
+            expect(unlinkSyncSpy.mock.invocationCallOrder[0]).toBeLessThan(spawnSpy.mock.invocationCallOrder[0]);
+        });
+
+        it("kills the spawned child on discovery failure so a retry can start clean", async () => {
+            existsSyncSpy.mockReturnValue(false);
+            const mgr = new ServerManager(defaultOpts());
+
+            const startPromise = mgr.start();
+            await vi.advanceTimersByTimeAsync(126_000);
+            await startPromise;
+
+            expect(mgr.state).toBe("error");
+            expect(child.kill).toHaveBeenCalled();
+            expect((mgr as any).child).toBeNull();
+
+            // With the failed child gone, a retry spawns a fresh server.
+            existsSyncSpy.mockReturnValue(true);
+            const retryPromise = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await retryPromise;
+
+            expect(spawnSpy).toHaveBeenCalledTimes(2);
+            expect(mgr.state).toBe("ready");
         }, 15_000);
     });
 
@@ -449,6 +488,8 @@ describe("ServerManager", () => {
             // Port file vanished between start and stop — e.g. the server
             // unlinked it on shutdown before our stop() ran the check.
             existsSyncSpy.mockReturnValue(false);
+            // Only stop()'s cleanup is under test, not start()'s pre-spawn unlink.
+            unlinkSyncSpy.mockClear();
 
             const stopPromise = mgr.stop();
             await vi.advanceTimersByTimeAsync(50);

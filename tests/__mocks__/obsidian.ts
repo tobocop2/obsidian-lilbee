@@ -8,6 +8,11 @@
 
 import { vi } from "vitest";
 
+// Mutable so tests can simulate either platform; reset isMacOS in afterEach when changed.
+export const Platform = {
+    isMacOS: false,
+};
+
 export class MockElement {
     tagName: string;
     private _textContent: string = "";
@@ -40,6 +45,10 @@ export class MockElement {
     placeholder: string = "";
     title: string = "";
     parentElement: MockElement | null = null;
+    // Scroll geometry — tests set scrollHeight/clientHeight to simulate overflow.
+    scrollTop: number = 0;
+    scrollHeight: number = 0;
+    clientHeight: number = 0;
 
     constructor(tag = "div") {
         this.tagName = tag.toUpperCase();
@@ -176,10 +185,8 @@ export class MockElement {
         if (i >= 0) handlers.splice(i, 1);
     }
 
-    // HTMLSelectElement.options — return children whose tagName is OPTION.
-    // Real-DOM HTMLSelectElement exposes the live HTMLOptionsCollection via
-    // this property; views that iterate it (e.g. chat-view.revertEmbeddingSelect)
-    // need the same surface in tests.
+    // HTMLSelectElement.options — children whose tagName is OPTION, matching
+    // the surface views that iterate a select's options expect.
     get options(): MockElement[] {
         return this.children.filter((c) => c.tagName === "OPTION");
     }
@@ -293,6 +300,8 @@ export class App {
     vault = {
         on: vi.fn().mockReturnValue({ id: "mock-vault-event" }),
         offref: vi.fn(),
+        // Undocumented-but-stable Obsidian API for appearance settings; null means unset.
+        getConfig: vi.fn().mockReturnValue(null),
         adapter: {
             getBasePath: vi.fn().mockReturnValue("/test/vault"),
             // Obsidian's real DataAdapter surfaces these; tests that copy
@@ -401,35 +410,84 @@ export class FuzzySuggestModal<T> {
     }
 }
 
-class MockMenuItem {
-    setTitle(_title: string): this {
+export class MockMenuItem {
+    title = "";
+    icon: string | null = null;
+    checked: boolean | null = null;
+    private clickHandler: ((evt?: MouseEvent | KeyboardEvent) => void) | null = null;
+
+    setTitle(title: string): this {
+        this.title = title;
         return this;
     }
-    setIcon(_icon: string): this {
+    setIcon(icon: string): this {
+        this.icon = icon;
         return this;
     }
-    onClick(cb: () => void): this {
-        cb();
+    setChecked(checked: boolean | null): this {
+        this.checked = checked;
         return this;
+    }
+    onClick(cb: (evt?: MouseEvent | KeyboardEvent) => void): this {
+        this.clickHandler = cb;
+        return this;
+    }
+    // Test helper: invoke the registered click handler.
+    click(): void {
+        this.clickHandler?.();
     }
 }
 
+/** Marker pushed by Menu.addSeparator so tests can assert on grouping. */
+export class MockMenuSeparator {}
+
 export class Menu {
-    private _items: MockMenuItem[] = [];
+    // Test helpers mirroring Notice.instances: grab the most recent menu.
+    static instances: Menu[] = [];
+    static clear(): void {
+        Menu.instances = [];
+    }
+
+    items: Array<MockMenuItem | MockMenuSeparator> = [];
+    visible = false;
+    position: { x: number; y: number } | null = null;
+    useNativeMenu: boolean | null = null;
     private _hideCallbacks: Array<() => void> = [];
+
+    constructor() {
+        Menu.instances.push(this);
+    }
 
     addItem(cb: (item: MockMenuItem) => void): this {
         const item = new MockMenuItem();
         cb(item);
-        this._items.push(item);
+        this.items.push(item);
         return this;
     }
 
-    showAtMouseEvent(_event: unknown): void {
-        /* noop */
+    addSeparator(): this {
+        this.items.push(new MockMenuSeparator());
+        return this;
+    }
+
+    setUseNativeMenu(useNativeMenu: boolean): this {
+        this.useNativeMenu = useNativeMenu;
+        return this;
+    }
+
+    showAtMouseEvent(_event: unknown): this {
+        this.visible = true;
+        return this;
+    }
+
+    showAtPosition(position: { x: number; y: number }): this {
+        this.visible = true;
+        this.position = position;
+        return this;
     }
 
     hide(): this {
+        this.visible = false;
         for (const cb of this._hideCallbacks) cb();
         this._hideCallbacks = [];
         return this;
@@ -437,6 +495,16 @@ export class Menu {
 
     onHide(cb: () => void): void {
         this._hideCallbacks.push(cb);
+    }
+
+    // Test helper: clickable items in order, separators excluded.
+    get menuItems(): MockMenuItem[] {
+        return this.items.filter((i): i is MockMenuItem => i instanceof MockMenuItem);
+    }
+
+    // Test helper: first item whose title matches.
+    itemTitled(title: string): MockMenuItem | null {
+        return this.menuItems.find((i) => i.title === title) ?? null;
     }
 }
 

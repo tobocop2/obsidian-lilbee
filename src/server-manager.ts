@@ -149,6 +149,10 @@ export class ServerManager {
         this.setState(SERVER_STATE.STARTING);
         this._stderrLines = [];
 
+        // A leftover server.port from a previous run would be adopted as this
+        // child's port, so it must be gone before the spawn.
+        this.cleanupPortFile();
+
         // No --port: the server binds 0, the kernel picks a free port, and
         // the chosen value is written to data/server.port for us to read.
         const args = ["serve", "--host", "127.0.0.1", "--data-dir", this.opts.dataDir];
@@ -166,6 +170,8 @@ export class ServerManager {
             this.crashCount = 0;
             this.setState(SERVER_STATE.READY);
         } catch {
+            // Kill the child we spawned so it doesn't outlive the failure and block retries.
+            await this.stop();
             this.setState(SERVER_STATE.ERROR);
         }
     }
