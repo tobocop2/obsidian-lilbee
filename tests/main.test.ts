@@ -4401,6 +4401,30 @@ describe("LilbeePlugin", () => {
             expect(phases).toContain("ready");
         });
 
+        it("startManagedServer aborted by unload mid-download never spawns a server", async () => {
+            let releaseBinary!: (path: string) => void;
+            mockEnsureBinary.mockImplementationOnce(() => new Promise((r) => (releaseBinary = r)));
+
+            const plugin = await createPlugin({ setupCompleted: false, serverMode: "managed" });
+            plugin.loadData = vi.fn().mockResolvedValue({ setupCompleted: false, serverMode: "managed" });
+            await plugin.onload();
+
+            const { ServerManager } = await import("../src/server-manager");
+            (ServerManager as unknown as ReturnType<typeof vi.fn>).mockClear();
+            mockServerStart.mockClear();
+
+            const startPromise = plugin.startManagedServer();
+            await flush();
+            // The plugin unloads (e.g. a reload) while the binary download is in flight.
+            plugin.onunload();
+            releaseBinary("/fake/bin/lilbee");
+            await startPromise;
+            await flush();
+
+            expect(ServerManager).not.toHaveBeenCalled();
+            expect(mockServerStart).not.toHaveBeenCalled();
+        });
+
         it("startManagedServer onProgress emits 'error' phase when ensureBinary rejects", async () => {
             mockBinaryExists.mockReturnValueOnce(false);
             mockEnsureBinary.mockRejectedValueOnce(new Error("boom"));
