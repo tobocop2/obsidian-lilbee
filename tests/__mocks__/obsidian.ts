@@ -8,6 +8,11 @@
 
 import { vi } from "vitest";
 
+// Mutable so tests can simulate either platform; reset isMacOS in afterEach when changed.
+export const Platform = {
+    isMacOS: false,
+};
+
 export class MockElement {
     tagName: string;
     private _textContent: string = "";
@@ -291,6 +296,8 @@ export class App {
     vault = {
         on: vi.fn().mockReturnValue({ id: "mock-vault-event" }),
         offref: vi.fn(),
+        // Undocumented-but-stable Obsidian API for appearance settings; null means unset.
+        getConfig: vi.fn().mockReturnValue(null),
         adapter: {
             getBasePath: vi.fn().mockReturnValue("/test/vault"),
             // Obsidian's real DataAdapter surfaces these; tests that copy
@@ -439,6 +446,7 @@ export class Menu {
     items: Array<MockMenuItem | MockMenuSeparator> = [];
     visible = false;
     position: { x: number; y: number } | null = null;
+    useNativeMenu: boolean | null = null;
     private _hideCallbacks: Array<() => void> = [];
 
     constructor() {
@@ -454,6 +462,11 @@ export class Menu {
 
     addSeparator(): this {
         this.items.push(new MockMenuSeparator());
+        return this;
+    }
+
+    setUseNativeMenu(useNativeMenu: boolean): this {
+        this.useNativeMenu = useNativeMenu;
         return this;
     }
 

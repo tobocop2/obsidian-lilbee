@@ -17,7 +17,7 @@ if (typeof globalThis.document === "undefined") {
     };
 }
 
-import { Menu, MockMenuItem, MockMenuSeparator, Notice, WorkspaceLeaf } from "../__mocks__/obsidian";
+import { Menu, MockMenuItem, MockMenuSeparator, Notice, Platform, WorkspaceLeaf } from "../__mocks__/obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal, electronDialog } from "../../src/views/chat-view";
 import { ok, err } from "neverthrow";
@@ -1598,6 +1598,83 @@ describe("ChatView.onOpen — model selector", () => {
         await tick();
 
         expect(plugin.refreshSettingsTab).not.toHaveBeenCalled();
+    });
+
+    it("renders in-window with ESC dismissal when native menus are off", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        (view.app.vault as any).getConfig = vi.fn().mockReturnValue(false);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const menu = openRailMenu(container, "lilbee-chat-model-select")!;
+        expect(menu.useNativeMenu).toBe(false);
+    });
+
+    it("renders natively when the vault's Native menus setting is on", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        (view.app.vault as any).getConfig = vi.fn().mockReturnValue(true);
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const menu = openRailMenu(container, "lilbee-chat-model-select")!;
+        expect(menu.useNativeMenu).toBe(true);
+        expect((view.app.vault as any).getConfig).toHaveBeenCalledWith("nativeMenus");
+    });
+
+    it("defaults to native on macOS when the setting is unset", async () => {
+        Notice.clear();
+        Platform.isMacOS = true;
+        try {
+            const plugin = makePlugin();
+            const view = new ChatView(makeLeaf(), plugin);
+            await view.onOpen();
+            await tick();
+
+            const container = view.containerEl.children[1] as unknown as MockElement;
+            const menu = openRailMenu(container, "lilbee-chat-model-select")!;
+            expect(menu.useNativeMenu).toBe(true);
+        } finally {
+            Platform.isMacOS = false;
+        }
+    });
+
+    it("defaults to the in-window menu when the vault has no getConfig API", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        (view.app.vault as any).getConfig = undefined;
+        await view.onOpen();
+        await tick();
+
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const menu = openRailMenu(container, "lilbee-chat-model-select")!;
+        expect(menu.useNativeMenu).toBe(false);
+    });
+
+    it("skips the document ESC listener for native menus", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        (view.app.vault as any).getConfig = vi.fn().mockReturnValue(true);
+        await view.onOpen();
+        await tick();
+
+        const addSpy = vi.fn();
+        const origAdd = document.addEventListener;
+        document.addEventListener = addSpy as typeof document.addEventListener;
+        try {
+            const container = view.containerEl.children[1] as unknown as MockElement;
+            openRailMenu(container, "lilbee-chat-model-select");
+            expect(addSpy).not.toHaveBeenCalled();
+        } finally {
+            document.addEventListener = origAdd;
+        }
     });
 
     it("keyboard activation (detail 0) anchors the menu to the chip instead of the mouse", async () => {

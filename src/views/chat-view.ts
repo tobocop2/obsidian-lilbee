@@ -4,6 +4,7 @@ import {
     MarkdownRenderer,
     Menu,
     Notice,
+    Platform,
     setIcon,
     type TFile,
     WorkspaceLeaf,
@@ -1011,16 +1012,28 @@ export class ChatView extends ItemView {
         this.showMenu(menu, event);
     }
 
-    /** Show a menu with capture-phase ESC dismissal (a focused input can otherwise swallow the keypress). */
+    /** The core "Native menus" appearance setting; unset falls back to the platform default (native on macOS). */
+    private prefersNativeMenu(): boolean {
+        const vault = this.app.vault as unknown as { getConfig?: (key: string) => unknown };
+        const value = vault.getConfig?.("nativeMenus");
+        return typeof value === "boolean" ? value : Platform.isMacOS;
+    }
+
+    /** Show a menu, native when the vault prefers it; the in-window menu gets capture-phase ESC dismissal. */
     private showMenu(menu: Menu, event: MouseEvent): void {
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") {
-                e.preventDefault();
-                menu.hide();
-            }
-        };
-        document.addEventListener("keydown", onKey, true);
-        menu.onHide(() => document.removeEventListener("keydown", onKey, true));
+        const useNative = this.prefersNativeMenu();
+        menu.setUseNativeMenu(useNative);
+        if (!useNative) {
+            // Capture-phase ESC: a focused input can otherwise swallow the keypress.
+            const onKey = (e: KeyboardEvent) => {
+                if (e.key === "Escape") {
+                    e.preventDefault();
+                    menu.hide();
+                }
+            };
+            document.addEventListener("keydown", onKey, true);
+            menu.onHide(() => document.removeEventListener("keydown", onKey, true));
+        }
         // Keyboard-synthesized clicks (detail 0) carry no coordinates; anchor to the trigger instead.
         const trigger = event.detail === 0 ? (event.currentTarget as HTMLElement | null) : null;
         if (trigger) {
