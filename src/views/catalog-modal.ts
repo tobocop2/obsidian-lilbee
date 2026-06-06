@@ -1,4 +1,4 @@
-import { App, Modal, Notice } from "obsidian";
+import { App, Modal, Notice, setIcon } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { CatalogEntry, CatalogTab, CatalogViewMode, KeyStatus, ModelTask } from "../types";
 import {
@@ -602,7 +602,7 @@ export class CatalogModal extends Modal {
             new Notice(noticeForResultError(result.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", row.hf_repo)));
             return;
         }
-        this.plugin.fetchActiveModel();
+        void this.plugin.fetchActiveModel();
         this.plugin.refreshSettingsTab();
         this.plugin.refreshOpenChatRails();
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(this.activatedRefFor(row)));
@@ -658,7 +658,7 @@ export class CatalogModal extends Modal {
             showActions: true,
             isActive,
             onPull: (e) => this.handlePull(e),
-            onUse: (e, btn) => this.handleUse(e, btn),
+            onUse: (e, btn) => void this.handleUse(e, btn),
             onRemove: (e, btn) => this.handleRemove(e, btn),
             onInfo: (e) => new ModelInfoModal(this.app, this.plugin, e).open(),
         });
@@ -722,7 +722,6 @@ export class CatalogModal extends Modal {
 
         const infoEl = row.createDiv({ cls: "lilbee-catalog-list-col-info" });
         const infoBtn = infoEl.createEl("button", {
-            text: "i",
             cls: "lilbee-model-card-info",
             attr: {
                 type: "button",
@@ -730,6 +729,7 @@ export class CatalogModal extends Modal {
                 title: MESSAGES.LABEL_MODEL_INFO_BTN,
             },
         });
+        setIcon(infoBtn, "info");
         infoBtn.addEventListener("click", (e: Event) => {
             e.stopPropagation();
             new ModelInfoModal(this.app, this.plugin, entry).open();
@@ -742,7 +742,7 @@ export class CatalogModal extends Modal {
             actionEl.createEl("span", { text: MESSAGES.LABEL_ACTIVE, cls: "lilbee-catalog-active" });
         } else if (entry.installed) {
             const useBtn = actionEl.createEl("button", { text: MESSAGES.BUTTON_USE, cls: "lilbee-catalog-use" });
-            useBtn.addEventListener("click", () => this.handleUse(entry, useBtn));
+            useBtn.addEventListener("click", () => void this.handleUse(entry, useBtn));
             const removeBtn = actionEl.createEl("button", {
                 text: MESSAGES.BUTTON_REMOVE,
                 cls: "lilbee-catalog-remove",
@@ -830,7 +830,7 @@ export class CatalogModal extends Modal {
 
         this.plugin.taskQueue.complete(taskId);
         new Notice(MESSAGES.NOTICE_REMOVED(entry.hf_repo));
-        this.plugin.fetchActiveModel();
+        void this.plugin.fetchActiveModel();
         this.resetAndFetch();
     }
 
@@ -847,7 +847,7 @@ export class CatalogModal extends Modal {
             return;
         }
 
-        this.plugin.fetchActiveModel();
+        void this.plugin.fetchActiveModel();
         this.plugin.refreshSettingsTab();
         this.plugin.refreshOpenChatRails();
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(this.activatedRefFor(entry)));
@@ -945,12 +945,12 @@ export class CatalogModal extends Modal {
         const result = await this.setActiveFor(entry);
         if (result.isErr()) {
             new Notice(noticeForResultError(result.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", entry.hf_repo)));
-            this.plugin.fetchActiveModel();
+            void this.plugin.fetchActiveModel();
             this.resetAndFetch();
             return;
         }
 
-        this.plugin.fetchActiveModel();
+        void this.plugin.fetchActiveModel();
         this.plugin.refreshSettingsTab();
         this.plugin.refreshOpenChatRails();
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(this.activatedRefFor(entry)));

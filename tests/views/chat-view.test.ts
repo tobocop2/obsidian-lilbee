@@ -16,6 +16,9 @@ if (typeof globalThis.document === "undefined") {
         removeEventListener: () => {},
     };
 }
+if (typeof (globalThis as any).activeDocument === "undefined") {
+    (globalThis as any).activeDocument = (globalThis as any).document;
+}
 
 import { Menu, MockMenuItem, MockMenuSeparator, Notice, Platform, WorkspaceLeaf } from "../__mocks__/obsidian";
 import { MockElement } from "../__mocks__/obsidian";

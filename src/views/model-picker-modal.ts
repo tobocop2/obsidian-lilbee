@@ -218,7 +218,7 @@ export class ModelPickerModal extends Modal {
             return;
         }
         if (this.pickerScope === "chat") this.plugin.activeModel = row.hf_repo;
-        this.plugin.fetchActiveModel();
+        void this.plugin.fetchActiveModel();
         this.plugin.refreshSettingsTab();
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(row.display_name));
         this.close();

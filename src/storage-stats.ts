@@ -19,7 +19,7 @@ export function dirSizeBytes(path: string): number {
     let total = 0;
     let entries: string[];
     try {
-        entries = node.readdirSync(path) as string[];
+        entries = node.readdirSync(path);
     } catch {
         return 0;
     }

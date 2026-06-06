@@ -2,6 +2,7 @@ import { ItemView, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
 import { BACKGROUND_TASK_TYPES, TASK_QUEUE, TASK_STATUS, type TaskEntry, type TaskStatus } from "../types";
 import { MESSAGES } from "../locales/en";
+import { ConfirmModal } from "./confirm-modal";
 import { FLASH_WINDOW_MS } from "../task-queue";
 import { formatBytes, formatElapsed, formatRate, relativeTime, TIME_REFRESH_INTERVAL_MS } from "../utils";
 
@@ -237,7 +238,7 @@ export class TaskCenterView extends ItemView {
             cancelBtn.title = MESSAGES.LABEL_CANCEL_TASK;
             cancelBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
-                this.handleCancel(task);
+                void this.handleCancel(task);
             });
         }
 
@@ -256,13 +257,15 @@ export class TaskCenterView extends ItemView {
         }
     }
 
-    private handleCancel(task: TaskEntry): void {
+    private async handleCancel(task: TaskEntry): Promise<void> {
         if (task.canCancel) {
             this.plugin.taskQueue.cancel(task.id);
             return;
         }
 
-        const confirmed = confirm(MESSAGES.NOTICE_CONFIRM_CANCEL);
+        const modal = new ConfirmModal(this.plugin.app, MESSAGES.NOTICE_CONFIRM_CANCEL);
+        modal.open();
+        const confirmed = await modal.result;
 
         if (confirmed) {
             this.plugin.taskQueue.cancel(task.id);

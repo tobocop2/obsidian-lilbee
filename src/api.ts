@@ -383,7 +383,7 @@ export class LilbeeClient {
         signal?: AbortSignal,
         options?: GenerationOptions,
         chunkType?: SearchChunkType,
-    ): AsyncGenerator<SSEEvent> {
+    ): AsyncGenerator<SSEEvent, void> {
         const body: Record<string, unknown> = { question, history, top_k: topK ?? 0 };
         if (options && Object.keys(options).length > 0) body.options = options;
         // "all" is the UI-side label for no filter; the field is omitted on the wire.
@@ -405,7 +405,7 @@ export class LilbeeClient {
         force = false,
         signal?: AbortSignal,
         ocrTimeout?: number | null,
-    ): AsyncGenerator<SSEEvent> {
+    ): AsyncGenerator<SSEEvent, void> {
         const body: Record<string, unknown> = { paths, force };
         if (ocrTimeout !== undefined && ocrTimeout !== null) body.ocr_timeout = ocrTimeout;
         const res = await this.fetchWithRetry(
@@ -420,7 +420,7 @@ export class LilbeeClient {
         yield* this.parseSSE(res);
     }
 
-    async *syncStream(signal?: AbortSignal, options?: SyncOptions): AsyncGenerator<SSEEvent> {
+    async *syncStream(signal?: AbortSignal, options?: SyncOptions): AsyncGenerator<SSEEvent, void> {
         const body: Record<string, unknown> = {};
         if (options?.forceRebuild) body.force_rebuild = true;
         if (options?.retrySkipped) body.retry_skipped = true;
@@ -441,7 +441,7 @@ export class LilbeeClient {
         return (await res.json()) as ModelsResponse;
     }
 
-    async *pullModel(model: string, source = "native", signal?: AbortSignal): AsyncGenerator<SSEEvent> {
+    async *pullModel(model: string, source = "native", signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/models/pull`,
             {
@@ -543,7 +543,7 @@ export class LilbeeClient {
     }
 
     /** Upload a per-page text dataset; the server re-embeds it and streams SSE progress. */
-    async *importDataset(data: ArrayBuffer | Uint8Array, format: DatasetFormat): AsyncGenerator<SSEEvent> {
+    async *importDataset(data: ArrayBuffer | Uint8Array, format: DatasetFormat): AsyncGenerator<SSEEvent, void> {
         const qs = new URLSearchParams({ format });
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/import?${qs}`,
@@ -563,7 +563,7 @@ export class LilbeeClient {
         depth?: number | null,
         maxPages?: number | null,
         signal?: AbortSignal,
-    ): AsyncGenerator<SSEEvent> {
+    ): AsyncGenerator<SSEEvent, void> {
         const body: Record<string, unknown> = { url };
         if (depth !== undefined) body.depth = depth;
         if (maxPages !== undefined) body.max_pages = maxPages;
@@ -713,7 +713,7 @@ export class LilbeeClient {
         });
     }
 
-    async *wikiGenerate(source: string, signal?: AbortSignal): AsyncGenerator<SSEEvent> {
+    async *wikiGenerate(source: string, signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/wiki/generate`,
             {
@@ -754,7 +754,7 @@ export class LilbeeClient {
         return (await res.json()) as DraftRejectResponse;
     }
 
-    async *wikiPrune(signal?: AbortSignal): AsyncGenerator<SSEEvent> {
+    async *wikiPrune(signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/wiki/prune`,
             {
@@ -766,7 +766,7 @@ export class LilbeeClient {
         yield* this.parseSSE(res);
     }
 
-    private async *parseSSE(response: Response): AsyncGenerator<SSEEvent> {
+    private async *parseSSE(response: Response): AsyncGenerator<SSEEvent, void> {
         if (!response.body) {
             throw new Error("Response body is null");
         }

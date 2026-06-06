@@ -355,6 +355,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
             setButtonText: () => fakeBtn,
             setDisabled: () => fakeBtn,
             setWarning: () => fakeBtn,
+            setClass: () => fakeBtn,
             onClick: (handler: ButtonOnClick) => {
                 buttonOnClicks.push(handler);
                 return fakeBtn;
@@ -1017,7 +1018,7 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             (plugin.api.setChatModel as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
             const { tab, captured } = renderPicker(plugin, LLAMA_REF, true);
-            const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
+            const displaySpy = vi.spyOn(tab, "render").mockImplementation(() => {});
             await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             expect(plugin.api.setChatModel).toHaveBeenCalledWith("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             expect(Notice.instances.some((n) => n.message.toLowerCase().includes("phi 3 mini"))).toBe(true);
@@ -1363,7 +1364,9 @@ describe("LilbeeSettingTab", () => {
             (tab as any).renderChatCatalogRow(table, entry, "");
             MockElement.prototype.addEventListener = origAddEventListener;
 
-            const pullPromise = clickHandlers[0]();
+            const pullSpy = vi.spyOn(tab as any, "pullAndSetChat");
+            clickHandlers[0]();
+            const pullPromise = pullSpy.mock.results.at(-1)?.value as Promise<void>;
             await new Promise((r) => setTimeout(r, 10));
 
             const active = plugin.taskQueue.active;
@@ -1570,7 +1573,15 @@ describe("LilbeeSettingTab", () => {
 
             const row = (table as unknown as MockElement).children[0];
             const actionCell = row.children[3];
-            return { tab, clickHandler: clickHandler!, actionCell };
+            // The click listener void-wraps pullAndSetChat; spy on it so tests can
+            // await the underlying promise.
+            const pullSpy = vi.spyOn(tab as any, "pullAndSetChat");
+            const rawHandler = clickHandler!;
+            const awaitableHandler = async (): Promise<void> => {
+                rawHandler();
+                await (pullSpy.mock.results.at(-1)?.value as Promise<void> | undefined);
+            };
+            return { tab, clickHandler: awaitableHandler, actionCell };
         }
 
         it("successful pull: updates taskQueue with percent and shows success Notice", async () => {
@@ -2110,7 +2121,7 @@ describe("LilbeeSettingTab", () => {
             mockChatPicker(plugin);
 
             const { tab, captured } = pickerSetup(plugin);
-            const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
+            const displaySpy = vi.spyOn(tab, "render").mockImplementation(() => {});
             await captured.dropdownOnChanges[0]("microsoft/Phi-3-mini-4k-Instruct-GGUF");
             expect(displaySpy).toHaveBeenCalled();
         });
@@ -2182,7 +2193,7 @@ describe("managed mode settings", () => {
         const tab = makeTab(plugin);
 
         const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
-        const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
+        const displaySpy = vi.spyOn(tab, "render").mockImplementation(() => {});
 
         // dropdownOnChanges[0] is the server mode dropdown
         await dropdownOnChanges[0]("external");
@@ -2289,7 +2300,7 @@ describe("managed mode settings", () => {
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
         // Stop the post-update re-render so the in-progress panel persists for assertion.
-        const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
+        const displaySpy = vi.spyOn(tab, "render").mockImplementation(() => {});
 
         await buttonOnClicks[2](); // check → sets pendingRelease
         await buttonOnClicks[2](); // update → drives the progress panel
@@ -2428,7 +2439,7 @@ describe("managed mode settings", () => {
         const tab = makeTab(plugin);
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
-        const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
+        const displaySpy = vi.spyOn(tab, "render").mockImplementation(() => {});
         // buttonOnClicks[0] = Setup wizard, [1] = Start
         await buttonOnClicks[1]();
 
@@ -2444,7 +2455,7 @@ describe("managed mode settings", () => {
         const tab = makeTab(plugin);
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
-        const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
+        const displaySpy = vi.spyOn(tab, "render").mockImplementation(() => {});
         // buttonOnClicks[0] = Setup wizard, [1] = Stop, [2] = Restart, [3] = Check for updates
         await buttonOnClicks[1]();
 
@@ -2460,7 +2471,7 @@ describe("managed mode settings", () => {
         const tab = makeTab(plugin);
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
-        const displaySpy = vi.spyOn(tab, "display").mockImplementation(() => {});
+        const displaySpy = vi.spyOn(tab, "render").mockImplementation(() => {});
         // buttonOnClicks[0] = Setup wizard, [1] = Stop, [2] = Restart
         await buttonOnClicks[2]();
 
@@ -6079,6 +6090,7 @@ describe("managed mode settings", () => {
                     setButtonText: () => fakeBtn,
                     setDisabled: () => fakeBtn,
                     setWarning: () => fakeBtn,
+                    setClass: () => fakeBtn,
                     onClick: (handler: ButtonOnClick) => {
                         buttonOnClicks.push(handler);
                         return fakeBtn;

@@ -322,8 +322,8 @@ describe("LilbeePlugin", () => {
                     return [];
                 }),
             };
-            const stash = (globalThis as { document?: unknown }).document;
-            (globalThis as { document?: unknown }).document = docMock;
+            const stash = (globalThis as { activeDocument?: unknown }).activeDocument;
+            (globalThis as { activeDocument?: unknown }).activeDocument = docMock;
             try {
                 const plugin = await createPlugin();
                 await plugin.onload();
@@ -332,7 +332,7 @@ describe("LilbeePlugin", () => {
                 // Two matches per selector, two selectors -> four removes.
                 expect(removeMock).toHaveBeenCalledTimes(4);
             } finally {
-                (globalThis as { document?: unknown }).document = stash;
+                (globalThis as { activeDocument?: unknown }).activeDocument = stash;
             }
         });
 
@@ -356,7 +356,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             const calls = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls;
-            const takeOver = calls.find((c) => c[0]?.id === "lilbee:take-over")?.[0];
+            const takeOver = calls.find((c) => c[0]?.id === "take-over")?.[0];
             expect(takeOver).toBeDefined();
             // Managed mode, no server running yet → available
             (plugin as any).serverManager = null;
@@ -376,7 +376,7 @@ describe("LilbeePlugin", () => {
             (plugin as any).serverManager = null;
             const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
             const calls = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls;
-            const takeOver = calls.find((c) => c[0]?.id === "lilbee:take-over")?.[0];
+            const takeOver = calls.find((c) => c[0]?.id === "take-over")?.[0];
             expect(takeOver!.checkCallback(false)).toBe(true);
             expect(startSpy).toHaveBeenCalled();
         });
@@ -387,38 +387,38 @@ describe("LilbeePlugin", () => {
 
             expect(plugin.addCommand).toHaveBeenCalledTimes(26);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
-            expect(allIds).toContain("lilbee:model-picker-chat");
-            expect(allIds).toContain("lilbee:model-picker-embedding");
-            expect(allIds).toContain("lilbee:model-info-active-chat");
-            expect(allIds).toContain("lilbee:model-info-active-embedding");
-            expect(allIds).toContain("lilbee:take-over");
+            expect(allIds).toContain("model-picker-chat");
+            expect(allIds).toContain("model-picker-embedding");
+            expect(allIds).toContain("model-info-active-chat");
+            expect(allIds).toContain("model-info-active-embedding");
+            expect(allIds).toContain("take-over");
             const ids = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
-            expect(ids).toContain("lilbee:search");
-            expect(ids).toContain("lilbee:chat");
-            expect(ids).toContain("lilbee:add-file");
-            expect(ids).toContain("lilbee:add-folder");
-            expect(ids).toContain("lilbee:sync");
-            expect(ids).toContain("lilbee:sync-retry-skipped");
-            expect(ids).toContain("lilbee:sync-rebuild");
-            expect(ids).toContain("lilbee:export-dataset");
-            expect(ids).toContain("lilbee:import-dataset");
-            expect(ids).toContain("lilbee:catalog");
-            expect(ids).toContain("lilbee:crawl");
-            expect(ids).toContain("lilbee:documents");
-            expect(ids).toContain("lilbee:setup");
-            expect(ids).toContain("lilbee:status");
-            expect(ids).toContain("lilbee:tasks");
-            expect(ids).toContain("lilbee:wiki");
-            expect(ids).toContain("lilbee:wiki-lint");
-            expect(ids).toContain("lilbee:wiki-drafts");
-            expect(ids).toContain("lilbee:wiki-generate");
+            expect(ids).toContain("search");
+            expect(ids).toContain("chat");
+            expect(ids).toContain("add-file");
+            expect(ids).toContain("add-folder");
+            expect(ids).toContain("sync");
+            expect(ids).toContain("sync-retry-skipped");
+            expect(ids).toContain("sync-rebuild");
+            expect(ids).toContain("export-dataset");
+            expect(ids).toContain("import-dataset");
+            expect(ids).toContain("catalog");
+            expect(ids).toContain("crawl");
+            expect(ids).toContain("documents");
+            expect(ids).toContain("setup");
+            expect(ids).toContain("status");
+            expect(ids).toContain("tasks");
+            expect(ids).toContain("wiki");
+            expect(ids).toContain("wiki-lint");
+            expect(ids).toContain("wiki-drafts");
+            expect(ids).toContain("wiki-generate");
         });
 
         it("add-file command returns false when no active file", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:add-file",
+                (c: any[]) => c[0].id === "add-file",
             )![0];
             expect(cmd.checkCallback(true)).toBe(false);
         });
@@ -428,7 +428,7 @@ describe("LilbeePlugin", () => {
             plugin.app.workspace.getActiveFile = vi.fn().mockReturnValue({ path: "test.md", name: "test.md" });
             await plugin.onload();
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:add-file",
+                (c: any[]) => c[0].id === "add-file",
             )![0];
             expect(cmd.checkCallback(true)).toBe(true);
         });
@@ -440,7 +440,7 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             const addSpy = vi.spyOn(plugin as any, "addToLilbee").mockResolvedValue(undefined);
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:add-file",
+                (c: any[]) => c[0].id === "add-file",
             )![0];
             cmd.checkCallback(false);
             expect(addSpy).toHaveBeenCalledWith(file);
@@ -450,7 +450,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:add-folder",
+                (c: any[]) => c[0].id === "add-folder",
             )![0];
             expect(cmd.checkCallback(true)).toBe(false);
         });
@@ -460,7 +460,7 @@ describe("LilbeePlugin", () => {
             plugin.app.workspace.getActiveFile = vi.fn().mockReturnValue({ path: "test.md", parent: null });
             await plugin.onload();
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:add-folder",
+                (c: any[]) => c[0].id === "add-folder",
             )![0];
             expect(cmd.checkCallback(true)).toBe(false);
         });
@@ -473,7 +473,7 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             const addSpy = vi.spyOn(plugin as any, "addToLilbee").mockResolvedValue(undefined);
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:add-folder",
+                (c: any[]) => c[0].id === "add-folder",
             )![0];
             cmd.checkCallback(false);
             expect(addSpy).toHaveBeenCalledWith(folder);
@@ -483,7 +483,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:export-dataset",
+                (c: any[]) => c[0].id === "export-dataset",
             )![0];
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValueOnce(false);
             expect(cmd.checkCallback(true)).toBe(false);
@@ -497,7 +497,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:import-dataset",
+                (c: any[]) => c[0].id === "import-dataset",
             )![0];
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValueOnce(false);
             expect(cmd.checkCallback(true)).toBe(false);
@@ -578,7 +578,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external", setupCompleted: true });
             await plugin.onload();
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:setup",
+                (c: any[]) => c[0].id === "setup",
             )![0];
             expect(cmd.name).toBe("Run setup wizard");
             cmd.callback();
@@ -788,8 +788,8 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(false);
-            expect(findCmd(plugin, "lilbee:open-memories").checkCallback(true)).toBe(false);
-            expect(findCmd(plugin, "lilbee:remember").checkCallback(true)).toBe(false);
+            expect(findCmd(plugin, "open-memories").checkCallback(true)).toBe(false);
+            expect(findCmd(plugin, "remember").checkCallback(true)).toBe(false);
         });
 
         it("open-memories command activates the memories view", async () => {
@@ -797,8 +797,8 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
             const activate = vi.spyOn(plugin as any, "activateMemoriesView").mockResolvedValue(undefined);
-            expect(findCmd(plugin, "lilbee:open-memories").checkCallback(true)).toBe(true);
-            findCmd(plugin, "lilbee:open-memories").checkCallback(false);
+            expect(findCmd(plugin, "open-memories").checkCallback(true)).toBe(true);
+            findCmd(plugin, "open-memories").checkCallback(false);
             expect(activate).toHaveBeenCalled();
         });
 
@@ -808,9 +808,9 @@ describe("LilbeePlugin", () => {
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
             const { RememberModal } = await import("../src/views/remember-modal");
             const openSpy = vi.spyOn(RememberModal.prototype, "open").mockImplementation(() => {});
-            expect(findCmd(plugin, "lilbee:remember").checkCallback(true)).toBe(true);
+            expect(findCmd(plugin, "remember").checkCallback(true)).toBe(true);
             expect(openSpy).not.toHaveBeenCalled();
-            findCmd(plugin, "lilbee:remember").checkCallback(false);
+            findCmd(plugin, "remember").checkCallback(false);
             expect(openSpy).toHaveBeenCalled();
             openSpy.mockRestore();
         });
@@ -1097,7 +1097,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            const cb = await getCommandCallback(plugin, "lilbee:search");
+            const cb = await getCommandCallback(plugin, "search");
             cb?.();
 
             expect(SearchModal).toHaveBeenCalled();
@@ -1110,7 +1110,7 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
 
             const activateSpy = vi.spyOn(plugin as any, "activateChatView").mockResolvedValue(undefined);
-            const cb = await getCommandCallback(plugin, "lilbee:chat");
+            const cb = await getCommandCallback(plugin, "chat");
             cb?.();
 
             expect(activateSpy).toHaveBeenCalled();
@@ -1121,7 +1121,7 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
 
             const syncSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
-            const cb = await getCommandCallback(plugin, "lilbee:sync");
+            const cb = await getCommandCallback(plugin, "sync");
             cb?.();
 
             expect(syncSpy).toHaveBeenCalled();
@@ -1132,7 +1132,7 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
 
             const syncSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
-            const cb = await getCommandCallback(plugin, "lilbee:sync-retry-skipped");
+            const cb = await getCommandCallback(plugin, "sync-retry-skipped");
             cb?.();
 
             expect(syncSpy).toHaveBeenCalledWith({ retrySkipped: true });
@@ -1143,7 +1143,7 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
 
             const syncSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
-            const cb = await getCommandCallback(plugin, "lilbee:sync-rebuild");
+            const cb = await getCommandCallback(plugin, "sync-rebuild");
             await cb?.();
 
             expect(syncSpy).toHaveBeenCalledWith({ forceRebuild: true });
@@ -1155,7 +1155,7 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
 
             const syncSpy = vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
-            const cb = await getCommandCallback(plugin, "lilbee:sync-rebuild");
+            const cb = await getCommandCallback(plugin, "sync-rebuild");
             await cb?.();
 
             expect(syncSpy).not.toHaveBeenCalled();
@@ -1166,7 +1166,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            const cb = await getCommandCallback(plugin, "lilbee:status");
+            const cb = await getCommandCallback(plugin, "status");
             cb?.();
 
             expect(StatusModal).toHaveBeenCalled();
@@ -1177,7 +1177,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            const cb = await getCommandCallback(plugin, "lilbee:catalog");
+            const cb = await getCommandCallback(plugin, "catalog");
             cb?.();
 
             expect(CatalogModal).toHaveBeenCalled();
@@ -1189,7 +1189,7 @@ describe("LilbeePlugin", () => {
             const { ModelPickerModal } = await import("../src/views/model-picker-modal");
             const plugin = await createPlugin();
             await plugin.onload();
-            const cb = await getCommandCallback(plugin, "lilbee:model-picker-chat");
+            const cb = await getCommandCallback(plugin, "model-picker-chat");
             cb?.();
             expect(ModelPickerModal).toHaveBeenCalledWith(expect.anything(), plugin, "chat");
             const inst = (ModelPickerModal as ReturnType<typeof vi.fn>).mock.results.at(-1)!.value;
@@ -1200,7 +1200,7 @@ describe("LilbeePlugin", () => {
             const { ModelPickerModal } = await import("../src/views/model-picker-modal");
             const plugin = await createPlugin();
             await plugin.onload();
-            const cb = await getCommandCallback(plugin, "lilbee:model-picker-embedding");
+            const cb = await getCommandCallback(plugin, "model-picker-embedding");
             cb?.();
             expect(ModelPickerModal).toHaveBeenCalledWith(expect.anything(), plugin, "embedding");
         });
@@ -1236,7 +1236,7 @@ describe("LilbeePlugin", () => {
                     ],
                 }),
             );
-            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-chat");
+            const cb = await getCommandCallback(plugin, "model-info-active-chat");
             await cb?.();
             expect(ModelInfoModal).toHaveBeenCalled();
         });
@@ -1247,7 +1247,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
-            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-chat");
+            const cb = await getCommandCallback(plugin, "model-info-active-chat");
             await cb?.();
             expect(ModelInfoModal).not.toHaveBeenCalled();
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_ACTIVE_MODEL("chat"));
@@ -1259,7 +1259,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
-            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-chat");
+            const cb = await getCommandCallback(plugin, "model-info-active-chat");
             await cb?.();
             expect(ModelInfoModal).not.toHaveBeenCalled();
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_ACTIVE_MODEL("chat"));
@@ -1275,7 +1275,7 @@ describe("LilbeePlugin", () => {
             (plugin.api as { catalog?: ReturnType<typeof vi.fn> }).catalog = vi
                 .fn()
                 .mockResolvedValue(err(new Error("nope")));
-            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-chat");
+            const cb = await getCommandCallback(plugin, "model-info-active-chat");
             await cb?.();
             expect(ModelInfoModal).not.toHaveBeenCalled();
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_ACTIVE_MODEL("chat"));
@@ -1291,7 +1291,7 @@ describe("LilbeePlugin", () => {
             (plugin.api as { catalog?: ReturnType<typeof vi.fn> }).catalog = vi
                 .fn()
                 .mockResolvedValue(ok({ total: 0, limit: 20, offset: 0, has_more: false, models: [] }));
-            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-chat");
+            const cb = await getCommandCallback(plugin, "model-info-active-chat");
             await cb?.();
             expect(ModelInfoModal).not.toHaveBeenCalled();
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_NO_ACTIVE_MODEL("chat"));
@@ -1330,7 +1330,7 @@ describe("LilbeePlugin", () => {
                     ],
                 }),
             );
-            const cb = await getCommandCallback(plugin, "lilbee:model-info-active-embedding");
+            const cb = await getCommandCallback(plugin, "model-info-active-embedding");
             await cb?.();
             expect(ModelInfoModal).toHaveBeenCalled();
         });
@@ -1353,20 +1353,20 @@ describe("LilbeePlugin", () => {
                 () => ({ path: "x.md", parent: { path: "" } }) as never,
             );
             for (const id of [
-                "lilbee:search",
-                "lilbee:chat",
-                "lilbee:add-file",
-                "lilbee:add-folder",
-                "lilbee:sync",
-                "lilbee:sync-retry-skipped",
-                "lilbee:sync-rebuild",
-                "lilbee:catalog",
-                "lilbee:model-picker-chat",
-                "lilbee:model-picker-embedding",
-                "lilbee:model-info-active-chat",
-                "lilbee:model-info-active-embedding",
-                "lilbee:crawl",
-                "lilbee:documents",
+                "search",
+                "chat",
+                "add-file",
+                "add-folder",
+                "sync",
+                "sync-retry-skipped",
+                "sync-rebuild",
+                "catalog",
+                "model-picker-chat",
+                "model-picker-embedding",
+                "model-info-active-chat",
+                "model-info-active-embedding",
+                "crawl",
+                "documents",
             ]) {
                 expect(checkOf(plugin, id)!(true)).toBe(false);
             }
@@ -1377,16 +1377,16 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             (plugin as unknown as { serverManager: unknown }).serverManager = {};
             (plugin as unknown as { serverUnreachable: boolean }).serverUnreachable = false;
-            expect(checkOf(plugin, "lilbee:catalog")!(true)).toBe(true);
+            expect(checkOf(plugin, "catalog")!(true)).toBe(true);
         });
 
         it("external mode gates commands on reachability, not a server-manager", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             (plugin as unknown as { serverUnreachable: boolean }).serverUnreachable = false;
-            expect(checkOf(plugin, "lilbee:catalog")!(true)).toBe(true);
+            expect(checkOf(plugin, "catalog")!(true)).toBe(true);
             (plugin as unknown as { serverUnreachable: boolean }).serverUnreachable = true;
-            expect(checkOf(plugin, "lilbee:catalog")!(true)).toBe(false);
+            expect(checkOf(plugin, "catalog")!(true)).toBe(false);
         });
 
         it("lilbee:tasks calls activateTaskView", async () => {
@@ -1394,7 +1394,7 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
 
             const activateSpy = vi.spyOn(plugin as any, "activateTaskView").mockResolvedValue(undefined);
-            const cb = await getCommandCallback(plugin, "lilbee:tasks");
+            const cb = await getCommandCallback(plugin, "tasks");
             cb?.();
 
             expect(activateSpy).toHaveBeenCalled();
@@ -1405,7 +1405,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            const cb = await getCommandCallback(plugin, "lilbee:crawl");
+            const cb = await getCommandCallback(plugin, "crawl");
             cb?.();
 
             expect(CrawlModal).toHaveBeenCalled();
@@ -1418,7 +1418,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            const cb = await getCommandCallback(plugin, "lilbee:documents");
+            const cb = await getCommandCallback(plugin, "documents");
             cb?.();
 
             expect(DocumentsModal).toHaveBeenCalled();
@@ -4586,7 +4586,7 @@ describe("LilbeePlugin", () => {
             await flush();
 
             const tab = new LilbeeSettingTab(plugin.app, plugin);
-            const display = vi.spyOn(tab, "display").mockImplementation(() => {});
+            const display = vi.spyOn(tab, "render").mockImplementation(() => {});
             (plugin.app as any).setting = { activeTab: tab };
 
             const stateChange = mockServerOpts?.onStateChange;
@@ -5437,7 +5437,7 @@ describe("LilbeePlugin", () => {
             (plugin as any).wikiEnabled = false;
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:wiki",
+                (c: any[]) => c[0].id === "wiki",
             )![0];
             expect(cmd.checkCallback(true)).toBe(false);
         });
@@ -5448,7 +5448,7 @@ describe("LilbeePlugin", () => {
             (plugin as any).wikiEnabled = true;
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:wiki",
+                (c: any[]) => c[0].id === "wiki",
             )![0];
             expect(cmd.checkCallback(true)).toBe(true);
         });
@@ -5459,7 +5459,7 @@ describe("LilbeePlugin", () => {
             (plugin as any).wikiEnabled = false;
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:wiki-lint",
+                (c: any[]) => c[0].id === "wiki-lint",
             )![0];
             expect(cmd.checkCallback(true)).toBe(false);
         });
@@ -5470,7 +5470,7 @@ describe("LilbeePlugin", () => {
             (plugin as any).wikiEnabled = true;
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:wiki-lint",
+                (c: any[]) => c[0].id === "wiki-lint",
             )![0];
             expect(cmd.checkCallback(true)).toBe(true);
         });
@@ -5481,7 +5481,7 @@ describe("LilbeePlugin", () => {
             (plugin as any).wikiEnabled = false;
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:wiki-generate",
+                (c: any[]) => c[0].id === "wiki-generate",
             )![0];
             expect(cmd.checkCallback(true)).toBe(false);
         });
@@ -5493,7 +5493,7 @@ describe("LilbeePlugin", () => {
             plugin.app.workspace.getActiveFile = vi.fn().mockReturnValue(null);
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:wiki-generate",
+                (c: any[]) => c[0].id === "wiki-generate",
             )![0];
             expect(cmd.checkCallback(true)).toBe(false);
         });
@@ -5505,7 +5505,7 @@ describe("LilbeePlugin", () => {
             plugin.app.workspace.getActiveFile = vi.fn().mockReturnValue({ path: "test.md" });
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:wiki-generate",
+                (c: any[]) => c[0].id === "wiki-generate",
             )![0];
             expect(cmd.checkCallback(true)).toBe(true);
         });
@@ -5517,7 +5517,7 @@ describe("LilbeePlugin", () => {
             const spy = vi.spyOn(plugin, "activateWikiView").mockResolvedValue(undefined);
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:wiki",
+                (c: any[]) => c[0].id === "wiki",
             )![0];
             cmd.checkCallback(false);
             expect(spy).toHaveBeenCalled();
@@ -5530,7 +5530,7 @@ describe("LilbeePlugin", () => {
             const spy = vi.spyOn(plugin, "runWikiLint").mockResolvedValue(undefined);
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:wiki-lint",
+                (c: any[]) => c[0].id === "wiki-lint",
             )![0];
             cmd.checkCallback(false);
             expect(spy).toHaveBeenCalled();
@@ -5542,7 +5542,7 @@ describe("LilbeePlugin", () => {
             (plugin as any).wikiEnabled = false;
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:wiki-drafts",
+                (c: any[]) => c[0].id === "wiki-drafts",
             )![0];
             expect(cmd.checkCallback(true)).toBe(false);
         });
@@ -5553,7 +5553,7 @@ describe("LilbeePlugin", () => {
             (plugin as any).wikiEnabled = true;
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:wiki-drafts",
+                (c: any[]) => c[0].id === "wiki-drafts",
             )![0];
             expect(cmd.checkCallback(true)).toBe(true);
         });
@@ -5565,7 +5565,7 @@ describe("LilbeePlugin", () => {
             mockDraftModalOpen.mockClear();
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:wiki-drafts",
+                (c: any[]) => c[0].id === "wiki-drafts",
             )![0];
             cmd.checkCallback(false);
             expect(mockDraftModalOpen).toHaveBeenCalled();
@@ -5579,7 +5579,7 @@ describe("LilbeePlugin", () => {
             const spy = vi.spyOn(plugin, "runWikiGenerate").mockResolvedValue(undefined);
 
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "lilbee:wiki-generate",
+                (c: any[]) => c[0].id === "wiki-generate",
             )![0];
             cmd.checkCallback(false);
             expect(spy).toHaveBeenCalledWith("test.md");
@@ -6226,20 +6226,20 @@ describe("LilbeePlugin", () => {
             >;
             const check = (id: string) => calls.find((c) => c[0].id === id)?.[0].checkCallback;
             for (const id of [
-                "lilbee:search",
-                "lilbee:chat",
-                "lilbee:add-file",
-                "lilbee:add-folder",
-                "lilbee:sync",
-                "lilbee:sync-retry-skipped",
-                "lilbee:sync-rebuild",
-                "lilbee:catalog",
-                "lilbee:model-picker-chat",
-                "lilbee:model-picker-embedding",
-                "lilbee:model-info-active-chat",
-                "lilbee:model-info-active-embedding",
-                "lilbee:crawl",
-                "lilbee:documents",
+                "search",
+                "chat",
+                "add-file",
+                "add-folder",
+                "sync",
+                "sync-retry-skipped",
+                "sync-rebuild",
+                "catalog",
+                "model-picker-chat",
+                "model-picker-embedding",
+                "model-info-active-chat",
+                "model-info-active-embedding",
+                "crawl",
+                "documents",
             ]) {
                 expect(check(id)!(true)).toBe(true);
             }

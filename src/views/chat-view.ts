@@ -49,6 +49,7 @@ import {
     isModelUnavailableError,
     noticeForResultError,
     getRelevantSystemMemoryGB,
+    configString,
 } from "../utils";
 import { SetupWizard } from "./setup-wizard";
 import { hostedOptions, isUsableHostedRow } from "./catalog-helpers";
@@ -277,7 +278,7 @@ export class ChatView extends ItemView {
         const saveBtn = actions.createEl("button", { cls: "lilbee-chat-save" });
         setIcon(saveBtn, "save");
         saveBtn.setAttribute("aria-label", MESSAGES.LABEL_SAVE_VAULT);
-        saveBtn.addEventListener("click", () => this.saveToVault());
+        saveBtn.addEventListener("click", () => void this.saveToVault());
 
         const clearBtn = actions.createEl("button", { cls: "lilbee-chat-clear" });
         setIcon(clearBtn, "eraser");
@@ -352,7 +353,7 @@ export class ChatView extends ItemView {
                 this.retryCount = 0;
                 this.chatCatalogEntries = chatCatalogResult.isOk() ? chatCatalogResult.value.models : [];
                 this.chatInstalled = chatInstalled.models;
-                this.chatActive = serverConfig ? String(serverConfig["chat_model"] ?? "") : "";
+                this.chatActive = serverConfig ? configString(serverConfig, "chat_model") : "";
                 this.chatTriggerTextEl?.setText(railTriggerLabel(this.chatOptionGroups().flat()));
 
                 this.fillEmbeddingSelector(embeddingResult, serverConfig);
@@ -447,7 +448,7 @@ export class ChatView extends ItemView {
         embeddingResult: import("neverthrow").Result<import("../types").CatalogResponse, Error> | null,
         serverConfig: Record<string, unknown> | null,
     ): void {
-        this.activeEmbeddingModel = serverConfig ? String(serverConfig["embedding_model"] ?? "") : "";
+        this.activeEmbeddingModel = serverConfig ? configString(serverConfig, "embedding_model") : "";
         this.embeddingModels =
             embeddingResult && embeddingResult.isOk() ? embeddingResult.value.models.filter((m) => m.installed) : [];
         this.embeddingTriggerTextEl?.setText(railTriggerLabel(this.embeddingOptions()));
@@ -546,7 +547,7 @@ export class ChatView extends ItemView {
                 // Keep the menu's checkmark in sync without waiting for a refetch.
                 this.chatActive = value;
                 this.plugin.activeModel = value;
-                this.plugin.fetchActiveModel();
+                void this.plugin.fetchActiveModel();
                 this.plugin.refreshSettingsTab();
             } else {
                 new Notice(MESSAGES.ERROR_SWITCH_MODEL);
@@ -633,8 +634,8 @@ export class ChatView extends ItemView {
     ): void {
         this.optionalCatalog.vision = visionCatalog;
         this.optionalCatalog.rerank = rerankCatalog;
-        this.optionalActive.vision = serverConfig ? String(serverConfig["vision_model"] ?? "") : "";
-        this.optionalActive.rerank = serverConfig ? String(serverConfig["reranker_model"] ?? "") : "";
+        this.optionalActive.vision = serverConfig ? configString(serverConfig, "vision_model") : "";
+        this.optionalActive.rerank = serverConfig ? configString(serverConfig, "reranker_model") : "";
         this.fillOptionalRoles();
     }
 
@@ -709,7 +710,7 @@ export class ChatView extends ItemView {
             }
             this.optionalActive[spec.key] = value;
             this.fillOptionalRoles();
-            this.plugin.fetchActiveModel();
+            void this.plugin.fetchActiveModel();
             this.plugin.refreshSettingsTab();
         });
     }
@@ -783,7 +784,7 @@ export class ChatView extends ItemView {
             new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.display_name));
             this.plugin.refreshSettingsTab();
         }
-        this.plugin.fetchActiveModel();
+        void this.plugin.fetchActiveModel();
         this.fetchAndFillSelectors();
     }
 
@@ -1038,8 +1039,8 @@ export class ChatView extends ItemView {
                     menu.hide();
                 }
             };
-            document.addEventListener("keydown", onKey, true);
-            menu.onHide(() => document.removeEventListener("keydown", onKey, true));
+            activeDocument.addEventListener("keydown", onKey, true);
+            menu.onHide(() => activeDocument.removeEventListener("keydown", onKey, true));
         }
         // Keyboard-synthesized clicks (detail 0) carry no coordinates; anchor to the trigger instead.
         const trigger = event.detail === 0 ? (event.currentTarget as HTMLElement | null) : null;

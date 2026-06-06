@@ -147,7 +147,7 @@ export class SourcePreviewModal extends Modal {
                 cls: "lilbee-preview-open-vault",
             });
             openBtn.addEventListener("click", () => {
-                this.app.workspace.openLinkText(inVaultPath, "");
+                void this.app.workspace.openLinkText(inVaultPath, "");
                 this.close();
             });
         } else {

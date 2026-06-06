@@ -71,7 +71,7 @@ export class StreamIdleError extends Error {
 }
 
 export async function* withIdleTimeout<T>(
-    gen: AsyncGenerator<T>,
+    gen: AsyncGenerator<T, void>,
     timeoutMs: number,
     abort: () => void,
 ): AsyncGenerator<T> {
@@ -299,7 +299,7 @@ export function formatElapsed(ms: number): string {
 /** Total system RAM in GB, rounded; null when ``os`` is unavailable. */
 export function getSystemMemoryGB(): number | null {
     try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        // eslint-disable-next-line @typescript-eslint/no-require-imports -- os exists only at runtime inside Electron; a static import would break the esbuild bundle
         const os = require("os") as { totalmem(): number };
         return Math.round(os.totalmem() / (1024 * 1024 * 1024));
     } catch {
@@ -348,4 +348,10 @@ export function noticeServerUnreachableIfApplicable(err: unknown): boolean {
         new Notice(MESSAGES.NOTICE_SERVER_UNREACHABLE);
     }
     return true;
+}
+
+/** String value of a server-config key; non-string values read as "". */
+export function configString(cfg: Record<string, unknown>, key: string): string {
+    const v = cfg[key];
+    return typeof v === "string" ? v : "";
 }

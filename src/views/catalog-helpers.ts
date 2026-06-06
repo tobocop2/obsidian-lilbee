@@ -144,9 +144,9 @@ export function deepLinkToApiKeySettings(app: App, provider: string): void {
     settingApi.openTabById("lilbee");
     window.setTimeout(() => {
         // Timer can fire after the modal closes; Node test envs don't have a global document.
-        if (typeof document === "undefined") return;
+        if (typeof activeDocument === "undefined") return;
         const escaped = provider.toLowerCase().replace(/[^a-z0-9-]/g, "-");
-        const target = document.querySelector(`[data-lilbee-api-key="${escaped}"]`);
+        const target = activeDocument.querySelector(`[data-lilbee-api-key="${escaped}"]`);
         if (target instanceof HTMLElement) {
             target.scrollIntoView({ behavior: "smooth", block: "center" });
             target.focus();

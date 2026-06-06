@@ -628,7 +628,7 @@ export class SetupWizard extends Modal {
         });
         taskCenterBtn.addEventListener("click", (e) => {
             e.preventDefault();
-            this.plugin.activateTaskView();
+            void this.plugin.activateTaskView();
         });
 
         return { progressEl, progressFill, progressLabel };
@@ -801,7 +801,7 @@ export class SetupWizard extends Modal {
                 return;
             }
             this.plugin.activeModel = model.hf_repo;
-            this.plugin.fetchActiveModel();
+            void this.plugin.fetchActiveModel();
             this.pulledModelName = model.display_name;
             this.step = WIZARD_STEP.EMBEDDING_PICKER;
             this.renderStep();
@@ -1193,7 +1193,7 @@ export class SetupWizard extends Modal {
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
         const openChatBtn = actions.createEl("button", { text: MESSAGES.BUTTON_OPEN_CHAT, cls: "mod-cta" });
-        openChatBtn.addEventListener("click", () => this.complete());
+        openChatBtn.addEventListener("click", () => void this.complete());
     }
 
     next(): void {

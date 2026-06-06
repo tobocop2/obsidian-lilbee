@@ -1,3 +1,4 @@
+import { setIcon } from "obsidian";
 import type { CatalogEntry, HardwareFit, ModelCardOptions } from "../types";
 import { HARDWARE_FIT, HOSTED_SOURCES, MODEL_COMPAT, MODEL_TASK } from "../types";
 import { MESSAGES } from "../locales/en";
@@ -55,13 +56,13 @@ function renderCardHead(card: HTMLElement, entry: CatalogEntry, options: ModelCa
         const onInfo = options.onInfo;
         const infoBtn = head.createEl("button", {
             cls: "lilbee-model-card-info",
-            text: "i",
             attr: {
                 type: "button",
                 "aria-label": MESSAGES.LABEL_MODEL_INFO_BTN,
                 title: MESSAGES.LABEL_MODEL_INFO_BTN,
             },
         });
+        setIcon(infoBtn, "info");
         infoBtn.addEventListener("click", (e: Event) => {
             e.stopPropagation();
             onInfo(entry);

@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
-import { Notice } from "obsidian";
+import { Notice, TFile } from "obsidian";
 import { datasetErrorMessage, exportDatasetToDisk, importDatasetFromDisk } from "../src/dataset-io";
 import { electronDialog } from "../src/utils/file-dialog";
 import { node } from "../src/binary-manager";
@@ -233,15 +233,34 @@ describe("importDatasetFromDisk()", () => {
         });
         const { queue } = fakeQueue("task-1");
         // Folder "data" and note "data/a.md" already exist on disk.
+        const existingNote = new TFile();
         const { app, createFolder, create, modify } = fakeApp((path) =>
-            path === "data" || path === "data/a.md" ? {} : null,
+            path === "data" ? {} : path === "data/a.md" ? existingNote : null,
         );
         await importDatasetFromDisk(app, api, queue);
 
         expect(createFolder).not.toHaveBeenCalled();
-        expect(modify).toHaveBeenCalledWith({}, "first");
+        expect(modify).toHaveBeenCalledWith(existingNote, "first");
         // b.md's getSource rejected, so it is skipped — no create call.
         expect(create).not.toHaveBeenCalled();
+    });
+
+    it("skips a clashing path that exists but is not a file", async () => {
+        showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ["/tmp/data.parquet"] });
+        readFileSync.mockReturnValue({ byteLength: 3 } as unknown as Buffer);
+        const api = fakeApi({
+            getSource: vi.fn().mockResolvedValue({ markdown: "first", content_type: "text/markdown", title: null }),
+            importDataset: vi.fn(() =>
+                sseEvents([{ event: "done", data: { command: "import", sources: ["a.md"], pages: 1, chunks: 1 } }]),
+            ),
+        });
+        const { queue } = fakeQueue("task-1");
+        // "data/a.md" resolves to a folder-like object, not a TFile.
+        const { app, create, modify } = fakeApp((path) => (path === "data" || path === "data/a.md" ? {} : null));
+        await importDatasetFromDisk(app, api, queue);
+
+        expect(create).not.toHaveBeenCalled();
+        expect(modify).not.toHaveBeenCalled();
     });
 
     it("names the import folder 'dataset' when the file is all extension", async () => {

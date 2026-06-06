@@ -47,7 +47,7 @@ export class WikiView extends ItemView {
         const refreshBtn = actions.createEl("button", { cls: "lilbee-tasks-clear" });
         setIcon(refreshBtn, "refresh-cw");
         refreshBtn.setAttribute("aria-label", MESSAGES.BUTTON_REFRESH);
-        refreshBtn.addEventListener("click", () => this.refresh());
+        refreshBtn.addEventListener("click", () => void this.refresh());
 
         const lintBtn = actions.createEl("button", { cls: "lilbee-tasks-clear" });
         setIcon(lintBtn, "check-circle");
@@ -194,7 +194,7 @@ export class WikiView extends ItemView {
                     void this.showPage(matchingPage.slug);
                 } else {
                     // Fall back to opening as a vault file
-                    this.app.workspace.openLinkText(href, "");
+                    void this.app.workspace.openLinkText(href, "");
                 }
             }
 

@@ -251,9 +251,9 @@ export default class LilbeePlugin extends Plugin {
         // ready" / "lilbee: error" pills side by side until Obsidian
         // restarts. Take a clean slate before adding our own. Guarded for
         // node-environment tests where document is undefined.
-        if (typeof document !== "undefined") {
-            document.querySelectorAll(".status-bar-item.plugin-lilbee").forEach((el) => el.remove());
-            document.querySelectorAll(".lilbee-ribbon-icon").forEach((el) => el.remove());
+        if (typeof activeDocument !== "undefined") {
+            activeDocument.querySelectorAll(".status-bar-item.plugin-lilbee").forEach((el) => el.remove());
+            activeDocument.querySelectorAll(".lilbee-ribbon-icon").forEach((el) => el.remove());
         }
 
         this.statusBarEl = this.addStatusBarItem();
@@ -333,7 +333,7 @@ export default class LilbeePlugin extends Plugin {
             } else {
                 this.configureApi(this.settings.serverUrl);
                 this.setStatusReady();
-                this.fetchActiveModel();
+                void this.fetchActiveModel();
             }
         }
 
@@ -399,7 +399,7 @@ export default class LilbeePlugin extends Plugin {
                 onProgress?.({ phase: MANAGED_PHASE.STARTING, message: MESSAGES.STATUS_STARTING_SERVER });
                 await this.serverManager.start();
                 this.configureApi(this.serverManager.serverUrl);
-                this.fetchActiveModel();
+                void this.fetchActiveModel();
                 void this.configureManagedStorage();
                 this.recordReadyState();
                 onProgress?.({ phase: MANAGED_PHASE.READY, message: "" });
@@ -814,7 +814,7 @@ export default class LilbeePlugin extends Plugin {
 
     private registerCommands(): void {
         this.addCommand({
-            id: "lilbee:search",
+            id: "search",
             name: "Search knowledge base",
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -824,7 +824,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:chat",
+            id: "chat",
             name: "Open chat",
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -834,7 +834,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:open-memories",
+            id: "open-memories",
             name: "Open memories",
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -844,7 +844,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:remember",
+            id: "remember",
             name: "Remember…",
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -854,8 +854,8 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:add-file",
-            name: "Add current file to lilbee",
+            id: "add-file",
+            name: "Add current file",
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 const file = this.app.workspace.getActiveFile();
@@ -866,8 +866,8 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:add-folder",
-            name: "Add current folder to lilbee",
+            id: "add-folder",
+            name: "Add current folder",
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 const file = this.app.workspace.getActiveFile();
@@ -879,7 +879,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:sync",
+            id: "sync",
             name: MESSAGES.COMMAND_SYNC,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -889,7 +889,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:sync-retry-skipped",
+            id: "sync-retry-skipped",
             name: MESSAGES.COMMAND_SYNC_RETRY_SKIPPED,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -899,7 +899,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:sync-rebuild",
+            id: "sync-rebuild",
             name: MESSAGES.COMMAND_SYNC_REBUILD,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -915,7 +915,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:export-dataset",
+            id: "export-dataset",
             name: MESSAGES.COMMAND_EXPORT_DATASET,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -925,7 +925,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:import-dataset",
+            id: "import-dataset",
             name: MESSAGES.COMMAND_IMPORT_DATASET,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -935,7 +935,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:catalog",
+            id: "catalog",
             name: "Browse model catalog",
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -945,7 +945,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:model-picker-chat",
+            id: "model-picker-chat",
             name: MESSAGES.COMMAND_MODEL_PICKER_CHAT,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -955,7 +955,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:model-picker-embedding",
+            id: "model-picker-embedding",
             name: MESSAGES.COMMAND_MODEL_PICKER_EMBED,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -965,7 +965,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:model-info-active-chat",
+            id: "model-info-active-chat",
             name: MESSAGES.COMMAND_MODEL_INFO_CHAT,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -975,7 +975,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:model-info-active-embedding",
+            id: "model-info-active-embedding",
             name: MESSAGES.COMMAND_MODEL_INFO_EMBED,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -985,7 +985,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:crawl",
+            id: "crawl",
             name: "Crawl web page",
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -995,7 +995,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:documents",
+            id: "documents",
             name: "Browse documents",
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
@@ -1005,19 +1005,19 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:setup",
+            id: "setup",
             name: "Run setup wizard",
             callback: () => new SetupWizard(this.app, this).open(),
         });
 
         this.addCommand({
-            id: "lilbee:tasks",
+            id: "tasks",
             name: "Show task center",
             callback: () => this.activateTaskView(),
         });
 
         this.addCommand({
-            id: "lilbee:wiki",
+            id: "wiki",
             name: MESSAGES.COMMAND_WIKI,
             checkCallback: (checking) => {
                 if (!this.wikiEnabled) return false;
@@ -1027,7 +1027,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:wiki-lint",
+            id: "wiki-lint",
             name: MESSAGES.COMMAND_WIKI_LINT,
             checkCallback: (checking) => {
                 if (!this.wikiEnabled) return false;
@@ -1037,7 +1037,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:wiki-drafts",
+            id: "wiki-drafts",
             name: MESSAGES.COMMAND_REVIEW_DRAFTS,
             checkCallback: (checking) => {
                 if (!this.wikiEnabled) return false;
@@ -1047,7 +1047,7 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:wiki-generate",
+            id: "wiki-generate",
             name: MESSAGES.COMMAND_WIKI_GENERATE,
             checkCallback: (checking) => {
                 if (!this.wikiEnabled) return false;
@@ -1059,13 +1059,13 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "lilbee:status",
+            id: "status",
             name: "Show status",
             callback: () => new StatusModal(this.app, this).open(),
         });
 
         this.addCommand({
-            id: "lilbee:take-over",
+            id: "take-over",
             name: MESSAGES.COMMAND_TAKE_OVER,
             checkCallback: (checking) => {
                 if (this.settings.serverMode !== SERVER_MODE.MANAGED) return false;
@@ -1712,32 +1712,32 @@ export default class LilbeePlugin extends Plugin {
     async activateTaskView(): Promise<void> {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_TASKS);
         if (existing.length > 0) {
-            this.app.workspace.revealLeaf(existing[0]);
+            void this.app.workspace.revealLeaf(existing[0]);
             return;
         }
         const leaf = this.app.workspace.getRightLeaf(false);
         if (leaf) {
             await leaf.setViewState({ type: VIEW_TYPE_TASKS, active: true });
-            this.app.workspace.revealLeaf(leaf);
+            void this.app.workspace.revealLeaf(leaf);
         }
     }
 
     refreshOpenWikiViews(): void {
         for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_WIKI)) {
-            (leaf.view as WikiView).refresh();
+            void (leaf.view as WikiView).refresh();
         }
     }
 
     async activateMemoriesView(): Promise<void> {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMORIES);
         if (existing.length > 0) {
-            this.app.workspace.revealLeaf(existing[0]);
+            void this.app.workspace.revealLeaf(existing[0]);
             return;
         }
         const leaf = this.app.workspace.getRightLeaf(false);
         if (leaf) {
             await leaf.setViewState({ type: VIEW_TYPE_MEMORIES, active: true });
-            this.app.workspace.revealLeaf(leaf);
+            void this.app.workspace.revealLeaf(leaf);
         }
     }
 
@@ -1767,7 +1767,7 @@ export default class LilbeePlugin extends Plugin {
         const setting = (this.app as unknown as { setting?: { activeTab?: unknown } }).setting;
         const activeTab = setting?.activeTab;
         if (activeTab instanceof LilbeeSettingTab) {
-            activeTab.display();
+            activeTab.render();
         }
     }
 
@@ -1783,26 +1783,26 @@ export default class LilbeePlugin extends Plugin {
     async activateWikiView(): Promise<void> {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_WIKI);
         if (existing.length > 0) {
-            this.app.workspace.revealLeaf(existing[0]);
+            void this.app.workspace.revealLeaf(existing[0]);
             return;
         }
         const leaf = this.app.workspace.getRightLeaf(false);
         if (leaf) {
             await leaf.setViewState({ type: VIEW_TYPE_WIKI, active: true });
-            this.app.workspace.revealLeaf(leaf);
+            void this.app.workspace.revealLeaf(leaf);
         }
     }
 
     async activateChatView(): Promise<void> {
         const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT);
         if (existing.length > 0) {
-            this.app.workspace.revealLeaf(existing[0]);
+            void this.app.workspace.revealLeaf(existing[0]);
             return;
         }
         const leaf = this.app.workspace.getRightLeaf(false);
         if (leaf) {
             await leaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
-            this.app.workspace.revealLeaf(leaf);
+            void this.app.workspace.revealLeaf(leaf);
         }
     }
 
@@ -1839,8 +1839,8 @@ export default class LilbeePlugin extends Plugin {
             }
         }
 
-        workspace.revealLeaf(chatLeaf);
-        if (tasksLeaf) workspace.revealLeaf(tasksLeaf);
+        void workspace.revealLeaf(chatLeaf);
+        if (tasksLeaf) void workspace.revealLeaf(tasksLeaf);
     }
 
     private registerPendingSyncHintWatchers(): void {

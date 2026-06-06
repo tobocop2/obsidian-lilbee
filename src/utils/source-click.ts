@@ -77,10 +77,10 @@ export function sourceClickAction(source: Source, vault: Vault): SourceClickActi
 export async function executeSourceClick(app: App, api: LilbeeClient, action: SourceClickAction): Promise<void> {
     switch (action.kind) {
         case SOURCE_ACTION.VAULT_MARKDOWN:
-            app.workspace.openLinkText(action.path, "", false, { eState: { line: action.line } });
+            void app.workspace.openLinkText(action.path, "", false, { eState: { line: action.line } });
             return;
         case SOURCE_ACTION.VAULT_NOTE:
-            app.workspace.openLinkText(action.path, "");
+            void app.workspace.openLinkText(action.path, "");
             return;
         case SOURCE_ACTION.PREVIEW:
             new SourcePreviewModal(app, api, action.source).open();

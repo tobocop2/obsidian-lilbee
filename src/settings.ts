@@ -89,6 +89,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     }
 
     display(): void {
+        this.render();
+    }
+
+    render(): void {
         const { containerEl } = this;
         containerEl.empty();
         this.serverConfigInputs.clear();
@@ -173,7 +177,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     .onChange(async (value) => {
                         this.plugin.settings.serverMode = value as ServerMode;
                         await this.plugin.saveSettings();
-                        this.display();
+                        this.render();
                     }),
             );
         this.appendLocalResetAffordance(modeSetting, "serverMode", MESSAGES.LABEL_SERVER_MODE);
@@ -215,7 +219,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             controlSetting.addButton((btn) =>
                 btn.setButtonText(MESSAGES.BUTTON_START).onClick(async () => {
                     await this.plugin.startManagedServer();
-                    this.display();
+                    this.render();
                 }),
             );
         }
@@ -223,7 +227,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             controlSetting.addButton((btn) =>
                 btn.setButtonText(MESSAGES.BUTTON_STOP).onClick(async () => {
                     await this.plugin.serverManager?.stop();
-                    this.display();
+                    this.render();
                 }),
             );
         }
@@ -231,7 +235,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             controlSetting.addButton((btn) =>
                 btn.setButtonText(MESSAGES.BUTTON_RESTART).onClick(async () => {
                     await this.plugin.serverManager?.restart();
-                    this.display();
+                    this.render();
                 }),
             );
         }
@@ -309,7 +313,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         try {
             await this.plugin.updateServer(release, (msg) => progress.phase.setText(msg));
             new Notice(MESSAGES.NOTICE_UPDATED_TO(release.tag));
-            this.display();
+            this.render();
             return true;
         } catch (err) {
             // errorMessage carries the server's reason, e.g. insufficient disk space.
@@ -358,7 +362,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }
                     await this.plugin.adoptDataDir(staged);
                     new Notice(MESSAGES.NOTICE_ADOPT_DATA_DIR_DONE(staged));
-                    this.display();
+                    this.render();
                 }),
             );
     }
@@ -423,7 +427,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.plugin.settings.serverMode = SERVER_MODE.MANAGED;
                     this.plugin.settings.serverUrl = DEFAULT_SETTINGS.serverUrl;
                     await this.plugin.saveSettings();
-                    this.display();
+                    this.render();
                 }),
             );
     }
@@ -450,7 +454,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             }),
         );
 
-        this.loadModels(modelsContainer);
+        void this.loadModels(modelsContainer);
     }
 
     private renderSearchRetrievalSettings(containerEl: HTMLElement): void {
@@ -508,7 +512,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 for (const [key, inputEl] of this.serverConfigInputs) {
                     const v = cfg[key];
                     if (v === undefined) continue;
-                    const formatted = v === null ? "" : String(v);
+                    const formatted =
+                        typeof v === "string" ? v : typeof v === "number" || typeof v === "boolean" ? String(v) : "";
                     inputEl.value = formatted;
                     if (formatted !== "") {
                         inputEl.placeholder = formatted;
@@ -604,7 +609,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     try {
                         await this.plugin.api.updateConfig({ [key]: def });
                         new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
-                        this.display();
+                        this.render();
                     } catch {
                         new Notice(MESSAGES.NOTICE_FAILED_RESET(label));
                     }
@@ -625,7 +630,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.plugin.settings[key] = DEFAULT_SETTINGS[key];
                     await this.plugin.saveSettings();
                     new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
-                    this.display();
+                    this.render();
                 }),
         );
     }
@@ -653,7 +658,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         this.plugin.settings[localKey] = def as LilbeeSettings[K];
                         await this.plugin.saveSettings();
                         new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
-                        this.display();
+                        this.render();
                     } catch {
                         new Notice(MESSAGES.NOTICE_FAILED_RESET(label));
                     }
@@ -1882,7 +1887,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 .addText((text) => {
                     text.setPlaceholder(MESSAGES.PLACEHOLDER_SK).setValue("");
                     text.inputEl.type = "password";
-                    text.inputEl.addEventListener("blur", async () => {
+                    const saveKey = async (): Promise<void> => {
                         const trimmed = text.inputEl.value.trim();
                         if (trimmed === "") return;
                         try {
@@ -1892,7 +1897,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         } catch {
                             new Notice(MESSAGES.NOTICE_FAILED_SAVE_KEY);
                         }
-                    });
+                    };
+                    text.inputEl.addEventListener("blur", () => void saveKey());
                 });
             setting.settingEl.setAttribute("data-lilbee-api-key", apiField.provider);
         }
@@ -1974,7 +1980,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .addButton((btn) =>
                 btn
                     .setButtonText(MESSAGES.BUTTON_RESET_ALL)
-                    .setWarning()
+                    .setClass("mod-warning")
                     .onClick(async () => {
                         const confirm = new ConfirmModal(this.app, MESSAGES.CONFIRM_RESET_ALL_SETTINGS);
                         confirm.open();
@@ -1987,7 +1993,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         try {
                             await this.plugin.api.updateConfig(payload);
                             new Notice(MESSAGES.NOTICE_SETTINGS_RESET);
-                            this.display();
+                            this.render();
                         } catch {
                             new Notice(MESSAGES.NOTICE_FAILED_RESET_ALL);
                         }
@@ -2140,8 +2146,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
             return;
         }
         new Notice(MESSAGES.NOTICE_SET_MODEL(MESSAGES.LABEL_CHAT_MODEL, label || MESSAGES.LABEL_NOT_SET.toLowerCase()));
-        this.plugin.fetchActiveModel();
-        this.display();
+        void this.plugin.fetchActiveModel();
+        this.render();
     }
 
     private async pullAndSetChat(entry: CatalogEntry): Promise<void> {
@@ -2155,8 +2161,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         } else {
             new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED_FULL(entry.display_name));
         }
-        this.plugin.fetchActiveModel();
-        this.display();
+        void this.plugin.fetchActiveModel();
+        this.render();
     }
 
     private async streamChatPull(entry: CatalogEntry): Promise<boolean> {
@@ -2216,10 +2222,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
             const deleteBtn = actions.createEl("button", { cls: "lilbee-model-delete" });
             setIcon(deleteBtn, "trash-2");
             deleteBtn.setAttribute("aria-label", MESSAGES.LABEL_DELETE_MODEL);
-            deleteBtn.addEventListener("click", () => this.deleteChatEntry(deleteBtn, entry, active));
+            deleteBtn.addEventListener("click", () => void this.deleteChatEntry(deleteBtn, entry, active));
         } else {
             const btn = actions.createEl("button", { text: MESSAGES.BUTTON_PULL });
-            btn.addEventListener("click", () => this.pullAndSetChat(entry));
+            btn.addEventListener("click", () => void this.pullAndSetChat(entry));
         }
     }
 
@@ -2248,7 +2254,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 this.plugin.activeModel = "";
             }
         }
-        this.plugin.fetchActiveModel();
+        void this.plugin.fetchActiveModel();
         const modelsContainer = this.containerEl.querySelector(`.${CLS_MODELS_CONTAINER}`);
         if (modelsContainer) {
             await this.loadModels(modelsContainer as HTMLElement);

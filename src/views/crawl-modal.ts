@@ -1,4 +1,4 @@
-import { App, Modal, Notice } from "obsidian";
+import { App, Modal, Notice, setIcon } from "obsidian";
 import type LilbeePlugin from "../main";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, ensureUrlScheme } from "../utils";
@@ -54,13 +54,13 @@ export class CrawlModal extends Modal {
 
         const infoBtn = recursiveRow.createEl("button", {
             cls: "lilbee-crawl-info-btn",
-            text: "i",
             attr: {
                 type: "button",
                 "aria-label": MESSAGES.LABEL_CRAWL_RECURSIVE_INFO,
                 "aria-expanded": "false",
             },
         });
+        setIcon(infoBtn, "info");
 
         const notice = contentEl.createDiv({ cls: "lilbee-crawl-notice" });
         notice.setAttribute("hidden", "hidden");
@@ -150,7 +150,7 @@ export class CrawlModal extends Modal {
                 maxPages = maxRes.value;
             }
 
-            this.plugin.runCrawl(url, depth, maxPages);
+            void this.plugin.runCrawl(url, depth, maxPages);
             this.close();
         });
 

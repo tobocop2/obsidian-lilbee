@@ -4,6 +4,20 @@ import { TaskCenterView, VIEW_TYPE_TASKS } from "../../src/views/task-center";
 import { TaskQueue } from "../../src/task-queue";
 import { TASK_TYPE, TASK_STATUS } from "../../src/types";
 import type LilbeePlugin from "../../src/main";
+import { ConfirmModal } from "../../src/views/confirm-modal";
+
+let mockCancelConfirmResult = true;
+vi.mock("../../src/views/confirm-modal", () => ({
+    ConfirmModal: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+            get result() {
+                return Promise.resolve(mockCancelConfirmResult);
+            },
+            close: vi.fn(),
+        };
+    }),
+}));
 
 function makePlugin(): LilbeePlugin {
     return {
@@ -508,15 +522,11 @@ describe("TaskCenterView — cancel handling", () => {
         const task = plugin.taskQueue.active!;
         expect(task.canCancel).toBe(false);
 
-        const origConfirm = globalThis.confirm;
-        globalThis.confirm = vi.fn().mockReturnValue(true);
+        mockCancelConfirmResult = true;
+        await (view as any).handleCancel(task);
 
-        (view as any).handleCancel(task);
-
-        expect(globalThis.confirm).toHaveBeenCalled();
+        expect(ConfirmModal).toHaveBeenCalled();
         expect(plugin.taskQueue.completed.some((t) => t.status === TASK_STATUS.CANCELLED)).toBe(true);
-
-        globalThis.confirm = origConfirm;
 
         await view.onClose();
     });
@@ -529,15 +539,11 @@ describe("TaskCenterView — cancel handling", () => {
         plugin.taskQueue.enqueue("Sync", TASK_TYPE.SYNC);
         const task = plugin.taskQueue.active!;
 
-        const origConfirm = globalThis.confirm;
-        globalThis.confirm = vi.fn().mockReturnValue(false);
+        mockCancelConfirmResult = false;
+        await (view as any).handleCancel(task);
 
-        (view as any).handleCancel(task);
-
-        expect(globalThis.confirm).toHaveBeenCalled();
+        expect(ConfirmModal).toHaveBeenCalled();
         expect(plugin.taskQueue.active).not.toBeNull();
-
-        globalThis.confirm = origConfirm;
 
         await view.onClose();
     });

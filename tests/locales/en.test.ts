@@ -345,8 +345,8 @@ describe("MESSAGES", () => {
         it("has all command names", () => {
             expect(MESSAGES.COMMAND_SEARCH).toBe("Search knowledge base");
             expect(MESSAGES.COMMAND_CHAT).toBe("Open chat");
-            expect(MESSAGES.COMMAND_ADD_FILE).toBe("Add current file to lilbee");
-            expect(MESSAGES.COMMAND_ADD_FOLDER).toBe("Add current folder to lilbee");
+            expect(MESSAGES.COMMAND_ADD_FILE).toBe("Add current file");
+            expect(MESSAGES.COMMAND_ADD_FOLDER).toBe("Add current folder");
             expect(MESSAGES.COMMAND_SYNC).toBe("Sync vault");
             expect(MESSAGES.COMMAND_SYNC_RETRY_SKIPPED).toBe("Retry skipped documents");
             expect(MESSAGES.COMMAND_SYNC_REBUILD).toBe("Rebuild index");

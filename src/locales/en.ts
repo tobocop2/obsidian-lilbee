@@ -628,8 +628,8 @@ export const MESSAGES = {
 
     COMMAND_SEARCH: "Search knowledge base",
     COMMAND_CHAT: "Open chat",
-    COMMAND_ADD_FILE: "Add current file to lilbee",
-    COMMAND_ADD_FOLDER: "Add current folder to lilbee",
+    COMMAND_ADD_FILE: "Add current file",
+    COMMAND_ADD_FOLDER: "Add current folder",
     COMMAND_SYNC: "Sync vault",
     COMMAND_SYNC_RETRY_SKIPPED: "Retry skipped documents",
     COMMAND_SYNC_REBUILD: "Rebuild index",

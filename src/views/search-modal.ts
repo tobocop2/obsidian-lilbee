@@ -15,7 +15,7 @@ export class SearchModal extends Modal {
         this.plugin = plugin;
         const debounced = debounce(() => {
             if (this.lastSearchQuery) {
-                this.runSearch(this.lastSearchQuery);
+                void this.runSearch(this.lastSearchQuery);
             }
         }, DEBOUNCE_MS);
         this.debouncedSearch = debounced.run;

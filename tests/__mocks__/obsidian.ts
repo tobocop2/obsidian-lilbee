@@ -327,10 +327,10 @@ export class App {
     };
 }
 
-export interface TFile {
-    path: string;
-    name: string;
-    parent: { path: string; name: string } | null;
+export class TFile {
+    path = "";
+    name = "";
+    parent: { path: string; name: string } | null = null;
 }
 
 type ModalKeyHandler = (e: KeyboardEvent) => unknown;
@@ -857,6 +857,11 @@ class MockButtonComponent {
     }
     setWarning(): this {
         this.warning = true;
+        return this;
+    }
+    classes: string[] = [];
+    setClass(cls: string): this {
+        this.classes.push(cls);
         return this;
     }
     onClick(cb: () => void): this {

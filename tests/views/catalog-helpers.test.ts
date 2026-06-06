@@ -247,8 +247,8 @@ describe("catalog-helpers", () => {
             const docMock = {
                 querySelector: vi.fn().mockReturnValue(target),
             };
-            const originalDocument = (globalThis as any).document;
-            (globalThis as any).document = docMock;
+            const originalDocument = (globalThis as any).activeDocument;
+            (globalThis as any).activeDocument = docMock;
             (globalThis as any).HTMLElement = class {};
             // Force the instanceof check to pass.
             Object.setPrototypeOf(target, (globalThis as any).HTMLElement.prototype);
@@ -261,18 +261,18 @@ describe("catalog-helpers", () => {
             expect(target.scrollIntoView).toHaveBeenCalled();
             expect(target.focus).toHaveBeenCalled();
 
-            (globalThis as any).document = originalDocument;
+            (globalThis as any).activeDocument = originalDocument;
         });
 
         it("returns early without throwing when document is undefined at firing time (Node-only test envs)", async () => {
-            const originalDocument = (globalThis as any).document;
+            const originalDocument = (globalThis as any).activeDocument;
             // Simulate the post-test cleanup: app.setting is wired but the DOM is gone.
-            (globalThis as any).document = undefined;
+            (globalThis as any).activeDocument = undefined;
             const app = new App();
             deepLinkToApiKeySettings(app as any, "OpenAI");
             // Let the inner setTimeout fire — must not throw.
             await new Promise((r) => setTimeout(r, 60));
-            (globalThis as any).document = originalDocument;
+            (globalThis as any).activeDocument = originalDocument;
         });
 
         it("Discover rail helpers cover task↔tab routing and ranking", () => {
@@ -343,15 +343,15 @@ describe("catalog-helpers", () => {
             const docMock = {
                 querySelector: vi.fn().mockReturnValue(null),
             };
-            const originalDocument = (globalThis as any).document;
-            (globalThis as any).document = docMock;
+            const originalDocument = (globalThis as any).activeDocument;
+            (globalThis as any).activeDocument = docMock;
 
             const app = new App();
             deepLinkToApiKeySettings(app as any, "MysteryProvider");
             await new Promise((r) => setTimeout(r, 60));
             expect(docMock.querySelector).toHaveBeenCalled();
 
-            (globalThis as any).document = originalDocument;
+            (globalThis as any).activeDocument = originalDocument;
         });
     });
 });

@@ -1,4 +1,4 @@
-import { Notice, type App, type TFile } from "obsidian";
+import { Notice, TFile, type App } from "obsidian";
 import type { LilbeeClient } from "./api";
 import type { TaskQueue } from "./task-queue";
 import {
@@ -92,7 +92,7 @@ async function materializeSources(app: App, api: LilbeeClient, sources: string[]
         const path = `${folder}/${noteName(source)}`;
         const existing = app.vault.getAbstractFileByPath(path);
         if (existing === null) await app.vault.create(path, content.markdown);
-        else await app.vault.modify(existing as TFile, content.markdown);
+        else if (existing instanceof TFile) await app.vault.modify(existing, content.markdown);
     }
 }
 
