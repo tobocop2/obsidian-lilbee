@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { windowStub } from "./window-stub";
 import { Notice } from "obsidian";
 import { App, WorkspaceLeaf } from "./__mocks__/obsidian";
 import { SSE_EVENT } from "../src/types";
@@ -4031,7 +4032,7 @@ describe("LilbeePlugin", () => {
 
         it("external outcome flips serverMode, configures the API, and does not start or open a browser", async () => {
             const openSpy = vi.fn();
-            vi.stubGlobal("window", { open: openSpy } as unknown as Window);
+            vi.stubGlobal("window", windowStub({ open: openSpy }));
             try {
                 mockBinaryExists.mockReturnValue(false);
                 mockConsentResult = { kind: "external" };

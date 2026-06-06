@@ -12,7 +12,7 @@ export class DraftModal extends Modal {
     private drafts: DraftInfoResponse[] = [];
     private selectedSlug: string | null = null;
     private selectedRow: HTMLElement | null = null;
-    private titleEl!: HTMLElement;
+    private draftsTitleEl!: HTMLElement;
     private listEl!: HTMLElement;
     private diffEl!: HTMLElement;
     private acceptBtn!: HTMLButtonElement;
@@ -40,7 +40,7 @@ export class DraftModal extends Modal {
 
     private renderChrome(root: HTMLElement): void {
         const header = root.createDiv({ cls: "lilbee-drafts-header" });
-        this.titleEl = header.createEl("h2", { text: MESSAGES.TITLE_DRAFTS(0) });
+        this.draftsTitleEl = header.createEl("h2", { text: MESSAGES.TITLE_DRAFTS(0) });
         const refreshBtn = header.createEl("button", {
             text: MESSAGES.LABEL_DRAFT_REFRESH,
             cls: "lilbee-drafts-refresh",
@@ -55,10 +55,10 @@ export class DraftModal extends Modal {
         this.acceptBtn = actions.createEl("button", {
             text: MESSAGES.LABEL_DRAFT_ACCEPT,
             cls: "mod-cta",
-        }) as HTMLButtonElement;
+        });
         this.rejectBtn = actions.createEl("button", {
             text: MESSAGES.LABEL_DRAFT_REJECT,
-        }) as HTMLButtonElement;
+        });
         this.acceptBtn.disabled = true;
         this.rejectBtn.disabled = true;
         this.acceptBtn.addEventListener("click", () => void this.accept());
@@ -77,7 +77,7 @@ export class DraftModal extends Modal {
             this.drafts = await this.plugin.api.wikiDrafts();
         } catch {
             loading.remove();
-            this.titleEl.setText(MESSAGES.TITLE_DRAFTS(0));
+            this.draftsTitleEl.setText(MESSAGES.TITLE_DRAFTS(0));
             this.listEl.createEl("p", {
                 text: MESSAGES.ERROR_LOAD_DRAFTS,
                 cls: "lilbee-empty-state",
@@ -89,7 +89,7 @@ export class DraftModal extends Modal {
     }
 
     private renderRows(): void {
-        this.titleEl.setText(MESSAGES.TITLE_DRAFTS(this.drafts.length));
+        this.draftsTitleEl.setText(MESSAGES.TITLE_DRAFTS(this.drafts.length));
         this.listEl.empty();
         if (this.drafts.length === 0) {
             this.listEl.createEl("p", {

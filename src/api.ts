@@ -199,7 +199,7 @@ export class LilbeeClient {
         if (!this.baseUrl) {
             const deadline = Date.now() + STARTUP_WAIT_MS;
             while (!this.baseUrl && Date.now() < deadline) {
-                await new Promise((r) => setTimeout(r, STARTUP_POLL_INTERVAL_MS));
+                await new Promise((r) => window.setTimeout(r, STARTUP_POLL_INTERVAL_MS));
             }
             if (!this.baseUrl) {
                 this.recordOutcome("starting");
@@ -214,20 +214,20 @@ export class LilbeeClient {
         let authRetried = false;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             if (attempt > 0) {
-                await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS * attempt));
+                await new Promise((r) => window.setTimeout(r, RETRY_BACKOFF_MS * attempt));
             }
             try {
                 const fetchInit = { ...init };
-                let timer: ReturnType<typeof setTimeout> | undefined;
+                let timer: number | undefined;
                 if (opts?.signal) {
                     fetchInit.signal = opts.signal;
                 } else if (!opts?.stream) {
                     const controller = new AbortController();
                     fetchInit.signal = controller.signal;
-                    timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+                    timer = window.setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
                 }
                 try {
-                    const res = await globalThis.fetch(url, fetchInit);
+                    const res = await window.fetch(url, fetchInit);
                     if ((res.status === 401 || res.status === 403) && !authRetried && this.refreshTokenFromProvider()) {
                         authRetried = true;
                         init = this.applyRefreshedToken(init);
@@ -245,7 +245,7 @@ export class LilbeeClient {
                     this.recordOutcome("ok");
                     return okRes;
                 } finally {
-                    if (timer !== undefined) clearTimeout(timer);
+                    if (timer !== undefined) window.clearTimeout(timer);
                 }
             } catch (err) {
                 lastError = err;
@@ -332,7 +332,7 @@ export class LilbeeClient {
         if (topK !== undefined) params.set("top_k", String(topK));
         if (chunkType && chunkType !== SEARCH_CHUNK_TYPE.ALL) params.set("chunk_type", chunkType);
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/search?${params}`);
-        return res.json();
+        return (await res.json()) as DocumentResult[];
     }
 
     async chat(question: string, history: Message[], topK?: number): Promise<AskResponse> {
@@ -341,7 +341,7 @@ export class LilbeeClient {
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ question, history, top_k: topK ?? 0 }),
         });
-        return res.json();
+        return (await res.json()) as AskResponse;
     }
 
     async listMemories(): Promise<MemoryItem[]> {
@@ -356,7 +356,7 @@ export class LilbeeClient {
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ text, kind, shared }),
         });
-        return res.json();
+        return (await res.json()) as RememberResponse;
     }
 
     async setMemoryShared(id: string, shared: boolean): Promise<MemoryFlagsResponse> {
@@ -365,7 +365,7 @@ export class LilbeeClient {
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ shared }),
         });
-        return res.json();
+        return (await res.json()) as MemoryFlagsResponse;
     }
 
     async forgetMemory(id: string): Promise<MemoryRemoveResponse> {
@@ -373,7 +373,7 @@ export class LilbeeClient {
             method: "DELETE",
             headers: { ...this.authHeaders() },
         });
-        return res.json();
+        return (await res.json()) as MemoryRemoveResponse;
     }
 
     async *chatStream(
@@ -438,7 +438,7 @@ export class LilbeeClient {
 
     async listModels(): Promise<ModelsResponse> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/models`);
-        return res.json();
+        return (await res.json()) as ModelsResponse;
     }
 
     async *pullModel(model: string, source = "native", signal?: AbortSignal): AsyncGenerator<SSEEvent> {
@@ -489,7 +489,7 @@ export class LilbeeClient {
         if (params?.task) qs.set("task", params.task);
         const suffix = qs.toString() ? `?${qs}` : "";
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/models/installed${suffix}`);
-        return res.json();
+        return (await res.json()) as InstalledResponse;
     }
 
     async showModel(model: string): Promise<ModelShowResponse> {
@@ -498,7 +498,7 @@ export class LilbeeClient {
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ model }),
         });
-        return res.json();
+        return (await res.json()) as ModelShowResponse;
     }
 
     async deleteModel(
@@ -520,7 +520,7 @@ export class LilbeeClient {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/documents${suffix}`, {
             headers: this.authHeaders(),
         });
-        return res.json();
+        return (await res.json()) as DocumentsResponse;
     }
 
     async removeDocuments(names: string[], deleteFiles = false): Promise<{ removed: number; not_found: string[] }> {
@@ -529,7 +529,7 @@ export class LilbeeClient {
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ names, delete_files: deleteFiles }),
         });
-        return res.json();
+        return (await res.json()) as { removed: number; not_found: string[] };
     }
 
     /** Download the per-page text dataset as raw bytes (parquet or jsonl). */
@@ -582,12 +582,12 @@ export class LilbeeClient {
 
     async config(): Promise<ConfigResponse> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/config`);
-        return res.json();
+        return (await res.json()) as ConfigResponse;
     }
 
     async configDefaults(): Promise<Record<string, unknown>> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/config/defaults`);
-        return res.json();
+        return (await res.json()) as Record<string, unknown>;
     }
 
     async updateConfig(updates: Record<string, unknown>): Promise<ConfigUpdateResponse> {
@@ -596,7 +596,7 @@ export class LilbeeClient {
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify(updates),
         });
-        return res.json();
+        return (await res.json()) as ConfigUpdateResponse;
     }
 
     async setEmbeddingModel(model: string): Promise<Result<void, Error>> {
@@ -625,21 +625,21 @@ export class LilbeeClient {
 
     async wikiList(): Promise<WikiPage[]> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki`, { headers: this.authHeaders() });
-        return res.json();
+        return (await res.json()) as WikiPage[];
     }
 
     async wikiPage(slug: string): Promise<WikiPageDetail> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/${encodeURIComponent(slug)}`, {
             headers: this.authHeaders(),
         });
-        return res.json();
+        return (await res.json()) as WikiPageDetail;
     }
 
     async wikiCitations(slug: string): Promise<WikiCitationChain> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/${encodeURIComponent(slug)}/citations`, {
             headers: this.authHeaders(),
         });
-        return res.json();
+        return (await res.json()) as WikiCitationChain;
     }
 
     async wikiCitationsForSource(filename: string): Promise<WikiCitationChain[]> {
@@ -647,7 +647,7 @@ export class LilbeeClient {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/citations?${params}`, {
             headers: this.authHeaders(),
         });
-        return res.json();
+        return (await res.json()) as WikiCitationChain[];
     }
 
     async wikiLint(): Promise<LintResult> {
@@ -655,7 +655,7 @@ export class LilbeeClient {
             method: "POST",
             headers: this.authHeaders(),
         });
-        return res.json();
+        return (await res.json()) as LintResult;
     }
 
     async wikiBuild(): Promise<WikiBuildResult> {
@@ -663,7 +663,7 @@ export class LilbeeClient {
             method: "POST",
             headers: this.authHeaders(),
         });
-        return res.json();
+        return (await res.json()) as WikiBuildResult;
     }
 
     async wikiUpdate(): Promise<WikiBuildResult> {
@@ -671,14 +671,14 @@ export class LilbeeClient {
             method: "PATCH",
             headers: this.authHeaders(),
         });
-        return res.json();
+        return (await res.json()) as WikiBuildResult;
     }
 
     async wikiStatus(): Promise<WikiStatusResult> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/status`, {
             headers: this.authHeaders(),
         });
-        return res.json();
+        return (await res.json()) as WikiStatusResult;
     }
 
     async wikiSynthesize(): Promise<WikiSynthesizeResult> {
@@ -686,7 +686,7 @@ export class LilbeeClient {
             method: "POST",
             headers: this.authHeaders(),
         });
-        return res.json();
+        return (await res.json()) as WikiSynthesizeResult;
     }
 
     /**
@@ -698,7 +698,7 @@ export class LilbeeClient {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/source?${params}`, {
             headers: this.authHeaders(),
         });
-        return res.json();
+        return (await res.json()) as SourceContent;
     }
 
     /**
@@ -728,7 +728,7 @@ export class LilbeeClient {
 
     async wikiDrafts(): Promise<DraftInfoResponse[]> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/drafts`, { headers: this.authHeaders() });
-        return res.json();
+        return (await res.json()) as DraftInfoResponse[];
     }
 
     async wikiDraftDiff(slug: string): Promise<string> {
@@ -743,7 +743,7 @@ export class LilbeeClient {
             method: "POST",
             headers: this.authHeaders(),
         });
-        return res.json();
+        return (await res.json()) as DraftAcceptResponse;
     }
 
     async wikiDraftReject(slug: string): Promise<DraftRejectResponse> {
@@ -751,7 +751,7 @@ export class LilbeeClient {
             method: "DELETE",
             headers: this.authHeaders(),
         });
-        return res.json();
+        return (await res.json()) as DraftRejectResponse;
     }
 
     async *wikiPrune(signal?: AbortSignal): AsyncGenerator<SSEEvent> {

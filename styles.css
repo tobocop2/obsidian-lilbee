@@ -3437,9 +3437,10 @@
    the preview as large as they need. Applying resize to the inner contentEl
    gets clipped by Obsidian's default ``overflow: hidden`` on the frame. */
 .lilbee-preview-modal-frame {
-    /* position is set inline (fixed) so the modal can be dragged anywhere on
-     * screen; centering happens via Obsidian's auto margins until the user
+    /* fixed positioning lets the modal be dragged anywhere on screen;
+     * centering happens via Obsidian's auto margins until the user
      * grabs the title bar. */
+    position: fixed;
     width: min(880px, 92vw);
     height: min(640px, 85vh);
     min-width: 360px;
@@ -4413,4 +4414,9 @@ button.lilbee-model-chip-select:focus-visible {
     justify-content: flex-end;
     gap: 8px;
     margin-top: 12px;
+}
+
+/* Cursor affordance for clickable status-bar items and chips. */
+.lilbee-clickable {
+    cursor: pointer;
 }

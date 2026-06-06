@@ -447,13 +447,13 @@ describe("LilbeeSettingTab", () => {
             expect(() => tab.display()).not.toThrow();
         });
 
-        it("creates h3 'Models' and description paragraph", () => {
+        it("creates a Models heading and description paragraph", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             tab.display();
-            const h3 = tab.containerEl.children.find((c) => c.tagName === "H3");
-            expect(h3?.textContent).toBe("Models");
+            const heading = tab.containerEl.find("setting-item-heading");
+            expect(heading?.textContent).toBe("Models");
             const p = tab.containerEl.children.find(
                 (c) => c.tagName === "P" && c.textContent.includes("Browse the catalog"),
             );

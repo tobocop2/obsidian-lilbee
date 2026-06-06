@@ -44,7 +44,7 @@ export class DocumentsModal extends Modal {
             attr: { type: "text" },
         });
         searchInput.addEventListener("input", () => {
-            this.searchQuery = (searchInput as unknown as HTMLInputElement).value;
+            this.searchQuery = searchInput.value;
             this.debouncedSearch();
         });
 
@@ -122,7 +122,7 @@ export class DocumentsModal extends Modal {
             attr: { type: "checkbox" },
         });
         checkbox.addEventListener("change", () => {
-            const checked = (checkbox as unknown as HTMLInputElement).checked;
+            const checked = checkbox.checked;
             if (checked) {
                 this.selected.add(doc.filename);
             } else {

@@ -396,14 +396,14 @@ export class SetupWizard extends Modal {
             mode = SERVER_MODE.MANAGED;
             managedOption.classList.add("selected");
             externalOption.classList.remove("selected");
-            externalFields.style.display = "none";
+            externalFields.hide();
             statusEl.textContent = "";
         };
         const selectExternal = (): void => {
             mode = SERVER_MODE.EXTERNAL;
             externalOption.classList.add("selected");
             managedOption.classList.remove("selected");
-            externalFields.style.display = "";
+            externalFields.show();
         };
         managedOption.addEventListener("click", selectManaged);
         externalOption.addEventListener("click", selectExternal);
@@ -447,7 +447,7 @@ export class SetupWizard extends Modal {
         let failed = false;
         const onProgress = (event: { phase: ManagedServerProgressPhase; message?: string }): void => {
             if (!panelShown) {
-                panel.style.display = "";
+                panel.show();
                 step.querySelector<HTMLElement>(".lilbee-wizard-rail")?.classList.add("is-active");
                 panelShown = true;
             }
@@ -461,13 +461,13 @@ export class SetupWizard extends Modal {
             if (outcome.kind === SETUP_OUTCOME.SWITCHED_TO_EXTERNAL) {
                 // User chose External from the consent modal: reveal the
                 // external URL/token fields so they can finish via that path.
-                panel.style.display = "none";
+                panel.hide();
                 selectExternal();
                 (nextBtn as HTMLButtonElement).disabled = false;
                 return;
             }
             if (outcome.kind === SETUP_OUTCOME.CANCELED) {
-                panel.style.display = "none";
+                panel.hide();
                 (nextBtn as HTMLButtonElement).disabled = false;
                 return;
             }
@@ -484,7 +484,7 @@ export class SetupWizard extends Modal {
             this.step = WIZARD_STEP.MODEL_PICKER;
             this.renderStep();
         } catch {
-            panel.style.display = "none";
+            panel.hide();
             statusEl.textContent = MESSAGES.ERROR_START_SERVER;
             (nextBtn as HTMLButtonElement).disabled = false;
         }
@@ -503,7 +503,7 @@ export class SetupWizard extends Modal {
         setPhase: (phase: ManagedServerProgressPhase, message?: string) => void;
     } {
         const panel = step.createDiv({ cls: "lilbee-wizard-setup" });
-        panel.style.display = "none";
+        panel.hide();
 
         const head = panel.createDiv({ cls: "lilbee-wizard-setup-head" });
         const spinner = head.createSpan({ cls: "lilbee-wizard-setup-spinner" });
@@ -516,7 +516,7 @@ export class SetupWizard extends Modal {
             line.createSpan({ cls: "lilbee-wizard-phase-dot" });
             const label = line.createSpan({ cls: "lilbee-wizard-phase-label", text: meta.pending });
             const detail = row.createDiv({ cls: "lilbee-wizard-phase-detail" });
-            detail.style.display = "none";
+            detail.hide();
             const bar = detail.createDiv({ cls: "lilbee-progress-bar-container" });
             bar.createDiv({ cls: "lilbee-wizard-progress-fill lilbee-wizard-progress-indeterminate" });
             detail.createDiv({ cls: "lilbee-wizard-phase-hint", text: meta.hint });
@@ -536,7 +536,7 @@ export class SetupWizard extends Modal {
             // message in the header and leave the rows showing where progress
             // stalled rather than blanking them.
             if (idx < 0) {
-                spinner.style.display = "none";
+                spinner.hide();
                 head.classList.add("is-error");
                 headText.setText(message || MESSAGES.ERROR_START_SERVER);
                 return;
@@ -545,31 +545,31 @@ export class SetupWizard extends Modal {
             // attempt doesn't leave the stale error text/styling above freshly
             // lit phase rows.
             head.classList.remove("is-error", "is-ready");
-            spinner.style.display = "";
-            gate.style.display = "";
+            spinner.show();
+            gate.show();
             headText.setText(MESSAGES.WIZARD_SETUP_HEAD);
 
             const terminal = idx === order.length - 1;
             for (let i = 0; i < rows.length; i++) {
                 const { meta, row, label, detail } = rows[i];
                 row.classList.remove("is-active", "is-done");
-                detail.style.display = "none";
+                detail.hide();
                 if (i < idx || (i === idx && terminal)) {
                     row.classList.add("is-done");
                     label.setText(meta.done);
                 } else if (i === idx) {
                     row.classList.add("is-active");
                     label.setText(meta.active);
-                    detail.style.display = "";
+                    detail.show();
                 } else {
                     label.setText(meta.pending);
                 }
             }
             if (terminal) {
-                spinner.style.display = "none";
+                spinner.hide();
                 head.classList.add("is-ready");
                 headText.setText(MESSAGES.WIZARD_SETUP_RUNNING);
-                gate.style.display = "none";
+                gate.hide();
             }
         };
 
@@ -608,7 +608,7 @@ export class SetupWizard extends Modal {
         progressLabel: HTMLElement;
     } {
         const progressEl = step.createDiv({ cls: "lilbee-wizard-progress" });
-        progressEl.style.display = "none";
+        progressEl.hide();
 
         const progressBar = progressEl.createDiv({ cls: "lilbee-progress-bar-container" });
         const progressFill = progressBar.createDiv({
@@ -766,7 +766,7 @@ export class SetupWizard extends Modal {
     ): Promise<void> {
         if (!this.selectedModel) return;
         const model = this.selectedModel;
-        progressEl.style.display = "";
+        progressEl.show();
         progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL.replace("{model}", model.hf_repo);
         this.pullController = new AbortController();
         this.updateProgress(step, progressFill, undefined);
@@ -796,7 +796,7 @@ export class SetupWizard extends Modal {
             if (setResult.isErr()) {
                 new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.display_name));
                 statusEl.textContent = setResult.error.message;
-                progressEl.style.display = "none";
+                progressEl.hide();
                 (downloadBtn as HTMLButtonElement).disabled = false;
                 return;
             }
@@ -815,7 +815,7 @@ export class SetupWizard extends Modal {
             } else {
                 statusEl.textContent = MESSAGES.ERROR_DOWNLOAD_FAILED;
             }
-            progressEl.style.display = "none";
+            progressEl.hide();
             (downloadBtn as HTMLButtonElement).disabled = false;
         } finally {
             this.pullController = null;
@@ -932,7 +932,7 @@ export class SetupWizard extends Modal {
     ): Promise<void> {
         if (!this.selectedEmbedding) return;
         const model = this.selectedEmbedding;
-        progressEl.style.display = "";
+        progressEl.show();
         progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL.replace("{model}", model.hf_repo);
         this.pullController = new AbortController();
         this.updateProgress(step, progressFill, undefined);
@@ -962,7 +962,7 @@ export class SetupWizard extends Modal {
             if (setResult.isErr()) {
                 new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.display_name));
                 statusEl.textContent = setResult.error.message;
-                progressEl.style.display = "none";
+                progressEl.hide();
                 (downloadBtn as HTMLButtonElement).disabled = false;
                 return;
             }
@@ -978,7 +978,7 @@ export class SetupWizard extends Modal {
             } else {
                 statusEl.textContent = MESSAGES.ERROR_DOWNLOAD_FAILED;
             }
-            progressEl.style.display = "none";
+            progressEl.hide();
             (downloadBtn as HTMLButtonElement).disabled = false;
         } finally {
             this.pullController = null;
@@ -991,7 +991,7 @@ export class SetupWizard extends Modal {
         step.createEl("p", { text: MESSAGES.WIZARD_SYNC_HELP });
 
         const { progressEl, progressFill, progressLabel } = this.renderProgressPanel(step);
-        progressEl.style.display = "";
+        progressEl.show();
         progressLabel.textContent = MESSAGES.WIZARD_STATUS_STARTING;
         this.updateProgress(step, progressFill, undefined);
 

@@ -61,7 +61,7 @@ export class WikiView extends ItemView {
             type: "text",
             cls: "lilbee-wiki-search",
             placeholder: MESSAGES.PLACEHOLDER_TYPE_SEARCH,
-        }) as HTMLInputElement;
+        });
         this.filterInput.addEventListener("input", () => this.renderList());
 
         // Page list

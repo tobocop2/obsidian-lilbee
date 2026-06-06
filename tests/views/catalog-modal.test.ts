@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+import { windowStub } from "../window-stub";
 import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { CatalogModal } from "../../src/views/catalog-modal";
@@ -2033,7 +2034,7 @@ describe("CatalogModal", () => {
 
     describe("detail drawer", () => {
         beforeEach(() => {
-            vi.stubGlobal("window", { innerWidth: 1200 } as unknown as Window);
+            vi.stubGlobal("window", windowStub({ innerWidth: 1200 }));
         });
         afterEach(() => {
             vi.unstubAllGlobals();
@@ -2124,7 +2125,7 @@ describe("CatalogModal", () => {
         });
 
         it("collapses the drawer when the viewport is narrower than 800px", async () => {
-            vi.stubGlobal("window", { innerWidth: 600 } as unknown as Window);
+            vi.stubGlobal("window", windowStub({ innerWidth: 600 }));
             const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse([makeEntry()])));
             const modal = await openModal(plugin, CATALOG_TAB.LIBRARY);
@@ -2158,7 +2159,7 @@ describe("CatalogModal", () => {
 
     describe("`i` key opens model info", () => {
         beforeEach(() => {
-            vi.stubGlobal("window", { innerWidth: 1200 } as unknown as Window);
+            vi.stubGlobal("window", windowStub({ innerWidth: 1200 }));
         });
         afterEach(() => {
             vi.unstubAllGlobals();

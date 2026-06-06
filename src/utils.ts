@@ -30,15 +30,15 @@ export function debounce<T extends (...args: unknown[]) => unknown>(
     fn: T,
     ms: number,
 ): { run: (...args: Parameters<T>) => void; cancel: () => void } {
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let timer: number | null = null;
     return {
         run: (...args: Parameters<T>) => {
-            if (timer) clearTimeout(timer);
-            timer = setTimeout(() => fn(...args), ms);
+            if (timer) window.clearTimeout(timer);
+            timer = window.setTimeout(() => fn(...args), ms);
         },
         cancel: () => {
             if (timer) {
-                clearTimeout(timer);
+                window.clearTimeout(timer);
                 timer = null;
             }
         },
@@ -77,14 +77,14 @@ export async function* withIdleTimeout<T>(
 ): AsyncGenerator<T> {
     const iter = gen[Symbol.asyncIterator]();
     while (true) {
-        let timer: ReturnType<typeof setTimeout> | null = null;
+        let timer: number | null = null;
         const idle = new Promise<"idle">((resolve) => {
-            timer = setTimeout(() => resolve("idle"), timeoutMs);
+            timer = window.setTimeout(() => resolve("idle"), timeoutMs);
         });
         const race = await Promise.race([iter.next(), idle]);
         // Guard against vitest's fake-timer lifecycle leaving clearTimeout undefined
         // across test-file boundaries; in production both are always defined.
-        if (timer !== null && typeof clearTimeout === "function") clearTimeout(timer);
+        if (timer !== null && typeof clearTimeout === "function") window.clearTimeout(timer);
         if (race === "idle") {
             abort();
             // Fire-and-forget: iter.return() lets the source generator exit its
@@ -94,7 +94,7 @@ export async function* withIdleTimeout<T>(
             void iter.return?.(undefined);
             throw new StreamIdleError(timeoutMs);
         }
-        const { done, value } = race as IteratorResult<T>;
+        const { done, value } = race;
         if (done) return;
         yield value;
     }

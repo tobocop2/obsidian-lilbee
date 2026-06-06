@@ -47,7 +47,7 @@ describe("SourcePreviewModal — malformed source", () => {
 });
 
 describe("SourcePreviewModal — resizable frame", () => {
-    it("applies the resize class and sizing styles to the outer modal frame", async () => {
+    it("applies the resize-frame class to the outer modal frame", async () => {
         const app = new App();
         const api = makeApi({
             getSource: vi.fn().mockResolvedValue({
@@ -60,10 +60,6 @@ describe("SourcePreviewModal — resizable frame", () => {
         await tick();
         const frame = modal.modalEl as unknown as MockElement;
         expect(frame.classList.contains("lilbee-preview-modal-frame")).toBe(true);
-        expect(frame.style.resize).toBe("both");
-        expect(frame.style.overflow).toBe("hidden");
-        expect(frame.style.width).toContain("92vw");
-        expect(frame.style.height).toContain("85vh");
     });
 });
 

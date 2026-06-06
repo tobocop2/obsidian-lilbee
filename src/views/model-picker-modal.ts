@@ -36,7 +36,7 @@ export class ModelPickerModal extends Modal {
     private searchInputEl: HTMLInputElement | null = null;
     private listEl: HTMLElement | null = null;
     private highlightedIndex = 0;
-    private filterTimer: ReturnType<typeof setTimeout> | null = null;
+    private filterTimer: number | null = null;
 
     constructor(app: App, plugin: LilbeePlugin, pickerScope: PickerScope) {
         super(app);
@@ -59,7 +59,7 @@ export class ModelPickerModal extends Modal {
     }
 
     onClose(): void {
-        if (this.filterTimer !== null) clearTimeout(this.filterTimer);
+        if (this.filterTimer !== null) window.clearTimeout(this.filterTimer);
     }
 
     private renderSearchInput(parent: HTMLElement): void {
@@ -68,17 +68,17 @@ export class ModelPickerModal extends Modal {
             cls: "lilbee-model-picker-search-input",
             attr: { type: "text" },
             placeholder: MESSAGES.MODEL_PICKER_SEARCH_PLACEHOLDER,
-        }) as HTMLInputElement;
+        });
         this.searchInputEl.addEventListener("input", () => {
             /* v8 ignore next */
             const value = this.searchInputEl?.value ?? "";
-            if (this.filterTimer !== null) clearTimeout(this.filterTimer);
-            this.filterTimer = setTimeout(() => {
+            if (this.filterTimer !== null) window.clearTimeout(this.filterTimer);
+            this.filterTimer = window.setTimeout(() => {
                 this.filterText = value;
                 this.applyFilterAndRender();
             }, SEARCH_DEBOUNCE_MS);
         });
-        setTimeout(() => this.searchInputEl?.focus(), 0);
+        window.setTimeout(() => this.searchInputEl?.focus(), 0);
     }
 
     private registerKeyHandlers(): void {
@@ -237,7 +237,7 @@ export class ModelPickerModal extends Modal {
             this.pickerScope === "chat" ? this.plugin.api.setChatModel(m) : this.plugin.api.setEmbeddingModel(m);
         let result = await set(repo);
         for (let attempt = 0; attempt < SET_MODEL_RETRIES && result.isErr(); attempt++) {
-            await new Promise((resolve) => setTimeout(resolve, SET_MODEL_RETRY_MS));
+            await new Promise((resolve) => window.setTimeout(resolve, SET_MODEL_RETRY_MS));
             result = await set(repo);
         }
         return result;

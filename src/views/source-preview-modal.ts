@@ -1,4 +1,4 @@
-import { App, MarkdownRenderer, Modal, Notice } from "obsidian";
+import { App, Component, MarkdownRenderer, Modal, Notice } from "obsidian";
 import type { LilbeeClient } from "../api";
 import type { Source, SourceContent } from "../types";
 import { CONTENT_TYPE, isPdfContentType } from "../types";
@@ -33,30 +33,26 @@ const TEXT_INLINE_RENDER_DENY = new Set([
 export class SourcePreviewModal extends Modal {
     private api: LilbeeClient;
     private source: Source;
+    private renderComponent: Component;
 
     constructor(app: App, api: LilbeeClient, source: Source) {
         super(app);
         this.api = api;
         this.source = source;
+        this.renderComponent = new Component();
         bindEscapeToClose(this);
     }
 
     onOpen(): void {
+        this.renderComponent.load();
         const { contentEl, modalEl } = this;
         contentEl.empty();
         contentEl.addClass("lilbee-modal");
         contentEl.addClass("lilbee-preview-modal");
-        // Apply resize handling to the outer modal frame that Obsidian creates;
-        // CSS ``resize: both`` on the inner content element is clipped by the
-        // frame's default ``overflow: hidden``. Setting dimensions inline
-        // beats Obsidian's default ``width: fit-content`` without relying on
-        // CSS specificity escalations.
+        // The outer modal frame carries sizing, ``resize: both``, and
+        // ``position: fixed`` via this class; the inner content element would
+        // be clipped by the frame's default ``overflow: hidden``.
         modalEl.addClass("lilbee-preview-modal-frame");
-        modalEl.style.width = "min(880px, 92vw)";
-        modalEl.style.height = "min(640px, 85vh)";
-        modalEl.style.resize = "both";
-        modalEl.style.overflow = "hidden";
-        modalEl.style.position = "fixed";
 
         contentEl.createEl("h2", { text: MESSAGES.TITLE_SOURCE_PREVIEW });
         this.makeDraggable(contentEl);
@@ -78,6 +74,7 @@ export class SourcePreviewModal extends Modal {
     }
 
     onClose(): void {
+        this.renderComponent.unload();
         this.contentEl.empty();
         if (this.dragMoveHandler) {
             window.removeEventListener("pointermove", this.dragMoveHandler);
@@ -107,13 +104,10 @@ export class SourcePreviewModal extends Modal {
             const rect = this.modalEl.getBoundingClientRect();
             const offsetX = down.clientX - rect.left;
             const offsetY = down.clientY - rect.top;
-            this.modalEl.style.margin = "0";
-            this.modalEl.style.left = `${rect.left}px`;
-            this.modalEl.style.top = `${rect.top}px`;
+            this.modalEl.setCssProps({ margin: "0", left: `${rect.left}px`, top: `${rect.top}px` });
 
             const move = (e: PointerEvent): void => {
-                this.modalEl.style.left = `${e.clientX - offsetX}px`;
-                this.modalEl.style.top = `${e.clientY - offsetY}px`;
+                this.modalEl.setCssProps({ left: `${e.clientX - offsetX}px`, top: `${e.clientY - offsetY}px` });
             };
             const up = (): void => {
                 window.removeEventListener("pointermove", move);
@@ -160,7 +154,7 @@ export class SourcePreviewModal extends Modal {
             const save = footer.createEl("button", {
                 text: MESSAGES.LABEL_PREVIEW_SAVE_TO_VAULT,
                 cls: "lilbee-preview-save",
-            }) as HTMLButtonElement;
+            });
             save.disabled = true;
             save.setAttribute("title", MESSAGES.TOOLTIP_PREVIEW_SAVE_SOON);
         }
@@ -211,7 +205,7 @@ export class SourcePreviewModal extends Modal {
         const textBlocked = TEXT_INLINE_RENDER_DENY.has(ct);
         if (!textBlocked && ct.startsWith("text/")) {
             const body = host.createDiv({ cls: "lilbee-preview-body" });
-            void MarkdownRenderer.render(this.app, content.markdown, body, "", this);
+            void MarkdownRenderer.render(this.app, content.markdown, body, "", this.renderComponent);
             return;
         }
         host.createEl("p", {

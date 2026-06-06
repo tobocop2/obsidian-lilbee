@@ -47,7 +47,7 @@ export const node = {
     createHash,
     processKill: process.kill.bind(process),
     requestUrl,
-    fetch: globalThis.fetch.bind(globalThis) as typeof globalThis.fetch,
+    fetch: window.fetch.bind(window),
 };
 
 export const GITHUB_REPO = "tobocop2/lilbee";

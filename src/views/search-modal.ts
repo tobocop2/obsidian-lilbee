@@ -50,7 +50,7 @@ export class SearchModal extends Modal {
             this.debouncedSearch();
         });
 
-        setTimeout(() => input.focus(), 0);
+        window.setTimeout(() => input.focus(), 0);
     }
 
     onClose(): void {

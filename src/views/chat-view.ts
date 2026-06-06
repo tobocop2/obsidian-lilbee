@@ -156,7 +156,7 @@ export class ChatView extends ItemView {
     private optionalCatalog: Record<string, CatalogEntry[]> = { vision: [], rerank: [] };
     private optionalActive: Record<string, string> = { vision: "", rerank: "" };
     private static readonly OFFLINE_THRESHOLD = 3;
-    private retryTimer: ReturnType<typeof setTimeout> | null = null;
+    private retryTimer: number | null = null;
     private retryCount = 0;
     private emptyStateEl: HTMLElement | null = null;
 
@@ -191,7 +191,7 @@ export class ChatView extends ItemView {
         this.streamController?.abort();
         this.pullController?.abort();
         if (this.retryTimer) {
-            clearTimeout(this.retryTimer);
+            window.clearTimeout(this.retryTimer);
             this.retryTimer = null;
         }
         this.retryCount = 0;
@@ -296,12 +296,12 @@ export class ChatView extends ItemView {
         const textarea = inputArea.createEl("textarea", {
             placeholder: MESSAGES.PLACEHOLDER_ASK_SOMETHING,
             cls: "lilbee-chat-textarea",
-        }) as HTMLTextAreaElement;
+        });
         this.textareaEl = textarea;
         this.sendBtn = inputArea.createEl("button", {
             text: MESSAGES.BUTTON_SEND,
             cls: "lilbee-chat-send",
-        }) as HTMLButtonElement;
+        });
 
         const handleSend = (): void => {
             // Defensively wrap in try/catch — exceptions in the click/keydown
@@ -346,7 +346,7 @@ export class ChatView extends ItemView {
         ])
             .then(([chatCatalogResult, chatInstalled, embeddingResult, serverConfig, visionCatalog, rerankCatalog]) => {
                 if (this.retryTimer) {
-                    clearTimeout(this.retryTimer);
+                    window.clearTimeout(this.retryTimer);
                     this.retryTimer = null;
                 }
                 this.retryCount = 0;
@@ -365,7 +365,7 @@ export class ChatView extends ItemView {
 
                 if (this.chatInstalled.length === 0) {
                     this.showEmptyState();
-                    this.retryTimer = setTimeout(() => this.fetchAndFillSelectors(), RETRY_INTERVAL_MS);
+                    this.retryTimer = window.setTimeout(() => this.fetchAndFillSelectors(), RETRY_INTERVAL_MS);
                 } else {
                     this.hideEmptyState();
                 }
@@ -384,7 +384,7 @@ export class ChatView extends ItemView {
                 if (this.retryCount === ChatView.OFFLINE_THRESHOLD) {
                     new Notice(MESSAGES.ERROR_SERVER_UNREACHABLE);
                 }
-                this.retryTimer = setTimeout(() => this.fetchAndFillSelectors(), RETRY_INTERVAL_MS);
+                this.retryTimer = window.setTimeout(() => this.fetchAndFillSelectors(), RETRY_INTERVAL_MS);
             });
     }
 
@@ -816,7 +816,7 @@ export class ChatView extends ItemView {
         spinner.createDiv({ cls: "lilbee-thinking-dot" });
         spinner.createDiv({ cls: "lilbee-thinking-dot" });
         const textEl = assistantBubble.createDiv({ cls: "lilbee-chat-content" });
-        textEl.style.display = "none";
+        textEl.hide();
         this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 
         const state = { fullContent: "", reasoningContent: "", sources: [] as Source[], renderPending: false };
@@ -825,11 +825,11 @@ export class ChatView extends ItemView {
         const revealContent = (): void => {
             const elapsed = Date.now() - spinnerCreatedAt;
             const delay = Math.max(0, SPINNER_MIN_DISPLAY_MS - elapsed);
-            setTimeout(() => {
+            window.setTimeout(() => {
                 // Revealing the hidden content grows the bubble; keep the view pinned.
                 void this.renderFollowing(() => {
                     if (spinner.parentElement) spinner.remove();
-                    textEl.style.display = "";
+                    textEl.show();
                 });
             }, delay);
         };
@@ -837,7 +837,7 @@ export class ChatView extends ItemView {
         const scheduleRender = (): void => {
             if (state.renderPending) return;
             state.renderPending = true;
-            requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
                 state.renderPending = false;
                 void this.renderFollowing(() => this.renderMarkdown(textEl, state.fullContent));
             });
@@ -917,7 +917,7 @@ export class ChatView extends ItemView {
                         const details = assistantBubble.createEl("details", { cls: "lilbee-reasoning" });
                         details.createEl("summary", { text: MESSAGES.LABEL_REASONING });
                         const content = details.createDiv({ cls: "lilbee-reasoning-content" });
-                        void MarkdownRenderer.render(this.app, state.reasoningContent, content, "", this.plugin);
+                        void MarkdownRenderer.render(this.app, state.reasoningContent, content, "", this);
                         details.removeAttribute("open");
                     }
                     this.renderBannerIfPresent(event.data, assistantBubble);
@@ -976,7 +976,7 @@ export class ChatView extends ItemView {
 
     private async renderMarkdown(el: HTMLElement, markdown: string): Promise<void> {
         el.empty();
-        await MarkdownRenderer.render(this.app, markdown, el, "", this.plugin);
+        await MarkdownRenderer.render(this.app, markdown, el, "", this);
         el.addClass("markdown-rendered");
     }
 

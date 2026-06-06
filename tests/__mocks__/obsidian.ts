@@ -37,6 +37,15 @@ export class MockElement {
         contains: (cls: string) => boolean;
     };
     style: Record<string, string> = {};
+    setCssProps(props: Record<string, string>): void {
+        Object.assign(this.style, props);
+    }
+    show(): void {
+        this.style.display = "";
+    }
+    hide(): void {
+        this.style.display = "none";
+    }
     attributes: Record<string, string> = {};
     dataset: Record<string, string> = {};
     _listeners: Record<string, Function[]> = {};
@@ -353,6 +362,11 @@ export class MockScope {
     }
 }
 
+export class Component {
+    load(): void {}
+    unload(): void {}
+}
+
 export class Modal {
     app: App;
     contentEl: MockElement;
@@ -652,10 +666,16 @@ export class Setting {
         this._el = el;
         this.settingEl = el;
     }
-    setName(_name: string): this {
+    private _name = "";
+    setName(name: string): this {
+        this._name = name;
         return this;
     }
     setDesc(_desc: string): this {
+        return this;
+    }
+    setHeading(): this {
+        this._el.createEl("div", { text: this._name, cls: "setting-item-heading" });
         return this;
     }
     setDisabled(_disabled: boolean): this {

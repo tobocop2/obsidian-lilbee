@@ -49,7 +49,7 @@ export class TaskCenterView extends ItemView {
 
         this.countersEl = header.createEl("span", { cls: "lilbee-tasks-counters" });
         this.capPill = header.createEl("span", { cls: "lilbee-tasks-cap-pill" });
-        this.capPill.style.display = "none";
+        this.capPill.hide();
 
         const clearBtn = header.createEl("button", { cls: "lilbee-tasks-clear" });
         clearBtn.textContent = MESSAGES.BUTTON_CLEAR_TASKS;
@@ -77,7 +77,7 @@ export class TaskCenterView extends ItemView {
     async onClose(): Promise<void> {
         this.unsubscribe?.();
         if (this.refreshInterval !== null) {
-            clearInterval(this.refreshInterval);
+            window.clearInterval(this.refreshInterval);
             this.refreshInterval = null;
         }
     }
@@ -99,10 +99,10 @@ export class TaskCenterView extends ItemView {
         if (targetMs === this.refreshIntervalMs && this.refreshInterval !== null) return;
 
         if (this.refreshInterval !== null) {
-            clearInterval(this.refreshInterval);
+            window.clearInterval(this.refreshInterval);
         }
         this.refreshIntervalMs = targetMs;
-        this.refreshInterval = setInterval(() => this.render(), targetMs) as unknown as number;
+        this.refreshInterval = window.setInterval(() => this.render(), targetMs);
     }
 
     private renderCounters(): void {
@@ -126,10 +126,10 @@ export class TaskCenterView extends ItemView {
                 "{active}",
                 String(backgroundActive),
             ).replace("{cap}", String(cap));
-            this.capPill.style.display = "";
+            this.capPill.show();
         } else {
             this.capPill.textContent = "";
-            this.capPill.style.display = "none";
+            this.capPill.hide();
         }
     }
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { windowStub } from "../window-stub";
 import { App } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { ModelInfoModal } from "../../src/views/model-info-modal";
@@ -101,7 +102,7 @@ describe("ModelInfoModal", () => {
 
     it("invokes window.open in a new tab when the HF link is clicked", () => {
         const openSpy = vi.fn();
-        vi.stubGlobal("window", { open: openSpy } as unknown as Window);
+        vi.stubGlobal("window", windowStub({ open: openSpy }));
         const modal = new ModelInfoModal(new App() as never, fakePlugin, makeEntry({ hf_repo: "qwen/qwen3-8b" }));
         modal.open();
         const link = content(modal).find("lilbee-hf-link")!;

@@ -51,14 +51,14 @@ export class MemoriesView extends ItemView {
 
         this.listEl = contentEl.createDiv({ cls: "lilbee-memories-list" });
 
-        await this.load();
+        await this.loadMemories();
     }
 
     async reload(): Promise<void> {
-        await this.load();
+        await this.loadMemories();
     }
 
-    private async load(): Promise<void> {
+    private async loadMemories(): Promise<void> {
         try {
             const cfg = await this.plugin.api.config();
             if (cfg[MEMORY_CONFIG_KEY.ENABLED] !== true) {
@@ -134,7 +134,7 @@ export class MemoriesView extends ItemView {
         try {
             await this.plugin.api.setMemoryShared(memory.id, next);
             new Notice(next ? MESSAGES.MEMORIES_SHARED_ON : MESSAGES.MEMORIES_SHARED_OFF);
-            await this.load();
+            await this.loadMemories();
         } catch (err) {
             new Notice(
                 MESSAGES.MEMORIES_FLAG_FAILED(
@@ -152,7 +152,7 @@ export class MemoriesView extends ItemView {
         try {
             await this.plugin.api.forgetMemory(memory.id);
             new Notice(MESSAGES.MEMORIES_DELETED);
-            await this.load();
+            await this.loadMemories();
         } catch (err) {
             new Notice(
                 MESSAGES.MEMORIES_DELETE_FAILED(

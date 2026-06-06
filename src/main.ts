@@ -215,7 +215,7 @@ export default class LilbeePlugin extends Plugin {
     vaultId = "";
     syncController: AbortController | null = null;
     private pendingSyncCount = 0;
-    private pendingHintTimeout: ReturnType<typeof setTimeout> | null = null;
+    private pendingHintTimeout: number | null = null;
     private previousServerMode: ServerMode = SERVER_MODE.MANAGED;
     private startingServer = false;
     private serverStartFailed = false;
@@ -257,7 +257,7 @@ export default class LilbeePlugin extends Plugin {
         }
 
         this.statusBarEl = this.addStatusBarItem();
-        this.statusBarEl.style.cursor = "pointer";
+        this.statusBarEl.addClass("lilbee-clickable");
         this.statusBarEl.setAttribute("aria-label", MESSAGES.LABEL_STATUSBAR_OPEN_SETTINGS);
         this.statusBarEl.addEventListener("click", () => this.openPluginSettings());
 
@@ -268,8 +268,8 @@ export default class LilbeePlugin extends Plugin {
         // second status icon. Clicking it triggers a sync.
         this.syncPillEl = this.addStatusBarItem();
         this.syncPillEl.addClass("lilbee-sync-pill");
-        this.syncPillEl.style.cursor = "pointer";
-        this.syncPillEl.style.display = "none";
+        this.syncPillEl.addClass("lilbee-clickable");
+        this.syncPillEl.hide();
         this.syncPillEl.setAttribute("aria-label", MESSAGES.TOOLTIP_PENDING_SYNC_HINT);
         this.syncPillEl.addEventListener("click", () => void this.triggerSync());
 
@@ -521,7 +521,7 @@ export default class LilbeePlugin extends Plugin {
             } catch {
                 return true;
             }
-            await new Promise((r) => setTimeout(r, 100));
+            await new Promise((r) => window.setTimeout(r, 100));
         }
         return false;
     }
@@ -1106,7 +1106,7 @@ export default class LilbeePlugin extends Plugin {
     onunload(): void {
         this.unloaded = true;
         if (this.pendingHintTimeout) {
-            clearTimeout(this.pendingHintTimeout);
+            window.clearTimeout(this.pendingHintTimeout);
             this.pendingHintTimeout = null;
         }
         // Tear down the status-bar items we own. addStatusBarItem returns
@@ -1245,7 +1245,7 @@ export default class LilbeePlugin extends Plugin {
 
     private startHealthProbe(): void {
         if (this.healthProbeHandle !== null) return;
-        const handle = setInterval(() => void this.probeServerHealth(), HEALTH_PROBE_INTERVAL_MS) as unknown as number;
+        const handle = window.setInterval(() => void this.probeServerHealth(), HEALTH_PROBE_INTERVAL_MS);
         this.registerInterval(handle);
         this.healthProbeHandle = handle;
     }
@@ -1325,7 +1325,7 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
 
-        const first = allActive[0]!;
+        const first = allActive[0];
         const pct = first.progress > 0 ? first.progress : 0;
         const suffix = queued.length > 0 ? ` +${queued.length}` : "";
 
@@ -1396,7 +1396,7 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         const key = task === "chat" ? "chat_model" : "embedding_model";
-        const ref = typeof cfg[key] === "string" ? (cfg[key] as string) : "";
+        const ref = typeof cfg[key] === "string" ? cfg[key] : "";
         if (!ref) {
             new Notice(MESSAGES.NOTICE_NO_ACTIVE_MODEL(task));
             return;
@@ -1860,9 +1860,9 @@ export default class LilbeePlugin extends Plugin {
 
     private schedulePendingSyncHint(): void {
         if (this.pendingHintTimeout) {
-            clearTimeout(this.pendingHintTimeout);
+            window.clearTimeout(this.pendingHintTimeout);
         }
-        this.pendingHintTimeout = setTimeout(() => {
+        this.pendingHintTimeout = window.setTimeout(() => {
             this.pendingHintTimeout = null;
             // Bail if the plugin was unloaded between scheduling and firing.
             // The statusBarEl guard inside updatePendingSyncHint covers this,
@@ -1917,9 +1917,9 @@ export default class LilbeePlugin extends Plugin {
         this.pendingSyncCount = count;
         if (count > 0) {
             this.syncPillEl.setText(MESSAGES.STATUS_SYNC_PILL(count));
-            this.syncPillEl.style.display = "";
+            this.syncPillEl.show();
         } else {
-            this.syncPillEl.style.display = "none";
+            this.syncPillEl.hide();
         }
     }
 

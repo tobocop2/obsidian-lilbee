@@ -1,6 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { CatalogEntry, CatalogTab, CatalogViewMode, KeyStatus, ModelTask, ModelSize } from "../types";
+import type { CatalogEntry, CatalogTab, CatalogViewMode, KeyStatus, ModelTask } from "../types";
 import {
     CATALOG_SOURCE,
     CATALOG_TAB,
@@ -123,7 +123,7 @@ export class CatalogModal extends Modal {
     // the modal header lets them switch to the passive-panel layout.
     private drawerCollapsedByUser = true;
     private focusedRepo: string | null = null;
-    private focusDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
+    private focusDebounceTimeout: number | null = null;
 
     /**
      * @param initialTaskFilter Pre-select a task tab when opening (e.g.
@@ -138,7 +138,7 @@ export class CatalogModal extends Modal {
         this.filterTask = initialTaskFilter;
         this.activeTab = initialTab ?? plugin.settings.lastCatalogTab ?? CATALOG_TAB.DISCOVER;
         if (initialTab === undefined && initialTaskFilter !== "") {
-            this.activeTab = taskToTabId(initialTaskFilter as ModelTask);
+            this.activeTab = taskToTabId(initialTaskFilter);
         }
         const searchDebounced = debounce(() => this.resetAndFetch(), DEBOUNCE_MS);
         this.debouncedSearch = searchDebounced.run;
@@ -203,8 +203,8 @@ export class CatalogModal extends Modal {
         if (!card) return;
         const repo = card.dataset.repo;
         if (!repo || repo === this.focusedRepo) return;
-        if (this.focusDebounceTimeout !== null) clearTimeout(this.focusDebounceTimeout);
-        this.focusDebounceTimeout = setTimeout(() => {
+        if (this.focusDebounceTimeout !== null) window.clearTimeout(this.focusDebounceTimeout);
+        this.focusDebounceTimeout = window.setTimeout(() => {
             this.focusedRepo = repo;
             this.updateDrawerForRepo(repo);
         }, DRAWER_FOCUS_DEBOUNCE_MS);
@@ -281,7 +281,7 @@ export class CatalogModal extends Modal {
             cls: "lilbee-catalog-tab",
         });
         this.hostedTabBtn.setAttribute("aria-selected", "false");
-        this.hostedTabBtn.style.display = "none";
+        this.hostedTabBtn.hide();
         this.hostedTabBtn.addEventListener("click", () => this.switchSubTab(SUB_TAB.HOSTED));
         this.updateSubTabBarVisibility();
     }
@@ -313,10 +313,10 @@ export class CatalogModal extends Modal {
         if (!this.hostedTabBtn) return;
         const showHosted = tabIdToTask(this.activeTab) !== null && hasReadyHostedRow(this.entries);
         if (showHosted) {
-            this.hostedTabBtn.style.display = "";
+            this.hostedTabBtn.show();
             return;
         }
-        this.hostedTabBtn.style.display = "none";
+        this.hostedTabBtn.hide();
         // Bounce the user home if a refetch revoked the only ready hosted row.
         if (this.currentTab === SUB_TAB.HOSTED) this.switchSubTab(SUB_TAB.LOCAL);
     }
@@ -328,7 +328,7 @@ export class CatalogModal extends Modal {
         this.bodyEl?.removeEventListener("pointerover", this.onCardFocus);
         this.contentEl.removeEventListener("keydown", this.onKeyDown);
         if (this.focusDebounceTimeout !== null) {
-            clearTimeout(this.focusDebounceTimeout);
+            window.clearTimeout(this.focusDebounceTimeout);
             this.focusDebounceTimeout = null;
         }
     }
@@ -371,7 +371,7 @@ export class CatalogModal extends Modal {
             attr: { type: "text" },
         });
         searchInput.addEventListener("input", () => {
-            this.filterSearch = (searchInput as unknown as HTMLInputElement).value;
+            this.filterSearch = searchInput.value;
             this.debouncedSearch();
         });
 
@@ -389,7 +389,7 @@ export class CatalogModal extends Modal {
         options: ReadonlyArray<readonly [string, string]>,
         onChange: (value: string) => void,
     ): void {
-        const select = parent.createEl("select", { cls }) as HTMLSelectElement;
+        const select = parent.createEl("select", { cls });
         for (const [value, label] of options) {
             const opt = select.createEl("option", { text: label });
             opt.value = value;
@@ -424,8 +424,8 @@ export class CatalogModal extends Modal {
             offset: this.offset,
             sort: this.filterSort,
         };
-        if (this.filterTask) params.task = this.filterTask as ModelTask;
-        if (this.filterSize) params.size = this.filterSize as ModelSize;
+        if (this.filterTask) params.task = this.filterTask;
+        if (this.filterSize) params.size = this.filterSize;
         if (this.filterSearch) params.search = this.filterSearch;
 
         try {

@@ -142,7 +142,7 @@ export function deepLinkToApiKeySettings(app: App, provider: string): void {
     if (!settingApi) return;
     settingApi.open();
     settingApi.openTabById("lilbee");
-    setTimeout(() => {
+    window.setTimeout(() => {
         // Timer can fire after the modal closes; Node test envs don't have a global document.
         if (typeof document === "undefined") return;
         const escaped = provider.toLowerCase().replace(/[^a-z0-9-]/g, "-");

@@ -131,7 +131,7 @@ export function renderSourceChip(
         chip.setText(label);
     }
 
-    chip.style.cursor = "pointer";
+    chip.addClass("lilbee-clickable");
     if (isWiki && onWikiClick) {
         chip.addEventListener("click", () => onWikiClick(source.source));
     } else {
@@ -167,7 +167,7 @@ export function renderAggregatedSourceChips(
             const loc = formatLocation(source);
             const label = loc ?? "open";
             const tag = chip.createEl("span", { text: label, cls: "lilbee-source-chip-loc" });
-            tag.style.cursor = "pointer";
+            tag.addClass("lilbee-clickable");
             tag.addEventListener("click", (e: Event) => {
                 e.stopPropagation();
                 void executeSourceClick(app, api, sourceClickAction(source, app.vault));

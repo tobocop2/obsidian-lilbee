@@ -35,7 +35,7 @@ export class ServerManager {
     private _state: ServerState = SERVER_STATE.STOPPED;
     private crashCount = 0;
     private stopping = false;
-    private restartTimer: ReturnType<typeof setTimeout> | null = null;
+    private restartTimer: number | null = null;
     private _actualPort: number | null = null;
     private _stderrLines: string[] = [];
     private static readonly MAX_STDERR_LINES = 20;
@@ -80,7 +80,7 @@ export class ServerManager {
                     return;
                 }
             }
-            await new Promise((r) => setTimeout(r, SERVER_MANAGER_CONFIG.PORT_FILE_POLL_INTERVAL_MS));
+            await new Promise((r) => window.setTimeout(r, SERVER_MANAGER_CONFIG.PORT_FILE_POLL_INTERVAL_MS));
         }
         throw new Error("Port file not found within timeout");
     }
@@ -126,7 +126,7 @@ export class ServerManager {
             if (this.crashCount < SERVER_MANAGER_CONFIG.MAX_CRASH_RESTARTS) {
                 this.crashCount++;
                 this.setState(SERVER_STATE.ERROR);
-                this.restartTimer = setTimeout(() => {
+                this.restartTimer = window.setTimeout(() => {
                     this.restartTimer = null;
                     /* v8 ignore next -- stop() clears this timer before setting stopping, so the false branch is unreachable */
                     if (!this.stopping) void this.start();
@@ -188,7 +188,7 @@ export class ServerManager {
                     // not ready yet
                 }
             }
-            await new Promise((r) => setTimeout(r, SERVER_MANAGER_CONFIG.HEALTH_POLL_INTERVAL_MS));
+            await new Promise((r) => window.setTimeout(r, SERVER_MANAGER_CONFIG.HEALTH_POLL_INTERVAL_MS));
         }
         throw new Error("Server did not become ready within timeout");
     }
@@ -217,7 +217,7 @@ export class ServerManager {
     async stop(): Promise<void> {
         this.stopping = true;
         if (this.restartTimer) {
-            clearTimeout(this.restartTimer);
+            window.clearTimeout(this.restartTimer);
             this.restartTimer = null;
         }
         if (!this.child) {
@@ -230,7 +230,9 @@ export class ServerManager {
 
         const exited = await Promise.race([
             new Promise<boolean>((resolve) => child.on("exit", () => resolve(true))),
-            new Promise<boolean>((resolve) => setTimeout(() => resolve(false), SERVER_MANAGER_CONFIG.STOP_GRACE_MS)),
+            new Promise<boolean>((resolve) =>
+                window.setTimeout(() => resolve(false), SERVER_MANAGER_CONFIG.STOP_GRACE_MS),
+            ),
         ]);
 
         if (!exited && this.child) {

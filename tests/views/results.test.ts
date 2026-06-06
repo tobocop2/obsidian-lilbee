@@ -719,7 +719,7 @@ describe("renderSourceChip — wiki chunk_type", () => {
         };
         renderSourceChip(container as unknown as HTMLElement, source, makeApp(), makeApi(), onWikiClick);
         const chip = container.find("lilbee-source-chip")!;
-        expect(chip.style["cursor"]).toBe("pointer");
+        expect(chip.classList.contains("lilbee-clickable")).toBe(true);
         chip.trigger("click");
         expect(onWikiClick).toHaveBeenCalledWith("wiki/concept.md");
     });
@@ -741,7 +741,7 @@ describe("renderSourceChip — wiki chunk_type", () => {
         const app = makeApp();
         renderSourceChip(container as unknown as HTMLElement, source, app, makeApi(), onWikiClick);
         const chip = container.find("lilbee-source-chip")!;
-        expect(chip.style["cursor"]).toBe("pointer");
+        expect(chip.classList.contains("lilbee-clickable")).toBe(true);
         chip.trigger("click");
         expect(onWikiClick).not.toHaveBeenCalled();
         // No vault_path → preview path
@@ -766,7 +766,7 @@ describe("renderSourceChip — wiki chunk_type", () => {
         app.vault.getAbstractFileByPath = vi.fn(() => ({ path: "lilbee/imported/readme.md" }) as unknown as null);
         renderSourceChip(container as unknown as HTMLElement, source, app, makeApi());
         const chip = container.find("lilbee-source-chip")!;
-        expect(chip.style["cursor"]).toBe("pointer");
+        expect(chip.classList.contains("lilbee-clickable")).toBe(true);
         chip.trigger("click");
         expect(app.workspace.openLinkText).toHaveBeenCalledWith("lilbee/imported/readme.md", "");
         expect(previewOpens).toHaveLength(0);

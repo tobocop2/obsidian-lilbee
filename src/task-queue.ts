@@ -13,13 +13,13 @@ export class TaskQueue {
     private aborts: Map<string, AbortController> = new Map();
     private history: TaskEntry[] = [];
     private listeners: TaskChangeListener[] = [];
-    private flashTimers: Set<ReturnType<typeof setTimeout>> = new Set();
+    private flashTimers: Set<number> = new Set();
 
     static readonly MAX_HISTORY = 50;
 
     /** Clear pending flash-clear timers — call from plugin unload to avoid zombie notifies. */
     dispose(): void {
-        for (const handle of this.flashTimers) clearTimeout(handle);
+        for (const handle of this.flashTimers) window.clearTimeout(handle);
         this.flashTimers.clear();
     }
 
@@ -228,7 +228,7 @@ export class TaskQueue {
     }
 
     private scheduleFlashClear(): void {
-        const handle = setTimeout(() => {
+        const handle = window.setTimeout(() => {
             this.flashTimers.delete(handle);
             this.notify();
         }, FLASH_WINDOW_MS);
