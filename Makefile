@@ -1,4 +1,4 @@
-.PHONY: build test lint format format-check release demo demo-prep demo-publish
+.PHONY: build test lint format format-check release release-store demo demo-prep demo-publish
 
 build:  ## esbuild → main.js
 	npm run build
@@ -17,6 +17,9 @@ format-check:  ## prettier --check
 
 release:  ## Bump the beta version, tag, push, and create the GH release
 	bash scripts/release.sh
+
+release-store:  ## Bump the stable version, tag (no v prefix), and release with assets
+	bash scripts/release_store.sh
 
 demo-prep:  ## Stage harness deps via the gh-pages worktree
 	bash scripts/demo.sh prep
