@@ -4241,7 +4241,7 @@ describe("ChatView — null-element guard branches", () => {
         expect((view as any).sending).toBe(false);
     });
 
-    it("sendMessage scrollToBottom no-ops when messagesEl becomes null mid-stream", async () => {
+    it("sendMessage scroll-follow no-ops when messagesEl becomes null mid-stream", async () => {
         Notice.clear();
         const plugin = makePlugin();
         const { mockFn, done } = makeStream([
@@ -4253,7 +4253,7 @@ describe("ChatView — null-element guard branches", () => {
         await view.onOpen();
         const messagesEl = (view as any).messagesEl as MockElement;
         const sendPromise = (view as any).sendMessage("hi");
-        // Drop messagesEl so the deferred scrollToBottom (797) hits its false branch.
+        // Drop messagesEl so the deferred renderFollowing hits its null-element branch.
         (view as any).messagesEl = null;
         await sendPromise;
         await done;
@@ -4354,6 +4354,76 @@ describe("ChatView — vault file picker enqueues the chosen file", () => {
         // The arrow (file) => this.enqueueAddFile(file) runs enqueueAddFile → addToLilbee.
         expect((plugin as any).addToLilbee).toHaveBeenCalledWith(file);
         spy.mockRestore();
+    });
+});
+
+describe("ChatView.sendMessage — sticky auto-scroll", () => {
+    async function streamWith(
+        events: SSEEvent[],
+        geometry: { scrollTop: number; scrollHeight: number; clientHeight: number },
+    ): Promise<MockElement> {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream(events);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        container.find("lilbee-chat-textarea")!.value = "follow me";
+        container.find("lilbee-chat-send")!.trigger("click");
+        // Applied after the send (which pins unconditionally) so the geometry
+        // describes the view's state while the answer streams.
+        Object.assign(messagesEl, geometry);
+        await done;
+        await tick();
+        await tick();
+        return messagesEl;
+    }
+
+    it("follows the stream to the bottom when the view is pinned near it", async () => {
+        const messagesEl = await streamWith(
+            [
+                { event: SSE_EVENT.TOKEN, data: "hello" },
+                { event: SSE_EVENT.DONE, data: {} },
+            ],
+            // 1000 - 480 - 500 = 20px from the bottom — within the follow threshold.
+            { scrollTop: 480, scrollHeight: 1000, clientHeight: 500 },
+        );
+        expect(messagesEl.scrollTop).toBe(messagesEl.scrollHeight);
+    });
+
+    it("ends pinned to the bottom after DONE renders sources and reasoning", async () => {
+        const messagesEl = await streamWith(
+            [
+                { event: SSE_EVENT.TOKEN, data: "hello" },
+                { event: SSE_EVENT.REASONING, data: "thinking" },
+                { event: SSE_EVENT.SOURCES, data: [makeSource()] },
+                { event: SSE_EVENT.DONE, data: {} },
+            ],
+            { scrollTop: 480, scrollHeight: 1000, clientHeight: 500 },
+        );
+        expect(messagesEl.scrollTop).toBe(messagesEl.scrollHeight);
+    });
+
+    it("does not yank the view back down when the user scrolled up mid-stream", async () => {
+        const messagesEl = await streamWith(
+            [
+                { event: SSE_EVENT.TOKEN, data: "hello" },
+                { event: SSE_EVENT.DONE, data: {} },
+            ],
+            // 1000 - 100 - 500 = 400px above the bottom — reading older content.
+            { scrollTop: 100, scrollHeight: 1000, clientHeight: 500 },
+        );
+        expect(messagesEl.scrollTop).toBe(100);
+    });
+
+    it("isNearBottom is false when messagesEl is null", async () => {
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        (view as any).messagesEl = null;
+        expect((view as any).isNearBottom()).toBe(false);
     });
 });
 

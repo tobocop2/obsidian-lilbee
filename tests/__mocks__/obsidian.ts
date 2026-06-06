@@ -45,6 +45,10 @@ export class MockElement {
     placeholder: string = "";
     title: string = "";
     parentElement: MockElement | null = null;
+    // Scroll geometry — tests set scrollHeight/clientHeight to simulate overflow.
+    scrollTop: number = 0;
+    scrollHeight: number = 0;
+    clientHeight: number = 0;
 
     constructor(tag = "div") {
         this.tagName = tag.toUpperCase();

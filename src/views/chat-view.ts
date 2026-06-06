@@ -72,6 +72,9 @@ export const electronDialog = {
 
 export const VIEW_TYPE_CHAT = "lilbee-chat";
 
+/** Within this distance of the bottom the view counts as pinned and follows the stream. */
+const SCROLL_FOLLOW_THRESHOLD_PX = 80;
+
 /** Sentinel option value: selecting it opens the catalog instead of switching models. */
 const RAIL_BROWSE_KEY = "__lilbee_browse__";
 /** Option value that turns an optional role off (matches the server's empty model ref). */
@@ -839,13 +842,12 @@ export class ChatView extends ItemView {
             const elapsed = Date.now() - spinnerCreatedAt;
             const delay = Math.max(0, SPINNER_MIN_DISPLAY_MS - elapsed);
             setTimeout(() => {
-                if (spinner.parentElement) spinner.remove();
-                textEl.style.display = "";
+                // Revealing the hidden content grows the bubble; keep the view pinned.
+                void this.renderFollowing(() => {
+                    if (spinner.parentElement) spinner.remove();
+                    textEl.style.display = "";
+                });
             }, delay);
-        };
-
-        const scrollToBottom = (): void => {
-            if (this.messagesEl) this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
         };
 
         const scheduleRender = (): void => {
@@ -853,7 +855,7 @@ export class ChatView extends ItemView {
             state.renderPending = true;
             requestAnimationFrame(() => {
                 state.renderPending = false;
-                void this.renderMarkdown(textEl, state.fullContent).then(scrollToBottom);
+                void this.renderFollowing(() => this.renderMarkdown(textEl, state.fullContent));
             });
         };
 
@@ -923,16 +925,21 @@ export class ChatView extends ItemView {
             case SSE_EVENT.DONE: {
                 revealContent();
                 const rendered = state.fullContent;
-                if (state.reasoningContent) {
-                    const details = assistantBubble.createEl("details", { cls: "lilbee-reasoning" });
-                    details.createEl("summary", { text: MESSAGES.LABEL_REASONING });
-                    const content = details.createDiv({ cls: "lilbee-reasoning-content" });
-                    void MarkdownRenderer.render(this.app, state.reasoningContent, content, "", this.plugin);
-                    details.removeAttribute("open");
-                }
-                this.renderBannerIfPresent(event.data, assistantBubble);
-                void this.renderMarkdown(textEl, rendered);
-                if (state.sources.length > 0) this.renderSources(assistantBubble, state.sources);
+                // Reasoning, banner, and sources all grow the bubble after the
+                // last token; render them inside one follow so the view ends
+                // pinned to the bottom.
+                void this.renderFollowing(async () => {
+                    if (state.reasoningContent) {
+                        const details = assistantBubble.createEl("details", { cls: "lilbee-reasoning" });
+                        details.createEl("summary", { text: MESSAGES.LABEL_REASONING });
+                        const content = details.createDiv({ cls: "lilbee-reasoning-content" });
+                        void MarkdownRenderer.render(this.app, state.reasoningContent, content, "", this.plugin);
+                        details.removeAttribute("open");
+                    }
+                    this.renderBannerIfPresent(event.data, assistantBubble);
+                    await this.renderMarkdown(textEl, rendered);
+                    if (state.sources.length > 0) this.renderSources(assistantBubble, state.sources);
+                });
                 this.history.push({ role: "assistant", content: rendered });
                 break;
             }
@@ -964,6 +971,22 @@ export class ChatView extends ItemView {
                 }
                 break;
             }
+        }
+    }
+
+    /** True when the message list is scrolled to (or near) the bottom. */
+    private isNearBottom(): boolean {
+        const el = this.messagesEl;
+        if (!el) return false;
+        return el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_FOLLOW_THRESHOLD_PX;
+    }
+
+    /** Run a DOM-growing render; re-pin the view to the bottom only if it was pinned before. */
+    private async renderFollowing(run: () => Promise<void> | void): Promise<void> {
+        const follow = this.isNearBottom();
+        await run();
+        if (follow && this.messagesEl) {
+            this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
         }
     }
 
