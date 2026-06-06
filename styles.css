@@ -718,8 +718,8 @@
     color: var(--text-error);
 }
 
-.lilbee-status-downloading {
-    color: var(--text-on-accent) !important;
+.status-bar-item.lilbee-status-downloading {
+    color: var(--text-on-accent);
     background-color: var(--interactive-accent);
     border-radius: var(--radius-s, 4px);
     padding: 0 var(--size-4-2, 8px);
@@ -758,8 +758,8 @@
     box-shadow: 0 0 5px color-mix(in srgb, var(--text-error) 55%, transparent);
 }
 
-.lilbee-status-starting {
-    color: var(--text-on-accent) !important;
+.status-bar-item.lilbee-status-starting {
+    color: var(--text-on-accent);
     background-color: var(--text-warning);
     border-radius: var(--radius-s, 4px);
     padding: 0 var(--size-4-2, 8px);
@@ -769,22 +769,22 @@
 /* Ready is the calm resting state, shown most of the time, so it uses a
  * soft green tint with green text rather than a loud solid fill. The
  * attention states (error/starting/adding) keep their solid fills. */
-.lilbee-status-ready {
-    color: var(--text-success) !important;
+.status-bar-item.lilbee-status-ready {
+    color: var(--text-success);
     background-color: color-mix(in srgb, var(--text-success) 18%, transparent);
     border-radius: var(--radius-s, 4px);
     padding: 0 var(--size-4-2, 8px);
 }
 
-.lilbee-status-error {
-    color: var(--text-on-accent) !important;
+.status-bar-item.lilbee-status-error {
+    color: var(--text-on-accent);
     background-color: var(--text-error);
     border-radius: var(--radius-s, 4px);
     padding: 0 var(--size-4-2, 8px);
 }
 
-.lilbee-status-adding {
-    color: var(--text-on-accent) !important;
+.status-bar-item.lilbee-status-adding {
+    color: var(--text-on-accent);
     background-color: var(--interactive-accent);
     border-radius: var(--radius-s, 4px);
     padding: 0 var(--size-4-2, 8px);
@@ -795,8 +795,8 @@
  * documents are pending. Amber so it stands apart from the green "ready"
  * status pill without alarming like the red error state, and no animation so
  * it stays calm when parked in the corner. */
-.lilbee-sync-pill {
-    color: var(--text-on-accent) !important;
+.status-bar-item.lilbee-sync-pill {
+    color: var(--text-on-accent);
     background-color: var(--color-orange, #e0922f);
     border-radius: var(--radius-s, 4px);
     padding: 0 var(--size-4-2, 8px);
@@ -1919,8 +1919,8 @@
     line-height: 1;
 }
 
-.lilbee-wizard-step-slot:has(.is-active) .lilbee-wizard-step-label,
-.lilbee-wizard-step-slot:has(.is-done) .lilbee-wizard-step-label {
+.lilbee-wizard-step-slot.is-active .lilbee-wizard-step-label,
+.lilbee-wizard-step-slot.is-done .lilbee-wizard-step-label {
     color: var(--text-muted);
 }
 
@@ -2041,9 +2041,9 @@
     margin-bottom: var(--size-4-1, 4px);
 }
 
-.lilbee-wizard-model-ram {
-    font-size: var(--font-smallest, 10px) !important;
-    color: var(--text-faint) !important;
+.lilbee-wizard-model-ram.lilbee-wizard-model-ram {
+    font-size: var(--font-smallest, 10px);
+    color: var(--text-faint);
 }
 
 .lilbee-wizard-recommended {
@@ -2056,9 +2056,9 @@
     font-weight: var(--font-medium, 500);
 }
 
-.lilbee-wizard-system-info {
+.lilbee-wizard-system-info.lilbee-wizard-system-info {
     font-size: var(--font-small, 13px);
-    color: var(--text-muted) !important;
+    color: var(--text-muted);
 }
 
 /* Progress panel: sits inside long-running steps. Indeterminate on start,
@@ -2423,9 +2423,9 @@
     font-size: 15px;
 }
 
-.lilbee-wizard-hint {
+.lilbee-wizard-hint.lilbee-wizard-hint {
     font-size: 12px;
-    color: var(--text-muted) !important;
+    color: var(--text-muted);
     line-height: 1.45;
 }
 
@@ -2493,14 +2493,14 @@
     line-height: 1.5;
 }
 
-.lilbee-wizard-experimental-intro {
-    margin-bottom: 6px !important;
+.lilbee-wizard-experimental-intro.lilbee-wizard-experimental-intro {
+    margin-bottom: 6px;
     font-weight: var(--font-medium, 500);
 }
 
-.lilbee-wizard-experimental-bullets {
-    margin: 0 !important;
-    padding-left: 18px !important;
+.lilbee-wizard-experimental-bullets.lilbee-wizard-experimental-bullets {
+    margin: 0;
+    padding-left: 18px;
 }
 
 .lilbee-wizard-experimental-bullets li {
@@ -2708,8 +2708,8 @@
 /* Make Obsidian's built-in close-X button reliably visible on lilbee modals
  * even when a theme has dimmed it. Sized for a click target and positioned
  * at the same top-right corner Obsidian's default uses. */
-.lilbee-modal-chrome .modal-close-button {
-    display: flex !important;
+.modal-container .lilbee-modal-chrome .modal-close-button {
+    display: flex;
     align-items: center;
     justify-content: center;
     width: 28px;
@@ -3930,7 +3930,7 @@
 .lilbee-storage-row {
     display: grid;
     grid-template-columns: minmax(120px, 1fr) auto;
-    column-gap: var(--size-4-3, 12px);
+    gap: 0 var(--size-4-3, 12px);
     align-items: baseline;
 }
 

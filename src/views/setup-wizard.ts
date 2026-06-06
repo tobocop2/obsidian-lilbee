@@ -287,8 +287,14 @@ export class SetupWizard extends Modal {
             const circle = slot.createDiv({ cls: "lilbee-wizard-step-circle" });
             const isActive = meta.step === this.step;
             const isDone = meta.step < this.step;
-            if (isActive) circle.addClass("is-active");
-            if (isDone) circle.addClass("is-done");
+            if (isActive) {
+                circle.addClass("is-active");
+                slot.addClass("is-active");
+            }
+            if (isDone) {
+                circle.addClass("is-done");
+                slot.addClass("is-done");
+            }
             circle.textContent = isDone ? "✓" : String(i + 1);
             slot.createDiv({ cls: "lilbee-wizard-step-label", text: meta.label });
         }

@@ -18,12 +18,6 @@ export default tseslint.config(
         },
     },
     {
-        files: ["src/views/chat-view.ts", "src/views/setup-wizard.ts", "src/utils/file-dialog.ts"],
-        rules: {
-            "@typescript-eslint/no-require-imports": "off",
-        },
-    },
-    {
         files: ["tests/**/*.ts"],
         rules: {
             "@typescript-eslint/no-explicit-any": "off",
