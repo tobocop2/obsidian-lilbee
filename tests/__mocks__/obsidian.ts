@@ -305,6 +305,7 @@ export class App {
         getAbstractFileByPath: vi.fn().mockReturnValue(null),
         createFolder: vi.fn().mockResolvedValue(undefined),
         create: vi.fn().mockResolvedValue(undefined),
+        modify: vi.fn().mockResolvedValue(undefined),
     };
 }
 

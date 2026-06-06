@@ -4,6 +4,7 @@ import { datasetErrorMessage, exportDatasetToDisk, importDatasetFromDisk } from 
 import { electronDialog } from "../src/utils/file-dialog";
 import { node } from "../src/binary-manager";
 import { MESSAGES } from "../src/locales/en";
+import type { App } from "obsidian";
 import type { LilbeeClient } from "../src/api";
 import type { TaskQueue } from "../src/task-queue";
 
@@ -35,8 +36,24 @@ function fakeApi(overrides: Partial<LilbeeClient> = {}): LilbeeClient {
     return {
         exportDataset: vi.fn(),
         importDataset: vi.fn(),
+        getSource: vi.fn().mockResolvedValue({ markdown: "note body", content_type: "text/markdown", title: null }),
         ...overrides,
     } as unknown as LilbeeClient;
+}
+
+function fakeApp(existing: (path: string) => unknown = () => null): {
+    app: App;
+    getAbstractFileByPath: ReturnType<typeof vi.fn>;
+    createFolder: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
+    modify: ReturnType<typeof vi.fn>;
+} {
+    const getAbstractFileByPath = vi.fn((path: string) => existing(path));
+    const createFolder = vi.fn().mockResolvedValue(undefined);
+    const create = vi.fn().mockResolvedValue(undefined);
+    const modify = vi.fn().mockResolvedValue(undefined);
+    const app = { vault: { getAbstractFileByPath, createFolder, create, modify } } as unknown as App;
+    return { app, getAbstractFileByPath, createFolder, create, modify };
 }
 
 function fakeQueue(enqueueId: string | null): {
@@ -134,7 +151,7 @@ describe("importDatasetFromDisk()", () => {
         showOpenDialog.mockResolvedValue({ canceled: true, filePaths: [] });
         const api = fakeApi();
         const { queue } = fakeQueue("task-1");
-        await importDatasetFromDisk(api, queue);
+        await importDatasetFromDisk(fakeApp().app, api, queue);
         expect(readFileSync).not.toHaveBeenCalled();
         expect(api.importDataset).not.toHaveBeenCalled();
     });
@@ -143,7 +160,7 @@ describe("importDatasetFromDisk()", () => {
         showOpenDialog.mockResolvedValue({ canceled: false, filePaths: [] });
         const api = fakeApi();
         const { queue } = fakeQueue("task-1");
-        await importDatasetFromDisk(api, queue);
+        await importDatasetFromDisk(fakeApp().app, api, queue);
         expect(readFileSync).not.toHaveBeenCalled();
     });
 
@@ -154,7 +171,7 @@ describe("importDatasetFromDisk()", () => {
         });
         const api = fakeApi();
         const { queue } = fakeQueue("task-1");
-        await importDatasetFromDisk(api, queue);
+        await importDatasetFromDisk(fakeApp().app, api, queue);
         expect(messages()).toContain(MESSAGES.ERROR_DATASET_READ("EACCES"));
         expect(api.importDataset).not.toHaveBeenCalled();
     });
@@ -164,31 +181,81 @@ describe("importDatasetFromDisk()", () => {
         readFileSync.mockReturnValue({ byteLength: 11 * 1024 * 1024 } as unknown as Buffer);
         const api = fakeApi();
         const { queue } = fakeQueue("task-1");
-        await importDatasetFromDisk(api, queue);
+        await importDatasetFromDisk(fakeApp().app, api, queue);
         expect(messages()).toContain(MESSAGES.ERROR_DATASET_TOO_LARGE);
         expect(api.importDataset).not.toHaveBeenCalled();
     });
 
-    it("streams embed progress, completes the task, and notifies on success", async () => {
+    it("streams progress, materializes notes into a folder, and notifies on success", async () => {
         showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ["/tmp/pages.jsonl"] });
         const data = { byteLength: 3 } as unknown as Buffer;
         readFileSync.mockReturnValue(data);
         const api = fakeApi({
             importDataset: vi.fn(() =>
                 sseEvents([
-                    { event: "embed", data: { file: "doc.pdf", chunk: 1, total_chunks: 1 } },
+                    { event: "embed", data: { file: "notes.md", chunk: 1, total_chunks: 1 } },
                     { event: "embed", data: {} },
                     { event: "message", data: "noise" },
-                    { event: "done", data: { command: "import", sources: ["doc.pdf"], pages: 2, chunks: 5 } },
+                    {
+                        event: "done",
+                        data: { command: "import", sources: ["notes.md", "manual.pdf"], pages: 2, chunks: 5 },
+                    },
                 ]),
             ),
         });
         const { queue, update, complete } = fakeQueue("task-1");
-        await importDatasetFromDisk(api, queue);
+        const { app, createFolder, create } = fakeApp();
+        await importDatasetFromDisk(app, api, queue);
+
         expect(api.importDataset).toHaveBeenCalledWith(data, "jsonl");
-        expect(update).toHaveBeenCalledWith("task-1", 50, MESSAGES.STATUS_DATASET_EMBEDDING("doc.pdf"));
+        expect(update).toHaveBeenCalledWith("task-1", 50, MESSAGES.STATUS_DATASET_EMBEDDING("notes.md"));
+        // Folder is the dataset stem; each source becomes a markdown note in it.
+        expect(createFolder).toHaveBeenCalledWith("pages");
+        expect(create).toHaveBeenCalledWith("pages/notes.md", "note body");
+        expect(create).toHaveBeenCalledWith("pages/manual.md", "note body");
         expect(complete).toHaveBeenCalledWith("task-1");
-        expect(messages()).toContain(MESSAGES.NOTICE_DATASET_IMPORTED(1, 2, 5));
+        expect(messages()).toContain(MESSAGES.NOTICE_DATASET_IMPORTED(2, 2, 5, "pages"));
+    });
+
+    it("reuses an existing folder, overwrites existing notes, and skips unreadable sources", async () => {
+        showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ["/tmp/data.parquet"] });
+        readFileSync.mockReturnValue({ byteLength: 3 } as unknown as Buffer);
+        const api = fakeApi({
+            getSource: vi
+                .fn()
+                .mockResolvedValueOnce({ markdown: "first", content_type: "text/markdown", title: null })
+                .mockRejectedValueOnce(new Error("404")),
+            importDataset: vi.fn(() =>
+                sseEvents([
+                    { event: "done", data: { command: "import", sources: ["a.md", "b.md"], pages: 2, chunks: 2 } },
+                ]),
+            ),
+        });
+        const { queue } = fakeQueue("task-1");
+        // Folder "data" and note "data/a.md" already exist on disk.
+        const { app, createFolder, create, modify } = fakeApp((path) =>
+            path === "data" || path === "data/a.md" ? {} : null,
+        );
+        await importDatasetFromDisk(app, api, queue);
+
+        expect(createFolder).not.toHaveBeenCalled();
+        expect(modify).toHaveBeenCalledWith({}, "first");
+        // b.md's getSource rejected, so it is skipped — no create call.
+        expect(create).not.toHaveBeenCalled();
+    });
+
+    it("names the import folder 'dataset' when the file is all extension", async () => {
+        showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ["/tmp/.parquet"] });
+        readFileSync.mockReturnValue({ byteLength: 3 } as unknown as Buffer);
+        const api = fakeApi({
+            importDataset: vi.fn(() =>
+                sseEvents([{ event: "done", data: { command: "import", sources: [], pages: 0, chunks: 0 } }]),
+            ),
+        });
+        const { queue } = fakeQueue("task-1");
+        const { app, createFolder } = fakeApp();
+        await importDatasetFromDisk(app, api, queue);
+        expect(createFolder).toHaveBeenCalledWith("dataset");
     });
 
     it("notifies when the task queue is full", async () => {
@@ -196,7 +263,7 @@ describe("importDatasetFromDisk()", () => {
         readFileSync.mockReturnValue({ byteLength: 3 } as unknown as Buffer);
         const api = fakeApi();
         const { queue } = fakeQueue(null);
-        await importDatasetFromDisk(api, queue);
+        await importDatasetFromDisk(fakeApp().app, api, queue);
         expect(messages()).toContain(MESSAGES.NOTICE_QUEUE_FULL);
         expect(api.importDataset).not.toHaveBeenCalled();
     });
@@ -208,7 +275,7 @@ describe("importDatasetFromDisk()", () => {
             importDataset: vi.fn(() => sseEvents([{ event: "error", data: { message: "embedding model mismatch" } }])),
         });
         const { queue, fail } = fakeQueue("task-1");
-        await importDatasetFromDisk(api, queue);
+        await importDatasetFromDisk(fakeApp().app, api, queue);
         expect(fail).toHaveBeenCalledWith("task-1", "embedding model mismatch");
         expect(messages()).toContain(MESSAGES.ERROR_DATASET_IMPORT("embedding model mismatch"));
     });
@@ -220,7 +287,7 @@ describe("importDatasetFromDisk()", () => {
             importDataset: vi.fn(() => sseEvents([{ event: "embed", data: { file: "doc.pdf" } }])),
         });
         const { queue, fail } = fakeQueue("task-1");
-        await importDatasetFromDisk(api, queue);
+        await importDatasetFromDisk(fakeApp().app, api, queue);
         expect(fail).toHaveBeenCalledWith("task-1", MESSAGES.ERROR_UNKNOWN);
         expect(messages()).toContain(MESSAGES.ERROR_DATASET_IMPORT(MESSAGES.ERROR_UNKNOWN));
     });
@@ -231,7 +298,7 @@ describe("importDatasetFromDisk()", () => {
         const err = new Error('Server responded 401: {"detail":"bad token"}');
         const api = fakeApi({ importDataset: vi.fn(() => sseThrows(err)) });
         const { queue, fail } = fakeQueue("task-1");
-        await importDatasetFromDisk(api, queue);
+        await importDatasetFromDisk(fakeApp().app, api, queue);
         expect(fail).toHaveBeenCalledWith("task-1", "bad token");
         expect(messages()).toContain(MESSAGES.ERROR_DATASET_IMPORT("bad token"));
     });

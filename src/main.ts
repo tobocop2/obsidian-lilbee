@@ -926,7 +926,7 @@ export default class LilbeePlugin extends Plugin {
             name: MESSAGES.COMMAND_IMPORT_DATASET,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
-                if (!checking) void importDatasetFromDisk(this.api, this.taskQueue);
+                if (!checking) void importDatasetFromDisk(this.app, this.api, this.taskQueue);
                 return true;
             },
         });

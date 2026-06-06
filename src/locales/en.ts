@@ -583,8 +583,8 @@ export const MESSAGES = {
     ERROR_DATASET_READ: (msg: string) => `lilbee: could not read dataset — ${msg}`,
     ERROR_DATASET_TOO_LARGE:
         "lilbee: dataset exceeds the 10 MB upload limit — use `lilbee import` from the CLI for larger files",
-    NOTICE_DATASET_IMPORTED: (sources: number, pages: number, chunks: number) =>
-        `lilbee: imported ${sources} source(s), ${pages} page(s), ${chunks} chunk(s)`,
+    NOTICE_DATASET_IMPORTED: (sources: number, pages: number, chunks: number, folder: string) =>
+        `lilbee: imported ${sources} source(s) into "${folder}/" (${pages} page(s), ${chunks} chunk(s))`,
     ERROR_DATASET_IMPORT: (msg: string) => `lilbee: import failed — ${msg}`,
     NOTICE_MODEL_ACTIVATED_FULL: (model: string) => `lilbee: ${model} pulled and activated`,
     NOTICE_SET_MODEL: (type: string, model: string) => `${type} set to ${model}`,

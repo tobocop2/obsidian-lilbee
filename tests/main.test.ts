@@ -503,7 +503,11 @@ describe("LilbeePlugin", () => {
             expect(cmd.checkCallback(true)).toBe(true);
             expect(importDatasetFromDisk).not.toHaveBeenCalled();
             expect(cmd.checkCallback(false)).toBe(true);
-            expect(importDatasetFromDisk).toHaveBeenCalledWith((plugin as any).api, (plugin as any).taskQueue);
+            expect(importDatasetFromDisk).toHaveBeenCalledWith(
+                (plugin as any).app,
+                (plugin as any).api,
+                (plugin as any).taskQueue,
+            );
         });
 
         it("sets status bar text to 'lilbee: ready [external]' in external mode", async () => {
