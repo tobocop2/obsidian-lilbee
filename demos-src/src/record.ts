@@ -130,10 +130,12 @@ export async function record(storyboard: Storyboard): Promise<void> {
       ctx,
       layout: storyboard.layout,
       freshIngest: storyboard.freshIngest,
+      emptyIndex: storyboard.emptyIndex,
       freshModel: storyboard.freshModel,
       clearTaskCenter: storyboard.clearTaskCenter,
       clearChat: storyboard.clearChat,
       preloadChatModel: storyboard.preloadChatModel,
+      prewarmReranker: storyboard.prewarmReranker,
       skipModelPin: storyboard.skipModelPin,
       skipServerCheck: storyboard.skipServerCheck,
       noLilbee: storyboard.noLilbee,
@@ -240,6 +242,7 @@ export async function record(storyboard: Storyboard): Promise<void> {
       trackChild,
       postSpeedup: storyboard.postSpeedup,
       caption: storyboard.caption,
+      captionMarginPx: storyboard.captionMarginPx,
       tracePath,
       recordingStartTime,
     });
@@ -672,12 +675,14 @@ type PostOptions = {
   trackChild: (proc: ChildProcess) => ChildProcess;
   postSpeedup?: number;
   caption?: string;
+  captionMarginPx?: number;
   tracePath?: string;
   recordingStartTime?: number;
 };
 
 async function postProcess(opts: PostOptions): Promise<void> {
   const { rawPath, outPath, timeline, trackChild, postSpeedup, caption, tracePath, recordingStartTime } = opts;
+  const captionMargin = opts.captionMarginPx ?? CAPTION_MARGIN_PX;
   const rawDurSec = await probeDurationSec(rawPath);
   const startMs = Math.max(0, timeline.ffmpegStartupGapMs - timeline.leadInMs);
   const last = timeline.beats[timeline.beats.length - 1];
@@ -890,7 +895,7 @@ async function postProcess(opts: PostOptions): Promise<void> {
     const idx = beatCaptionInputIdx.get(text);
     if (idx === undefined) continue;
     const next = `v_cap${capIdx++}`;
-    chain.push(`[${lastLabel}][${idx}:v]overlay=(W-w)/2:H-h-${CAPTION_MARGIN_PX}:enable='${windows.join("+")}'[${next}]`);
+    chain.push(`[${lastLabel}][${idx}:v]overlay=(W-w)/2:H-h-${captionMargin}:enable='${windows.join("+")}'[${next}]`);
     lastLabel = next;
   }
 

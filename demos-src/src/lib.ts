@@ -76,6 +76,9 @@ export type Storyboard = {
   layout: LayoutName;
   /** Doc names to remove from the corpus before recording (so ingest demos start fresh). */
   freshIngest?: string[];
+  /** Empty the whole index before recording, for a fresh-vault demo that adds a
+   * doc on camera: the Add is a clean first ingest and retrieval sees only it. */
+  emptyIndex?: boolean;
   /** HF repo of a model to uninstall before recording, so a download demo
    * triggers a real pull on every take. */
   freshModel?: string;
@@ -85,6 +88,9 @@ export type Storyboard = {
   clearChat?: boolean;
   /** Fire a throwaway chat in pre-flight so the model is warm. Defaults to true. */
   preloadChatModel?: boolean;
+  /** HF ref of a reranker to pre-warm in pre-flight (enable, throwaway chat to
+   * load the cross-encoder, disable again) so the on-camera rerank toggle is warm. */
+  prewarmReranker?: string;
   /** Skip the chat-model pin entirely. For demos that don't exercise chat. */
   skipModelPin?: boolean;
   /** Skip the server-ready health gate. For demos where this vault has no
@@ -100,6 +106,10 @@ export type Storyboard = {
   postSpeedup?: number;
   /** Optional caption overlay drawn at the top-right of the final webm. */
   caption?: string;
+  /** Bottom margin (retina px) for the narration caption pill. Overrides the
+   * default 190 — raise it to clear a full-height chat answer, or lower it to
+   * sit over the input strip. */
+  captionMarginPx?: number;
   /** Which beat is the held money shot (gets extra hold). */
   moneyShotBeatIndex?: number;
   /** Cursor home position (viewport-relative coords). Cursor parks here
@@ -113,16 +123,19 @@ export type StoryboardOptions = {
   window?: [number, number];
   layout?: LayoutName;
   freshIngest?: string[];
+  emptyIndex?: boolean;
   freshModel?: string;
   clearTaskCenter?: boolean;
   clearChat?: boolean;
   preloadChatModel?: boolean;
+  prewarmReranker?: string;
   skipModelPin?: boolean;
   skipServerCheck?: boolean;
   noLilbee?: boolean;
   vaultMatch?: string;
   postSpeedup?: number;
   caption?: string;
+  captionMarginPx?: number;
   moneyShotBeatIndex?: number;
   cursorHome?: [number, number];
   beats: Beat[];
@@ -134,16 +147,19 @@ export function storyboard(name: string, opts: StoryboardOptions): Storyboard {
     window: { w: opts.window?.[0] ?? 1400, h: opts.window?.[1] ?? 900 },
     layout: opts.layout ?? "chat-and-tasks",
     freshIngest: opts.freshIngest,
+    emptyIndex: opts.emptyIndex,
     freshModel: opts.freshModel,
     clearTaskCenter: opts.clearTaskCenter,
     clearChat: opts.clearChat,
     preloadChatModel: opts.preloadChatModel,
+    prewarmReranker: opts.prewarmReranker,
     skipModelPin: opts.skipModelPin,
     skipServerCheck: opts.skipServerCheck,
     noLilbee: opts.noLilbee,
     vaultMatch: opts.vaultMatch,
     postSpeedup: opts.postSpeedup,
     caption: opts.caption,
+    captionMarginPx: opts.captionMarginPx,
     moneyShotBeatIndex: opts.moneyShotBeatIndex,
     cursorHome: opts.cursorHome,
     beats: opts.beats,
