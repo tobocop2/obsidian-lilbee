@@ -1,9 +1,9 @@
 {
 	"id": "lilbee",
 	"name": "lilbee",
-	"version": "0.6.66b440",
+	"version": "0.6.66",
 	"minAppVersion": "1.0.0",
-	"description": "Chat with your vault and verify every answer at the source. Click any citation to preview the cited passage in place.",
+	"description": "Search and chat with your notes, PDFs, and crawled web pages using local AI, with click-to-verify citations. Manages and runs models for you, or bring your own from Ollama, LM Studio, and frontier providers (OpenAI, Anthropic, Gemini).",
 	"author": "tobocop2",
 	"authorUrl": "https://obsidian.lilbee.sh/",
 	"isDesktopOnly": true

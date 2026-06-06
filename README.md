@@ -41,6 +41,7 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 - [Quick start](#quick-start)
 - [Open the chat](#open-the-chat)
 - [How it works](#how-it-works)
+- [Privacy & network use](#privacy--network-use)
 - [Updating the plugin](#updating-the-plugin)
 - [Updating the server](#updating-the-server)
 - [Documentation](#documentation)
@@ -189,6 +190,16 @@ Settings → BRAT → Beta Plugin List → click the edit (pencil) icon next to 
 The plugin tracks the installed lilbee server version. Go to Settings → lilbee → **Check for updates**. If a newer release is available the button changes to **Update to vX.Y.Z**: one click stops the running server, downloads the new version, verifies it, and restarts.
 
 This updates only the lilbee **server**, never the plugin itself. The plugin's own code is updated through Obsidian like any other community plugin; the **Check for updates** button only manages the separate server it downloads. Each server download is checked against the SHA256 digest GitHub publishes for the release before it runs, so a corrupted or tampered download is discarded instead of executed.
+
+## Privacy & network use
+
+Everything runs on your machine by default, and the plugin tells you when that changes. For transparency, here's exactly what it does and what leaves your computer:
+
+- **Managed or external server.** The plugin talks to a local lilbee server over `127.0.0.1`. In **managed mode** (the default) Obsidian runs the server for you so you can get going without installing or managing the executable yourself. It **prompts before downloading** the server, then starts it when Obsidian launches and stops it when you close Obsidian. In **external mode** you run `lilbee serve` yourself and point the plugin at it; in that mode the plugin downloads no executable.
+- **What it contacts, and why.** [GitHub](https://github.com): in managed mode, to download the lilbee server and check for updates. [Hugging Face Hub](https://huggingface.co): the model catalog you browse and pull models from. Nothing else, unless you opt into a cloud model below.
+- **Cloud models are opt-in, per role.** By default chat, embedding, vision, and reranking all run locally. You can point a single role at your own API endpoint (Settings → Advanced); only that role's requests leave your machine, and a persistent indicator shows whenever a cloud model is active.
+- **No account, no telemetry.** lilbee needs no account to run locally, and the plugin collects no analytics or usage data of any kind. Cloud models use an API key you enter yourself.
+- **Vault access.** The plugin reads your vault to index it and, if you enable the wiki, writes generated pages into a vault folder you choose (default `lilbee/`). The server install and model cache live in Obsidian's app data folder, outside your vault.
 
 ## Documentation
 
