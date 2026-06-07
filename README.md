@@ -11,7 +11,7 @@
 
 <p align="center"><a href="https://obsidian.lilbee.sh/">Project site</a> &nbsp;·&nbsp; <a href="https://obsidian.lilbee.sh/tutorial">Tutorial reel</a> &nbsp;·&nbsp; <a href="https://github.com/tobocop2/obsidian-lilbee/releases">Releases</a> &nbsp;·&nbsp; <a href="https://lilbee.sh/">lilbee engine</a></p>
 
-This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives you chat, an auto-generated wiki, click-to-source citations, and a model catalog, all inside Obsidian. It downloads and manages the lilbee server for you; nothing to install separately. Everything runs on your computer; cloud models are opt-in, per role.
+This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives you chat, a web crawler that saves sites into your vault, an auto-generated wiki, click-to-source citations, and a model catalog, all inside Obsidian. It downloads and manages the lilbee server for you; nothing to install separately. Everything runs on your computer; cloud models are opt-in, per role.
 
 [![CI](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml/badge.svg)](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml)
 [![Coverage](https://obsidian.lilbee.sh/coverage/badge.svg)](https://obsidian.lilbee.sh/coverage/)
@@ -52,6 +52,7 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 
 - **Ask your vault in plain English.** Type a question; get an answer with citations that click straight back to the source line.
 - **Verify in one click.** Every citation opens a Source Preview scrolled to the exact spot: surrounding paragraphs visible, cited lines highlighted.
+- **Save websites into your vault.** Crawl a single page or a whole docs site; the pages land in your vault as markdown notes you can search, chat with, and cite offline, even after the site changes or goes down.
 - **Reads more than markdown.** PDFs, Office files, ebooks, CSV / TSV / JSON / YAML, 150+ programming languages, plus OCR for scans and photographed pages.
 - **Your models, your machine.** Browse a built-in model catalog straight from Hugging Face Hub, pull one with a click, run it locally. No account needed.
 - **Already on Ollama or LM Studio? Keep them.** lilbee manages models for you by default, but it also works with both, so you never have to switch model managers. Their models appear in the same pickers, alongside lilbee's own.
@@ -76,13 +77,17 @@ Add a single file from the right-click menu or the command palette, or run **Syn
 
 <p align="center"><img alt="add a PDF and a README from the palette, watch the Task Center index them, then ask a cited question" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/add.gif" width="640"></p>
 
-### Verify every answer at the source
+### Offline copies of websites, inside your vault
 
-Every citation in a chat reply or wiki page is a live link. Click it and a Source Preview opens, scrolled to the exact spot, surrounding paragraphs visible and cited lines highlighted; from there, open the full document or copy a deep link back. A confident answer with a footnote is only as good as the footnote, so the check is one click instead of a separate chore.
+> **Watch it:** [crawl the web into your vault](https://obsidian.lilbee.sh/tutorial/#crawl) — fetch a Wikipedia page, then ask a cited question against the saved copy.
 
-This works for web pages too: crawl a docs site or a Wikipedia page into your vault, then search or chat with that copy offline, with citations back to the source.
+Crawl a docs site, a wiki, or a vendor's API reference and the pages land in your vault as ordinary markdown notes. Grab a single page or a whole site; whole-site crawls follow internal links, with depth and page caps when you want them. From then on you search or chat with that copy offline, with citations that click back to the saved page, even after the site changes or goes down.
 
 <p align="center"><img alt="crawl a Wikipedia page into the vault, ask a cited question, and jump to the cited section" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl.gif" width="640"></p>
+
+### Verify every answer at the source
+
+Every citation in a chat reply or wiki page is a live link. Click it and a Source Preview opens, scrolled to the exact spot, surrounding paragraphs visible and cited lines highlighted; from there, open the full document or copy a deep link back. A confident answer with a footnote is only as good as the footnote, so the check is one click instead of a separate chore. This works for crawled web pages too: citations link back to the saved copy in your vault.
 
 ### Ask for several things at once
 
