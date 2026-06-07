@@ -1172,6 +1172,39 @@ describe("ChatView.sendMessage — API throws", () => {
         expect((view as any).history.length).toBe(0);
     });
 
+    it.each([
+        ["managed", MESSAGES.ERROR_STREAM_INTERRUPTED_MANAGED],
+        ["external", MESSAGES.ERROR_STREAM_INTERRUPTED_EXTERNAL],
+    ])("maps a dead stream (TypeError: network error) to the %s-mode log pointer", async (mode, expected) => {
+        Notice.clear();
+        const plugin = makePlugin();
+        (plugin.settings as { serverMode?: string }).serverMode = mode;
+        let resolveThrown!: () => void;
+        const thrown = new Promise<void>((r) => {
+            resolveThrown = r;
+        });
+        plugin.api.chatStream = vi.fn().mockReturnValue(
+            (async function* () {
+                resolveThrown();
+                throw new TypeError("network error");
+            })(),
+        );
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "dead stream question";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await thrown;
+        await tick();
+
+        const errBubble = messagesEl.children[1];
+        expect(errBubble.find("lilbee-chat-error-text")!.textContent).toBe(expected);
+        expect(Notice.instances.some((n) => n.message === expected)).toBe(true);
+    });
+
     it("surfaces 'Chat failed' Notice when handleSend itself throws synchronously", async () => {
         Notice.clear();
         const plugin = makePlugin();

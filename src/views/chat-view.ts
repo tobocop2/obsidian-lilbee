@@ -50,6 +50,8 @@ import {
     noticeForResultError,
     getRelevantSystemMemoryGB,
     configString,
+    isStreamInterruptedError,
+    streamInterruptedMessage,
 } from "../utils";
 import { SetupWizard } from "./setup-wizard";
 import { hostedOptions, isUsableHostedRow } from "./catalog-helpers";
@@ -866,6 +868,8 @@ export class ChatView extends ItemView {
                 }
             } else if (err instanceof RateLimitedError) {
                 this.renderInlineError(assistantBubble, MESSAGES.ERROR_RATE_LIMITED(err.retryAfterSeconds));
+            } else if (isStreamInterruptedError(err)) {
+                this.renderInlineError(assistantBubble, streamInterruptedMessage(this.plugin.settings.serverMode));
             } else {
                 this.renderInlineError(
                     assistantBubble,
