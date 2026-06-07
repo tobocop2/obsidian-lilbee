@@ -3961,10 +3961,14 @@
     gap: 6px;
 }
 
-/* The optional container holds the Vision/Rerank chips but participates in the
-   rail's flex flow directly, so all four chips wrap together as one group. */
+/* The optional container holds the Vision/Rerank chips; a nested flex with the
+   rail's own gap keeps all four chips visually on one wrapping row. */
 .lilbee-model-rail-optional {
-    display: contents;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
 }
 
 /* A chip: colored dot · label · model picker. Sizes to its content; off roles
