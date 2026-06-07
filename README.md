@@ -206,6 +206,13 @@ Everything runs on your machine by default, and the plugin tells you when that c
 - **No account, no telemetry.** lilbee needs no account to run locally, and the plugin collects no analytics or usage data of any kind. Cloud models use an API key you enter yourself.
 - **Vault access.** The plugin reads your vault to index it and, if you enable the wiki, writes generated pages into a vault folder you choose (default `lilbee/`). The server install and model cache live in Obsidian's app data folder, outside your vault.
 
+Running a local server is unusual for an Obsidian plugin, so the automated store review flags a few capabilities. Here is exactly what each one does:
+
+- **Shell execution.** In managed mode the plugin starts and stops the lilbee server executable it downloaded (and verified against GitHub's published SHA256). It runs nothing else, and external mode never spawns a process.
+- **Filesystem access outside the vault API.** The server install, model cache, and index live in Obsidian's app data folder, so the plugin uses Node's `fs` to download, verify, and clean up those files. The only other paths it touches are ones you pick yourself in a save/open dialog when exporting or importing a dataset.
+- **Environment variables.** Read only to locate the server's data folder (`HOME`/`USERPROFILE`, `XDG_DATA_HOME`, `LOCALAPPDATA`, and the `LILBEE_DATA` override). The plugin never reads your hostname or username, and nothing from your environment leaves your machine.
+- **Vault file listing.** The plugin lists your vault's files to know what to index and to keep the index in sync as you edit. File contents go only to the local server.
+
 ## Documentation
 
 See **[Usage Guide](docs/usage.md)** for the full reference: every command, every setting, the chat toolbar, supported formats, troubleshooting, and advanced configuration. For the underlying engine (what it indexes, how retrieval works, model formats, hardware requirements), see [lilbee](https://lilbee.sh/).
