@@ -28,8 +28,8 @@ async function* sseEvents(
 }
 
 async function* sseThrows(err: Error): AsyncGenerator<{ event: string; data: unknown }> {
+    yield* sseEvents([]);
     throw err;
-    yield { event: "", data: null };
 }
 
 function fakeApi(overrides: Partial<LilbeeClient> = {}): LilbeeClient {
