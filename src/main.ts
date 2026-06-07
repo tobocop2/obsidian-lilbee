@@ -1807,34 +1807,32 @@ export default class LilbeePlugin extends Plugin {
     }
 
     /**
-     * Open the chat view and the task center as adjacent leaves in the right
-     * sidebar so a fresh-install user lands on a usable workspace without
-     * having to discover the ribbon icon and the slash command. Idempotent —
-     * if either view is already open, just reveal it; no duplicates.
+     * Open the chat view in the main editor area and the task center in the
+     * right sidebar so a fresh-install user lands on a usable workspace
+     * without having to discover the ribbon icon and the slash command.
+     * Idempotent — if either view is already open, just reveal it; no
+     * duplicates.
      */
     async openCockpit(): Promise<void> {
         const workspace = this.app.workspace;
         const existingChat = workspace.getLeavesOfType(VIEW_TYPE_CHAT);
         const existingTasks = workspace.getLeavesOfType(VIEW_TYPE_TASKS);
 
+        // Chat gets a main-area tab: the post-wizard workspace is empty, and
+        // a sidebar leaf compresses the conversation into a narrow column.
         let chatLeaf = existingChat[0] ?? null;
         if (!chatLeaf) {
-            const leaf = workspace.getRightLeaf(false);
+            const leaf = workspace.getLeaf(true);
             if (!leaf) return;
             chatLeaf = leaf;
             await chatLeaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
         }
 
-        // Task center lives as a bottom panel under the editor — not a right
-        // sidebar tab, because the right sidebar collapses sibling leaves into
-        // tabs and only one would be visible at a time. getLeaf("split",
-        // "horizontal") splits the active root leaf in the main editor area
-        // along the horizontal axis (editor on top, task center beneath).
         let tasksLeaf = existingTasks[0] ?? null;
         if (!tasksLeaf) {
-            const split = workspace.getLeaf("split", "horizontal");
-            if (split) {
-                tasksLeaf = split;
+            const leaf = workspace.getRightLeaf(false);
+            if (leaf) {
+                tasksLeaf = leaf;
                 await tasksLeaf.setViewState({ type: VIEW_TYPE_TASKS, active: true });
             }
         }

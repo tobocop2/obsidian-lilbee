@@ -3475,18 +3475,18 @@ describe("LilbeePlugin", () => {
     });
 
     describe("openCockpit()", () => {
-        it("opens chat in the right sidebar and splits the task center under the editor", async () => {
+        it("opens chat in the main area and the task center in the right sidebar", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             const chatLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
             const tasksLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
-            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(chatLeaf);
-            plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(tasksLeaf);
+            plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(chatLeaf);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(tasksLeaf);
             plugin.app.workspace.revealLeaf = vi.fn();
             await plugin.openCockpit();
+            expect(plugin.app.workspace.getLeaf).toHaveBeenCalledWith(true);
             expect(chatLeaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-chat", active: true });
-            expect(plugin.app.workspace.getLeaf).toHaveBeenCalledWith("split", "horizontal");
             expect(tasksLeaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-tasks", active: true });
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(tasksLeaf);
@@ -3502,9 +3502,11 @@ describe("LilbeePlugin", () => {
                 if (type === "lilbee-tasks") return [existingTasks];
                 return [];
             });
+            plugin.app.workspace.getLeaf = vi.fn();
             plugin.app.workspace.getRightLeaf = vi.fn();
             plugin.app.workspace.revealLeaf = vi.fn();
             await plugin.openCockpit();
+            expect(plugin.app.workspace.getLeaf).not.toHaveBeenCalled();
             expect(plugin.app.workspace.getRightLeaf).not.toHaveBeenCalled();
             expect(existingChat.setViewState).not.toHaveBeenCalled();
             expect(existingTasks.setViewState).not.toHaveBeenCalled();
@@ -3512,23 +3514,23 @@ describe("LilbeePlugin", () => {
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(existingTasks);
         });
 
-        it("bails when getRightLeaf returns null and no chat leaf exists", async () => {
+        it("bails when getLeaf returns null and no chat leaf exists", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
-            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
+            plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(null);
             plugin.app.workspace.revealLeaf = vi.fn();
             await plugin.openCockpit();
             expect(plugin.app.workspace.revealLeaf).not.toHaveBeenCalled();
         });
 
-        it("opens chat alone when the editor-split call returns null", async () => {
+        it("opens chat alone when getRightLeaf returns null", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             const chatLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
-            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(chatLeaf);
-            plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(null);
+            plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(chatLeaf);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
             plugin.app.workspace.revealLeaf = vi.fn();
             await plugin.openCockpit();
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
