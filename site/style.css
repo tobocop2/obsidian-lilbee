@@ -419,19 +419,8 @@ h1.sr {
   font-weight: 500;
   word-break: break-word;
 }
-.install .copy {
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.16em;
-  background: transparent;
-  border: none;
-  border-left: 1px solid var(--rule-2);
-  color: var(--ink-2);
-  padding: 0 1.1rem;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.install .copy:hover { color: var(--accent-hot); background: rgba(124, 58, 237, 0.09); }
+.install a.cmd { color: var(--accent); }
+.install a.cmd:hover { color: var(--accent-hot); }
 
 .steps { margin-top: 1rem; display: grid; gap: 0.55rem; }
 .step { display: flex; gap: 0.8rem; font-size: 14px; color: var(--ink-2); line-height: 1.6; }
