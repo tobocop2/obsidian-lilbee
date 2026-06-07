@@ -46,7 +46,7 @@ const groups = [
     id: "set-up-and-tune",
     heading: "Set up &amp; tune",
     reels: [
-      { id: "first-start", name: "first_start", title: "First run: install to first cited answer", desc: "Brand-new to lilbee, on a fresh vault. Install it through BRAT, walk the setup wizard (pick a chat model and an embedder, run the first sync), then ask a question and get a cited answer from your own notes, with a click-through to the source. The whole onboarding in one take." },
+      { id: "first-start", name: "first_start", title: "First run: install to first cited answer", desc: "Brand-new to lilbee, on a fresh vault. Install it from the community plugin store, walk the setup wizard (pick a chat model and an embedder, run the first sync), then ask a question and get a cited answer from your own notes, with a click-through to the source. The whole onboarding in one take." },
       { id: "settings", name: "settings", title: "Settings", desc: "50+ settings: search depth, reranking, sampling, parsers, the wiki. Sane defaults; tune the moment you want to." },
       { id: "tour", name: "tour", title: "Tour: the palette as an async control surface", desc: "Fire a crawl, a file add, and a model download back to back without waiting, watch all three run at once in the Task Center, then ask the just-crawled page a cited question." },
     ],

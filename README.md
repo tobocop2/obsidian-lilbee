@@ -19,7 +19,7 @@ This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives y
   <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.6-blue?logo=typescript&logoColor=white"></a>
   <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg">
-  <a href="https://obsidian.md"><img alt="Obsidian" src="https://img.shields.io/badge/Obsidian-Plugin-7c3aed?logo=obsidian&logoColor=white"></a>
+  <a href="https://community.obsidian.md/plugins/lilbee"><img alt="Obsidian community plugin" src="https://img.shields.io/badge/Obsidian-Community%20plugin-7c3aed?logo=obsidian&logoColor=white"></a>
   <a href="https://github.com/tobocop2/obsidian-lilbee/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/tobocop2/obsidian-lilbee/total"></a>
 </p>
 
@@ -29,9 +29,9 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 
 > **Tutorial reel:** every recording on this page (and a few extras) as videos with longer notes at [**obsidian.lilbee.sh/tutorial**](https://obsidian.lilbee.sh/tutorial).
 
-> ## ⚠️ Beta software
+> ## Now in the Obsidian community plugin store
 >
-> The plugin is in **active beta**. Installation goes through [BRAT](https://github.com/TfTHacker/obsidian42-brat) so you always get the latest pre-release. Interfaces, settings layout, and on-disk formats may shift between betas. Feedback, bug reports, and issues are very welcome; that's the whole point of the beta.
+> lilbee is an official [community plugin](https://community.obsidian.md/plugins/lilbee): install it from **Settings → Community plugins** inside Obsidian, nothing else needed. Feedback, bug reports, and issues are very welcome.
 
 > **Heads up: this downloads to your computer.** lilbee is a local search engine with its own models, so the plugin fetches the lilbee server (a few hundred MB) on first launch and the models you pick from the catalog (a few hundred MB up to several GB each) when you choose them. It's all stored locally and runs on your machine.
 
@@ -64,7 +64,7 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 
 ## Why a local search engine for Obsidian
 
-A vault is already a curated set of documents: notes you've taken, PDFs you've collected, scans you've filed away. That's exactly what a local search engine wants. This plugin points lilbee at your vault so a local model can reason over your library and answer with citations you click straight back to the source.
+A vault is already a curated set of documents: notes you've taken, PDFs you've collected, scans you've filed away. That's exactly what a local search engine wants. This plugin points lilbee at your vault so a local model can reason over your library with retrieval-augmented generation (RAG) and answer with citations you click straight back to the source.
 
 An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, from your own vault, shaped to your needs.
 
@@ -157,14 +157,12 @@ The plugin reads everything you've indexed and writes a wiki about it. Pages com
 
 ## Quick start
 
-1. Install **[BRAT](https://github.com/TfTHacker/obsidian42-brat)** in Obsidian (Settings → Community plugins → Browse → search "BRAT" → Install → Enable).
-2. Open the command palette (`Cmd/Ctrl + P`) → **BRAT: Plugins: Add a beta plugin for testing** → paste `tobocop2/obsidian-lilbee` → **Add Plugin**.
-3. Enable **lilbee** in Settings → Community plugins.
-4. The Setup Wizard auto-launches. Pick a chat model and an embedding model from the featured grid, then run the initial sync.
+1. In Obsidian, open **Settings → Community plugins → Browse**, search for **"lilbee"**, then **Install** and **Enable**. (Or start from the [store listing](https://community.obsidian.md/plugins/lilbee).)
+2. The Setup Wizard auto-launches. Pick a chat model and an embedding model from the featured grid, then run the initial sync.
 
 The plugin downloads and manages the [lilbee](https://lilbee.sh/) server automatically; nothing to install separately. The first launch fetches the right version for your platform and verifies it before starting. Wait for the status bar to show `lilbee: ready`, then open the chat.
 
-<p align="center"><img alt="first run on a fresh vault: install lilbee through BRAT, walk the setup wizard, and ask a question that gets a cited answer from your notes" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first_start.gif" width="640"></p>
+<p align="center"><img alt="first run on a fresh vault: install lilbee from the community plugin store, walk the setup wizard, and ask a question that gets a cited answer from your notes" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first_start.gif" width="640"></p>
 
 > **Hardware note:** the server runs on your CPU or GPU. A Mac with Apple Silicon (M1+) or a PC with an NVIDIA / AMD / Intel Arc GPU gives the best performance. 8 GB of RAM is the minimum; 16 to 32 GB is recommended. See [lilbee's hardware requirements](https://github.com/tobocop2/lilbee#hardware-requirements) for the full table.
 
@@ -191,7 +189,7 @@ Vaults on the same computer share one lilbee install and one model cache, so dow
 
 ## Updating the plugin
 
-Settings → BRAT → Beta Plugin List → click the edit (pencil) icon next to lilbee → change the version to the latest release tag. BRAT downloads the new version. **Restart Obsidian** after the update for the new version to take effect.
+Obsidian handles plugin updates: **Settings → Community plugins → Check for updates**, then update lilbee like any other plugin.
 
 ## Updating the server
 
