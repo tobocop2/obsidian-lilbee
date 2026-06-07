@@ -1207,7 +1207,7 @@ describe("LilbeePlugin", () => {
 
         it("lilbee:model-info-active-chat opens ModelInfoModal when chat_model is set", async () => {
             const { ModelInfoModal } = await import("../src/views/model-info-modal");
-            const { ok } = await import("neverthrow");
+            const { ok } = await import("../src/result");
             const plugin = await createPlugin();
             await plugin.onload();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: "qwen/qwen3-8b" });
@@ -1268,7 +1268,7 @@ describe("LilbeePlugin", () => {
         it("lilbee:model-info-active-chat shows a Notice when catalog lookup errors", async () => {
             const { ModelInfoModal } = await import("../src/views/model-info-modal");
             (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
-            const { err } = await import("neverthrow");
+            const { err } = await import("../src/result");
             const plugin = await createPlugin();
             await plugin.onload();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: "qwen/qwen3-8b" });
@@ -1284,7 +1284,7 @@ describe("LilbeePlugin", () => {
         it("lilbee:model-info-active-chat shows a Notice when catalog returns no rows", async () => {
             const { ModelInfoModal } = await import("../src/views/model-info-modal");
             (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
-            const { ok } = await import("neverthrow");
+            const { ok } = await import("../src/result");
             const plugin = await createPlugin();
             await plugin.onload();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ chat_model: "qwen/qwen3-8b" });
@@ -1300,7 +1300,7 @@ describe("LilbeePlugin", () => {
         it("lilbee:model-info-active-embedding resolves embedding_model and falls back to first catalog row", async () => {
             const { ModelInfoModal } = await import("../src/views/model-info-modal");
             (ModelInfoModal as ReturnType<typeof vi.fn>).mockClear();
-            const { ok } = await import("neverthrow");
+            const { ok } = await import("../src/result");
             const plugin = await createPlugin();
             await plugin.onload();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ embedding_model: "BAAI/bge-m3" });

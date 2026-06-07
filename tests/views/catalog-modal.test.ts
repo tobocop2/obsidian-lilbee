@@ -6,7 +6,7 @@ import { CatalogModal } from "../../src/views/catalog-modal";
 import { CATALOG_TAB, SSE_EVENT } from "../../src/types";
 import type { CatalogEntry, CatalogResponse, CatalogTab } from "../../src/types";
 import { TaskQueue } from "../../src/task-queue";
-import { ok, err } from "neverthrow";
+import { ok, err } from "../../src/result";
 import { MESSAGES } from "../../src/locales/en";
 
 let mockConfirmResult = true;

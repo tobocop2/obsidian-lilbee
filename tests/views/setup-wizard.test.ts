@@ -6,7 +6,7 @@ import { getSystemMemoryGB } from "../../src/utils";
 import * as utils from "../../src/utils";
 import { SessionTokenError } from "../../src/api";
 import { SSE_EVENT, WIZARD_STEP, LILBEE_REPO_URL } from "../../src/types";
-import { ok, err } from "neverthrow";
+import { ok, err } from "../../src/result";
 import { MESSAGES } from "../../src/locales/en";
 import type { CatalogEntry, CatalogResponse } from "../../src/types";
 
@@ -861,7 +861,7 @@ describe("SetupWizard", () => {
         });
 
         it("sets empty featured models when catalog returns error result", async () => {
-            const { err } = await import("neverthrow");
+            const { err } = await import("../../src/result");
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             plugin.api.catalog = vi.fn().mockResolvedValue(err(new Error("server error")));
             const wizard = new SetupWizard(plugin.app as any, plugin as any);

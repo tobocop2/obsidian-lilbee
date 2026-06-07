@@ -1,5 +1,5 @@
 import { App, Modal, Notice } from "obsidian";
-import type { Result } from "neverthrow";
+import type { Result } from "../result";
 import type LilbeePlugin from "../main";
 import type { CatalogEntry, ModelTask } from "../types";
 import { CATALOG_SOURCE, HOSTED_SOURCES, KEY_STATUS, MODEL_TASK } from "../types";

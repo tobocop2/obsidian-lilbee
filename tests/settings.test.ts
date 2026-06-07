@@ -6,7 +6,7 @@ import type { CatalogEntry, CatalogResponse, InstalledModel, LilbeeSettings } fr
 import { DEFAULT_SETTINGS, MEMORY_CONFIG_KEY, MODEL_TASK, SSE_EVENT } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import { ServerStartingError } from "../src/api";
-import { ok, err } from "neverthrow";
+import { ok, err } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
 import { ConfirmPullModal } from "../src/views/confirm-pull-modal";
 

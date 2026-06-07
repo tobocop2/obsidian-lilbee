@@ -1,5 +1,5 @@
 import { CAPABILITY, JSON_HEADERS, OCTET_STREAM_HEADERS, SEARCH_CHUNK_TYPE, SSE_EVENT, ERROR_NAME } from "./types";
-import { ok, err, Result } from "neverthrow";
+import { ok, err, Result } from "./result";
 
 import type {
     AskResponse,

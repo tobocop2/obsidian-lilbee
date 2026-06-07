@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { App, Notice } from "obsidian";
-import { ok, err } from "neverthrow";
+import { ok, err } from "../../src/result";
 import { StatusModal } from "../../src/views/status-modal";
 import { MockElement } from "../__mocks__/obsidian";
 import type LilbeePlugin from "../../src/main";

@@ -2,7 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Notice, MockElement } from "../__mocks__/obsidian";
 import { ModelPickerModal, filterRowsByText, SET_MODEL_RETRIES } from "../../src/views/model-picker-modal";
 import type { CatalogEntry } from "../../src/types";
-import { ok, err } from "neverthrow";
+import { ok, err } from "../../src/result";
 import { TaskQueue } from "../../src/task-queue";
 import { MESSAGES } from "../../src/locales/en";
 

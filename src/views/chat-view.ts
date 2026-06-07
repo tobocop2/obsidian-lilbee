@@ -447,7 +447,7 @@ export class ChatView extends ItemView {
     }
 
     private fillEmbeddingSelector(
-        embeddingResult: import("neverthrow").Result<import("../types").CatalogResponse, Error> | null,
+        embeddingResult: import("../result").Result<import("../types").CatalogResponse, Error> | null,
         serverConfig: Record<string, unknown> | null,
     ): void {
         this.activeEmbeddingModel = serverConfig ? configString(serverConfig, "embedding_model") : "";

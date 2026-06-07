@@ -15,9 +15,6 @@
     "prepare": "husky",
     "lint:store": "eslint --config eslint.obsidian.mjs src"
   },
-  "dependencies": {
-    "neverthrow": "^8.2.0"
-  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.6.0",

@@ -217,15 +217,15 @@ The plugin needs a reachable lilbee server. In **managed mode** (default) it dow
 
 | Need | Recommended Library |
 |------|---------------------|
-| Result/Either type | [neverthrow](https://github.com/supermacro/neverthrow) (7k+ stars, 0 deps) |
+| Result/Either type | `src/result.ts` (local, neverthrow-compatible subset — neverthrow's published build ships ES5 helpers the plugin store flags) |
 | Functional programming | [fp-ts](https://github.com/gcanti/fp-ts) |
 | Async utilities | Native TypeScript (Promise.all, etc.) |
 
-If a library is chosen, add it to `dependencies` in package.json (not devDependencies), as it will be bundled into the plugin.
+If a library is chosen, add it to `dependencies` in package.json (not devDependencies), as it will be bundled into the plugin. The bundle must stay free of ES5 transpilation helpers (`__awaiter`, `__generator`, `__spreadArray`) — the Obsidian store review discloses them; check `main.js` after adding a dependency.
 
-Example - using neverthrow for error handling:
+Example - Result-based error handling:
 ```typescript
-import { Result, ok, err } from "neverthrow";
+import { Result, ok, err } from "./result";
 
 async function fetchData(): Promise<Result<Data, Error>> {
     try {

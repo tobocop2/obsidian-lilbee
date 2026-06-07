@@ -24,7 +24,7 @@ import { Menu, MockMenuItem, MockMenuSeparator, Notice, Platform, WorkspaceLeaf 
 import { MockElement } from "../__mocks__/obsidian";
 import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal } from "../../src/views/chat-view";
 import { electronDialog } from "../../src/utils/file-dialog";
-import { ok, err } from "neverthrow";
+import { ok, err } from "../../src/result";
 import type LilbeePlugin from "../../src/main";
 import { SSE_EVENT } from "../../src/types";
 import { MESSAGES } from "../../src/locales/en";
