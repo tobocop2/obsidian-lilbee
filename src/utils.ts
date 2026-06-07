@@ -161,6 +161,19 @@ export function sessionTokenInvalidMessage(serverMode: ServerMode): string {
         : MESSAGES.NOTICE_SESSION_TOKEN_INVALID;
 }
 
+/** Chromium rejects a response stream that dies mid-read with this TypeError message. */
+const STREAM_INTERRUPTED_MESSAGE = "network error";
+
+export function isStreamInterruptedError(err: unknown): boolean {
+    return err instanceof TypeError && err.message === STREAM_INTERRUPTED_MESSAGE;
+}
+
+export function streamInterruptedMessage(serverMode: ServerMode): string {
+    return serverMode === SERVER_MODE.MANAGED
+        ? MESSAGES.ERROR_STREAM_INTERRUPTED_MANAGED
+        : MESSAGES.ERROR_STREAM_INTERRUPTED_EXTERNAL;
+}
+
 /**
  * Pull a human-readable message out of an unknown thrown value.
  * Centralizes the `err instanceof Error ? err.message : <fallback>` pattern.

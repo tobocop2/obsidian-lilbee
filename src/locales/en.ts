@@ -554,6 +554,10 @@ export const MESSAGES = {
     ERROR_SERVER_UNREACHABLE: "Could not connect to lilbee server. Is it running?",
     ERROR_STREAM: (msg: string) => `lilbee: ${msg}`,
     ERROR_CHAT_FAILED: (reason: string) => `Chat failed: ${reason}`,
+    ERROR_STREAM_INTERRUPTED_MANAGED:
+        "Chat failed: the server closed the stream unexpectedly. Check the server logs in the logs folder of lilbee's data directory (inside Obsidian's app data folder), then try again.",
+    ERROR_STREAM_INTERRUPTED_EXTERNAL:
+        "Chat failed: the server closed the stream unexpectedly. Check the output of your lilbee serve process, then try again.",
     NOTICE_MODEL_UNAVAILABLE_SETUP: "Your model isn't available. Opening setup so you can pick a working one.",
     ERROR_RATE_LIMITED: (retryAfterSeconds: number | null) =>
         retryAfterSeconds !== null

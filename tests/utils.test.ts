@@ -13,6 +13,8 @@ import {
     formatElapsed,
     getRelevantSystemMemoryGB,
     isRoleMismatchDetail,
+    isStreamInterruptedError,
+    streamInterruptedMessage,
     noticeForResultError,
     noticeServerUnreachableIfApplicable,
     percentFromSse,
@@ -229,6 +231,28 @@ describe("extractSseErrorMessage", () => {
 
     it("falls back for a payload with no message field", () => {
         expect(extractSseErrorMessage({ other: "x" }, "fallback")).toBe("fallback");
+    });
+});
+
+describe("isStreamInterruptedError", () => {
+    it("matches Chromium's mid-read stream TypeError", () => {
+        expect(isStreamInterruptedError(new TypeError("network error"))).toBe(true);
+    });
+
+    it("ignores other TypeErrors and non-TypeErrors", () => {
+        expect(isStreamInterruptedError(new TypeError("Failed to fetch"))).toBe(false);
+        expect(isStreamInterruptedError(new Error("network error"))).toBe(false);
+        expect(isStreamInterruptedError("network error")).toBe(false);
+    });
+});
+
+describe("streamInterruptedMessage", () => {
+    it("points managed mode at the data-directory logs", () => {
+        expect(streamInterruptedMessage(SERVER_MODE.MANAGED)).toBe(MESSAGES.ERROR_STREAM_INTERRUPTED_MANAGED);
+    });
+
+    it("points external mode at the lilbee serve output", () => {
+        expect(streamInterruptedMessage(SERVER_MODE.EXTERNAL)).toBe(MESSAGES.ERROR_STREAM_INTERRUPTED_EXTERNAL);
     });
 });
 
