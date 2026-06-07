@@ -2,17 +2,16 @@
 # Cut a stable store release: bump the patch version in package.json,
 # package-lock.json, and manifest.json, record it in versions.json, commit, tag,
 # and push from main. The tag has no "v" prefix (the community plugin store
-# requires the release tag to equal the manifest version exactly), so the
-# Release workflow does not fire; this script builds main.js and attaches the
-# assets itself, with notes generated from the tag diff plus an explicit link
-# to the lilbee server version these changes depend on.
+# requires the release tag to equal the manifest version exactly), so the beta
+# Release workflow does not fire; pushing the tag triggers the Store Release
+# workflow, which builds, attests, and publishes the release with notes
+# generated from the tag diff plus a link to the lilbee server version these
+# changes depend on.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
 repo="tobocop2/obsidian-lilbee"
-lilbee_repo="tobocop2/lilbee"
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 branch=$(git rev-parse --abbrev-ref HEAD)
 [ "$branch" = "main" ] || { echo "release-store: must be on main (on $branch)" >&2; exit 1; }
@@ -27,7 +26,6 @@ case "$cur" in
 esac
 next="${cur%.*}.$(( ${cur##*.} + 1 ))"
 tag="$next"
-prev_tag="$cur"
 echo "release-store: $cur -> $next ($tag)"
 
 perl -pi -e 's/"\Q'"$cur"'\E"/"'"$next"'"/g' package.json manifest.json package-lock.json
@@ -45,19 +43,17 @@ git tag "$tag"
 git push origin main
 git push origin "$tag"
 
-npm run build
+echo "release-store: $tag pushed; the Store Release workflow publishes the release."
 
-# The lilbee server release these plugin changes depend on (newest published).
-lilbee_tag=$(gh api "repos/${lilbee_repo}/releases" --jq '.[0].tag_name')
+# The run takes a moment to appear after the tag push.
+run_id=""
+for _ in $(seq 1 12); do
+  run_id=$(gh run list --repo "$repo" --workflow=release-store.yml --branch "$tag" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+  [ -n "$run_id" ] && break
+  sleep 5
+done
+[ -n "$run_id" ] || { echo "release-store: no workflow run found for $tag; check gh run list --workflow=release-store.yml" >&2; exit 1; }
 
-notes=$(mktemp)
-{
-  printf 'Requires lilbee server [%s](https://github.com/%s/releases/tag/%s) or newer. In managed mode the plugin downloads and runs the server for you.\n\n' \
-    "$lilbee_tag" "$lilbee_repo" "$lilbee_tag"
-  bash "$here/release_notes.sh" "$repo" "$tag" "$prev_tag"
-} > "$notes"
-
-gh release create "$tag" --repo "$repo" --title "$tag" --verify-tag --notes-file "$notes" \
-  main.js manifest.json styles.css
-rm -f "$notes"
+gh run watch --repo "$repo" "$run_id" --exit-status \
+  || { echo "release-store: workflow failed; see gh run view --repo $repo $run_id" >&2; exit 1; }
 echo "release-store: $tag published with main.js / manifest.json / styles.css."

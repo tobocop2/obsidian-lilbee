@@ -1,0 +1,55 @@
+name: Store Release
+# Stable store tags have no "v" prefix (the store requires tag == manifest
+# version), so the beta Release workflow does not fire for them. This one
+# builds, attests, and attaches the assets; scripts/release_store.sh only
+# bumps versions and pushes the tag.
+on:
+  push:
+    tags: ["[0-9]*"]
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
+      - name: Write release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          # Keep the existing notes when the release already exists (e.g. a re-pushed tag).
+          if gh release view "$tag" --json body --jq .body > release-notes.md 2>/dev/null && [ -s release-notes.md ]; then
+            echo "release $tag exists; keeping its notes"
+            exit 0
+          fi
+          prev=$(git tag -l '[0-9]*' --sort=-v:refname | grep -A1 -x "$tag" | tail -n +2 | head -1 || true)
+          lilbee_tag=$(gh api repos/tobocop2/lilbee/releases --jq '.[0].tag_name')
+          {
+            printf 'Requires lilbee server [%s](https://github.com/tobocop2/lilbee/releases/tag/%s) or newer. In managed mode the plugin downloads and runs the server for you.\n\n' \
+              "$lilbee_tag" "$lilbee_tag"
+            bash scripts/release_notes.sh "$GITHUB_REPOSITORY" "$tag" "$prev"
+          } > release-notes.md
+      - uses: softprops/action-gh-release@v3
+        with:
+          body_path: release-notes.md
+          files: |
+            main.js
+            manifest.json
+            styles.css
