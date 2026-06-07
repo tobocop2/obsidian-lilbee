@@ -19,9 +19,9 @@ This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives y
   <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.6-blue?logo=typescript&logoColor=white"></a>
   <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg">
+  <a href="https://obsidian.md"><img alt="Obsidian" src="https://img.shields.io/badge/Obsidian-Plugin-7c3aed?logo=obsidian&logoColor=white"></a>
   <a href="https://github.com/tobocop2/obsidian-lilbee/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/tobocop2/obsidian-lilbee/total"></a>
 </p>
-[![Obsidian](https://img.shields.io/badge/Obsidian-Plugin-7c3aed?logo=obsidian&logoColor=white)](https://obsidian.md)
 
 Ask a question in plain English and lilbee answers from your vault, with citations that click straight back to the source line.
 
