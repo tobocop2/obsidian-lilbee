@@ -13,12 +13,14 @@
 
 This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives you chat, a web crawler that saves sites into your vault, an auto-generated wiki, click-to-source citations, and a model catalog, all inside Obsidian. It downloads and manages the lilbee server for you; nothing to install separately. Everything runs on your computer; cloud models are opt-in, per role.
 
-[![CI](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml/badge.svg)](https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml)
-[![Coverage](https://obsidian.lilbee.sh/coverage/badge.svg)](https://obsidian.lilbee.sh/coverage/)
-[![Downloads](https://img.shields.io/github/downloads/tobocop2/obsidian-lilbee/total)](https://github.com/tobocop2/obsidian-lilbee/releases)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)
+<p align="center">
+  <a href="https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://obsidian.lilbee.sh/coverage/"><img alt="Coverage" src="https://obsidian.lilbee.sh/coverage/badge.svg"></a>
+  <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.6-blue?logo=typescript&logoColor=white"></a>
+  <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg">
+  <a href="https://github.com/tobocop2/obsidian-lilbee/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/tobocop2/obsidian-lilbee/total"></a>
+</p>
 [![Obsidian](https://img.shields.io/badge/Obsidian-Plugin-7c3aed?logo=obsidian&logoColor=white)](https://obsidian.md)
 
 Ask a question in plain English and lilbee answers from your vault, with citations that click straight back to the source line.
