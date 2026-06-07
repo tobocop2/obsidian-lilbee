@@ -1,7 +1,7 @@
 {
 	"id": "lilbee",
 	"name": "lilbee",
-	"version": "0.6.66",
+	"version": "0.6.67",
 	"minAppVersion": "1.7.2",
 	"description": "Search and chat with your notes, PDFs, and crawled web pages using local AI, with click-to-verify citations. Manages models for you, or bring your own from Ollama, LM Studio, OpenAI, Claude, Gemini.",
 	"author": "tobocop2",
