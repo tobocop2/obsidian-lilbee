@@ -67,6 +67,8 @@ type BeatRecord = {
   speedup?: number;
   keyHint?: string;
   caption?: string;
+  captionMarginPx?: number;
+  clearCaption?: boolean;
 };
 
 export async function record(storyboard: Storyboard): Promise<void> {
@@ -205,7 +207,7 @@ export async function record(storyboard: Storyboard): Promise<void> {
       const hold = beat.holdMs ?? DEFAULT_HOLD_MS;
       await sleep(hold);
       const endedAt = Date.now() - recordingStartTime;
-      records.push({ index: i, label: beat.label, kind: beat.action.kind, startedAt, endedAt, cursor, speedup: beat.speedup, keyHint: beat.keyHint, caption: beat.caption });
+      records.push({ index: i, label: beat.label, kind: beat.action.kind, startedAt, endedAt, cursor, speedup: beat.speedup, keyHint: beat.keyHint, caption: beat.caption, captionMarginPx: beat.captionMarginPx, clearCaption: beat.clearCaption });
       console.log(`beat ${i} [${beat.label}] ${beat.action.kind}: ${startedAt}-${endedAt} ms${cursor ? ` cursor=(${Math.round(cursor.x)},${Math.round(cursor.y)})` : ""}`);
     }
 
@@ -873,29 +875,42 @@ async function postProcess(opts: PostOptions): Promise<void> {
   }
 
   // Sticky narration captions, overlaid bottom-centre on the app itself. Each
-  // caption shows from its beat's output start until the next captioned beat
-  // (or the end), so a run of sub-step beats shares one explanation w/o flicker.
-  const capStarts = beatCaptions
+  // caption shows from its beat's output start until the next captioned beat,
+  // a clearCaption beat, or the end — so a run of sub-step beats shares one
+  // explanation w/o flicker. A clearCaption beat ends the running caption
+  // without drawing a new one (no clear spot under a full-bleed open note).
+  // Per-beat captionMarginPx lifts an individual caption onto a dead zone;
+  // otherwise the storyboard margin holds.
+  const capPoints = timeline.beats
+    .filter((b) => !!b.caption || b.clearCaption)
     .map((b) => ({
-      text: b.caption as string,
+      text: b.clearCaption ? null : (b.caption as string),
+      margin: b.captionMarginPx ?? captionMargin,
       outStart: inMsToOutSec(Math.max(0, timeline.ffmpegStartupGapMs + b.startedAt - trimStart), segments),
     }))
     .sort((a, b) => a.outStart - b.outStart);
+  // One overlay per distinct caption text (each text has exactly one PNG input,
+  // so it can be consumed by exactly one filter). The margin is taken from the
+  // beat that introduced the text.
   const capWindowsByText = new Map<string, string[]>();
-  for (let i = 0; i < capStarts.length; i++) {
-    const start = capStarts[i].outStart;
-    const end = i + 1 < capStarts.length ? capStarts[i + 1].outStart : 1e6;
-    const expr = `between(t,${start.toFixed(3)},${end.toFixed(3)})`;
-    const arr = capWindowsByText.get(capStarts[i].text) ?? [];
-    arr.push(expr);
-    capWindowsByText.set(capStarts[i].text, arr);
+  const capMarginByText = new Map<string, number>();
+  for (let i = 0; i < capPoints.length; i++) {
+    const pt = capPoints[i];
+    if (pt.text === null) continue; // clear point: only a boundary, draws nothing
+    const start = pt.outStart;
+    const end = i + 1 < capPoints.length ? capPoints[i + 1].outStart : 1e6;
+    const arr = capWindowsByText.get(pt.text) ?? [];
+    arr.push(`between(t,${start.toFixed(3)},${end.toFixed(3)})`);
+    capWindowsByText.set(pt.text, arr);
+    if (!capMarginByText.has(pt.text)) capMarginByText.set(pt.text, pt.margin);
   }
   let capIdx = 0;
   for (const [text, windows] of capWindowsByText) {
     const idx = beatCaptionInputIdx.get(text);
     if (idx === undefined) continue;
+    const margin = capMarginByText.get(text) ?? captionMargin;
     const next = `v_cap${capIdx++}`;
-    chain.push(`[${lastLabel}][${idx}:v]overlay=(W-w)/2:H-h-${captionMargin}:enable='${windows.join("+")}'[${next}]`);
+    chain.push(`[${lastLabel}][${idx}:v]overlay=(W-w)/2:H-h-${margin}:enable='${windows.join("+")}'[${next}]`);
     lastLabel = next;
   }
 

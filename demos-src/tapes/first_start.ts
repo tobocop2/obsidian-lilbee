@@ -6,7 +6,7 @@
  *      smallest chat model (Qwen3 0.6B), let the embedding model
  *      download, etc.
  *   3. Add the lilbee README to the corpus via the command palette.
- *   4. Ask a simple question Qwen3 0.6B can answer, watch it stream.
+ *   4. Ask a simple question Qwen3 0.6B can answer in one sentence, watch it stream.
  *
  * Heavy demo: several real downloads (server binary, chat model,
  * embedding model) plus a real chat completion. Speedup keeps the
@@ -28,9 +28,11 @@ import {
 } from "../src/lib.ts";
 
 const SMALL_MODEL_REPO = "Qwen/Qwen3-0.6B-GGUF";
-// One-sentence framing keeps the freshly downloaded small chat model (Qwen3
-// 0.6B) on a task it handles well: a concise, grounded summary off the README.
-const QUESTION = "What is lilbee in one sentence?";
+// "Describe ... in exactly one sentence" is the phrasing that most reliably keeps
+// the tiny Qwen3 0.6B to a single, accurate, grounded sentence off the README
+// (plain "in one sentence" lets it ramble into a bulleted list). Verified across
+// repeated runs against the live model; still confirm the on-camera answer.
+const QUESTION = "Describe lilbee in exactly one sentence.";
 
 // Advance the wizard by mouse-clicking the step's primary CTA. Every
 // wizard step renders exactly one `.lilbee-wizard-actions button.mod-cta`
@@ -508,8 +510,15 @@ export default storyboard("first_start", {
     // down into the body, and linger so the cited passage is the last thing
     // on screen. Park the cursor off the links while it scrolls. The sources
     // block renders a beat after the stream goes idle, so wait for the chip.
-    beat("Wait for the citation chip", waitForSelector(".lilbee-source-chip-loc"), { holdMs: 500 }),
-    beat("Jump to the citation", clickChip(0), { holdMs: 1200, cursorParkTo: [1245, 520], caption: "Click a citation to open the exact source it came from." }),
+    // Caption lands over the chat's empty lower region (the one-sentence answer
+    // leaves it clear) before the note opens, then clears so nothing overlays
+    // the full-bleed README. Verify the dead-zone placement frame-by-frame.
+    beat(
+      "Wait for the citation chip",
+      waitForSelector(".lilbee-source-chip-loc"),
+      { holdMs: 500, caption: "Click a citation to open the exact source it came from." },
+    ),
+    beat("Jump to the citation", clickChip(0), { holdMs: 1200, cursorParkTo: [1245, 520] }),
     beat(
       "Render the cited README and scroll down into the body",
       runJs(`
@@ -526,7 +535,9 @@ export default storyboard("first_start", {
           if (sc) sc.scrollTo({ top: (sc.clientHeight || 700) * 1.1, behavior: 'smooth' });
         }
       `),
-      { holdMs: 2600 },
+      // Clear the citation caption as the README fills the frame — no pill over
+      // the open note's body text.
+      { holdMs: 2600, clearCaption: true },
     ),
     beat("Linger on the cited passage", sleep(2600)),
   ],

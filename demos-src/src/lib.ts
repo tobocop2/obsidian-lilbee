@@ -64,8 +64,17 @@ export type Beat = {
   keyHint?: string;
   /** Narration caption shown at the bottom of the frame while this beat
    * plays. Sticky: it stays on screen until the next beat that sets a
-   * caption, so a run of sub-step beats can share one explanation. */
+   * caption (or clears it), so a run of sub-step beats can share one
+   * explanation. */
   caption?: string;
+  /** Bottom margin (retina px) for this beat's caption pill. Overrides the
+   * storyboard margin — lift a caption onto a dead zone when the default
+   * position would sit over content (e.g. an open note). */
+  captionMarginPx?: number;
+  /** End the running sticky caption at this beat without drawing a new one.
+   * Use on beats where a full-bleed view (an open note) leaves no clear spot
+   * for the pill, so nothing overlays the content. */
+  clearCaption?: boolean;
 };
 
 import type { LayoutName } from "./layouts.ts";
@@ -176,6 +185,8 @@ export function beat(
     maxMs?: number;
     keyHint?: string;
     caption?: string;
+    captionMarginPx?: number;
+    clearCaption?: boolean;
   } = {},
 ): Beat {
   return {
@@ -187,6 +198,8 @@ export function beat(
     maxMs: options.maxMs,
     keyHint: options.keyHint,
     caption: options.caption,
+    captionMarginPx: options.captionMarginPx,
+    clearCaption: options.clearCaption,
   };
 }
 
