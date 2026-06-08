@@ -33,6 +33,8 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 >
 > lilbee is an official [community plugin](https://community.obsidian.md/plugins/lilbee): install it from **Settings → Community plugins** inside Obsidian, nothing else needed. Feedback, bug reports, and issues are very welcome.
 
+<p align="center"><img alt="first run on a fresh vault: install lilbee from the community plugin store, walk the setup wizard, and ask a question that gets a cited answer from your notes" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first_start.gif" width="640"></p>
+
 > **Heads up: this downloads to your computer.** lilbee is a local search engine with its own models, so the plugin fetches the lilbee server (a few hundred MB) on first launch and the models you pick from the catalog (a few hundred MB up to several GB each) when you choose them. It's all stored locally and runs on your machine.
 
 ---
@@ -160,9 +162,7 @@ The plugin reads everything you've indexed and writes a wiki about it. Pages com
 1. In Obsidian, open **Settings → Community plugins → Browse**, search for **"lilbee"**, then **Install** and **Enable**. (Or start from the [store listing](https://community.obsidian.md/plugins/lilbee).)
 2. The Setup Wizard auto-launches. Pick a chat model and an embedding model from the featured grid, then run the initial sync.
 
-The plugin downloads and manages the [lilbee](https://lilbee.sh/) server automatically; nothing to install separately. The first launch fetches the right version for your platform and verifies it before starting. Wait for the status bar to show `lilbee: ready`, then open the chat.
-
-<p align="center"><img alt="first run on a fresh vault: install lilbee from the community plugin store, walk the setup wizard, and ask a question that gets a cited answer from your notes" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first_start.gif" width="640"></p>
+The plugin downloads and manages the [lilbee](https://lilbee.sh/) server automatically; nothing to install separately. The first launch fetches the right version for your platform and verifies it before starting. Wait for the status bar to show `lilbee: ready`, then open the chat. (The first-run reel near the top walks the whole flow; longer cut on the [tutorial page](https://obsidian.lilbee.sh/tutorial).)
 
 > **Hardware note:** the server runs on your CPU or GPU. A Mac with Apple Silicon (M1+) or a PC with an NVIDIA / AMD / Intel Arc GPU gives the best performance. 8 GB of RAM is the minimum; 16 to 32 GB is recommended. See [lilbee's hardware requirements](https://github.com/tobocop2/lilbee#hardware-requirements) for the full table.
 
