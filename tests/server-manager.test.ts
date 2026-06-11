@@ -67,6 +67,7 @@ describe("ServerManager", () => {
     let existsSyncSpy: ReturnType<typeof vi.spyOn>;
     let readFileSyncSpy: ReturnType<typeof vi.spyOn>;
     let unlinkSyncSpy: ReturnType<typeof vi.spyOn>;
+    let appendFileSyncSpy: ReturnType<typeof vi.spyOn>;
     let child: MockChild;
 
     beforeEach(() => {
@@ -78,6 +79,8 @@ describe("ServerManager", () => {
         existsSyncSpy = vi.spyOn(node, "existsSync").mockReturnValue(true);
         readFileSyncSpy = vi.spyOn(node, "readFileSync").mockReturnValue("9999");
         unlinkSyncSpy = vi.spyOn(node, "unlinkSync").mockImplementation(() => {});
+        appendFileSyncSpy = vi.spyOn(node, "appendFileSync").mockImplementation(() => {});
+        vi.spyOn(node, "statSync").mockReturnValue({ size: 0 } as any);
     });
 
     afterEach(() => {
@@ -632,6 +635,66 @@ describe("ServerManager", () => {
             await vi.advanceTimersByTimeAsync(5000);
             expect(spawnSpy).toHaveBeenCalledOnce();
             expect(mgr.state).toBe("stopped");
+        });
+    });
+
+    // ── crash stderr snapshot ───────────────────────────────────────
+
+    describe("crash stderr snapshot", () => {
+        function crashLogCalls() {
+            return appendFileSyncSpy.mock.calls.filter(([path]) => String(path).includes("logs/spawn-crash.log"));
+        }
+
+        it("appends stderr to logs/spawn-crash.log on crash exit", async () => {
+            const mgr = new ServerManager(defaultOpts());
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+
+            child.stderr._emit("data", Buffer.from("fatal: bind failed\n"));
+            child._emit("exit", 1, null);
+
+            const calls = crashLogCalls();
+            expect(calls).toHaveLength(1);
+            const [path, chunk] = calls[0] as unknown as [string, string];
+            expect(path).toBe("/tmp/data/logs/spawn-crash.log");
+            expect(chunk).toMatch(/^=== crash \d{4}-\d{2}-\d{2}T/);
+            expect(chunk).toContain("fatal: bind failed");
+        });
+
+        it("does not snapshot on clean stop", async () => {
+            const mgr = new ServerManager(defaultOpts());
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+
+            child.kill = vi.fn(() => {
+                setTimeout(() => child._emit("exit", 0, null), 10);
+            });
+            const stopPromise = mgr.stop();
+            await vi.advanceTimersByTimeAsync(50);
+            await stopPromise;
+
+            expect(crashLogCalls()).toHaveLength(0);
+        });
+
+        it("snapshot failures do not break crash handling", async () => {
+            appendFileSyncSpy.mockImplementation(() => {
+                throw new Error("ENOSPC");
+            });
+            const mgr = new ServerManager(defaultOpts());
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+
+            const child2 = mockChild();
+            spawnSpy.mockReturnValue(child2 as any);
+            child._emit("exit", 1, null);
+
+            expect(mgr.state).toBe("error");
+            // Restart timer still fires and respawns the server.
+            await vi.advanceTimersByTimeAsync(3500);
+            expect(spawnSpy).toHaveBeenCalledTimes(2);
         });
     });
 
