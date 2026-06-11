@@ -523,7 +523,7 @@ export interface DiagnosticsContext {
     pluginVersion: string;
     serverState: ServerState;
     serverUrl: string;
-    lastStderr: string;
+    lastOutput: string;
 }
 
 /** SSE event type constants — shared across chat, sync, and model pull streams. */

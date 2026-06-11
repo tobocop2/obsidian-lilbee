@@ -30,7 +30,7 @@ function makeContext(overrides: Partial<DiagnosticsContext> = {}): DiagnosticsCo
         pluginVersion: "1.2.3",
         serverState: SERVER_STATE.ERROR,
         serverUrl: "http://127.0.0.1:1234",
-        lastStderr: "Traceback: boom",
+        lastOutput: "Traceback: boom",
         ...overrides,
     };
 }
@@ -153,7 +153,7 @@ describe("collectDiagnostics", () => {
     });
 
     it("renders placeholders for empty stderr, journal, url, and shared root", () => {
-        const bundle = collectDiagnostics(makeContext({ lastStderr: "", serverUrl: "", sharedRoot: null }));
+        const bundle = collectDiagnostics(makeContext({ lastOutput: "", serverUrl: "", sharedRoot: null }));
         expect(bundle.summaryMarkdown).toContain("(empty)");
         expect(bundle.summaryMarkdown).toContain("(none)");
     });

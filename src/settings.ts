@@ -236,7 +236,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
         if (serverState === SERVER_STATE.READY) {
             controlSetting.addButton((btn) =>
                 btn.setButtonText(MESSAGES.BUTTON_RESTART).onClick(async () => {
-                    await this.plugin.serverManager?.restart();
+                    try {
+                        await this.plugin.serverManager?.restart();
+                    } catch (err) {
+                        new Notice(errorMessage(err, MESSAGES.ERROR_START_SERVER));
+                    }
                     this.render();
                 }),
             );
