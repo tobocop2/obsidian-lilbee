@@ -73,6 +73,11 @@ vi.mock("../src/views/setup-wizard", () => ({
     }),
 }));
 
+import { exportDiagnostics } from "../src/diagnostics-export";
+vi.mock("../src/diagnostics-export", () => ({
+    exportDiagnostics: vi.fn().mockResolvedValue(undefined),
+}));
+
 let mockGenericConfirmResult = true;
 vi.mock("../src/views/confirm-modal", () => ({
     ConfirmModal: vi.fn().mockImplementation(function () {
@@ -117,6 +122,7 @@ function makePlugin(overrides: Partial<LilbeeSettings> & { lilbeeVersion?: strin
     const initWikiSync = vi.fn();
     const reconcileWiki = vi.fn().mockResolvedValue(undefined);
     const configureManagedStorage = vi.fn().mockResolvedValue(undefined);
+    const diagnosticsContext = vi.fn().mockReturnValue({ pluginVersion: "0.0.0-test" });
     return {
         settings,
         api,
@@ -129,6 +135,7 @@ function makePlugin(overrides: Partial<LilbeeSettings> & { lilbeeVersion?: strin
         initWikiSync,
         reconcileWiki,
         configureManagedStorage,
+        diagnosticsContext,
         activeModel: "",
         wikiEnabled: overrides.wikiEnabled !== undefined ? settings.wikiEnabled : true,
         wikiSync: null,
@@ -907,8 +914,8 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-            // Setup wizard + Start + Check for updates + Refresh + Browse Catalog + Wiki Lint + Wiki Prune + Reset all = 8
-            expect(buttonOnClicks.length).toBe(8);
+            // Setup wizard + Start + Check for updates + Refresh + Browse Catalog + Wiki Lint + Wiki Prune + Export diagnostics + Reset all = 9
+            expect(buttonOnClicks.length).toBe(9);
             // Refresh is the fourth button (index 3)
             await expect(buttonOnClicks[3]()).resolves.not.toThrow();
         });
@@ -4135,9 +4142,9 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-            // Wiki section renders before the Advanced section's Reset-all button, so lint/prune sit
-            // 3rd/2nd from the end: … lint, prune, reset-all.
-            const lintIdx = buttonOnClicks.length - 3;
+            // Wiki section renders before the Diagnostics and Advanced sections, so lint/prune sit
+            // 4th/3rd from the end: … lint, prune, export-diagnostics, reset-all.
+            const lintIdx = buttonOnClicks.length - 4;
             await buttonOnClicks[lintIdx]();
             expect(plugin.runWikiLint).toHaveBeenCalled();
         });
@@ -4149,7 +4156,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-            const pruneIdx = buttonOnClicks.length - 2;
+            const pruneIdx = buttonOnClicks.length - 3;
             await buttonOnClicks[pruneIdx]();
             expect(plugin.runWikiPrune).toHaveBeenCalled();
         });
@@ -6746,5 +6753,45 @@ describe("LilbeeSettingTab.renderMemorySection", () => {
         (tab as any).renderMemorySection(new MockElement() as unknown as HTMLElement);
         await flush();
         expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_MEMORY_CONFIG_FAILED);
+    });
+});
+
+describe("Export diagnostics button", () => {
+    it("calls exportDiagnostics with the plugin's diagnostics context", () => {
+        const plugin = makePlugin();
+        mockChatPicker(plugin);
+        const ctx = { pluginVersion: "0.0.0-test" };
+        (plugin.diagnosticsContext as unknown as ReturnType<typeof vi.fn>).mockReturnValue(ctx);
+        const tab = makeTab(plugin);
+
+        const origAddButton = Setting.prototype.addButton;
+        const namedButtons: Array<{ name: string; onClick: () => unknown }> = [];
+        Setting.prototype.addButton = function (cb: (btn: any) => void) {
+            const name = (this as any)._name as string;
+            const fakeBtn = {
+                setButtonText: () => fakeBtn,
+                setDisabled: () => fakeBtn,
+                setWarning: () => fakeBtn,
+                setClass: () => fakeBtn,
+                onClick: (handler: () => unknown) => {
+                    namedButtons.push({ name, onClick: handler });
+                    return fakeBtn;
+                },
+            };
+            cb(fakeBtn);
+            return this;
+        };
+        try {
+            tab.display();
+        } finally {
+            Setting.prototype.addButton = origAddButton;
+        }
+
+        const diagnostics = namedButtons.find((b) => b.name === MESSAGES.LABEL_EXPORT_DIAGNOSTICS);
+        expect(diagnostics).toBeDefined();
+        diagnostics!.onClick();
+
+        expect(plugin.diagnosticsContext).toHaveBeenCalledTimes(1);
+        expect(exportDiagnostics).toHaveBeenCalledWith(ctx);
     });
 });

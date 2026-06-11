@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { windowStub } from "./window-stub";
 import { Notice } from "obsidian";
-import { App, WorkspaceLeaf } from "./__mocks__/obsidian";
+import { App, MockElement, WorkspaceLeaf } from "./__mocks__/obsidian";
 import { SSE_EVENT } from "../src/types";
 import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
@@ -11,6 +11,10 @@ import { exportDatasetToDisk, importDatasetFromDisk } from "../src/dataset-io";
 vi.mock("../src/dataset-io", () => ({
     exportDatasetToDisk: vi.fn().mockResolvedValue(undefined),
     importDatasetFromDisk: vi.fn().mockResolvedValue(undefined),
+}));
+import { exportDiagnostics } from "../src/diagnostics-export";
+vi.mock("../src/diagnostics-export", () => ({
+    exportDiagnostics: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../src/api", () => ({
     SessionTokenError: class SessionTokenError extends Error {
@@ -381,17 +385,18 @@ describe("LilbeePlugin", () => {
             expect(startSpy).toHaveBeenCalled();
         });
 
-        it("adds all twenty-six commands", async () => {
+        it("adds all twenty-seven commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(26);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(27);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("model-picker-chat");
             expect(allIds).toContain("model-picker-embedding");
             expect(allIds).toContain("model-info-active-chat");
             expect(allIds).toContain("model-info-active-embedding");
             expect(allIds).toContain("take-over");
+            expect(allIds).toContain("export-diagnostics");
             const ids = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(ids).toContain("search");
             expect(ids).toContain("chat");
@@ -4341,6 +4346,196 @@ describe("LilbeePlugin", () => {
             expect(notice).toBeDefined();
             expect(notice!.message).toContain("database locked");
             mockLastStderr = "";
+        });
+
+        describe("diagnostics export wiring", () => {
+            const exportLink = (notice: Notice): MockElement | undefined =>
+                (notice.noticeEl as unknown as MockElement).children.find((c) => c.tagName === "A");
+
+            const domHandler = (plugin: unknown, type: string): ((e: unknown) => void) => {
+                const events = (plugin as { domEvents: Array<{ type: string; cb: (e: unknown) => void }> }).domEvents;
+                const entry = events.find((d) => d.type === type);
+                expect(entry).toBeDefined();
+                return entry!.cb;
+            };
+
+            it("export-diagnostics command invokes exportDiagnostics while the server is down", async () => {
+                const plugin = await createPlugin();
+                await plugin.onload();
+                expect((plugin as any).serverManager).toBeNull();
+                const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                    (c: any[]) => c[0].id === "export-diagnostics",
+                )![0];
+                expect(cmd.checkCallback).toBeUndefined();
+                (plugin as any).vaultRegistry = null;
+                cmd.callback();
+                expect(exportDiagnostics).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        dataDir: null,
+                        sharedRoot: null,
+                        serverState: "stopped",
+                        serverUrl: plugin.settings.serverUrl,
+                        lastStderr: "",
+                        pluginVersion: "0.1.0",
+                    }),
+                );
+            });
+
+            it("diagnosticsContext reads the live managed server when present", async () => {
+                const plugin = await createPlugin({ serverMode: "managed" });
+                await plugin.onload();
+                await flush();
+                const ctx = plugin.diagnosticsContext();
+                expect(ctx.dataDir).toBe(mockServerOpts.dataDir);
+                expect(ctx.sharedRoot).toBe((plugin as any).vaultRegistry.sharedRoot);
+                expect(ctx.serverState).toBe("ready");
+                expect(ctx.serverUrl).toBe("http://127.0.0.1:54321");
+                expect(ctx.journalEntries).toBe(plugin.journal.entries);
+            });
+
+            it("showError records label, message, and stack to the journal", async () => {
+                const plugin = await createPlugin();
+                await plugin.onload();
+                (plugin as any).showError("indexing failed", new Error("boom"));
+                const entry = plugin.journal.entries.find((e) => e.label === "indexing failed");
+                expect(entry).toBeDefined();
+                expect(entry!.message).toBe("boom");
+                expect(entry!.stack).toContain("boom");
+            });
+
+            it("showError journals non-Error values with a null stack", async () => {
+                const plugin = await createPlugin();
+                await plugin.onload();
+                (plugin as any).showError("weird failure", 42);
+                const entry = plugin.journal.entries.find((e) => e.label === "weird failure");
+                expect(entry).toBeDefined();
+                expect(entry!.message).toBe("42");
+                expect(entry!.stack).toBeNull();
+            });
+
+            it("showError attaches an export link to its notice when a server manager exists", async () => {
+                const plugin = await createPlugin({ serverMode: "managed" });
+                await plugin.onload();
+                await flush();
+                (plugin as any).showError("sync failed", new Error("boom"));
+                const notice = Notice.instances.find((n) => n.message.includes("sync failed"))!;
+                const link = exportLink(notice);
+                expect(link).toBeDefined();
+                expect(link!.textContent).toBe(MESSAGES.BUTTON_EXPORT_DIAGNOSTICS);
+                link!.trigger("click");
+                expect(exportDiagnostics).toHaveBeenCalled();
+            });
+
+            it("showError attaches no export link without a server manager", async () => {
+                const plugin = await createPlugin();
+                await plugin.onload();
+                (plugin as any).showError("sync failed", new Error("boom"));
+                const notice = Notice.instances.find((n) => n.message.includes("sync failed"))!;
+                expect(exportLink(notice)).toBeUndefined();
+            });
+
+            it("journals window errors with lilbee in the stack", async () => {
+                const plugin = await createPlugin();
+                await plugin.onload();
+                const handler = domHandler(plugin, "error");
+                const err = new Error("boom");
+                err.stack = "Error: boom\n    at plugin:lilbee:main.js:1:1";
+                handler({ message: "boom", error: err });
+                const entry = plugin.journal.entries.find((e) => e.label === "window");
+                expect(entry).toBeDefined();
+                expect(entry!.message).toBe("boom");
+                expect(entry!.stack).toContain("lilbee");
+            });
+
+            it("ignores window errors from other plugins, non-Error errors, and missing stacks", async () => {
+                const plugin = await createPlugin();
+                await plugin.onload();
+                const handler = domHandler(plugin, "error");
+                const foreign = new Error("other");
+                foreign.stack = "Error: other\n    at plugin:other:main.js:1:1";
+                handler({ message: "other", error: foreign });
+                const stackless = new Error("bare");
+                stackless.stack = undefined;
+                handler({ message: "bare", error: stackless });
+                handler({ message: "string", error: "not an error" });
+                expect(plugin.journal.entries.some((e) => e.label === "window")).toBe(false);
+            });
+
+            it("journals unhandled rejections with lilbee in the stack", async () => {
+                const plugin = await createPlugin();
+                await plugin.onload();
+                const handler = domHandler(plugin, "unhandledrejection");
+                const err = new Error("rejected");
+                err.stack = "Error: rejected\n    at plugin:lilbee:main.js:2:2";
+                handler({ reason: err });
+                const entry = plugin.journal.entries.find((e) => e.label === "unhandledrejection");
+                expect(entry).toBeDefined();
+                expect(entry!.message).toBe("rejected");
+                expect(entry!.stack).toContain("lilbee");
+            });
+
+            it("ignores unhandled rejections from elsewhere, non-Error reasons, and missing stacks", async () => {
+                const plugin = await createPlugin();
+                await plugin.onload();
+                const handler = domHandler(plugin, "unhandledrejection");
+                const foreign = new Error("other");
+                foreign.stack = "Error: other\n    at plugin:other:main.js:1:1";
+                handler({ reason: foreign });
+                const stackless = new Error("bare");
+                stackless.stack = undefined;
+                handler({ reason: stackless });
+                handler({ reason: "not an error" });
+                expect(plugin.journal.entries.some((e) => e.label === "unhandledrejection")).toBe(false);
+            });
+
+            it("onRestartsExhausted logs stderr, journals the crash, and attaches an export link", async () => {
+                const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+                try {
+                    const plugin = await createPlugin({ serverMode: "managed" });
+                    await plugin.onload();
+                    await flush();
+
+                    mockServerOpts.onRestartsExhausted("bind: address already in use");
+
+                    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("bind: address already in use"));
+                    const entry = plugin.journal.entries.find((e) => e.label === "server-crash");
+                    expect(entry).toBeDefined();
+                    expect(entry!.message).toBe(MESSAGES.ERROR_SERVER_CRASHED);
+                    expect(entry!.stack).toBe("bind: address already in use");
+
+                    const notice = Notice.instances.find((n) => n.message.includes("crashed after multiple restarts"))!;
+                    const link = exportLink(notice);
+                    expect(link).toBeDefined();
+                    expect(link!.textContent).toBe(MESSAGES.BUTTON_EXPORT_DIAGNOSTICS);
+                    link!.trigger("click");
+                    expect(exportDiagnostics).toHaveBeenCalled();
+                } finally {
+                    consoleSpy.mockRestore();
+                }
+            });
+
+            it("onRestartsExhausted journals a null stack when stderr is empty", async () => {
+                const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+                try {
+                    const plugin = await createPlugin({ serverMode: "managed" });
+                    await plugin.onload();
+                    await flush();
+                    mockServerOpts.onRestartsExhausted("");
+                    const entry = plugin.journal.entries.find((e) => e.label === "server-crash");
+                    expect(entry).toBeDefined();
+                    expect(entry!.stack).toBeNull();
+                } finally {
+                    consoleSpy.mockRestore();
+                }
+            });
+
+            it("points the journal at <dataDir>/logs when the managed server starts", async () => {
+                const plugin = await createPlugin({ serverMode: "managed" });
+                const spy = vi.spyOn(plugin.journal, "setLogDir");
+                await plugin.onload();
+                await flush();
+                expect(spy).toHaveBeenCalledWith(`${mockServerOpts.dataDir}/logs`);
+            });
         });
 
         it("ensureBinary progress callback updates status bar", async () => {

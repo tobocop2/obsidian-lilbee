@@ -591,6 +591,13 @@ export class Plugin {
     registerView = vi.fn();
     registerEvent = vi.fn();
     registerInterval = vi.fn((handle: number) => handle);
+
+    // Test helper: handlers registered via registerDomEvent, invoked directly
+    // by tests since the Node env has no DOM event machinery.
+    domEvents: Array<{ el: unknown; type: string; cb: (...args: never[]) => void }> = [];
+    registerDomEvent = vi.fn((el: unknown, type: string, cb: (...args: never[]) => void) => {
+        this.domEvents.push({ el, type, cb });
+    });
 }
 
 export class PluginSettingTab {
@@ -642,6 +649,7 @@ export class Notice {
     message: string;
     duration: number | undefined;
     hidden = false;
+    noticeEl = new MockElement("div");
     static instances: Notice[] = [];
     constructor(message: string, duration?: number) {
         this.message = message;

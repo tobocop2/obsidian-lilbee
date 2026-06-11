@@ -479,6 +479,53 @@ export const SHARED_PATH = {
     LOCK: "active.lock",
 } as const;
 
+/** Subdirectory of a vault data dir where all log files land. */
+export const LOGS_DIR = "logs";
+
+/** Log file names the diagnostics bundle knows about. */
+export const LOG_FILE = {
+    SERVER: "server.log",
+    FAULT: "server-fault.log",
+    SPAWN_CRASH: "spawn-crash.log",
+    PLUGIN: "plugin.log",
+} as const;
+
+/** One captured plugin-side error. */
+export interface JournalEntry {
+    timestamp: string;
+    label: string;
+    message: string;
+    stack: string | null;
+}
+
+/** One file gathered (or missed) by the diagnostics collector. */
+export interface CollectedFile {
+    /** Path inside the zip, e.g. "logs/worker-chat.log". */
+    name: string;
+    /** File bytes after tail-capping and redaction; null when the file was missed. */
+    data: Uint8Array | null;
+    /** Manifest note, e.g. "not found" or "truncated to last 1 MiB". Null when collected whole. */
+    note: string | null;
+}
+
+/** Everything the collector gathered, ready to zip. */
+export interface DiagnosticsBundle {
+    files: CollectedFile[];
+    summaryMarkdown: string;
+}
+
+/** Inputs the collector reads from the live plugin. */
+export interface DiagnosticsContext {
+    dataDir: string | null;
+    sharedRoot: string | null;
+    settings: LilbeeSettings;
+    journalEntries: readonly JournalEntry[];
+    pluginVersion: string;
+    serverState: ServerState;
+    serverUrl: string;
+    lastStderr: string;
+}
+
 /** SSE event type constants — shared across chat, sync, and model pull streams. */
 export const SSE_EVENT = {
     TOKEN: "token",

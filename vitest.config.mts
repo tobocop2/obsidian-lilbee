@@ -15,6 +15,7 @@ export default defineConfig({
         },
         alias: {
             obsidian: new URL("./tests/__mocks__/obsidian.ts", import.meta.url).pathname,
+            electron: new URL("./tests/__mocks__/electron.ts", import.meta.url).pathname,
         },
     },
 });

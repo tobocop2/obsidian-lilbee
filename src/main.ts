@@ -11,6 +11,8 @@ import { LilbeeClient, SessionTokenError } from "./api";
 import type { RequestOutcome } from "./api";
 import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
+import { exportDiagnostics } from "./diagnostics-export";
+import { ErrorJournal } from "./error-journal";
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
@@ -21,6 +23,7 @@ import {
     DOT_STATE,
     ERROR_NAME,
     LOCK_STATE,
+    LOGS_DIR,
     MANAGED_CONSENT_RESULT,
     MANAGED_PHASE,
     SERVER_MODE,
@@ -31,6 +34,7 @@ import {
     TASK_TYPE,
     type ActiveLock,
     type BatchProgressPayload,
+    type DiagnosticsContext,
     type DotState,
     type LilbeeSettings,
     type ManagedServerProgressHandler,
@@ -211,6 +215,7 @@ export default class LilbeePlugin extends Plugin {
     chatRibbonIconEl: HTMLElement | null = null;
     binaryManager: BinaryManager | null = null;
     serverManager: ServerManager | null = null;
+    journal = new ErrorJournal();
     vaultRegistry: VaultRegistry | null = null;
     vaultId = "";
     syncController: AbortController | null = null;
@@ -242,6 +247,7 @@ export default class LilbeePlugin extends Plugin {
     private serverEverReady = false;
 
     async onload(): Promise<void> {
+        this.registerErrorCapture();
         await this.loadSettings();
         this.wikiEnabled = this.settings.wikiEnabled;
 
@@ -394,6 +400,7 @@ export default class LilbeePlugin extends Plugin {
 
             try {
                 this.serverManager = this.buildServerManager(binaryPath, registry, sharedRoot);
+                this.journal.setLogDir(node.join(this.serverManager.dataDir, LOGS_DIR));
                 this.updateStatusBar(MESSAGES.STATUS_STARTING, DOT_STATE.PRIMARY);
                 this.setStatusClass("lilbee-status-starting");
                 onProgress?.({ phase: MANAGED_PHASE.STARTING, message: MESSAGES.STATUS_STARTING_SERVER });
@@ -464,8 +471,11 @@ export default class LilbeePlugin extends Plugin {
             onStateChange: (state) => this.handleServerStateChange(state),
             onRestartsExhausted: (stderr: string) => {
                 if (this.serverStartFailed) return;
+                console.error(`[lilbee] server crashed; stderr:\n${stderr}`);
+                this.journal.record("server-crash", MESSAGES.ERROR_SERVER_CRASHED, stderr || undefined);
                 const detail = stderr ? `\n${stderr.split("\n").slice(-5).join("\n")}` : "";
-                new Notice(`${MESSAGES.ERROR_SERVER_CRASHED}${detail}`, NOTICE_PERMANENT);
+                const notice = new Notice(`${MESSAGES.ERROR_SERVER_CRASHED}${detail}`, NOTICE_PERMANENT);
+                this.attachExportLink(notice);
             },
             onShutdownFailure: (err: Error) => {
                 new Notice(`${MESSAGES.ERROR_SERVER_SHUTDOWN_FAILED}: ${err.message}`);
@@ -690,13 +700,48 @@ export default class LilbeePlugin extends Plugin {
         onProgress?.("Update complete.");
     }
 
+    /** Journal lilbee-originated window errors and unhandled rejections. */
+    private registerErrorCapture(): void {
+        this.registerDomEvent(window, "error", (e: ErrorEvent) => {
+            const stack: string = e.error instanceof Error ? (e.error.stack ?? "") : "";
+            if (stack.includes("lilbee")) this.journal.record("window", e.message, stack);
+        });
+        this.registerDomEvent(window, "unhandledrejection", (e: PromiseRejectionEvent) => {
+            const reason: unknown = e.reason;
+            if (!(reason instanceof Error)) return;
+            const stack = reason.stack ?? "";
+            if (stack.includes("lilbee")) this.journal.record("unhandledrejection", reason.message, stack);
+        });
+    }
+
+    private attachExportLink(notice: Notice): void {
+        const link = notice.noticeEl.createEl("a", { text: MESSAGES.BUTTON_EXPORT_DIAGNOSTICS });
+        link.addEventListener("click", () => void exportDiagnostics(this.diagnosticsContext()));
+    }
+
+    /** Snapshot of plugin + server state for the diagnostics collector. */
+    diagnosticsContext(): DiagnosticsContext {
+        return {
+            dataDir: this.serverManager?.dataDir ?? null,
+            sharedRoot: this.vaultRegistry?.sharedRoot ?? null,
+            settings: this.settings,
+            journalEntries: this.journal.entries,
+            pluginVersion: this.manifest.version,
+            serverState: this.serverManager?.state ?? SERVER_STATE.STOPPED,
+            serverUrl: this.serverManager?.serverUrl ?? this.settings.serverUrl,
+            lastStderr: this.serverManager?.lastStderr ?? "",
+        };
+    }
+
     private showError(label: string, err: unknown): void {
+        const detail = errorMessage(err, String(err));
+        this.journal.record(label, detail, err instanceof Error ? err.stack : undefined);
         console.error(`[lilbee] ${label}:`, err);
         const stderr = this.serverManager?.lastStderr;
         if (stderr) console.error(`[lilbee] server stderr:\n${stderr}`);
-        const detail = errorMessage(err, String(err));
         const stderrTail = stderr ? `\n${stderr.split("\n").slice(-5).join("\n")}` : "";
-        new Notice(`lilbee: ${label} — ${detail}${stderrTail}`, NOTICE_ERROR_DURATION_MS);
+        const notice = new Notice(`lilbee: ${label} — ${detail}${stderrTail}`, NOTICE_ERROR_DURATION_MS);
+        if (this.serverManager !== null) this.attachExportLink(notice);
         this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
         this.setStatusClass(null);
         this.serverStartFailed = true;
@@ -1062,6 +1107,13 @@ export default class LilbeePlugin extends Plugin {
             id: "status",
             name: "Show status",
             callback: () => new StatusModal(this.app, this).open(),
+        });
+
+        // Plain callback: exporting diagnostics must work while the server is down.
+        this.addCommand({
+            id: "export-diagnostics",
+            name: MESSAGES.BUTTON_EXPORT_DIAGNOSTICS,
+            callback: () => void exportDiagnostics(this.diagnosticsContext()),
         });
 
         this.addCommand({

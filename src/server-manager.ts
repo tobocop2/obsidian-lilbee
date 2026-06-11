@@ -1,7 +1,8 @@
 import type { ChildProcess } from "child_process";
 import type { ServerState } from "./types";
-import { PLATFORM, SERVER_STATE } from "./types";
+import { LOG_FILE, LOGS_DIR, PLATFORM, SERVER_STATE } from "./types";
 import { node } from "./binary-manager";
+import { appendCapped } from "./utils/capped-log";
 
 const SERVER_MANAGER_CONFIG = {
     HEALTH_POLL_INTERVAL_MS: 1000,
@@ -11,6 +12,7 @@ const SERVER_MANAGER_CONFIG = {
     MAX_CRASH_RESTARTS: 3,
     PORT_FILE_POLL_INTERVAL_MS: 500,
     PORT_FILE_MAX_ATTEMPTS: 240,
+    SPAWN_CRASH_LOG_MAX_BYTES: 262_144,
 } as const;
 
 export interface ServerManagerOptions {
@@ -63,6 +65,20 @@ export class ServerManager {
 
     private get portFilePath(): string {
         return `${this.opts.dataDir}/data/server.port`;
+    }
+
+    private get crashLogPath(): string {
+        return `${this.opts.dataDir}/${LOGS_DIR}/${LOG_FILE.SPAWN_CRASH}`;
+    }
+
+    /** Persist the stderr ring buffer so a crash survives an Obsidian restart. */
+    private snapshotCrashStderr(): void {
+        const header = `=== crash ${new Date().toISOString()} ===\n`;
+        appendCapped(
+            this.crashLogPath,
+            `${header}${this.lastStderr}\n`,
+            SERVER_MANAGER_CONFIG.SPAWN_CRASH_LOG_MAX_BYTES,
+        );
     }
 
     private setState(s: ServerState): void {
@@ -123,6 +139,7 @@ export class ServerManager {
         child.on("exit", () => {
             this.child = null;
             if (this.stopping) return;
+            this.snapshotCrashStderr();
             if (this.crashCount < SERVER_MANAGER_CONFIG.MAX_CRASH_RESTARTS) {
                 this.crashCount++;
                 this.setState(SERVER_STATE.ERROR);

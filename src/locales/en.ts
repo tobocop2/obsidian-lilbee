@@ -915,6 +915,21 @@ export const MESSAGES = {
     LABEL_MEMORY_AUTO_EXTRACT: "Auto-extract memories from chat",
     DESC_MEMORY_AUTO_EXTRACT: "After each answer, lilbee proposes memories to save. Review them in the Memories view.",
     NOTICE_MEMORY_CONFIG_FAILED: "lilbee: could not update memory settings",
+
+    // Diagnostics export
+    DIAG_REVIEW_WARNING:
+        "Review this bundle before sharing. Secrets are redacted, but log lines can include file paths and note titles.",
+    DIAG_REMOTE_SERVER_NOTE:
+        "External server data dir is not locally readable; server logs must be fetched from the machine running lilbee serve.",
+    BUTTON_EXPORT_DIAGNOSTICS: "Export diagnostics",
+    LABEL_EXPORT_DIAGNOSTICS: "Diagnostics",
+    DESC_EXPORT_DIAGNOSTICS:
+        "Bundle logs, settings (secrets removed), and recent errors into a zip you can attach to a bug report.",
+    NOTICE_DIAGNOSTICS_EXPORTED: (path: string): string =>
+        `Diagnostics saved to ${path}. The summary is on your clipboard. Review the contents before sharing.`,
+    NOTICE_DIAGNOSTICS_SUMMARY_ONLY: (path: string): string =>
+        `Zip creation failed; wrote summary.md to ${path} instead. Review the contents before sharing.`,
+    NOTICE_DIAGNOSTICS_FAILED: (detail: string): string => `Diagnostics export failed: ${detail}`,
 } as const;
 
 export const FILTERS = {
