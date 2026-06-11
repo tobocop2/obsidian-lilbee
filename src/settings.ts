@@ -16,6 +16,7 @@ import {
     ERROR_NAME,
 } from "./types";
 import type { CatalogEntry, ConfigResponse, InstalledModel, LilbeeSettings, ServerMode } from "./types";
+import { exportDiagnostics } from "./diagnostics-export";
 import { formatBytes, reportForVault } from "./storage-stats";
 import { MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
@@ -121,6 +122,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderCrawlingSettings(this.crawlingContainerEl);
         this.wikiContainerEl = containerEl.createDiv();
         this.renderWikiSettings(this.wikiContainerEl);
+        this.renderDiagnostics(containerEl);
         this.renderAdvancedSettings(containerEl);
         this.loadServerDefaults();
         this.loadConfigDefaults();
@@ -378,6 +380,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_MODELS, report.modelsBytes);
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_VAULT, report.vaultBytes, report.vaultDataDir);
         appendStorageRow(list, MESSAGES.LABEL_STORAGE_TOTAL, report.totalBytes);
+    }
+
+    private renderDiagnostics(containerEl: HTMLElement): void {
+        new Setting(containerEl)
+            .setName(MESSAGES.LABEL_EXPORT_DIAGNOSTICS)
+            .setDesc(MESSAGES.DESC_EXPORT_DIAGNOSTICS)
+            .addButton((btn) =>
+                btn.setButtonText(MESSAGES.BUTTON_EXPORT_DIAGNOSTICS).onClick(() => {
+                    void exportDiagnostics(this.plugin.diagnosticsContext());
+                }),
+            );
     }
 
     private renderExternalSettings(containerEl: HTMLElement): void {
