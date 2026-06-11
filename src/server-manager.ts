@@ -183,6 +183,7 @@ export class ServerManager {
         });
         child.on("error", (err: Error) => {
             this.child = null;
+            if (this.stopping) return;
             this.pushOutputLine(`failed to launch server: ${err.message}`);
             this.snapshotCrashOutput();
             this.fatalStartError = new Error(`Failed to launch server: ${err.message}`);
@@ -199,6 +200,20 @@ export class ServerManager {
         }
     }
 
+    private spawnChild(): ChildProcess {
+        // No --port: the server binds 0, the kernel picks a free port, and
+        // the chosen value is written to data/server.port for us to read.
+        const args = ["serve", "--host", "127.0.0.1", "--data-dir", this.opts.dataDir];
+        const child = node.spawn(this.opts.binaryPath, args, {
+            env: this.buildSpawnEnv(),
+            stdio: ["ignore", "pipe", "pipe"],
+            detached: false,
+        });
+        this.attachOutputCapture(child);
+        this.attachLifecycleHandlers(child);
+        return child;
+    }
+
     async start(): Promise<void> {
         if (this.child) return;
         this.stopping = false;
@@ -211,16 +226,7 @@ export class ServerManager {
         // child's port, so it must be gone before the spawn.
         this.cleanupPortFile();
 
-        // No --port: the server binds 0, the kernel picks a free port, and
-        // the chosen value is written to data/server.port for us to read.
-        const args = ["serve", "--host", "127.0.0.1", "--data-dir", this.opts.dataDir];
-        this.child = node.spawn(this.opts.binaryPath, args, {
-            env: this.buildSpawnEnv(),
-            stdio: ["ignore", "pipe", "pipe"],
-            detached: false,
-        });
-        this.attachOutputCapture(this.child);
-        this.attachLifecycleHandlers(this.child);
+        this.child = this.spawnChild();
 
         try {
             await this.waitForPortFile();

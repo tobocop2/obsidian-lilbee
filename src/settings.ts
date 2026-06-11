@@ -209,7 +209,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const dot = statusEl.createDiv({ cls: "lilbee-server-dot" });
         const stateText = statusEl.createEl("span");
 
-        const serverState = this.plugin.serverManager?.state ?? "stopped";
+        const serverState = this.plugin.serverManager?.state ?? SERVER_STATE.STOPPED;
         stateText.textContent = serverState;
         dot.classList.add(`is-${serverState}`);
 

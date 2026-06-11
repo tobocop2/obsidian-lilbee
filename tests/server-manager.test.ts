@@ -781,6 +781,23 @@ describe("ServerManager", () => {
             expect(String(calls[0][1])).toContain("failed to launch server: spawn EACCES");
         });
 
+        it("ignores an error event during a deliberate stop", async () => {
+            const mgr = new ServerManager(defaultOpts());
+            const p1 = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p1;
+
+            appendFileSyncSpy.mockClear();
+            const stopPromise = mgr.stop();
+            child._emit("error", new Error("kill EPERM"));
+            await vi.advanceTimersByTimeAsync(6_000);
+            await stopPromise;
+
+            expect(mgr.state).toBe("stopped");
+            expect(mgr.lastOutput).not.toContain("failed to launch server");
+            expect(appendFileSyncSpy).not.toHaveBeenCalled();
+        });
+
         it("aborts health polling when the child reports a launch error", async () => {
             fetchSpy.mockRejectedValue(new Error("ECONNREFUSED"));
             const mgr = new ServerManager(defaultOpts());
