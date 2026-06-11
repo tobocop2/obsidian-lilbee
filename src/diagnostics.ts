@@ -1,14 +1,15 @@
 import { strToU8, zipSync } from "fflate";
 import { node } from "./binary-manager";
+import { formatJournalEntry } from "./error-journal";
 import { MESSAGES } from "./locales/en";
 import { redactSecrets, redactSettings } from "./redact";
+import { LOG_FILE, LOGS_DIR } from "./types";
 import type { CollectedFile, DiagnosticsBundle, DiagnosticsContext } from "./types";
 
 export const LOG_TAIL_MAX_BYTES = 1_048_576;
-const LOGS_SUBDIR = "logs";
 const NOTE_NOT_FOUND = "not found";
 const NOTE_TRUNCATED = "truncated to last 1 MiB";
-const EXPECTED_LOGS = ["server.log", "server-fault.log", "spawn-crash.log", "plugin.log"];
+const EXPECTED_LOGS = Object.values(LOG_FILE);
 
 /** Reads a file, keeping only the last LOG_TAIL_MAX_BYTES when oversized. */
 function readTailCapped(path: string): { text: string; note: string | null } {
@@ -32,7 +33,7 @@ function collectFile(zipName: string, path: string): CollectedFile {
 /** Lists .log file names under <dataDir>/logs, or [] when unreadable. */
 function listLogFiles(dataDir: string): string[] {
     try {
-        const dir = node.join(dataDir, LOGS_SUBDIR);
+        const dir = node.join(dataDir, LOGS_DIR);
         if (!node.existsSync(dir)) return [];
         return node
             .readdirSync(dir)
@@ -47,11 +48,11 @@ function listLogFiles(dataDir: string): string[] {
 function collectLogFiles(dataDir: string | null): CollectedFile[] {
     if (dataDir === null) return [];
     const found = listLogFiles(dataDir).map((name) =>
-        collectFile(`${LOGS_SUBDIR}/${name}`, node.join(dataDir, LOGS_SUBDIR, name)),
+        collectFile(`${LOGS_DIR}/${name}`, node.join(dataDir, LOGS_DIR, name)),
     );
     const haveNames = new Set(found.map((f) => f.name));
     for (const name of EXPECTED_LOGS) {
-        const zipName = `${LOGS_SUBDIR}/${name}`;
+        const zipName = `${LOGS_DIR}/${name}`;
         if (!haveNames.has(zipName)) found.push({ name: zipName, data: null, note: NOTE_NOT_FOUND });
     }
     return found;
@@ -59,9 +60,7 @@ function collectLogFiles(dataDir: string | null): CollectedFile[] {
 
 /** Renders the journal entries as plain log lines. */
 function journalText(ctx: DiagnosticsContext): string {
-    return ctx.journalEntries
-        .map((e) => `${e.timestamp} [${e.label}] ${e.message}${e.stack ? `\n${e.stack}` : ""}`)
-        .join("\n");
+    return ctx.journalEntries.map(formatJournalEntry).join("\n");
 }
 
 /** Renders the human-readable summary.md for the bundle. */

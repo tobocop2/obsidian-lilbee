@@ -1,10 +1,14 @@
 import { node } from "./binary-manager";
-import type { JournalEntry } from "./types";
+import { LOG_FILE, type JournalEntry } from "./types";
 import { appendCapped } from "./utils/capped-log";
 
 export const JOURNAL_MAX_ENTRIES = 200;
 export const PLUGIN_LOG_MAX_BYTES = 262_144;
-const PLUGIN_LOG_FILE = "plugin.log";
+
+/** One journal entry as a log line (no trailing newline). */
+export function formatJournalEntry(entry: JournalEntry): string {
+    return `${entry.timestamp} [${entry.label}] ${entry.message}${entry.stack ? `\n${entry.stack}` : ""}`;
+}
 
 /** In-memory ring buffer of plugin errors, mirrored best-effort to logs/plugin.log. */
 export class ErrorJournal {
@@ -17,7 +21,7 @@ export class ErrorJournal {
 
     /** Point persistence at `<dataDir>/logs`. */
     setLogDir(dir: string): void {
-        this.logPath = node.join(dir, PLUGIN_LOG_FILE);
+        this.logPath = node.join(dir, LOG_FILE.PLUGIN);
     }
 
     record(label: string, message: string, stack?: string): void {
@@ -34,7 +38,6 @@ export class ErrorJournal {
 
     private append(entry: JournalEntry): void {
         if (!this.logPath) return;
-        const line = `${entry.timestamp} [${entry.label}] ${entry.message}${entry.stack ? `\n${entry.stack}` : ""}\n`;
-        appendCapped(this.logPath, line, PLUGIN_LOG_MAX_BYTES);
+        appendCapped(this.logPath, `${formatJournalEntry(entry)}\n`, PLUGIN_LOG_MAX_BYTES);
     }
 }

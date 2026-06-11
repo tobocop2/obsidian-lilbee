@@ -23,6 +23,7 @@ import {
     DOT_STATE,
     ERROR_NAME,
     LOCK_STATE,
+    LOGS_DIR,
     MANAGED_CONSENT_RESULT,
     MANAGED_PHASE,
     SERVER_MODE,
@@ -399,7 +400,7 @@ export default class LilbeePlugin extends Plugin {
 
             try {
                 this.serverManager = this.buildServerManager(binaryPath, registry, sharedRoot);
-                this.journal.setLogDir(node.join(this.serverManager.dataDir, "logs"));
+                this.journal.setLogDir(node.join(this.serverManager.dataDir, LOGS_DIR));
                 this.updateStatusBar(MESSAGES.STATUS_STARTING, DOT_STATE.PRIMARY);
                 this.setStatusClass("lilbee-status-starting");
                 onProgress?.({ phase: MANAGED_PHASE.STARTING, message: MESSAGES.STATUS_STARTING_SERVER });

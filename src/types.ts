@@ -479,6 +479,17 @@ export const SHARED_PATH = {
     LOCK: "active.lock",
 } as const;
 
+/** Subdirectory of a vault data dir where all log files land. */
+export const LOGS_DIR = "logs";
+
+/** Log file names the diagnostics bundle knows about. */
+export const LOG_FILE = {
+    SERVER: "server.log",
+    FAULT: "server-fault.log",
+    SPAWN_CRASH: "spawn-crash.log",
+    PLUGIN: "plugin.log",
+} as const;
+
 /** One captured plugin-side error. */
 export interface JournalEntry {
     timestamp: string;

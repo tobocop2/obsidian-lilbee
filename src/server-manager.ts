@@ -1,6 +1,6 @@
 import type { ChildProcess } from "child_process";
 import type { ServerState } from "./types";
-import { PLATFORM, SERVER_STATE } from "./types";
+import { LOG_FILE, LOGS_DIR, PLATFORM, SERVER_STATE } from "./types";
 import { node } from "./binary-manager";
 import { appendCapped } from "./utils/capped-log";
 
@@ -68,7 +68,7 @@ export class ServerManager {
     }
 
     private get crashLogPath(): string {
-        return `${this.opts.dataDir}/logs/spawn-crash.log`;
+        return `${this.opts.dataDir}/${LOGS_DIR}/${LOG_FILE.SPAWN_CRASH}`;
     }
 
     /** Persist the stderr ring buffer so a crash survives an Obsidian restart. */
