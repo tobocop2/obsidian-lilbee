@@ -1,6 +1,7 @@
 import { requestUrl } from "obsidian";
 import { execFile, spawn } from "child_process";
 import {
+    appendFileSync,
     existsSync,
     mkdirSync,
     chmodSync,
@@ -27,6 +28,7 @@ const statfsAsync = promisify(statfs);
 export const node = {
     spawn,
     execFile: execFileAsync,
+    appendFileSync,
     existsSync,
     mkdirSync,
     chmodSync,
