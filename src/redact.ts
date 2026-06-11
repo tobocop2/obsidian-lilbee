@@ -4,8 +4,8 @@ export const REDACTED = "[redacted]";
 
 /** Key-value pairs whose key smells like a credential, in TOML/JSON/header shapes. */
 const SECRET_LINE_PATTERNS: RegExp[] = [
-    /((?:\w*[_-])?(?:token|api[_-]?key|apikey|secret)\s*[:=]\s*["']?)(?:bearer\s+)?[^"'\s]+/gi,
-    /(authorization\s*[:=]\s*["']?)(?:bearer\s+)?[^"'\s]+/gi,
+    /\b((?:\w+[_-])?(?:token|api[_-]?key|apikey|secret)\s*[:=]\s*["']?)(?:bearer\s+)?[^"'\s]+/gi,
+    /\b(authorization\s*[:=]\s*["']?)(?:bearer\s+)?[^"'\s]+/gi,
 ];
 
 /** Blanks credential values in log/config text while keeping line shape. */

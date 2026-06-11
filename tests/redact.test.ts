@@ -19,6 +19,13 @@ describe("redactSecrets", () => {
         expect(redactSecrets(line)).toBe(line);
     });
 
+    it("handles a huge unbroken token in linear time", () => {
+        const huge = "y".repeat(1_048_576);
+        const start = Date.now();
+        expect(redactSecrets(huge)).toBe(huge);
+        expect(Date.now() - start).toBeLessThan(2_000);
+    });
+
     it("redacts every occurrence in multi-line text", () => {
         const text = 'a_token = "one"\npath = "/x"\napi_key = "two"';
         const out = redactSecrets(text);
