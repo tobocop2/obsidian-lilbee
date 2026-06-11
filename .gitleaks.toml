@@ -1,0 +1,14 @@
+# Gitleaks config. Extends the default ruleset (so every real secret pattern
+# still fires) and allowlists the redaction unit test, whose fixtures are
+# synthetic secret-shaped strings that exist only to prove redactSecrets()
+# rewrites them to [redacted].
+title = "lilbee gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic secret-shaped fixtures for the redaction unit tests"
+paths = [
+    '''tests/redact\.test\.ts''',
+]
