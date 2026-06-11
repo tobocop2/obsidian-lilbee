@@ -110,7 +110,7 @@ vi.mock("../src/server-manager", () => {
                 get state() {
                     return "ready";
                 },
-                get lastStderr() {
+                get lastOutput() {
                     return "";
                 },
             };

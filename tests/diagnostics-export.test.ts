@@ -31,7 +31,7 @@ function makeContext(): DiagnosticsContext {
         pluginVersion: "1.2.3",
         serverState: SERVER_STATE.ERROR,
         serverUrl: "",
-        lastStderr: "",
+        lastOutput: "",
     };
 }
 

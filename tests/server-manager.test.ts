@@ -5,7 +5,7 @@ import type { ServerManagerOptions } from "../src/server-manager";
 
 // ── Mock child process ──────────────────────────────────────────────
 
-function mockStderr() {
+function mockStream() {
     const handlers: Record<string, Function[]> = {};
     return {
         on(event: string, handler: Function) {
@@ -19,10 +19,10 @@ function mockStderr() {
 
 function mockChild() {
     const handlers: Record<string, Function[]> = {};
-    const stderr = mockStderr();
     return {
         pid: 1234,
-        stderr,
+        stdout: mockStream(),
+        stderr: mockStream(),
         on(event: string, handler: Function) {
             (handlers[event] ??= []).push(handler);
         },
@@ -129,7 +129,7 @@ describe("ServerManager", () => {
             expect(opts.env.LILBEE_MODELS_DIR).toBe("/tmp/models");
             expect(opts.env.LILBEE_RAG_SYSTEM_PROMPT).toBeUndefined();
             expect(opts.env.LILBEE_GENERAL_SYSTEM_PROMPT).toBeUndefined();
-            expect(opts.stdio).toEqual(["ignore", "ignore", "pipe"]);
+            expect(opts.stdio).toEqual(["ignore", "pipe", "pipe"]);
             expect(opts.detached).toBe(false);
 
             expect(mgr.state).toBe("ready");
@@ -174,15 +174,16 @@ describe("ServerManager", () => {
             expect(mgr.state).toBe("ready");
         });
 
-        it("sets state to error when the port file never appears", async () => {
+        it("sets state to error and rejects when the port file never appears", async () => {
             existsSyncSpy.mockReturnValue(false);
             const mgr = new ServerManager(defaultOpts());
 
             const startPromise = mgr.start();
+            const rejection = expect(startPromise).rejects.toThrow("Port file not found within timeout");
             await vi.advanceTimersByTimeAsync(120_000);
             // The failure path stops the child; advance past the stop grace period.
             await vi.advanceTimersByTimeAsync(6_000);
-            await startPromise;
+            await rejection;
 
             expect(mgr.state).toBe("error");
         });
@@ -194,9 +195,10 @@ describe("ServerManager", () => {
             const mgr = new ServerManager(defaultOpts());
 
             const startPromise = mgr.start();
+            const rejection = expect(startPromise).rejects.toThrow("Port file not found within timeout");
             await vi.advanceTimersByTimeAsync(120_000);
             await vi.advanceTimersByTimeAsync(6_000);
-            await startPromise;
+            await rejection;
 
             expect(mgr.serverUrl).toBe("");
             expect(mgr.state).toBe("error");
@@ -213,16 +215,17 @@ describe("ServerManager", () => {
             expect(spawnSpy).toHaveBeenCalledOnce();
         });
 
-        it("sets state to error when health polling times out", async () => {
+        it("sets state to error and rejects when health polling times out", async () => {
             fetchSpy.mockRejectedValue(new Error("ECONNREFUSED"));
             const stateChanges: string[] = [];
             const mgr = new ServerManager(defaultOpts({ onStateChange: (s) => stateChanges.push(s) }));
 
             const startPromise = mgr.start();
+            const rejection = expect(startPromise).rejects.toThrow("Server did not become ready within timeout");
             // 120 attempts * 1000ms each = 120000ms
             await vi.advanceTimersByTimeAsync(120_000);
             await vi.advanceTimersByTimeAsync(6_000);
-            await startPromise;
+            await rejection;
 
             expect(mgr.state).toBe("error");
         }, 15_000);
@@ -232,9 +235,10 @@ describe("ServerManager", () => {
             const mgr = new ServerManager(defaultOpts());
 
             const startPromise = mgr.start();
+            const rejection = expect(startPromise).rejects.toThrow("Server did not become ready within timeout");
             await vi.advanceTimersByTimeAsync(120_000);
             await vi.advanceTimersByTimeAsync(6_000);
-            await startPromise;
+            await rejection;
 
             expect(mgr.state).toBe("error");
         }, 15_000);
@@ -256,8 +260,9 @@ describe("ServerManager", () => {
             const mgr = new ServerManager(defaultOpts());
 
             const startPromise = mgr.start();
+            const rejection = expect(startPromise).rejects.toThrow("Port file not found within timeout");
             await vi.advanceTimersByTimeAsync(126_000);
-            await startPromise;
+            await rejection;
 
             expect(mgr.state).toBe("error");
             expect(child.kill).toHaveBeenCalled();
@@ -591,7 +596,7 @@ describe("ServerManager", () => {
             expect(spawnSpy).toHaveBeenCalledTimes(4);
         });
 
-        it("calls onRestartsExhausted with stderr when max restarts exceeded", async () => {
+        it("calls onRestartsExhausted with the captured output when max restarts exceeded", async () => {
             const onExhausted = vi.fn();
             const mgr = new ServerManager(defaultOpts({ onRestartsExhausted: onExhausted }));
 
@@ -617,6 +622,36 @@ describe("ServerManager", () => {
             child._emit("exit", 1, null);
             expect(onExhausted).toHaveBeenCalledTimes(1);
             expect(onExhausted).toHaveBeenCalledWith(expect.stringContaining("address already in use"));
+            // The exit detail rides along in the same output buffer.
+            expect(onExhausted).toHaveBeenCalledWith(expect.stringContaining("server exited (exit code 1)"));
+        });
+
+        it("aborts a pending start as soon as restarts are exhausted", async () => {
+            existsSyncSpy.mockReturnValue(false);
+            const onExhausted = vi.fn();
+            const mgr = new ServerManager(defaultOpts({ onRestartsExhausted: onExhausted }));
+
+            const startPromise = mgr.start();
+            const rejection = expect(startPromise).rejects.toThrow(
+                "Server exited (signal SIGKILL) and did not come back after 3 restarts",
+            );
+
+            for (let i = 0; i < 3; i++) {
+                const nextChild = mockChild();
+                spawnSpy.mockReturnValue(nextChild as any);
+                child._emit("exit", 1, null);
+                await vi.advanceTimersByTimeAsync(3_000);
+                child = nextChild;
+            }
+
+            // Final crash exhausts the budget; the pending start aborts on its next poll tick
+            // (~500ms) instead of burning the rest of the 120s port-file window.
+            child._emit("exit", null, "SIGKILL");
+            await vi.advanceTimersByTimeAsync(1_000);
+            await rejection;
+
+            expect(onExhausted).toHaveBeenCalledTimes(1);
+            expect(mgr.state).toBe("error");
         });
 
         it("stop() during restart delay cancels the pending restart", async () => {
@@ -638,14 +673,14 @@ describe("ServerManager", () => {
         });
     });
 
-    // ── crash stderr snapshot ───────────────────────────────────────
+    // ── crash output snapshot ───────────────────────────────────────
 
-    describe("crash stderr snapshot", () => {
+    describe("crash output snapshot", () => {
         function crashLogCalls() {
             return appendFileSyncSpy.mock.calls.filter(([path]) => String(path).includes("logs/spawn-crash.log"));
         }
 
-        it("appends stderr to logs/spawn-crash.log on crash exit", async () => {
+        it("appends the captured output and exit detail to logs/spawn-crash.log on crash exit", async () => {
             const mgr = new ServerManager(defaultOpts());
             const p = mgr.start();
             await vi.advanceTimersByTimeAsync(1000);
@@ -660,6 +695,19 @@ describe("ServerManager", () => {
             expect(path).toBe("/tmp/data/logs/spawn-crash.log");
             expect(chunk).toMatch(/^=== crash \d{4}-\d{2}-\d{2}T/);
             expect(chunk).toContain("fatal: bind failed");
+            expect(chunk).toContain("server exited (exit code 1)");
+        });
+
+        it("describes an exit with neither code nor signal as unknown cause", async () => {
+            const mgr = new ServerManager(defaultOpts());
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+
+            child._emit("exit", null, null);
+
+            const [, chunk] = crashLogCalls()[0] as unknown as [string, string];
+            expect(chunk).toContain("server exited (unknown cause)");
         });
 
         it("does not snapshot on clean stop", async () => {
@@ -701,26 +749,93 @@ describe("ServerManager", () => {
     // ── error event ─────────────────────────────────────────────────
 
     describe("error event", () => {
-        it("sets state to error and nullifies child", async () => {
+        it("rejects the pending start with the launch error instead of polling out the timeout", async () => {
             const stateChanges: string[] = [];
             const mgr = new ServerManager(defaultOpts({ onStateChange: (s) => stateChanges.push(s) }));
 
             const p1 = mgr.start();
+            const rejection = expect(p1).rejects.toThrow("Failed to launch server: spawn ENOENT");
             // Fire error before health check completes
             child._emit("error", new Error("spawn ENOENT"));
-            await vi.advanceTimersByTimeAsync(15_000);
-            await p1;
+            await vi.advanceTimersByTimeAsync(1_000);
+            await rejection;
 
             expect(stateChanges).toContain("error");
+            expect((mgr as any).child).toBeNull();
+            expect(mgr.lastOutput).toContain("failed to launch server: spawn ENOENT");
+        });
+
+        it("snapshots the launch failure to the crash log", async () => {
+            const mgr = new ServerManager(defaultOpts());
+
+            const p1 = mgr.start();
+            const rejection = expect(p1).rejects.toThrow("Failed to launch server: spawn EACCES");
+            child._emit("error", new Error("spawn EACCES"));
+            await vi.advanceTimersByTimeAsync(1_000);
+            await rejection;
+
+            const calls = appendFileSyncSpy.mock.calls.filter(([path]) =>
+                String(path).includes("logs/spawn-crash.log"),
+            );
+            expect(calls).toHaveLength(1);
+            expect(String(calls[0][1])).toContain("failed to launch server: spawn EACCES");
+        });
+
+        it("ignores an error event during a deliberate stop", async () => {
+            const mgr = new ServerManager(defaultOpts());
+            const p1 = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p1;
+
+            appendFileSyncSpy.mockClear();
+            const stopPromise = mgr.stop();
+            child._emit("error", new Error("kill EPERM"));
+            await vi.advanceTimersByTimeAsync(6_000);
+            await stopPromise;
+
+            expect(mgr.state).toBe("stopped");
+            expect(mgr.lastOutput).not.toContain("failed to launch server");
+            expect(appendFileSyncSpy).not.toHaveBeenCalled();
+        });
+
+        it("aborts health polling when the child reports a launch error", async () => {
+            fetchSpy.mockRejectedValue(new Error("ECONNREFUSED"));
+            const mgr = new ServerManager(defaultOpts());
+
+            const startPromise = mgr.start();
+            const rejection = expect(startPromise).rejects.toThrow("Failed to launch server: EACCES");
+            await vi.advanceTimersByTimeAsync(2_000);
+            child._emit("error", new Error("EACCES"));
+            await vi.advanceTimersByTimeAsync(2_000);
+            await rejection;
+
+            expect(mgr.state).toBe("error");
+        });
+    });
+
+    // ── stop during startup ─────────────────────────────────────────
+
+    describe("stop() during startup", () => {
+        it("resolves the pending start quietly instead of erroring", async () => {
+            existsSyncSpy.mockReturnValue(false);
+            const mgr = new ServerManager(defaultOpts());
+
+            const startPromise = mgr.start();
+            const stopPromise = mgr.stop();
+            await vi.advanceTimersByTimeAsync(6_000);
+            await stopPromise;
+            await startPromise;
+
+            expect(mgr.state).toBe("stopped");
         });
     });
 
     // ── stderr capture ────────────────────────────────────────────────
 
-    describe("lastStderr", () => {
+    describe("lastOutput", () => {
         it("returns empty string initially", () => {
             const mgr = new ServerManager(defaultOpts());
-            expect(mgr.lastStderr).toBe("");
+            expect(mgr.lastOutput).toBe("");
         });
 
         it("collects stderr lines from the spawned process", async () => {
@@ -730,7 +845,18 @@ describe("ServerManager", () => {
             await p;
 
             child.stderr._emit("data", Buffer.from("line one\nline two\n"));
-            expect(mgr.lastStderr).toBe("line one\nline two");
+            expect(mgr.lastOutput).toBe("line one\nline two");
+        });
+
+        it("collects stdout lines alongside stderr", async () => {
+            const mgr = new ServerManager(defaultOpts());
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+
+            child.stdout._emit("data", Buffer.from("Listening on http://127.0.0.1:9999\n"));
+            child.stderr._emit("data", Buffer.from("warning: slow disk\n"));
+            expect(mgr.lastOutput).toBe("Listening on http://127.0.0.1:9999\nwarning: slow disk");
         });
 
         it("skips empty lines emitted by the server", async () => {
@@ -740,23 +866,23 @@ describe("ServerManager", () => {
             await p;
 
             child.stderr._emit("data", Buffer.from("line one\n\nline two\n"));
-            expect(mgr.lastStderr).toBe("line one\nline two");
+            expect(mgr.lastOutput).toBe("line one\nline two");
         });
 
-        it("no-ops when the spawned child has no stderr stream", async () => {
-            const childNoStderr = { ...mockChild(), stderr: null };
-            spawnSpy.mockReturnValue(childNoStderr as any);
+        it("no-ops when the spawned child has no stdio streams", async () => {
+            const childNoStreams = { ...mockChild(), stdout: null, stderr: null };
+            spawnSpy.mockReturnValue(childNoStreams as any);
 
             const mgr = new ServerManager(defaultOpts());
             const p = mgr.start();
             await vi.advanceTimersByTimeAsync(1000);
             await p;
 
-            expect(mgr.lastStderr).toBe("");
+            expect(mgr.lastOutput).toBe("");
             expect(mgr.state).toBe("ready");
         });
 
-        it("limits to MAX_STDERR_LINES", async () => {
+        it("limits to MAX_OUTPUT_LINES", async () => {
             const mgr = new ServerManager(defaultOpts());
             const p = mgr.start();
             await vi.advanceTimersByTimeAsync(1000);
@@ -764,20 +890,20 @@ describe("ServerManager", () => {
 
             const lines = Array.from({ length: 25 }, (_, i) => `line ${i}`).join("\n") + "\n";
             child.stderr._emit("data", Buffer.from(lines));
-            const collected = mgr.lastStderr.split("\n");
+            const collected = mgr.lastOutput.split("\n");
             expect(collected.length).toBe(20);
             expect(collected[0]).toBe("line 5");
             expect(collected[19]).toBe("line 24");
         });
 
-        it("resets stderr on new start", async () => {
+        it("resets captured output on new start", async () => {
             const mgr = new ServerManager(defaultOpts());
             const p1 = mgr.start();
             await vi.advanceTimersByTimeAsync(1000);
             await p1;
 
             child.stderr._emit("data", Buffer.from("old error\n"));
-            expect(mgr.lastStderr).toBe("old error");
+            expect(mgr.lastOutput).toBe("old error");
 
             // Stop and restart
             child.kill = vi.fn(() => {
@@ -793,7 +919,7 @@ describe("ServerManager", () => {
             await vi.advanceTimersByTimeAsync(1000);
             await p2;
 
-            expect(mgr.lastStderr).toBe("");
+            expect(mgr.lastOutput).toBe("");
         });
     });
 

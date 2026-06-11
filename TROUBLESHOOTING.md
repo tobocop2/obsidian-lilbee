@@ -33,8 +33,8 @@ Obsidian ships Chromium's developer tools, and the plugin logs everything there 
 A few snippets worth pasting into the console:
 
 ```js
-// Last stderr output from the managed server (in-memory buffer)
-app.plugins.plugins.lilbee.serverManager?.lastStderr
+// Last output from the managed server (in-memory buffer)
+app.plugins.plugins.lilbee.serverManager?.lastOutput
 
 // Current server state: "stopped", "starting", "ready", or "error"
 app.plugins.plugins.lilbee.serverManager?.state
@@ -63,7 +63,7 @@ Each vault keeps its own data under `<shared root>/vaults/<id>/`, and the server
 | `server.log` | The lilbee server's main log |
 | `server-fault.log` | Native crash tracebacks |
 | `worker-*.log` | Model subprocess logs, one per worker |
-| `spawn-crash.log` | stderr the plugin captured when the managed server died |
+| `spawn-crash.log` | output the plugin captured when the managed server died, with the exit code or signal |
 | `plugin.log` | The plugin's own error journal |
 
 You don't have to guess the `<id>`: **Settings → lilbee** shows the resolved shared root and this vault's data folder in the storage section.
@@ -94,6 +94,10 @@ Fill in both paths from the settings tab's storage section. If it crashes here t
 - **Intel Macs aren't supported in managed mode.** Managed mode covers Apple Silicon Macs, Linux x64, and Windows x64. On an Intel Mac, use external mode: `pip install lilbee`, run `lilbee serve` yourself, and point the plugin at it from Settings → Connection.
 - **Disk space.** Models run from hundreds of MB to several GB each. A download or index job failing partway through is often just a full disk.
 - **RAM / VRAM exhaustion.** Crashes during chat or indexing usually mean the model doesn't fit in memory. Try a smaller model from the catalog, or close other heavy apps.
+- **Linux: the OOM killer.** If the server dies with `signal SIGKILL` in `spawn-crash.log` and nothing in its own logs, the kernel likely reclaimed its memory. Check with `journalctl -k | grep -i oom`, then free up RAM or pick smaller models.
+- **Linux: SELinux denials.** Fedora and RHEL enforce SELinux. If the server never launches and `spawn-crash.log` shows a permission error, check for denials with `sudo ausearch -m avc -ts recent`.
+- **Linux: missing Vulkan loader.** If the server starts fine but every model fails to load, install the Vulkan loader once: `sudo dnf install vulkan-loader` (Fedora / RHEL), `sudo apt-get install libvulkan1` (Debian / Ubuntu), `sudo pacman -S vulkan-icd-loader` (Arch).
+- **Linux: a corrupted unpack cache.** The first launch unpacks the server binary into `~/.cache/lilbee/<version>`. A partial unpack (full disk, crash mid-launch) can make every later launch die instantly. Delete that folder and the next launch unpacks fresh.
 
 ## Clean reset
 

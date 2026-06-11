@@ -1,8 +1,16 @@
 import type { ChildProcess } from "child_process";
+import type { Readable } from "stream";
 import type { ServerState } from "./types";
 import { LOG_FILE, LOGS_DIR, PLATFORM, SERVER_STATE } from "./types";
 import { node } from "./binary-manager";
 import { appendCapped } from "./utils/capped-log";
+
+/** Human-readable cause for a child that went away: signal beats exit code. */
+function describeExit(code: number | null, signal: NodeJS.Signals | null): string {
+    if (signal) return `signal ${signal}`;
+    if (code !== null) return `exit code ${code}`;
+    return "unknown cause";
+}
 
 const SERVER_MANAGER_CONFIG = {
     HEALTH_POLL_INTERVAL_MS: 1000,
@@ -27,7 +35,7 @@ export interface ServerManagerOptions {
     ragSystemPrompt: string;
     generalSystemPrompt: string;
     onStateChange?: (state: ServerState) => void;
-    onRestartsExhausted?: (stderr: string) => void;
+    onRestartsExhausted?: (output: string) => void;
     onShutdownFailure?: (error: Error) => void;
 }
 
@@ -39,15 +47,17 @@ export class ServerManager {
     private stopping = false;
     private restartTimer: number | null = null;
     private _actualPort: number | null = null;
-    private _stderrLines: string[] = [];
-    private static readonly MAX_STDERR_LINES = 20;
+    private _outputLines: string[] = [];
+    /** Set when the child can no longer come up (spawn error, restarts exhausted); aborts discovery. */
+    private fatalStartError: Error | null = null;
+    private static readonly MAX_OUTPUT_LINES = 20;
 
     constructor(opts: ServerManagerOptions) {
         this.opts = opts;
     }
 
-    get lastStderr(): string {
-        return this._stderrLines.join("\n");
+    get lastOutput(): string {
+        return this._outputLines.join("\n");
     }
 
     get state(): ServerState {
@@ -71,12 +81,12 @@ export class ServerManager {
         return `${this.opts.dataDir}/${LOGS_DIR}/${LOG_FILE.SPAWN_CRASH}`;
     }
 
-    /** Persist the stderr ring buffer so a crash survives an Obsidian restart. */
-    private snapshotCrashStderr(): void {
+    /** Persist the output ring buffer so a crash survives an Obsidian restart. */
+    private snapshotCrashOutput(): void {
         const header = `=== crash ${new Date().toISOString()} ===\n`;
         appendCapped(
             this.crashLogPath,
-            `${header}${this.lastStderr}\n`,
+            `${header}${this.lastOutput}\n`,
             SERVER_MANAGER_CONFIG.SPAWN_CRASH_LOG_MAX_BYTES,
         );
     }
@@ -86,8 +96,15 @@ export class ServerManager {
         this.opts.onStateChange?.(s);
     }
 
+    /** Throws when waiting any longer is pointless: the child is unrecoverable or the user stopped us. */
+    private assertStartupViable(): void {
+        if (this.fatalStartError) throw this.fatalStartError;
+        if (this.stopping) throw new Error("Server was stopped during startup");
+    }
+
     private async waitForPortFile(): Promise<void> {
         for (let i = 0; i < SERVER_MANAGER_CONFIG.PORT_FILE_MAX_ATTEMPTS; i++) {
+            this.assertStartupViable();
             if (node.existsSync(this.portFilePath)) {
                 const content = node.readFileSync(this.portFilePath, "utf-8").trim();
                 const port = parseInt(content, 10);
@@ -117,84 +134,118 @@ export class ServerManager {
         return env;
     }
 
-    private attachStderrCapture(child: ChildProcess): void {
-        if (!child.stderr) return;
+    private pushOutputLine(line: string): void {
+        this._outputLines.push(line);
+        if (this._outputLines.length > ServerManager.MAX_OUTPUT_LINES) {
+            this._outputLines.shift();
+        }
+    }
+
+    private attachOutputCapture(child: ChildProcess): void {
+        this.attachStreamCapture(child.stdout);
+        this.attachStreamCapture(child.stderr);
+    }
+
+    private attachStreamCapture(stream: Readable | null): void {
+        if (!stream) return;
         let partial = "";
-        child.stderr.on("data", (chunk: Buffer) => {
+        stream.on("data", (chunk: Buffer) => {
             partial += chunk.toString();
             const lines = partial.split("\n");
             partial = lines.pop()!;
             for (const line of lines) {
-                if (line.length > 0) {
-                    this._stderrLines.push(line);
-                    if (this._stderrLines.length > ServerManager.MAX_STDERR_LINES) {
-                        this._stderrLines.shift();
-                    }
-                }
+                if (line.length > 0) this.pushOutputLine(line);
             }
         });
     }
 
     private attachLifecycleHandlers(child: ChildProcess): void {
-        child.on("exit", () => {
+        child.on("exit", (code: number | null, signal: NodeJS.Signals | null) => {
             this.child = null;
             if (this.stopping) return;
-            this.snapshotCrashStderr();
+            this.pushOutputLine(`server exited (${describeExit(code, signal)})`);
+            this.snapshotCrashOutput();
             if (this.crashCount < SERVER_MANAGER_CONFIG.MAX_CRASH_RESTARTS) {
                 this.crashCount++;
                 this.setState(SERVER_STATE.ERROR);
                 this.restartTimer = window.setTimeout(() => {
                     this.restartTimer = null;
                     /* v8 ignore next -- stop() clears this timer before setting stopping, so the false branch is unreachable */
-                    if (!this.stopping) void this.start();
+                    if (!this.stopping) void this.startForRestart();
                 }, SERVER_MANAGER_CONFIG.CRASH_RESTART_DELAY_MS);
                 return;
             }
+            this.fatalStartError = new Error(
+                `Server exited (${describeExit(code, signal)}) and did not come back after ${SERVER_MANAGER_CONFIG.MAX_CRASH_RESTARTS} restarts`,
+            );
             this.setState(SERVER_STATE.ERROR);
-            this.opts.onRestartsExhausted?.(this.lastStderr);
+            this.opts.onRestartsExhausted?.(this.lastOutput);
         });
-        child.on("error", () => {
+        child.on("error", (err: Error) => {
             this.child = null;
+            if (this.stopping) return;
+            this.pushOutputLine(`failed to launch server: ${err.message}`);
+            this.snapshotCrashOutput();
+            this.fatalStartError = new Error(`Failed to launch server: ${err.message}`);
             this.setState(SERVER_STATE.ERROR);
         });
+    }
+
+    /** Crash-loop restart: failures already surface via state + onRestartsExhausted, so don't rethrow. */
+    private async startForRestart(): Promise<void> {
+        try {
+            await this.start();
+        } catch {
+            // already reported
+        }
+    }
+
+    private spawnChild(): ChildProcess {
+        // No --port: the server binds 0, the kernel picks a free port, and
+        // the chosen value is written to data/server.port for us to read.
+        const args = ["serve", "--host", "127.0.0.1", "--data-dir", this.opts.dataDir];
+        const child = node.spawn(this.opts.binaryPath, args, {
+            env: this.buildSpawnEnv(),
+            stdio: ["ignore", "pipe", "pipe"],
+            detached: false,
+        });
+        this.attachOutputCapture(child);
+        this.attachLifecycleHandlers(child);
+        return child;
     }
 
     async start(): Promise<void> {
         if (this.child) return;
         this.stopping = false;
         this._actualPort = null;
+        this.fatalStartError = null;
         this.setState(SERVER_STATE.STARTING);
-        this._stderrLines = [];
+        this._outputLines = [];
 
         // A leftover server.port from a previous run would be adopted as this
         // child's port, so it must be gone before the spawn.
         this.cleanupPortFile();
 
-        // No --port: the server binds 0, the kernel picks a free port, and
-        // the chosen value is written to data/server.port for us to read.
-        const args = ["serve", "--host", "127.0.0.1", "--data-dir", this.opts.dataDir];
-        this.child = node.spawn(this.opts.binaryPath, args, {
-            env: this.buildSpawnEnv(),
-            stdio: ["ignore", "ignore", "pipe"],
-            detached: false,
-        });
-        this.attachStderrCapture(this.child);
-        this.attachLifecycleHandlers(this.child);
+        this.child = this.spawnChild();
 
         try {
             await this.waitForPortFile();
             await this.waitForReady();
             this.crashCount = 0;
             this.setState(SERVER_STATE.READY);
-        } catch {
+        } catch (err) {
+            // A stop() mid-startup aborted the discovery on purpose; not a failure.
+            if (this.stopping) return;
             // Kill the child we spawned so it doesn't outlive the failure and block retries.
-            await this.stop();
+            if (this.child) await this.stop();
             this.setState(SERVER_STATE.ERROR);
+            throw err;
         }
     }
 
     private async waitForReady(): Promise<void> {
         for (let i = 0; i < SERVER_MANAGER_CONFIG.HEALTH_POLL_MAX_ATTEMPTS; i++) {
+            this.assertStartupViable();
             const url = this.serverUrl;
             /* v8 ignore next -- waitForReady runs only after waitForPortFile sets the port, so url is always non-empty */
             if (url) {

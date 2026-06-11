@@ -469,11 +469,11 @@ export default class LilbeePlugin extends Plugin {
             ragSystemPrompt: this.settings.ragSystemPrompt,
             generalSystemPrompt: this.settings.generalSystemPrompt,
             onStateChange: (state) => this.handleServerStateChange(state),
-            onRestartsExhausted: (stderr: string) => {
+            onRestartsExhausted: (output: string) => {
                 if (this.serverStartFailed) return;
-                console.error(`[lilbee] server crashed; stderr:\n${stderr}`);
-                this.journal.record("server-crash", MESSAGES.ERROR_SERVER_CRASHED, stderr || undefined);
-                const detail = stderr ? `\n${stderr.split("\n").slice(-5).join("\n")}` : "";
+                console.error(`[lilbee] server crashed; output:\n${output}`);
+                this.journal.record("server-crash", MESSAGES.ERROR_SERVER_CRASHED, output || undefined);
+                const detail = output ? `\n${output.split("\n").slice(-5).join("\n")}` : "";
                 const notice = new Notice(`${MESSAGES.ERROR_SERVER_CRASHED}${detail}`, NOTICE_PERMANENT);
                 this.attachExportLink(notice);
             },
@@ -729,7 +729,7 @@ export default class LilbeePlugin extends Plugin {
             pluginVersion: this.manifest.version,
             serverState: this.serverManager?.state ?? SERVER_STATE.STOPPED,
             serverUrl: this.serverManager?.serverUrl ?? this.settings.serverUrl,
-            lastStderr: this.serverManager?.lastStderr ?? "",
+            lastOutput: this.serverManager?.lastOutput ?? "",
         };
     }
 
@@ -737,10 +737,10 @@ export default class LilbeePlugin extends Plugin {
         const detail = errorMessage(err, String(err));
         this.journal.record(label, detail, err instanceof Error ? err.stack : undefined);
         console.error(`[lilbee] ${label}:`, err);
-        const stderr = this.serverManager?.lastStderr;
-        if (stderr) console.error(`[lilbee] server stderr:\n${stderr}`);
-        const stderrTail = stderr ? `\n${stderr.split("\n").slice(-5).join("\n")}` : "";
-        const notice = new Notice(`lilbee: ${label} — ${detail}${stderrTail}`, NOTICE_ERROR_DURATION_MS);
+        const output = this.serverManager?.lastOutput;
+        if (output) console.error(`[lilbee] server output:\n${output}`);
+        const outputTail = output ? `\n${output.split("\n").slice(-5).join("\n")}` : "";
+        const notice = new Notice(`lilbee: ${label} — ${detail}${outputTail}`, NOTICE_ERROR_DURATION_MS);
         if (this.serverManager !== null) this.attachExportLink(notice);
         this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
         this.setStatusClass(null);

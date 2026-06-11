@@ -2486,6 +2486,21 @@ describe("managed mode settings", () => {
         expect(displaySpy).toHaveBeenCalled();
     });
 
+    it("Restart button surfaces a restart failure as a notice and still re-renders", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        const mockRestart = vi.fn().mockRejectedValue(new Error("Port file not found within timeout"));
+        (plugin as any).serverManager = { state: "ready", stop: vi.fn(), restart: mockRestart };
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        const displaySpy = vi.spyOn(tab, "render").mockImplementation(() => {});
+        await buttonOnClicks[2]();
+
+        expect(Notice.instances.map((n) => n.message)).toContain("Port file not found within timeout");
+        expect(displaySpy).toHaveBeenCalled();
+    });
+
     describe("Ingest chunk fields onChange", () => {
         // Ingest section text inputs sit at: [14] chunk_size, [15] chunk_overlap,
         // [16] tesseract_timeout, [17] vision_load_budget_s.

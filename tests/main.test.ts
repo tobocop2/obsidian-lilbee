@@ -235,7 +235,7 @@ vi.mock("../src/server-manager", () => ({
             get state() {
                 return "ready";
             },
-            get lastStderr() {
+            get lastOutput() {
                 return mockLastStderr;
             },
             opts,
@@ -4334,7 +4334,7 @@ describe("LilbeePlugin", () => {
             expect(notice!.message).toContain("process not found");
         });
 
-        it("showError includes lastStderr in the notice", async () => {
+        it("showError includes lastOutput in the notice", async () => {
             mockLastStderr = "fatal: database locked";
             mockServerStart.mockRejectedValueOnce(new Error("startup failed"));
 
@@ -4375,7 +4375,7 @@ describe("LilbeePlugin", () => {
                         sharedRoot: null,
                         serverState: "stopped",
                         serverUrl: plugin.settings.serverUrl,
-                        lastStderr: "",
+                        lastOutput: "",
                         pluginVersion: "0.1.0",
                     }),
                 );
