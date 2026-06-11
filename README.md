@@ -220,6 +220,8 @@ See **[Usage Guide](docs/usage.md)** for the full reference: every command, ever
 
 ## Support
 
+Something broken? See [TROUBLESHOOTING.md](TROUBLESHOOTING.md), and use **Settings → lilbee → Export diagnostics** to attach logs to a bug report.
+
 lilbee is built and maintained by one person. If it is useful to you, you can chip in via [PayPal](https://paypal.me/lilbeedotsh). Bug reports and pull requests help just as much.
 
 ## License
