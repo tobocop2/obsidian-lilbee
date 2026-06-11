@@ -915,6 +915,12 @@ export const MESSAGES = {
     LABEL_MEMORY_AUTO_EXTRACT: "Auto-extract memories from chat",
     DESC_MEMORY_AUTO_EXTRACT: "After each answer, lilbee proposes memories to save. Review them in the Memories view.",
     NOTICE_MEMORY_CONFIG_FAILED: "lilbee: could not update memory settings",
+
+    // Diagnostics export
+    DIAG_REVIEW_WARNING:
+        "Review this bundle before sharing. Secrets are redacted, but log lines can include file paths and note titles.",
+    DIAG_REMOTE_SERVER_NOTE:
+        "External server data dir is not locally readable; server logs must be fetched from the machine running lilbee serve.",
 } as const;
 
 export const FILTERS = {
