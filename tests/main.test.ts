@@ -2,7 +2,8 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { windowStub } from "./window-stub";
 import { Notice } from "obsidian";
 import { App, MockElement, WorkspaceLeaf } from "./__mocks__/obsidian";
-import { SSE_EVENT } from "../src/types";
+import { SETUP_OUTCOME, SSE_EVENT } from "../src/types";
+import { VaultRegistry } from "../src/vault-registry";
 import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
 import { ConfirmModal } from "../src/views/confirm-modal";
@@ -5323,6 +5324,109 @@ describe("LilbeePlugin", () => {
 
             const result = await plugin.checkForUpdate();
             expect(result.available).toBe(false);
+        });
+    });
+
+    describe("automatic server update on plugin update", () => {
+        const RELEASE = { tag: "v0.2.0", assetUrl: "u", variant: "default", sizeBytes: 1, digest: null };
+
+        const seedSharedConfig = (lastChecked: string) => {
+            vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                lilbeeVersion: "v0.1.0",
+                lilbeeVariant: "",
+                hfToken: "",
+                lastUpdateCheckPluginVersion: lastChecked,
+            });
+            return vi.spyOn(VaultRegistry.prototype, "saveConfig").mockImplementation(() => {});
+        };
+
+        it("installs a newer server binary on first load of a new plugin version", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const check = vi.spyOn(plugin, "checkForUpdate").mockResolvedValue({ available: true, release: RELEASE });
+            const update = vi.spyOn(plugin, "updateServer").mockResolvedValue(undefined);
+            const save = seedSharedConfig("");
+            await plugin.onload();
+            await flush();
+
+            expect(check).toHaveBeenCalled();
+            expect(update.mock.calls[0][0]).toBe(RELEASE);
+            expect(save).toHaveBeenCalledWith(
+                expect.objectContaining({ lastUpdateCheckPluginVersion: plugin.manifest.version }),
+            );
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_SERVER_AUTO_UPDATED(RELEASE.tag));
+        });
+
+        it("skips the check when this plugin version already checked", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const check = vi.spyOn(plugin, "checkForUpdate");
+            seedSharedConfig(plugin.manifest.version);
+            await plugin.onload();
+            await flush();
+
+            expect(check).not.toHaveBeenCalled();
+        });
+
+        it("stamps the version without updating when already on the latest release", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            vi.spyOn(plugin, "checkForUpdate").mockResolvedValue({ available: false });
+            const update = vi.spyOn(plugin, "updateServer");
+            const save = seedSharedConfig("");
+            await plugin.onload();
+            await flush();
+
+            expect(update).not.toHaveBeenCalled();
+            expect(save).toHaveBeenCalledWith(
+                expect.objectContaining({ lastUpdateCheckPluginVersion: plugin.manifest.version }),
+            );
+        });
+
+        it("leaves the version unstamped when the check fails, so the next load retries", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            vi.spyOn(plugin, "checkForUpdate").mockRejectedValue(new Error("offline"));
+            const save = seedSharedConfig("");
+            await plugin.onload();
+            await flush();
+
+            expect(save).not.toHaveBeenCalled();
+        });
+
+        it("shows a failure notice when the automatic update errors", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            vi.spyOn(plugin, "checkForUpdate").mockResolvedValue({ available: true, release: RELEASE });
+            vi.spyOn(plugin, "updateServer").mockRejectedValue(new Error("disk full"));
+            seedSharedConfig("");
+            await plugin.onload();
+            await flush();
+
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_SERVER_AUTO_UPDATE_FAILED);
+        });
+
+        it("does not check in external mode", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const check = vi.spyOn(plugin, "checkForUpdate");
+            await plugin.onload();
+            await flush();
+
+            expect(check).not.toHaveBeenCalled();
+        });
+
+        it("does not check when managed startup does not reach the started state", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            vi.spyOn(plugin, "ensureManagedConsentThenStart").mockResolvedValue({ kind: SETUP_OUTCOME.CANCELED });
+            const check = vi.spyOn(plugin, "checkForUpdate");
+            await plugin.onload();
+            await flush();
+
+            expect(check).not.toHaveBeenCalled();
+        });
+
+        it("bails when no vault registry exists", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const check = vi.spyOn(plugin, "checkForUpdate");
+            (plugin as any).vaultRegistry = null;
+            await (plugin as any).autoUpdateServerBinary();
+
+            expect(check).not.toHaveBeenCalled();
         });
     });
 

@@ -316,7 +316,12 @@ describe("LilbeeSettings interface", () => {
 
 describe("SharedConfig interface", () => {
     it("accepts version, variant, and token", () => {
-        const c: SharedConfig = { lilbeeVersion: "v0.5.0", lilbeeVariant: "cu125", hfToken: "hf_x" };
+        const c: SharedConfig = {
+            lilbeeVersion: "v0.5.0",
+            lilbeeVariant: "cu125",
+            hfToken: "hf_x",
+            lastUpdateCheckPluginVersion: "",
+        };
         expect(c.lilbeeVersion).toBe("v0.5.0");
         expect(c.lilbeeVariant).toBe("cu125");
         expect(c.hfToken).toBe("hf_x");

@@ -143,7 +143,12 @@ describe("VaultRegistry.loadConfig", () => {
     it("returns defaults when config file is missing", () => {
         mountFs(makeFs());
         const reg = new VaultRegistry("/r");
-        expect(reg.loadConfig()).toEqual({ lilbeeVersion: "", lilbeeVariant: "", hfToken: "" });
+        expect(reg.loadConfig()).toEqual({
+            lilbeeVersion: "",
+            lilbeeVariant: "",
+            hfToken: "",
+            lastUpdateCheckPluginVersion: "",
+        });
     });
 
     it("merges defaults with persisted partial config", () => {
@@ -154,6 +159,7 @@ describe("VaultRegistry.loadConfig", () => {
             lilbeeVersion: "v0.5.0",
             lilbeeVariant: "",
             hfToken: "",
+            lastUpdateCheckPluginVersion: "",
         });
     });
 
@@ -161,7 +167,12 @@ describe("VaultRegistry.loadConfig", () => {
         const fs = makeFs();
         fs.write("/r/config.json", "{not json");
         mountFs(fs);
-        expect(new VaultRegistry("/r").loadConfig()).toEqual({ lilbeeVersion: "", lilbeeVariant: "", hfToken: "" });
+        expect(new VaultRegistry("/r").loadConfig()).toEqual({
+            lilbeeVersion: "",
+            lilbeeVariant: "",
+            hfToken: "",
+            lastUpdateCheckPluginVersion: "",
+        });
     });
 });
 
@@ -171,20 +182,31 @@ describe("VaultRegistry.saveConfig", () => {
     it("writes via a temp file then renames", () => {
         const fs = makeFs();
         mountFs(fs);
-        new VaultRegistry("/r").saveConfig({ lilbeeVersion: "v1", lilbeeVariant: "cu125", hfToken: "tok" });
+        new VaultRegistry("/r").saveConfig({
+            lilbeeVersion: "v1",
+            lilbeeVariant: "cu125",
+            hfToken: "tok",
+            lastUpdateCheckPluginVersion: "",
+        });
         expect(fs.exists("/r/config.json")).toBe(true);
         expect(fs.exists("/r/config.json.tmp")).toBe(false);
         expect(JSON.parse(fs.read("/r/config.json"))).toEqual({
             lilbeeVersion: "v1",
             lilbeeVariant: "cu125",
             hfToken: "tok",
+            lastUpdateCheckPluginVersion: "",
         });
     });
 
     it("creates the shared root directory if missing", () => {
         const fs = makeFs();
         mountFs(fs);
-        new VaultRegistry("/r").saveConfig({ lilbeeVersion: "", lilbeeVariant: "", hfToken: "" });
+        new VaultRegistry("/r").saveConfig({
+            lilbeeVersion: "",
+            lilbeeVariant: "",
+            hfToken: "",
+            lastUpdateCheckPluginVersion: "",
+        });
         expect(fs.dirs.has("/r")).toBe(true);
     });
 });
