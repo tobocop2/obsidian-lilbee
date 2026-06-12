@@ -434,12 +434,15 @@ export interface SharedConfig {
     /** Which server build is installed. Empty when unknown (e.g. installed before variant tracking). */
     lilbeeVariant: ServerVariant | "";
     hfToken: string;
+    /** Plugin version that last ran the automatic server-update check. */
+    lastUpdateCheckPluginVersion: string;
 }
 
 export const DEFAULT_SHARED_CONFIG: SharedConfig = {
     lilbeeVersion: "",
     lilbeeVariant: "",
     hfToken: "",
+    lastUpdateCheckPluginVersion: "",
 };
 
 /** One row in `<shared-root>/registry.json` — one per Obsidian vault. */

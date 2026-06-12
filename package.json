@@ -1,6 +1,6 @@
 {
   "name": "obsidian-lilbee",
-  "version": "0.6.68",
+  "version": "0.6.69",
   "private": true,
   "scripts": {
     "build": "node esbuild.config.mjs production",

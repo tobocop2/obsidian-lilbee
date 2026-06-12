@@ -335,6 +335,7 @@ export default class LilbeePlugin extends Plugin {
                     // If the user opts into external mode from the consent modal,
                     // drop them on the plugin's external-server settings.
                     if (outcome.kind === SETUP_OUTCOME.SWITCHED_TO_EXTERNAL) this.openPluginSettings();
+                    if (outcome.kind === SETUP_OUTCOME.STARTED) void this.autoUpdateServerBinary();
                 });
             } else {
                 this.configureApi(this.settings.serverUrl);
@@ -667,6 +668,33 @@ export default class LilbeePlugin extends Plugin {
         return { available: false };
     }
 
+    /** Once per plugin version, fetch the latest server release and install it if newer. */
+    private async autoUpdateServerBinary(): Promise<void> {
+        const registry = this.vaultRegistry;
+        if (!registry) return;
+        const config = registry.loadConfig();
+        if (config.lastUpdateCheckPluginVersion === this.manifest.version) return;
+        let result: { available: boolean; release?: ReleaseInfo };
+        try {
+            result = await this.checkForUpdate();
+        } catch {
+            // offline or rate-limited; the next load retries
+            return;
+        }
+        registry.saveConfig({ ...config, lastUpdateCheckPluginVersion: this.manifest.version });
+        if (!result.available || !result.release) return;
+        const release = result.release;
+        const notice = new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATING(release.tag), NOTICE_PERMANENT);
+        try {
+            await this.updateServer(release, (msg) => notice.setMessage(msg));
+            new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATED(release.tag));
+        } catch {
+            new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATE_FAILED, NOTICE_ERROR_DURATION_MS);
+        } finally {
+            notice.hide();
+        }
+    }
+
     async updateServer(release: ReleaseInfo, onProgress?: (msg: string) => void): Promise<void> {
         const registry = this.vaultRegistry;
         if (!registry) return;
@@ -715,7 +743,7 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private attachExportLink(notice: Notice): void {
-        const link = notice.noticeEl.createEl("a", { text: MESSAGES.BUTTON_EXPORT_DIAGNOSTICS });
+        const link = notice.messageEl.createEl("a", { text: MESSAGES.BUTTON_EXPORT_DIAGNOSTICS });
         link.addEventListener("click", () => void exportDiagnostics(this.diagnosticsContext()));
     }
 
