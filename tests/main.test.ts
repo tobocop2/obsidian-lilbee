@@ -4350,7 +4350,7 @@ describe("LilbeePlugin", () => {
 
         describe("diagnostics export wiring", () => {
             const exportLink = (notice: Notice): MockElement | undefined =>
-                (notice.noticeEl as unknown as MockElement).children.find((c) => c.tagName === "A");
+                (notice.messageEl as unknown as MockElement).children.find((c) => c.tagName === "A");
 
             const domHandler = (plugin: unknown, type: string): ((e: unknown) => void) => {
                 const events = (plugin as { domEvents: Array<{ type: string; cb: (e: unknown) => void }> }).domEvents;

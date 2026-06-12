@@ -23,7 +23,7 @@ const SECRET_SETTING_KEYS = ["manualToken", "hfToken"] as const;
 export function redactSettings(settings: LilbeeSettings & Partial<SharedConfig>): Record<string, unknown> {
     const copy: Record<string, unknown> = { ...settings };
     for (const key of SECRET_SETTING_KEYS) {
-        if (typeof copy[key] === "string" && (copy[key] as string).length > 0) {
+        if (typeof copy[key] === "string" && copy[key].length > 0) {
             copy[key] = REDACTED;
         }
     }

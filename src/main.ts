@@ -715,7 +715,7 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private attachExportLink(notice: Notice): void {
-        const link = notice.noticeEl.createEl("a", { text: MESSAGES.BUTTON_EXPORT_DIAGNOSTICS });
+        const link = notice.messageEl.createEl("a", { text: MESSAGES.BUTTON_EXPORT_DIAGNOSTICS });
         link.addEventListener("click", () => void exportDiagnostics(this.diagnosticsContext()));
     }
 

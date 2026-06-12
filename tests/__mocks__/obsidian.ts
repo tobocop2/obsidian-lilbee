@@ -650,6 +650,7 @@ export class Notice {
     duration: number | undefined;
     hidden = false;
     noticeEl = new MockElement("div");
+    messageEl = new MockElement("div");
     static instances: Notice[] = [];
     constructor(message: string, duration?: number) {
         this.message = message;
