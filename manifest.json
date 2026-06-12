@@ -3,7 +3,7 @@
 	"name": "lilbee",
 	"version": "0.6.67",
 	"minAppVersion": "1.7.2",
-	"description": "Search, ask, and chat with your notes, PDFs, and web pages — answers come straight from your own files, with click-to-verify citations (local RAG, done for you). Runs local LLMs, or bring your own from Ollama, LM Studio, OpenAI, Claude, Gemini.",
+	"description": "A local AI search engine and native LLM manager for your vault, with a built-in web crawler. Ask it anything and get cited answers (local RAG). Works with Ollama, LM Studio, and frontier models too.",
 	"author": "tobocop2",
 	"authorUrl": "https://obsidian.lilbee.sh/",
 	"isDesktopOnly": true
