@@ -3665,6 +3665,29 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
         });
 
+        it("turns show_reasoning on the first time the server is ready, then never again", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const updateConfig = vi.fn().mockResolvedValue({ updated: ["show_reasoning"] });
+            plugin.api.updateConfig = updateConfig;
+            plugin.api.listModels = vi.fn().mockResolvedValue({
+                chat: { active: "qwen3:8b", installed: ["qwen3:8b"], catalog: [] },
+            });
+            const saveSpy = vi.spyOn(plugin, "saveSettings");
+            // Reset so the manual call exercises the first-ready apply branch.
+            plugin.settings.reasoningDefaulted = false;
+
+            await plugin.fetchActiveModel();
+            expect(updateConfig).toHaveBeenCalledWith({ show_reasoning: true });
+            expect(plugin.settings.reasoningDefaulted).toBe(true);
+            expect(saveSpy).toHaveBeenCalled();
+
+            // Already applied: a second ready pass leaves the server config alone.
+            updateConfig.mockClear();
+            await plugin.fetchActiveModel();
+            expect(updateConfig).not.toHaveBeenCalled();
+        });
+
         it("status bar shows task name during sync and flashes done after", async () => {
             const plugin = await createPlugin();
             await plugin.onload();

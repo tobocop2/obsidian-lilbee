@@ -19,6 +19,7 @@ import { readSessionToken, resolveExternalDataRoot } from "./session-token";
 import { LilbeeSettingTab } from "./settings";
 import { VaultRegistry, computeVaultId, resolveSharedRoot, sharedBinDir, sharedModelsDir } from "./vault-registry";
 import {
+    CONFIG_KEY,
     DEFAULT_SETTINGS,
     DOT_STATE,
     ERROR_NAME,
@@ -1501,6 +1502,7 @@ export default class LilbeePlugin extends Plugin {
             const models = await this.api.listModels();
             this.activeModel = models.chat.active;
             this.setStatusReady();
+            await this.applyReasoningDefaultOnce();
         } catch {
             // Silently fail - will retry on next action
         }
@@ -1521,6 +1523,14 @@ export default class LilbeePlugin extends Plugin {
             this.initWikiSync();
             void this.reconcileWiki();
         }
+    }
+
+    /** Turn reasoning display on once, the first time we reach a ready server. */
+    private async applyReasoningDefaultOnce(): Promise<void> {
+        if (this.settings.reasoningDefaulted) return;
+        await this.api.updateConfig({ [CONFIG_KEY.SHOW_REASONING]: true });
+        this.settings.reasoningDefaulted = true;
+        await this.saveSettings();
     }
 
     initWikiSync(): void {

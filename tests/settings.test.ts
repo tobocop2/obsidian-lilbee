@@ -560,7 +560,8 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[0](true);
+            // [0] is show_reasoning (Chat section, rendered first); [1] is adaptiveThreshold.
+            await toggleOnChanges[1](true);
             expect(plugin.settings.adaptiveThreshold).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
         });
@@ -6401,8 +6402,8 @@ describe("managed mode settings", () => {
     });
 
     describe("show reasoning toggle", () => {
-        // toggleOnChanges[1] is show_reasoning; [0]=adaptiveThreshold.
-        const SHOW_REASONING_TOGGLE_IDX = 1;
+        // toggleOnChanges[0] is show_reasoning (Chat section, top); [1]=adaptiveThreshold.
+        const SHOW_REASONING_TOGGLE_IDX = 0;
 
         it("PATCHes show_reasoning when the toggle flips", async () => {
             const plugin = makePlugin();

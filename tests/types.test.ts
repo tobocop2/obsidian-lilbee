@@ -77,6 +77,7 @@ describe("DEFAULT_SETTINGS", () => {
         const expected = [
             "adaptiveThreshold",
             "autoOpenCockpit",
+            "reasoningDefaulted",
             "manualToken",
             "maxDistance",
             "searchChunkType",
