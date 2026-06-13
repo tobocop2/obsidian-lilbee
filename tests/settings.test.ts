@@ -3093,9 +3093,9 @@ describe("managed mode settings", () => {
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
             // Toggle order: [0] adaptiveThreshold (search/retrieval),
-            // [1] worker_pool_eager_start (worker-pool),
-            // [2] crawl_retry_on_rate_limit (crawling), [3+] wiki toggles.
-            await toggleOnChanges[2](false);
+            // [1] show_reasoning (generation), [2] worker_pool_eager_start (worker-pool),
+            // [3] crawl_retry_on_rate_limit (crawling), [4+] wiki toggles.
+            await toggleOnChanges[3](false);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: false });
         });
 
@@ -3106,7 +3106,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[2](false);
+            await toggleOnChanges[3](false);
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -3224,9 +3224,9 @@ describe("managed mode settings", () => {
             // load-bearing (if the flag failed to set, updateConfig WOULD be called).
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = false;
-            // toggleOnChanges[2] is crawl_retry_on_rate_limit; [0]=adaptiveThreshold,
-            // [1]=worker_pool_eager_start.
-            await toggleOnChanges[2](true);
+            // toggleOnChanges[3] is crawl_retry_on_rate_limit; [0]=adaptiveThreshold,
+            // [1]=show_reasoning, [2]=worker_pool_eager_start.
+            await toggleOnChanges[3](true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: true });
         });
 
@@ -3238,7 +3238,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = true;
-            await toggleOnChanges[2](true);
+            await toggleOnChanges[3](true);
             (tab as any).suppressToggleChanges = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
@@ -5265,7 +5265,9 @@ describe("managed mode settings", () => {
 
             expect(options[0]["gpustack/bge-reranker-v2-m3-GGUF"]).toBe("BGE Reranker v2 m3");
             expect(options[0]["gpustack/bge-reranker-v2-m3-GGUF"]).not.toContain(MESSAGES.LABEL_NOT_INSTALLED);
-            expect(values[0]).toBe(installedRef);
+            // The featured option keys on the bare hf_repo, so the active full ref selects
+            // that option (matchModelOption) instead of a missing full-ref value that renders blank.
+            expect(values[0]).toBe("gpustack/bge-reranker-v2-m3-GGUF");
         });
 
         it("parses reranker_model as empty when config lacks the field", async () => {
@@ -6311,7 +6313,7 @@ describe("managed mode settings", () => {
         // ([0]=adaptiveThreshold).
         const POOL_CALL_TIMEOUT_IDX = 19;
         const POOL_MAX_IDLE_IDX = 20;
-        const POOL_EAGER_TOGGLE_IDX = 1;
+        const POOL_EAGER_TOGGLE_IDX = 2;
 
         it("hides each worker-pool row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
@@ -6393,6 +6395,45 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = true;
             await toggleOnChanges[POOL_EAGER_TOGGLE_IDX](true);
+            (tab as any).suppressToggleChanges = false;
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("show reasoning toggle", () => {
+        // toggleOnChanges[1] is show_reasoning; [0]=adaptiveThreshold.
+        const SHOW_REASONING_TOGGLE_IDX = 1;
+
+        it("PATCHes show_reasoning when the toggle flips", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await toggleOnChanges[SHOW_REASONING_TOGGLE_IDX](true);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ show_reasoning: true });
+        });
+
+        it("surfaces a notice when the show_reasoning PATCH fails", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await toggleOnChanges[SHOW_REASONING_TOGGLE_IDX](true);
+            expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+        });
+
+        it("suppresses show_reasoning echo-patches while the suppress flag is set", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            (tab as any).suppressToggleChanges = true;
+            await toggleOnChanges[SHOW_REASONING_TOGGLE_IDX](true);
             (tab as any).suppressToggleChanges = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });

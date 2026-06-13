@@ -89,6 +89,7 @@ export interface ConfigResponse {
     chunk_overlap?: number;
     tesseract_timeout?: number;
     max_tokens?: number;
+    show_reasoning?: boolean;
     max_reasoning_chars?: number;
     model_keep_alive?: string;
     gpu_memory_fraction?: number;
@@ -105,6 +106,7 @@ export const CONFIG_KEY = {
     RAG_SYSTEM_PROMPT: "rag_system_prompt",
     GENERAL_SYSTEM_PROMPT: "general_system_prompt",
     CHAT_MODE: "chat_mode",
+    SHOW_REASONING: "show_reasoning",
 } as const;
 
 export type ChatMode = "search" | "chat";

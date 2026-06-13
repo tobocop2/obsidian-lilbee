@@ -19,7 +19,7 @@ import type { CatalogEntry, ConfigResponse, InstalledModel, LilbeeSettings, Serv
 import { exportDiagnostics } from "./diagnostics-export";
 import { formatBytes, reportForVault } from "./storage-stats";
 import { MESSAGES } from "./locales/en";
-import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
+import { displayLabelForRef, extractHfRepo, matchModelOption } from "./utils/model-ref";
 import { CatalogModal } from "./views/catalog-modal";
 import { hostedOptions } from "./views/catalog-helpers";
 import { ConfirmModal } from "./views/confirm-modal";
@@ -744,6 +744,24 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.chatModeSettingEl = chatModeSetting.settingEl;
         this.chatModeSettingEl.hide();
 
+        const showReasoningSetting = new Setting(details)
+            .setName(MESSAGES.LABEL_SHOW_REASONING)
+            .setDesc(MESSAGES.DESC_SHOW_REASONING)
+            .addToggle((toggle) => {
+                toggle.onChange(async (value) => {
+                    if (this.suppressToggleChanges) return;
+                    try {
+                        await this.plugin.api.updateConfig({ [CONFIG_KEY.SHOW_REASONING]: value });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_SHOW_REASONING));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_SHOW_REASONING));
+                    }
+                });
+                this.serverConfigToggles.set(CONFIG_KEY.SHOW_REASONING, toggle);
+            });
+        showReasoningSetting.settingEl.hide();
+        this.serverConfigHideableEls.set(CONFIG_KEY.SHOW_REASONING, showReasoningSetting.settingEl);
+
         const fields: { key: string; name: string; desc: string; integer: boolean; hideable?: boolean }[] = [
             {
                 key: "temperature",
@@ -1193,7 +1211,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 for (const [value, label] of options) {
                     dropdown.addOption(value, label);
                 }
-                dropdown.setValue(active || RERANKER_DISABLED_KEY);
+                dropdown.setValue(
+                    matchModelOption(
+                        active || RERANKER_DISABLED_KEY,
+                        options.map(([value]) => value),
+                    ),
+                );
                 dropdown.onChange(async (value) => {
                     await this.handleRerankerChange(value, catalogEntries, installed);
                 });
@@ -1340,7 +1363,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 for (const [value, label] of options) {
                     dropdown.addOption(value, label);
                 }
-                dropdown.setValue(active || VISION_DISABLED_KEY);
+                dropdown.setValue(
+                    matchModelOption(
+                        active || VISION_DISABLED_KEY,
+                        options.map(([value]) => value),
+                    ),
+                );
                 dropdown.onChange(async (value) => {
                     await this.handleVisionChange(value, catalogEntries, installed);
                 });
@@ -2088,7 +2116,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
             for (const [value, label] of options) {
                 dropdown.addOption(value, label);
             }
-            dropdown.setValue(active);
+            dropdown.setValue(
+                matchModelOption(
+                    active,
+                    options.map(([value]) => value),
+                ),
+            );
             dropdown.onChange(async (value) => {
                 if (value === SEPARATOR_KEY) return;
                 await this.handleChatChange(value, catalogEntries);
