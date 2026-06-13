@@ -3,23 +3,25 @@
  * One lilbee binary, one HF cache, many vault data-dirs, one active vault at a time.
  */
 import { node } from "./binary-manager";
-import { getDefaultLilbeeDataRoot } from "./session-token";
+import { getDefaultPluginDataRoot } from "./session-token";
 import {
     DEFAULT_SHARED_CONFIG,
     LOCK_STATE,
+    MIGRATION_RESULT,
     SHARED_PATH,
     type ActiveLock,
     type LockState,
+    type MigrationResult,
     type SharedConfig,
     type VaultRegistryEntry,
 } from "./types";
 
 const VAULT_ID_BYTES = 6;
-const FALLBACK_SHARED_ROOT = "/tmp/lilbee";
+const FALLBACK_SHARED_ROOT = "/tmp/obsidian-lilbee";
 
 export function resolveSharedRoot(setting: string): string {
     if (setting && setting.length > 0) return setting;
-    return getDefaultLilbeeDataRoot() ?? FALLBACK_SHARED_ROOT;
+    return getDefaultPluginDataRoot() ?? FALLBACK_SHARED_ROOT;
 }
 
 export function computeVaultId(vaultPath: string): string {
@@ -85,6 +87,92 @@ function isProcessAlive(pid: number): boolean {
         return true;
     } catch {
         return false;
+    }
+}
+
+/** Everything moved off the legacy root; the lock is stale by definition and is deleted instead. */
+const MIGRATABLE_ENTRIES = [
+    SHARED_PATH.BIN,
+    SHARED_PATH.MODELS,
+    SHARED_PATH.VAULTS,
+    SHARED_PATH.CONFIG,
+    SHARED_PATH.REGISTRY,
+] as const;
+
+/** Entries only the plugin writes; the CLI may create models/ or config files of its own. */
+const PLUGIN_MARKERS = [SHARED_PATH.BIN, SHARED_PATH.REGISTRY] as const;
+
+function hasPluginEntries(root: string): boolean {
+    return Object.values(SHARED_PATH).some((entry) => node.existsSync(node.join(root, entry)));
+}
+
+function moveEntry(from: string, to: string): void {
+    try {
+        node.renameSync(from, to);
+    } catch {
+        // cross-device rename; copy then remove
+        node.cpSync(from, to, { recursive: true });
+        node.rmSync(from, { recursive: true, force: true });
+    }
+}
+
+/** Registry entries carry absolute data-dir paths; repoint the ones under the legacy root. */
+function rewriteDataDirPrefixes(newRoot: string, legacyRoot: string): void {
+    const path = node.join(newRoot, SHARED_PATH.REGISTRY);
+    const entries = readJson<VaultRegistryEntry[]>(path);
+    if (entries === null) return;
+    const prefix = `${legacyRoot}/`;
+    const rewritten = entries.map((e) =>
+        e.dataDir.startsWith(prefix) ? { ...e, dataDir: node.join(newRoot, e.dataDir.slice(prefix.length)) } : e,
+    );
+    writeJsonAtomic(path, rewritten);
+}
+
+/**
+ * One-time move of plugin-created entries from the legacy CLI-shared data root
+ * into the plugin-owned root. Anything else in the legacy root (e.g. an
+ * external `lilbee serve` install) stays untouched. Returns DEFERRED while a
+ * live process still serves from the legacy root; the next plugin load retries.
+ */
+export function migrateLegacySharedRoot(legacyRoot: string | null, newRoot: string): MigrationResult {
+    if (!legacyRoot || hasPluginEntries(newRoot)) return MIGRATION_RESULT.NONE;
+    if (!PLUGIN_MARKERS.some((e) => node.existsSync(node.join(legacyRoot, e)))) return MIGRATION_RESULT.NONE;
+
+    const lock = readJson<ActiveLock>(node.join(legacyRoot, SHARED_PATH.LOCK));
+    if (lock !== null && isProcessAlive(lock.pid)) return MIGRATION_RESULT.DEFERRED;
+
+    ensureDir(newRoot);
+    for (const entry of MIGRATABLE_ENTRIES) {
+        const from = node.join(legacyRoot, entry);
+        if (!node.existsSync(from)) continue;
+        try {
+            moveEntry(from, node.join(newRoot, entry));
+        } catch (err) {
+            console.warn(`[lilbee] could not migrate ${from}; it will be recreated`, err);
+        }
+    }
+    try {
+        node.unlinkSync(node.join(legacyRoot, SHARED_PATH.LOCK));
+    } catch {
+        // no stale lock to clean up
+    }
+    rewriteDataDirPrefixes(newRoot, legacyRoot);
+    return MIGRATION_RESULT.MIGRATED;
+}
+
+/**
+ * Delete the managed install. The plugin-owned default root is removed
+ * wholesale; a user-overridden root may hold files the plugin never wrote,
+ * so only the entries the plugin creates are removed there.
+ */
+export function deleteManagedInstall(sharedRoot: string): void {
+    const defaultRoot = getDefaultPluginDataRoot() ?? FALLBACK_SHARED_ROOT;
+    if (node.resolve(sharedRoot) === node.resolve(defaultRoot)) {
+        node.rmSync(sharedRoot, { recursive: true, force: true });
+        return;
+    }
+    for (const entry of Object.values(SHARED_PATH)) {
+        node.rmSync(node.join(sharedRoot, entry), { recursive: true, force: true });
     }
 }
 

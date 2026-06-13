@@ -4,12 +4,15 @@ import {
     VaultRegistry,
     computeVaultId,
     defaultDataDirFor,
+    deleteManagedInstall,
+    migrateLegacySharedRoot,
     resolveSharedRoot,
     sharedBinDir,
     sharedModelsDir,
     vaultsRootDir,
 } from "../src/vault-registry";
-import { LOCK_STATE, type ActiveLock, type VaultRegistryEntry } from "../src/types";
+import { getDefaultPluginDataRoot } from "../src/session-token";
+import { LOCK_STATE, MIGRATION_RESULT, SHARED_PATH, type ActiveLock, type VaultRegistryEntry } from "../src/types";
 
 /* ------------------------------------------------------------------ */
 /*  In-memory fs                                                      */
@@ -43,6 +46,19 @@ function makeFs() {
         mkdir: (p: string) => {
             dirs.add(p);
         },
+        rm: (p: string) => {
+            files.delete(p);
+            dirs.delete(p);
+            for (const k of [...files.keys()]) if (k.startsWith(`${p}/`)) files.delete(k);
+            for (const d of [...dirs]) if (d.startsWith(`${p}/`)) dirs.delete(d);
+        },
+        cp: (from: string, to: string) => {
+            const v = files.get(from);
+            if (v !== undefined) files.set(to, v);
+            for (const k of [...files.keys()]) {
+                if (k.startsWith(`${from}/`)) files.set(to + k.slice(from.length), files.get(k) as string);
+            }
+        },
     };
 }
 
@@ -56,6 +72,8 @@ function mountFs(fs: ReturnType<typeof makeFs>) {
         fs.mkdir(p as string);
         return undefined;
     });
+    vi.spyOn(node, "rmSync").mockImplementation((p) => fs.rm(p as string));
+    vi.spyOn(node, "cpSync").mockImplementation((f, t) => fs.cp(f as string, t as string));
 }
 
 /* ------------------------------------------------------------------ */
@@ -67,19 +85,19 @@ describe("resolveSharedRoot", () => {
         expect(resolveSharedRoot("/custom/path")).toBe("/custom/path");
     });
 
-    it("falls back to platform default when setting is empty", () => {
+    it("falls back to the plugin-owned platform default when setting is empty", () => {
         const result = resolveSharedRoot("");
         // On any normal test host HOME/USERPROFILE is set so we get a real path.
-        expect(result).toMatch(/lilbee/);
+        expect(result).toMatch(/obsidian-lilbee/);
     });
 
-    it("falls back to /tmp/lilbee when both HOME and USERPROFILE are missing", () => {
+    it("falls back to /tmp/obsidian-lilbee when both HOME and USERPROFILE are missing", () => {
         const origHome = process.env.HOME;
         const origUser = process.env.USERPROFILE;
         delete process.env.HOME;
         delete process.env.USERPROFILE;
         try {
-            expect(resolveSharedRoot("")).toBe("/tmp/lilbee");
+            expect(resolveSharedRoot("")).toBe("/tmp/obsidian-lilbee");
         } finally {
             if (origHome !== undefined) process.env.HOME = origHome;
             if (origUser !== undefined) process.env.USERPROFILE = origUser;
@@ -371,5 +389,171 @@ describe("VaultRegistry write/release lock", () => {
         expect(reg.readLock()).toBeNull();
         fs.write("/r/active.lock", JSON.stringify(lock({ pid: 99 })));
         expect(reg.readLock()?.pid).toBe(99);
+    });
+});
+
+/* ------------------------------------------------------------------ */
+/*  migrateLegacySharedRoot                                            */
+/* ------------------------------------------------------------------ */
+
+describe("migrateLegacySharedRoot", () => {
+    beforeEach(() => vi.restoreAllMocks());
+
+    const deadPid = () =>
+        vi.spyOn(node, "processKill").mockImplementation(() => {
+            throw new Error("ESRCH");
+        });
+
+    it("NONE when there is no legacy root", () => {
+        mountFs(makeFs());
+        expect(migrateLegacySharedRoot(null, "/new")).toBe(MIGRATION_RESULT.NONE);
+    });
+
+    it("NONE when the new root already has plugin entries", () => {
+        const fs = makeFs();
+        fs.write("/new/registry.json", "[]");
+        fs.write("/old/bin", "binary");
+        mountFs(fs);
+        expect(migrateLegacySharedRoot("/old", "/new")).toBe(MIGRATION_RESULT.NONE);
+        expect(fs.exists("/old/bin")).toBe(true);
+    });
+
+    it("NONE when the legacy root has no plugin markers", () => {
+        const fs = makeFs();
+        fs.write("/old/data/server.json", "{}");
+        fs.write("/old/models", "cli-models");
+        mountFs(fs);
+        expect(migrateLegacySharedRoot("/old", "/new")).toBe(MIGRATION_RESULT.NONE);
+        expect(fs.exists("/old/models")).toBe(true);
+    });
+
+    it("DEFERRED while a live process holds the legacy lock", () => {
+        const fs = makeFs();
+        fs.write("/old/bin", "binary");
+        fs.write("/old/active.lock", JSON.stringify(lock()));
+        mountFs(fs);
+        vi.spyOn(node, "processKill").mockImplementation(() => true);
+        expect(migrateLegacySharedRoot("/old", "/new")).toBe(MIGRATION_RESULT.DEFERRED);
+        expect(fs.exists("/old/bin")).toBe(true);
+    });
+
+    it("moves every plugin entry, drops the stale lock, and rewrites data-dir paths", () => {
+        const fs = makeFs();
+        fs.write("/old/bin", "binary");
+        fs.write("/old/models", "models");
+        fs.write("/old/vaults", "vaults");
+        fs.write("/old/config.json", JSON.stringify({ lilbeeVersion: "v1" }));
+        fs.write(
+            "/old/registry.json",
+            JSON.stringify([entry("a", { dataDir: "/old/vaults/a" }), entry("b", { dataDir: "/elsewhere/b" })]),
+        );
+        fs.write("/old/active.lock", JSON.stringify(lock()));
+        mountFs(fs);
+        deadPid();
+
+        expect(migrateLegacySharedRoot("/old", "/new")).toBe(MIGRATION_RESULT.MIGRATED);
+
+        expect(fs.read("/new/bin")).toBe("binary");
+        expect(fs.read("/new/models")).toBe("models");
+        expect(fs.read("/new/vaults")).toBe("vaults");
+        expect(JSON.parse(fs.read("/new/config.json"))).toMatchObject({ lilbeeVersion: "v1" });
+        expect(fs.exists("/old/bin")).toBe(false);
+        expect(fs.exists("/old/active.lock")).toBe(false);
+        const rewritten = JSON.parse(fs.read("/new/registry.json")) as VaultRegistryEntry[];
+        expect(rewritten.find((e) => e.id === "a")?.dataDir).toBe("/new/vaults/a");
+        expect(rewritten.find((e) => e.id === "b")?.dataDir).toBe("/elsewhere/b");
+    });
+
+    it("migrates a legacy root that never had a lock file", () => {
+        const fs = makeFs();
+        fs.write("/old/registry.json", "[]");
+        mountFs(fs);
+        expect(migrateLegacySharedRoot("/old", "/new")).toBe(MIGRATION_RESULT.MIGRATED);
+        expect(fs.read("/new/registry.json")).toBe("[]");
+    });
+
+    it("falls back to copy + remove when rename fails (cross-device)", () => {
+        const fs = makeFs();
+        fs.write("/old/bin", "binary");
+        mountFs(fs);
+        vi.spyOn(node, "renameSync").mockImplementation(() => {
+            throw new Error("EXDEV");
+        });
+        expect(migrateLegacySharedRoot("/old", "/new")).toBe(MIGRATION_RESULT.MIGRATED);
+        expect(fs.read("/new/bin")).toBe("binary");
+        expect(fs.exists("/old/bin")).toBe(false);
+    });
+
+    it("keeps going when one entry cannot be moved at all", () => {
+        const fs = makeFs();
+        fs.write("/old/bin", "binary");
+        fs.write("/old/registry.json", "[]");
+        mountFs(fs);
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        vi.spyOn(node, "renameSync").mockImplementation((f, t) => {
+            if ((f as string) === "/old/bin") throw new Error("EXDEV");
+            fs.rename(f as string, t as string);
+        });
+        vi.spyOn(node, "cpSync").mockImplementation(() => {
+            throw new Error("EACCES");
+        });
+
+        expect(migrateLegacySharedRoot("/old", "/new")).toBe(MIGRATION_RESULT.MIGRATED);
+        expect(fs.read("/new/registry.json")).toBe("[]");
+        expect(fs.exists("/old/bin")).toBe(true);
+        expect(warn).toHaveBeenCalled();
+    });
+});
+
+/* ------------------------------------------------------------------ */
+/*  deleteManagedInstall                                               */
+/* ------------------------------------------------------------------ */
+
+describe("deleteManagedInstall", () => {
+    beforeEach(() => vi.restoreAllMocks());
+
+    it("removes the whole root when it is the plugin-owned default", () => {
+        const root = getDefaultPluginDataRoot() as string;
+        const fs = makeFs();
+        fs.write(`${root}/bin`, "binary");
+        fs.write(`${root}/anything-else`, "x");
+        mountFs(fs);
+        deleteManagedInstall(root);
+        expect(node.rmSync).toHaveBeenCalledTimes(1);
+        expect(fs.exists(`${root}/bin`)).toBe(false);
+        expect(fs.exists(`${root}/anything-else`)).toBe(false);
+    });
+
+    it("treats the /tmp fallback as the default root when no home is set", () => {
+        const origHome = process.env.HOME;
+        const origUser = process.env.USERPROFILE;
+        delete process.env.HOME;
+        delete process.env.USERPROFILE;
+        const fs = makeFs();
+        fs.write("/tmp/obsidian-lilbee/bin", "binary");
+        mountFs(fs);
+        try {
+            deleteManagedInstall("/tmp/obsidian-lilbee");
+            expect(node.rmSync).toHaveBeenCalledTimes(1);
+            expect(fs.exists("/tmp/obsidian-lilbee/bin")).toBe(false);
+        } finally {
+            if (origHome !== undefined) process.env.HOME = origHome;
+            if (origUser !== undefined) process.env.USERPROFILE = origUser;
+        }
+    });
+
+    it("removes only plugin-created entries from a custom root", () => {
+        const fs = makeFs();
+        fs.write("/custom/bin", "binary");
+        fs.write("/custom/registry.json", "[]");
+        fs.write("/custom/active.lock", "{}");
+        fs.write("/custom/data/server.json", "{}");
+        mountFs(fs);
+        deleteManagedInstall("/custom");
+        expect(fs.exists("/custom/bin")).toBe(false);
+        expect(fs.exists("/custom/registry.json")).toBe(false);
+        expect(fs.exists("/custom/active.lock")).toBe(false);
+        expect(fs.exists("/custom/data/server.json")).toBe(true);
+        expect(node.rmSync).toHaveBeenCalledTimes(Object.values(SHARED_PATH).length);
     });
 });

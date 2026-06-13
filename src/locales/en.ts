@@ -224,6 +224,15 @@ export const MESSAGES = {
     LABEL_STORAGE_MODELS: "Models cache",
     LABEL_STORAGE_VAULT: "This vault",
     LABEL_STORAGE_TOTAL: "Total",
+    LABEL_UNINSTALL: "Uninstall lilbee",
+    DESC_UNINSTALL: (path: string): string =>
+        `Deletes the server binary, downloaded models, and every vault's index from ${path}. Do this before removing the plugin and nothing is left behind. Your notes are not touched.`,
+    BUTTON_UNINSTALL: "Delete server and data",
+    CONFIRM_UNINSTALL: (size: string, vaultCount: number): string =>
+        `Delete the lilbee server and everything it downloaded (${size})? This removes the index data of ${vaultCount === 1 ? "1 vault" : `${vaultCount} vaults`}. Your notes stay where they are, but models will need to be downloaded again if you reinstall.`,
+    NOTICE_UNINSTALL_BLOCKED: (vaultName: string): string =>
+        `lilbee is still serving "${vaultName}". Close that vault or take over before deleting.`,
+    NOTICE_UNINSTALL_DONE: "lilbee server and data deleted. You can now remove the plugin.",
     LABEL_EMBEDDING_MODEL: "Embedding model",
     LABEL_RERANKER_TITLE: "Reranker model",
     LABEL_RERANKER_DISABLED: "(disabled)",
@@ -853,7 +862,7 @@ export const MESSAGES = {
     MANAGED_CONSENT_PILL_RECOMMENDED: "Recommended",
     MANAGED_CONSENT_CARD_MANAGED_TITLE: "Managed",
     MANAGED_CONSENT_CARD_MANAGED_DESC:
-        "This plugin downloads the server and handles start, stop, and updates. Nothing else to install.",
+        "This plugin downloads the server and handles start, stop, and updates. Nothing else to install. Everything lives in one folder you can delete from settings at any time.",
     MANAGED_CONSENT_CARD_EXTERNAL_TITLE: "External",
     MANAGED_CONSENT_CARD_EXTERNAL_DESC: "You run lilbee serve yourself. The plugin connects to it.",
     MANAGED_CONSENT_CARD_EXTERNAL_HINT: "For advanced / custom setups",

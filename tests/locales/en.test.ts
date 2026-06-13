@@ -450,3 +450,19 @@ describe("types", () => {
         expect(sorts).toContain(FILTERS.SORT.SIZE_DESC);
     });
 });
+
+describe("uninstall strings", () => {
+    it("DESC_UNINSTALL names the shared root", () => {
+        expect(MESSAGES.DESC_UNINSTALL("/data/obsidian-lilbee")).toContain("/data/obsidian-lilbee");
+    });
+
+    it("CONFIRM_UNINSTALL pluralizes the vault count", () => {
+        expect(MESSAGES.CONFIRM_UNINSTALL("1.2 GB", 1)).toContain("1 vault");
+        expect(MESSAGES.CONFIRM_UNINSTALL("1.2 GB", 3)).toContain("3 vaults");
+        expect(MESSAGES.CONFIRM_UNINSTALL("1.2 GB", 3)).toContain("1.2 GB");
+    });
+
+    it("NOTICE_UNINSTALL_BLOCKED names the owning vault", () => {
+        expect(MESSAGES.NOTICE_UNINSTALL_BLOCKED("Work")).toContain('"Work"');
+    });
+});

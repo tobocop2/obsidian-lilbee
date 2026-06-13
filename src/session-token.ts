@@ -19,19 +19,28 @@ import { PLATFORM } from "./types";
 
 const MAX_WALK_UP_DEPTH = 32;
 
-export function getDefaultLilbeeDataRoot(): string | null {
+function platformDataDir(): string | null {
     const home = process.env.HOME ?? process.env.USERPROFILE;
     if (!home) return null;
 
     if (process.platform === PLATFORM.DARWIN) {
-        return `${home}/Library/Application Support/lilbee`;
+        return `${home}/Library/Application Support`;
     }
     if (process.platform === PLATFORM.WIN32) {
-        const local = process.env.LOCALAPPDATA;
-        return local ? `${local}/lilbee` : `${home}/AppData/Local/lilbee`;
+        return process.env.LOCALAPPDATA ?? `${home}/AppData/Local`;
     }
-    const xdg = process.env.XDG_DATA_HOME;
-    return xdg ? `${xdg}/lilbee` : `${home}/.local/share/lilbee`;
+    return process.env.XDG_DATA_HOME ?? `${home}/.local/share`;
+}
+
+export function getDefaultLilbeeDataRoot(): string | null {
+    const base = platformDataDir();
+    return base ? `${base}/lilbee` : null;
+}
+
+/** Managed-mode root owned solely by this plugin — safe to delete wholesale on uninstall. */
+export function getDefaultPluginDataRoot(): string | null {
+    const base = platformDataDir();
+    return base ? `${base}/obsidian-lilbee` : null;
 }
 
 export function findLocalLilbeeRoot(startDir: string): string | null {

@@ -15,9 +15,17 @@ import { exportDiagnostics } from "./diagnostics-export";
 import { ErrorJournal } from "./error-journal";
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
-import { readSessionToken, resolveExternalDataRoot } from "./session-token";
+import { getDefaultLilbeeDataRoot, readSessionToken, resolveExternalDataRoot } from "./session-token";
 import { LilbeeSettingTab } from "./settings";
-import { VaultRegistry, computeVaultId, resolveSharedRoot, sharedBinDir, sharedModelsDir } from "./vault-registry";
+import {
+    VaultRegistry,
+    computeVaultId,
+    deleteManagedInstall,
+    migrateLegacySharedRoot,
+    resolveSharedRoot,
+    sharedBinDir,
+    sharedModelsDir,
+} from "./vault-registry";
 import {
     DEFAULT_SETTINGS,
     DOT_STATE,
@@ -26,6 +34,7 @@ import {
     LOGS_DIR,
     MANAGED_CONSENT_RESULT,
     MANAGED_PHASE,
+    MIGRATION_RESULT,
     SERVER_MODE,
     SERVER_STATE,
     SETUP_OUTCOME,
@@ -1208,7 +1217,37 @@ export default class LilbeePlugin extends Plugin {
         this.previousServerMode = this.settings.serverMode;
         this.taskQueue.loadFromJSON(raw?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
         this.vaultId = computeVaultId(this.getVaultBasePath());
-        this.vaultRegistry = new VaultRegistry(resolveSharedRoot(this.settings.sharedRoot));
+        this.vaultRegistry = new VaultRegistry(this.resolveMigratedSharedRoot());
+    }
+
+    /** Plugin-owned root by default; migrates a legacy CLI-shared install once, deferring while it's live. */
+    private resolveMigratedSharedRoot(): string {
+        const root = resolveSharedRoot(this.settings.sharedRoot);
+        if (this.settings.sharedRoot) return root;
+        const legacy = getDefaultLilbeeDataRoot();
+        if (legacy !== null && migrateLegacySharedRoot(legacy, root) === MIGRATION_RESULT.DEFERRED) return legacy;
+        return root;
+    }
+
+    /** Stop the managed server and delete the binary, model cache, and every vault's index data. */
+    async uninstallManagedInstall(): Promise<boolean> {
+        const registry = this.vaultRegistry;
+        if (!registry) return false;
+        if (registry.lockState(this.vaultId) === LOCK_STATE.LIVE_OTHER) {
+            const owner = registry.readLock();
+            const ownerName = owner ? this.lookupVaultName(owner.vaultId) : "another vault";
+            new Notice(MESSAGES.NOTICE_UNINSTALL_BLOCKED(ownerName));
+            return false;
+        }
+        if (this.serverManager) {
+            await this.serverManager.stop();
+            this.serverManager = null;
+        }
+        deleteManagedInstall(registry.sharedRoot);
+        this.binaryManager = null;
+        this.updateStatusBar(MESSAGES.STATUS_STOPPED, DOT_STATE.MUTED);
+        new Notice(MESSAGES.NOTICE_UNINSTALL_DONE);
+        return true;
     }
 
     getSharedLilbeeVersion(): string {

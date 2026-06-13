@@ -394,7 +394,7 @@ export interface LilbeeSettings {
     /**
      * Filesystem root that holds the shared lilbee binary, models cache, and
      * per-vault data directories. Empty string means "use platform default"
-     * (resolved via getDefaultLilbeeDataRoot). Set explicitly to point the
+     * (resolved via getDefaultPluginDataRoot). Set explicitly to point the
      * plugin at a different location (e.g. an external SSD).
      */
     sharedRoot: string;
@@ -471,6 +471,15 @@ export const LOCK_STATE = {
     STALE: "stale",
     LIVE_OTHER: "live_other",
 } as const satisfies Record<string, LockState>;
+
+/** Outcome of moving a legacy CLI-shared root into the plugin-owned root. */
+export type MigrationResult = "none" | "migrated" | "deferred";
+
+export const MIGRATION_RESULT = {
+    NONE: "none",
+    MIGRATED: "migrated",
+    DEFERRED: "deferred",
+} as const satisfies Record<string, MigrationResult>;
 
 /** Names of files/dirs the plugin writes inside the shared root. */
 export const SHARED_PATH = {

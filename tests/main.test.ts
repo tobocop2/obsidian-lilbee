@@ -2,7 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { windowStub } from "./window-stub";
 import { Notice } from "obsidian";
 import { App, MockElement, WorkspaceLeaf } from "./__mocks__/obsidian";
-import { SETUP_OUTCOME, SSE_EVENT } from "../src/types";
+import { LOCK_STATE, SETUP_OUTCOME, SSE_EVENT } from "../src/types";
 import { VaultRegistry } from "../src/vault-registry";
 import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
@@ -670,6 +670,127 @@ describe("LilbeePlugin", () => {
             await plugin.loadSettings();
             expect(plugin.settings.topK).toBe(12);
             expect(plugin.settings.serverMode).toBe("managed");
+        });
+
+        it("uses the configured shared root verbatim without migrating", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin({ sharedRoot: "/custom/root" });
+            await plugin.loadSettings();
+            expect(plugin.vaultRegistry?.sharedRoot).toBe("/custom/root");
+            expect(node.renameSync).not.toHaveBeenCalled();
+        });
+
+        it("defaults to the plugin-owned root when there is no legacy install", async () => {
+            const plugin = await createPlugin();
+            await plugin.loadSettings();
+            expect(plugin.vaultRegistry?.sharedRoot).toMatch(/obsidian-lilbee/);
+        });
+
+        it("migrates a legacy install into the plugin-owned root", async () => {
+            const { node } = await import("../src/binary-manager");
+            const { getDefaultLilbeeDataRoot, getDefaultPluginDataRoot } = await import("../src/session-token");
+            const legacy = getDefaultLilbeeDataRoot() as string;
+            const newRoot = getDefaultPluginDataRoot() as string;
+            vi.mocked(node.existsSync).mockImplementation((p) => p === `${legacy}/bin`);
+
+            const plugin = await createPlugin();
+            await plugin.loadSettings();
+
+            expect(plugin.vaultRegistry?.sharedRoot).toBe(newRoot);
+            expect(node.renameSync).toHaveBeenCalledWith(`${legacy}/bin`, `${newRoot}/bin`);
+        });
+
+        it("keeps the legacy root for the session while a live process serves from it", async () => {
+            const { node } = await import("../src/binary-manager");
+            const { getDefaultLilbeeDataRoot } = await import("../src/session-token");
+            const legacy = getDefaultLilbeeDataRoot() as string;
+            vi.mocked(node.existsSync).mockImplementation(
+                (p) => p === `${legacy}/bin` || p === `${legacy}/active.lock`,
+            );
+            vi.mocked(node.readFileSync).mockImplementation((p) => {
+                if (p === `${legacy}/active.lock`) {
+                    return JSON.stringify({ vaultId: "other", pid: 1234, port: 1, startedAt: 1 });
+                }
+                throw new Error("ENOENT");
+            });
+            vi.mocked(node.processKill).mockImplementation(() => true);
+
+            const plugin = await createPlugin();
+            await plugin.loadSettings();
+
+            expect(plugin.vaultRegistry?.sharedRoot).toBe(legacy);
+            expect(node.renameSync).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("uninstallManagedInstall()", () => {
+        const fakeRegistry = (overrides: Record<string, unknown> = {}) => ({
+            sharedRoot: "/custom/root",
+            lockState: () => LOCK_STATE.OURS,
+            readLock: () => null,
+            get: () => null,
+            ...overrides,
+        });
+
+        it("returns false when there is no vault registry", async () => {
+            const plugin = await createPlugin();
+            await plugin.loadSettings();
+            (plugin as any).vaultRegistry = null;
+            expect(await plugin.uninstallManagedInstall()).toBe(false);
+        });
+
+        it("refuses while another vault's live process holds the lock", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.loadSettings();
+            (plugin as any).vaultRegistry = fakeRegistry({
+                lockState: () => LOCK_STATE.LIVE_OTHER,
+                readLock: () => ({ vaultId: "other", pid: 1, port: 1, startedAt: 1 }),
+                get: () => ({ displayName: "Work Vault" }),
+            });
+
+            expect(await plugin.uninstallManagedInstall()).toBe(false);
+            expect(Notice.instances.map((n) => n.message).join()).toContain('still serving "Work Vault"');
+            expect(node.rmSync).not.toHaveBeenCalled();
+        });
+
+        it("names the owner generically when the lock vanished between checks", async () => {
+            const plugin = await createPlugin();
+            await plugin.loadSettings();
+            (plugin as any).vaultRegistry = fakeRegistry({
+                lockState: () => LOCK_STATE.LIVE_OTHER,
+                readLock: () => null,
+            });
+
+            expect(await plugin.uninstallManagedInstall()).toBe(false);
+            expect(Notice.instances.map((n) => n.message).join()).toContain('still serving "another vault"');
+        });
+
+        it("stops the server, deletes the install, and reports success", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.loadSettings();
+            (plugin as any).vaultRegistry = fakeRegistry();
+            (plugin as any).serverManager = { stop: mockServerStop };
+            (plugin as any).binaryManager = {};
+
+            expect(await plugin.uninstallManagedInstall()).toBe(true);
+
+            expect(mockServerStop).toHaveBeenCalled();
+            expect((plugin as any).serverManager).toBeNull();
+            expect((plugin as any).binaryManager).toBeNull();
+            expect(node.rmSync).toHaveBeenCalled();
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_UNINSTALL_DONE);
+        });
+
+        it("deletes the install when no server is running", async () => {
+            const { node } = await import("../src/binary-manager");
+            const plugin = await createPlugin();
+            await plugin.loadSettings();
+            (plugin as any).vaultRegistry = fakeRegistry();
+
+            expect(await plugin.uninstallManagedInstall()).toBe(true);
+            expect(node.rmSync).toHaveBeenCalled();
         });
     });
 

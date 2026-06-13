@@ -17,7 +17,7 @@ import {
 } from "./types";
 import type { CatalogEntry, ConfigResponse, InstalledModel, LilbeeSettings, ServerMode } from "./types";
 import { exportDiagnostics } from "./diagnostics-export";
-import { formatBytes, reportForVault } from "./storage-stats";
+import { dirSizeBytes, formatBytes, reportForVault } from "./storage-stats";
 import { MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import { CatalogModal } from "./views/catalog-modal";
@@ -293,6 +293,31 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 }
             }),
         );
+
+        this.renderUninstall(containerEl);
+    }
+
+    /** Danger-zone removal of the whole managed install, gated behind a sized confirm dialog. */
+    private renderUninstall(containerEl: HTMLElement): void {
+        const registry = this.plugin.vaultRegistry;
+        if (!registry) return;
+        new Setting(containerEl)
+            .setName(MESSAGES.LABEL_UNINSTALL)
+            .setDesc(MESSAGES.DESC_UNINSTALL(registry.sharedRoot))
+            .addButton((btn) =>
+                btn
+                    .setButtonText(MESSAGES.BUTTON_UNINSTALL)
+                    // setWarning is deprecated and setDestructive needs Obsidian 1.13+; the class is what both apply.
+                    .setClass("mod-warning")
+                    .onClick(async () => {
+                        const size = formatBytes(dirSizeBytes(registry.sharedRoot));
+                        const vaultCount = Math.max(registry.list().length, 1);
+                        const confirm = new ConfirmModal(this.app, MESSAGES.CONFIRM_UNINSTALL(size, vaultCount));
+                        confirm.open();
+                        if (!(await confirm.result)) return;
+                        if (await this.plugin.uninstallManagedInstall()) this.render();
+                    }),
+            );
     }
 
     /** Indeterminate progress panel for the managed-server update; hidden until an update runs. */

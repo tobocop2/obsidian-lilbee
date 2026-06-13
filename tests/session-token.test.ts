@@ -3,6 +3,7 @@ import { node } from "../src/binary-manager";
 import {
     findLocalLilbeeRoot,
     getDefaultLilbeeDataRoot,
+    getDefaultPluginDataRoot,
     readSessionToken,
     resolveExternalDataRoot,
 } from "../src/session-token";
@@ -65,6 +66,50 @@ describe("session-token", () => {
             process.env.HOME = "/home/alice";
             delete process.env.XDG_DATA_HOME;
             expect(getDefaultLilbeeDataRoot()).toBe("/home/alice/.local/share/lilbee");
+        });
+    });
+
+    describe("getDefaultPluginDataRoot()", () => {
+        it("returns the plugin-owned macOS path when platform is darwin", () => {
+            setPlatform("darwin");
+            process.env.HOME = "/Users/alice";
+            expect(getDefaultPluginDataRoot()).toBe("/Users/alice/Library/Application Support/obsidian-lilbee");
+        });
+
+        it("returns null when no HOME or USERPROFILE is set", () => {
+            setPlatform("darwin");
+            delete process.env.HOME;
+            delete process.env.USERPROFILE;
+            expect(getDefaultPluginDataRoot()).toBeNull();
+        });
+
+        it("uses LOCALAPPDATA on windows when set", () => {
+            setPlatform("win32");
+            process.env.HOME = "C:\\Users\\alice";
+            process.env.LOCALAPPDATA = "C:\\Users\\alice\\AppData\\Local";
+            expect(getDefaultPluginDataRoot()).toBe("C:\\Users\\alice\\AppData\\Local/obsidian-lilbee");
+        });
+
+        it("falls back to ~/AppData/Local on windows when LOCALAPPDATA is unset", () => {
+            setPlatform("win32");
+            delete process.env.HOME;
+            process.env.USERPROFILE = "C:\\Users\\alice";
+            delete process.env.LOCALAPPDATA;
+            expect(getDefaultPluginDataRoot()).toBe("C:\\Users\\alice/AppData/Local/obsidian-lilbee");
+        });
+
+        it("uses XDG_DATA_HOME on linux when set", () => {
+            setPlatform("linux");
+            process.env.HOME = "/home/alice";
+            process.env.XDG_DATA_HOME = "/home/alice/xdg";
+            expect(getDefaultPluginDataRoot()).toBe("/home/alice/xdg/obsidian-lilbee");
+        });
+
+        it("falls back to ~/.local/share on linux when XDG is unset", () => {
+            setPlatform("linux");
+            process.env.HOME = "/home/alice";
+            delete process.env.XDG_DATA_HOME;
+            expect(getDefaultPluginDataRoot()).toBe("/home/alice/.local/share/obsidian-lilbee");
         });
     });
 

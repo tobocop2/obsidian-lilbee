@@ -6810,3 +6810,67 @@ describe("Export diagnostics button", () => {
         expect(exportDiagnostics).toHaveBeenCalledWith(ctx);
     });
 });
+
+describe("uninstall lilbee section", () => {
+    const makeRegistry = () => ({
+        sharedRoot: "/r",
+        resolveDataDir: () => "/r/vaults/a",
+        list: () => [{ id: "a" }, { id: "b" }],
+    });
+
+    afterEach(() => {
+        mockGenericConfirmResult = true;
+    });
+
+    it("is omitted when there is no vault registry", () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        const tab = makeTab(plugin);
+        const container = new MockElement() as unknown as HTMLElement;
+        const { buttonOnClicks } = captureSettingCallbacks(() => (tab as any).renderUninstall(container));
+        expect(buttonOnClicks).toHaveLength(0);
+    });
+
+    it("deletes after confirmation and re-renders", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).vaultRegistry = makeRegistry();
+        (plugin as any).uninstallManagedInstall = vi.fn().mockResolvedValue(true);
+        const tab = makeTab(plugin);
+        const renderSpy = vi.spyOn(tab, "render").mockImplementation(() => {});
+        const container = new MockElement() as unknown as HTMLElement;
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => (tab as any).renderUninstall(container));
+        await buttonOnClicks[0]();
+
+        expect((plugin as any).uninstallManagedInstall).toHaveBeenCalled();
+        expect(renderSpy).toHaveBeenCalled();
+    });
+
+    it("does nothing when the confirm dialog is canceled", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).vaultRegistry = makeRegistry();
+        (plugin as any).uninstallManagedInstall = vi.fn().mockResolvedValue(true);
+        const tab = makeTab(plugin);
+        const container = new MockElement() as unknown as HTMLElement;
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => (tab as any).renderUninstall(container));
+        mockGenericConfirmResult = false;
+        await buttonOnClicks[0]();
+
+        expect((plugin as any).uninstallManagedInstall).not.toHaveBeenCalled();
+    });
+
+    it("does not re-render when deletion was refused", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).vaultRegistry = makeRegistry();
+        (plugin as any).uninstallManagedInstall = vi.fn().mockResolvedValue(false);
+        const tab = makeTab(plugin);
+        const renderSpy = vi.spyOn(tab, "render").mockImplementation(() => {});
+        const container = new MockElement() as unknown as HTMLElement;
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => (tab as any).renderUninstall(container));
+        await buttonOnClicks[0]();
+
+        expect((plugin as any).uninstallManagedInstall).toHaveBeenCalled();
+        expect(renderSpy).not.toHaveBeenCalled();
+    });
+});
