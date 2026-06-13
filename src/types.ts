@@ -400,6 +400,8 @@ export interface LilbeeSettings {
      * plugin at a different location (e.g. an external SSD).
      */
     sharedRoot: string;
+    /** Set once the plugin has applied its one-time `show_reasoning` on-by-default. */
+    reasoningDefaulted: boolean;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -424,6 +426,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     lastCatalogTab: "discover",
     autoOpenCockpit: true,
     sharedRoot: "",
+    reasoningDefaulted: false,
 };
 
 /**

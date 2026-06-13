@@ -94,6 +94,7 @@ export const MESSAGES = {
     LABEL_SWITCH_MANAGED: "Switch to managed server",
     LABEL_MODELS: "Models",
     LABEL_REFRESH_MODELS: "Refresh models",
+    LABEL_CHAT_SECTION: "Chat",
     LABEL_SEARCH_RETRIEVAL: "Search & Retrieval",
     LABEL_RESULTS_COUNT: "Results count",
     LABEL_MAX_DISTANCE: "Search strictness",

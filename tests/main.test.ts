@@ -3665,6 +3665,62 @@ describe("LilbeePlugin", () => {
             expect((plugin as any).statusBarEl?.textContent).toBe("lilbee: ready [external]");
         });
 
+        it("turns show_reasoning on the first time the server reports it off, then never again", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const updateConfig = vi.fn().mockResolvedValue({ updated: ["show_reasoning"] });
+            plugin.api.updateConfig = updateConfig;
+            plugin.api.config = vi.fn().mockResolvedValue({ show_reasoning: false });
+            plugin.api.listModels = vi.fn().mockResolvedValue({
+                chat: { active: "qwen3:8b", installed: ["qwen3:8b"], catalog: [] },
+            });
+            const persistSpy = vi.spyOn(plugin as any, "persistAll");
+            // Reset so the manual call exercises the first-ready apply branch.
+            plugin.settings.reasoningDefaulted = false;
+
+            await plugin.fetchActiveModel();
+            expect(updateConfig).toHaveBeenCalledWith({ show_reasoning: true });
+            expect(plugin.settings.reasoningDefaulted).toBe(true);
+            expect(persistSpy).toHaveBeenCalled();
+
+            // Already applied: a second ready pass doesn't even re-read the config.
+            updateConfig.mockClear();
+            await plugin.fetchActiveModel();
+            expect(updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("leaves an already-on server alone but records the default as applied", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const updateConfig = vi.fn();
+            plugin.api.updateConfig = updateConfig;
+            plugin.api.config = vi.fn().mockResolvedValue({ show_reasoning: true });
+            plugin.api.listModels = vi.fn().mockResolvedValue({
+                chat: { active: "x", installed: [], catalog: [] },
+            });
+            plugin.settings.reasoningDefaulted = false;
+
+            await plugin.fetchActiveModel();
+            expect(updateConfig).not.toHaveBeenCalled();
+            expect(plugin.settings.reasoningDefaulted).toBe(true);
+        });
+
+        it("records the default as applied against an older server that omits show_reasoning", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const updateConfig = vi.fn();
+            plugin.api.updateConfig = updateConfig;
+            plugin.api.config = vi.fn().mockResolvedValue({});
+            plugin.api.listModels = vi.fn().mockResolvedValue({
+                chat: { active: "x", installed: [], catalog: [] },
+            });
+            plugin.settings.reasoningDefaulted = false;
+
+            await plugin.fetchActiveModel();
+            expect(updateConfig).not.toHaveBeenCalled();
+            expect(plugin.settings.reasoningDefaulted).toBe(true);
+        });
+
         it("status bar shows task name during sync and flashes done after", async () => {
             const plugin = await createPlugin();
             await plugin.onload();

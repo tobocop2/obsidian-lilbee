@@ -112,6 +112,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         this.renderConnectionSettings(containerEl);
         this.renderModelsSection(containerEl);
+        this.renderChatSettings(containerEl);
         this.renderSearchRetrievalSettings(containerEl);
         this.renderGenerationSettings(containerEl);
         this.renderMemorySection(containerEl);
@@ -474,6 +475,28 @@ export class LilbeeSettingTab extends PluginSettingTab {
         void this.loadModels(modelsContainer);
     }
 
+    private renderChatSettings(containerEl: HTMLElement): void {
+        new Setting(containerEl).setName(MESSAGES.LABEL_CHAT_SECTION).setHeading();
+
+        const showReasoningSetting = new Setting(containerEl)
+            .setName(MESSAGES.LABEL_SHOW_REASONING)
+            .setDesc(MESSAGES.DESC_SHOW_REASONING)
+            .addToggle((toggle) => {
+                toggle.onChange(async (value) => {
+                    if (this.suppressToggleChanges) return;
+                    try {
+                        await this.plugin.api.updateConfig({ [CONFIG_KEY.SHOW_REASONING]: value });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_SHOW_REASONING));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_SHOW_REASONING));
+                    }
+                });
+                this.serverConfigToggles.set(CONFIG_KEY.SHOW_REASONING, toggle);
+            });
+        showReasoningSetting.settingEl.hide();
+        this.serverConfigHideableEls.set(CONFIG_KEY.SHOW_REASONING, showReasoningSetting.settingEl);
+    }
+
     private renderSearchRetrievalSettings(containerEl: HTMLElement): void {
         new Setting(containerEl).setName(MESSAGES.LABEL_SEARCH_RETRIEVAL).setHeading();
 
@@ -743,24 +766,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
         this.chatModeSettingEl = chatModeSetting.settingEl;
         this.chatModeSettingEl.hide();
-
-        const showReasoningSetting = new Setting(details)
-            .setName(MESSAGES.LABEL_SHOW_REASONING)
-            .setDesc(MESSAGES.DESC_SHOW_REASONING)
-            .addToggle((toggle) => {
-                toggle.onChange(async (value) => {
-                    if (this.suppressToggleChanges) return;
-                    try {
-                        await this.plugin.api.updateConfig({ [CONFIG_KEY.SHOW_REASONING]: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_SHOW_REASONING));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_SHOW_REASONING));
-                    }
-                });
-                this.serverConfigToggles.set(CONFIG_KEY.SHOW_REASONING, toggle);
-            });
-        showReasoningSetting.settingEl.hide();
-        this.serverConfigHideableEls.set(CONFIG_KEY.SHOW_REASONING, showReasoningSetting.settingEl);
 
         const fields: { key: string; name: string; desc: string; integer: boolean; hideable?: boolean }[] = [
             {

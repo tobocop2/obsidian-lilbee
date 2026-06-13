@@ -560,7 +560,8 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[0](true);
+            // [0] is show_reasoning (Chat section, rendered first); [1] is adaptiveThreshold.
+            await toggleOnChanges[1](true);
             expect(plugin.settings.adaptiveThreshold).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
         });
@@ -3092,8 +3093,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Toggle order: [0] adaptiveThreshold (search/retrieval),
-            // [1] show_reasoning (generation), [2] worker_pool_eager_start (worker-pool),
+            // Toggle order: [0] show_reasoning (Chat), [1] adaptiveThreshold (search/retrieval),
+            // [2] worker_pool_eager_start (worker-pool),
             // [3] crawl_retry_on_rate_limit (crawling), [4+] wiki toggles.
             await toggleOnChanges[3](false);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: false });
@@ -3224,8 +3225,8 @@ describe("managed mode settings", () => {
             // load-bearing (if the flag failed to set, updateConfig WOULD be called).
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = false;
-            // toggleOnChanges[3] is crawl_retry_on_rate_limit; [0]=adaptiveThreshold,
-            // [1]=show_reasoning, [2]=worker_pool_eager_start.
+            // toggleOnChanges[3] is crawl_retry_on_rate_limit; [0]=show_reasoning,
+            // [1]=adaptiveThreshold, [2]=worker_pool_eager_start.
             await toggleOnChanges[3](true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: true });
         });
@@ -6401,8 +6402,8 @@ describe("managed mode settings", () => {
     });
 
     describe("show reasoning toggle", () => {
-        // toggleOnChanges[1] is show_reasoning; [0]=adaptiveThreshold.
-        const SHOW_REASONING_TOGGLE_IDX = 1;
+        // toggleOnChanges[0] is show_reasoning (Chat section, top); [1]=adaptiveThreshold.
+        const SHOW_REASONING_TOGGLE_IDX = 0;
 
         it("PATCHes show_reasoning when the toggle flips", async () => {
             const plugin = makePlugin();
