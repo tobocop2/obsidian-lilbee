@@ -144,6 +144,7 @@ export const MESSAGES = {
     LABEL_GEN_NUM_CTX: "Context window",
     LABEL_GEN_SEED: "Seed",
     LABEL_GEN_MAX_TOKENS: "Max tokens",
+    LABEL_SHOW_REASONING: "Show thinking",
     LABEL_GEN_MAX_REASONING_CHARS: "Max reasoning characters",
     LABEL_GEN_MODEL_KEEP_ALIVE: "Model keep-alive (s)",
     LABEL_GEN_GPU_MEMORY_FRACTION: "GPU memory fraction",
@@ -381,6 +382,8 @@ export const MESSAGES = {
     DESC_GEN_NUM_CTX: "Maximum amount of text the AI can consider at once",
     DESC_GEN_SEED: "Set a number for reproducible responses. Leave blank for varied answers.",
     DESC_GEN_MAX_TOKENS: "Hard cap on generated tokens per response (blank = no cap)",
+    DESC_SHOW_REASONING:
+        "Show a reasoning model's thinking in the chat, in a collapsible block above each answer. Off strips it.",
     DESC_GEN_MAX_REASONING_CHARS:
         "Maximum reasoning characters before lilbee forces the model to answer (per-model overrides apply on top)",
     DESC_GEN_MODEL_KEEP_ALIVE: "Seconds the loaded model stays warm between calls (0 = unload immediately)",

@@ -30,6 +30,20 @@ export function extractHfRepo(ref: string): string {
     return ref.slice(0, slash);
 }
 
+/**
+ * The dropdown option value that represents `active`. Server config stores a full
+ * native ref (`<repo>/<file>.gguf`) but installed-featured options key on the bare
+ * `hf_repo`, so an exact lookup misses and the dropdown renders blank. Match exactly
+ * first (hosted refs, other-installed full refs), then by bare repo; fall back to the
+ * ref unchanged when nothing matches.
+ */
+export function matchModelOption(active: string, optionValues: string[]): string {
+    if (optionValues.includes(active)) return active;
+    const repo = extractHfRepo(active);
+    if (optionValues.includes(repo)) return repo;
+    return active;
+}
+
 /** Convert a `<repo>` segment (org-stripped) into a friendly label. Mirrors the server's `clean_display_name`. */
 export function cleanDisplayName(repo: string): string {
     let name = repo.includes("/") ? repo.slice(repo.indexOf("/") + 1) : repo;

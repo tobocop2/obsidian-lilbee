@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { cleanDisplayName, displayLabelForRef, extractHfRepo, nativeModelRef } from "../../src/utils/model-ref";
+import {
+    cleanDisplayName,
+    displayLabelForRef,
+    extractHfRepo,
+    matchModelOption,
+    nativeModelRef,
+} from "../../src/utils/model-ref";
 
 describe("nativeModelRef", () => {
     it("builds the full file ref when a concrete .gguf filename is present", () => {
@@ -96,6 +102,32 @@ describe("extractHfRepo", () => {
 
     it("returns a .gguf ref with no slash unchanged", () => {
         expect(extractHfRepo("loose.gguf")).toBe("loose.gguf");
+    });
+});
+
+describe("matchModelOption", () => {
+    it("matches a full native ref to its bare-repo option key", () => {
+        const options = ["Qwen/Qwen3-0.6B-GGUF", "gemini/gemini-2.5-flash"];
+        expect(matchModelOption("Qwen/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf", options)).toBe("Qwen/Qwen3-0.6B-GGUF");
+    });
+
+    it("prefers an exact option match over the bare repo (other-installed full refs)", () => {
+        const ref = "user/custom-GGUF/custom-Q4_K_M.gguf";
+        const options = ["user/custom-GGUF", ref];
+        expect(matchModelOption(ref, options)).toBe(ref);
+    });
+
+    it("returns hosted/provider refs unchanged when present", () => {
+        const options = ["gemini/gemini-2.5-flash", "Qwen/Qwen3-0.6B-GGUF"];
+        expect(matchModelOption("gemini/gemini-2.5-flash", options)).toBe("gemini/gemini-2.5-flash");
+    });
+
+    it("matches the empty disabled-sentinel option", () => {
+        expect(matchModelOption("", ["", "Qwen/Qwen3-0.6B-GGUF"])).toBe("");
+    });
+
+    it("falls back to the active ref when nothing matches", () => {
+        expect(matchModelOption("ollama/llama3", ["gemini/gemini-2.5-flash"])).toBe("ollama/llama3");
     });
 });
 
