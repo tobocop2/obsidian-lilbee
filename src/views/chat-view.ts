@@ -93,6 +93,18 @@ interface OptionalRoleSpec {
     failNotice: string;
 }
 
+/** Per-message streaming state: accumulated text and the live reasoning DOM. */
+interface StreamState {
+    fullContent: string;
+    reasoningContent: string;
+    sources: Source[];
+    renderPending: boolean;
+    reasoningRenderPending: boolean;
+    reasoningContentEl: HTMLElement | null;
+    reasoningDetailsEl: HTMLElement | null;
+    answerStarted: boolean;
+}
+
 const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
     {
         key: "vision",
@@ -822,7 +834,16 @@ export class ChatView extends ItemView {
         textEl.hide();
         this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
 
-        const state = { fullContent: "", reasoningContent: "", sources: [] as Source[], renderPending: false };
+        const state: StreamState = {
+            fullContent: "",
+            reasoningContent: "",
+            sources: [],
+            renderPending: false,
+            reasoningRenderPending: false,
+            reasoningContentEl: null,
+            reasoningDetailsEl: null,
+            answerStarted: false,
+        };
 
         const spinnerCreatedAt = Date.now();
         const revealContent = (): void => {
@@ -893,19 +914,30 @@ export class ChatView extends ItemView {
         event: SSEEvent,
         textEl: HTMLElement,
         assistantBubble: HTMLElement,
-        state: { fullContent: string; reasoningContent: string; sources: Source[] },
+        state: StreamState,
         revealContent: () => void,
         scheduleRender: () => void,
     ): void {
         switch (event.event) {
             case SSE_EVENT.TOKEN: {
                 revealContent();
+                // The model has moved from thinking to answering: collapse the
+                // reasoning so the answer is what's prominent.
+                if (!state.answerStarted) {
+                    state.answerStarted = true;
+                    state.reasoningDetailsEl?.removeAttribute("open");
+                }
                 state.fullContent += extractString(event.data, "token");
                 scheduleRender();
                 break;
             }
             case SSE_EVENT.REASONING: {
+                // Reasoning leads the answer, so show it first and stream it live
+                // for immediate feedback, in an expanded block above the answer.
+                revealContent();
+                const el = this.ensureReasoningBlock(assistantBubble, textEl, state);
                 state.reasoningContent += extractString(event.data, "token");
+                this.scheduleReasoningRender(state, el);
                 break;
             }
             case SSE_EVENT.SOURCES:
@@ -914,16 +946,13 @@ export class ChatView extends ItemView {
             case SSE_EVENT.DONE: {
                 revealContent();
                 const rendered = state.fullContent;
-                // Reasoning, banner, and sources all grow the bubble after the
-                // last token; render them inside one follow so the view ends
-                // pinned to the bottom.
+                // Banner and sources grow the bubble after the last token; render
+                // them inside one follow so the view ends pinned to the bottom.
                 void this.renderFollowing(async () => {
                     if (state.reasoningContent) {
-                        const details = assistantBubble.createEl("details", { cls: "lilbee-reasoning" });
-                        details.createEl("summary", { text: MESSAGES.LABEL_REASONING });
-                        const content = details.createDiv({ cls: "lilbee-reasoning-content" });
-                        void MarkdownRenderer.render(this.app, state.reasoningContent, content, "", this);
-                        details.removeAttribute("open");
+                        const el = this.ensureReasoningBlock(assistantBubble, textEl, state);
+                        await this.renderMarkdown(el, state.reasoningContent);
+                        state.reasoningDetailsEl?.removeAttribute("open");
                     }
                     this.renderBannerIfPresent(event.data, assistantBubble);
                     await this.renderMarkdown(textEl, rendered);
@@ -961,6 +990,30 @@ export class ChatView extends ItemView {
                 break;
             }
         }
+    }
+
+    /** Create the reasoning block above the answer on first use; return its content div. */
+    private ensureReasoningBlock(assistantBubble: HTMLElement, textEl: HTMLElement, state: StreamState): HTMLElement {
+        if (state.reasoningContentEl) return state.reasoningContentEl;
+        const details = assistantBubble.createEl("details", { cls: "lilbee-reasoning" });
+        details.setAttribute("open", "");
+        details.createEl("summary", { text: MESSAGES.LABEL_REASONING });
+        const content = details.createDiv({ cls: "lilbee-reasoning-content" });
+        // The answer div was created first; move the thinking above it so it reads first.
+        assistantBubble.insertBefore(details, textEl);
+        state.reasoningDetailsEl = details;
+        state.reasoningContentEl = content;
+        return content;
+    }
+
+    /** Coalesce live reasoning re-renders to one per frame. */
+    private scheduleReasoningRender(state: StreamState, el: HTMLElement): void {
+        if (state.reasoningRenderPending) return;
+        state.reasoningRenderPending = true;
+        window.requestAnimationFrame(() => {
+            state.reasoningRenderPending = false;
+            void this.renderFollowing(() => this.renderMarkdown(el, state.reasoningContent));
+        });
     }
 
     /** True when the message list is scrolled to (or near) the bottom. */

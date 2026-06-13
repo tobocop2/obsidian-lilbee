@@ -601,6 +601,94 @@ describe("ChatView.sendMessage — reasoning tokens", () => {
         expect(details!.children[0].textContent).toBe("Reasoning");
         const textEl = assistantBubble.find("lilbee-chat-content");
         expect(textEl!.textContent).toBe("The answer is 42.");
+        // Reasoning reads first: it sits above the answer in the bubble.
+        const idxReasoning = assistantBubble.children.indexOf(details!);
+        const idxAnswer = assistantBubble.children.indexOf(textEl!);
+        expect(idxReasoning).toBeGreaterThanOrEqual(0);
+        expect(idxReasoning).toBeLessThan(idxAnswer);
+        // Collapsed once the answer arrived.
+        expect(details!.getAttribute("open")).toBeNull();
+    });
+
+    it("streams reasoning live and expanded, above the answer, before the answer arrives", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        let release!: () => void;
+        const gate = new Promise<void>((r) => {
+            release = r;
+        });
+        const mockFn = vi.fn().mockReturnValue(
+            (async function* () {
+                yield { event: SSE_EVENT.REASONING, data: { token: "First, " } };
+                yield { event: SSE_EVENT.REASONING, data: { token: "I weigh the options." } };
+                await gate; // pause before any answer token
+                yield { event: SSE_EVENT.TOKEN, data: { token: "Answer." } };
+                yield { event: SSE_EVENT.DONE, data: {} };
+            })(),
+        );
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        container.find("lilbee-chat-textarea")!.value = "think first";
+        container.find("lilbee-chat-send")!.trigger("click");
+
+        // Let the reasoning events stream and the rAF render flush, still before the answer.
+        await tick();
+        await tick();
+
+        const assistantBubble = messagesEl.children[1];
+        const details = assistantBubble.find("lilbee-reasoning");
+        expect(details).toBeTruthy();
+        // Expanded while thinking, for immediate feedback.
+        expect(details!.getAttribute("open")).toBe("");
+        // Reasoning content already rendered before the answer/DONE arrived.
+        const reasoningContent = assistantBubble.find("lilbee-reasoning-content");
+        expect(reasoningContent!.textContent).toContain("First, I weigh the options.");
+        // No answer text yet.
+        expect(assistantBubble.find("lilbee-chat-content")!.textContent).toBe("");
+        // Reasoning is above the (empty) answer in the bubble.
+        const textEl = assistantBubble.find("lilbee-chat-content");
+        expect(assistantBubble.children.indexOf(details!)).toBeLessThan(assistantBubble.children.indexOf(textEl!));
+
+        release();
+        await tick();
+        await tick();
+        // Once the answer streams in, the reasoning collapses.
+        expect(details!.getAttribute("open")).toBeNull();
+        expect(textEl!.textContent).toBe("Answer.");
+    });
+
+    it("coalesces live reasoning re-renders to one per frame", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const origRAF = globalThis.requestAnimationFrame;
+        const frames: FrameRequestCallback[] = [];
+        globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+            frames.push(cb);
+            return frames.length;
+        };
+        try {
+            const { mockFn, done } = makeStream([
+                { event: SSE_EVENT.REASONING, data: { token: "a" } },
+                { event: SSE_EVENT.REASONING, data: { token: "b" } },
+                { event: SSE_EVENT.REASONING, data: { token: "c" } },
+            ]);
+            plugin.api.chatStream = mockFn;
+            const view = new ChatView(makeLeaf(), plugin);
+            await view.onOpen();
+            const container = view.containerEl.children[1] as unknown as MockElement;
+            container.find("lilbee-chat-textarea")!.value = "x";
+            container.find("lilbee-chat-send")!.trigger("click");
+            await done;
+            await tick();
+            // Three reasoning tokens, but the pending guard collapses them to a single frame.
+            const reasoningFrames = frames.length;
+            expect(reasoningFrames).toBe(1);
+        } finally {
+            globalThis.requestAnimationFrame = origRAF;
+        }
     });
 
     it("does not render details block when no reasoning tokens", async () => {
