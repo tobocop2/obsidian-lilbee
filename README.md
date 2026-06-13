@@ -177,6 +177,19 @@ Once the status bar shows **lilbee: ready**:
 
 The chat panel opens in the sidebar. From there you can ask questions, attach individual files, or run **Sync vault** (`Cmd/Ctrl + P` → "lilbee: Sync vault") to index everything at once. Every lilbee surface, the model catalog, the Task Center, chat, is reachable from the command palette.
 
+### Search vs Chat
+
+A toggle at the top of the chat panel picks how each reply is answered:
+
+- **Search** (the default) answers *from your vault*. It retrieves the most relevant passages and replies with citations you can click straight back to the source. Use it when you want grounded answers about your own notes, PDFs, and crawled pages.
+- **Chat** turns retrieval off and talks to the model directly, like a plain assistant. No vault lookup and no citations, just the model's own knowledge. Use it for a quick general question or to keep riffing without pulling your notes into the answer.
+
+It's the same model either way; the toggle only decides whether your library is searched first.
+
+### Showing the model's thinking (optional)
+
+Reasoning models work through a problem before they answer. **Show thinking** is an optional toggle in **Settings** (next to the chat mode setting): turn it on to see that thinking in a collapsible block above each reply, or leave it off to just get the answer. It's off by default, and it has no effect on models that don't produce a separate reasoning step.
+
 ## How it works
 
 The plugin runs [lilbee](https://lilbee.sh/) in the background: on first launch it downloads the right version for your platform, starts it, and shuts it down when you close Obsidian. Your vault is what it searches; lilbee handles indexing, retrieval, generation, and the wiki, and the plugin is the interface on top.
