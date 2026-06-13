@@ -1528,9 +1528,13 @@ export default class LilbeePlugin extends Plugin {
     /** Turn reasoning display on once, the first time we reach a ready server. */
     private async applyReasoningDefaultOnce(): Promise<void> {
         if (this.settings.reasoningDefaulted) return;
-        await this.api.updateConfig({ [CONFIG_KEY.SHOW_REASONING]: true });
+        // Patch only when the server reports it explicitly off; older servers omit the key.
+        const cfg = await this.api.config();
+        if (cfg.show_reasoning === false) {
+            await this.api.updateConfig({ [CONFIG_KEY.SHOW_REASONING]: true });
+        }
         this.settings.reasoningDefaulted = true;
-        await this.saveSettings();
+        await this.persistAll();
     }
 
     initWikiSync(): void {

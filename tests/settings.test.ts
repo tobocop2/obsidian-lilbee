@@ -3093,8 +3093,8 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Toggle order: [0] adaptiveThreshold (search/retrieval),
-            // [1] show_reasoning (generation), [2] worker_pool_eager_start (worker-pool),
+            // Toggle order: [0] show_reasoning (Chat), [1] adaptiveThreshold (search/retrieval),
+            // [2] worker_pool_eager_start (worker-pool),
             // [3] crawl_retry_on_rate_limit (crawling), [4+] wiki toggles.
             await toggleOnChanges[3](false);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: false });
@@ -3225,8 +3225,8 @@ describe("managed mode settings", () => {
             // load-bearing (if the flag failed to set, updateConfig WOULD be called).
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = false;
-            // toggleOnChanges[3] is crawl_retry_on_rate_limit; [0]=adaptiveThreshold,
-            // [1]=show_reasoning, [2]=worker_pool_eager_start.
+            // toggleOnChanges[3] is crawl_retry_on_rate_limit; [0]=show_reasoning,
+            // [1]=adaptiveThreshold, [2]=worker_pool_eager_start.
             await toggleOnChanges[3](true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: true });
         });

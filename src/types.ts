@@ -400,12 +400,7 @@ export interface LilbeeSettings {
      * plugin at a different location (e.g. an external SSD).
      */
     sharedRoot: string;
-    /**
-     * Whether the plugin has applied its on-by-default for reasoning display.
-     * The first time it reaches a ready server it turns `show_reasoning` on so
-     * the chat surfaces a reasoning model's thinking out of the box; after that
-     * the server config owns the value and the user's choice is respected.
-     */
+    /** Set once the plugin has applied its one-time `show_reasoning` on-by-default. */
     reasoningDefaulted: boolean;
 }
 

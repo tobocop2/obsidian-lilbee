@@ -691,6 +691,59 @@ describe("ChatView.sendMessage — reasoning tokens", () => {
         }
     });
 
+    it("collapses the reasoning block when the stream is stopped mid-thinking", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const mockFn = vi.fn().mockReturnValue(
+            (async function* () {
+                yield { event: SSE_EVENT.REASONING, data: { token: "Considering the options" } };
+                const abort = new Error("stopped");
+                abort.name = "AbortError";
+                throw abort;
+            })(),
+        );
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        container.find("lilbee-chat-textarea")!.value = "stop me";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+        await tick();
+
+        const assistantBubble = messagesEl.children[1];
+        const details = assistantBubble.find("lilbee-reasoning");
+        expect(details).toBeTruthy();
+        // Stopping mid-thinking collapses the block instead of leaving it expanded above "(stopped)".
+        expect(details!.getAttribute("open")).toBeNull();
+    });
+
+    it("renders a late reasoning block collapsed when the answer already started", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: { token: "Answer." } },
+            { event: SSE_EVENT.REASONING, data: { token: "afterthought" } },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        container.find("lilbee-chat-textarea")!.value = "x";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+
+        const assistantBubble = messagesEl.children[1];
+        const details = assistantBubble.find("lilbee-reasoning");
+        expect(details).toBeTruthy();
+        // The first answer token already arrived, so the block is created collapsed, not expanded.
+        expect(details!.getAttribute("open")).toBeNull();
+    });
+
     it("does not render details block when no reasoning tokens", async () => {
         Notice.clear();
         const plugin = makePlugin();

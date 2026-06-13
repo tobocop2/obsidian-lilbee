@@ -881,6 +881,7 @@ export class ChatView extends ItemView {
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 revealContent();
+                state.reasoningDetailsEl?.removeAttribute("open");
                 if (state.fullContent) {
                     void this.renderMarkdown(textEl, `${state.fullContent}\n\n${MESSAGES.LABEL_STOPPED_MD}`);
                     this.history.push({ role: "assistant", content: state.fullContent });
@@ -921,8 +922,7 @@ export class ChatView extends ItemView {
         switch (event.event) {
             case SSE_EVENT.TOKEN: {
                 revealContent();
-                // The model has moved from thinking to answering: collapse the
-                // reasoning so the answer is what's prominent.
+                // First answer token: collapse the reasoning block.
                 if (!state.answerStarted) {
                     state.answerStarted = true;
                     state.reasoningDetailsEl?.removeAttribute("open");
@@ -932,8 +932,7 @@ export class ChatView extends ItemView {
                 break;
             }
             case SSE_EVENT.REASONING: {
-                // Reasoning leads the answer, so show it first and stream it live
-                // for immediate feedback, in an expanded block above the answer.
+                // Stream reasoning live into an expanded block above the answer.
                 revealContent();
                 const el = this.ensureReasoningBlock(assistantBubble, textEl, state);
                 state.reasoningContent += extractString(event.data, "token");
@@ -996,10 +995,11 @@ export class ChatView extends ItemView {
     private ensureReasoningBlock(assistantBubble: HTMLElement, textEl: HTMLElement, state: StreamState): HTMLElement {
         if (state.reasoningContentEl) return state.reasoningContentEl;
         const details = assistantBubble.createEl("details", { cls: "lilbee-reasoning" });
-        details.setAttribute("open", "");
+        // Expanded while thinking; collapsed if the answer already started.
+        if (!state.answerStarted) details.setAttribute("open", "");
         details.createEl("summary", { text: MESSAGES.LABEL_REASONING });
         const content = details.createDiv({ cls: "lilbee-reasoning-content" });
-        // The answer div was created first; move the thinking above it so it reads first.
+        // Move the reasoning block above the answer div.
         assistantBubble.insertBefore(details, textEl);
         state.reasoningDetailsEl = details;
         state.reasoningContentEl = content;
