@@ -756,6 +756,7 @@ export default class LilbeePlugin extends Plugin {
             settings: this.settings,
             journalEntries: this.journal.entries,
             pluginVersion: this.manifest.version,
+            serverVersion: this.getSharedLilbeeVersion(),
             serverState: this.serverManager?.state ?? SERVER_STATE.STOPPED,
             serverUrl: this.serverManager?.serverUrl ?? this.settings.serverUrl,
             lastOutput: this.serverManager?.lastOutput ?? "",

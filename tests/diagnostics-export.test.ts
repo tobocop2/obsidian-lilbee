@@ -29,6 +29,7 @@ function makeContext(): DiagnosticsContext {
         settings: { ...DEFAULT_SETTINGS },
         journalEntries: [],
         pluginVersion: "1.2.3",
+        serverVersion: "v0.4.0",
         serverState: SERVER_STATE.ERROR,
         serverUrl: "",
         lastOutput: "",

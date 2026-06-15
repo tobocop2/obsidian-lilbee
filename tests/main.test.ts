@@ -4434,6 +4434,7 @@ describe("LilbeePlugin", () => {
                         serverUrl: plugin.settings.serverUrl,
                         lastOutput: "",
                         pluginVersion: "0.1.0",
+                        serverVersion: "",
                     }),
                 );
             });
@@ -4442,11 +4443,13 @@ describe("LilbeePlugin", () => {
                 const plugin = await createPlugin({ serverMode: "managed" });
                 await plugin.onload();
                 await flush();
+                vi.spyOn(plugin as any, "getSharedLilbeeVersion").mockReturnValue("v0.4.0");
                 const ctx = plugin.diagnosticsContext();
                 expect(ctx.dataDir).toBe(mockServerOpts.dataDir);
                 expect(ctx.sharedRoot).toBe((plugin as any).vaultRegistry.sharedRoot);
                 expect(ctx.serverState).toBe("ready");
                 expect(ctx.serverUrl).toBe("http://127.0.0.1:54321");
+                expect(ctx.serverVersion).toBe("v0.4.0");
                 expect(ctx.journalEntries).toBe(plugin.journal.entries);
             });
 

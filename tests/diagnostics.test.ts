@@ -28,6 +28,7 @@ function makeContext(overrides: Partial<DiagnosticsContext> = {}): DiagnosticsCo
         settings: { ...DEFAULT_SETTINGS },
         journalEntries: [],
         pluginVersion: "1.2.3",
+        serverVersion: "v0.4.0",
         serverState: SERVER_STATE.ERROR,
         serverUrl: "http://127.0.0.1:1234",
         lastOutput: "Traceback: boom",
@@ -148,14 +149,18 @@ describe("collectDiagnostics", () => {
         const bundle = collectDiagnostics(makeContext());
         expect(bundle.summaryMarkdown.startsWith(MESSAGES.DIAG_REVIEW_WARNING)).toBe(true);
         expect(bundle.summaryMarkdown).toContain("1.2.3");
+        expect(bundle.summaryMarkdown).toContain("- Server version: v0.4.0");
         expect(bundle.summaryMarkdown).toContain(process.platform);
         expect(bundle.summaryMarkdown).toContain("Traceback: boom");
     });
 
-    it("renders placeholders for empty stderr, journal, url, and shared root", () => {
-        const bundle = collectDiagnostics(makeContext({ lastOutput: "", serverUrl: "", sharedRoot: null }));
+    it("renders placeholders for empty stderr, journal, url, shared root, and server version", () => {
+        const bundle = collectDiagnostics(
+            makeContext({ lastOutput: "", serverUrl: "", sharedRoot: null, serverVersion: "" }),
+        );
         expect(bundle.summaryMarkdown).toContain("(empty)");
         expect(bundle.summaryMarkdown).toContain("(none)");
+        expect(bundle.summaryMarkdown).toContain("- Server version: (unknown)");
     });
 
     it("marks a noteless miss as missing in the summary", () => {
