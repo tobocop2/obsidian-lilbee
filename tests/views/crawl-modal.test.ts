@@ -2,6 +2,7 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { CrawlModal } from "../../src/views/crawl-modal";
+import { MESSAGES } from "../../src/locales/en";
 
 function makePlugin(renderMode: string = "http") {
     return {
@@ -358,6 +359,16 @@ describe("CrawlModal", () => {
         expect(browser.checked).toBe(false);
         const texts = collectTexts(el);
         expect(texts.some((t) => t.includes("Use browser"))).toBe(true);
+    });
+
+    it("sets hover tooltips on the modal controls", () => {
+        const { el } = openModal();
+        const title = (cls: string): string | null => (el.find(cls) as unknown as MockElement)?.getAttribute("title");
+        expect(title("lilbee-crawl-url")).toBe(MESSAGES.TOOLTIP_CRAWL_URL);
+        expect(title("lilbee-crawl-recursive")).toBe(MESSAGES.TOOLTIP_CRAWL_RECURSIVE);
+        expect(title("lilbee-crawl-browser")).toBe(MESSAGES.TOOLTIP_CRAWL_USE_BROWSER);
+        expect(title("lilbee-crawl-depth")).toBe(MESSAGES.TOOLTIP_CRAWL_DEPTH);
+        expect(title("lilbee-crawl-max-pages")).toBe(MESSAGES.TOOLTIP_CRAWL_MAX_PAGES);
     });
 
     it("pre-sets the browser toggle from the server's crawl_render_mode", async () => {

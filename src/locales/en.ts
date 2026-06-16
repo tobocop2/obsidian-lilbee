@@ -81,6 +81,12 @@ export const MESSAGES = {
     NOTICE_CRAWL_RECURSIVE:
         "Whole-site crawl follows every internal link it finds on the same origin. Large sites can fetch hundreds of pages and take a while. Use Advanced to cap depth or page count. Request delay, concurrency and retry behavior live in Settings → Crawling.",
     LABEL_CRAWL_USE_BROWSER: "Use browser (enables JavaScript, uses more memory)",
+    TOOLTIP_CRAWL_URL: "Web page to crawl. A scheme is added for you if you leave it off.",
+    TOOLTIP_CRAWL_RECURSIVE: "Follow internal links on the same site instead of crawling just this page.",
+    TOOLTIP_CRAWL_USE_BROWSER:
+        "Render pages in Chromium so content built with JavaScript is captured. Use it for sites that render client-side.",
+    TOOLTIP_CRAWL_DEPTH: "How many links deep to follow from the starting page. Blank means no limit.",
+    TOOLTIP_CRAWL_MAX_PAGES: "Stop after fetching this many pages. Blank means no limit.",
     HINT_CRAWL_BLANK_NO_LIMIT: "blank = no limit",
     ERROR_CRAWL_MAX_PAGES_POSITIVE: "Max pages must be a positive integer or blank",
     ERROR_CRAWL_DEPTH_INVALID: "Depth cap must be a non-negative integer or blank",

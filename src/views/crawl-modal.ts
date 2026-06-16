@@ -41,11 +41,14 @@ export class CrawlModal extends Modal {
         const urlInput = contentEl.createEl("input", {
             cls: "lilbee-crawl-url",
             placeholder: MESSAGES.PLACEHOLDER_URL,
-            attr: { type: "text" },
+            attr: { type: "text", title: MESSAGES.TOOLTIP_CRAWL_URL },
         });
 
         const recursiveRow = contentEl.createDiv({ cls: "lilbee-crawl-recursive-row" });
-        const recursiveLabel = recursiveRow.createEl("label", { cls: "lilbee-crawl-recursive" });
+        const recursiveLabel = recursiveRow.createEl("label", {
+            cls: "lilbee-crawl-recursive",
+            attr: { title: MESSAGES.TOOLTIP_CRAWL_RECURSIVE },
+        });
         const recursiveInput = recursiveLabel.createEl("input", {
             cls: "lilbee-crawl-recursive-input",
             attr: { type: "checkbox" },
@@ -81,7 +84,10 @@ export class CrawlModal extends Modal {
         infoBtn.addEventListener("click", () => setNoticeOpen(!noticeOpen));
 
         const browserRow = contentEl.createDiv({ cls: "lilbee-crawl-browser-row" });
-        const browserLabel = browserRow.createEl("label", { cls: "lilbee-crawl-browser" });
+        const browserLabel = browserRow.createEl("label", {
+            cls: "lilbee-crawl-browser",
+            attr: { title: MESSAGES.TOOLTIP_CRAWL_USE_BROWSER },
+        });
         const browserInput = browserLabel.createEl("input", {
             cls: "lilbee-crawl-browser-input",
             attr: { type: "checkbox" },
@@ -108,7 +114,7 @@ export class CrawlModal extends Modal {
         const depthInput = depthLabel.createEl("input", {
             cls: "lilbee-crawl-depth",
             placeholder: MESSAGES.HINT_CRAWL_BLANK_NO_LIMIT,
-            attr: { type: "number", min: "0" },
+            attr: { type: "number", min: "0", title: MESSAGES.TOOLTIP_CRAWL_DEPTH },
         });
         asInput(depthInput).value = "";
 
@@ -116,7 +122,7 @@ export class CrawlModal extends Modal {
         const maxInput = maxLabel.createEl("input", {
             cls: "lilbee-crawl-max-pages",
             placeholder: MESSAGES.HINT_CRAWL_BLANK_NO_LIMIT,
-            attr: { type: "number", min: "1" },
+            attr: { type: "number", min: "1", title: MESSAGES.TOOLTIP_CRAWL_MAX_PAGES },
         });
         asInput(maxInput).value = "";
 
