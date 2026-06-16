@@ -1527,7 +1527,7 @@ describe("LilbeePlugin", () => {
             await plugin.updatePendingSyncHint();
 
             // External servers reconcile their own documents_dir, never the vault,
-            // so Sync vault can't ingest these — the pill must stay hidden.
+            // so Sync vault can't ingest these, so the pill must stay hidden.
             expect(plugin.syncPillEl?.style.display).toBe("none");
             expect(listSpy).not.toHaveBeenCalled();
         });

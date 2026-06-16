@@ -1967,10 +1967,8 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private async countPendingSync(): Promise<number> {
-        // Sync reconciles the server's own documents_dir; only managed storage
-        // (configureManagedStorage) points that at <vault>/lilbee. Elsewhere —
-        // external mode, or vault storage off — Sync vault can never ingest these
-        // files, so counting them shows a hint that clicking Sync never clears.
+        // Only managed mode with vault storage points the server's documents_dir at
+        // <vault>/lilbee; elsewhere Sync can't reconcile these files, so don't count them.
         if (this.settings.serverMode !== SERVER_MODE.MANAGED || !this.settings.storeContentInVault) {
             return 0;
         }

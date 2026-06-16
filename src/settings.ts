@@ -4,9 +4,8 @@ import type { ReleaseInfo } from "./binary-manager";
 import {
     CAPABILITY,
     CHAT_MODE,
-    CRAWL_RENDER_MODE,
-    CRAWL_RENDER_MODE_CONFIG_KEY,
     CONFIG_KEY,
+    CRAWL_RENDER_MODE,
     MEMORY_CONFIG_KEY,
     DEFAULT_SETTINGS,
     HOSTED_SOURCES,
@@ -1706,17 +1705,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 dropdown.setValue(CRAWL_RENDER_MODE.HTTP);
                 dropdown.onChange(async (value) => {
                     try {
-                        await this.plugin.api.updateConfig({ [CRAWL_RENDER_MODE_CONFIG_KEY]: value });
+                        await this.plugin.api.updateConfig({ [CONFIG_KEY.CRAWL_RENDER_MODE]: value });
                         new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_CRAWL_RENDER_MODE));
                     } catch {
                         new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_CRAWL_RENDER_MODE));
                     }
                 });
-                this.serverConfigDropdowns.set(CRAWL_RENDER_MODE_CONFIG_KEY, dropdown);
+                this.serverConfigDropdowns.set(CONFIG_KEY.CRAWL_RENDER_MODE, dropdown);
             });
-        this.appendResetAffordance(renderModeSetting, CRAWL_RENDER_MODE_CONFIG_KEY, MESSAGES.LABEL_CRAWL_RENDER_MODE);
+        this.appendResetAffordance(renderModeSetting, CONFIG_KEY.CRAWL_RENDER_MODE, MESSAGES.LABEL_CRAWL_RENDER_MODE);
         renderModeContainer.hide();
-        this.serverConfigHideableEls.set(CRAWL_RENDER_MODE_CONFIG_KEY, renderModeContainer);
+        this.serverConfigHideableEls.set(CONFIG_KEY.CRAWL_RENDER_MODE, renderModeContainer);
 
         const patternsSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS)

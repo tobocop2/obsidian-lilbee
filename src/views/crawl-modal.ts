@@ -2,7 +2,7 @@ import { App, Modal, Notice, setIcon } from "obsidian";
 import type LilbeePlugin from "../main";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, ensureUrlScheme } from "../utils";
-import { CRAWL_RENDER_MODE, CRAWL_RENDER_MODE_CONFIG_KEY, type CrawlRenderMode } from "../types";
+import { CONFIG_KEY, CRAWL_RENDER_MODE, type CrawlRenderMode } from "../types";
 
 type ParseResult = { value: number | null; error: string | null };
 
@@ -173,11 +173,8 @@ export class CrawlModal extends Modal {
             const renderMode: CrawlRenderMode = asInput(browserInput).checked
                 ? CRAWL_RENDER_MODE.BROWSER
                 : CRAWL_RENDER_MODE.HTTP;
-            // Persist the choice so the toggle is sticky next time; the explicit render_mode below
-            // drives this crawl regardless, so a failed write must not block it.
-            void this.plugin.api.updateConfig({ [CRAWL_RENDER_MODE_CONFIG_KEY]: renderMode }).catch(() => {
-                /* Non-fatal: the crawl still runs with the explicit render_mode below. */
-            });
+            // Persist the sticky default; non-fatal since runCrawl below drives this crawl explicitly.
+            void this.plugin.api.updateConfig({ [CONFIG_KEY.CRAWL_RENDER_MODE]: renderMode }).catch(() => {});
 
             void this.plugin.runCrawl(url, depth, maxPages, renderMode);
             this.close();
