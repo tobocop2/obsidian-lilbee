@@ -73,6 +73,7 @@ export function renderSummary(ctx: DiagnosticsContext, files: CollectedFile[]): 
         "",
         "## Environment",
         `- Plugin version: ${ctx.pluginVersion}`,
+        `- Server version: ${ctx.serverVersion || "(unknown)"}`,
         `- Platform: ${process.platform} ${process.arch}`,
         `- Server state: ${ctx.serverState}`,
         `- Server URL: ${ctx.serverUrl || "(none)"}`,

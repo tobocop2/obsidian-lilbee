@@ -529,6 +529,7 @@ export interface DiagnosticsContext {
     settings: LilbeeSettings;
     journalEntries: readonly JournalEntry[];
     pluginVersion: string;
+    serverVersion: string;
     serverState: ServerState;
     serverUrl: string;
     lastOutput: string;
