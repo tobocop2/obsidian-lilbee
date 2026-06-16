@@ -7,6 +7,7 @@ import type {
     CatalogResponse,
     ConfigResponse,
     ConfigUpdateResponse,
+    CrawlRenderMode,
     DatasetFormat,
     DocumentResult,
     DocumentsResponse,
@@ -563,10 +564,12 @@ export class LilbeeClient {
         depth?: number | null,
         maxPages?: number | null,
         signal?: AbortSignal,
+        renderMode?: CrawlRenderMode,
     ): AsyncGenerator<SSEEvent, void> {
         const body: Record<string, unknown> = { url };
         if (depth !== undefined) body.depth = depth;
         if (maxPages !== undefined) body.max_pages = maxPages;
+        if (renderMode !== undefined) body.render_mode = renderMode;
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/crawl`,
             {

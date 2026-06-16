@@ -4,6 +4,8 @@ import type { ReleaseInfo } from "./binary-manager";
 import {
     CAPABILITY,
     CHAT_MODE,
+    CRAWL_RENDER_MODE,
+    CRAWL_RENDER_MODE_CONFIG_KEY,
     CONFIG_KEY,
     MEMORY_CONFIG_KEY,
     DEFAULT_SETTINGS,
@@ -72,6 +74,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private serverConfigToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private memoryToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private serverConfigTextAreas: Map<string, HTMLTextAreaElement> = new Map();
+    private serverConfigDropdowns: Map<string, { setValue: (v: string) => unknown }> = new Map();
     // Rows hidden until loadServerDefaults sees a defined value for the matching cfg key.
     private serverConfigHideableEls: Map<string, HTMLElement> = new Map();
     private configDefaults: Record<string, unknown> = {};
@@ -99,6 +102,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.serverConfigInputs.clear();
         this.serverConfigToggles.clear();
         this.serverConfigTextAreas.clear();
+        this.serverConfigDropdowns.clear();
         this.serverConfigHideableEls.clear();
 
         const filterInput = containerEl.createEl("input", {
@@ -574,6 +578,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     const v = cfg[key];
                     if (Array.isArray(v)) {
                         textArea.value = v.join("\n");
+                    }
+                }
+                for (const [key, dropdown] of this.serverConfigDropdowns) {
+                    const v = cfg[key];
+                    if (typeof v === "string") {
+                        dropdown.setValue(v);
                     }
                 }
                 if (typeof cfg.rag_system_prompt === "string") {
@@ -1683,6 +1693,30 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 });
             this.appendResetAffordance(numSetting, numField.key, numField.name);
         }
+
+        // Wrap the render-mode row in its own child div so the hide-until-supported
+        // toggle targets just this row, not the capability-gated crawling container.
+        const renderModeContainer = containerEl.createDiv();
+        const renderModeSetting = new Setting(renderModeContainer)
+            .setName(MESSAGES.LABEL_CRAWL_RENDER_MODE)
+            .setDesc(MESSAGES.DESC_CRAWL_RENDER_MODE)
+            .addDropdown((dropdown) => {
+                dropdown.addOption(CRAWL_RENDER_MODE.HTTP, MESSAGES.LABEL_CRAWL_RENDER_MODE_HTTP);
+                dropdown.addOption(CRAWL_RENDER_MODE.BROWSER, MESSAGES.LABEL_CRAWL_RENDER_MODE_BROWSER);
+                dropdown.setValue(CRAWL_RENDER_MODE.HTTP);
+                dropdown.onChange(async (value) => {
+                    try {
+                        await this.plugin.api.updateConfig({ [CRAWL_RENDER_MODE_CONFIG_KEY]: value });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_CRAWL_RENDER_MODE));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_CRAWL_RENDER_MODE));
+                    }
+                });
+                this.serverConfigDropdowns.set(CRAWL_RENDER_MODE_CONFIG_KEY, dropdown);
+            });
+        this.appendResetAffordance(renderModeSetting, CRAWL_RENDER_MODE_CONFIG_KEY, MESSAGES.LABEL_CRAWL_RENDER_MODE);
+        renderModeContainer.hide();
+        this.serverConfigHideableEls.set(CRAWL_RENDER_MODE_CONFIG_KEY, renderModeContainer);
 
         const patternsSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS)

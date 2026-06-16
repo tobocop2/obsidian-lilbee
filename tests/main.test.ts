@@ -2698,7 +2698,13 @@ describe("LilbeePlugin", () => {
 
             await plugin.runCrawl("https://example.com", 0, 50);
 
-            expect(plugin.api.crawl).toHaveBeenCalledWith("https://example.com", 0, 50, expect.any(AbortSignal));
+            expect(plugin.api.crawl).toHaveBeenCalledWith(
+                "https://example.com",
+                0,
+                50,
+                expect.any(AbortSignal),
+                undefined,
+            );
             expect(Notice.instances.some((n) => n.message.includes("crawl done"))).toBe(true);
             expect(syncSpy).toHaveBeenCalled();
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
@@ -2717,7 +2723,35 @@ describe("LilbeePlugin", () => {
 
             await plugin.runCrawl("https://example.com", null, null);
 
-            expect(plugin.api.crawl).toHaveBeenCalledWith("https://example.com", null, null, expect.any(AbortSignal));
+            expect(plugin.api.crawl).toHaveBeenCalledWith(
+                "https://example.com",
+                null,
+                null,
+                expect.any(AbortSignal),
+                undefined,
+            );
+        });
+
+        it("forwards an explicit render mode to api.crawl", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 1 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, null, "browser");
+
+            expect(plugin.api.crawl).toHaveBeenCalledWith(
+                "https://example.com",
+                0,
+                null,
+                expect.any(AbortSignal),
+                "browser",
+            );
         });
 
         it("CRAWL_DONE without pages_crawled uses local pageCount", async () => {

@@ -1452,6 +1452,21 @@
     cursor: pointer;
 }
 
+.lilbee-crawl-browser-row {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-1, 4px);
+    margin: var(--size-4-2, 8px) 0;
+}
+
+.lilbee-crawl-browser {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    font-size: var(--font-small, 13px);
+    cursor: pointer;
+}
+
 .lilbee-crawl-info-btn {
     width: 18px;
     height: 18px;

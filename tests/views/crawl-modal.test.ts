@@ -3,9 +3,13 @@ import { App, Notice } from "obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { CrawlModal } from "../../src/views/crawl-modal";
 
-function makePlugin() {
+function makePlugin(renderMode: string = "http") {
     return {
         runCrawl: vi.fn(),
+        api: {
+            config: vi.fn().mockResolvedValue({ crawl_render_mode: renderMode }),
+            updateConfig: vi.fn().mockResolvedValue({}),
+        },
     };
 }
 
@@ -178,7 +182,7 @@ describe("CrawlModal", () => {
         const closeSpy = vi.spyOn(modal, "close");
         setUrl(el, "https://example.com");
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", null, null);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", null, null, "http");
         expect(closeSpy).toHaveBeenCalled();
     });
 
@@ -186,7 +190,7 @@ describe("CrawlModal", () => {
         const { plugin, el } = openModal();
         setUrl(el, "https://example.com");
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "http");
     });
 
     it("Recursive on + Advanced filled → sends the parsed numbers", () => {
@@ -196,7 +200,7 @@ describe("CrawlModal", () => {
         (el.find("lilbee-crawl-depth") as any).value = "2";
         (el.find("lilbee-crawl-max-pages") as any).value = "20";
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 2, 20);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 2, 20, "http");
     });
 
     it("Recursive on + depth only → sends (n, null)", () => {
@@ -205,7 +209,7 @@ describe("CrawlModal", () => {
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-depth") as any).value = "3";
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 3, null);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 3, null, "http");
     });
 
     it("Recursive on + max only → sends (null, n)", () => {
@@ -214,7 +218,7 @@ describe("CrawlModal", () => {
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-max-pages") as any).value = "100";
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", null, 100);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", null, 100, "http");
     });
 
     it("max_pages=0 blocks submit with inline error", () => {
@@ -320,7 +324,7 @@ describe("CrawlModal", () => {
         expect(plugin.runCrawl).not.toHaveBeenCalled();
         (el.find("lilbee-crawl-max-pages") as any).value = "5";
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", null, 5);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", null, 5, "http");
         expect(err.textContent).toBe("");
     });
 
@@ -328,14 +332,14 @@ describe("CrawlModal", () => {
         const { plugin, el } = openModal();
         setUrl(el, "example.com");
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "http");
     });
 
     it("preserves http:// when already present", () => {
         const { plugin, el } = openModal();
         setUrl(el, "http://example.com");
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("http://example.com", 0, null);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("http://example.com", 0, null, "http");
     });
 
     it("Recursive on + depth=0 → sends (0, null) (seed-only with recursive on is still valid)", () => {
@@ -344,6 +348,72 @@ describe("CrawlModal", () => {
         setUrl(el, "https://example.com");
         (el.find("lilbee-crawl-depth") as any).value = "0";
         clickCrawl(el);
-        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "http");
+    });
+
+    it("renders the Use-browser toggle, unchecked by default", () => {
+        const { el } = openModal();
+        const browser = el.find("lilbee-crawl-browser-input") as any;
+        expect(browser).not.toBeNull();
+        expect(browser.checked).toBe(false);
+        const texts = collectTexts(el);
+        expect(texts.some((t) => t.includes("Use browser"))).toBe(true);
+    });
+
+    it("pre-sets the browser toggle from the server's crawl_render_mode", async () => {
+        const app = new App();
+        const plugin = makePlugin("browser");
+        const modal = new CrawlModal(app as any, plugin as any);
+        modal.onOpen();
+        const el = modal.contentEl as unknown as MockElement;
+        await Promise.resolve();
+        await Promise.resolve();
+        expect((el.find("lilbee-crawl-browser-input") as any).checked).toBe(true);
+        expect(plugin.api.config).toHaveBeenCalled();
+    });
+
+    it("on submit sends browser render mode and persists it via config", () => {
+        const { plugin, el } = openModal();
+        setUrl(el, "https://example.com");
+        (el.find("lilbee-crawl-browser-input") as any).checked = true;
+        clickCrawl(el);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "browser");
+        expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_render_mode: "browser" });
+    });
+
+    it("on submit persists http when the browser toggle is off", () => {
+        const { plugin, el } = openModal();
+        setUrl(el, "https://example.com");
+        clickCrawl(el);
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "http");
+        expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_render_mode: "http" });
+    });
+
+    it("leaves the browser toggle at its lightweight default when config() is unreachable", async () => {
+        const app = new App();
+        const plugin = {
+            runCrawl: vi.fn(),
+            api: {
+                config: vi.fn().mockRejectedValue(new Error("unreachable")),
+                updateConfig: vi.fn().mockResolvedValue({}),
+            },
+        };
+        const modal = new CrawlModal(app as any, plugin as any);
+        modal.onOpen();
+        const el = modal.contentEl as unknown as MockElement;
+        await Promise.resolve();
+        await Promise.resolve();
+        expect((el.find("lilbee-crawl-browser-input") as any).checked).toBe(false);
+    });
+
+    it("still runs the crawl when persisting the render mode fails", async () => {
+        const { plugin, el } = openModal();
+        (plugin.api.updateConfig as any).mockRejectedValue(new Error("write failed"));
+        setUrl(el, "https://example.com");
+        (el.find("lilbee-crawl-browser-input") as any).checked = true;
+        clickCrawl(el);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(plugin.runCrawl).toHaveBeenCalledWith("https://example.com", 0, null, "browser");
     });
 });

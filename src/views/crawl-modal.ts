@@ -2,6 +2,7 @@ import { App, Modal, Notice, setIcon } from "obsidian";
 import type LilbeePlugin from "../main";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, ensureUrlScheme } from "../utils";
+import { CRAWL_RENDER_MODE, CRAWL_RENDER_MODE_CONFIG_KEY, type CrawlRenderMode } from "../types";
 
 type ParseResult = { value: number | null; error: string | null };
 
@@ -79,6 +80,25 @@ export class CrawlModal extends Modal {
         };
         infoBtn.addEventListener("click", () => setNoticeOpen(!noticeOpen));
 
+        const browserRow = contentEl.createDiv({ cls: "lilbee-crawl-browser-row" });
+        const browserLabel = browserRow.createEl("label", { cls: "lilbee-crawl-browser" });
+        const browserInput = browserLabel.createEl("input", {
+            cls: "lilbee-crawl-browser-input",
+            attr: { type: "checkbox" },
+        });
+        asInput(browserInput).checked = false;
+        browserLabel.createSpan({ text: MESSAGES.LABEL_CRAWL_USE_BROWSER });
+
+        // Pre-set the toggle from the server's current crawl_render_mode (sticky default).
+        void this.plugin.api
+            .config()
+            .then((cfg) => {
+                asInput(browserInput).checked = cfg.crawl_render_mode === CRAWL_RENDER_MODE.BROWSER;
+            })
+            .catch(() => {
+                /* Leave the toggle at its lightweight default if config is unreachable. */
+            });
+
         const advanced = contentEl.createEl("details", { cls: "lilbee-crawl-advanced" });
         advanced.createEl("summary", { text: MESSAGES.LABEL_CRAWL_ADVANCED });
 
@@ -150,7 +170,16 @@ export class CrawlModal extends Modal {
                 maxPages = maxRes.value;
             }
 
-            void this.plugin.runCrawl(url, depth, maxPages);
+            const renderMode: CrawlRenderMode = asInput(browserInput).checked
+                ? CRAWL_RENDER_MODE.BROWSER
+                : CRAWL_RENDER_MODE.HTTP;
+            // Persist the choice so the toggle is sticky next time; the explicit render_mode below
+            // drives this crawl regardless, so a failed write must not block it.
+            void this.plugin.api.updateConfig({ [CRAWL_RENDER_MODE_CONFIG_KEY]: renderMode }).catch(() => {
+                /* Non-fatal: the crawl still runs with the explicit render_mode below. */
+            });
+
+            void this.plugin.runCrawl(url, depth, maxPages, renderMode);
             this.close();
         });
 
