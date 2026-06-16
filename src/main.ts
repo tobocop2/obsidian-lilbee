@@ -1967,6 +1967,13 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private async countPendingSync(): Promise<number> {
+        // Sync reconciles the server's own documents_dir; only managed storage
+        // (configureManagedStorage) points that at <vault>/lilbee. Elsewhere —
+        // external mode, or vault storage off — Sync vault can never ingest these
+        // files, so counting them shows a hint that clicking Sync never clears.
+        if (this.settings.serverMode !== SERVER_MODE.MANAGED || !this.settings.storeContentInVault) {
+            return 0;
+        }
         // The vault adapter can be gone if the timer fires after the host
         // environment teared down (vitest end-of-file cleanup while a real
         // setTimeout was still pending). Bail cleanly instead of crashing.
