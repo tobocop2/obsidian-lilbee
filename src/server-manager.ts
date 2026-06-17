@@ -121,6 +121,12 @@ export class ServerManager {
     private buildSpawnEnv(): Record<string, string | undefined> {
         const env: Record<string, string | undefined> = {
             ...process.env,
+            // Force UTF-8 locale/stdio: GUI-spawned children inherit no locale,
+            // so the server defaults to ASCII and crashes crawling non-ASCII output.
+            LANG: "en_US.UTF-8",
+            LC_ALL: "en_US.UTF-8",
+            PYTHONIOENCODING: "utf-8",
+            PYTHONUTF8: "1",
             LILBEE_CORS_ORIGINS: "app://obsidian.md",
             LILBEE_PARENT_PID: String(process.pid),
             LILBEE_MODELS_DIR: this.opts.modelsDir,

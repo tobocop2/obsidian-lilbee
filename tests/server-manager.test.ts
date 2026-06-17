@@ -127,6 +127,12 @@ describe("ServerManager", () => {
             expect(opts.env.LILBEE_CORS_ORIGINS).toBe("app://obsidian.md");
             expect(opts.env.LILBEE_PARENT_PID).toBe(String(process.pid));
             expect(opts.env.LILBEE_MODELS_DIR).toBe("/tmp/models");
+            // UTF-8 locale so the server's Python doesn't fall back to ASCII
+            // stdio and crash crawling pages with non-ASCII output (e.g. "→").
+            expect(opts.env.LANG).toBe("en_US.UTF-8");
+            expect(opts.env.LC_ALL).toBe("en_US.UTF-8");
+            expect(opts.env.PYTHONIOENCODING).toBe("utf-8");
+            expect(opts.env.PYTHONUTF8).toBe("1");
             expect(opts.env.LILBEE_RAG_SYSTEM_PROMPT).toBeUndefined();
             expect(opts.env.LILBEE_GENERAL_SYSTEM_PROMPT).toBeUndefined();
             expect(opts.stdio).toEqual(["ignore", "pipe", "pipe"]);
