@@ -330,7 +330,14 @@ export class App {
 export class TFile {
     path = "";
     name = "";
+    extension = "";
     parent: { path: string; name: string } | null = null;
+}
+
+export class TFolder {
+    path = "";
+    name = "";
+    children: Array<TFile | TFolder> = [];
 }
 
 type ModalKeyHandler = (e: KeyboardEvent) => unknown;

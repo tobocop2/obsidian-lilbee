@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { windowStub } from "./window-stub";
 import { Notice } from "obsidian";
-import { App, MockElement, WorkspaceLeaf } from "./__mocks__/obsidian";
+import { App, MockElement, WorkspaceLeaf, TFile, TFolder } from "./__mocks__/obsidian";
 import { SETUP_OUTCOME, SSE_EVENT } from "../src/types";
 import { VaultRegistry } from "../src/vault-registry";
 import { FileProgressTracker } from "../src/main";
@@ -1513,10 +1513,41 @@ describe("LilbeePlugin", () => {
     });
 
     describe("updatePendingSyncHint()", () => {
+        // Build the lilbee/ folder getAbstractFileByPath returns, nesting each
+        // file under TFolder nodes for any path segments between lilbee/ and
+        // the filename (so lilbee/wiki/d.md lands in a real wiki subfolder).
+        const managedFolder = (files: Array<{ path: string; name: string; extension: string }>): TFolder => {
+            const root = new TFolder();
+            root.path = "lilbee";
+            for (const f of files) {
+                const segments = f.path.split("/").slice(1, -1);
+                let parent = root;
+                let prefix = "lilbee";
+                for (const seg of segments) {
+                    prefix = `${prefix}/${seg}`;
+                    let next = parent.children.find((c): c is TFolder => c instanceof TFolder && c.path === prefix);
+                    if (!next) {
+                        next = new TFolder();
+                        next.path = prefix;
+                        parent.children.push(next);
+                    }
+                    parent = next;
+                }
+                parent.children.push(Object.assign(new TFile(), f));
+            }
+            return root;
+        };
+        const stubManagedDocs = (
+            plugin: Awaited<ReturnType<typeof createPlugin>>,
+            files: Array<{ path: string; name: string; extension: string }>,
+        ): void => {
+            (plugin.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(managedFolder(files));
+        };
+
         it("hides the sync pill in external mode even when lilbee/ files are unsynced", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
-            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+            stubManagedDocs(plugin, [
                 { path: "lilbee/a.md", name: "a.md", extension: "md" },
                 { path: "lilbee/b.pdf", name: "b.pdf", extension: "pdf" },
             ]);
@@ -1537,9 +1568,7 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             plugin.settings.serverMode = "managed";
             plugin.settings.storeContentInVault = false;
-            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "lilbee/a.md", name: "a.md", extension: "md" },
-            ]);
+            stubManagedDocs(plugin, [{ path: "lilbee/a.md", name: "a.md", extension: "md" }]);
             const listSpy = plugin.api.listDocuments as ReturnType<typeof vi.fn>;
             listSpy.mockClear();
             plugin.syncPillEl!.style.display = "";
@@ -1554,7 +1583,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.settings.serverMode = "managed";
-            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+            stubManagedDocs(plugin, [
                 { path: "lilbee/a.md", name: "a.md", extension: "md" },
                 { path: "lilbee/b.pdf", name: "b.pdf", extension: "pdf" },
                 { path: "lilbee/c.txt", name: "c.txt", extension: "txt" },
@@ -1579,9 +1608,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.settings.serverMode = "managed";
-            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "lilbee/a.md", name: "a.md", extension: "md" },
-            ]);
+            stubManagedDocs(plugin, [{ path: "lilbee/a.md", name: "a.md", extension: "md" }]);
             (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
                 documents: [{ filename: "a.md", chunk_count: 1, ingested_at: "" }],
                 total: 1,
@@ -1604,10 +1631,11 @@ describe("LilbeePlugin", () => {
                 isWikiPath: (p: string) => p.startsWith("lilbee/wiki/"),
                 reconcile: vi.fn(),
             } as any;
-            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+            // Loose notes live outside lilbee/, so the folder walk never sees
+            // them — only the unsupported and wiki entries need filtering out.
+            stubManagedDocs(plugin, [
                 { path: "lilbee/a.md", name: "a.md", extension: "md" }, // counts
                 { path: "lilbee/b.png", name: "b.png", extension: "png" }, // unsupported
-                { path: "notes/c.md", name: "c.md", extension: "md" }, // loose note, indexed via Add
                 { path: "lilbee/wiki/d.md", name: "d.md", extension: "md" }, // wiki
             ]);
             (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -1627,7 +1655,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.settings.serverMode = "managed";
-            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+            stubManagedDocs(plugin, [
                 { path: "lilbee/a.md", name: "a.md", extension: "md" },
                 { path: "lilbee/b.md", name: "b.md", extension: "md" },
             ]);
@@ -1657,9 +1685,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.settings.serverMode = "managed";
-            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "lilbee/a.md", name: "a.md", extension: "md" },
-            ]);
+            stubManagedDocs(plugin, [{ path: "lilbee/a.md", name: "a.md", extension: "md" }]);
             (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
 
             await plugin.updatePendingSyncHint();
@@ -1671,7 +1697,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.settings.serverMode = "managed";
-            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+            stubManagedDocs(plugin, [
                 { path: "lilbee/a.md", name: "a.md", extension: "md" },
                 { path: "lilbee/b.md", name: "b.md", extension: "md" },
             ]);
@@ -1701,9 +1727,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.settings.serverMode = "managed";
-            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
-                { path: "lilbee/a.md", name: "a.md", extension: "md" },
-            ]);
+            stubManagedDocs(plugin, [{ path: "lilbee/a.md", name: "a.md", extension: "md" }]);
             (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockImplementation(async () => {
                 plugin.syncPillEl = null; // simulate onunload during the await
                 return { documents: [], total: 0, limit: 100, offset: 0, has_more: false };
@@ -1711,11 +1735,11 @@ describe("LilbeePlugin", () => {
             await expect(plugin.updatePendingSyncHint()).resolves.toBeUndefined();
         });
 
-        it("hides the sync pill when the vault adapter is gone (timer fired post-teardown)", async () => {
+        it("hides the sync pill when the managed folder is gone (timer fired post-teardown)", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.settings.serverMode = "managed";
-            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
+            (plugin.app.vault.getAbstractFileByPath as ReturnType<typeof vi.fn>).mockReturnValue(null);
             await expect(plugin.updatePendingSyncHint()).resolves.toBeUndefined();
             expect(plugin.syncPillEl?.style.display).toBe("none");
         });

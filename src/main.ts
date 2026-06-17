@@ -5,6 +5,8 @@ import {
     Notice,
     Plugin,
     type TAbstractFile,
+    TFile,
+    TFolder,
     type WorkspaceLeaf,
 } from "obsidian";
 import { LilbeeClient, SessionTokenError } from "./api";
@@ -103,7 +105,14 @@ const SUPPORTED_SYNC_EXTENSIONS = new Set(["md", "pdf", "txt", "html"]);
 
 // Vault-relative folder where managed mode stores lilbee's documents
 // (see configureManagedStorage). It is the only scope `Sync vault` reconciles.
-const MANAGED_DOCS_PREFIX = "lilbee/";
+const MANAGED_DOCS_FOLDER = "lilbee";
+
+// All files in a folder subtree, recursing into subfolders.
+function descendantFiles(folder: TFolder): TFile[] {
+    const files = folder.children.filter((c): c is TFile => c instanceof TFile);
+    const subfolders = folder.children.filter((c): c is TFolder => c instanceof TFolder);
+    return [...files, ...subfolders.flatMap(descendantFiles)];
+}
 
 const basename = (p: string): string => p.slice(p.lastIndexOf("/") + 1);
 
@@ -1966,25 +1975,26 @@ export default class LilbeePlugin extends Plugin {
         }, PENDING_SYNC_HINT_DEBOUNCE_MS);
     }
 
+    // Files under lilbee's managed document folder (<vault>/lilbee/), walked
+    // from that folder alone rather than enumerating the whole vault. Loose
+    // notes outside it are indexed only via the explicit Add action.
+    private collectManagedDocFiles(): TFile[] {
+        // The vault adapter (or the folder) can be gone if the timer fires
+        // after the host environment teared down. Bail cleanly.
+        const root = this.app?.vault?.getAbstractFileByPath?.(MANAGED_DOCS_FOLDER);
+        if (!(root instanceof TFolder)) return [];
+        return descendantFiles(root);
+    }
+
     private async countPendingSync(): Promise<number> {
         // Only managed mode with vault storage points the server's documents_dir at
         // <vault>/lilbee; elsewhere Sync can't reconcile these files, so don't count them.
         if (this.settings.serverMode !== SERVER_MODE.MANAGED || !this.settings.storeContentInVault) {
             return 0;
         }
-        // The vault adapter can be gone if the timer fires after the host
-        // environment teared down (vitest end-of-file cleanup while a real
-        // setTimeout was still pending). Bail cleanly instead of crashing.
-        const files = this.app?.vault?.getFiles?.();
-        if (!Array.isArray(files)) return 0;
-        // Only count files inside lilbee's managed document folder
-        // (<vault>/lilbee/). That's the scope `Sync vault` actually
-        // reconciles. Loose vault notes live outside it and are indexed
-        // only via the explicit Add action (which copies them in), so
-        // counting them here would show a count that sync can never clear.
-        const docFiles = files
+        const docFiles = this.collectManagedDocFiles()
             .filter((f) => SUPPORTED_SYNC_EXTENSIONS.has(f.extension.toLowerCase()))
-            .filter((f) => f.path.startsWith(MANAGED_DOCS_PREFIX) && !this.wikiSync?.isWikiPath(f.path));
+            .filter((f) => !this.wikiSync?.isWikiPath(f.path));
         const known = new Set<string>();
         try {
             // Page through the documents endpoint so we count every known
