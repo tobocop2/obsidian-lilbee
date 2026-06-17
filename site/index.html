@@ -100,6 +100,7 @@
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-ask"       aria-controls="tutorial-pane-ask"       aria-selected="false" tabindex="-1">ask &amp; cite</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-vision"    aria-controls="tutorial-pane-vision"    aria-selected="false" tabindex="-1">scanned PDF</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-crawl"     aria-controls="tutorial-pane-crawl"     aria-selected="false" tabindex="-1">crawl</button>
+          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-crawlsite" aria-controls="tutorial-pane-crawlsite" aria-selected="false" tabindex="-1">crawl a site</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-catalog"   aria-controls="tutorial-pane-catalog"   aria-selected="false" tabindex="-1">catalog</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-download"  aria-controls="tutorial-pane-download"  aria-selected="false" tabindex="-1">download a model</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-models"    aria-controls="tutorial-pane-models"    aria-selected="false" tabindex="-1">model rail</button>
@@ -173,6 +174,13 @@
             <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl.webm" controls loop muted autoplay playsinline preload="metadata"></video>
           </div>
           <p class="tutorial-caption">Crawl a Wikipedia page into your vault and ask it a question, then jump from the citation straight to the cited section of the rendered source.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-crawlsite" aria-labelledby="tutorial-tab-crawlsite" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl_site.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">Crawl a whole site one link deep into an empty vault, hundreds of pages streaming into the explorer as they index, then ask one multi-part question that only makes sense across all of it. A local model answers with reranking and cites several of the crawled pages.</p>
         </div>
 
         <div class="tutorialpane" role="tabpanel" id="tutorial-pane-catalog" aria-labelledby="tutorial-tab-catalog" hidden>
