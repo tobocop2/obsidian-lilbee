@@ -35,6 +35,7 @@ import {
     TASK_TYPE,
     type ActiveLock,
     type BatchProgressPayload,
+    type CrawlRenderMode,
     type DiagnosticsContext,
     type DotState,
     type LilbeeSettings,
@@ -1966,6 +1967,11 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private async countPendingSync(): Promise<number> {
+        // Only managed mode with vault storage points the server's documents_dir at
+        // <vault>/lilbee; elsewhere Sync can't reconcile these files, so don't count them.
+        if (this.settings.serverMode !== SERVER_MODE.MANAGED || !this.settings.storeContentInVault) {
+            return 0;
+        }
         // The vault adapter can be gone if the timer fires after the host
         // environment teared down (vitest end-of-file cleanup while a real
         // setTimeout was still pending). Bail cleanly instead of crashing.
@@ -2103,7 +2109,12 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    async runCrawl(url: string, depth: number | null, maxPages: number | null): Promise<void> {
+    async runCrawl(
+        url: string,
+        depth: number | null,
+        maxPages: number | null,
+        renderMode?: CrawlRenderMode,
+    ): Promise<void> {
         const taskId = this.taskQueue.enqueue(`Crawl ${url}`, TASK_TYPE.CRAWL);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
@@ -2115,7 +2126,7 @@ export default class LilbeePlugin extends Plugin {
         let setupResolved = false;
         try {
             let pageCount = 0;
-            const rawStream = this.api.crawl(url, depth, maxPages, controller.signal);
+            const rawStream = this.api.crawl(url, depth, maxPages, controller.signal, renderMode);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 switch (event.event) {
                     case SSE_EVENT.SETUP_START: {

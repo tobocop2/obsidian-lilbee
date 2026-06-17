@@ -2,6 +2,7 @@ import { App, Modal, Notice, setIcon } from "obsidian";
 import type LilbeePlugin from "../main";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, ensureUrlScheme } from "../utils";
+import { CONFIG_KEY, CRAWL_RENDER_MODE, type CrawlRenderMode } from "../types";
 
 type ParseResult = { value: number | null; error: string | null };
 
@@ -40,11 +41,14 @@ export class CrawlModal extends Modal {
         const urlInput = contentEl.createEl("input", {
             cls: "lilbee-crawl-url",
             placeholder: MESSAGES.PLACEHOLDER_URL,
-            attr: { type: "text" },
+            attr: { type: "text", title: MESSAGES.TOOLTIP_CRAWL_URL },
         });
 
         const recursiveRow = contentEl.createDiv({ cls: "lilbee-crawl-recursive-row" });
-        const recursiveLabel = recursiveRow.createEl("label", { cls: "lilbee-crawl-recursive" });
+        const recursiveLabel = recursiveRow.createEl("label", {
+            cls: "lilbee-crawl-recursive",
+            attr: { title: MESSAGES.TOOLTIP_CRAWL_RECURSIVE },
+        });
         const recursiveInput = recursiveLabel.createEl("input", {
             cls: "lilbee-crawl-recursive-input",
             attr: { type: "checkbox" },
@@ -79,6 +83,28 @@ export class CrawlModal extends Modal {
         };
         infoBtn.addEventListener("click", () => setNoticeOpen(!noticeOpen));
 
+        const browserRow = contentEl.createDiv({ cls: "lilbee-crawl-browser-row" });
+        const browserLabel = browserRow.createEl("label", {
+            cls: "lilbee-crawl-browser",
+            attr: { title: MESSAGES.TOOLTIP_CRAWL_USE_BROWSER },
+        });
+        const browserInput = browserLabel.createEl("input", {
+            cls: "lilbee-crawl-browser-input",
+            attr: { type: "checkbox" },
+        });
+        asInput(browserInput).checked = false;
+        browserLabel.createSpan({ text: MESSAGES.LABEL_CRAWL_USE_BROWSER });
+
+        // Pre-set the toggle from the server's current crawl_render_mode (sticky default).
+        void this.plugin.api
+            .config()
+            .then((cfg) => {
+                asInput(browserInput).checked = cfg.crawl_render_mode === CRAWL_RENDER_MODE.BROWSER;
+            })
+            .catch(() => {
+                /* Leave the toggle at its lightweight default if config is unreachable. */
+            });
+
         const advanced = contentEl.createEl("details", { cls: "lilbee-crawl-advanced" });
         advanced.createEl("summary", { text: MESSAGES.LABEL_CRAWL_ADVANCED });
 
@@ -88,7 +114,7 @@ export class CrawlModal extends Modal {
         const depthInput = depthLabel.createEl("input", {
             cls: "lilbee-crawl-depth",
             placeholder: MESSAGES.HINT_CRAWL_BLANK_NO_LIMIT,
-            attr: { type: "number", min: "0" },
+            attr: { type: "number", min: "0", title: MESSAGES.TOOLTIP_CRAWL_DEPTH },
         });
         asInput(depthInput).value = "";
 
@@ -96,7 +122,7 @@ export class CrawlModal extends Modal {
         const maxInput = maxLabel.createEl("input", {
             cls: "lilbee-crawl-max-pages",
             placeholder: MESSAGES.HINT_CRAWL_BLANK_NO_LIMIT,
-            attr: { type: "number", min: "1" },
+            attr: { type: "number", min: "1", title: MESSAGES.TOOLTIP_CRAWL_MAX_PAGES },
         });
         asInput(maxInput).value = "";
 
@@ -150,7 +176,13 @@ export class CrawlModal extends Modal {
                 maxPages = maxRes.value;
             }
 
-            void this.plugin.runCrawl(url, depth, maxPages);
+            const renderMode: CrawlRenderMode = asInput(browserInput).checked
+                ? CRAWL_RENDER_MODE.BROWSER
+                : CRAWL_RENDER_MODE.HTTP;
+            // Persist the sticky default; non-fatal since runCrawl below drives this crawl explicitly.
+            void this.plugin.api.updateConfig({ [CONFIG_KEY.CRAWL_RENDER_MODE]: renderMode }).catch(() => {});
+
+            void this.plugin.runCrawl(url, depth, maxPages, renderMode);
             this.close();
         });
 

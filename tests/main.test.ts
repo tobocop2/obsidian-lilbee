@@ -1513,9 +1513,47 @@ describe("LilbeePlugin", () => {
     });
 
     describe("updatePendingSyncHint()", () => {
+        it("hides the sync pill in external mode even when lilbee/ files are unsynced", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+                { path: "lilbee/a.md", name: "a.md", extension: "md" },
+                { path: "lilbee/b.pdf", name: "b.pdf", extension: "pdf" },
+            ]);
+            const listSpy = plugin.api.listDocuments as ReturnType<typeof vi.fn>;
+            listSpy.mockClear();
+            plugin.syncPillEl!.style.display = "";
+
+            await plugin.updatePendingSyncHint();
+
+            // External servers reconcile their own documents_dir, never the vault,
+            // so Sync vault can't ingest these, so the pill must stay hidden.
+            expect(plugin.syncPillEl?.style.display).toBe("none");
+            expect(listSpy).not.toHaveBeenCalled();
+        });
+
+        it("hides the sync pill when managed but vault storage is off", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.settings.serverMode = "managed";
+            plugin.settings.storeContentInVault = false;
+            (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
+                { path: "lilbee/a.md", name: "a.md", extension: "md" },
+            ]);
+            const listSpy = plugin.api.listDocuments as ReturnType<typeof vi.fn>;
+            listSpy.mockClear();
+            plugin.syncPillEl!.style.display = "";
+
+            await plugin.updatePendingSyncHint();
+
+            expect(plugin.syncPillEl?.style.display).toBe("none");
+            expect(listSpy).not.toHaveBeenCalled();
+        });
+
         it("shows the sync pill with the count when the vault has unknown files", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
+            plugin.settings.serverMode = "managed";
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
                 { path: "lilbee/a.md", name: "a.md", extension: "md" },
                 { path: "lilbee/b.pdf", name: "b.pdf", extension: "pdf" },
@@ -1540,6 +1578,7 @@ describe("LilbeePlugin", () => {
         it("hides the sync pill when nothing is pending", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
+            plugin.settings.serverMode = "managed";
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
                 { path: "lilbee/a.md", name: "a.md", extension: "md" },
             ]);
@@ -1560,6 +1599,7 @@ describe("LilbeePlugin", () => {
         it("counts only lilbee/ docs, skipping loose notes, unsupported files, and wiki pages", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
+            plugin.settings.serverMode = "managed";
             plugin.wikiSync = {
                 isWikiPath: (p: string) => p.startsWith("lilbee/wiki/"),
                 reconcile: vi.fn(),
@@ -1586,6 +1626,7 @@ describe("LilbeePlugin", () => {
         it("pages through listDocuments when has_more is true", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
+            plugin.settings.serverMode = "managed";
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
                 { path: "lilbee/a.md", name: "a.md", extension: "md" },
                 { path: "lilbee/b.md", name: "b.md", extension: "md" },
@@ -1615,6 +1656,7 @@ describe("LilbeePlugin", () => {
         it("hides the sync pill when listDocuments rejects (server offline)", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
+            plugin.settings.serverMode = "managed";
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
                 { path: "lilbee/a.md", name: "a.md", extension: "md" },
             ]);
@@ -1628,6 +1670,7 @@ describe("LilbeePlugin", () => {
         it("renders the sync pill independently of the main status pill", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
+            plugin.settings.serverMode = "managed";
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
                 { path: "lilbee/a.md", name: "a.md", extension: "md" },
                 { path: "lilbee/b.md", name: "b.md", extension: "md" },
@@ -1657,6 +1700,7 @@ describe("LilbeePlugin", () => {
         it("bails after the await if the pill was torn down mid-flight", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
+            plugin.settings.serverMode = "managed";
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue([
                 { path: "lilbee/a.md", name: "a.md", extension: "md" },
             ]);
@@ -1670,6 +1714,7 @@ describe("LilbeePlugin", () => {
         it("hides the sync pill when the vault adapter is gone (timer fired post-teardown)", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
+            plugin.settings.serverMode = "managed";
             (plugin.app.vault.getFiles as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
             await expect(plugin.updatePendingSyncHint()).resolves.toBeUndefined();
             expect(plugin.syncPillEl?.style.display).toBe("none");
@@ -2698,7 +2743,13 @@ describe("LilbeePlugin", () => {
 
             await plugin.runCrawl("https://example.com", 0, 50);
 
-            expect(plugin.api.crawl).toHaveBeenCalledWith("https://example.com", 0, 50, expect.any(AbortSignal));
+            expect(plugin.api.crawl).toHaveBeenCalledWith(
+                "https://example.com",
+                0,
+                50,
+                expect.any(AbortSignal),
+                undefined,
+            );
             expect(Notice.instances.some((n) => n.message.includes("crawl done"))).toBe(true);
             expect(syncSpy).toHaveBeenCalled();
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
@@ -2717,7 +2768,35 @@ describe("LilbeePlugin", () => {
 
             await plugin.runCrawl("https://example.com", null, null);
 
-            expect(plugin.api.crawl).toHaveBeenCalledWith("https://example.com", null, null, expect.any(AbortSignal));
+            expect(plugin.api.crawl).toHaveBeenCalledWith(
+                "https://example.com",
+                null,
+                null,
+                expect.any(AbortSignal),
+                undefined,
+            );
+        });
+
+        it("forwards an explicit render mode to api.crawl", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 1 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", 0, null, "browser");
+
+            expect(plugin.api.crawl).toHaveBeenCalledWith(
+                "https://example.com",
+                0,
+                null,
+                expect.any(AbortSignal),
+                "browser",
+            );
         });
 
         it("CRAWL_DONE without pages_crawled uses local pageCount", async () => {

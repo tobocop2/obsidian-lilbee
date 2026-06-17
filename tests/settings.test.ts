@@ -235,6 +235,8 @@ interface Captured {
     blurHandlers: BlurCapture[];
     sliderOnChanges: SliderOnChange[];
     dropdownOnChanges: DropdownOnChange[];
+    dropdownOptions: Array<Record<string, string>>;
+    dropdownSetValues: string[][];
     toggleOnChanges: ToggleOnChange[];
     buttonOnClicks: ButtonOnClick[];
     extraButtonOnClicks: ButtonOnClick[];
@@ -246,6 +248,8 @@ function captureSettingCallbacks(fn: () => void): Captured {
     const blurHandlers: BlurCapture[] = [];
     const sliderOnChanges: SliderOnChange[] = [];
     const dropdownOnChanges: DropdownOnChange[] = [];
+    const dropdownOptions: Array<Record<string, string>> = [];
+    const dropdownSetValues: string[][] = [];
     const toggleOnChanges: ToggleOnChange[] = [];
     const buttonOnClicks: ButtonOnClick[] = [];
     const extraButtonOnClicks: ButtonOnClick[] = [];
@@ -323,16 +327,29 @@ function captureSettingCallbacks(fn: () => void): Captured {
     };
 
     Setting.prototype.addDropdown = function (cb: (dropdown: any) => void) {
+        const options: Record<string, string> = {};
+        const setValues: string[] = [];
         const fakeDropdown = {
-            addOption: (_v: string, _l: string) => fakeDropdown,
-            addOptions: (_opts: Record<string, string>) => fakeDropdown,
-            setValue: () => fakeDropdown,
+            addOption: (v: string, l: string) => {
+                options[v] = l;
+                return fakeDropdown;
+            },
+            addOptions: (opts: Record<string, string>) => {
+                Object.assign(options, opts);
+                return fakeDropdown;
+            },
+            setValue: (v: string) => {
+                setValues.push(v);
+                return fakeDropdown;
+            },
             onChange: (handler: DropdownOnChange) => {
                 dropdownOnChanges.push(handler);
                 return fakeDropdown;
             },
         };
         cb(fakeDropdown);
+        dropdownOptions.push(options);
+        dropdownSetValues.push(setValues);
         return this;
     };
 
@@ -403,6 +420,8 @@ function captureSettingCallbacks(fn: () => void): Captured {
         blurHandlers,
         sliderOnChanges,
         dropdownOnChanges,
+        dropdownOptions,
+        dropdownSetValues,
         toggleOnChanges,
         buttonOnClicks,
         extraButtonOnClicks,
@@ -3131,6 +3150,45 @@ describe("managed mode settings", () => {
 
             await textOnChanges[CRAWL_DEPTH]("3");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
+        });
+
+        // Locate the render-mode dropdown by its option set rather than a brittle absolute index.
+        const renderModeIndex = (dropdownOptions: Array<Record<string, string>>): number =>
+            dropdownOptions.findIndex((o) => "http" in o && "browser" in o);
+
+        it("PATCHes crawl_render_mode when the render-mode dropdown changes", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { dropdownOnChanges, dropdownOptions } = captureSettingCallbacks(() => tab.display());
+
+            const idx = renderModeIndex(dropdownOptions);
+            expect(idx).toBeGreaterThanOrEqual(0);
+            await dropdownOnChanges[idx]("browser");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_render_mode: "browser" });
+        });
+
+        it("shows an error notice when the render-mode PATCH fails", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { dropdownOnChanges, dropdownOptions } = captureSettingCallbacks(() => tab.display());
+
+            await dropdownOnChanges[renderModeIndex(dropdownOptions)]("browser");
+            expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
+        });
+
+        it("hydrates the render-mode dropdown from the server's crawl_render_mode", async () => {
+            const plugin = makePlugin();
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ crawl_render_mode: "browser" });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { dropdownOptions, dropdownSetValues } = captureSettingCallbacks(() => tab.display());
+
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(dropdownSetValues[renderModeIndex(dropdownOptions)]).toContain("browser");
         });
     });
 

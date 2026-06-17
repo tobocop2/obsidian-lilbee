@@ -784,6 +784,20 @@ describe("pullModel()", () => {
             });
         });
 
+        it("includes render_mode in the body when a render mode is passed", async () => {
+            fetchMock.mockResolvedValue(
+                sseResponse(['event: crawl_done\ndata: {"pages_crawled":1,"files_written":1}\n\n']),
+            );
+
+            await collect(client.crawl("https://example.com", 0, null, undefined, "browser"));
+
+            expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/crawl`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: "https://example.com", depth: 0, max_pages: null, render_mode: "browser" }),
+            });
+        });
+
         it("omits depth and max_pages from the body when they are not passed", async () => {
             fetchMock.mockResolvedValue(
                 sseResponse(['event: crawl_done\ndata: {"pages_crawled":1,"files_written":1}\n\n']),

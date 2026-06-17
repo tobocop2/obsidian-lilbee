@@ -99,14 +99,23 @@ export interface ConfigResponse {
     max_context_sources?: number;
     diversity_max_per_source?: number;
     mmr_lambda?: number;
+    crawl_render_mode?: CrawlRenderMode;
     [key: string]: unknown;
 }
+
+export type CrawlRenderMode = "http" | "browser";
+
+export const CRAWL_RENDER_MODE = {
+    HTTP: "http",
+    BROWSER: "browser",
+} as const satisfies Record<string, CrawlRenderMode>;
 
 export const CONFIG_KEY = {
     RAG_SYSTEM_PROMPT: "rag_system_prompt",
     GENERAL_SYSTEM_PROMPT: "general_system_prompt",
     CHAT_MODE: "chat_mode",
     SHOW_REASONING: "show_reasoning",
+    CRAWL_RENDER_MODE: "crawl_render_mode",
 } as const;
 
 export type ChatMode = "search" | "chat";
