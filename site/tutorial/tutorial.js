@@ -15,6 +15,7 @@ const groups = [
     reels: [
       { id: "scanned-pdf", name: "vision", title: "Scanned PDFs, read by OCR", desc: "A scanned, image-only PDF read by a local vision model. The Task Center streams the OCR page by page, then a cited answer reads the support number and publisher straight off the scanned cover, a detail only OCR could surface." },
       { id: "crawl", name: "crawl", title: "Crawl the web into your vault", desc: "Crawl a Wikipedia page into your vault and ask it a question, then jump from the citation straight to the cited section of the rendered source." },
+      { id: "crawl-site", name: "crawl_site", title: "Crawl a whole site", desc: "Crawl a whole article and every page it links to, one link deep, into an empty vault. Hundreds of pages stream into the explorer as they index, then one multi-part question that only makes sense across the whole site gets a single cited answer, with reranking pulling the best chunks from across the crawl and each fact a click from its source page." },
     ],
   },
   {
