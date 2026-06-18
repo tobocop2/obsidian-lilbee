@@ -7,7 +7,7 @@
   </a>
 </p>
 
-<p align="center"><strong>Local AI search and chat for your vault, inside Obsidian.</strong></p>
+<p align="center"><strong>Local AI search, chat, and web crawling for your vault, inside Obsidian.</strong></p>
 
 <p align="center"><a href="https://obsidian.lilbee.sh/">Project site</a> &nbsp;·&nbsp; <a href="https://obsidian.lilbee.sh/tutorial">Tutorial reel</a> &nbsp;·&nbsp; <a href="https://github.com/tobocop2/obsidian-lilbee/releases">Releases</a> &nbsp;·&nbsp; <a href="https://lilbee.sh/">lilbee engine</a></p>
 
