@@ -2,6 +2,32 @@
   "name": "obsidian-lilbee",
   "version": "0.6.74",
   "private": true,
+  "description": "A local AI search engine and model manager for your Obsidian vault: ask your notes, PDFs, code, and crawled web pages in plain English and get answers with citations. Local-first, with a built-in model catalog. Works with Ollama and LM Studio.",
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "local-ai",
+    "ai-search-engine",
+    "rag",
+    "retrieval-augmented-generation",
+    "semantic-search",
+    "llm",
+    "web-crawler",
+    "cited-answers",
+    "ollama",
+    "lm-studio",
+    "mcp"
+  ],
+  "homepage": "https://obsidian.lilbee.sh/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tobocop2/obsidian-lilbee.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tobocop2/obsidian-lilbee/issues"
+  },
+  "license": "MIT",
+  "author": "Tobias Perelstein",
   "scripts": {
     "build": "node esbuild.config.mjs production",
     "dev": "node esbuild.config.mjs",

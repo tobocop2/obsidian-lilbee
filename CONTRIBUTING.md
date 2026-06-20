@@ -51,6 +51,25 @@ locally first so the PR comes in green.
 
 See `CLAUDE.md` in the repo root for the full architecture and code-style guide.
 
+## Project layout
+
+- `src/` holds the plugin source. `main.ts` is the entry point and wires up the commands and
+  views; `api.ts` holds the `LilbeeClient` that every network call goes through; `views/`
+  contains the chat, Task Center, wiki, and memories panels; `settings.ts` builds the settings
+  tab; and `locales/en.ts` holds every user-facing string.
+- `tests/` mirrors `src/` with Vitest unit tests. Integration tests that need a running server
+  live behind `npm run test:integration`.
+- `site/` is the project website published to obsidian.lilbee.sh by CI on every push to `main`.
+- `esbuild.config.mjs` is the bundler that emits `main.js`, the file Obsidian actually loads.
+
+## Testing
+
+Unit tests run under jsdom with Obsidian's API mocked, so you don't need a vault to run them.
+Add or update a test alongside any change in `src/`, and keep the suite at 100% line coverage,
+the Vitest threshold fails the build below that. For flows that talk to a real server, run a
+local `lilbee serve` and use the integration config. Run `npm test` before opening a PR so the
+coverage gate doesn't surprise you in CI.
+
 ## Running the Plugin Against a Server
 
 The plugin needs a reachable lilbee server. In managed mode it downloads and runs the server

@@ -211,6 +211,20 @@ The plugin tracks the installed lilbee server version. Go to Settings → lilbee
 
 This updates only the lilbee **server**, never the plugin itself. The plugin's own code is updated through Obsidian like any other community plugin; the **Check for updates** button only manages the separate server it downloads. Each server download is checked against the SHA256 digest GitHub publishes for the release before it runs, so a corrupted or tampered download is discarded instead of executed.
 
+## Advanced
+
+Most people never need this. By default the plugin downloads and runs the server for you and stores everything under your OS data directory. Two optional overrides, set in your shell before launching Obsidian:
+
+```bash
+# Run your own server instead of the managed one, then point the plugin at its URL in Settings:
+lilbee serve
+
+# Or move where lilbee keeps the server binary, models, and index:
+export LILBEE_DATA="/path/to/lilbee-data"      # macOS / Linux
+# Windows (PowerShell):
+#   $env:LILBEE_DATA = "D:\lilbee-data"
+```
+
 ## Privacy & network use
 
 Everything runs on your machine by default, and the plugin tells you when that changes. For transparency, here's exactly what it does and what leaves your computer:
