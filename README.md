@@ -213,13 +213,13 @@ This updates only the lilbee **server**, never the plugin itself. The plugin's o
 
 ## Advanced
 
-Most people never need this. By default the plugin downloads and runs the server for you and stores everything under your OS data directory. Two optional overrides, set in your shell before launching Obsidian:
+Most people never need this. By default the plugin downloads and runs the server for you and stores everything under your OS data directory.
+
+**Run your own server (external mode).** Instead of letting the plugin manage it, you can run the lilbee server yourself and point the plugin at its URL in Settings. How you keep it running depends on your setup: a systemd unit, a launchd / `brew services` agent, or whatever daemonization tool you prefer. See [running lilbee as a service](https://github.com/tobocop2/lilbee#running-as-a-service-optional) in the lilbee docs for the per-platform recipes.
+
+**Move where lilbee stores its data.** Set `LILBEE_DATA` in your shell before launching Obsidian:
 
 ```bash
-# Run your own server instead of the managed one, then point the plugin at its URL in Settings:
-lilbee serve
-
-# Or move where lilbee keeps the server binary, models, and index:
 export LILBEE_DATA="/path/to/lilbee-data"      # macOS / Linux
 # Windows (PowerShell):
 #   $env:LILBEE_DATA = "D:\lilbee-data"
