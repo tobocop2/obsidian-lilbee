@@ -254,13 +254,13 @@ describe("PlacementView manual editing", () => {
             makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(multiManual())) })),
         );
         expect(rowFor(contentEl, "embed").findAll("lilbee-placement-chip")[0].getAttribute("aria-label")).toBe(
-            "Run embed on cuda0",
+            "Run embedding on cuda0",
         );
         expect(rowFor(contentEl, "embed").findAll("lilbee-placement-step")[1].getAttribute("aria-label")).toBe(
-            "Add a embed worker",
+            "Add an embedding worker",
         );
         expect(rowFor(contentEl, "embed").findAll("lilbee-placement-step")[0].getAttribute("aria-label")).toBe(
-            "Remove a embed worker",
+            "Remove an embedding worker",
         );
     });
 

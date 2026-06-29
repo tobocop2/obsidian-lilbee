@@ -1,4 +1,15 @@
-import { MODEL_TASK } from "../types";
+import { MODEL_TASK, type WorkerRole } from "../types";
+
+// Natural-language noun for each worker role, so tooltips read "embedding
+// worker" rather than the internal "embed".
+const ROLE_NOUN: Record<WorkerRole, string> = {
+    chat: "chat",
+    embed: "embedding",
+    vision: "vision",
+    rerank: "reranking",
+};
+const roleNoun = (role: string): string => ROLE_NOUN[role as WorkerRole];
+const indefinite = (word: string): string => (/^[aeiou]/i.test(word) ? "an" : "a");
 
 export const MESSAGES = {
     CONFIRM_REINDEX: (name: string): string => `"${name}" is already indexed. Re-add it?`,
@@ -914,9 +925,10 @@ export const MESSAGES = {
     PLACEMENT_FITS: "Fits all roles",
     PLACEMENT_WONT_FIT: (roles: string): string => `Won't fit: ${roles}. Move it to another GPU or free up memory.`,
     PLACEMENT_NOT_SET: "not set",
-    PLACEMENT_TIP_CHIP: (role: string, gpu: string): string => `Run ${role} on ${gpu}`,
-    PLACEMENT_TIP_REPLICA_ADD: (role: string): string => `Add a ${role} worker`,
-    PLACEMENT_TIP_REPLICA_REMOVE: (role: string): string => `Remove a ${role} worker`,
+    PLACEMENT_TIP_CHIP: (role: string, gpu: string): string => `Run ${roleNoun(role)} on ${gpu}`,
+    PLACEMENT_TIP_REPLICA_ADD: (role: string): string => `Add ${indefinite(roleNoun(role))} ${roleNoun(role)} worker`,
+    PLACEMENT_TIP_REPLICA_REMOVE: (role: string): string =>
+        `Remove ${indefinite(roleNoun(role))} ${roleNoun(role)} worker`,
     PLACEMENT_HINT_EDIT_MANUALLY: 'Click "Edit manually" first to change GPU placement.',
     PLACEMENT_HINT_REPLICAS_SETTINGS:
         "This device runs everything together. Set worker counts in Settings → lilbee → Hardware / fleet.",
