@@ -1,5 +1,5 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { WorkspaceLeaf, MockElement, Notice } from "../__mocks__/obsidian";
+import { WorkspaceLeaf, MockElement, Notice, Platform } from "../__mocks__/obsidian";
 import { ok, err } from "../../src/result";
 import { PlacementView, VIEW_TYPE_PLACEMENT } from "../../src/views/placement-view";
 import type LilbeePlugin from "../../src/main";
@@ -103,7 +103,7 @@ describe("VIEW_TYPE_PLACEMENT + metadata", () => {
         expect(VIEW_TYPE_PLACEMENT).toBe("lilbee-placement");
         const view = new PlacementView(new WorkspaceLeaf(), makePlugin(makeApi()));
         expect(view.getViewType()).toBe("lilbee-placement");
-        expect(view.getDisplayText()).toBe("lilbee Placement");
+        expect(view.getDisplayText()).toBe("lilbee GPU placement");
         expect(view.getIcon()).toBe("cpu");
     });
 });
@@ -113,7 +113,7 @@ describe("PlacementView multi-GPU (auto)", () => {
         const { contentEl } = await openView(makePlugin(makeApi()));
         expect(contentEl.classList.contains("lilbee-placement-container")).toBe(true);
         expect(contentEl.find("lilbee-placement-header")!.find("lilbee-placement-state")!.textContent).toBe("auto");
-        expect(contentEl.findAll("lilbee-placement-gpu-row").length).toBe(2);
+        expect(contentEl.findAll("lilbee-placement-card").length).toBe(2);
         expect(contentEl.findAll("lilbee-placement-role-row").length).toBe(3);
         // chips are read-only in auto mode
         expect(contentEl.findAll("lilbee-placement-chip").every((c) => c.classList.contains("is-readonly"))).toBe(true);
@@ -138,9 +138,10 @@ describe("PlacementView single device", () => {
         const { contentEl } = await openView(
             makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(single())) })),
         );
-        expect(contentEl.find("lilbee-placement-device-name")!.textContent).toBe("Apple M3 Max");
+        expect(contentEl.find("lilbee-placement-card-name")!.textContent).toBe("Apple M3 Max");
         expect(contentEl.find("lilbee-placement-mem")!.textContent).toBe("36.0 GB / 48.0 GB free");
-        expect(contentEl.find("lilbee-placement-gpus")).toBeNull();
+        // single device has no GPU toggle chips
+        expect(contentEl.find("lilbee-placement-chip")).toBeNull();
         // vision has no model → "not set"
         expect(rowFor(contentEl, "vision").find("lilbee-placement-role-model")!.textContent).toBe("not set");
         // single-device steppers are editable even in auto (embed + vision)
@@ -167,13 +168,26 @@ describe("PlacementView single device", () => {
         ]);
     });
 
-    it("renders a CPU message when no GPUs are detected", async () => {
+    it("renders a CPU host card when no GPUs are detected (non-Mac)", async () => {
+        Platform.isMacOS = false;
         const { contentEl } = await openView(
             makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(noGpu())) })),
         );
-        expect(contentEl.find("lilbee-placement-device")!.textContent).toBe(
-            "No GPUs detected. lilbee is running on CPU.",
-        );
+        expect(contentEl.find("lilbee-placement-card-name")!.textContent).toBe("CPU");
+        expect(contentEl.find("lilbee-placement-card-sub")!.textContent).toBe("no GPU detected");
+    });
+
+    it("renders an Apple Silicon unified-memory card on macOS with no discrete GPU", async () => {
+        Platform.isMacOS = true;
+        try {
+            const { contentEl } = await openView(
+                makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(noGpu())) })),
+            );
+            expect(contentEl.find("lilbee-placement-card-name")!.textContent).toBe("Apple Silicon");
+            expect(contentEl.find("lilbee-placement-card-sub")!.textContent).toBe("unified memory · Metal");
+        } finally {
+            Platform.isMacOS = false;
+        }
     });
 });
 

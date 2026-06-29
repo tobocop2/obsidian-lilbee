@@ -928,7 +928,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "open-placement",
-            name: "Open placement",
+            name: "Open GPU placement",
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) void this.activatePlacementView();

@@ -892,10 +892,16 @@ export const MESSAGES = {
     RAIL_LABEL_RERANK: "Rerank",
     RAIL_BROWSE_CATALOG: "Browse catalog…",
 
-    // Placement / GPU fleet
-    LABEL_PLACEMENT_VIEW: "lilbee Placement",
-    LABEL_RIBBON_OPEN_PLACEMENT: "Open lilbee placement",
-    PLACEMENT_TITLE: "Placement",
+    // GPU placement / fleet
+    LABEL_PLACEMENT_VIEW: "lilbee GPU placement",
+    LABEL_RIBBON_OPEN_PLACEMENT: "Open lilbee GPU placement",
+    PLACEMENT_TITLE: "GPU placement",
+    PLACEMENT_SECTION_HARDWARE: "Hardware",
+    PLACEMENT_SECTION_ROLES: "Roles",
+    PLACEMENT_HOST_APPLE: "Apple Silicon",
+    PLACEMENT_HOST_APPLE_SUB: "unified memory · Metal",
+    PLACEMENT_HOST_CPU: "CPU",
+    PLACEMENT_HOST_CPU_SUB: "no GPU detected",
     PLACEMENT_STATE_AUTO: "auto",
     PLACEMENT_STATE_MANUAL: "manual",
     PLACEMENT_STATE_EDITED: "edited",
@@ -908,7 +914,6 @@ export const MESSAGES = {
     PLACEMENT_FITS: "Fits all roles",
     PLACEMENT_WONT_FIT: (roles: string): string => `Won't fit: ${roles}. Move it to another GPU or free up memory.`,
     PLACEMENT_NOT_SET: "not set",
-    PLACEMENT_NO_GPUS: "No GPUs detected. lilbee is running on CPU.",
     PLACEMENT_MEM_FREE: (free: string, total: string): string => `${free} / ${total} free`,
     PLACEMENT_SPLIT: (ratio: string): string => `split ${ratio}`,
     PLACEMENT_REBUILDING: "Rebuilding fleet…",

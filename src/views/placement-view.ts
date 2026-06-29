@@ -1,6 +1,7 @@
-import { ItemView, Notice, WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, Platform, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
 import { isHttpStatus } from "../api";
+import { displayLabelForRef } from "../utils/model-ref";
 import {
     PLACEMENT_MODE,
     REPLICA_ROLES,
@@ -130,81 +131,99 @@ export class PlacementView extends ItemView {
     private renderHeader(container: HTMLElement, data: PlacementResponse): void {
         const header = container.createDiv({ cls: "lilbee-placement-header" });
         header.createEl("h2", { text: MESSAGES.PLACEMENT_TITLE });
-        header.createSpan({ cls: "lilbee-placement-state", text: this.stateLabel(data) });
+        const state = this.applying ? "applying" : this.mode;
+        header.createSpan({ cls: `lilbee-placement-state is-${state}`, text: this.stateLabel(data) });
     }
 
-    // ---- single-device (the common case: unified memory or one GPU) ----------
+    private renderSectionTitle(container: HTMLElement, text: string): void {
+        container.createDiv({ cls: "lilbee-placement-section-title", text });
+    }
 
+    // ---- hardware cards -------------------------------------------------------
+
+    /** Single device: one unified/CPU host card (no discrete GPUs) or one GPU card. */
     private renderSingleDevice(container: HTMLElement, data: PlacementResponse): void {
+        this.renderSectionTitle(container, MESSAGES.PLACEMENT_SECTION_HARDWARE);
+        const hw = container.createDiv({ cls: "lilbee-placement-hw" });
         if (data.gpus.length === 1) {
-            this.renderDeviceSummary(container, data.gpus[0]);
+            this.renderDeviceCard(hw, data.gpus[0]);
         } else {
-            container.createDiv({ cls: "lilbee-placement-device", text: MESSAGES.PLACEMENT_NO_GPUS });
+            this.renderHostCard(hw);
         }
-        const table = container.createDiv({ cls: "lilbee-placement-roles" });
-        for (const role of data.roles) {
-            this.renderRoleStatusRow(table, role);
+        this.renderRoleSection(container, data, null);
+    }
+
+    /** The host's compute when no discrete GPU is enumerated: Apple unified memory
+     * (the chat fleet runs on Metal) or a plain CPU host elsewhere. */
+    private renderHostCard(container: HTMLElement): void {
+        const card = container.createDiv({ cls: "lilbee-placement-card" });
+        const head = card.createDiv({ cls: "lilbee-placement-card-head" });
+        if (Platform.isMacOS) {
+            head.createSpan({ cls: "lilbee-placement-card-name", text: MESSAGES.PLACEMENT_HOST_APPLE });
+            head.createSpan({ cls: "lilbee-placement-card-sub", text: MESSAGES.PLACEMENT_HOST_APPLE_SUB });
+        } else {
+            head.createSpan({ cls: "lilbee-placement-card-name", text: MESSAGES.PLACEMENT_HOST_CPU });
+            head.createSpan({ cls: "lilbee-placement-card-sub", text: MESSAGES.PLACEMENT_HOST_CPU_SUB });
         }
     }
 
-    private renderDeviceSummary(container: HTMLElement, gpu: GpuInfo): void {
-        const dev = container.createDiv({ cls: "lilbee-placement-device" });
-        dev.createSpan({ cls: "lilbee-placement-device-name", text: gpu.name });
-        this.renderBar(dev, gpu.total_bytes - gpu.free_bytes, gpu.total_bytes);
-        dev.createSpan({
+    private renderDeviceCard(container: HTMLElement, gpu: GpuInfo): void {
+        const card = container.createDiv({ cls: "lilbee-placement-card" });
+        const head = card.createDiv({ cls: "lilbee-placement-card-head" });
+        head.createSpan({ cls: "lilbee-placement-card-name", text: gpu.name });
+        head.createSpan({ cls: "lilbee-placement-card-sub", text: gpu.label });
+        const meter = card.createDiv({ cls: "lilbee-placement-meter" });
+        this.renderBar(meter, gpu.total_bytes - gpu.free_bytes, gpu.total_bytes);
+        meter.createSpan({
             cls: "lilbee-placement-mem",
             text: MESSAGES.PLACEMENT_MEM_FREE(formatGb(gpu.free_bytes), formatGb(gpu.total_bytes)),
         });
     }
 
-    private renderRoleStatusRow(container: HTMLElement, role: RolePlacement): void {
+    // ---- roles ----------------------------------------------------------------
+
+    /** The Roles section. `gpus` non-null renders the per-role GPU toggle matrix. */
+    private renderRoleSection(container: HTMLElement, data: PlacementResponse, gpus: GpuInfo[] | null): void {
+        this.renderSectionTitle(container, MESSAGES.PLACEMENT_SECTION_ROLES);
+        const table = container.createDiv({ cls: "lilbee-placement-roles" });
+        for (const role of data.roles) {
+            this.renderRoleRow(table, role, gpus);
+        }
+    }
+
+    private renderRoleRow(container: HTMLElement, role: RolePlacement, gpus: GpuInfo[] | null): void {
         const row = container.createDiv({ cls: "lilbee-placement-role-row" });
         row.dataset.role = role.role;
-        row.createSpan({ cls: "lilbee-placement-role-name", text: role.role });
-        row.createSpan({ cls: "lilbee-placement-role-model", text: role.model || MESSAGES.PLACEMENT_NOT_SET });
+        if (this.unplaceable.includes(role.role)) row.addClass("lilbee-placement-role-unfit");
+        row.createSpan({ cls: `lilbee-placement-badge is-${role.role}`, text: role.role });
+        row.createSpan({
+            cls: "lilbee-placement-role-model",
+            text: role.model ? displayLabelForRef(role.model) : MESSAGES.PLACEMENT_NOT_SET,
+        });
+        if (gpus) {
+            const chips = row.createDiv({ cls: "lilbee-placement-chips" });
+            for (const gpu of gpus) {
+                this.renderChip(chips, role.role, gpu);
+            }
+            if (role.tensor_split && role.tensor_split.length > 0) {
+                row.createSpan({
+                    cls: "lilbee-placement-split",
+                    text: MESSAGES.PLACEMENT_SPLIT(role.tensor_split.join("/")),
+                });
+            }
+        }
         if (REPLICA_ROLES.has(role.role)) this.renderStepper(row, role.role);
     }
 
     // ---- multi-GPU matrix -----------------------------------------------------
 
     private renderMatrix(container: HTMLElement, data: PlacementResponse): void {
-        const gpuTable = container.createDiv({ cls: "lilbee-placement-gpus" });
+        this.renderSectionTitle(container, MESSAGES.PLACEMENT_SECTION_HARDWARE);
+        const hw = container.createDiv({ cls: "lilbee-placement-hw" });
         for (const gpu of data.gpus) {
-            this.renderGpuRow(gpuTable, gpu);
+            this.renderDeviceCard(hw, gpu);
         }
-        const matrix = container.createDiv({ cls: "lilbee-placement-matrix" });
-        for (const role of data.roles) {
-            this.renderMatrixRow(matrix, role, data.gpus);
-        }
-    }
-
-    private renderGpuRow(container: HTMLElement, gpu: GpuInfo): void {
-        const row = container.createDiv({ cls: "lilbee-placement-gpu-row" });
-        row.createSpan({ cls: "lilbee-placement-gpu-label", text: gpu.label });
-        row.createSpan({ cls: "lilbee-placement-gpu-name", text: gpu.name });
-        this.renderBar(row, gpu.total_bytes - gpu.free_bytes, gpu.total_bytes);
-        row.createSpan({
-            cls: "lilbee-placement-mem",
-            text: MESSAGES.PLACEMENT_MEM_FREE(formatGb(gpu.free_bytes), formatGb(gpu.total_bytes)),
-        });
-    }
-
-    private renderMatrixRow(container: HTMLElement, role: RolePlacement, gpus: GpuInfo[]): void {
-        const row = container.createDiv({ cls: "lilbee-placement-role-row" });
-        row.dataset.role = role.role;
-        if (this.unplaceable.includes(role.role)) row.addClass("lilbee-placement-role-unfit");
-        row.createSpan({ cls: "lilbee-placement-role-name", text: role.role });
-        const chips = row.createDiv({ cls: "lilbee-placement-chips" });
-        for (const gpu of gpus) {
-            this.renderChip(chips, role.role, gpu);
-        }
-        if (role.tensor_split && role.tensor_split.length > 0) {
-            row.createSpan({
-                cls: "lilbee-placement-split",
-                text: MESSAGES.PLACEMENT_SPLIT(role.tensor_split.join("/")),
-            });
-        }
-        if (REPLICA_ROLES.has(role.role)) this.renderStepper(row, role.role);
+        this.renderRoleSection(container, data, data.gpus);
     }
 
     private renderChip(container: HTMLElement, role: WorkerRole, gpu: GpuInfo): void {
