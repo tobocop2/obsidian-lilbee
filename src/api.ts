@@ -12,7 +12,10 @@ import type {
     DocumentResult,
     DocumentsResponse,
     GenerationOptions,
+    HealthResponse,
     InstalledResponse,
+    PlacementResponse,
+    PlacementSpec,
     MemoryFlagsResponse,
     MemoryItem,
     MemoryKind,
@@ -94,6 +97,16 @@ export class RateLimitedError extends Error {
 }
 
 export type RequestOutcome = "ok" | "auth_error" | "server_error" | "unreachable" | "starting";
+
+/**
+ * True when a `fetchResult` error came from a specific HTTP status. `assertOk`
+ * formats non-ok responses as `Server responded <status>: <body>`, so callers
+ * (e.g. the placement view distinguishing a 409 "apply not enabled" from a real
+ * failure) can branch on the status without a bespoke error type per route.
+ */
+export function isHttpStatus(error: Error, status: number): boolean {
+    return error.message.startsWith(`Server responded ${status}`);
+}
 
 export class LilbeeClient {
     private token: string | null = null;
@@ -270,7 +283,7 @@ export class LilbeeClient {
         throw lastError;
     }
 
-    async health(): Promise<Result<{ status: string; version: string }, Error>> {
+    async health(): Promise<Result<HealthResponse, Error>> {
         return this.fetchResult(`${this.baseUrl}/api/health`);
     }
 
@@ -470,6 +483,7 @@ export class LilbeeClient {
         size?: "small" | "medium" | "large";
         sort?: "featured" | "downloads" | "name" | "size_asc" | "size_desc";
         featured?: boolean;
+        installed?: boolean;
         limit?: number;
         offset?: number;
     }): Promise<Result<CatalogResponse, Error>> {
@@ -479,6 +493,7 @@ export class LilbeeClient {
         if (params?.size) qs.set("size", params.size);
         if (params?.sort) qs.set("sort", params.sort);
         if (params?.featured !== undefined) qs.set("featured", String(params.featured));
+        if (params?.installed !== undefined) qs.set("installed", String(params.installed));
         if (params?.limit !== undefined) qs.set("limit", String(params.limit));
         if (params?.offset !== undefined) qs.set("offset", String(params.offset));
         const suffix = qs.toString() ? `?${qs}` : "";
@@ -565,11 +580,14 @@ export class LilbeeClient {
         maxPages?: number | null,
         signal?: AbortSignal,
         renderMode?: CrawlRenderMode,
+        includeSubdomains?: boolean,
     ): AsyncGenerator<SSEEvent, void> {
         const body: Record<string, unknown> = { url };
         if (depth !== undefined) body.depth = depth;
+        // max_pages of 0 means "unlimited" on the server, so pass it through.
         if (maxPages !== undefined) body.max_pages = maxPages;
         if (renderMode !== undefined) body.render_mode = renderMode;
+        if (includeSubdomains !== undefined) body.include_subdomains = includeSubdomains;
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/crawl`,
             {
@@ -623,6 +641,38 @@ export class LilbeeClient {
             method: "PUT",
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ model }),
+        });
+    }
+
+    /** The current effective placement (auto plan or active manual spec). */
+    async placement(): Promise<Result<PlacementResponse, Error>> {
+        return this.fetchResult<PlacementResponse>(`${this.baseUrl}/api/placement`, { headers: this.authHeaders() });
+    }
+
+    /** Dry-run a candidate spec (or auto when null); reports fit without persisting. */
+    async placementPreview(spec: PlacementSpec | null): Promise<Result<PlacementResponse, Error>> {
+        return this.fetchResult<PlacementResponse>(`${this.baseUrl}/api/placement/preview`, {
+            method: "POST",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ spec }),
+        });
+    }
+
+    /** Apply a manual spec: persists it and rebuilds the fleet. Returns 409 when
+     * the server has not enabled HTTP placement (older or shared deployments). */
+    async applyPlacement(spec: PlacementSpec): Promise<Result<PlacementResponse, Error>> {
+        return this.fetchResult<PlacementResponse>(`${this.baseUrl}/api/placement`, {
+            method: "PUT",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ spec }),
+        });
+    }
+
+    /** Clear the manual spec, returning to auto placement (rebuilds the fleet). */
+    async clearPlacement(): Promise<Result<PlacementResponse, Error>> {
+        return this.fetchResult<PlacementResponse>(`${this.baseUrl}/api/placement`, {
+            method: "DELETE",
+            headers: this.authHeaders(),
         });
     }
 

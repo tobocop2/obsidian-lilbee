@@ -4439,3 +4439,232 @@ button.lilbee-model-chip-select:focus-visible {
 .lilbee-clickable {
     cursor: pointer;
 }
+
+/* ── Placement view (GPU fleet) ─────────────────────────────────────────── */
+.lilbee-placement-container {
+    padding: 16px 20px;
+    overflow-y: auto;
+}
+.lilbee-placement-body {
+    position: relative;
+    max-width: 720px;
+    margin: 0 auto;
+}
+.lilbee-placement-header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+.lilbee-placement-header h2 {
+    margin: 0;
+    font-size: 1.1em;
+}
+.lilbee-placement-state {
+    color: var(--text-muted);
+    font-size: 0.85em;
+}
+.lilbee-placement-empty {
+    color: var(--text-muted);
+    padding: 24px 0;
+    text-align: center;
+}
+.lilbee-placement-device {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 0 10px;
+}
+.lilbee-placement-device-name {
+    font-weight: 600;
+    white-space: nowrap;
+}
+.lilbee-placement-gpus {
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+}
+.lilbee-placement-gpu-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 0;
+}
+.lilbee-placement-gpu-label {
+    font-weight: 600;
+    width: 56px;
+}
+.lilbee-placement-gpu-name {
+    color: var(--text-muted);
+    width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.lilbee-placement-mem {
+    color: var(--text-muted);
+    font-size: 0.82em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    min-width: 110px;
+    text-align: right;
+}
+.lilbee-placement-bar {
+    flex: 1;
+    height: 8px;
+    border-radius: 5px;
+    background: var(--background-modifier-border);
+    overflow: hidden;
+    min-width: 60px;
+}
+.lilbee-placement-bar-fill {
+    height: 100%;
+    background: var(--interactive-accent);
+}
+.lilbee-placement-roles,
+.lilbee-placement-matrix {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.lilbee-placement-role-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+.lilbee-placement-matrix .lilbee-placement-role-row:last-child,
+.lilbee-placement-roles .lilbee-placement-role-row:last-child {
+    border-bottom: none;
+}
+.lilbee-placement-role-name {
+    font-weight: 600;
+    width: 64px;
+}
+.lilbee-placement-role-model {
+    color: var(--text-normal);
+    flex: 1;
+}
+.lilbee-placement-role-unfit .lilbee-placement-role-name {
+    color: var(--text-error);
+}
+.lilbee-placement-chips {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+    flex-wrap: wrap;
+}
+.lilbee-placement-chip {
+    padding: 3px 10px;
+    border-radius: 13px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    font-size: 0.8em;
+    cursor: pointer;
+}
+.lilbee-placement-chip.is-on {
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+.lilbee-placement-chip.is-readonly {
+    cursor: default;
+    border-style: dashed;
+    background: transparent;
+}
+.lilbee-placement-chip.is-on.is-readonly {
+    background: transparent;
+    color: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+}
+.lilbee-placement-split {
+    color: var(--text-muted);
+    font-size: 0.78em;
+}
+.lilbee-placement-stepper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 0.82em;
+}
+.lilbee-placement-step {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    cursor: pointer;
+    line-height: 1;
+}
+.lilbee-placement-step.is-readonly {
+    cursor: default;
+    opacity: 0.5;
+}
+.lilbee-placement-step-count {
+    min-width: 24px;
+    text-align: center;
+    color: var(--text-normal);
+}
+.lilbee-placement-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+.lilbee-placement-fit {
+    flex: 1;
+    font-size: 0.88em;
+    color: var(--text-success);
+}
+.lilbee-placement-fit.is-muted {
+    color: var(--text-muted);
+}
+.lilbee-placement-fit.is-unfit {
+    color: var(--text-error);
+}
+.lilbee-placement-btn {
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    cursor: pointer;
+    font-size: 0.85em;
+}
+.lilbee-placement-btn-primary {
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+.lilbee-placement-btn.is-disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+.lilbee-placement-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: var(--background-primary);
+    opacity: 0.92;
+}
+.lilbee-placement-spinner {
+    width: 26px;
+    height: 26px;
+    border: 3px solid var(--background-modifier-border);
+    border-top-color: var(--interactive-accent);
+    border-radius: 50%;
+    animation: lilbee-spin 0.7s linear infinite;
+}
+.lilbee-placement-overlay-text {
+    font-weight: 600;
+}

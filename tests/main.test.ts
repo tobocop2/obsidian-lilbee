@@ -386,11 +386,11 @@ describe("LilbeePlugin", () => {
             expect(startSpy).toHaveBeenCalled();
         });
 
-        it("adds all twenty-seven commands", async () => {
+        it("adds all twenty-eight commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(27);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(28);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("model-picker-chat");
             expect(allIds).toContain("model-picker-embedding");
@@ -418,6 +418,7 @@ describe("LilbeePlugin", () => {
             expect(ids).toContain("wiki-lint");
             expect(ids).toContain("wiki-drafts");
             expect(ids).toContain("wiki-generate");
+            expect(ids).toContain("open-placement");
         });
 
         it("add-file command returns false when no active file", async () => {
@@ -857,6 +858,52 @@ describe("LilbeePlugin", () => {
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([{ view: { reload } }]);
             (plugin as any).refreshMemoryViews();
             expect(reload).toHaveBeenCalled();
+        });
+
+        it("open-placement command activates the placement view", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
+            const activate = vi.spyOn(plugin as any, "activatePlacementView").mockResolvedValue(undefined);
+            expect(findCmd(plugin, "open-placement").checkCallback(true)).toBe(true);
+            findCmd(plugin, "open-placement").checkCallback(false);
+            expect(activate).toHaveBeenCalled();
+        });
+
+        it("open-placement command is gated when lilbee is not ready", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(false);
+            expect(findCmd(plugin, "open-placement").checkCallback(false)).toBe(false);
+        });
+
+        it("activatePlacementView reveals an existing leaf", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const leaf = new WorkspaceLeaf(plugin.app as any);
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([leaf]);
+            await (plugin as any).activatePlacementView();
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+            expect(plugin.app.workspace.getLeaf).not.toHaveBeenCalled();
+        });
+
+        it("activatePlacementView opens a new main-area leaf when none exists", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            const leaf = new WorkspaceLeaf(plugin.app as any);
+            plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(leaf);
+            await (plugin as any).activatePlacementView();
+            expect(leaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-placement", active: true });
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
+        });
+
+        it("activatePlacementView does not crash when no leaf is available", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(null);
+            await expect((plugin as any).activatePlacementView()).resolves.not.toThrow();
         });
     });
 

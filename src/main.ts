@@ -79,6 +79,7 @@ import { SetupWizard } from "./views/setup-wizard";
 import { TaskCenterView, VIEW_TYPE_TASKS } from "./views/task-center";
 import { WikiView, VIEW_TYPE_WIKI } from "./views/wiki-view";
 import { MemoriesView, VIEW_TYPE_MEMORIES } from "./views/memories-view";
+import { PlacementView, VIEW_TYPE_PLACEMENT } from "./views/placement-view";
 import { RememberModal } from "./views/remember-modal";
 import { LintModal } from "./views/lint-modal";
 import { DraftModal } from "./views/draft-modal";
@@ -305,6 +306,7 @@ export default class LilbeePlugin extends Plugin {
         safeRegisterView(VIEW_TYPE_TASKS, (leaf) => new TaskCenterView(leaf, this));
         safeRegisterView(VIEW_TYPE_WIKI, (leaf) => new WikiView(leaf, this));
         safeRegisterView(VIEW_TYPE_MEMORIES, (leaf) => new MemoriesView(leaf, this));
+        safeRegisterView(VIEW_TYPE_PLACEMENT, (leaf) => new PlacementView(leaf, this));
         this.addSettingTab(new LilbeeSettingTab(this.app, this));
         this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
         this.taskQueue.onChange(() => this.updateRibbonFromQueue());
@@ -376,7 +378,7 @@ export default class LilbeePlugin extends Plugin {
 
     /** Collapse multiple lilbee-chat / -tasks / -wiki leaves to one of each. */
     private dedupeLilbeeLeaves(): void {
-        for (const type of [VIEW_TYPE_CHAT, VIEW_TYPE_TASKS, VIEW_TYPE_WIKI, VIEW_TYPE_MEMORIES]) {
+        for (const type of [VIEW_TYPE_CHAT, VIEW_TYPE_TASKS, VIEW_TYPE_WIKI, VIEW_TYPE_MEMORIES, VIEW_TYPE_PLACEMENT]) {
             const leaves = this.app.workspace.getLeavesOfType(type);
             for (let i = 1; i < leaves.length; i++) leaves[i].detach();
         }
@@ -915,6 +917,16 @@ export default class LilbeePlugin extends Plugin {
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) void this.activateMemoriesView();
+                return true;
+            },
+        });
+
+        this.addCommand({
+            id: "open-placement",
+            name: "Open placement",
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void this.activatePlacementView();
                 return true;
             },
         });
@@ -1840,6 +1852,20 @@ export default class LilbeePlugin extends Plugin {
     refreshMemoryViews(): void {
         for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMORIES)) {
             void (leaf.view as MemoriesView).reload();
+        }
+    }
+
+    /** Open the placement view in a main-area tab (it is wider than the sidebar views). */
+    async activatePlacementView(): Promise<void> {
+        const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_PLACEMENT);
+        if (existing.length > 0) {
+            void this.app.workspace.revealLeaf(existing[0]);
+            return;
+        }
+        const leaf = this.app.workspace.getLeaf(true);
+        if (leaf) {
+            await leaf.setViewState({ type: VIEW_TYPE_PLACEMENT, active: true });
+            void this.app.workspace.revealLeaf(leaf);
         }
     }
 

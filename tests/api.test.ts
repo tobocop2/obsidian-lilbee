@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { LilbeeClient, RateLimitedError, ServerStartingError, SessionTokenError } from "../src/api";
-import type { Message } from "../src/types";
+import { LilbeeClient, RateLimitedError, ServerStartingError, SessionTokenError, isHttpStatus } from "../src/api";
+import type { Message, PlacementResponse, PlacementSpec } from "../src/types";
 
 const BASE_URL = "http://localhost:7433";
 
@@ -209,8 +209,8 @@ describe("memory methods", () => {
         expect(result).toEqual({ id: "a1", updated: true });
     });
 
-    it("forgetMemory() DELETEs the id and returns the removed id", async () => {
-        fetchMock.mockResolvedValue(jsonResponse({ removed: "a1" }));
+    it("forgetMemory() DELETEs the id and returns the {id, deleted} result", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ id: "a1", deleted: true }));
 
         const result = await client.forgetMemory("a1");
 
@@ -218,11 +218,11 @@ describe("memory methods", () => {
             `${BASE_URL}/api/memories/a1`,
             expect.objectContaining({ method: "DELETE" }),
         );
-        expect(result).toEqual({ removed: "a1" });
+        expect(result).toEqual({ id: "a1", deleted: true });
     });
 
     it("forgetMemory() URL-encodes the id", async () => {
-        fetchMock.mockResolvedValue(jsonResponse({ removed: "a/b" }));
+        fetchMock.mockResolvedValue(jsonResponse({ id: "a/b", deleted: false }));
 
         await client.forgetMemory("a/b");
 
@@ -2349,5 +2349,106 @@ describe("RateLimitedError", () => {
     it("propagates as the typed error from streaming endpoints", async () => {
         fetchMock.mockResolvedValue(rateLimitedResponse("2"));
         await expect(collect(client.chatStream("hi", [] as Message[]))).rejects.toBeInstanceOf(RateLimitedError);
+    });
+});
+
+const PLACEMENT: PlacementResponse = {
+    gpus: [{ index: 0, backend: "cuda", label: "cuda0", name: "RTX 4090", total_bytes: 24, free_bytes: 18 }],
+    roles: [{ role: "chat", model: "Qwen3", devices: [0], tensor_split: null, replicas: 1 }],
+    unplaceable: [],
+    manual: false,
+    spec_json: null,
+};
+
+describe("placement()", () => {
+    it("GETs /api/placement and returns the plan", async () => {
+        fetchMock.mockResolvedValue(jsonResponse(PLACEMENT));
+        const result = await client.placement();
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/placement`, expect.objectContaining({}));
+        expect(result._unsafeUnwrap()).toEqual(PLACEMENT);
+    });
+});
+
+describe("placementPreview()", () => {
+    it("POSTs the spec to /api/placement/preview", async () => {
+        fetchMock.mockResolvedValue(jsonResponse(PLACEMENT));
+        const spec: PlacementSpec = { chat: { devices: [0] } };
+        const result = await client.placementPreview(spec);
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/placement/preview`,
+            expect.objectContaining({ method: "POST", body: JSON.stringify({ spec }) }),
+        );
+        expect(result._unsafeUnwrap()).toEqual(PLACEMENT);
+    });
+
+    it("sends spec: null for an auto preview", async () => {
+        fetchMock.mockResolvedValue(jsonResponse(PLACEMENT));
+        await client.placementPreview(null);
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/placement/preview`,
+            expect.objectContaining({ body: JSON.stringify({ spec: null }) }),
+        );
+    });
+});
+
+describe("applyPlacement()", () => {
+    it("PUTs the spec to /api/placement", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ ...PLACEMENT, manual: true }));
+        const spec: PlacementSpec = { chat: { devices: [0, 1] } };
+        const result = await client.applyPlacement(spec);
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/placement`,
+            expect.objectContaining({ method: "PUT", body: JSON.stringify({ spec }) }),
+        );
+        expect(result._unsafeUnwrap().manual).toBe(true);
+    });
+
+    it("returns an error Result when the server refuses with 409", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 409,
+            text: () => Promise.resolve("not enabled"),
+            headers: { get: () => null },
+        } as unknown as Response);
+        const result = await client.applyPlacement({ chat: { devices: [0] } });
+        expect(result.isErr()).toBe(true);
+        expect(isHttpStatus(result._unsafeUnwrapErr(), 409)).toBe(true);
+    });
+});
+
+describe("clearPlacement()", () => {
+    it("DELETEs /api/placement and returns the auto plan", async () => {
+        fetchMock.mockResolvedValue(jsonResponse(PLACEMENT));
+        const result = await client.clearPlacement();
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/placement`,
+            expect.objectContaining({ method: "DELETE" }),
+        );
+        expect(result._unsafeUnwrap().manual).toBe(false);
+    });
+});
+
+describe("isHttpStatus()", () => {
+    it("matches the assertOk error format", () => {
+        expect(isHttpStatus(new Error("Server responded 409: x"), 409)).toBe(true);
+        expect(isHttpStatus(new Error("Server responded 500: x"), 409)).toBe(false);
+        expect(isHttpStatus(new Error("network down"), 409)).toBe(false);
+    });
+});
+
+describe("catalog() installed filter", () => {
+    it("sets the installed query param", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ total: 0, limit: 0, offset: 0, models: [], has_more: false }));
+        await client.catalog({ installed: true });
+        expect(fetchMock.mock.calls[0][0]).toBe(`${BASE_URL}/api/models/catalog?installed=true`);
+    });
+});
+
+describe("crawl() include_subdomains", () => {
+    it("passes include_subdomains and max_pages=0 through the body", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+        await collect(client.crawl("https://x.com", undefined, 0, undefined, undefined, true));
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+        expect(body).toMatchObject({ url: "https://x.com", max_pages: 0, include_subdomains: true });
     });
 });
