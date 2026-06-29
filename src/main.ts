@@ -38,6 +38,7 @@ import {
     type CrawlRenderMode,
     type DiagnosticsContext,
     type DotState,
+    type HealthResponse,
     type LilbeeSettings,
     type ManagedServerProgressHandler,
     type ServerMode,
@@ -237,6 +238,10 @@ export default class LilbeePlugin extends Plugin {
     wikiSync: WikiSync | null = null;
     private healthProbeHandle: number | null = null;
     private serverUnreachable = false;
+    // Chat-engine warmth from /api/health (feat/local-model-api). `chatWarming`
+    // is true when the server is up but the chat role is still cold-loading;
+    // `chatCtx` is the per-slot context window it serves once ready.
+    private chatWarming = false;
     // While > 0, probeServerHealth() bails: llama.cpp serializes requests,
     // so /api/health stalls behind the active stream and would falsely flip
     // the status bar to error.
@@ -1352,13 +1357,14 @@ export default class LilbeePlugin extends Plugin {
         // Re-read the token before probing — the server writes a fresh one on
         // every restart, and this is the cheapest way to stay in sync.
         this.api.setToken(this.readCurrentToken());
-        const ok = (await this.api.health().catch(() => null))?.isOk() ?? false;
-        if (ok) {
+        const health = await this.api.health().catch(() => null);
+        if (health?.isOk()) {
             this.healthFailureStreak = 0;
             if (this.serverUnreachable) {
                 this.serverUnreachable = false;
                 void this.fetchActiveModel();
             }
+            this.reflectChatWarmth(health.value);
             return;
         }
         this.healthFailureStreak += 1;
@@ -1373,6 +1379,21 @@ export default class LilbeePlugin extends Plugin {
         this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
         this.setStatusClass("lilbee-status-error");
         this.maybeWarnMissingToken();
+    }
+
+    /** Reflect the chat engine's warm state from a health snapshot: show a warming
+     * pill while it cold-loads, and revert to ready once it is warm. Older servers
+     * omit `chat_ready`, which we treat as ready. */
+    private reflectChatWarmth(health: HealthResponse): void {
+        const warming = health.chat_ready === false;
+        if (warming === this.chatWarming) return;
+        this.chatWarming = warming;
+        if (warming) {
+            this.updateStatusBar(MESSAGES.STATUS_WARMING, DOT_STATE.PRIMARY);
+            this.setStatusClass("lilbee-status-starting");
+        } else {
+            this.setStatusReady();
+        }
     }
 
     notifyChatStart(): void {

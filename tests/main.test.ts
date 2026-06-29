@@ -905,6 +905,30 @@ describe("LilbeePlugin", () => {
             plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(null);
             await expect((plugin as any).activatePlacementView()).resolves.not.toThrow();
         });
+
+        it("shows a warming pill while the chat engine cold-loads", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).reflectChatWarmth({ status: "ok", version: "1", chat_ready: false });
+            expect((plugin.statusBarEl as any)?.textContent).toContain("warming");
+        });
+
+        it("ignores repeat warming snapshots", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).reflectChatWarmth({ chat_ready: false });
+            (plugin as any).reflectChatWarmth({ chat_ready: false });
+            expect((plugin.statusBarEl as any)?.textContent).toContain("warming");
+        });
+
+        it("reverts to ready once the chat engine is warm", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).reflectChatWarmth({ chat_ready: false });
+            (plugin as any).settings.serverMode = "external";
+            (plugin as any).reflectChatWarmth({ chat_ready: true });
+            expect((plugin.statusBarEl as any)?.textContent).toContain("ready");
+        });
     });
 
     describe("refreshOpenChatRails()", () => {

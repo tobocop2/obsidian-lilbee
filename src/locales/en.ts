@@ -479,6 +479,7 @@ export const MESSAGES = {
     STATUS_DOWNLOADING: "lilbee: downloading...",
     STATUS_UPDATE_SIZE: (tag: string, size: string) => `Updating to ${tag} · ${size} download`,
     STATUS_STARTING: "lilbee: starting...",
+    STATUS_WARMING: "lilbee: warming up...",
     STATUS_READY: "lilbee: ready",
     STATUS_READY_EXTERNAL: "lilbee: ready [external]",
     STATUS_ERROR: "lilbee: error",
@@ -917,6 +918,25 @@ export const MESSAGES = {
     PLACEMENT_APPLY_FAILED: (msg: string): string => `Couldn't apply placement: ${msg}`,
     PLACEMENT_PREVIEW_FAILED: (msg: string): string => `Couldn't preview placement: ${msg}`,
     PLACEMENT_LOAD_FAILED: (msg: string): string => `Couldn't load placement: ${msg}`,
+
+    // Hardware / fleet settings
+    LABEL_FLEET: "Hardware / fleet",
+    LABEL_FLEET_HELP:
+        "How the model fleet uses your GPUs. These apply to local (managed) and self-hosted servers; they have no effect when lilbee points at a hosted provider.",
+    LABEL_KV_CACHE_TYPE: "KV cache type",
+    DESC_KV_CACHE_TYPE:
+        "Smaller types use less memory for the chat context. q8_0 roughly halves it versus f16 with no noticeable quality loss; q4_0 quarters it.",
+    LABEL_N_GPU_LAYERS: "GPU layers (chat)",
+    DESC_N_GPU_LAYERS:
+        "How many chat-model layers to offload to the GPU. Leave empty to offload all; lower it to fit a large model in limited VRAM.",
+    LABEL_EMBED_REPLICAS: "Embedding replicas",
+    DESC_EMBED_REPLICAS: "How many embedding workers to run while indexing. 0 lets lilbee pick (one per GPU).",
+    LABEL_VISION_REPLICAS: "Vision replicas",
+    DESC_VISION_REPLICAS: "How many OCR workers to run while indexing. 0 lets lilbee pick (one per GPU).",
+    LABEL_GPU_DEVICES: "Visible GPUs",
+    DESC_GPU_DEVICES:
+        "Restrict lilbee to specific GPUs by index, comma separated (for example 0,1). Leave empty to use all.",
+    PLACEHOLDER_GPU_DEVICES: "all",
 
     // Memory
     LABEL_MEMORIES_VIEW: "lilbee Memories",

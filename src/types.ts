@@ -140,6 +140,13 @@ export const CRAWL_RENDER_MODE = {
 /** KV-cache element type for the chat fleet. Mirrors the server's KvCacheType. */
 export type KvCacheType = "f16" | "f32" | "q8_0" | "q4_0";
 
+export const KV_CACHE_TYPE = {
+    F16: "f16",
+    F32: "f32",
+    Q8_0: "q8_0",
+    Q4_0: "q4_0",
+} as const satisfies Record<string, KvCacheType>;
+
 export const CONFIG_KEY = {
     RAG_SYSTEM_PROMPT: "rag_system_prompt",
     GENERAL_SYSTEM_PROMPT: "general_system_prompt",

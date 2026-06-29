@@ -503,8 +503,8 @@ describe("LilbeeSettingTab", () => {
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
             // sharedRoot + 9 generation + 5 retrieval-advanced + 4 ingest + 2 worker-pool
             // + 10 crawling + wikiVaultFolder + rerank_candidates + hfToken
-            // + ollama URL + lm_studio URL = 36
-            expect(textOnChanges.length).toBe(36);
+            // + ollama URL + lm_studio URL + 4 fleet (n_gpu_layers, embed/vision replicas, gpu_devices) = 40
+            expect(textOnChanges.length).toBe(40);
         });
     });
 
@@ -4203,7 +4203,9 @@ describe("managed mode settings", () => {
             // The wiki search mode is added by renderWikiSettings, which adds one dropdown
             // We need to find the right index. The wiki dropdown should have "all"/"wiki"/"raw" options.
             // It should be the second-to-last dropdown since LLM provider is last
-            const wikiSearchIdx = dropdownOnChanges.length - 2;
+            // Fleet section (last) adds the kv_cache_type dropdown after the LLM
+            // provider, so wiki search mode is now third-from-last.
+            const wikiSearchIdx = dropdownOnChanges.length - 3;
             await dropdownOnChanges[wikiSearchIdx]("wiki");
             expect(plugin.settings.searchChunkType).toBe("wiki");
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -4358,7 +4360,9 @@ describe("managed mode settings", () => {
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
 
             // Last dropdown is the LLM provider (after server mode, chat model, sync mode)
-            const providerIdx = dropdownOnChanges.length - 1;
+            // Fleet section (rendered last) adds the kv_cache_type dropdown after the
+            // LLM provider, so the provider is now second-to-last.
+            const providerIdx = dropdownOnChanges.length - 2;
             await dropdownOnChanges[providerIdx]("litellm");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_provider: "litellm" });
         });
@@ -4369,7 +4373,9 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const providerIdx = dropdownOnChanges.length - 1;
+            // Fleet section (rendered last) adds the kv_cache_type dropdown after the
+            // LLM provider, so the provider is now second-to-last.
+            const providerIdx = dropdownOnChanges.length - 2;
             await dropdownOnChanges[providerIdx]("auto");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_provider: "auto" });
         });
@@ -4381,9 +4387,55 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const providerIdx = dropdownOnChanges.length - 1;
+            // Fleet section (rendered last) adds the kv_cache_type dropdown after the
+            // LLM provider, so the provider is now second-to-last.
+            const providerIdx = dropdownOnChanges.length - 2;
             await dropdownOnChanges[providerIdx]("litellm");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update LLM provider"))).toBe(true);
+        });
+    });
+
+    describe("Fleet settings onChange", () => {
+        it("kv_cache_type dropdown PATCHes the config", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
+            // kv_cache_type is the last dropdown (fleet section renders last).
+            await dropdownOnChanges[dropdownOnChanges.length - 1]("q4_0");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ kv_cache_type: "q4_0" });
+        });
+
+        it("kv_cache_type dropdown shows an error notice on failure", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
+            await dropdownOnChanges[dropdownOnChanges.length - 1]("q4_0");
+            expect(Notice.instances.some((n: any) => n.message.includes("KV cache type"))).toBe(true);
+        });
+
+        it("gpu_devices PATCHes a non-empty value and null when cleared", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            // gpu_devices is the last text input (fleet section renders last).
+            await textOnChanges[textOnChanges.length - 1]("0,1");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ gpu_devices: "0,1" });
+            await textOnChanges[textOnChanges.length - 1]("  ");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ gpu_devices: null });
+        });
+
+        it("gpu_devices shows an error notice on failure", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            await textOnChanges[textOnChanges.length - 1]("0,1");
+            expect(Notice.instances.some((n: any) => n.message.includes("Visible GPUs"))).toBe(true);
         });
     });
 

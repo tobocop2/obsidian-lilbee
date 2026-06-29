@@ -6,6 +6,7 @@ import {
     CHAT_MODE,
     CONFIG_KEY,
     CRAWL_RENDER_MODE,
+    KV_CACHE_TYPE,
     MEMORY_CONFIG_KEY,
     DEFAULT_SETTINGS,
     HOSTED_SOURCES,
@@ -128,6 +129,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderWikiSettings(this.wikiContainerEl);
         this.renderDiagnostics(containerEl);
         this.renderAdvancedSettings(containerEl);
+        this.renderFleetSettings(containerEl);
         this.loadServerDefaults();
         this.loadConfigDefaults();
         void this.applyCapabilityGating();
@@ -933,6 +935,87 @@ export class LilbeeSettingTab extends PluginSettingTab {
             { integer: false, min: 0 },
         );
         this.appendResetAffordance(maxIdleSetting, "worker_pool_max_idle_s", MESSAGES.LABEL_WORKER_POOL_MAX_IDLE);
+    }
+
+    /** GPU / fleet tuning knobs not surfaced in the placement view. Each row stays
+     * hidden until the connected server reports the key, so older servers show none. */
+    private renderFleetSettings(containerEl: HTMLElement): void {
+        const details = containerEl.createEl("details", { cls: "lilbee-fleet-details lilbee-settings-section" });
+        details.createEl("summary", { text: MESSAGES.LABEL_FLEET });
+        details.createEl("p", { text: MESSAGES.LABEL_FLEET_HELP, cls: "setting-item-description" });
+
+        const kvContainer = details.createDiv();
+        const kvSetting = new Setting(kvContainer)
+            .setName(MESSAGES.LABEL_KV_CACHE_TYPE)
+            .setDesc(MESSAGES.DESC_KV_CACHE_TYPE)
+            .addDropdown((dropdown) => {
+                dropdown.addOption(KV_CACHE_TYPE.F16, KV_CACHE_TYPE.F16);
+                dropdown.addOption(KV_CACHE_TYPE.Q8_0, KV_CACHE_TYPE.Q8_0);
+                dropdown.addOption(KV_CACHE_TYPE.Q4_0, KV_CACHE_TYPE.Q4_0);
+                dropdown.addOption(KV_CACHE_TYPE.F32, KV_CACHE_TYPE.F32);
+                dropdown.setValue(KV_CACHE_TYPE.Q8_0);
+                dropdown.onChange(async (value) => {
+                    try {
+                        await this.plugin.api.updateConfig({ kv_cache_type: value });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_KV_CACHE_TYPE));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_KV_CACHE_TYPE));
+                    }
+                });
+                this.serverConfigDropdowns.set("kv_cache_type", dropdown);
+            });
+        this.appendResetAffordance(kvSetting, "kv_cache_type", MESSAGES.LABEL_KV_CACHE_TYPE);
+        kvContainer.hide();
+        this.serverConfigHideableEls.set("kv_cache_type", kvContainer);
+
+        const layers = this.renderHideableNumberField(
+            details,
+            "n_gpu_layers",
+            MESSAGES.LABEL_N_GPU_LAYERS,
+            MESSAGES.DESC_N_GPU_LAYERS,
+            { integer: true, min: 0 },
+        );
+        this.appendResetAffordance(layers, "n_gpu_layers", MESSAGES.LABEL_N_GPU_LAYERS);
+
+        const embedReplicas = this.renderHideableNumberField(
+            details,
+            "embed_replicas",
+            MESSAGES.LABEL_EMBED_REPLICAS,
+            MESSAGES.DESC_EMBED_REPLICAS,
+            { integer: true, min: 0 },
+        );
+        this.appendResetAffordance(embedReplicas, "embed_replicas", MESSAGES.LABEL_EMBED_REPLICAS);
+
+        const visionReplicas = this.renderHideableNumberField(
+            details,
+            "vision_replicas",
+            MESSAGES.LABEL_VISION_REPLICAS,
+            MESSAGES.DESC_VISION_REPLICAS,
+            { integer: true, min: 0 },
+        );
+        this.appendResetAffordance(visionReplicas, "vision_replicas", MESSAGES.LABEL_VISION_REPLICAS);
+
+        const devContainer = details.createDiv();
+        const devSetting = new Setting(devContainer)
+            .setName(MESSAGES.LABEL_GPU_DEVICES)
+            .setDesc(MESSAGES.DESC_GPU_DEVICES)
+            .addText((text) => {
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_GPU_DEVICES)
+                    .setValue("")
+                    .onChange(async (value) => {
+                        const trimmed = value.trim();
+                        try {
+                            await this.plugin.api.updateConfig({ gpu_devices: trimmed === "" ? null : trimmed });
+                            new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_GPU_DEVICES));
+                        } catch {
+                            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_GPU_DEVICES));
+                        }
+                    });
+                this.serverConfigInputs.set("gpu_devices", text.inputEl);
+            });
+        this.appendResetAffordance(devSetting, "gpu_devices", MESSAGES.LABEL_GPU_DEVICES);
+        devContainer.hide();
+        this.serverConfigHideableEls.set("gpu_devices", devContainer);
     }
 
     private renderIngestSettings(containerEl: HTMLElement): void {
