@@ -611,6 +611,7 @@ export const SSE_EVENT = {
     ALREADY_INGESTING: "already_ingesting",
     BATCH_PROGRESS: "batch_progress",
     MEMORY_EXTRACTED: "memory_extracted",
+    GPU_STATS: "gpu_stats",
 } as const;
 
 export interface SetupStartPayload {
@@ -942,6 +943,21 @@ export interface GpuInfo {
     name: string;
     total_bytes: number;
     free_bytes: number;
+}
+
+/** A live per-GPU activity snapshot from the GET /api/gpus/stream SSE stream.
+ * `utilization_pct` is compute load (0-100), or null for backends that can't
+ * report it; `free_bytes` moves as models load and ingest runs. */
+export interface GpuStat {
+    index: number;
+    utilization_pct: number | null;
+    free_bytes: number;
+    total_bytes: number;
+}
+
+/** Payload of a `gpu_stats` SSE event: a snapshot for every detected GPU. */
+export interface GpuStatsPayload {
+    gpus: GpuStat[];
 }
 
 /** Where one role's model is placed in the resolved plan. Mirrors RolePlacementResponse. */

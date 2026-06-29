@@ -651,6 +651,16 @@ export class LilbeeClient {
         return this.fetchResult<GpuInfo[]>(`${this.baseUrl}/api/gpus`, { headers: this.authHeaders() });
     }
 
+    /** Live per-GPU utilization + free memory, streamed as SSE until aborted. */
+    async *gpuStatsStream(signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/gpus/stream`,
+            { headers: this.authHeaders() },
+            { stream: true, signal },
+        );
+        yield* this.parseSSE(res);
+    }
+
     /** The current effective placement (auto plan or active manual spec). */
     async placement(): Promise<Result<PlacementResponse, Error>> {
         return this.fetchResult<PlacementResponse>(`${this.baseUrl}/api/placement`, { headers: this.authHeaders() });

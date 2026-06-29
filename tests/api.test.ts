@@ -2369,6 +2369,23 @@ describe("gpus()", () => {
     });
 });
 
+describe("gpuStatsStream()", () => {
+    it("GETs /api/gpus/stream and yields parsed gpu_stats events", async () => {
+        fetchMock.mockResolvedValue(
+            sseResponse([
+                'event: gpu_stats\ndata: {"gpus": [{"index": 0, "utilization_pct": 55, "free_bytes": 1, "total_bytes": 2}]}\n\n',
+            ]),
+        );
+        const events = await collect(client.gpuStatsStream());
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/gpus/stream`, expect.objectContaining({}));
+        expect(events).toHaveLength(1);
+        expect(events[0]).toEqual({
+            event: "gpu_stats",
+            data: { gpus: [{ index: 0, utilization_pct: 55, free_bytes: 1, total_bytes: 2 }] },
+        });
+    });
+});
+
 describe("placement()", () => {
     it("GETs /api/placement and returns the plan", async () => {
         fetchMock.mockResolvedValue(jsonResponse(PLACEMENT));

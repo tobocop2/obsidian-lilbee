@@ -5,7 +5,10 @@ import { displayLabelForRef } from "../utils/model-ref";
 import {
     PLACEMENT_MODE,
     REPLICA_ROLES,
+    SSE_EVENT,
     type GpuInfo,
+    type GpuStat,
+    type GpuStatsPayload,
     type PlacementMode,
     type PlacementResponse,
     type PlacementRoleSpec,
@@ -19,7 +22,6 @@ import { errorMessage } from "../utils";
 export const VIEW_TYPE_PLACEMENT = "lilbee-placement";
 
 const PREVIEW_DEBOUNCE_MS = 350;
-const USAGE_REFRESH_MS = 4000;
 const HTTP_CONFLICT = 409;
 const GB = 1_000_000_000;
 
@@ -48,9 +50,9 @@ export class PlacementView extends ItemView {
     private applyDisabled = false;
     private multiDevice = false;
     private previewTimer: number | null = null;
-    private refreshTimer: number | null = null;
-    /** Live GPU memory bar + free/total text per device index, updated in place by the poll. */
-    private gpuBars: Map<number, { fill: HTMLElement; mem: HTMLElement }> = new Map();
+    private statsController: AbortController | null = null;
+    /** Live utilization bar + util/memory text per device index, updated in place by the stats stream. */
+    private gpuBars: Map<number, { fill: HTMLElement; util: HTMLElement; mem: HTMLElement }> = new Map();
     private bodyEl: HTMLElement | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: LilbeePlugin) {
@@ -76,9 +78,9 @@ export class PlacementView extends ItemView {
         contentEl.addClass("lilbee-placement-container");
         this.bodyEl = contentEl.createDiv({ cls: "lilbee-placement-body" });
         await this.reload();
-        // Poll live GPU memory so the bars track the fleet loading/unloading and
-        // re-placement, rather than freezing at the snapshot taken on open.
-        this.refreshTimer = window.setInterval(() => void this.refreshUsage(), USAGE_REFRESH_MS);
+        // Stream live per-GPU utilization + memory so the cards animate as the
+        // fleet loads and ingest runs, instead of freezing at the open snapshot.
+        void this.subscribeStats();
     }
 
     async reload(): Promise<void> {
@@ -188,13 +190,14 @@ export class PlacementView extends ItemView {
         head.createSpan({ cls: "lilbee-placement-card-name", text: gpu.name });
         head.createSpan({ cls: "lilbee-placement-card-sub", text: gpu.label });
         const meter = card.createDiv({ cls: "lilbee-placement-meter" });
-        const fill = this.renderBar(meter, gpu.total_bytes - gpu.free_bytes, gpu.total_bytes);
+        const fill = this.renderBar(meter);
+        const util = meter.createSpan({ cls: "lilbee-placement-util", text: MESSAGES.PLACEMENT_UTIL_NA });
         const mem = meter.createSpan({
             cls: "lilbee-placement-mem",
             text: MESSAGES.PLACEMENT_MEM_FREE(formatGb(gpu.free_bytes), formatGb(gpu.total_bytes)),
         });
-        // Keep refs so the usage poll can move the bar without a full re-render.
-        this.gpuBars.set(gpu.index, { fill, mem });
+        // Keep refs so the live stats stream can move the bar without a full re-render.
+        this.gpuBars.set(gpu.index, { fill, util, mem });
     }
 
     // ---- roles ----------------------------------------------------------------
@@ -281,11 +284,10 @@ export class PlacementView extends ItemView {
         }
     }
 
-    /** Tooltip that shows in Obsidian (aria-label) and natively (title), so the
-     * control's purpose is clear on hover regardless of the theme's tooltip setup. */
+    /** Tooltip via aria-label only: Obsidian renders its own styled tooltip from
+     * it. Setting `title` too would stack a second native tooltip on hover. */
     private tip(el: HTMLElement, text: string): void {
         el.setAttribute("aria-label", text);
-        el.setAttribute("title", text);
     }
 
     /** A disabled control: greyed, tooltipped with why, and a click explains where
@@ -302,36 +304,40 @@ export class PlacementView extends ItemView {
         return this.multiDevice ? MESSAGES.PLACEMENT_HINT_EDIT_MANUALLY : MESSAGES.PLACEMENT_HINT_REPLICAS_SETTINGS;
     }
 
-    private renderBar(container: HTMLElement, used: number, total: number): HTMLElement {
+    private renderBar(container: HTMLElement): HTMLElement {
         const bar = container.createDiv({ cls: "lilbee-placement-bar" });
-        const fill = bar.createDiv({ cls: "lilbee-placement-bar-fill" });
-        fill.setCssProps({ width: `${this.barPct(used, total)}%` });
-        return fill;
+        return bar.createDiv({ cls: "lilbee-placement-bar-fill" });
     }
 
-    private barPct(used: number, total: number): number {
-        return total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+    private clampPct(pct: number): number {
+        return Math.min(100, Math.max(0, Math.round(pct)));
     }
 
-    /** Poll live GPU memory and move the bars in place (no full re-render, so it
-     * never disrupts an in-progress manual edit). A changed device set forces a
-     * full reload to rebuild the cards. */
-    private async refreshUsage(): Promise<void> {
-        if (this.applying) return;
-        const result = await this.plugin.api.gpus();
-        if (result.isErr()) return;
-        const gpus = result.value;
-        if (gpus.length !== this.gpuBars.size) {
-            await this.reload();
-            return;
+    /** Subscribe to the live GPU stats SSE stream; each event moves the bars in
+     * place. The stream stays open until the view closes (onClose aborts it) or
+     * the server drops it, in which case the bars hold their last values. */
+    private async subscribeStats(): Promise<void> {
+        this.statsController = new AbortController();
+        try {
+            for await (const event of this.plugin.api.gpuStatsStream(this.statsController.signal)) {
+                if (event.event === SSE_EVENT.GPU_STATS) {
+                    this.applyStats((event.data as GpuStatsPayload).gpus);
+                }
+            }
+        } catch {
+            // Stream aborted (view closed) or failed (server gone): leave the bars as they are.
         }
+    }
+
+    /** Move each card's utilization bar and util/memory text from a live snapshot.
+     * Skips devices not currently rendered (a reload rebuilds the cards). */
+    private applyStats(gpus: GpuStat[]): void {
         for (const gpu of gpus) {
             const refs = this.gpuBars.get(gpu.index);
-            if (!refs) {
-                await this.reload();
-                return;
-            }
-            refs.fill.setCssProps({ width: `${this.barPct(gpu.total_bytes - gpu.free_bytes, gpu.total_bytes)}%` });
+            if (!refs) continue;
+            const pct = gpu.utilization_pct;
+            refs.fill.setCssProps({ width: `${pct === null ? 0 : this.clampPct(pct)}%` });
+            refs.util.setText(pct === null ? MESSAGES.PLACEMENT_UTIL_NA : MESSAGES.PLACEMENT_UTIL(this.clampPct(pct)));
             refs.mem.setText(MESSAGES.PLACEMENT_MEM_FREE(formatGb(gpu.free_bytes), formatGb(gpu.total_bytes)));
         }
     }
@@ -512,9 +518,9 @@ export class PlacementView extends ItemView {
             window.clearTimeout(this.previewTimer);
             this.previewTimer = null;
         }
-        if (this.refreshTimer !== null) {
-            window.clearInterval(this.refreshTimer);
-            this.refreshTimer = null;
+        if (this.statsController !== null) {
+            this.statsController.abort();
+            this.statsController = null;
         }
     }
 }

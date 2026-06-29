@@ -3,7 +3,15 @@ import { WorkspaceLeaf, MockElement, Notice, Platform } from "../__mocks__/obsid
 import { ok, err } from "../../src/result";
 import { PlacementView, VIEW_TYPE_PLACEMENT } from "../../src/views/placement-view";
 import type LilbeePlugin from "../../src/main";
-import type { PlacementResponse } from "../../src/types";
+import type { GpuStat, PlacementResponse, SSEEvent } from "../../src/types";
+
+function statsEvent(gpus: GpuStat[]): SSEEvent {
+    return { event: "gpu_stats", data: { gpus } };
+}
+
+async function* statsStream(...events: SSEEvent[]): AsyncGenerator<SSEEvent, void> {
+    for (const e of events) yield e;
+}
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 const GB = 1_000_000_000;
@@ -81,8 +89,10 @@ interface ApiOverrides {
     placementPreview?: ReturnType<typeof vi.fn>;
     applyPlacement?: ReturnType<typeof vi.fn>;
     clearPlacement?: ReturnType<typeof vi.fn>;
-    gpus?: ReturnType<typeof vi.fn>;
+    gpuStatsStream?: ReturnType<typeof vi.fn>;
 }
+
+async function* emptyStatsStream(): AsyncGenerator<SSEEvent, void> {}
 
 function makeApi(overrides: ApiOverrides = {}) {
     return {
@@ -90,7 +100,7 @@ function makeApi(overrides: ApiOverrides = {}) {
         placementPreview: vi.fn().mockResolvedValue(ok(multi())),
         applyPlacement: vi.fn().mockResolvedValue(ok(multiManual())),
         clearPlacement: vi.fn().mockResolvedValue(ok(multi())),
-        gpus: vi.fn().mockResolvedValue(ok(multi().gpus)),
+        gpuStatsStream: vi.fn(() => emptyStatsStream()),
         ...overrides,
     };
 }
@@ -103,7 +113,7 @@ async function openView(plugin: LilbeePlugin): Promise<{ view: PlacementView; co
     const view = new PlacementView(new WorkspaceLeaf(), plugin);
     await view.onOpen();
     await flush();
-    // Stop the usage poll so it can't fire across other tests; tests drive refreshUsage directly.
+    // Stop the live stats stream so it can't fire across other tests; tests drive applyStats directly.
     await view.onClose();
     return { view, contentEl: (view as unknown as { contentEl: MockElement }).contentEl };
 }
@@ -143,11 +153,10 @@ describe("PlacementView multi-GPU (auto)", () => {
         expect(btns).toEqual(["Edit manually"]);
     });
 
-    it("shows the GPU memory bar filled to used fraction", async () => {
+    it("renders an empty utilization bar and free-memory text before any stats arrive", async () => {
         const { contentEl } = await openView(makePlugin(makeApi()));
-        const fill = contentEl.findAll("lilbee-placement-bar-fill")[0];
-        // 4090: 6GB used of 24 → 25%
-        expect(fill.style.width).toBe("25%");
+        expect(contentEl.findAll("lilbee-placement-util")[0].textContent).toBe("—");
+        expect(contentEl.findAll("lilbee-placement-mem")[0].textContent).toBe("18.0 GB / 24.0 GB free");
     });
 
     it("read-only chips in auto mode are tooltipped and point to Edit manually on click", async () => {
@@ -505,12 +514,9 @@ describe("PlacementView defensive paths", () => {
         expect(draft.devices.size).toBe(0);
     });
 
-    it("renderBar handles a zero-total device", async () => {
-        const zero = single();
-        zero.gpus[0].total_bytes = 0;
-        zero.gpus[0].free_bytes = 0;
-        const { contentEl } = await openView(makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(zero)) })));
-        expect(contentEl.find("lilbee-placement-bar-fill")!.style.width).toBe("0%");
+    it("starts each utilization bar at no inline width (CSS drives the empty state)", async () => {
+        const { contentEl } = await openView(makePlugin(makeApi()));
+        expect(contentEl.find("lilbee-placement-bar-fill")!.style.width).toBeFalsy();
     });
 
     it("onClose clears a pending preview timer", async () => {
@@ -555,69 +561,95 @@ describe("PlacementView defensive paths", () => {
     });
 });
 
+type StatsApplier = { applyStats: (gpus: GpuStat[]) => void };
+
 describe("PlacementView live usage bars", () => {
-    it("moves the bars to live GPU usage in place", async () => {
-        const api = makeApi();
-        const { view, contentEl } = await openView(makePlugin(api));
-        // report GPU0 fully used (free 0); the first bar fill jumps to 100%
-        const live = multi().gpus.map((g, i) => (i === 0 ? { ...g, free_bytes: 0 } : g));
-        api.gpus.mockResolvedValue(ok(live));
-        await (view as unknown as { refreshUsage: () => Promise<void> }).refreshUsage();
+    it("moves the utilization bar, util text and memory text from a live snapshot", async () => {
+        const { view, contentEl } = await openView(makePlugin(makeApi()));
+        (view as unknown as StatsApplier).applyStats([
+            { index: 0, utilization_pct: 73, free_bytes: 5 * GB, total_bytes: 24 * GB },
+            { index: 1, utilization_pct: 10, free_bytes: 9 * GB, total_bytes: 24 * GB },
+        ]);
+        expect(contentEl.findAll("lilbee-placement-bar-fill")[0].style.width).toBe("73%");
+        expect(contentEl.findAll("lilbee-placement-util")[0].textContent).toBe("73%");
+        expect(contentEl.findAll("lilbee-placement-mem")[0].textContent).toBe("5.0 GB / 24.0 GB free");
+    });
+
+    it("shows an em dash and empties the bar when utilization is unavailable", async () => {
+        const { view, contentEl } = await openView(makePlugin(makeApi()));
+        (view as unknown as StatsApplier).applyStats([
+            { index: 0, utilization_pct: null, free_bytes: 1 * GB, total_bytes: 24 * GB },
+        ]);
+        expect(contentEl.findAll("lilbee-placement-bar-fill")[0].style.width).toBe("0%");
+        expect(contentEl.findAll("lilbee-placement-util")[0].textContent).toBe("—");
+        expect(contentEl.findAll("lilbee-placement-mem")[0].textContent).toBe("1.0 GB / 24.0 GB free");
+    });
+
+    it("clamps out-of-range utilization to 0-100", async () => {
+        const { view, contentEl } = await openView(makePlugin(makeApi()));
+        const applier = view as unknown as StatsApplier;
+        applier.applyStats([{ index: 0, utilization_pct: 150, free_bytes: 0, total_bytes: 24 * GB }]);
         expect(contentEl.findAll("lilbee-placement-bar-fill")[0].style.width).toBe("100%");
-        expect(contentEl.findAll("lilbee-placement-mem")[0].textContent).toBe("0.0 GB / 24.0 GB free");
+        applier.applyStats([{ index: 0, utilization_pct: -5, free_bytes: 0, total_bytes: 24 * GB }]);
+        expect(contentEl.findAll("lilbee-placement-bar-fill")[0].style.width).toBe("0%");
     });
 
-    it("skips the poll while applying", async () => {
+    it("skips stats for a device index it isn't rendering", async () => {
+        const { view, contentEl } = await openView(makePlugin(makeApi()));
+        (view as unknown as StatsApplier).applyStats([
+            { index: 99, utilization_pct: 50, free_bytes: 0, total_bytes: 24 * GB },
+        ]);
+        expect(contentEl.findAll("lilbee-placement-util")[0].textContent).toBe("—");
+    });
+
+    it("subscribes to the stats stream on open and applies streamed events", async () => {
+        const api = makeApi({
+            gpuStatsStream: vi.fn(() =>
+                statsStream(statsEvent([{ index: 0, utilization_pct: 42, free_bytes: 2 * GB, total_bytes: 24 * GB }])),
+            ),
+        });
+        const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
+        await view.onOpen();
+        await flush();
+        const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
+        expect(api.gpuStatsStream).toHaveBeenCalled();
+        expect(contentEl.findAll("lilbee-placement-util")[0].textContent).toBe("42%");
+        await view.onClose();
+    });
+
+    it("ignores non-gpu_stats events on the stream", async () => {
+        const api = makeApi({
+            gpuStatsStream: vi.fn(() => statsStream({ event: "done", data: {} })),
+        });
+        const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
+        await view.onOpen();
+        await flush();
+        const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
+        expect(contentEl.findAll("lilbee-placement-util")[0].textContent).toBe("—");
+        await view.onClose();
+    });
+
+    it("swallows a stats-stream error", async () => {
+        const api = makeApi({
+            gpuStatsStream: vi.fn(() =>
+                (async function* (): AsyncGenerator<SSEEvent, void> {
+                    throw new Error("stream boom");
+                })(),
+            ),
+        });
+        const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
+        await expect(view.onOpen()).resolves.toBeUndefined();
+        await flush();
+        await view.onClose();
+    });
+
+    it("opens a stats stream on open and aborts it on close", async () => {
         const api = makeApi();
-        const { view } = await openView(makePlugin(api));
-        (view as unknown as { applying: boolean }).applying = true;
-        api.gpus.mockClear();
-        await (view as unknown as { refreshUsage: () => Promise<void> }).refreshUsage();
-        expect(api.gpus).not.toHaveBeenCalled();
-    });
-
-    it("ignores a poll error", async () => {
-        const api = makeApi({ gpus: vi.fn().mockResolvedValue(err(new Error("probe failed"))) });
-        const { view } = await openView(makePlugin(api));
-        await expect(
-            (view as unknown as { refreshUsage: () => Promise<void> }).refreshUsage(),
-        ).resolves.toBeUndefined();
-    });
-
-    it("reloads when the device count changes", async () => {
-        const api = makeApi();
-        const { view } = await openView(makePlugin(api));
-        api.placement.mockClear();
-        api.gpus.mockResolvedValue(ok([multi().gpus[0]])); // 1 device now (was 2)
-        await (view as unknown as { refreshUsage: () => Promise<void> }).refreshUsage();
-        expect(api.placement).toHaveBeenCalled();
-    });
-
-    it("reloads when a device index is unknown", async () => {
-        const api = makeApi();
-        const { view } = await openView(makePlugin(api));
-        api.placement.mockClear();
-        api.gpus.mockResolvedValue(ok(multi().gpus.map((g) => ({ ...g, index: g.index + 10 }))));
-        await (view as unknown as { refreshUsage: () => Promise<void> }).refreshUsage();
-        expect(api.placement).toHaveBeenCalled();
-    });
-
-    it("polls GPU usage on an interval after open and stops on close", async () => {
-        vi.useFakeTimers();
-        try {
-            const api = makeApi();
-            const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
-            await view.onOpen();
-            api.gpus.mockClear();
-            await vi.advanceTimersByTimeAsync(4000);
-            expect(api.gpus).toHaveBeenCalled();
-            await view.onClose();
-            api.gpus.mockClear();
-            await vi.advanceTimersByTimeAsync(8000);
-            expect(api.gpus).not.toHaveBeenCalled();
-        } finally {
-            vi.useRealTimers();
-        }
+        const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
+        await view.onOpen();
+        expect((view as unknown as { statsController: AbortController | null }).statsController).not.toBeNull();
+        await view.onClose();
+        expect((view as unknown as { statsController: AbortController | null }).statsController).toBeNull();
     });
 });
 

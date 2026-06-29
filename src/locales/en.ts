@@ -934,6 +934,8 @@ export const MESSAGES = {
         "This device runs everything together. Set worker counts in Settings → lilbee → Hardware / fleet.",
     PLACEMENT_ROLE_MEM: (mem: string): string => `~${mem}`,
     PLACEMENT_MEM_FREE: (free: string, total: string): string => `${free} / ${total} free`,
+    PLACEMENT_UTIL: (pct: number): string => `${pct}%`,
+    PLACEMENT_UTIL_NA: "—",
     PLACEMENT_SPLIT: (ratio: string): string => `split ${ratio}`,
     PLACEMENT_REBUILDING: "Rebuilding fleet…",
     PLACEMENT_APPLIED: "Placement applied.",

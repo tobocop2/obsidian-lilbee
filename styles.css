@@ -4525,6 +4525,14 @@ button.lilbee-model-chip-select:focus-visible {
     min-width: 120px;
     text-align: right;
 }
+.lilbee-placement-util {
+    color: var(--text-muted);
+    font-size: 0.82em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    min-width: 38px;
+    text-align: right;
+}
 .lilbee-placement-bar {
     flex: 1;
     height: 8px;
@@ -4535,8 +4543,10 @@ button.lilbee-model-chip-select:focus-visible {
 }
 .lilbee-placement-bar-fill {
     height: 100%;
+    width: 0;
     background: var(--interactive-accent);
     border-radius: 5px;
+    transition: width 0.6s ease;
 }
 .lilbee-placement-roles {
     display: flex;
