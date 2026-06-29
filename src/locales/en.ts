@@ -922,7 +922,6 @@ export const MESSAGES = {
     PLACEMENT_RESET_DONE: "Back to automatic placement.",
     PLACEMENT_APPLY_NOT_ENABLED: "Applying placement isn't enabled on this lilbee server.",
     PLACEMENT_APPLY_FAILED: (msg: string): string => `Couldn't apply placement: ${msg}`,
-    PLACEMENT_PREVIEW_FAILED: (msg: string): string => `Couldn't preview placement: ${msg}`,
     PLACEMENT_LOAD_FAILED: (msg: string): string => `Couldn't load placement: ${msg}`,
 
     // Hardware / fleet settings

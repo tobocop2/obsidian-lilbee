@@ -158,28 +158,21 @@ describe("PlacementView single device", () => {
         expect(contentEl.find("lilbee-placement-chip")).toBeNull();
         // vision has no model → "not set"
         expect(rowFor(contentEl, "vision").find("lilbee-placement-role-model")!.textContent).toBe("not set");
-        // single-device steppers are editable even in auto (embed + vision)
+        // single-device steppers are read-only (nothing to assign; replicas live in Settings)
         expect(contentEl.findAll("lilbee-placement-stepper").length).toBe(2);
-        expect(contentEl.findAll("lilbee-placement-step").every((s) => !s.classList.contains("is-readonly"))).toBe(
-            true,
-        );
-        // no edit / apply buttons until something changes
+        expect(contentEl.findAll("lilbee-placement-step").every((s) => s.classList.contains("is-readonly"))).toBe(true);
+        // no edit / apply buttons on a single device
         expect(contentEl.findAll("lilbee-placement-btn").length).toBe(0);
     });
 
-    it("bumping a replica enters manual mode and reveals apply/reset", async () => {
-        const { contentEl } = await openView(
-            makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(single())) })),
-        );
-        const inc = rowFor(contentEl, "embed").findAll("lilbee-placement-step")[1];
-        inc.trigger("click");
-        expect(contentEl.find("lilbee-placement-state")!.textContent).toBe("edited");
-        expect(rowFor(contentEl, "embed").find("lilbee-placement-step-count")!.textContent).toBe("×3");
-        expect(contentEl.findAll("lilbee-placement-btn").map((b) => b.textContent)).toEqual([
-            "Preview",
-            "Apply",
-            "Reset to auto",
-        ]);
+    it("does not let a single-device replica stepper build an (invalid) spec", async () => {
+        const api = makeApi({ placement: vi.fn().mockResolvedValue(ok(single())) });
+        const { contentEl } = await openView(makePlugin(api));
+        // read-only steppers have no click handler, so clicking is a no-op (no 422)
+        rowFor(contentEl, "embed").findAll("lilbee-placement-step")[1].trigger("click");
+        expect(rowFor(contentEl, "embed").find("lilbee-placement-step-count")!.textContent).toBe("×2");
+        expect(api.placementPreview).not.toHaveBeenCalled();
+        expect(Notice.instances.length).toBe(0);
     });
 
     it("shows per-role estimated memory when the server reports it (and omits it at zero)", async () => {
@@ -283,15 +276,18 @@ describe("PlacementView manual editing", () => {
         }
     });
 
-    it("decrements replicas but not below one", async () => {
+    it("increments and decrements replicas but not below one", async () => {
         const { contentEl } = await openView(
             makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(multiManual())) })),
         );
         const rerankCannotStep = rowFor(contentEl, "rerank").find("lilbee-placement-stepper");
         expect(rerankCannotStep).toBeNull(); // rerank is not a replica role
+        const inc = rowFor(contentEl, "embed").findAll("lilbee-placement-step")[1];
+        inc.trigger("click"); // 2 → 3
+        expect(rowFor(contentEl, "embed").find("lilbee-placement-step-count")!.textContent).toBe("×3");
         const dec = rowFor(contentEl, "embed").findAll("lilbee-placement-step")[0];
+        dec.trigger("click"); // 3 → 2
         dec.trigger("click"); // 2 → 1
-        expect(rowFor(contentEl, "embed").find("lilbee-placement-step-count")!.textContent).toBe("×1");
         dec.trigger("click"); // stays 1
         expect(rowFor(contentEl, "embed").find("lilbee-placement-step-count")!.textContent).toBe("×1");
     });
@@ -321,7 +317,7 @@ describe("PlacementView preview", () => {
         ).toBe(true);
     });
 
-    it("notifies on a preview failure", async () => {
+    it("fails an automatic preview quietly (no toast spam)", async () => {
         const api = makeApi({
             placement: vi.fn().mockResolvedValue(ok(multiManual())),
             placementPreview: vi.fn().mockResolvedValue(err(new Error("probe died"))),
@@ -332,7 +328,7 @@ describe("PlacementView preview", () => {
             .find((b) => b.textContent === "Preview")!
             .trigger("click");
         await flush();
-        expect(Notice.instances.map((n) => n.message)).toContain("Couldn't preview placement: probe died");
+        expect(Notice.instances.length).toBe(0);
     });
 });
 
@@ -474,12 +470,6 @@ describe("PlacementView defensive paths", () => {
         ).draftFor("vision");
         expect(draft.replicas).toBe(1);
         expect(draft.devices.size).toBe(0);
-    });
-
-    it("stepperEditable is false when there is no loaded plan", async () => {
-        const { view } = await openView(makePlugin(makeApi()));
-        (view as unknown as { current: null }).current = null;
-        expect((view as unknown as { stepperEditable: () => boolean }).stepperEditable()).toBe(false);
     });
 
     it("renderBar handles a zero-total device", async () => {

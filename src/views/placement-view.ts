@@ -254,7 +254,7 @@ export class PlacementView extends ItemView {
         const dec = stepper.createEl("button", { cls: "lilbee-placement-step", text: "−" });
         stepper.createSpan({ cls: "lilbee-placement-step-count", text: `×${draft.replicas}` });
         const inc = stepper.createEl("button", { cls: "lilbee-placement-step", text: "+" });
-        if (this.stepperEditable()) {
+        if (this.isEditable()) {
             dec.addEventListener("click", () => this.changeReplicas(role, -1));
             inc.addEventListener("click", () => this.changeReplicas(role, 1));
         } else {
@@ -269,16 +269,12 @@ export class PlacementView extends ItemView {
         bar.createDiv({ cls: "lilbee-placement-bar-fill" }).setCssProps({ width: `${pct}%` });
     }
 
-    /** Device chips are assignable only in manual mode (multi-GPU). */
+    /** Chips and replica steppers are editable only in manual mode, which is
+     * reachable only on multi-GPU hosts. A single or unified device has nothing to
+     * assign — the server rejects a device-less spec — so replica counts there are
+     * configured in Settings (Hardware / fleet), not here. */
     private isEditable(): boolean {
         return this.mode === PLACEMENT_MODE.MANUAL && !this.applying;
-    }
-
-    /** Replica steppers are also editable on a single device, where bumping a
-     * count is the one meaningful placement change and switches to manual. */
-    private stepperEditable(): boolean {
-        const singleDevice = this.current?.gpus.length === 1;
-        return (this.mode === PLACEMENT_MODE.MANUAL || singleDevice) && !this.applying;
     }
 
     // ---- footer + actions -----------------------------------------------------
@@ -351,7 +347,6 @@ export class PlacementView extends ItemView {
     private changeReplicas(role: WorkerRole, delta: number): void {
         const draft = this.draftFor(role);
         draft.replicas = Math.max(1, draft.replicas + delta);
-        if (this.mode === PLACEMENT_MODE.AUTO) this.mode = PLACEMENT_MODE.MANUAL;
         this.render();
         this.schedulePreview();
     }
@@ -387,15 +382,10 @@ export class PlacementView extends ItemView {
     }
 
     private async runPreview(): Promise<void> {
+        // Preview is automatic (debounced on every edit), so a failure stays quiet
+        // rather than firing a toast per keystroke; a real problem surfaces on Apply.
         const result = await this.plugin.api.placementPreview(this.buildSpec());
-        if (result.isErr()) {
-            new Notice(
-                MESSAGES.PLACEMENT_PREVIEW_FAILED(
-                    errorMessage(result.error, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode),
-                ),
-            );
-            return;
-        }
+        if (result.isErr()) return;
         this.unplaceable = result.value.unplaceable;
         this.render();
     }
