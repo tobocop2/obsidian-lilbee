@@ -951,6 +951,8 @@ export interface RolePlacement {
     devices: number[];
     tensor_split: number[] | null;
     replicas: number;
+    /** Estimated memory footprint of the role's model; absent on older servers. */
+    vram_bytes?: number | null;
 }
 
 /** `GET /api/placement`, `POST /api/placement/preview`, and the apply response. */

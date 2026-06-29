@@ -200,6 +200,12 @@ export class PlacementView extends ItemView {
             cls: "lilbee-placement-role-model",
             text: role.model ? displayLabelForRef(role.model) : MESSAGES.PLACEMENT_NOT_SET,
         });
+        if (role.vram_bytes) {
+            row.createSpan({
+                cls: "lilbee-placement-role-mem",
+                text: MESSAGES.PLACEMENT_ROLE_MEM(formatGb(role.vram_bytes)),
+            });
+        }
         if (gpus) {
             const chips = row.createDiv({ cls: "lilbee-placement-chips" });
             for (const gpu of gpus) {

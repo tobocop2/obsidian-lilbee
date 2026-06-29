@@ -914,6 +914,7 @@ export const MESSAGES = {
     PLACEMENT_FITS: "Fits all roles",
     PLACEMENT_WONT_FIT: (roles: string): string => `Won't fit: ${roles}. Move it to another GPU or free up memory.`,
     PLACEMENT_NOT_SET: "not set",
+    PLACEMENT_ROLE_MEM: (mem: string): string => `~${mem}`,
     PLACEMENT_MEM_FREE: (free: string, total: string): string => `${free} / ${total} free`,
     PLACEMENT_SPLIT: (ratio: string): string => `split ${ratio}`,
     PLACEMENT_REBUILDING: "Rebuilding fleet…",

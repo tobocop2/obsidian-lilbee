@@ -21,9 +21,23 @@ function single(): PlacementResponse {
             },
         ],
         roles: [
-            { role: "chat", model: "Qwen3-8B", devices: [0], tensor_split: null, replicas: 1 },
-            { role: "embed", model: "nomic-embed", devices: [0], tensor_split: null, replicas: 2 },
-            { role: "vision", model: "", devices: [0], tensor_split: null, replicas: 1 },
+            {
+                role: "chat",
+                model: "Qwen3-8B",
+                devices: [0],
+                tensor_split: null,
+                replicas: 1,
+                vram_bytes: 6_100_000_000,
+            },
+            {
+                role: "embed",
+                model: "nomic-embed",
+                devices: [0],
+                tensor_split: null,
+                replicas: 2,
+                vram_bytes: 1_000_000_000,
+            },
+            { role: "vision", model: "", devices: [0], tensor_split: null, replicas: 1, vram_bytes: 0 },
         ],
         unplaceable: [],
         manual: false,
@@ -166,6 +180,21 @@ describe("PlacementView single device", () => {
             "Apply",
             "Reset to auto",
         ]);
+    });
+
+    it("shows per-role estimated memory when the server reports it (and omits it at zero)", async () => {
+        const { contentEl } = await openView(
+            makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(single())) })),
+        );
+        const mems = contentEl.findAll("lilbee-placement-role-mem").map((m) => m.textContent);
+        // chat 6.1GB and embed 1.0GB shown; vision (0 bytes) omitted
+        expect(mems).toEqual(["~6.1 GB", "~1.0 GB"]);
+    });
+
+    it("omits per-role memory when the server does not report it (older server)", async () => {
+        // multi() roles carry no vram_bytes
+        const { contentEl } = await openView(makePlugin(makeApi()));
+        expect(contentEl.find("lilbee-placement-role-mem")).toBeNull();
     });
 
     it("renders a CPU host card when no GPUs are detected (non-Mac)", async () => {

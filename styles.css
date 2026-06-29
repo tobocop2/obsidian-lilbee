@@ -4706,3 +4706,9 @@ button.lilbee-model-chip-select:focus-visible {
 .lilbee-placement-overlay-text {
     font-weight: 600;
 }
+.lilbee-placement-role-mem {
+    color: var(--text-muted);
+    font-size: 0.8em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
