@@ -81,6 +81,7 @@ interface ApiOverrides {
     placementPreview?: ReturnType<typeof vi.fn>;
     applyPlacement?: ReturnType<typeof vi.fn>;
     clearPlacement?: ReturnType<typeof vi.fn>;
+    gpus?: ReturnType<typeof vi.fn>;
 }
 
 function makeApi(overrides: ApiOverrides = {}) {
@@ -89,6 +90,7 @@ function makeApi(overrides: ApiOverrides = {}) {
         placementPreview: vi.fn().mockResolvedValue(ok(multi())),
         applyPlacement: vi.fn().mockResolvedValue(ok(multiManual())),
         clearPlacement: vi.fn().mockResolvedValue(ok(multi())),
+        gpus: vi.fn().mockResolvedValue(ok(multi().gpus)),
         ...overrides,
     };
 }
@@ -101,6 +103,8 @@ async function openView(plugin: LilbeePlugin): Promise<{ view: PlacementView; co
     const view = new PlacementView(new WorkspaceLeaf(), plugin);
     await view.onOpen();
     await flush();
+    // Stop the usage poll so it can't fire across other tests; tests drive refreshUsage directly.
+    await view.onClose();
     return { view, contentEl: (view as unknown as { contentEl: MockElement }).contentEl };
 }
 
@@ -545,6 +549,72 @@ describe("PlacementView defensive paths", () => {
             vi.advanceTimersByTime(400);
             await Promise.resolve();
             expect(api.placementPreview).toHaveBeenCalledTimes(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});
+
+describe("PlacementView live usage bars", () => {
+    it("moves the bars to live GPU usage in place", async () => {
+        const api = makeApi();
+        const { view, contentEl } = await openView(makePlugin(api));
+        // report GPU0 fully used (free 0); the first bar fill jumps to 100%
+        const live = multi().gpus.map((g, i) => (i === 0 ? { ...g, free_bytes: 0 } : g));
+        api.gpus.mockResolvedValue(ok(live));
+        await (view as unknown as { refreshUsage: () => Promise<void> }).refreshUsage();
+        expect(contentEl.findAll("lilbee-placement-bar-fill")[0].style.width).toBe("100%");
+        expect(contentEl.findAll("lilbee-placement-mem")[0].textContent).toBe("0.0 GB / 24.0 GB free");
+    });
+
+    it("skips the poll while applying", async () => {
+        const api = makeApi();
+        const { view } = await openView(makePlugin(api));
+        (view as unknown as { applying: boolean }).applying = true;
+        api.gpus.mockClear();
+        await (view as unknown as { refreshUsage: () => Promise<void> }).refreshUsage();
+        expect(api.gpus).not.toHaveBeenCalled();
+    });
+
+    it("ignores a poll error", async () => {
+        const api = makeApi({ gpus: vi.fn().mockResolvedValue(err(new Error("probe failed"))) });
+        const { view } = await openView(makePlugin(api));
+        await expect(
+            (view as unknown as { refreshUsage: () => Promise<void> }).refreshUsage(),
+        ).resolves.toBeUndefined();
+    });
+
+    it("reloads when the device count changes", async () => {
+        const api = makeApi();
+        const { view } = await openView(makePlugin(api));
+        api.placement.mockClear();
+        api.gpus.mockResolvedValue(ok([multi().gpus[0]])); // 1 device now (was 2)
+        await (view as unknown as { refreshUsage: () => Promise<void> }).refreshUsage();
+        expect(api.placement).toHaveBeenCalled();
+    });
+
+    it("reloads when a device index is unknown", async () => {
+        const api = makeApi();
+        const { view } = await openView(makePlugin(api));
+        api.placement.mockClear();
+        api.gpus.mockResolvedValue(ok(multi().gpus.map((g) => ({ ...g, index: g.index + 10 }))));
+        await (view as unknown as { refreshUsage: () => Promise<void> }).refreshUsage();
+        expect(api.placement).toHaveBeenCalled();
+    });
+
+    it("polls GPU usage on an interval after open and stops on close", async () => {
+        vi.useFakeTimers();
+        try {
+            const api = makeApi();
+            const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
+            await view.onOpen();
+            api.gpus.mockClear();
+            await vi.advanceTimersByTimeAsync(4000);
+            expect(api.gpus).toHaveBeenCalled();
+            await view.onClose();
+            api.gpus.mockClear();
+            await vi.advanceTimersByTimeAsync(8000);
+            expect(api.gpus).not.toHaveBeenCalled();
         } finally {
             vi.useRealTimers();
         }

@@ -12,6 +12,7 @@ import type {
     DocumentResult,
     DocumentsResponse,
     GenerationOptions,
+    GpuInfo,
     HealthResponse,
     InstalledResponse,
     PlacementResponse,
@@ -642,6 +643,12 @@ export class LilbeeClient {
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ model }),
         });
+    }
+
+    /** Detected GPUs with current free/total VRAM. Cheaper than placement() for
+     * polling live memory usage (no plan re-resolve of roles). */
+    async gpus(): Promise<Result<GpuInfo[], Error>> {
+        return this.fetchResult<GpuInfo[]>(`${this.baseUrl}/api/gpus`, { headers: this.authHeaders() });
     }
 
     /** The current effective placement (auto plan or active manual spec). */

@@ -2360,6 +2360,15 @@ const PLACEMENT: PlacementResponse = {
     spec_json: null,
 };
 
+describe("gpus()", () => {
+    it("GETs /api/gpus and returns the detected GPUs", async () => {
+        fetchMock.mockResolvedValue(jsonResponse(PLACEMENT.gpus));
+        const result = await client.gpus();
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/gpus`, expect.objectContaining({}));
+        expect(result._unsafeUnwrap()).toEqual(PLACEMENT.gpus);
+    });
+});
+
 describe("placement()", () => {
     it("GETs /api/placement and returns the plan", async () => {
         fetchMock.mockResolvedValue(jsonResponse(PLACEMENT));

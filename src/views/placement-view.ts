@@ -19,6 +19,7 @@ import { errorMessage } from "../utils";
 export const VIEW_TYPE_PLACEMENT = "lilbee-placement";
 
 const PREVIEW_DEBOUNCE_MS = 350;
+const USAGE_REFRESH_MS = 4000;
 const HTTP_CONFLICT = 409;
 const GB = 1_000_000_000;
 
@@ -47,6 +48,9 @@ export class PlacementView extends ItemView {
     private applyDisabled = false;
     private multiDevice = false;
     private previewTimer: number | null = null;
+    private refreshTimer: number | null = null;
+    /** Live GPU memory bar + free/total text per device index, updated in place by the poll. */
+    private gpuBars: Map<number, { fill: HTMLElement; mem: HTMLElement }> = new Map();
     private bodyEl: HTMLElement | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: LilbeePlugin) {
@@ -72,6 +76,9 @@ export class PlacementView extends ItemView {
         contentEl.addClass("lilbee-placement-container");
         this.bodyEl = contentEl.createDiv({ cls: "lilbee-placement-body" });
         await this.reload();
+        // Poll live GPU memory so the bars track the fleet loading/unloading and
+        // re-placement, rather than freezing at the snapshot taken on open.
+        this.refreshTimer = window.setInterval(() => void this.refreshUsage(), USAGE_REFRESH_MS);
     }
 
     async reload(): Promise<void> {
@@ -116,6 +123,7 @@ export class PlacementView extends ItemView {
         const data = this.current;
         if (!this.bodyEl || !data) return;
         this.multiDevice = data.gpus.length >= 2;
+        this.gpuBars.clear();
         this.bodyEl.empty();
         this.renderHeader(this.bodyEl, data);
         if (data.gpus.length < 2) {
@@ -180,11 +188,13 @@ export class PlacementView extends ItemView {
         head.createSpan({ cls: "lilbee-placement-card-name", text: gpu.name });
         head.createSpan({ cls: "lilbee-placement-card-sub", text: gpu.label });
         const meter = card.createDiv({ cls: "lilbee-placement-meter" });
-        this.renderBar(meter, gpu.total_bytes - gpu.free_bytes, gpu.total_bytes);
-        meter.createSpan({
+        const fill = this.renderBar(meter, gpu.total_bytes - gpu.free_bytes, gpu.total_bytes);
+        const mem = meter.createSpan({
             cls: "lilbee-placement-mem",
             text: MESSAGES.PLACEMENT_MEM_FREE(formatGb(gpu.free_bytes), formatGb(gpu.total_bytes)),
         });
+        // Keep refs so the usage poll can move the bar without a full re-render.
+        this.gpuBars.set(gpu.index, { fill, mem });
     }
 
     // ---- roles ----------------------------------------------------------------
@@ -247,7 +257,7 @@ export class PlacementView extends ItemView {
             text: gpu.label,
         });
         if (this.isEditable()) {
-            chip.setAttribute("aria-label", MESSAGES.PLACEMENT_TIP_CHIP(role, gpu.label));
+            this.tip(chip, MESSAGES.PLACEMENT_TIP_CHIP(role, gpu.label));
             chip.addEventListener("click", () => this.toggleDevice(role, gpu.index));
         } else {
             this.makeReadOnly(chip);
@@ -261,8 +271,8 @@ export class PlacementView extends ItemView {
         stepper.createSpan({ cls: "lilbee-placement-step-count", text: `×${draft.replicas}` });
         const inc = stepper.createEl("button", { cls: "lilbee-placement-step", text: "+" });
         if (this.isEditable()) {
-            dec.setAttribute("aria-label", MESSAGES.PLACEMENT_TIP_REPLICA_REMOVE(role));
-            inc.setAttribute("aria-label", MESSAGES.PLACEMENT_TIP_REPLICA_ADD(role));
+            this.tip(dec, MESSAGES.PLACEMENT_TIP_REPLICA_REMOVE(role));
+            this.tip(inc, MESSAGES.PLACEMENT_TIP_REPLICA_ADD(role));
             dec.addEventListener("click", () => this.changeReplicas(role, -1));
             inc.addEventListener("click", () => this.changeReplicas(role, 1));
         } else {
@@ -271,11 +281,18 @@ export class PlacementView extends ItemView {
         }
     }
 
+    /** Tooltip that shows in Obsidian (aria-label) and natively (title), so the
+     * control's purpose is clear on hover regardless of the theme's tooltip setup. */
+    private tip(el: HTMLElement, text: string): void {
+        el.setAttribute("aria-label", text);
+        el.setAttribute("title", text);
+    }
+
     /** A disabled control: greyed, tooltipped with why, and a click explains where
      * to make the change instead (rather than silently doing nothing). */
     private makeReadOnly(el: HTMLElement): void {
         el.addClass("is-readonly");
-        el.setAttribute("aria-label", this.readOnlyHint());
+        this.tip(el, this.readOnlyHint());
         el.addEventListener("click", () => new Notice(this.readOnlyHint()));
     }
 
@@ -285,10 +302,38 @@ export class PlacementView extends ItemView {
         return this.multiDevice ? MESSAGES.PLACEMENT_HINT_EDIT_MANUALLY : MESSAGES.PLACEMENT_HINT_REPLICAS_SETTINGS;
     }
 
-    private renderBar(container: HTMLElement, used: number, total: number): void {
+    private renderBar(container: HTMLElement, used: number, total: number): HTMLElement {
         const bar = container.createDiv({ cls: "lilbee-placement-bar" });
-        const pct = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
-        bar.createDiv({ cls: "lilbee-placement-bar-fill" }).setCssProps({ width: `${pct}%` });
+        const fill = bar.createDiv({ cls: "lilbee-placement-bar-fill" });
+        fill.setCssProps({ width: `${this.barPct(used, total)}%` });
+        return fill;
+    }
+
+    private barPct(used: number, total: number): number {
+        return total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+    }
+
+    /** Poll live GPU memory and move the bars in place (no full re-render, so it
+     * never disrupts an in-progress manual edit). A changed device set forces a
+     * full reload to rebuild the cards. */
+    private async refreshUsage(): Promise<void> {
+        if (this.applying) return;
+        const result = await this.plugin.api.gpus();
+        if (result.isErr()) return;
+        const gpus = result.value;
+        if (gpus.length !== this.gpuBars.size) {
+            await this.reload();
+            return;
+        }
+        for (const gpu of gpus) {
+            const refs = this.gpuBars.get(gpu.index);
+            if (!refs) {
+                await this.reload();
+                return;
+            }
+            refs.fill.setCssProps({ width: `${this.barPct(gpu.total_bytes - gpu.free_bytes, gpu.total_bytes)}%` });
+            refs.mem.setText(MESSAGES.PLACEMENT_MEM_FREE(formatGb(gpu.free_bytes), formatGb(gpu.total_bytes)));
+        }
     }
 
     /** Chips and replica steppers are editable only in manual mode, which is
@@ -466,6 +511,10 @@ export class PlacementView extends ItemView {
         if (this.previewTimer !== null) {
             window.clearTimeout(this.previewTimer);
             this.previewTimer = null;
+        }
+        if (this.refreshTimer !== null) {
+            window.clearInterval(this.refreshTimer);
+            this.refreshTimer = null;
         }
     }
 }
