@@ -32,6 +32,11 @@ function formatGb(bytes: number): string {
     return `${(bytes / GB).toFixed(1)} GB`;
 }
 
+/** Memory for a single role's footprint: MB under a gigabyte, GB above. */
+function formatMem(bytes: number): string {
+    return bytes < GB ? `${Math.round(bytes / 1_000_000)} MB` : formatGb(bytes);
+}
+
 export class PlacementView extends ItemView {
     private plugin: LilbeePlugin;
     private current: PlacementResponse | null = null;
@@ -203,7 +208,7 @@ export class PlacementView extends ItemView {
         if (role.vram_bytes) {
             row.createSpan({
                 cls: "lilbee-placement-role-mem",
-                text: MESSAGES.PLACEMENT_ROLE_MEM(formatGb(role.vram_bytes)),
+                text: MESSAGES.PLACEMENT_ROLE_MEM(formatMem(role.vram_bytes)),
             });
         }
         if (gpus) {

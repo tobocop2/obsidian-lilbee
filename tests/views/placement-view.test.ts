@@ -35,7 +35,7 @@ function single(): PlacementResponse {
                 devices: [0],
                 tensor_split: null,
                 replicas: 2,
-                vram_bytes: 1_000_000_000,
+                vram_bytes: 300_000_000,
             },
             { role: "vision", model: "", devices: [0], tensor_split: null, replicas: 1, vram_bytes: 0 },
         ],
@@ -187,8 +187,8 @@ describe("PlacementView single device", () => {
             makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(single())) })),
         );
         const mems = contentEl.findAll("lilbee-placement-role-mem").map((m) => m.textContent);
-        // chat 6.1GB and embed 1.0GB shown; vision (0 bytes) omitted
-        expect(mems).toEqual(["~6.1 GB", "~1.0 GB"]);
+        // chat 6.1 GB and embed 300 MB shown; vision (0 bytes) omitted
+        expect(mems).toEqual(["~6.1 GB", "~300 MB"]);
     });
 
     it("omits per-role memory when the server does not report it (older server)", async () => {
