@@ -45,6 +45,32 @@
 }
 </script>
 
+<!-- WebSite JSON-LD: names the site for search engines. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "lilbee for Obsidian",
+  "url": "https://obsidian.lilbee.sh/",
+  "description": "A local AI plugin that turns your Obsidian vault into a search engine you can talk to, with cited answers and the models run for you."
+}
+</script>
+
+<!-- FAQPage JSON-LD: the questions people ask before they install. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    { "@type": "Question", "name": "Do I need Ollama or LM Studio to use lilbee in Obsidian?", "acceptedAnswer": { "@type": "Answer", "text": "No. lilbee downloads and runs the AI models for you; it is a complete model manager, so there is no separate runner to set up. If you already use Ollama or LM Studio, you can point lilbee at them instead." } },
+    { "@type": "Question", "name": "Does my vault leave my computer?", "acceptedAnswer": { "@type": "Answer", "text": "No. Indexing and search run on your own machine, and your notes stay on disk. lilbee uses a cloud model only if you pick one." } },
+    { "@type": "Question", "name": "What can it search in my vault?", "acceptedAnswer": { "@type": "Answer", "text": "Your notes and markdown, plus PDFs, code, ebooks, and scanned images through OCR, and whole websites you crawl into the vault. Over 150 file types, with answers that cite the exact source." } },
+    { "@type": "Question", "name": "Does it work offline?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. With local models in place, lilbee searches, asks, and chats with your vault with no internet connection." } },
+    { "@type": "Question", "name": "How do I install it?", "acceptedAnswer": { "@type": "Answer", "text": "From the Obsidian community plugin store: open Settings, then Community plugins, search for lilbee, and install. lilbee sets up the models for you on first run." } }
+  ]
+}
+</script>
+
 <link rel="stylesheet" href="style.css">
 <script src="main.js" defer></script>
 </head>
@@ -315,6 +341,17 @@
         <a href="https://github.com/tobocop2/obsidian-lilbee/releases"><span class="num">[6]</span><span>Releases</span><span class="dots">·······································</span><span class="desc">changelog</span></a>
         <a href="coverage/"><span class="num">[7]</span><span>Coverage</span><span class="dots">·······································</span><span class="desc">100%</span></a>
         <a href="https://obsidian.md"><span class="num">[8]</span><span>Obsidian</span><span class="dots">·······································</span><span class="desc">obsidian.md</span></a>
+      </div>
+    </section>
+
+    <section>
+      <div class="label">questions</div>
+      <div class="faq">
+        <details><summary>Do I need Ollama or LM Studio to use lilbee in Obsidian?</summary><p>No. lilbee downloads and runs the AI models for you; it is a complete model manager, so there is no separate runner to set up. If you already use Ollama or LM Studio, you can point lilbee at them instead.</p></details>
+        <details><summary>Does my vault leave my computer?</summary><p>No. Indexing and search run on your own machine, and your notes stay on disk. lilbee uses a cloud model only if you pick one.</p></details>
+        <details><summary>What can it search in my vault?</summary><p>Your notes and markdown, plus PDFs, code, ebooks, and scanned images through OCR, and whole websites you crawl into the vault. Over 150 file types, with answers that cite the exact source.</p></details>
+        <details><summary>Does it work offline?</summary><p>Yes. With local models in place, lilbee searches, asks, and chats with your vault with no internet connection.</p></details>
+        <details><summary>How do I install it?</summary><p>From the Obsidian community plugin store: open Settings, then Community plugins, search for lilbee, and install. lilbee sets up the models for you on first run.</p></details>
       </div>
     </section>
 

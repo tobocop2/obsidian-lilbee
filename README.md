@@ -246,6 +246,18 @@ Running a local server is unusual for an Obsidian plugin, so the automated store
 
 See **[Usage Guide](docs/usage.md)** for the full reference: every command, every setting, the chat toolbar, supported formats, troubleshooting, and advanced configuration. For the underlying engine (what it indexes, how retrieval works, model formats, hardware requirements), see [lilbee](https://lilbee.sh/).
 
+## FAQ
+
+**Do I need Ollama or LM Studio?** No. lilbee downloads and runs the AI models for you; it is a complete model manager, so there is no separate runner to set up. If you already use Ollama or LM Studio, point lilbee at them instead.
+
+**Does my vault leave my computer?** No. Indexing and search run on your own machine, and your notes stay on disk. A cloud model is used only if you pick one.
+
+**What can it search?** Your notes and markdown, plus PDFs, code, ebooks, and scanned images through OCR, and whole websites you crawl into the vault. Over 150 file types, with answers that cite the source.
+
+**Does it work offline?** Yes, with local models in place.
+
+**How do I install it?** From the Obsidian community plugin store: Settings → Community plugins, search for lilbee, install. It sets up the models for you on first run.
+
 ## Support
 
 Something broken? See [TROUBLESHOOTING.md](TROUBLESHOOTING.md), and use **Settings → lilbee → Export diagnostics** to attach logs to a bug report.
