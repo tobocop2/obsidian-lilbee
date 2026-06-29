@@ -132,6 +132,7 @@
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-catalog"   aria-controls="tutorial-pane-catalog"   aria-selected="false" tabindex="-1">catalog</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-download"  aria-controls="tutorial-pane-download"  aria-selected="false" tabindex="-1">download a model</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-models"    aria-controls="tutorial-pane-models"    aria-selected="false" tabindex="-1">model rail</button>
+          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-placement" aria-controls="tutorial-pane-placement" aria-selected="false" tabindex="-1">multi-GPU</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-ollama"    aria-controls="tutorial-pane-ollama"    aria-selected="false" tabindex="-1">Ollama</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-lmstudio"  aria-controls="tutorial-pane-lmstudio"  aria-selected="false" tabindex="-1">LM Studio</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-gemini"    aria-controls="tutorial-pane-gemini"    aria-selected="false" tabindex="-1">cloud</button>
@@ -232,6 +233,13 @@
           <p class="tutorial-caption">Four roles on one rail: chat writes the answers, embedding indexes your notes, vision reads scanned PDFs, reranking sharpens the results. Hover each to see what it does, then flip between Search and Chat mode.</p>
         </div>
 
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-placement" aria-labelledby="tutorial-tab-placement" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/placement.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">On a box with four GPUs, the placement view shows each card and what's running on it. Spread chat across all four, add an embedding worker, and index the whole codebase, thousands of chunks, with every GPU busy at once. The usage bars move as the work lands, then ask a grounded question about what was just indexed.</p>
+        </div>
+
         <div class="tutorialpane" role="tabpanel" id="tutorial-pane-firststart" aria-labelledby="tutorial-tab-firststart" hidden>
           <div class="tutorial-clip">
             <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first_start.webm" controls loop muted autoplay playsinline preload="metadata"></video>
@@ -326,6 +334,22 @@
         <div class="cap">
           <h3>writes a wiki of your knowledge <span class="exp">experimental</span></h3>
           <p>lilbee can draft linked wiki pages from your library; they land in your vault as ordinary notes and show up in the graph view, alongside your own.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="label">across your GPUs</div>
+      <div class="gpu">
+        <div class="gpu-copy">
+          <h3>one box, many GPUs, no flags</h3>
+          <p>Got more than one graphics card? lilbee finds them all. The placement view draws every GPU and what's running on it, chat, embedding, vision, reranking, and lets you spread a model across cards or pin a worker to one with a click.</p>
+          <p>Add an embedding worker and indexing fans out across every card at once, so a big library lands in a fraction of the time. The usage bars are live; you watch the work move. On a single machine it stays simple: one card, everything together, nothing to configure.</p>
+        </div>
+        <div class="gpu-clip">
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/placement.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
         </div>
       </div>
     </section>

@@ -25,6 +25,7 @@ const groups = [
       { id: "catalog", name: "catalog", title: "Model catalog", desc: "Browse the model catalog without leaving Obsidian: Chat, Embed, Vision, and Rerank tabs, each pulled live from Hugging Face Hub. Models that won't run on your hardware are flagged before you pull." },
       { id: "download", name: "download_model", title: "Download and use a model", desc: "Search the catalog for a small chat model, watch the download stream start to finish in the Task Center, then activate it, switch to Chat mode, and use it, the full pull-and-use loop without leaving Obsidian." },
       { id: "models", name: "models", title: "The model rail, role by role", desc: "The chat rail carries four roles, each its own model: chat writes the answers, embedding indexes your notes, vision reads scanned PDFs, reranking sharpens the results. Hover each pill to see what it does, then flip between Search (answers from your vault, cited) and Chat (the model directly, no retrieval)." },
+      { id: "placement", name: "placement", title: "Spread models across your GPUs", desc: "On a box with four GPUs, the placement view draws every card and what's running on it. Spread chat across all four, add an embedding worker, and index a whole codebase, thousands of chunks, with every card busy at once and the usage bars moving as the work lands. Then ask a grounded question about what was just indexed. On a single machine it stays simple: one card, everything together, nothing to set up." },
     ],
   },
   {

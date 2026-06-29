@@ -512,6 +512,19 @@ h1.sr {
 .cap p { font-size: 14px; color: var(--ink-2); line-height: 1.65; }
 .cap p code { background: var(--bg); border: 1px solid var(--rule); padding: 0 0.35rem; border-radius: 3px; color: var(--ink); }
 
+/* multi-GPU section -------------------------------------------------- */
+.gpu { display: grid; grid-template-columns: 1fr 1.1fr; gap: 1.6rem; align-items: center; }
+.gpu-copy h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.01em;
+  margin-bottom: 0.6rem;
+}
+.gpu-copy p { font-size: 14px; color: var(--ink-2); line-height: 1.65; }
+.gpu-copy p + p { margin-top: 0.7rem; }
+.gpu-clip .tutorial-clip { margin: 0; }
+
 /* go-deeper links ---------------------------------------------------- */
 .links { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 2.5rem; font-size: 14px; }
 .links a {
@@ -582,7 +595,7 @@ footer .meta { text-align: right; font-size: 12px; }
 @media (max-width: 720px) {
   body { padding: 1.4rem 1.1rem 3rem; font-size: 14.5px; }
   .wordmark, .wordmark-sub { font-size: 9px; }
-  .caps, .links, .shape { grid-template-columns: 1fr; }
+  .caps, .links, .shape, .gpu { grid-template-columns: 1fr; }
   .tagline { font-size: 18px; }
   .tutorialtabs .tutorialtab { padding: 0.45rem 0.6rem; font-size: 12px; }
 }
