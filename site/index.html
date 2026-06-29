@@ -237,7 +237,7 @@
           <div class="tutorial-clip">
             <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/placement.webm" controls loop muted autoplay playsinline preload="metadata"></video>
           </div>
-          <p class="tutorial-caption">On a box with four GPUs, the placement view shows each card and what's running on it. Spread chat across all four, add an embedding worker, and index the whole codebase, thousands of chunks, with every GPU busy at once. The usage bars move as the work lands, then ask a grounded question about what was just indexed.</p>
+          <p class="tutorial-caption">On a box with four GPUs, the placement view shows each card and what's running on it. Spread chat across all four, pin an embedding worker, apply, then re-index the codebase and watch each card's load update live. Finish by asking a grounded question about what was just indexed.</p>
         </div>
 
         <div class="tutorialpane" role="tabpanel" id="tutorial-pane-firststart" aria-labelledby="tutorial-tab-firststart" hidden>
@@ -344,7 +344,7 @@
         <div class="gpu-copy">
           <h3>one box, many GPUs, no flags</h3>
           <p>Got more than one graphics card? lilbee finds them all. The placement view draws every GPU and what's running on it, chat, embedding, vision, reranking, and lets you spread a model across cards or pin a worker to one with a click.</p>
-          <p>Add an embedding worker and indexing fans out across every card at once, so a big library lands in a fraction of the time. The usage bars are live; you watch the work move. On a single machine it stays simple: one card, everything together, nothing to configure.</p>
+          <p>Spread one model's layers across several cards, or pin embedding, vision and reranking workers to the GPUs you choose, then apply and the fleet rebuilds to match. The usage bars update live, so you can see each card's load in real time. On a single machine it stays simple: one card, everything together, nothing to configure.</p>
         </div>
         <div class="gpu-clip">
           <div class="tutorial-clip">
