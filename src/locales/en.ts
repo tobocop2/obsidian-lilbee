@@ -914,6 +914,12 @@ export const MESSAGES = {
     PLACEMENT_FITS: "Fits all roles",
     PLACEMENT_WONT_FIT: (roles: string): string => `Won't fit: ${roles}. Move it to another GPU or free up memory.`,
     PLACEMENT_NOT_SET: "not set",
+    PLACEMENT_TIP_CHIP: (role: string, gpu: string): string => `Run ${role} on ${gpu}`,
+    PLACEMENT_TIP_REPLICA_ADD: (role: string): string => `Add a ${role} worker`,
+    PLACEMENT_TIP_REPLICA_REMOVE: (role: string): string => `Remove a ${role} worker`,
+    PLACEMENT_HINT_EDIT_MANUALLY: 'Click "Edit manually" first to change GPU placement.',
+    PLACEMENT_HINT_REPLICAS_SETTINGS:
+        "This device runs everything together. Set worker counts in Settings → lilbee → Hardware / fleet.",
     PLACEMENT_ROLE_MEM: (mem: string): string => `~${mem}`,
     PLACEMENT_MEM_FREE: (free: string, total: string): string => `${free} / ${total} free`,
     PLACEMENT_SPLIT: (ratio: string): string => `split ${ratio}`,

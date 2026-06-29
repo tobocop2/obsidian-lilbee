@@ -145,6 +145,16 @@ describe("PlacementView multi-GPU (auto)", () => {
         // 4090: 6GB used of 24 → 25%
         expect(fill.style.width).toBe("25%");
     });
+
+    it("read-only chips in auto mode are tooltipped and point to Edit manually on click", async () => {
+        const { contentEl } = await openView(makePlugin(makeApi()));
+        const chip = contentEl.find("lilbee-placement-chip")!;
+        expect(chip.getAttribute("aria-label")).toBe('Click "Edit manually" first to change GPU placement.');
+        chip.trigger("click");
+        expect(Notice.instances.map((n) => n.message)).toContain(
+            'Click "Edit manually" first to change GPU placement.',
+        );
+    });
 });
 
 describe("PlacementView single device", () => {
@@ -165,14 +175,18 @@ describe("PlacementView single device", () => {
         expect(contentEl.findAll("lilbee-placement-btn").length).toBe(0);
     });
 
-    it("does not let a single-device replica stepper build an (invalid) spec", async () => {
+    it("a single-device stepper is read-only: shows guidance, builds no spec, has a tooltip", async () => {
         const api = makeApi({ placement: vi.fn().mockResolvedValue(ok(single())) });
         const { contentEl } = await openView(makePlugin(api));
-        // read-only steppers have no click handler, so clicking is a no-op (no 422)
-        rowFor(contentEl, "embed").findAll("lilbee-placement-step")[1].trigger("click");
+        const inc = rowFor(contentEl, "embed").findAll("lilbee-placement-step")[1];
+        inc.trigger("click");
+        // count unchanged + no spec sent (no 422), but the user gets feedback
         expect(rowFor(contentEl, "embed").find("lilbee-placement-step-count")!.textContent).toBe("×2");
         expect(api.placementPreview).not.toHaveBeenCalled();
-        expect(Notice.instances.length).toBe(0);
+        expect(Notice.instances.map((n) => n.message)).toContain(
+            "This device runs everything together. Set worker counts in Settings → lilbee → Hardware / fleet.",
+        );
+        expect(inc.getAttribute("aria-label")).toContain("Settings");
     });
 
     it("shows per-role estimated memory when the server reports it (and omits it at zero)", async () => {
@@ -229,6 +243,21 @@ describe("PlacementView manual editing", () => {
         expect(contentEl.find("lilbee-placement-state")!.textContent).toBe("manual");
         expect(contentEl.findAll("lilbee-placement-chip").some((c) => c.classList.contains("is-readonly"))).toBe(false);
         expect(contentEl.find("lilbee-placement-fit")!.textContent).toBe("Fits all roles");
+    });
+
+    it("editable chips and steppers carry descriptive tooltips", async () => {
+        const { contentEl } = await openView(
+            makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(multiManual())) })),
+        );
+        expect(rowFor(contentEl, "embed").findAll("lilbee-placement-chip")[0].getAttribute("aria-label")).toBe(
+            "Run embed on cuda0",
+        );
+        expect(rowFor(contentEl, "embed").findAll("lilbee-placement-step")[1].getAttribute("aria-label")).toBe(
+            "Add a embed worker",
+        );
+        expect(rowFor(contentEl, "embed").findAll("lilbee-placement-step")[0].getAttribute("aria-label")).toBe(
+            "Remove a embed worker",
+        );
     });
 
     it("enters manual mode from the edit button", async () => {

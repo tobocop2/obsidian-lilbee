@@ -45,6 +45,7 @@ export class PlacementView extends ItemView {
     private applying = false;
     private unplaceable: string[] = [];
     private applyDisabled = false;
+    private multiDevice = false;
     private previewTimer: number | null = null;
     private bodyEl: HTMLElement | null = null;
 
@@ -114,6 +115,7 @@ export class PlacementView extends ItemView {
     private render(): void {
         const data = this.current;
         if (!this.bodyEl || !data) return;
+        this.multiDevice = data.gpus.length >= 2;
         this.bodyEl.empty();
         this.renderHeader(this.bodyEl, data);
         if (data.gpus.length < 2) {
@@ -244,8 +246,12 @@ export class PlacementView extends ItemView {
             cls: on ? "lilbee-placement-chip is-on" : "lilbee-placement-chip",
             text: gpu.label,
         });
-        if (this.isEditable()) chip.addEventListener("click", () => this.toggleDevice(role, gpu.index));
-        else chip.addClass("is-readonly");
+        if (this.isEditable()) {
+            chip.setAttribute("aria-label", MESSAGES.PLACEMENT_TIP_CHIP(role, gpu.label));
+            chip.addEventListener("click", () => this.toggleDevice(role, gpu.index));
+        } else {
+            this.makeReadOnly(chip);
+        }
     }
 
     private renderStepper(container: HTMLElement, role: WorkerRole): void {
@@ -255,12 +261,28 @@ export class PlacementView extends ItemView {
         stepper.createSpan({ cls: "lilbee-placement-step-count", text: `×${draft.replicas}` });
         const inc = stepper.createEl("button", { cls: "lilbee-placement-step", text: "+" });
         if (this.isEditable()) {
+            dec.setAttribute("aria-label", MESSAGES.PLACEMENT_TIP_REPLICA_REMOVE(role));
+            inc.setAttribute("aria-label", MESSAGES.PLACEMENT_TIP_REPLICA_ADD(role));
             dec.addEventListener("click", () => this.changeReplicas(role, -1));
             inc.addEventListener("click", () => this.changeReplicas(role, 1));
         } else {
-            dec.addClass("is-readonly");
-            inc.addClass("is-readonly");
+            this.makeReadOnly(dec);
+            this.makeReadOnly(inc);
         }
+    }
+
+    /** A disabled control: greyed, tooltipped with why, and a click explains where
+     * to make the change instead (rather than silently doing nothing). */
+    private makeReadOnly(el: HTMLElement): void {
+        el.addClass("is-readonly");
+        el.setAttribute("aria-label", this.readOnlyHint());
+        el.addEventListener("click", () => new Notice(this.readOnlyHint()));
+    }
+
+    /** Why editing is unavailable: enter manual mode on multi-GPU, or use Settings
+     * on a single/unified device where there is nothing to assign. */
+    private readOnlyHint(): string {
+        return this.multiDevice ? MESSAGES.PLACEMENT_HINT_EDIT_MANUALLY : MESSAGES.PLACEMENT_HINT_REPLICAS_SETTINGS;
     }
 
     private renderBar(container: HTMLElement, used: number, total: number): void {
