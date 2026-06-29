@@ -4568,7 +4568,8 @@ button.lilbee-model-chip-select:focus-visible {
     border-top: none;
 }
 .lilbee-placement-role-unfit {
-    background: var(--background-modifier-error);
+    box-shadow: inset 2px 0 0 var(--text-error);
+    background: rgba(var(--color-red-rgb, 233, 49, 71), 0.06);
 }
 .lilbee-placement-badge {
     flex-shrink: 0;

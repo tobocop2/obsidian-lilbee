@@ -23,6 +23,7 @@ export const VIEW_TYPE_PLACEMENT = "lilbee-placement";
 
 const PREVIEW_DEBOUNCE_MS = 350;
 const HTTP_CONFLICT = 409;
+const HTTP_UNPROCESSABLE = 422;
 const GB = 1_000_000_000;
 
 /** A role row's editable state while a manual placement is being assembled. */
@@ -456,11 +457,25 @@ export class PlacementView extends ItemView {
 
     private async runPreview(): Promise<void> {
         // Preview is automatic (debounced on every edit), so a failure stays quiet
-        // rather than firing a toast per keystroke; a real problem surfaces on Apply.
+        // (no toast) — but a fit rejection surfaces as the "Won't fit" badge so a
+        // model pinned to too few GPUs reads as won't-fit, not as nothing happening.
         const result = await this.plugin.api.placementPreview(this.buildSpec());
-        if (result.isErr()) return;
+        if (result.isErr()) {
+            this.unplaceable = this.unplaceableFrom422(result.error);
+            this.render();
+            return;
+        }
         this.unplaceable = result.value.unplaceable;
         this.render();
+    }
+
+    /** The server rejects an impossible pin with a 422 naming the role(s) that
+     * won't fit ("chat pinned to device 0 needs N GiB but device 0 has M GiB").
+     * Map that to the unplaceable list; on any other error keep the prior state. */
+    private unplaceableFrom422(error: Error): string[] {
+        if (!isHttpStatus(error, HTTP_UNPROCESSABLE)) return this.unplaceable;
+        const roles = [...this.draft.keys()].filter((role) => error.message.includes(`${role} pinned to device`));
+        return roles.length > 0 ? roles : this.unplaceable;
     }
 
     private async runApply(): Promise<void> {

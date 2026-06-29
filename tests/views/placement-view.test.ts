@@ -372,6 +372,52 @@ describe("PlacementView preview", () => {
         await flush();
         expect(Notice.instances.length).toBe(0);
     });
+
+    it("surfaces a 422 fit rejection as the Won't fit badge, no toast", async () => {
+        const api = makeApi({
+            placement: vi.fn().mockResolvedValue(ok(multiManual())),
+            placementPreview: vi
+                .fn()
+                .mockResolvedValue(
+                    err(
+                        new Error(
+                            'Server responded 422: {"detail":"chat pinned to device 0 needs 107.7 GiB but device 0 has 40.0 GiB usable"}',
+                        ),
+                    ),
+                ),
+        });
+        const { contentEl } = await openView(makePlugin(api));
+        contentEl
+            .findAll("lilbee-placement-btn")
+            .find((b) => b.textContent === "Preview")!
+            .trigger("click");
+        await flush();
+        expect(contentEl.find("lilbee-placement-fit")!.classList.contains("is-unfit")).toBe(true);
+        expect(rowFor(contentEl, "chat").classList.contains("lilbee-placement-role-unfit")).toBe(true);
+        expect(
+            contentEl
+                .findAll("lilbee-placement-btn")
+                .find((b) => b.textContent === "Apply")!
+                .classList.contains("is-disabled"),
+        ).toBe(true);
+        expect(Notice.instances.length).toBe(0);
+    });
+
+    it("keeps the prior fit state on a 422 that names no current role", async () => {
+        const api = makeApi({
+            placement: vi.fn().mockResolvedValue(ok(multiManual())),
+            placementPreview: vi
+                .fn()
+                .mockResolvedValue(err(new Error('Server responded 422: {"detail":"spec is required"}'))),
+        });
+        const { contentEl } = await openView(makePlugin(api));
+        contentEl
+            .findAll("lilbee-placement-btn")
+            .find((b) => b.textContent === "Preview")!
+            .trigger("click");
+        await flush();
+        expect(contentEl.find("lilbee-placement-fit")!.classList.contains("is-unfit")).toBe(false);
+    });
 });
 
 describe("PlacementView apply", () => {
