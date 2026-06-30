@@ -93,6 +93,42 @@ describe("SourcePreviewModal — loading + success (markdown)", () => {
         expect(body!.textContent).toContain("# Hello from server");
     });
 
+    it("fences a code source in its language so it highlights", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({
+                markdown: "def fit_split_ctx():\n    return 512",
+                content_type: "text/x-python",
+            } satisfies SourceContent),
+        });
+        const modal = new SourcePreviewModal(
+            app as never,
+            api,
+            makeSource({ source: "lilbee/providers/fleet/ctx.py", content_type: "text/x-python" }),
+        );
+        modal.open();
+        await tick();
+        const body = (modal.contentEl as unknown as MockElement).find("lilbee-preview-body");
+        expect(body).not.toBeNull();
+        expect(body!.textContent).toContain("```python");
+        expect(body!.textContent).toContain("def fit_split_ctx():");
+    });
+
+    it("does not fence a markdown source", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({
+                markdown: "# Title\n\nbody text",
+                content_type: CONTENT_TYPE.MARKDOWN,
+            } satisfies SourceContent),
+        });
+        const modal = new SourcePreviewModal(app as never, api, makeSource({ source: "notes/page.md" }));
+        modal.open();
+        await tick();
+        const body = (modal.contentEl as unknown as MockElement).find("lilbee-preview-body");
+        expect(body!.textContent).not.toContain("```");
+    });
+
     it("renders header with vault_path when available", async () => {
         const app = new App();
         const api = makeApi({
