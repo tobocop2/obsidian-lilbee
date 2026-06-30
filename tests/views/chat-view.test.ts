@@ -983,6 +983,17 @@ describe("ChatView — extractBanner helper", () => {
     });
 });
 
+describe("ChatView — plainStream helper", () => {
+    it("strips bold and code markers but keeps the words and citations", async () => {
+        const { plainStream } = await import("../../src/views/chat-view");
+        expect(plainStream("lilbee uses **tensor-splitting** to spread it [1]")).toBe(
+            "lilbee uses tensor-splitting to spread it [1]",
+        );
+        expect(plainStream("call `fit_split_ctx()` here")).toBe("call fit_split_ctx() here");
+        expect(plainStream("plain text, no markers")).toBe("plain text, no markers");
+    });
+});
+
 describe("ChatView.sendMessage — banner rendering", () => {
     it("renders a lilbee-chat-banner div above the assistant bubble when DONE.data.banner is set", async () => {
         Notice.clear();

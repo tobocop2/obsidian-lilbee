@@ -146,6 +146,13 @@ export function extractBanner(data: unknown): string | null {
     return typeof banner === "string" && banner.length > 0 ? banner : null;
 }
 
+/** Strip the markdown markers that would otherwise show as raw syntax while text
+ *  streams as plain text (bold `**`, code backticks). The full markdown — bold,
+ *  code blocks, the lot — is rendered once when the message completes. */
+export function plainStream(md: string): string {
+    return md.replace(/\*\*/g, "").replace(/`/g, "");
+}
+
 export class ChatView extends ItemView {
     private plugin: LilbeePlugin;
     private history: Message[] = [];
@@ -867,13 +874,13 @@ export class ChatView extends ItemView {
         const scheduleRender = (): void => {
             if (state.renderPending) return;
             state.renderPending = true;
-            window.requestAnimationFrame(async () => {
-                // Clear the flag only AFTER the async render settles. Resetting it
-                // first let a token arriving mid-render kick off a second render
-                // that empty()s the bubble while the first was still in flight —
-                // the answer blanked and reappeared, i.e. the streaming stutter.
-                await this.renderFollowing(() => this.renderMarkdown(textEl, state.fullContent));
+            window.requestAnimationFrame(() => {
                 state.renderPending = false;
+                // Stream as lightweight plain text (markdown markers stripped, so
+                // no raw `**` shows): a synchronous setText that can't stall under
+                // load, so the answer never freezes mid-stream. The DONE event
+                // renders the full formatted markdown once.
+                void this.renderFollowing(() => textEl.setText(plainStream(state.fullContent)));
             });
         };
 
@@ -1022,7 +1029,9 @@ export class ChatView extends ItemView {
         state.reasoningRenderPending = true;
         window.requestAnimationFrame(() => {
             state.reasoningRenderPending = false;
-            void this.renderFollowing(() => this.renderMarkdown(el, state.reasoningContent));
+            // Same lightweight plain-text streaming as the answer (reasoning can
+            // be long — the heavy per-token markdown render stuttered most here).
+            void this.renderFollowing(() => el.setText(plainStream(state.reasoningContent)));
         });
     }
 
