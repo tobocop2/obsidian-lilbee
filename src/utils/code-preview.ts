@@ -58,6 +58,15 @@ export function languageForSource(source: string): string | null {
     return EXTENSION_LANGUAGE[name.slice(dot + 1)] ?? null;
 }
 
+/** Pixels to scroll a rendered code block so the cited line sits near the top
+ *  with a couple of lines of lead-in — the code equivalent of the PDF preview's
+ *  jump to the cited page. Returns 0 when there is nothing to scroll to. */
+export function citedLineScrollTop(scrollHeight: number, totalLines: number, line: number | null): number {
+    if (line === null || line <= 1 || totalLines <= 0 || scrollHeight <= 0) return 0;
+    const lineHeight = scrollHeight / totalLines;
+    return Math.max(0, (line - 1) * lineHeight - lineHeight * 2);
+}
+
 /** Wrap content in a fenced code block whose fence outlives any backtick run
  *  inside it, so embedded backticks can't close the block early. */
 export function toCodeFence(content: string, lang: string): string {

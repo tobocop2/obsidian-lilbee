@@ -4,7 +4,7 @@ import type { Source, SourceContent } from "../types";
 import { CONTENT_TYPE, isPdfContentType } from "../types";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, errorMessage } from "../utils";
-import { languageForSource, toCodeFence } from "../utils/code-preview";
+import { citedLineScrollTop, languageForSource, toCodeFence } from "../utils/code-preview";
 import { formatLocation } from "./results";
 
 // Text/* mime types that should NOT render inline through MarkdownRenderer
@@ -211,13 +211,20 @@ export class SourcePreviewModal extends Modal {
             // highlighter styles them. Markdown/plain text render as-is.
             const lang = languageForSource(this.source.source);
             const markdown = lang === null ? content.markdown : toCodeFence(content.markdown, lang);
-            void MarkdownRenderer.render(this.app, markdown, body, "", this.renderComponent);
+            void MarkdownRenderer.render(this.app, markdown, body, "", this.renderComponent).then(() => {
+                if (lang !== null) this.scrollToCitedLine(host, body, content.markdown);
+            });
             return;
         }
         host.createEl("p", {
             text: MESSAGES.ERROR_PREVIEW_UNSUPPORTED(ct),
             cls: "lilbee-preview-error",
         });
+    }
+
+    /** Scroll the rendered code so the cited chunk's first line is in view. */
+    private scrollToCitedLine(host: HTMLElement, body: HTMLElement, code: string): void {
+        host.scrollTop = citedLineScrollTop(body.scrollHeight, code.split("\n").length, this.source.line_start);
     }
 
     private renderPdf(host: HTMLElement): void {

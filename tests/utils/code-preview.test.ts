@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { languageForSource, toCodeFence } from "../../src/utils/code-preview";
+import { citedLineScrollTop, languageForSource, toCodeFence } from "../../src/utils/code-preview";
 
 describe("languageForSource", () => {
     it("maps known code extensions to Prism languages", () => {
@@ -43,5 +43,23 @@ describe("toCodeFence", () => {
 
     it("uses a four-backtick fence when content holds a triple run", () => {
         expect(toCodeFence("```", "text")).toBe("````text\n```\n````");
+    });
+});
+
+describe("citedLineScrollTop", () => {
+    it("scrolls to the cited line with a two-line lead-in", () => {
+        // 100 lines over 1000px => 10px/line; line 50 => (49-2)*10 = 470.
+        expect(citedLineScrollTop(1000, 100, 50)).toBe(470);
+    });
+
+    it("never returns a negative offset for an early line", () => {
+        expect(citedLineScrollTop(1000, 100, 2)).toBe(0);
+    });
+
+    it("returns 0 when there is no cited line or nothing to scroll", () => {
+        expect(citedLineScrollTop(1000, 100, null)).toBe(0);
+        expect(citedLineScrollTop(1000, 100, 1)).toBe(0);
+        expect(citedLineScrollTop(1000, 0, 50)).toBe(0);
+        expect(citedLineScrollTop(0, 100, 50)).toBe(0);
     });
 });

@@ -114,6 +114,22 @@ describe("SourcePreviewModal — loading + success (markdown)", () => {
         expect(body!.textContent).toContain("def fit_split_ctx():");
     });
 
+    it("scrolls the rendered code preview to the cited line", () => {
+        const modal = new SourcePreviewModal(
+            new App() as never,
+            makeApi(),
+            makeSource({ source: "a.py", content_type: "text/x-python", line_start: 50 }),
+        );
+        const host = new MockElement();
+        const body = new MockElement();
+        body.scrollHeight = 1000; // 100 lines => 10px/line
+        const code = Array.from({ length: 100 }, (_, i) => `line${i}`).join("\n");
+        (
+            modal as unknown as { scrollToCitedLine: (h: MockElement, b: MockElement, c: string) => void }
+        ).scrollToCitedLine(host, body, code);
+        expect(host.scrollTop).toBe(470);
+    });
+
     it("does not fence a markdown source", async () => {
         const app = new App();
         const api = makeApi({
