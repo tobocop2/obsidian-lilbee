@@ -867,9 +867,13 @@ export class ChatView extends ItemView {
         const scheduleRender = (): void => {
             if (state.renderPending) return;
             state.renderPending = true;
-            window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(async () => {
+                // Clear the flag only AFTER the async render settles. Resetting it
+                // first let a token arriving mid-render kick off a second render
+                // that empty()s the bubble while the first was still in flight —
+                // the answer blanked and reappeared, i.e. the streaming stutter.
+                await this.renderFollowing(() => this.renderMarkdown(textEl, state.fullContent));
                 state.renderPending = false;
-                void this.renderFollowing(() => this.renderMarkdown(textEl, state.fullContent));
             });
         };
 
