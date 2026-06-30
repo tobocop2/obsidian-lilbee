@@ -272,7 +272,11 @@ export class LilbeeClient {
                     throw err;
                 }
                 if (err instanceof Error && err.message.startsWith("Server responded")) {
-                    this.recordOutcome("server_error");
+                    // A 4xx is a reachable server rejecting this request (validation,
+                    // not-found, conflict) that the caller handles — don't flag a
+                    // global server error. Only 5xx flips the status to error.
+                    const status = parseInt(err.message.slice("Server responded ".length), 10);
+                    this.recordOutcome(status >= 500 ? "server_error" : "ok");
                     throw err;
                 }
                 if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {

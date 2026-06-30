@@ -2218,6 +2218,18 @@ describe("setOutcomeCallback", () => {
         expect(outcomes).toContain("server_error");
     });
 
+    it("treats a 4xx as a reachable server ('ok'), not a server error", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 422,
+            text: () => Promise.resolve("won't fit"),
+        } as unknown as Response);
+        const result = await client.health();
+        expect(result.isErr()).toBe(true);
+        expect(outcomes).toContain("ok");
+        expect(outcomes).not.toContain("server_error");
+    });
+
     it("fires 'unreachable' when fetch keeps rejecting", async () => {
         fetchMock.mockRejectedValue(new Error("ECONNREFUSED"));
         const result = await client.health();
