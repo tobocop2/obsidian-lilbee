@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-import { WorkspaceLeaf, MockElement, Notice, Platform } from "../__mocks__/obsidian";
+import { App, WorkspaceLeaf, MockElement, Notice, Platform } from "../__mocks__/obsidian";
 import { ok, err } from "../../src/result";
-import { PlacementView, VIEW_TYPE_PLACEMENT } from "../../src/views/placement-view";
+import { PlacementView, VIEW_TYPE_PLACEMENT, revealPlacementBeside } from "../../src/views/placement-view";
 import type LilbeePlugin from "../../src/main";
 import type { GpuStat, PlacementResponse, SSEEvent } from "../../src/types";
 
@@ -701,4 +701,30 @@ describe("PlacementView live usage bars", () => {
 
 afterEach(() => {
     vi.useRealTimers();
+});
+
+describe("revealPlacementBeside", () => {
+    it("splits beside the source leaf and opens placement when none is open", async () => {
+        const app = new App();
+        const newLeaf = new WorkspaceLeaf(app);
+        app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+        app.workspace.createLeafBySplit = vi.fn().mockReturnValue(newLeaf);
+        app.workspace.revealLeaf = vi.fn();
+        const source = new WorkspaceLeaf(app);
+        await revealPlacementBeside(app as never, source as never);
+        expect(app.workspace.createLeafBySplit).toHaveBeenCalledWith(source, "vertical");
+        expect(newLeaf.setViewState).toHaveBeenCalledWith({ type: VIEW_TYPE_PLACEMENT, active: false });
+        expect(app.workspace.revealLeaf).toHaveBeenCalledWith(newLeaf);
+    });
+
+    it("reveals an existing placement leaf instead of splitting again", async () => {
+        const app = new App();
+        const existing = new WorkspaceLeaf(app);
+        app.workspace.getLeavesOfType = vi.fn().mockReturnValue([existing]);
+        app.workspace.createLeafBySplit = vi.fn();
+        app.workspace.revealLeaf = vi.fn();
+        await revealPlacementBeside(app as never, new WorkspaceLeaf(app) as never);
+        expect(app.workspace.revealLeaf).toHaveBeenCalledWith(existing);
+        expect(app.workspace.createLeafBySplit).not.toHaveBeenCalled();
+    });
 });

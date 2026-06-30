@@ -20,7 +20,7 @@ if (typeof (globalThis as any).activeDocument === "undefined") {
     (globalThis as any).activeDocument = (globalThis as any).document;
 }
 
-import { Menu, MockMenuItem, MockMenuSeparator, Notice, Platform, WorkspaceLeaf } from "../__mocks__/obsidian";
+import { App, Menu, MockMenuItem, MockMenuSeparator, Notice, Platform, WorkspaceLeaf } from "../__mocks__/obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal } from "../../src/views/chat-view";
 import { electronDialog } from "../../src/utils/file-dialog";
@@ -342,6 +342,20 @@ describe("ChatView.onOpen — DOM structure", () => {
         expect(clearBtn!.tagName).toBe("BUTTON");
         // Icon button (matches the save action), with the label on aria-label.
         expect(clearBtn!.getAttribute("aria-label")).toBe("Clear chat");
+    });
+
+    it("creates a GPU activity button that splits placement beside the chat", () => {
+        const gpuBtn = container.find("lilbee-chat-gpu");
+        expect(gpuBtn).not.toBeNull();
+        expect(gpuBtn!.tagName).toBe("BUTTON");
+        expect(gpuBtn!.getAttribute("aria-label")).toBe("GPU activity beside chat");
+        const app = (view as unknown as { app: App }).app;
+        const splitLeaf = new WorkspaceLeaf();
+        app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+        app.workspace.createLeafBySplit = vi.fn().mockReturnValue(splitLeaf);
+        app.workspace.revealLeaf = vi.fn();
+        gpuBtn!.trigger("click");
+        expect(app.workspace.createLeafBySplit).toHaveBeenCalled();
     });
 
     it("creates a paperclip add-file button inside the input area", () => {

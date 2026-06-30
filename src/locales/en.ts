@@ -315,6 +315,7 @@ export const MESSAGES = {
     LABEL_EMBEDDING_MODEL_ICON: "Embed",
     LABEL_ADD_FILE: "Add file",
     LABEL_SAVE_VAULT: "Save to vault",
+    LABEL_OPEN_GPU_ACTIVITY: "GPU activity beside chat",
     LABEL_THINKING: "Thinking...",
     LABEL_STOPPED: "(stopped)",
     LABEL_STOPPED_MD: "*(stopped)*",

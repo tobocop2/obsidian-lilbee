@@ -54,6 +54,7 @@ import {
     streamInterruptedMessage,
 } from "../utils";
 import { SetupWizard } from "./setup-wizard";
+import { revealPlacementBeside } from "./placement-view";
 import { hostedOptions, isUsableHostedRow } from "./catalog-helpers";
 import { electronDialog } from "../utils/file-dialog";
 
@@ -288,6 +289,11 @@ export class ChatView extends ItemView {
         }
 
         actions.createDiv({ cls: "lilbee-toolbar-spacer" });
+
+        const gpuBtn = actions.createEl("button", { cls: "lilbee-chat-gpu" });
+        setIcon(gpuBtn, "cpu");
+        gpuBtn.setAttribute("aria-label", MESSAGES.LABEL_OPEN_GPU_ACTIVITY);
+        gpuBtn.addEventListener("click", () => void revealPlacementBeside(this.app, this.leaf));
 
         const saveBtn = actions.createEl("button", { cls: "lilbee-chat-save" });
         setIcon(saveBtn, "save");

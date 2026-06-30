@@ -386,11 +386,11 @@ describe("LilbeePlugin", () => {
             expect(startSpy).toHaveBeenCalled();
         });
 
-        it("adds all twenty-eight commands", async () => {
+        it("adds all twenty-nine commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(28);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(29);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("model-picker-chat");
             expect(allIds).toContain("model-picker-embedding");
@@ -419,6 +419,7 @@ describe("LilbeePlugin", () => {
             expect(ids).toContain("wiki-drafts");
             expect(ids).toContain("wiki-generate");
             expect(ids).toContain("open-placement");
+            expect(ids).toContain("open-placement-beside-chat");
         });
 
         it("add-file command returns false when no active file", async () => {
@@ -451,6 +452,42 @@ describe("LilbeePlugin", () => {
             )![0];
             cmd.checkCallback(false);
             expect(addSpy).toHaveBeenCalledWith(file);
+        });
+
+        it("open-placement-beside-chat returns false when lilbee is not ready", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(false);
+            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "open-placement-beside-chat",
+            )![0];
+            expect(cmd.checkCallback(true)).toBe(false);
+        });
+
+        it("open-placement-beside-chat returns false when no chat view is open", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "open-placement-beside-chat",
+            )![0];
+            expect(cmd.checkCallback(true)).toBe(false);
+        });
+
+        it("open-placement-beside-chat splits placement beside the chat leaf", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const chatLeaf = new WorkspaceLeaf();
+            const splitLeaf = new WorkspaceLeaf();
+            plugin.app.workspace.getLeavesOfType = vi.fn((t: string) => (t === "lilbee-chat" ? [chatLeaf] : []));
+            plugin.app.workspace.createLeafBySplit = vi.fn().mockReturnValue(splitLeaf);
+            plugin.app.workspace.revealLeaf = vi.fn();
+            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "open-placement-beside-chat",
+            )![0];
+            expect(cmd.checkCallback(true)).toBe(true);
+            cmd.checkCallback(false);
+            expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledWith(chatLeaf, "vertical");
         });
 
         it("add-folder command returns false when no active file", async () => {

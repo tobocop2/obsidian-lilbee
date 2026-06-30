@@ -80,7 +80,7 @@ import { SetupWizard } from "./views/setup-wizard";
 import { TaskCenterView, VIEW_TYPE_TASKS } from "./views/task-center";
 import { WikiView, VIEW_TYPE_WIKI } from "./views/wiki-view";
 import { MemoriesView, VIEW_TYPE_MEMORIES } from "./views/memories-view";
-import { PlacementView, VIEW_TYPE_PLACEMENT } from "./views/placement-view";
+import { PlacementView, VIEW_TYPE_PLACEMENT, revealPlacementBeside } from "./views/placement-view";
 import { RememberModal } from "./views/remember-modal";
 import { LintModal } from "./views/lint-modal";
 import { DraftModal } from "./views/draft-modal";
@@ -932,6 +932,18 @@ export default class LilbeePlugin extends Plugin {
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) void this.activatePlacementView();
+                return true;
+            },
+        });
+
+        this.addCommand({
+            id: "open-placement-beside-chat",
+            name: "Show GPU activity beside chat",
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                const chatLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
+                if (!chatLeaf) return false;
+                if (!checking) void revealPlacementBeside(this.app, chatLeaf);
                 return true;
             },
         });

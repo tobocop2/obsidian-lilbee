@@ -1,4 +1,4 @@
-import { ItemView, Notice, Platform, WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, Platform, WorkspaceLeaf, type App } from "obsidian";
 import type LilbeePlugin from "../main";
 import { isHttpStatus } from "../api";
 import { displayLabelForRef } from "../utils/model-ref";
@@ -20,6 +20,19 @@ import { MESSAGES } from "../locales/en";
 import { errorMessage } from "../utils";
 
 export const VIEW_TYPE_PLACEMENT = "lilbee-placement";
+
+/** Open the GPU placement view in a split beside `sourceLeaf` so live GPU
+ *  activity sits next to the chat. Reuses an existing placement leaf if open. */
+export async function revealPlacementBeside(app: App, sourceLeaf: WorkspaceLeaf): Promise<void> {
+    const existing = app.workspace.getLeavesOfType(VIEW_TYPE_PLACEMENT);
+    if (existing.length > 0) {
+        app.workspace.revealLeaf(existing[0]);
+        return;
+    }
+    const leaf = app.workspace.createLeafBySplit(sourceLeaf, "vertical");
+    await leaf.setViewState({ type: VIEW_TYPE_PLACEMENT, active: false });
+    app.workspace.revealLeaf(leaf);
+}
 
 const PREVIEW_DEBOUNCE_MS = 350;
 const HTTP_CONFLICT = 409;
