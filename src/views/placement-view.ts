@@ -350,7 +350,10 @@ export class PlacementView extends ItemView {
             const refs = this.gpuBars.get(gpu.index);
             if (!refs) continue;
             const pct = gpu.utilization_pct;
-            refs.fill.setCssProps({ width: `${pct === null ? 0 : this.clampPct(pct)}%` });
+            const clamped = pct === null ? 0 : this.clampPct(pct);
+            refs.fill.setCssProps({ width: `${clamped}%` });
+            // Glow only while the card is actually working; idle bars stay flat.
+            refs.fill.toggleClass("is-active", clamped > 0);
             refs.util.setText(pct === null ? MESSAGES.PLACEMENT_UTIL_NA : MESSAGES.PLACEMENT_UTIL(this.clampPct(pct)));
             refs.mem.setText(MESSAGES.PLACEMENT_MEM_FREE(formatGb(gpu.free_bytes), formatGb(gpu.total_bytes)));
         }
@@ -369,14 +372,16 @@ export class PlacementView extends ItemView {
     private renderFooter(container: HTMLElement, data: PlacementResponse): void {
         const footer = container.createDiv({ cls: "lilbee-placement-footer" });
         const fit = footer.createSpan({ cls: "lilbee-placement-fit" });
+        fit.createSpan({ cls: "lilbee-placement-fit-dot" });
+        const label = fit.createSpan({ cls: "lilbee-placement-fit-label" });
         if (this.unplaceable.length > 0) {
             fit.addClass("is-unfit");
-            fit.setText(MESSAGES.PLACEMENT_WONT_FIT(this.unplaceable.join(", ")));
+            label.setText(MESSAGES.PLACEMENT_WONT_FIT(this.unplaceable.join(", ")));
         } else if (this.mode === PLACEMENT_MODE.AUTO) {
             fit.addClass("is-muted");
-            fit.setText(MESSAGES.PLACEMENT_AUTO_MANAGED);
+            label.setText(MESSAGES.PLACEMENT_AUTO_MANAGED);
         } else {
-            fit.setText(MESSAGES.PLACEMENT_FITS);
+            label.setText(MESSAGES.PLACEMENT_FITS);
         }
         this.renderFooterButtons(footer, data);
     }

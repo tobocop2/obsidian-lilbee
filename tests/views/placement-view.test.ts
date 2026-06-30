@@ -619,6 +619,17 @@ describe("PlacementView live usage bars", () => {
         expect(contentEl.findAll("lilbee-placement-bar-fill")[0].style.width).toBe("73%");
         expect(contentEl.findAll("lilbee-placement-util")[0].textContent).toBe("73%");
         expect(contentEl.findAll("lilbee-placement-mem")[0].textContent).toBe("5.0 GB / 24.0 GB free");
+        // Working cards glow; idle cards do not.
+        expect(contentEl.findAll("lilbee-placement-bar-fill")[0].classList.contains("is-active")).toBe(true);
+    });
+
+    it("clears the glow when a card goes idle", async () => {
+        const { view, contentEl } = await openView(makePlugin(makeApi()));
+        const applier = view as unknown as StatsApplier;
+        applier.applyStats([{ index: 0, utilization_pct: 40, free_bytes: 5 * GB, total_bytes: 24 * GB }]);
+        expect(contentEl.findAll("lilbee-placement-bar-fill")[0].classList.contains("is-active")).toBe(true);
+        applier.applyStats([{ index: 0, utilization_pct: 0, free_bytes: 5 * GB, total_bytes: 24 * GB }]);
+        expect(contentEl.findAll("lilbee-placement-bar-fill")[0].classList.contains("is-active")).toBe(false);
     });
 
     it("shows an em dash and empties the bar when utilization is unavailable", async () => {

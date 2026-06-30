@@ -4537,18 +4537,41 @@ button.lilbee-model-chip-select:focus-visible {
 }
 .lilbee-placement-bar {
     flex: 1;
-    height: 8px;
-    border-radius: 5px;
+    height: 11px;
+    border-radius: 6px;
     background: var(--background-modifier-border);
-    overflow: hidden;
+    /* visible: let the active-bar glow spill past the track */
+    overflow: visible;
     min-width: 80px;
 }
 .lilbee-placement-bar-fill {
     height: 100%;
     width: 0;
     background: var(--interactive-accent);
-    border-radius: 5px;
-    transition: width 0.6s ease;
+    border-radius: 6px;
+    transition:
+        width 0.6s ease,
+        box-shadow 0.5s ease,
+        filter 0.5s ease;
+}
+/* A bar only glows while its card is actually doing work (util > 0); idle bars
+   stay flat. Soft, slow breath — never obnoxious — and off when the user has
+   reduced motion enabled. */
+@media (prefers-reduced-motion: no-preference) {
+    .lilbee-placement-bar-fill.is-active {
+        animation: lilbee-gpu-glow 1.4s ease-in-out infinite;
+    }
+}
+@keyframes lilbee-gpu-glow {
+    0%,
+    100% {
+        box-shadow: 0 0 2px 0 color-mix(in srgb, var(--interactive-accent) 45%, transparent);
+        filter: brightness(1);
+    }
+    50% {
+        box-shadow: 0 0 9px 1px color-mix(in srgb, var(--interactive-accent) 80%, transparent);
+        filter: brightness(1.13);
+    }
 }
 .lilbee-placement-roles {
     display: flex;
@@ -4668,16 +4691,41 @@ button.lilbee-model-chip-select:focus-visible {
     padding-top: 14px;
     border-top: 1px solid var(--background-modifier-border);
 }
+/* Fit status reads as a bold pill with a status dot, not thin throwaway text. */
 .lilbee-placement-fit {
-    flex: 1;
-    font-size: 0.88em;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.95em;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 999px;
     color: var(--text-success);
+    background: color-mix(in srgb, var(--text-success) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--text-success) 42%, transparent);
 }
+.lilbee-placement-fit-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 7px currentColor;
+    flex: 0 0 auto;
+}
+/* Auto-managed is informational, not a pass/fail verdict: keep it understated. */
 .lilbee-placement-fit.is-muted {
     color: var(--text-muted);
+    font-weight: 500;
+    background: transparent;
+    border-color: transparent;
+}
+.lilbee-placement-fit.is-muted .lilbee-placement-fit-dot {
+    box-shadow: none;
 }
 .lilbee-placement-fit.is-unfit {
     color: var(--text-error);
+    background: color-mix(in srgb, var(--text-error) 16%, transparent);
+    border-color: color-mix(in srgb, var(--text-error) 48%, transparent);
 }
 .lilbee-placement-btn {
     padding: 6px 13px;
