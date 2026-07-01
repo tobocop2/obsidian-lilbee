@@ -1,5 +1,6 @@
 import { App, ButtonComponent, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
+import { LilbeeClient } from "./api";
 import type { ReleaseInfo } from "./binary-manager";
 import {
     CAPABILITY,
@@ -27,7 +28,7 @@ import type {
     ServerMode,
 } from "./types";
 import { exportDiagnostics } from "./diagnostics-export";
-import { formatBytes, reportForVault } from "./storage-stats";
+import { reportForVault } from "./storage-stats";
 import { MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo, matchModelOption } from "./utils/model-ref";
 import { CatalogModal } from "./views/catalog-modal";
@@ -41,6 +42,7 @@ import {
     percentFromSse,
     errorMessage,
     extractSseErrorMessage,
+    formatDiskSize,
     noticeForResultError,
     getRelevantSystemMemoryGB,
     noticeServerUnreachableIfApplicable,
@@ -329,7 +331,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         checkBtn.setDisabled(true);
         checkBtn.setButtonText(MESSAGES.STATUS_DOWNLOADING);
         progress.panel.show();
-        progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatBytes(release.sizeBytes)));
+        progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatDiskSize(release.sizeBytes)));
         try {
             await this.plugin.updateServer(release, (msg) => progress.phase.setText(msg));
             new Notice(MESSAGES.NOTICE_UPDATED_TO(release.tag));
@@ -2179,18 +2181,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         statusEl.empty();
         statusEl.classList.remove("lilbee-health-ok", "lilbee-health-error");
         const dot = statusEl.createDiv({ cls: "lilbee-health-dot" });
-        try {
-            const controller = new AbortController();
-            const timeout = window.setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
-            const response = await window.fetch(url, { signal: controller.signal });
-            window.clearTimeout(timeout);
-            const ok = response.ok;
-            dot.classList.add(ok ? "is-ok" : "is-error");
-            statusEl.classList.add(ok ? "lilbee-health-ok" : "lilbee-health-error");
-        } catch {
-            dot.classList.add("is-error");
-            statusEl.classList.add("lilbee-health-error");
-        }
+        const ok = await LilbeeClient.probe(url, CHECK_TIMEOUT_MS);
+        dot.classList.add(ok ? "is-ok" : "is-error");
+        statusEl.classList.add(ok ? "lilbee-health-ok" : "lilbee-health-error");
     }
 
     private async loadModels(container: HTMLElement): Promise<void> {
@@ -2476,6 +2469,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
 function appendStorageRow(parent: HTMLElement, label: string, bytes: number, detail?: string): void {
     const row = parent.createDiv({ cls: "lilbee-storage-row" });
     row.createSpan({ text: label, cls: "lilbee-storage-row-label" });
-    row.createSpan({ text: formatBytes(bytes), cls: "lilbee-storage-row-bytes" });
+    row.createSpan({ text: formatDiskSize(bytes), cls: "lilbee-storage-row-bytes" });
     if (detail) row.createSpan({ text: detail, cls: "lilbee-storage-row-detail" });
 }

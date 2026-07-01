@@ -154,6 +154,16 @@ export function formatRate(bytesPerSecond: number): string {
     return `${formatBytes(bytesPerSecond)}/s`;
 }
 
+// Decimal (SI, 1000-based) sizing for disk figures, which the OS reports in
+// decimal. formatBytes above is binary (1024) for in-flight transfer/progress.
+export function formatDiskSize(bytes: number): string {
+    if (!bytes) return "0 B";
+    const exp = Math.min(BYTE_UNITS.length - 1, Math.floor(Math.log10(bytes) / 3));
+    const value = bytes / 10 ** (exp * 3);
+    const precision = value >= 100 ? 0 : value >= 10 ? 1 : 2;
+    return `${value.toFixed(precision)} ${BYTE_UNITS[exp]}`;
+}
+
 /** Pick the right session-token-invalid notice for the active server mode. */
 export function sessionTokenInvalidMessage(serverMode: ServerMode): string {
     return serverMode === SERVER_MODE.MANAGED

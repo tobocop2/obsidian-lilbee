@@ -145,6 +145,21 @@ export class LilbeeClient {
         this.baseUrl = url;
     }
 
+    /** Reachability probe for an arbitrary URL. True on an ok response, false on
+     * any error or timeout. Keeps browser fetch inside this module. */
+    static async probe(url: string, timeoutMs: number): Promise<boolean> {
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const res = await window.fetch(url, { signal: controller.signal });
+            return res.ok;
+        } catch {
+            return false;
+        } finally {
+            window.clearTimeout(timer);
+        }
+    }
+
     private authHeaders(): Record<string, string> {
         if (!this.token) return {};
         return { Authorization: `Bearer ${this.token}` };

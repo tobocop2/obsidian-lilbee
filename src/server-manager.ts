@@ -260,6 +260,8 @@ export class ServerManager {
             /* v8 ignore next -- waitForReady runs only after waitForPortFile sets the port, so url is always non-empty */
             if (url) {
                 try {
+                    // Bootstrap probe via the injectable node abstraction: runs during
+                    // spawn before any LilbeeClient exists, and stays test-swappable.
                     const res = await node.fetch(`${url}/api/health`);
                     if (res.ok) return;
                 } catch {
