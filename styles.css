@@ -1257,37 +1257,9 @@
     font-weight: 500;
 }
 
-.lilbee-pill-pick {
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-}
-
-.lilbee-pill-task-chat,
-.lilbee-pill-task-embedding,
-.lilbee-pill-task-vision {
-    background: var(--background-secondary);
-    color: var(--text-muted);
-}
-
-.lilbee-pill-task-rerank {
-    background: rgba(56, 139, 176, 0.15);
-    color: rgb(56, 139, 176);
-}
-
 .lilbee-pill-installed {
     background: var(--background-modifier-success);
     color: var(--text-on-accent);
-}
-
-.lilbee-pill-active {
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-}
-
-.lilbee-pill-provider {
-    background: var(--background-modifier-border);
-    color: var(--text-muted);
-    font-style: italic;
 }
 
 /* Section Headings */
