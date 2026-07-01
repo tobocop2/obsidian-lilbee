@@ -55,7 +55,7 @@
     "prettier": "^3.8.3",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.1",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.9"
   },
   "nano-staged": {
     "src/**/*.ts": [
