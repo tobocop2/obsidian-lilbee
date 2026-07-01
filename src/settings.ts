@@ -11,13 +11,21 @@ import {
     DEFAULT_SETTINGS,
     HOSTED_SOURCES,
     MODEL_TASK,
+    SEARCH_CHUNK_TYPE,
     SERVER_MODE,
     SERVER_STATE,
     SSE_EVENT,
     TASK_TYPE,
     ERROR_NAME,
 } from "./types";
-import type { CatalogEntry, ConfigResponse, InstalledModel, LilbeeSettings, ServerMode } from "./types";
+import type {
+    CatalogEntry,
+    ConfigResponse,
+    InstalledModel,
+    LilbeeSettings,
+    SearchChunkType,
+    ServerMode,
+} from "./types";
 import { exportDiagnostics } from "./diagnostics-export";
 import { formatBytes, reportForVault } from "./storage-stats";
 import { MESSAGES } from "./locales/en";
@@ -1901,12 +1909,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_WIKI_SEARCH_MODE)
             .addDropdown((dropdown) => {
                 dropdown
-                    .addOption("all", MESSAGES.LABEL_SEARCH_ALL)
-                    .addOption("wiki", MESSAGES.LABEL_SEARCH_WIKI)
-                    .addOption("raw", MESSAGES.LABEL_SEARCH_RAW)
+                    .addOption(SEARCH_CHUNK_TYPE.ALL, MESSAGES.LABEL_SEARCH_ALL)
+                    .addOption(SEARCH_CHUNK_TYPE.WIKI, MESSAGES.LABEL_SEARCH_WIKI)
+                    .addOption(SEARCH_CHUNK_TYPE.RAW, MESSAGES.LABEL_SEARCH_RAW)
                     .setValue(this.plugin.settings.searchChunkType)
                     .onChange(async (value) => {
-                        this.plugin.settings.searchChunkType = value as "all" | "wiki" | "raw";
+                        this.plugin.settings.searchChunkType = value as SearchChunkType;
                         await this.plugin.saveSettings();
                     });
             });

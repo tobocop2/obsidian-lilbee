@@ -16,6 +16,7 @@ import {
     CONFIG_KEY,
     HOSTED_SOURCES,
     MODEL_TASK,
+    SEARCH_CHUNK_TYPE,
     SSE_EVENT,
     TASK_TYPE,
     ERROR_NAME,
@@ -271,8 +272,8 @@ export class ChatView extends ItemView {
 
         // Search mode toggle (only shown when wiki feature is enabled)
         const wikiEnabled = this.plugin.settings.wikiEnabled;
-        if (!wikiEnabled && this.plugin.settings.searchChunkType === "wiki") {
-            this.plugin.settings.searchChunkType = "all";
+        if (!wikiEnabled && this.plugin.settings.searchChunkType === SEARCH_CHUNK_TYPE.WIKI) {
+            this.plugin.settings.searchChunkType = SEARCH_CHUNK_TYPE.ALL;
         }
         if (wikiEnabled) {
             const modeGroup = actions.createDiv({ cls: "lilbee-search-mode" });
