@@ -12,7 +12,11 @@ import type {
     DocumentResult,
     DocumentsResponse,
     GenerationOptions,
+    GpuInfo,
+    HealthResponse,
     InstalledResponse,
+    PlacementResponse,
+    PlacementSpec,
     MemoryFlagsResponse,
     MemoryItem,
     MemoryKind,
@@ -95,6 +99,16 @@ export class RateLimitedError extends Error {
 
 export type RequestOutcome = "ok" | "auth_error" | "server_error" | "unreachable" | "starting";
 
+/**
+ * True when a `fetchResult` error came from a specific HTTP status. `assertOk`
+ * formats non-ok responses as `Server responded <status>: <body>`, so callers
+ * (e.g. the placement view distinguishing a 409 "apply not enabled" from a real
+ * failure) can branch on the status without a bespoke error type per route.
+ */
+export function isHttpStatus(error: Error, status: number): boolean {
+    return error.message.startsWith(`Server responded ${status}`);
+}
+
 export class LilbeeClient {
     private token: string | null = null;
     private tokenProvider: (() => string | null) | null = null;
@@ -129,6 +143,21 @@ export class LilbeeClient {
      * the target server without tearing down the existing client instance. */
     setBaseUrl(url: string): void {
         this.baseUrl = url;
+    }
+
+    /** Reachability probe for an arbitrary URL. True on an ok response, false on
+     * any error or timeout. Keeps browser fetch inside this module. */
+    static async probe(url: string, timeoutMs: number): Promise<boolean> {
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const res = await window.fetch(url, { signal: controller.signal });
+            return res.ok;
+        } catch {
+            return false;
+        } finally {
+            window.clearTimeout(timer);
+        }
     }
 
     private authHeaders(): Record<string, string> {
@@ -258,7 +287,11 @@ export class LilbeeClient {
                     throw err;
                 }
                 if (err instanceof Error && err.message.startsWith("Server responded")) {
-                    this.recordOutcome("server_error");
+                    // A 4xx is a reachable server rejecting this request (validation,
+                    // not-found, conflict) that the caller handles — don't flag a
+                    // global server error. Only 5xx flips the status to error.
+                    const status = parseInt(err.message.slice("Server responded ".length), 10);
+                    this.recordOutcome(status >= 500 ? "server_error" : "ok");
                     throw err;
                 }
                 if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
@@ -270,7 +303,7 @@ export class LilbeeClient {
         throw lastError;
     }
 
-    async health(): Promise<Result<{ status: string; version: string }, Error>> {
+    async health(): Promise<Result<HealthResponse, Error>> {
         return this.fetchResult(`${this.baseUrl}/api/health`);
     }
 
@@ -421,6 +454,30 @@ export class LilbeeClient {
         yield* this.parseSSE(res);
     }
 
+    /**
+     * Upload file CONTENT to /api/add/upload and stream ingest progress. Used
+     * when the server is remote (external mode): the plugin can't hand it a
+     * server-readable path, so it sends the bytes straight from the vault.
+     * FormData sets its own multipart Content-Type, so no JSON header here.
+     */
+    async *uploadFiles(
+        files: { name: string; data: ArrayBuffer }[],
+        signal?: AbortSignal,
+    ): AsyncGenerator<SSEEvent, void> {
+        const form = new FormData();
+        for (const file of files) form.append("data", new Blob([file.data]), file.name);
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/add/upload`,
+            {
+                method: "POST",
+                headers: { ...this.authHeaders() },
+                body: form,
+            },
+            { stream: true, signal },
+        );
+        yield* this.parseSSE(res);
+    }
+
     async *syncStream(signal?: AbortSignal, options?: SyncOptions): AsyncGenerator<SSEEvent, void> {
         const body: Record<string, unknown> = {};
         if (options?.forceRebuild) body.force_rebuild = true;
@@ -470,6 +527,7 @@ export class LilbeeClient {
         size?: "small" | "medium" | "large";
         sort?: "featured" | "downloads" | "name" | "size_asc" | "size_desc";
         featured?: boolean;
+        installed?: boolean;
         limit?: number;
         offset?: number;
     }): Promise<Result<CatalogResponse, Error>> {
@@ -479,6 +537,7 @@ export class LilbeeClient {
         if (params?.size) qs.set("size", params.size);
         if (params?.sort) qs.set("sort", params.sort);
         if (params?.featured !== undefined) qs.set("featured", String(params.featured));
+        if (params?.installed !== undefined) qs.set("installed", String(params.installed));
         if (params?.limit !== undefined) qs.set("limit", String(params.limit));
         if (params?.offset !== undefined) qs.set("offset", String(params.offset));
         const suffix = qs.toString() ? `?${qs}` : "";
@@ -565,11 +624,14 @@ export class LilbeeClient {
         maxPages?: number | null,
         signal?: AbortSignal,
         renderMode?: CrawlRenderMode,
+        includeSubdomains?: boolean,
     ): AsyncGenerator<SSEEvent, void> {
         const body: Record<string, unknown> = { url };
         if (depth !== undefined) body.depth = depth;
+        // max_pages of 0 means "unlimited" on the server, so pass it through.
         if (maxPages !== undefined) body.max_pages = maxPages;
         if (renderMode !== undefined) body.render_mode = renderMode;
+        if (includeSubdomains !== undefined) body.include_subdomains = includeSubdomains;
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/crawl`,
             {
@@ -623,6 +685,54 @@ export class LilbeeClient {
             method: "PUT",
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
             body: JSON.stringify({ model }),
+        });
+    }
+
+    /** Detected GPUs with current free/total VRAM. Cheaper than placement() for
+     * polling live memory usage (no plan re-resolve of roles). */
+    async gpus(): Promise<Result<GpuInfo[], Error>> {
+        return this.fetchResult<GpuInfo[]>(`${this.baseUrl}/api/gpus`, { headers: this.authHeaders() });
+    }
+
+    /** Live per-GPU utilization + free memory, streamed as SSE until aborted. */
+    async *gpuStatsStream(signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/gpus/stream`,
+            { headers: this.authHeaders() },
+            { stream: true, signal },
+        );
+        yield* this.parseSSE(res);
+    }
+
+    /** The current effective placement (auto plan or active manual spec). */
+    async placement(): Promise<Result<PlacementResponse, Error>> {
+        return this.fetchResult<PlacementResponse>(`${this.baseUrl}/api/placement`, { headers: this.authHeaders() });
+    }
+
+    /** Dry-run a candidate spec (or auto when null); reports fit without persisting. */
+    async placementPreview(spec: PlacementSpec | null): Promise<Result<PlacementResponse, Error>> {
+        return this.fetchResult<PlacementResponse>(`${this.baseUrl}/api/placement/preview`, {
+            method: "POST",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ spec }),
+        });
+    }
+
+    /** Apply a manual spec: persists it and rebuilds the fleet. Returns 409 when
+     * the server has not enabled HTTP placement (older or shared deployments). */
+    async applyPlacement(spec: PlacementSpec): Promise<Result<PlacementResponse, Error>> {
+        return this.fetchResult<PlacementResponse>(`${this.baseUrl}/api/placement`, {
+            method: "PUT",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ spec }),
+        });
+    }
+
+    /** Clear the manual spec, returning to auto placement (rebuilds the fleet). */
+    async clearPlacement(): Promise<Result<PlacementResponse, Error>> {
+        return this.fetchResult<PlacementResponse>(`${this.baseUrl}/api/placement`, {
+            method: "DELETE",
+            headers: this.authHeaders(),
         });
     }
 

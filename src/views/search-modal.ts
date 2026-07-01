@@ -1,6 +1,6 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { DocumentResult, SearchChunkType } from "../types";
+import { SEARCH_CHUNK_TYPE, type DocumentResult, type SearchChunkType } from "../types";
 import { renderDocumentResult } from "./results";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, debounce, DEBOUNCE_MS } from "../utils";
@@ -61,8 +61,8 @@ export class SearchModal extends Modal {
 
     private renderSearchModeToggle(container: HTMLElement): void {
         const wikiEnabled = this.plugin.settings.wikiEnabled;
-        if (!wikiEnabled && this.plugin.settings.searchChunkType === "wiki") {
-            this.plugin.settings.searchChunkType = "all";
+        if (!wikiEnabled && this.plugin.settings.searchChunkType === SEARCH_CHUNK_TYPE.WIKI) {
+            this.plugin.settings.searchChunkType = SEARCH_CHUNK_TYPE.ALL;
         }
         if (!wikiEnabled) return;
         const modes: { value: SearchChunkType; label: string }[] = [

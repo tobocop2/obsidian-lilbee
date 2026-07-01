@@ -17,6 +17,22 @@ export interface DocumentResult {
 export interface AskResponse {
     answer: string;
     sources: Source[];
+    /**
+     * Subset of `sources` the answer actually cited. Present on lilbee servers
+     * that distinguish grounded answers from off-corpus ones; absent on older
+     * servers, so always optional.
+     */
+    cited_sources?: Source[];
+}
+
+/** `GET /api/health`. `chat_ready`/`chat_ctx` are absent on older servers. */
+export interface HealthResponse {
+    status: string;
+    version: string;
+    /** True once the chat engine is loaded and can serve a first token. */
+    chat_ready?: boolean;
+    /** Per-slot context window the chat engine serves; null when not up. */
+    chat_ctx?: number | null;
 }
 
 export interface Source {
@@ -93,6 +109,17 @@ export interface ConfigResponse {
     max_reasoning_chars?: number;
     model_keep_alive?: string;
     gpu_memory_fraction?: number;
+    // Fleet / GPU placement knobs (lilbee feat/local-model-api). Replica counts
+    // of 0 mean "auto" (one per GPU). `placement` is the manual spec JSON when
+    // set; it is read-only here — change it through the placement endpoints, not
+    // a generic config PATCH.
+    embed_replicas?: number;
+    vision_replicas?: number;
+    flash_attention?: boolean | null;
+    kv_cache_type?: KvCacheType;
+    n_gpu_layers?: number | null;
+    gpu_devices?: string | null;
+    placement?: string | null;
     candidate_multiplier?: number;
     max_distance?: number;
     min_relevance_score?: number;
@@ -109,6 +136,16 @@ export const CRAWL_RENDER_MODE = {
     HTTP: "http",
     BROWSER: "browser",
 } as const satisfies Record<string, CrawlRenderMode>;
+
+/** KV-cache element type for the chat fleet. Mirrors the server's KvCacheType. */
+export type KvCacheType = "f16" | "f32" | "q8_0" | "q4_0";
+
+export const KV_CACHE_TYPE = {
+    F16: "f16",
+    F32: "f32",
+    Q8_0: "q8_0",
+    Q4_0: "q4_0",
+} as const satisfies Record<string, KvCacheType>;
 
 export const CONFIG_KEY = {
     RAG_SYSTEM_PROMPT: "rag_system_prompt",
@@ -349,7 +386,9 @@ export interface MemoryFlagsResponse {
 }
 
 export interface MemoryRemoveResponse {
-    removed: string;
+    id: string;
+    /** False when the id was unknown (the server no longer raises on a miss). */
+    deleted: boolean;
 }
 
 export interface MemoryExtractedItem {
@@ -570,6 +609,7 @@ export const SSE_EVENT = {
     ALREADY_INGESTING: "already_ingesting",
     BATCH_PROGRESS: "batch_progress",
     MEMORY_EXTRACTED: "memory_extracted",
+    GPU_STATS: "gpu_stats",
 } as const;
 
 export interface SetupStartPayload {
@@ -867,6 +907,87 @@ export const MODEL_TASK = {
     EMBEDDING: "embedding",
     RERANK: "rerank",
 } as const satisfies Record<string, ModelTask>;
+
+// ---------------------------------------------------------------------------
+// GPU placement / fleet (lilbee feat/local-model-api)
+// ---------------------------------------------------------------------------
+
+/** A worker role in the model fleet. Mirrors the server's WorkerRole. */
+export type WorkerRole = "chat" | "embed" | "rerank" | "vision";
+
+export const WORKER_ROLE = {
+    CHAT: "chat",
+    EMBED: "embed",
+    RERANK: "rerank",
+    VISION: "vision",
+} as const satisfies Record<string, WorkerRole>;
+
+/** Roles whose replica count is user-tunable; the others are always single. */
+export const REPLICA_ROLES: ReadonlySet<WorkerRole> = new Set<WorkerRole>([WORKER_ROLE.EMBED, WORKER_ROLE.VISION]);
+
+/** Whether placement is auto (planner-chosen) or a manual pinned spec. */
+export type PlacementMode = "auto" | "manual";
+
+export const PLACEMENT_MODE = {
+    AUTO: "auto",
+    MANUAL: "manual",
+} as const satisfies Record<string, PlacementMode>;
+
+/** One detected GPU. Mirrors the server's GpuInfoResponse. */
+export interface GpuInfo {
+    index: number;
+    backend: string;
+    label: string;
+    name: string;
+    total_bytes: number;
+    free_bytes: number;
+}
+
+/** A live per-GPU activity snapshot from the GET /api/gpus/stream SSE stream.
+ * `utilization_pct` is compute load (0-100), or null for backends that can't
+ * report it; `free_bytes` moves as models load and ingest runs. */
+export interface GpuStat {
+    index: number;
+    utilization_pct: number | null;
+    free_bytes: number;
+    total_bytes: number;
+}
+
+/** Payload of a `gpu_stats` SSE event: a snapshot for every detected GPU. */
+export interface GpuStatsPayload {
+    gpus: GpuStat[];
+}
+
+/** Where one role's model is placed in the resolved plan. Mirrors RolePlacementResponse. */
+export interface RolePlacement {
+    role: WorkerRole;
+    model: string;
+    devices: number[];
+    tensor_split: number[] | null;
+    replicas: number;
+    /** Estimated memory footprint of the role's model; absent on older servers. */
+    vram_bytes?: number | null;
+}
+
+/** `GET /api/placement`, `POST /api/placement/preview`, and the apply response. */
+export interface PlacementResponse {
+    gpus: GpuInfo[];
+    roles: RolePlacement[];
+    /** Roles that cannot fit the current hardware under this plan. */
+    unplaceable: string[];
+    manual: boolean;
+    spec_json: string | null;
+}
+
+/** One role entry in a manual placement spec. */
+export interface PlacementRoleSpec {
+    devices: number[];
+    tensor_split?: number[];
+    replicas?: number;
+}
+
+/** A manual placement spec: role to pinning. Sent to preview and apply. */
+export type PlacementSpec = Partial<Record<WorkerRole, PlacementRoleSpec>>;
 
 export const ERROR_NAME = {
     ABORT_ERROR: "AbortError",

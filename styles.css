@@ -619,7 +619,8 @@
 }
 
 .lilbee-chat-save,
-.lilbee-chat-clear {
+.lilbee-chat-clear,
+.lilbee-chat-gpu {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -634,7 +635,8 @@
 }
 
 .lilbee-chat-save:hover,
-.lilbee-chat-clear:hover {
+.lilbee-chat-clear:hover,
+.lilbee-chat-gpu:hover {
     background-color: var(--background-modifier-hover);
     color: var(--text-normal);
 }
@@ -1255,37 +1257,9 @@
     font-weight: 500;
 }
 
-.lilbee-pill-pick {
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-}
-
-.lilbee-pill-task-chat,
-.lilbee-pill-task-embedding,
-.lilbee-pill-task-vision {
-    background: var(--background-secondary);
-    color: var(--text-muted);
-}
-
-.lilbee-pill-task-rerank {
-    background: rgba(56, 139, 176, 0.15);
-    color: rgb(56, 139, 176);
-}
-
 .lilbee-pill-installed {
     background: var(--background-modifier-success);
     color: var(--text-on-accent);
-}
-
-.lilbee-pill-active {
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-}
-
-.lilbee-pill-provider {
-    background: var(--background-modifier-border);
-    color: var(--text-muted);
-    font-style: italic;
 }
 
 /* Section Headings */
@@ -4438,4 +4412,336 @@ button.lilbee-model-chip-select:focus-visible {
 /* Cursor affordance for clickable status-bar items and chips. */
 .lilbee-clickable {
     cursor: pointer;
+}
+
+/* ── GPU placement view ─────────────────────────────────────────────────── */
+.lilbee-placement-container {
+    padding: 18px 22px;
+    overflow-y: auto;
+}
+.lilbee-placement-body {
+    position: relative;
+    max-width: 760px;
+    margin: 0 auto;
+}
+.lilbee-placement-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+.lilbee-placement-header h2 {
+    margin: 0;
+    font-size: 1.25em;
+}
+.lilbee-placement-state {
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 9px;
+    border-radius: 10px;
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+}
+.lilbee-placement-state.is-manual,
+.lilbee-placement-state.is-applying {
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+}
+.lilbee-placement-empty {
+    color: var(--text-muted);
+    padding: 28px 0;
+    text-align: center;
+}
+.lilbee-placement-section-title {
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin: 18px 0 8px;
+}
+.lilbee-placement-hw {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.lilbee-placement-card {
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 9px;
+    padding: 12px 14px;
+}
+.lilbee-placement-card-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.lilbee-placement-card-name {
+    font-weight: 600;
+    font-size: 1em;
+}
+.lilbee-placement-card-sub {
+    color: var(--text-muted);
+    font-size: 0.82em;
+}
+.lilbee-placement-meter {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+.lilbee-placement-mem {
+    color: var(--text-muted);
+    font-size: 0.82em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    min-width: 120px;
+    text-align: right;
+}
+.lilbee-placement-util {
+    color: var(--text-muted);
+    font-size: 0.82em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    min-width: 38px;
+    text-align: right;
+}
+.lilbee-placement-bar {
+    flex: 1;
+    height: 11px;
+    border-radius: 6px;
+    background: var(--background-modifier-border);
+    /* visible: let the active-bar glow spill past the track */
+    overflow: visible;
+    min-width: 80px;
+}
+.lilbee-placement-bar-fill {
+    height: 100%;
+    width: 0;
+    background: var(--interactive-accent);
+    border-radius: 6px;
+    transition:
+        width 0.6s ease,
+        box-shadow 0.5s ease,
+        filter 0.5s ease;
+}
+/* A bar only glows while its card is actually doing work (util > 0); idle bars
+   stay flat. Soft, slow breath — never obnoxious — and off when the user has
+   reduced motion enabled. */
+@media (prefers-reduced-motion: no-preference) {
+    .lilbee-placement-bar-fill.is-active {
+        animation: lilbee-gpu-glow 1.4s ease-in-out infinite;
+    }
+}
+@keyframes lilbee-gpu-glow {
+    0%,
+    100% {
+        box-shadow: 0 0 2px 0 color-mix(in srgb, var(--interactive-accent) 45%, transparent);
+        filter: brightness(1);
+    }
+    50% {
+        box-shadow: 0 0 9px 1px color-mix(in srgb, var(--interactive-accent) 80%, transparent);
+        filter: brightness(1.13);
+    }
+}
+.lilbee-placement-roles {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 9px;
+    overflow: hidden;
+}
+.lilbee-placement-role-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 11px 14px;
+    background: var(--background-secondary);
+    border-top: 1px solid var(--background-modifier-border);
+}
+.lilbee-placement-role-row:first-child {
+    border-top: none;
+}
+.lilbee-placement-role-unfit {
+    box-shadow: inset 2px 0 0 var(--text-error);
+    background: rgba(var(--color-red-rgb, 233, 49, 71), 0.06);
+}
+.lilbee-placement-badge {
+    flex-shrink: 0;
+    min-width: 58px;
+    text-align: center;
+    font-size: 0.72em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 3px 8px;
+    border-radius: 6px;
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+}
+.lilbee-placement-badge.is-embed {
+    background: var(--color-green, #3fb950);
+}
+.lilbee-placement-badge.is-rerank {
+    background: var(--color-orange, #d29922);
+}
+.lilbee-placement-badge.is-vision {
+    background: var(--color-purple, #a371f7);
+}
+.lilbee-placement-role-model {
+    flex: 1 1 120px;
+    min-width: 90px;
+    color: var(--text-normal);
+    overflow-wrap: anywhere;
+}
+.lilbee-placement-chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.lilbee-placement-chip {
+    padding: 3px 11px;
+    border-radius: 13px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-muted);
+    font-size: 0.8em;
+    cursor: pointer;
+}
+.lilbee-placement-chip.is-on {
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+.lilbee-placement-chip.is-readonly {
+    cursor: default;
+    border-style: dashed;
+    background: transparent;
+}
+.lilbee-placement-chip.is-on.is-readonly {
+    background: transparent;
+    color: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+}
+.lilbee-placement-split {
+    color: var(--text-muted);
+    font-size: 0.78em;
+}
+.lilbee-placement-stepper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 0.82em;
+}
+.lilbee-placement-step {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    cursor: pointer;
+    line-height: 1;
+}
+.lilbee-placement-step.is-readonly {
+    cursor: default;
+    opacity: 0.4;
+}
+.lilbee-placement-step-count {
+    min-width: 26px;
+    text-align: center;
+    color: var(--text-normal);
+}
+.lilbee-placement-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+/* Fit status reads as a bold pill with a status dot, not thin throwaway text. */
+.lilbee-placement-fit {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.95em;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 999px;
+    color: var(--text-success);
+    background: color-mix(in srgb, var(--text-success) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--text-success) 42%, transparent);
+}
+.lilbee-placement-fit-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 7px currentColor;
+    flex: 0 0 auto;
+}
+/* Auto-managed is informational, not a pass/fail verdict: keep it understated. */
+.lilbee-placement-fit.is-muted {
+    color: var(--text-muted);
+    font-weight: 500;
+    background: transparent;
+    border-color: transparent;
+}
+.lilbee-placement-fit.is-muted .lilbee-placement-fit-dot {
+    box-shadow: none;
+}
+.lilbee-placement-fit.is-unfit {
+    color: var(--text-error);
+    background: color-mix(in srgb, var(--text-error) 16%, transparent);
+    border-color: color-mix(in srgb, var(--text-error) 48%, transparent);
+}
+.lilbee-placement-btn {
+    padding: 6px 13px;
+    border-radius: 7px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    cursor: pointer;
+    font-size: 0.85em;
+}
+.lilbee-placement-btn-primary {
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+.lilbee-placement-btn.is-disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+.lilbee-placement-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: var(--background-primary);
+    opacity: 0.92;
+}
+.lilbee-placement-spinner {
+    width: 26px;
+    height: 26px;
+    border: 3px solid var(--background-modifier-border);
+    border-top-color: var(--interactive-accent);
+    border-radius: 50%;
+    animation: lilbee-spin 0.7s linear infinite;
+}
+.lilbee-placement-overlay-text {
+    font-weight: 600;
+}
+.lilbee-placement-role-mem {
+    color: var(--text-muted);
+    font-size: 0.8em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }

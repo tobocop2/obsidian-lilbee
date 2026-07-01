@@ -130,6 +130,10 @@ export class ServerManager {
             LILBEE_CORS_ORIGINS: "app://obsidian.md",
             LILBEE_PARENT_PID: String(process.pid),
             LILBEE_MODELS_DIR: this.opts.modelsDir,
+            // The managed server has exactly one client (this plugin), so applying
+            // GPU placement over HTTP is safe; enable it so the placement view can
+            // apply. A shared `lilbee serve` keeps this off by default.
+            LILBEE_ALLOW_HTTP_PLACEMENT: "true",
         };
         if (this.opts.ragSystemPrompt) {
             env.LILBEE_RAG_SYSTEM_PROMPT = this.opts.ragSystemPrompt;
@@ -256,6 +260,8 @@ export class ServerManager {
             /* v8 ignore next -- waitForReady runs only after waitForPortFile sets the port, so url is always non-empty */
             if (url) {
                 try {
+                    // Bootstrap probe via the injectable node abstraction: runs during
+                    // spawn before any LilbeeClient exists, and stays test-swappable.
                     const res = await node.fetch(`${url}/api/health`);
                     if (res.ok) return;
                 } catch {

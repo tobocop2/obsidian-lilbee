@@ -425,9 +425,9 @@ describe("BinaryManager", () => {
             const writeSpy = vi.spyOn(node, "writeFileSync").mockImplementation(() => {});
 
             const mgr = new BinaryManager("/plugins/lilbee/bin");
-            // A 1 GB asset needs ~1.5 GB; the message reports GB for the requirement and MB for the free space.
+            // A 1 GB asset needs ~1.5x; disk figures render in decimal (SI) units.
             await expect(mgr.download("https://example.com/dl", 1024 ** 3, null)).rejects.toThrow(
-                /need about 1\.5 GB free, but only 500 MB is available/,
+                /need about 1\.61 GB free, but only 524 MB is available/,
             );
             expect(reqSpy).not.toHaveBeenCalled();
             expect(writeSpy).not.toHaveBeenCalled();

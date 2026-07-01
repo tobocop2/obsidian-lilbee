@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { node } from "../src/binary-manager";
-import { dirSizeBytes, formatBytes, reportForVault } from "../src/storage-stats";
+import { dirSizeBytes, reportForVault } from "../src/storage-stats";
 
 function makeFs() {
     const files = new Map<string, number>(); // path → size
@@ -91,32 +91,6 @@ describe("dirSizeBytes", () => {
         fs.dirs.get("/root")!.add("ghost.txt");
         mountFs(fs);
         expect(dirSizeBytes("/root")).toBe(100);
-    });
-});
-
-describe("formatBytes", () => {
-    it("renders 0 explicitly", () => {
-        expect(formatBytes(0)).toBe("0 B");
-    });
-
-    it("renders bytes below a kilobyte", () => {
-        expect(formatBytes(500)).toBe("500 B");
-    });
-
-    it("renders kilobytes", () => {
-        expect(formatBytes(2_500)).toBe("2.50 KB");
-    });
-
-    it("renders megabytes", () => {
-        expect(formatBytes(12_500_000)).toBe("12.5 MB");
-    });
-
-    it("renders gigabytes", () => {
-        expect(formatBytes(2_500_000_000)).toBe("2.50 GB");
-    });
-
-    it("drops decimals once values exceed 100", () => {
-        expect(formatBytes(123_000_000)).toBe("123 MB");
     });
 });
 

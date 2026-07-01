@@ -60,6 +60,7 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 - **Save websites into your vault.** Crawl a single page or a whole docs site; the pages land in your vault as markdown notes you can search, chat with, and cite offline, even after the site changes or goes down.
 - **Reads more than markdown.** PDFs, Office files, ebooks, CSV / TSV / JSON / YAML, 150+ programming languages, plus OCR for scans and photographed pages.
 - **Your models, your machine.** Browse a built-in model catalog straight from Hugging Face Hub, pull one with a click, run it locally. No account needed.
+- **Spreads models across your GPUs.** Chat, embedding, reranking, and vision run as a fleet; lilbee places them automatically, splits a model too big for one card across several, and a GPU placement view lets you assign roles to cards by hand on a multi-GPU box.
 - **Already on Ollama or LM Studio? Keep them.** lilbee manages models for you by default, but it also works with both, so you never have to switch model managers. Their models appear in the same pickers, alongside lilbee's own.
 - **Runs on your computer.** Server, models, index, and vault all stay local; cloud models are opt-in per role, with a persistent indicator when one is active.
 - **Remembers what you tell it.** Turn on memory and lilbee holds onto durable facts about you and how you like your answers, then recalls the relevant ones in later chats no matter which conversation they came from. Off by default, managed from a Memories view, and never mixed into your citations.
@@ -116,6 +117,14 @@ Each role sits on the chat rail, so you can see what's active and switch it mid-
 Reranking is an optional role that re-scores retrieved passages with a cross-encoder before the model answers. When the note that holds the answer is worded around the cause rather than your keywords, plain vector search can rank it too low to make the cut; reranking pulls it back into context. Here's the same question with reranking off, then on; the answer flips from wrong to right.
 
 <p align="center"><img alt="the same question asked with reranking off then on: off returns the wrong fix, on promotes the right note and the answer corrects itself" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/rerank.gif" width="640"></p>
+
+### Place models across your GPUs
+
+lilbee runs its models as a fleet: chat, embedding, reranking, and vision each run in their own process, and lilbee decides where they go. On a single GPU or a Mac's unified memory there's nothing to decide, so it just runs everything together. With two or more GPUs it packs the roles across your cards automatically and splits a model that's too big for one card across several.
+
+The **GPU placement** view (command palette: Open GPU placement) shows where every role runs and how much memory each card has free. On a single device it's a clean read-out of your hardware and what's loaded on it; worker counts for that case live in Settings under Hardware / fleet. On a multi-GPU box you can take over: switch to manual, toggle which cards each role runs on, set how many embedding or vision workers run in parallel, preview the fit, then apply. lilbee rebuilds the fleet on the spot and flags any role that won't fit before you commit.
+
+Applying placement over HTTP is enabled automatically for the plugin's managed server. If you point the plugin at a server you run yourself, set `LILBEE_ALLOW_HTTP_PLACEMENT=true` on it to edit placement from here; otherwise the view stays a read-only read-out.
 
 ### Already running Ollama or LM Studio? Keep them.
 

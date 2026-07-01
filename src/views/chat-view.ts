@@ -16,6 +16,7 @@ import {
     CONFIG_KEY,
     HOSTED_SOURCES,
     MODEL_TASK,
+    SEARCH_CHUNK_TYPE,
     SSE_EVENT,
     TASK_TYPE,
     ERROR_NAME,
@@ -54,6 +55,7 @@ import {
     streamInterruptedMessage,
 } from "../utils";
 import { SetupWizard } from "./setup-wizard";
+import { revealPlacementBeside } from "./placement-view";
 import { hostedOptions, isUsableHostedRow } from "./catalog-helpers";
 import { electronDialog } from "../utils/file-dialog";
 
@@ -143,6 +145,13 @@ export function extractBanner(data: unknown): string | null {
     if (data === null || typeof data !== "object") return null;
     const banner = (data as Record<string, unknown>).banner;
     return typeof banner === "string" && banner.length > 0 ? banner : null;
+}
+
+/** Strip the markdown markers that would otherwise show as raw syntax while text
+ *  streams as plain text (bold `**`, code backticks). The full markdown — bold,
+ *  code blocks, the lot — is rendered once when the message completes. */
+export function plainStream(md: string): string {
+    return md.replace(/\*\*/g, "").replace(/`/g, "");
 }
 
 export class ChatView extends ItemView {
@@ -263,8 +272,8 @@ export class ChatView extends ItemView {
 
         // Search mode toggle (only shown when wiki feature is enabled)
         const wikiEnabled = this.plugin.settings.wikiEnabled;
-        if (!wikiEnabled && this.plugin.settings.searchChunkType === "wiki") {
-            this.plugin.settings.searchChunkType = "all";
+        if (!wikiEnabled && this.plugin.settings.searchChunkType === SEARCH_CHUNK_TYPE.WIKI) {
+            this.plugin.settings.searchChunkType = SEARCH_CHUNK_TYPE.ALL;
         }
         if (wikiEnabled) {
             const modeGroup = actions.createDiv({ cls: "lilbee-search-mode" });
@@ -288,6 +297,11 @@ export class ChatView extends ItemView {
         }
 
         actions.createDiv({ cls: "lilbee-toolbar-spacer" });
+
+        const gpuBtn = actions.createEl("button", { cls: "lilbee-chat-gpu" });
+        setIcon(gpuBtn, "cpu");
+        gpuBtn.setAttribute("aria-label", MESSAGES.LABEL_OPEN_GPU_ACTIVITY);
+        gpuBtn.addEventListener("click", () => void revealPlacementBeside(this.app, this.leaf));
 
         const saveBtn = actions.createEl("button", { cls: "lilbee-chat-save" });
         setIcon(saveBtn, "save");
@@ -863,7 +877,11 @@ export class ChatView extends ItemView {
             state.renderPending = true;
             window.requestAnimationFrame(() => {
                 state.renderPending = false;
-                void this.renderFollowing(() => this.renderMarkdown(textEl, state.fullContent));
+                // Stream as lightweight plain text (markdown markers stripped, so
+                // no raw `**` shows): a synchronous setText that can't stall under
+                // load, so the answer never freezes mid-stream. The DONE event
+                // renders the full formatted markdown once.
+                void this.renderFollowing(() => textEl.setText(plainStream(state.fullContent)));
             });
         };
 
@@ -1012,7 +1030,9 @@ export class ChatView extends ItemView {
         state.reasoningRenderPending = true;
         window.requestAnimationFrame(() => {
             state.reasoningRenderPending = false;
-            void this.renderFollowing(() => this.renderMarkdown(el, state.reasoningContent));
+            // Same lightweight plain-text streaming as the answer (reasoning can
+            // be long — the heavy per-token markdown render stuttered most here).
+            void this.renderFollowing(() => el.setText(plainStream(state.reasoningContent)));
         });
     }
 

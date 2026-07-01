@@ -5,6 +5,8 @@ import {
     Notice,
     Plugin,
     type TAbstractFile,
+    TFile,
+    TFolder,
     type WorkspaceLeaf,
 } from "obsidian";
 import { LilbeeClient, SessionTokenError } from "./api";
@@ -38,6 +40,7 @@ import {
     type CrawlRenderMode,
     type DiagnosticsContext,
     type DotState,
+    type HealthResponse,
     type LilbeeSettings,
     type ManagedServerProgressHandler,
     type ServerMode,
@@ -48,6 +51,7 @@ import {
     type SetupProgressPayload,
     type SetupStartPayload,
     type SyncDone,
+    type SSEEvent,
     type SyncOptions,
     type TaskEntry,
     type VaultAdapter,
@@ -79,6 +83,7 @@ import { SetupWizard } from "./views/setup-wizard";
 import { TaskCenterView, VIEW_TYPE_TASKS } from "./views/task-center";
 import { WikiView, VIEW_TYPE_WIKI } from "./views/wiki-view";
 import { MemoriesView, VIEW_TYPE_MEMORIES } from "./views/memories-view";
+import { PlacementView, VIEW_TYPE_PLACEMENT, revealPlacementBeside } from "./views/placement-view";
 import { RememberModal } from "./views/remember-modal";
 import { LintModal } from "./views/lint-modal";
 import { DraftModal } from "./views/draft-modal";
@@ -236,6 +241,10 @@ export default class LilbeePlugin extends Plugin {
     wikiSync: WikiSync | null = null;
     private healthProbeHandle: number | null = null;
     private serverUnreachable = false;
+    // Chat-engine warmth from /api/health (feat/local-model-api). `chatWarming`
+    // is true when the server is up but the chat role is still cold-loading;
+    // `chatCtx` is the per-slot context window it serves once ready.
+    private chatWarming = false;
     // While > 0, probeServerHealth() bails: llama.cpp serializes requests,
     // so /api/health stalls behind the active stream and would falsely flip
     // the status bar to error.
@@ -305,6 +314,7 @@ export default class LilbeePlugin extends Plugin {
         safeRegisterView(VIEW_TYPE_TASKS, (leaf) => new TaskCenterView(leaf, this));
         safeRegisterView(VIEW_TYPE_WIKI, (leaf) => new WikiView(leaf, this));
         safeRegisterView(VIEW_TYPE_MEMORIES, (leaf) => new MemoriesView(leaf, this));
+        safeRegisterView(VIEW_TYPE_PLACEMENT, (leaf) => new PlacementView(leaf, this));
         this.addSettingTab(new LilbeeSettingTab(this.app, this));
         this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
         this.taskQueue.onChange(() => this.updateRibbonFromQueue());
@@ -376,7 +386,7 @@ export default class LilbeePlugin extends Plugin {
 
     /** Collapse multiple lilbee-chat / -tasks / -wiki leaves to one of each. */
     private dedupeLilbeeLeaves(): void {
-        for (const type of [VIEW_TYPE_CHAT, VIEW_TYPE_TASKS, VIEW_TYPE_WIKI, VIEW_TYPE_MEMORIES]) {
+        for (const type of [VIEW_TYPE_CHAT, VIEW_TYPE_TASKS, VIEW_TYPE_WIKI, VIEW_TYPE_MEMORIES, VIEW_TYPE_PLACEMENT]) {
             const leaves = this.app.workspace.getLeavesOfType(type);
             for (let i = 1; i < leaves.length; i++) leaves[i].detach();
         }
@@ -920,6 +930,28 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "open-placement",
+            name: "Open GPU placement",
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void this.activatePlacementView();
+                return true;
+            },
+        });
+
+        this.addCommand({
+            id: "open-placement-beside-chat",
+            name: "Show GPU activity beside chat",
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                const chatLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
+                if (!chatLeaf) return false;
+                if (!checking) void revealPlacementBeside(this.app, chatLeaf);
+                return true;
+            },
+        });
+
+        this.addCommand({
             id: "remember",
             name: "Remember…",
             checkCallback: (checking) => {
@@ -1340,13 +1372,19 @@ export default class LilbeePlugin extends Plugin {
         // Re-read the token before probing — the server writes a fresh one on
         // every restart, and this is the cheapest way to stay in sync.
         this.api.setToken(this.readCurrentToken());
-        const ok = (await this.api.health().catch(() => null))?.isOk() ?? false;
-        if (ok) {
+        const health = await this.api.health().catch(() => null);
+        if (health?.isOk()) {
             this.healthFailureStreak = 0;
             if (this.serverUnreachable) {
                 this.serverUnreachable = false;
                 void this.fetchActiveModel();
+            } else {
+                // Keep the status-bar model in sync with out-of-band changes
+                // (CLI/TUI/another client switching the chat model) while the
+                // server stays connected.
+                void this.refreshActiveModel();
             }
+            this.reflectChatWarmth(health.value);
             return;
         }
         this.healthFailureStreak += 1;
@@ -1361,6 +1399,21 @@ export default class LilbeePlugin extends Plugin {
         this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
         this.setStatusClass("lilbee-status-error");
         this.maybeWarnMissingToken();
+    }
+
+    /** Reflect the chat engine's warm state from a health snapshot: show a warming
+     * pill while it cold-loads, and revert to ready once it is warm. Older servers
+     * omit `chat_ready`, which we treat as ready. */
+    private reflectChatWarmth(health: HealthResponse): void {
+        const warming = health.chat_ready === false;
+        if (warming === this.chatWarming) return;
+        this.chatWarming = warming;
+        if (warming) {
+            this.updateStatusBar(MESSAGES.STATUS_WARMING, DOT_STATE.PRIMARY);
+            this.setStatusClass("lilbee-status-starting");
+        } else {
+            this.setStatusReady();
+        }
     }
 
     notifyChatStart(): void {
@@ -1497,6 +1550,20 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         new ModelInfoModal(this.app, this, entry).open();
+    }
+
+    /** Lightweight active-model resync used on every healthy probe tick, so the
+     *  status bar reflects an out-of-band chat-model change. Cheaper than
+     *  fetchActiveModel (no wiki/reasoning work); repaints only on a change. */
+    private async refreshActiveModel(): Promise<void> {
+        try {
+            const models = await this.api.listModels();
+            if (models.chat.active === this.activeModel) return;
+            this.activeModel = models.chat.active;
+            if (!this.chatWarming) this.setStatusReady();
+        } catch {
+            // best-effort; the next probe tick retries
+        }
     }
 
     async fetchActiveModel(): Promise<void> {
@@ -1683,7 +1750,56 @@ export default class LilbeePlugin extends Plugin {
         if (!isRetry && !(await this.confirmReindexIfNeeded(name))) return;
 
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", name));
-        await this.runAdd([absolutePath], [absolutePath], () => this.addToLilbee(file));
+        if (this.settings.serverMode === SERVER_MODE.EXTERNAL) {
+            // A remote server can't read this machine's paths, so send the file
+            // bytes straight from the vault instead of a server-side path. The
+            // read runs before runAdd's guard, so surface a failure here too.
+            let uploads: { name: string; data: ArrayBuffer }[];
+            try {
+                uploads = await this.collectVaultUploads(file);
+            } catch (err) {
+                console.error("[lilbee] add failed:", err);
+                new Notice(MESSAGES.ERROR_ADD_FAILED_DETAIL(errorMessage(err, MESSAGES.ERROR_CANNOT_CONNECT)));
+                return;
+            }
+            await this.runUpload(uploads, [absolutePath], () => this.addToLilbee(file));
+        } else {
+            await this.runAdd([absolutePath], [absolutePath], () => this.addToLilbee(file));
+        }
+    }
+
+    /** Read every file under *file* (recursing folders) as upload payloads. */
+    private async collectVaultUploads(file: TAbstractFile): Promise<{ name: string; data: ArrayBuffer }[]> {
+        const tfiles = file instanceof TFolder ? this.filesInFolder(file) : [file as TFile];
+        return Promise.all(tfiles.map(async (f) => ({ name: f.name, data: await this.app.vault.readBinary(f) })));
+    }
+
+    private filesInFolder(folder: TFolder): TFile[] {
+        const out: TFile[] = [];
+        for (const child of folder.children) {
+            if (child instanceof TFile) out.push(child);
+            else if (child instanceof TFolder) out.push(...this.filesInFolder(child));
+        }
+        return out;
+    }
+
+    /** Ingest by uploading file content (external mode); reuses runAdd's stream loop. */
+    private async runUpload(
+        files: { name: string; data: ArrayBuffer }[],
+        retryKeys: string[],
+        retry?: () => void | Promise<void>,
+    ): Promise<void> {
+        if (files.length === 0) {
+            new Notice(MESSAGES.STATUS_NOTHING_NEW);
+            return;
+        }
+        await this.runAdd(
+            files.map((f) => f.name),
+            retryKeys,
+            retry,
+            (signal) => this.api.uploadFiles(files, signal),
+            "Uploading files",
+        );
     }
 
     cancelSync(): void {
@@ -1695,8 +1811,10 @@ export default class LilbeePlugin extends Plugin {
         paths: string[],
         retryKeys: string[] = paths,
         retry?: () => void | Promise<void>,
+        makeStream?: (signal: AbortSignal) => AsyncGenerator<SSEEvent, void>,
+        label = "Adding files",
     ): Promise<void> {
-        const taskId = this.taskQueue.enqueue("Adding files", TASK_TYPE.ADD, retry);
+        const taskId = this.taskQueue.enqueue(label, TASK_TYPE.ADD, retry);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
@@ -1709,7 +1827,9 @@ export default class LilbeePlugin extends Plugin {
             const progress = new FileProgressTracker();
             let syncResult: SyncDone | null = null;
             const controller = this.syncController;
-            const rawStream = this.api.addFiles(paths, true, controller.signal);
+            const rawStream = makeStream
+                ? makeStream(controller.signal)
+                : this.api.addFiles(paths, true, controller.signal);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };
@@ -1840,6 +1960,20 @@ export default class LilbeePlugin extends Plugin {
     refreshMemoryViews(): void {
         for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMORIES)) {
             void (leaf.view as MemoriesView).reload();
+        }
+    }
+
+    /** Open the placement view in a main-area tab (it is wider than the sidebar views). */
+    async activatePlacementView(): Promise<void> {
+        const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_PLACEMENT);
+        if (existing.length > 0) {
+            void this.app.workspace.revealLeaf(existing[0]);
+            return;
+        }
+        const leaf = this.app.workspace.getLeaf(true);
+        if (leaf) {
+            await leaf.setViewState({ type: VIEW_TYPE_PLACEMENT, active: true });
+            void this.app.workspace.revealLeaf(leaf);
         }
     }
 

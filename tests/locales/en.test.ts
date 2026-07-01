@@ -449,4 +449,19 @@ describe("types", () => {
         expect(sorts).toContain(FILTERS.SORT.SIZE_ASC);
         expect(sorts).toContain(FILTERS.SORT.SIZE_DESC);
     });
+
+    describe("PLACEMENT_ tooltip functions", () => {
+        it("uses a natural role noun, not the internal role id", () => {
+            expect(MESSAGES.PLACEMENT_TIP_CHIP("embed", "CUDA0")).toBe("Run embedding on CUDA0");
+            expect(MESSAGES.PLACEMENT_TIP_CHIP("rerank", "CUDA1")).toBe("Run reranking on CUDA1");
+        });
+
+        it("picks the right indefinite article for the role noun", () => {
+            // embedding starts with a vowel sound -> "an"; vision a consonant -> "a".
+            expect(MESSAGES.PLACEMENT_TIP_REPLICA_ADD("embed")).toBe("Add an embedding worker");
+            expect(MESSAGES.PLACEMENT_TIP_REPLICA_ADD("vision")).toBe("Add a vision worker");
+            expect(MESSAGES.PLACEMENT_TIP_REPLICA_REMOVE("embed")).toBe("Remove an embedding worker");
+            expect(MESSAGES.PLACEMENT_TIP_REPLICA_REMOVE("vision")).toBe("Remove a vision worker");
+        });
+    });
 });

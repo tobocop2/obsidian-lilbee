@@ -20,6 +20,7 @@ import { basename, join, resolve, dirname } from "path";
 import { createHash } from "crypto";
 import { promisify } from "util";
 import { ARCH, PLATFORM, SERVER_VARIANT, type CudaTag, type ServerVariant } from "./types";
+import { formatDiskSize } from "./utils";
 
 const execFileAsync = promisify(execFile);
 const statfsAsync = promisify(statfs);
@@ -165,12 +166,6 @@ export function checkForUpdate(currentVersion: string, latestTag: string): boole
 /** Headroom over the asset size: the whole file is buffered in memory before the write. */
 const DISK_SPACE_FACTOR = 1.5;
 
-function formatBytes(bytes: number): string {
-    const gb = bytes / 1024 ** 3;
-    if (gb >= 1) return `${gb.toFixed(1)} GB`;
-    return `${Math.round(bytes / 1024 ** 2)} MB`;
-}
-
 export class BinaryManager {
     constructor(private binDir: string) {}
 
@@ -201,8 +196,8 @@ export class BinaryManager {
         const free = stats.bavail * stats.bsize;
         if (free < required) {
             throw new Error(
-                `Not enough disk space for the lilbee server: need about ${formatBytes(required)} free, ` +
-                    `but only ${formatBytes(free)} is available. Free up some space and try again.`,
+                `Not enough disk space for the lilbee server: need about ${formatDiskSize(required)} free, ` +
+                    `but only ${formatDiskSize(free)} is available. Free up some space and try again.`,
             );
         }
     }

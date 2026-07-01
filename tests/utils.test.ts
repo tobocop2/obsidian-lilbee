@@ -9,6 +9,7 @@ import {
     extractSseErrorMessage,
     isModelUnavailableError,
     formatBytes,
+    formatDiskSize,
     formatRate,
     formatElapsed,
     getRelevantSystemMemoryGB,
@@ -85,6 +86,32 @@ describe("formatBytes", () => {
 
     it("caps at TB", () => {
         expect(formatBytes(2 * 1024 ** 4)).toBe("2.0 TB");
+    });
+});
+
+describe("formatDiskSize", () => {
+    it("renders 0 explicitly", () => {
+        expect(formatDiskSize(0)).toBe("0 B");
+    });
+
+    it("renders bytes below a kilobyte", () => {
+        expect(formatDiskSize(500)).toBe("500 B");
+    });
+
+    it("renders kilobytes", () => {
+        expect(formatDiskSize(2_500)).toBe("2.50 KB");
+    });
+
+    it("renders megabytes", () => {
+        expect(formatDiskSize(12_500_000)).toBe("12.5 MB");
+    });
+
+    it("renders gigabytes", () => {
+        expect(formatDiskSize(2_500_000_000)).toBe("2.50 GB");
+    });
+
+    it("drops decimals once values exceed 100", () => {
+        expect(formatDiskSize(123_000_000)).toBe("123 MB");
     });
 });
 

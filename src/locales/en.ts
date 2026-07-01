@@ -1,4 +1,15 @@
-import { MODEL_TASK } from "../types";
+import { MODEL_TASK, type WorkerRole } from "../types";
+
+// Natural-language noun for each worker role, so tooltips read "embedding
+// worker" rather than the internal "embed".
+const ROLE_NOUN: Record<WorkerRole, string> = {
+    chat: "chat",
+    embed: "embedding",
+    vision: "vision",
+    rerank: "reranking",
+};
+const roleNoun = (role: WorkerRole): string => ROLE_NOUN[role];
+const indefinite = (word: string): string => (/^[aeiou]/i.test(word) ? "an" : "a");
 
 export const MESSAGES = {
     CONFIRM_REINDEX: (name: string): string => `"${name}" is already indexed. Re-add it?`,
@@ -304,6 +315,7 @@ export const MESSAGES = {
     LABEL_EMBEDDING_MODEL_ICON: "Embed",
     LABEL_ADD_FILE: "Add file",
     LABEL_SAVE_VAULT: "Save to vault",
+    LABEL_OPEN_GPU_ACTIVITY: "GPU activity beside chat",
     LABEL_THINKING: "Thinking...",
     LABEL_STOPPED: "(stopped)",
     LABEL_STOPPED_MD: "*(stopped)*",
@@ -479,6 +491,7 @@ export const MESSAGES = {
     STATUS_DOWNLOADING: "lilbee: downloading...",
     STATUS_UPDATE_SIZE: (tag: string, size: string) => `Updating to ${tag} · ${size} download`,
     STATUS_STARTING: "lilbee: starting...",
+    STATUS_WARMING: "lilbee: warming up...",
     STATUS_READY: "lilbee: ready",
     STATUS_READY_EXTERNAL: "lilbee: ready [external]",
     STATUS_ERROR: "lilbee: error",
@@ -890,6 +903,67 @@ export const MESSAGES = {
     RAIL_LABEL_VISION: "Vision",
     RAIL_LABEL_RERANK: "Rerank",
     RAIL_BROWSE_CATALOG: "Browse catalog…",
+
+    // GPU placement / fleet
+    LABEL_PLACEMENT_VIEW: "lilbee GPU placement",
+    LABEL_RIBBON_OPEN_PLACEMENT: "Open lilbee GPU placement",
+    PLACEMENT_TITLE: "GPU placement",
+    PLACEMENT_SECTION_HARDWARE: "Hardware",
+    PLACEMENT_SECTION_ROLES: "Roles",
+    PLACEMENT_HOST_APPLE: "Apple Silicon",
+    PLACEMENT_HOST_APPLE_SUB: "unified memory · Metal",
+    PLACEMENT_HOST_CPU: "CPU",
+    PLACEMENT_HOST_CPU_SUB: "no GPU detected",
+    PLACEMENT_STATE_AUTO: "auto",
+    PLACEMENT_STATE_MANUAL: "manual",
+    PLACEMENT_STATE_EDITED: "edited",
+    PLACEMENT_STATE_APPLYING: "applying…",
+    PLACEMENT_AUTO_MANAGED: "Auto-managed. The planner balances roles across your hardware.",
+    PLACEMENT_EDIT: "Edit manually",
+    PLACEMENT_PREVIEW: "Preview",
+    PLACEMENT_APPLY: "Apply",
+    PLACEMENT_RESET: "Reset to auto",
+    PLACEMENT_FITS: "Fits all roles",
+    PLACEMENT_WONT_FIT: (roles: string): string => `Won't fit: ${roles}. Move it to another GPU or free up memory.`,
+    PLACEMENT_NOT_SET: "not set",
+    PLACEMENT_TIP_CHIP: (role: WorkerRole, gpu: string): string => `Run ${roleNoun(role)} on ${gpu}`,
+    PLACEMENT_TIP_REPLICA_ADD: (role: WorkerRole): string =>
+        `Add ${indefinite(roleNoun(role))} ${roleNoun(role)} worker`,
+    PLACEMENT_TIP_REPLICA_REMOVE: (role: WorkerRole): string =>
+        `Remove ${indefinite(roleNoun(role))} ${roleNoun(role)} worker`,
+    PLACEMENT_HINT_EDIT_MANUALLY: 'Click "Edit manually" first to change GPU placement.',
+    PLACEMENT_HINT_REPLICAS_SETTINGS:
+        "This device runs everything together. Set worker counts in Settings → lilbee → Hardware / fleet.",
+    PLACEMENT_ROLE_MEM: (mem: string): string => `~${mem}`,
+    PLACEMENT_MEM_FREE: (free: string, total: string): string => `${free} / ${total} free`,
+    PLACEMENT_UTIL: (pct: number): string => `${pct}%`,
+    PLACEMENT_UTIL_NA: "—",
+    PLACEMENT_SPLIT: (ratio: string): string => `split ${ratio}`,
+    PLACEMENT_REBUILDING: "Rebuilding fleet…",
+    PLACEMENT_APPLIED: "Placement applied.",
+    PLACEMENT_RESET_DONE: "Back to automatic placement.",
+    PLACEMENT_APPLY_NOT_ENABLED: "Applying placement isn't enabled on this lilbee server.",
+    PLACEMENT_APPLY_FAILED: (msg: string): string => `Couldn't apply placement: ${msg}`,
+    PLACEMENT_LOAD_FAILED: (msg: string): string => `Couldn't load placement: ${msg}`,
+
+    // Hardware / fleet settings
+    LABEL_FLEET: "Hardware / fleet",
+    LABEL_FLEET_HELP:
+        "How the model fleet uses your GPUs. These apply to local (managed) and self-hosted servers; they have no effect when lilbee points at a hosted provider.",
+    LABEL_KV_CACHE_TYPE: "KV cache type",
+    DESC_KV_CACHE_TYPE:
+        "Smaller types use less memory for the chat context. q8_0 roughly halves it versus f16 with no noticeable quality loss; q4_0 quarters it.",
+    LABEL_N_GPU_LAYERS: "GPU layers (chat)",
+    DESC_N_GPU_LAYERS:
+        "How many chat-model layers to offload to the GPU. Leave empty to offload all; lower it to fit a large model in limited VRAM.",
+    LABEL_EMBED_REPLICAS: "Embedding replicas",
+    DESC_EMBED_REPLICAS: "How many embedding workers to run while indexing. 0 lets lilbee pick (one per GPU).",
+    LABEL_VISION_REPLICAS: "Vision replicas",
+    DESC_VISION_REPLICAS: "How many OCR workers to run while indexing. 0 lets lilbee pick (one per GPU).",
+    LABEL_GPU_DEVICES: "Visible GPUs",
+    DESC_GPU_DEVICES:
+        "Restrict lilbee to specific GPUs by index, comma separated (for example 0,1). Leave empty to use all.",
+    PLACEHOLDER_GPU_DEVICES: "all",
 
     // Memory
     LABEL_MEMORIES_VIEW: "lilbee Memories",
