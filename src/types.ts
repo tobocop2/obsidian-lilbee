@@ -304,9 +304,7 @@ export const MANAGED_CONSENT_RESULT = {
 export type SetupOutcomeKind = "started" | "switched-to-external" | "canceled";
 
 export type SetupOutcome =
-    | { kind: "started"; mode: ServerMode }
-    | { kind: "switched-to-external" }
-    | { kind: "canceled" };
+    { kind: "started"; mode: ServerMode } | { kind: "switched-to-external" } | { kind: "canceled" };
 
 export const SETUP_OUTCOME = {
     STARTED: "started",
