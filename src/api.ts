@@ -439,6 +439,30 @@ export class LilbeeClient {
         yield* this.parseSSE(res);
     }
 
+    /**
+     * Upload file CONTENT to /api/add/upload and stream ingest progress. Used
+     * when the server is remote (external mode): the plugin can't hand it a
+     * server-readable path, so it sends the bytes straight from the vault.
+     * FormData sets its own multipart Content-Type, so no JSON header here.
+     */
+    async *uploadFiles(
+        files: { name: string; data: ArrayBuffer }[],
+        signal?: AbortSignal,
+    ): AsyncGenerator<SSEEvent, void> {
+        const form = new FormData();
+        for (const file of files) form.append("data", new Blob([file.data]), file.name);
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/add/upload`,
+            {
+                method: "POST",
+                headers: { ...this.authHeaders() },
+                body: form,
+            },
+            { stream: true, signal },
+        );
+        yield* this.parseSSE(res);
+    }
+
     async *syncStream(signal?: AbortSignal, options?: SyncOptions): AsyncGenerator<SSEEvent, void> {
         const body: Record<string, unknown> = {};
         if (options?.forceRebuild) body.force_rebuild = true;

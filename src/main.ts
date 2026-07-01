@@ -5,6 +5,8 @@ import {
     Notice,
     Plugin,
     type TAbstractFile,
+    TFile,
+    TFolder,
     type WorkspaceLeaf,
 } from "obsidian";
 import { LilbeeClient, SessionTokenError } from "./api";
@@ -49,6 +51,7 @@ import {
     type SetupProgressPayload,
     type SetupStartPayload,
     type SyncDone,
+    type SSEEvent,
     type SyncOptions,
     type TaskEntry,
     type VaultAdapter,
@@ -1747,7 +1750,56 @@ export default class LilbeePlugin extends Plugin {
         if (!isRetry && !(await this.confirmReindexIfNeeded(name))) return;
 
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", name));
-        await this.runAdd([absolutePath], [absolutePath], () => this.addToLilbee(file));
+        if (this.settings.serverMode === SERVER_MODE.EXTERNAL) {
+            // A remote server can't read this machine's paths, so send the file
+            // bytes straight from the vault instead of a server-side path. The
+            // read runs before runAdd's guard, so surface a failure here too.
+            let uploads: { name: string; data: ArrayBuffer }[];
+            try {
+                uploads = await this.collectVaultUploads(file);
+            } catch (err) {
+                console.error("[lilbee] add failed:", err);
+                new Notice(MESSAGES.ERROR_ADD_FAILED_DETAIL(errorMessage(err, MESSAGES.ERROR_CANNOT_CONNECT)));
+                return;
+            }
+            await this.runUpload(uploads, [absolutePath], () => this.addToLilbee(file));
+        } else {
+            await this.runAdd([absolutePath], [absolutePath], () => this.addToLilbee(file));
+        }
+    }
+
+    /** Read every file under *file* (recursing folders) as upload payloads. */
+    private async collectVaultUploads(file: TAbstractFile): Promise<{ name: string; data: ArrayBuffer }[]> {
+        const tfiles = file instanceof TFolder ? this.filesInFolder(file) : [file as TFile];
+        return Promise.all(tfiles.map(async (f) => ({ name: f.name, data: await this.app.vault.readBinary(f) })));
+    }
+
+    private filesInFolder(folder: TFolder): TFile[] {
+        const out: TFile[] = [];
+        for (const child of folder.children) {
+            if (child instanceof TFile) out.push(child);
+            else if (child instanceof TFolder) out.push(...this.filesInFolder(child));
+        }
+        return out;
+    }
+
+    /** Ingest by uploading file content (external mode); reuses runAdd's stream loop. */
+    private async runUpload(
+        files: { name: string; data: ArrayBuffer }[],
+        retryKeys: string[],
+        retry?: () => void | Promise<void>,
+    ): Promise<void> {
+        if (files.length === 0) {
+            new Notice(MESSAGES.STATUS_NOTHING_NEW);
+            return;
+        }
+        await this.runAdd(
+            files.map((f) => f.name),
+            retryKeys,
+            retry,
+            (signal) => this.api.uploadFiles(files, signal),
+            "Uploading files",
+        );
     }
 
     cancelSync(): void {
@@ -1759,8 +1811,10 @@ export default class LilbeePlugin extends Plugin {
         paths: string[],
         retryKeys: string[] = paths,
         retry?: () => void | Promise<void>,
+        makeStream?: (signal: AbortSignal) => AsyncGenerator<SSEEvent, void>,
+        label = "Adding files",
     ): Promise<void> {
-        const taskId = this.taskQueue.enqueue("Adding files", TASK_TYPE.ADD, retry);
+        const taskId = this.taskQueue.enqueue(label, TASK_TYPE.ADD, retry);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
@@ -1773,7 +1827,9 @@ export default class LilbeePlugin extends Plugin {
             const progress = new FileProgressTracker();
             let syncResult: SyncDone | null = null;
             const controller = this.syncController;
-            const rawStream = this.api.addFiles(paths, true, controller.signal);
+            const rawStream = makeStream
+                ? makeStream(controller.signal)
+                : this.api.addFiles(paths, true, controller.signal);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };
