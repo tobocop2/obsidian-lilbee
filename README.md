@@ -121,6 +121,10 @@ Reranking is an optional role that re-scores retrieved passages with a cross-enc
 
 **lilbee has its own model manager and multi-GPU fleet, built on llama.cpp.** Downloading, running, and updating models for you is the default and the simplest path, with no second app to think about. Battle-tested managers are supported too, so you don't have to switch model managers to use lilbee.
 
+Point lilbee at a multi-GPU box and it places a model across every card for you. Here a 235B chat model splits across three A100s with the embedder mirrored onto each, indexing the codebase while every card's load moves live, then answering a grounded question with a citation straight into the real source:
+
+<p align="center"><img alt="the GPU placement view splitting a 235B chat model across three A100s with the embedder mirrored per card, ingesting the codebase, then answering a grounded question with a citation into the real source" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/bigmodel.gif" width="640"></p>
+
 If your models already live in Ollama or LM Studio, point lilbee at the running server and they show up right in the same Chat / Embed / Vision / Rerank pickers, next to lilbee's own models and any cloud models, each labeled by where it runs. You keep managing them in the app you already use; lilbee just uses them. Pick whichever fits how you already work, and mix all three freely.
 
 Pick one of your Ollama models for embedding and another for chat from the catalog's Hosted tab, and the whole pipeline runs on Ollama:
