@@ -122,6 +122,21 @@ function rowFor(contentEl: MockElement, role: string): MockElement {
     return contentEl.findAll("lilbee-placement-role-row").find((r) => r.dataset.role === role)!;
 }
 
+// A GPU row carries a util meter and a vram meter; each holds a value span and a
+// bar fill. These pick the right one for device row `i` (DOM order = device order).
+function utilVal(contentEl: MockElement, i: number): MockElement {
+    return contentEl.findAll("lilbee-meter-util")[i].find("lilbee-meter-val")!;
+}
+function vramVal(contentEl: MockElement, i: number): MockElement {
+    return contentEl.findAll("lilbee-meter-vram")[i].find("lilbee-meter-val")!;
+}
+function utilFill(contentEl: MockElement, i: number): MockElement {
+    return contentEl.findAll("lilbee-meter-util")[i].find("lilbee-bar-fill")!;
+}
+function vramFill(contentEl: MockElement, i: number): MockElement {
+    return contentEl.findAll("lilbee-meter-vram")[i].find("lilbee-bar-fill")!;
+}
+
 beforeEach(() => {
     Notice.clear();
 });
@@ -141,12 +156,16 @@ describe("PlacementView multi-GPU (auto)", () => {
         const { contentEl } = await openView(makePlugin(makeApi()));
         expect(contentEl.classList.contains("lilbee-placement-container")).toBe(true);
         expect(contentEl.find("lilbee-placement-header")!.find("lilbee-placement-state")!.textContent).toBe("auto");
-        expect(contentEl.findAll("lilbee-placement-card").length).toBe(2);
+        expect(contentEl.findAll("lilbee-gpu-row").length).toBe(2);
         expect(contentEl.findAll("lilbee-placement-role-row").length).toBe(3);
-        // chips are read-only in auto mode
-        expect(contentEl.findAll("lilbee-placement-chip").every((c) => c.classList.contains("is-readonly"))).toBe(true);
-        // chat row shows its tensor split
-        expect(rowFor(contentEl, "chat").find("lilbee-placement-split")!.textContent).toBe("split 60/40");
+        // toggles are read-only in auto mode
+        expect(contentEl.findAll("lilbee-placement-toggle").every((c) => c.classList.contains("is-readonly"))).toBe(
+            true,
+        );
+        // each role shows its placement rule as a one-word hint
+        expect(rowFor(contentEl, "chat").find("lilbee-placement-role-hint")!.textContent).toBe("split");
+        expect(rowFor(contentEl, "embed").find("lilbee-placement-role-hint")!.textContent).toBe("mirror");
+        expect(rowFor(contentEl, "rerank").find("lilbee-placement-role-hint")!.textContent).toBe("one card");
         // footer: auto-managed message + edit button, no apply
         expect(contentEl.find("lilbee-placement-fit")!.classList.contains("is-muted")).toBe(true);
         const btns = contentEl.findAll("lilbee-placement-btn").map((b) => b.textContent);
@@ -155,13 +174,28 @@ describe("PlacementView multi-GPU (auto)", () => {
 
     it("renders an empty utilization bar and free-memory text before any stats arrive", async () => {
         const { contentEl } = await openView(makePlugin(makeApi()));
-        expect(contentEl.findAll("lilbee-placement-util")[0].textContent).toBe("—");
-        expect(contentEl.findAll("lilbee-placement-mem")[0].textContent).toBe("18.0 GB / 24.0 GB free");
+        expect(utilVal(contentEl, 0).textContent).toBe("—");
+        expect(vramVal(contentEl, 0).textContent).toBe("18.0 GB / 24.0 GB free");
     });
 
-    it("read-only chips in auto mode are tooltipped and point to Edit manually on click", async () => {
+    it("shows the roles running on each GPU as badges on its row", async () => {
         const { contentEl } = await openView(makePlugin(makeApi()));
-        const chip = contentEl.find("lilbee-placement-chip")!;
+        // device 0 runs chat (0,1) + rerank (0); device 1 runs chat + embed (1)
+        const row0Badges = contentEl
+            .findAll("lilbee-gpu-row")[0]
+            .findAll("lilbee-role-badge")
+            .map((b) => b.textContent);
+        expect(row0Badges).toEqual(["chat", "rerank"]);
+        const row1Badges = contentEl
+            .findAll("lilbee-gpu-row")[1]
+            .findAll("lilbee-role-badge")
+            .map((b) => b.textContent);
+        expect(row1Badges).toEqual(["chat", "embed"]);
+    });
+
+    it("read-only toggles in auto mode are tooltipped and point to Edit manually on click", async () => {
+        const { contentEl } = await openView(makePlugin(makeApi()));
+        const chip = contentEl.find("lilbee-placement-toggle")!;
         expect(chip.getAttribute("aria-label")).toBe('Click "Edit manually" first to change GPU placement.');
         chip.trigger("click");
         expect(Notice.instances.map((n) => n.message)).toContain(
@@ -175,10 +209,10 @@ describe("PlacementView single device", () => {
         const { contentEl } = await openView(
             makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(single())) })),
         );
-        expect(contentEl.find("lilbee-placement-card-name")!.textContent).toBe("Apple M3 Max");
-        expect(contentEl.find("lilbee-placement-mem")!.textContent).toBe("36.0 GB / 48.0 GB free");
-        // single device has no GPU toggle chips
-        expect(contentEl.find("lilbee-placement-chip")).toBeNull();
+        expect(contentEl.find("lilbee-gpu-name")!.textContent).toBe("Apple M3 Max");
+        expect(vramVal(contentEl, 0).textContent).toBe("36.0 GB / 48.0 GB free");
+        // single device has no GPU toggle matrix
+        expect(contentEl.find("lilbee-placement-toggle")).toBeNull();
         // vision has no model → "not set"
         expect(rowFor(contentEl, "vision").find("lilbee-placement-role-model")!.textContent).toBe("not set");
         // single-device steppers are read-only (nothing to assign; replicas live in Settings)
@@ -200,21 +234,6 @@ describe("PlacementView single device", () => {
             "This device runs everything together. Set worker counts in Settings → lilbee → Hardware / fleet.",
         );
         expect(inc.getAttribute("aria-label")).toContain("Settings");
-    });
-
-    it("shows per-role estimated memory when the server reports it (and omits it at zero)", async () => {
-        const { contentEl } = await openView(
-            makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(single())) })),
-        );
-        const mems = contentEl.findAll("lilbee-placement-role-mem").map((m) => m.textContent);
-        // chat 6.1 GB and embed 300 MB shown; vision (0 bytes) omitted
-        expect(mems).toEqual(["~6.1 GB", "~300 MB"]);
-    });
-
-    it("omits per-role memory when the server does not report it (older server)", async () => {
-        // multi() roles carry no vram_bytes
-        const { contentEl } = await openView(makePlugin(makeApi()));
-        expect(contentEl.find("lilbee-placement-role-mem")).toBeNull();
     });
 
     it("renders a CPU host card when no GPUs are detected (non-Mac)", async () => {
@@ -254,7 +273,9 @@ describe("PlacementView manual editing", () => {
             makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(multiManual())) })),
         );
         expect(contentEl.find("lilbee-placement-state")!.textContent).toBe("manual");
-        expect(contentEl.findAll("lilbee-placement-chip").some((c) => c.classList.contains("is-readonly"))).toBe(false);
+        expect(contentEl.findAll("lilbee-placement-toggle").some((c) => c.classList.contains("is-readonly"))).toBe(
+            false,
+        );
         expect(contentEl.find("lilbee-placement-fit")!.textContent).toBe("Fits all roles");
     });
 
@@ -262,7 +283,7 @@ describe("PlacementView manual editing", () => {
         const { contentEl } = await openView(
             makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(multiManual())) })),
         );
-        expect(rowFor(contentEl, "embed").findAll("lilbee-placement-chip")[0].getAttribute("aria-label")).toBe(
+        expect(rowFor(contentEl, "embed").findAll("lilbee-placement-toggle")[0].getAttribute("aria-label")).toBe(
             "Run embedding on cuda0",
         );
         expect(rowFor(contentEl, "embed").findAll("lilbee-placement-step")[1].getAttribute("aria-label")).toBe(
@@ -295,18 +316,18 @@ describe("PlacementView manual editing", () => {
             await view.onOpen();
             const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
             // embed starts on cuda1 only; add cuda0
-            rowFor(contentEl, "embed").findAll("lilbee-placement-chip")[0].trigger("click");
-            expect(rowFor(contentEl, "embed").findAll("lilbee-placement-chip")[0].classList.contains("is-on")).toBe(
+            rowFor(contentEl, "embed").findAll("lilbee-placement-toggle")[0].trigger("click");
+            expect(rowFor(contentEl, "embed").findAll("lilbee-placement-toggle")[0].classList.contains("is-on")).toBe(
                 true,
             );
             // remove cuda1 → only cuda0 left
-            rowFor(contentEl, "embed").findAll("lilbee-placement-chip")[1].trigger("click");
-            expect(rowFor(contentEl, "embed").findAll("lilbee-placement-chip")[1].classList.contains("is-on")).toBe(
+            rowFor(contentEl, "embed").findAll("lilbee-placement-toggle")[1].trigger("click");
+            expect(rowFor(contentEl, "embed").findAll("lilbee-placement-toggle")[1].classList.contains("is-on")).toBe(
                 false,
             );
             // try removing the last device → stays on
-            rowFor(contentEl, "embed").findAll("lilbee-placement-chip")[0].trigger("click");
-            expect(rowFor(contentEl, "embed").findAll("lilbee-placement-chip")[0].classList.contains("is-on")).toBe(
+            rowFor(contentEl, "embed").findAll("lilbee-placement-toggle")[0].trigger("click");
+            expect(rowFor(contentEl, "embed").findAll("lilbee-placement-toggle")[0].classList.contains("is-on")).toBe(
                 true,
             );
             // debounced preview fires once timers advance
@@ -332,6 +353,23 @@ describe("PlacementView manual editing", () => {
         dec.trigger("click"); // 2 → 1
         dec.trigger("click"); // stays 1
         expect(rowFor(contentEl, "embed").find("lilbee-placement-step-count")!.textContent).toBe("×1");
+    });
+
+    it("rerank is single-select: its toggles are radios and picking a card replaces the pin", async () => {
+        const { contentEl } = await openView(
+            makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(multiManual())) })),
+        );
+        const toggles = rowFor(contentEl, "rerank").findAll("lilbee-placement-toggle");
+        expect(toggles.every((t) => t.classList.contains("is-radio"))).toBe(true);
+        // rerank starts pinned to device 0; embed (a mirror role) is not a radio
+        expect(toggles[0].classList.contains("is-on")).toBe(true);
+        expect(toggles[1].classList.contains("is-on")).toBe(false);
+        expect(rowFor(contentEl, "embed").find("lilbee-placement-toggle")!.classList.contains("is-radio")).toBe(false);
+        // picking device 1 moves the single pin there instead of adding a second
+        toggles[1].trigger("click");
+        const after = rowFor(contentEl, "rerank").findAll("lilbee-placement-toggle");
+        expect(after[0].classList.contains("is-on")).toBe(false);
+        expect(after[1].classList.contains("is-on")).toBe(true);
     });
 });
 
@@ -425,7 +463,7 @@ describe("PlacementView apply", () => {
         const api = makeApi({ placement: vi.fn().mockResolvedValue(ok(multiManual())) });
         const { view, contentEl } = await openView(makePlugin(api));
         // toggle so the spec reflects an edit
-        rowFor(contentEl, "embed").findAll("lilbee-placement-chip")[0].trigger("click");
+        rowFor(contentEl, "embed").findAll("lilbee-placement-toggle")[0].trigger("click");
         contentEl
             .findAll("lilbee-placement-btn")
             .find((b) => b.textContent === "Apply")!
@@ -562,7 +600,7 @@ describe("PlacementView defensive paths", () => {
 
     it("starts each utilization bar at no inline width (CSS drives the empty state)", async () => {
         const { contentEl } = await openView(makePlugin(makeApi()));
-        expect(contentEl.find("lilbee-placement-bar-fill")!.style.width).toBeFalsy();
+        expect(utilFill(contentEl, 0).style.width).toBeFalsy();
     });
 
     it("onClose clears a pending preview timer", async () => {
@@ -574,7 +612,7 @@ describe("PlacementView defensive paths", () => {
             );
             await view.onOpen();
             const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
-            rowFor(contentEl, "embed").findAll("lilbee-placement-chip")[0].trigger("click");
+            rowFor(contentEl, "embed").findAll("lilbee-placement-toggle")[0].trigger("click");
             expect((view as unknown as { previewTimer: number | null }).previewTimer).not.toBeNull();
             await view.onClose();
             expect((view as unknown as { previewTimer: number | null }).previewTimer).toBeNull();
@@ -595,9 +633,9 @@ describe("PlacementView defensive paths", () => {
             const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
             await view.onOpen();
             const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
-            rowFor(contentEl, "chat").findAll("lilbee-placement-chip")[0].trigger("click");
+            rowFor(contentEl, "chat").findAll("lilbee-placement-toggle")[0].trigger("click");
             vi.advanceTimersByTime(100);
-            rowFor(contentEl, "chat").findAll("lilbee-placement-chip")[0].trigger("click");
+            rowFor(contentEl, "chat").findAll("lilbee-placement-toggle")[0].trigger("click");
             vi.advanceTimersByTime(400);
             await Promise.resolve();
             expect(api.placementPreview).toHaveBeenCalledTimes(1);
@@ -616,20 +654,20 @@ describe("PlacementView live usage bars", () => {
             { index: 0, utilization_pct: 73, free_bytes: 5 * GB, total_bytes: 24 * GB },
             { index: 1, utilization_pct: 10, free_bytes: 9 * GB, total_bytes: 24 * GB },
         ]);
-        expect(contentEl.findAll("lilbee-placement-bar-fill")[0].style.width).toBe("73%");
-        expect(contentEl.findAll("lilbee-placement-util")[0].textContent).toBe("73%");
-        expect(contentEl.findAll("lilbee-placement-mem")[0].textContent).toBe("5.0 GB / 24.0 GB free");
+        expect(utilFill(contentEl, 0).style.width).toBe("73%");
+        expect(utilVal(contentEl, 0).textContent).toBe("73%");
+        expect(vramVal(contentEl, 0).textContent).toBe("5.0 GB / 24.0 GB free");
         // Working cards glow; idle cards do not.
-        expect(contentEl.findAll("lilbee-placement-bar-fill")[0].classList.contains("is-active")).toBe(true);
+        expect(utilFill(contentEl, 0).classList.contains("is-active")).toBe(true);
     });
 
     it("clears the glow when a card goes idle", async () => {
         const { view, contentEl } = await openView(makePlugin(makeApi()));
         const applier = view as unknown as StatsApplier;
         applier.applyStats([{ index: 0, utilization_pct: 40, free_bytes: 5 * GB, total_bytes: 24 * GB }]);
-        expect(contentEl.findAll("lilbee-placement-bar-fill")[0].classList.contains("is-active")).toBe(true);
+        expect(utilFill(contentEl, 0).classList.contains("is-active")).toBe(true);
         applier.applyStats([{ index: 0, utilization_pct: 0, free_bytes: 5 * GB, total_bytes: 24 * GB }]);
-        expect(contentEl.findAll("lilbee-placement-bar-fill")[0].classList.contains("is-active")).toBe(false);
+        expect(utilFill(contentEl, 0).classList.contains("is-active")).toBe(false);
     });
 
     it("shows an em dash and empties the bar when utilization is unavailable", async () => {
@@ -637,18 +675,30 @@ describe("PlacementView live usage bars", () => {
         (view as unknown as StatsApplier).applyStats([
             { index: 0, utilization_pct: null, free_bytes: 1 * GB, total_bytes: 24 * GB },
         ]);
-        expect(contentEl.findAll("lilbee-placement-bar-fill")[0].style.width).toBe("0%");
-        expect(contentEl.findAll("lilbee-placement-util")[0].textContent).toBe("—");
-        expect(contentEl.findAll("lilbee-placement-mem")[0].textContent).toBe("1.0 GB / 24.0 GB free");
+        expect(utilFill(contentEl, 0).style.width).toBe("0%");
+        expect(utilVal(contentEl, 0).textContent).toBe("—");
+        expect(vramVal(contentEl, 0).textContent).toBe("1.0 GB / 24.0 GB free");
     });
 
     it("clamps out-of-range utilization to 0-100", async () => {
         const { view, contentEl } = await openView(makePlugin(makeApi()));
         const applier = view as unknown as StatsApplier;
         applier.applyStats([{ index: 0, utilization_pct: 150, free_bytes: 0, total_bytes: 24 * GB }]);
-        expect(contentEl.findAll("lilbee-placement-bar-fill")[0].style.width).toBe("100%");
+        expect(utilFill(contentEl, 0).style.width).toBe("100%");
         applier.applyStats([{ index: 0, utilization_pct: -5, free_bytes: 0, total_bytes: 24 * GB }]);
-        expect(contentEl.findAll("lilbee-placement-bar-fill")[0].style.width).toBe("0%");
+        expect(utilFill(contentEl, 0).style.width).toBe("0%");
+    });
+
+    it("fills the vram bar to the used fraction and clamps a zero-total device to empty", async () => {
+        const { view, contentEl } = await openView(makePlugin(makeApi()));
+        // device 0 initial: 18/24 free → 25% used
+        expect(vramFill(contentEl, 0).style.width).toBe("25%");
+        const applier = view as unknown as StatsApplier;
+        applier.applyStats([{ index: 0, utilization_pct: 0, free_bytes: 6 * GB, total_bytes: 24 * GB }]);
+        expect(vramFill(contentEl, 0).style.width).toBe("75%");
+        // a device reporting zero total memory can't divide → empty bar
+        applier.applyStats([{ index: 0, utilization_pct: 0, free_bytes: 0, total_bytes: 0 }]);
+        expect(vramFill(contentEl, 0).style.width).toBe("0%");
     });
 
     it("skips stats for a device index it isn't rendering", async () => {
@@ -656,7 +706,7 @@ describe("PlacementView live usage bars", () => {
         (view as unknown as StatsApplier).applyStats([
             { index: 99, utilization_pct: 50, free_bytes: 0, total_bytes: 24 * GB },
         ]);
-        expect(contentEl.findAll("lilbee-placement-util")[0].textContent).toBe("—");
+        expect(utilVal(contentEl, 0).textContent).toBe("—");
     });
 
     it("subscribes to the stats stream on open and applies streamed events", async () => {
@@ -670,7 +720,7 @@ describe("PlacementView live usage bars", () => {
         await flush();
         const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
         expect(api.gpuStatsStream).toHaveBeenCalled();
-        expect(contentEl.findAll("lilbee-placement-util")[0].textContent).toBe("42%");
+        expect(utilVal(contentEl, 0).textContent).toBe("42%");
         await view.onClose();
     });
 
@@ -682,7 +732,7 @@ describe("PlacementView live usage bars", () => {
         await view.onOpen();
         await flush();
         const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
-        expect(contentEl.findAll("lilbee-placement-util")[0].textContent).toBe("—");
+        expect(utilVal(contentEl, 0).textContent).toBe("—");
         await view.onClose();
     });
 

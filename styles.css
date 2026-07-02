@@ -4485,52 +4485,132 @@ button.lilbee-model-chip-select:focus-visible {
     color: var(--text-muted);
     font-size: 0.82em;
 }
-.lilbee-placement-meter {
+/* --- compact GPU rows: one line per card, scales to many GPUs --- */
+.lilbee-gpu-row {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    grid-template-rows: auto auto;
+    column-gap: 9px;
+    row-gap: 4px;
+    align-items: center;
+    padding: 7px 9px;
+    border-radius: 8px;
+    background: var(--background-secondary);
+    border: 1px solid transparent;
+}
+.lilbee-gpu-row:hover {
+    border-color: var(--background-modifier-border);
+}
+.lilbee-gpu-idx {
+    grid-row: 1 / 3;
+    align-self: center;
+    justify-self: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    display: grid;
+    place-items: center;
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+    font-size: 0.78em;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.lilbee-gpu-top {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-top: 10px;
+    gap: 8px;
+    min-width: 0;
 }
-.lilbee-placement-mem {
-    color: var(--text-muted);
-    font-size: 0.82em;
-    font-variant-numeric: tabular-nums;
+.lilbee-gpu-name {
+    font-size: 0.86em;
+    font-weight: 500;
     white-space: nowrap;
-    min-width: 120px;
-    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
-.lilbee-placement-util {
+.lilbee-gpu-roles {
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+.lilbee-role-badge {
+    font-size: 0.66em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: lowercase;
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+}
+.lilbee-role-badge.is-embed {
+    background: var(--color-green, #3fb950);
+}
+.lilbee-role-badge.is-rerank {
+    background: var(--color-orange, #d29922);
+}
+.lilbee-role-badge.is-vision {
+    background: var(--color-purple, #a371f7);
+}
+.lilbee-gpu-meters {
+    grid-column: 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.lilbee-meter {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.lilbee-meter-label {
+    font-size: 0.7em;
     color: var(--text-muted);
-    font-size: 0.82em;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    min-width: 38px;
-    text-align: right;
+    width: 24px;
+    flex-shrink: 0;
 }
-.lilbee-placement-bar {
+.lilbee-bar {
+    position: relative;
+    height: 6px;
     flex: 1;
-    height: 11px;
-    border-radius: 6px;
+    min-width: 0;
+    border-radius: 3px;
     background: var(--background-modifier-border);
     /* visible: let the active-bar glow spill past the track */
     overflow: visible;
-    min-width: 80px;
 }
-.lilbee-placement-bar-fill {
+.lilbee-bar-fill {
     height: 100%;
     width: 0;
-    background: var(--interactive-accent);
-    border-radius: 6px;
+    border-radius: 3px;
     transition:
         width 0.6s ease,
         box-shadow 0.5s ease,
         filter 0.5s ease;
 }
+.lilbee-meter-util .lilbee-bar-fill {
+    background: var(--interactive-accent);
+}
+.lilbee-meter-vram .lilbee-bar-fill {
+    background: var(--text-muted);
+}
+.lilbee-meter-val {
+    font-size: 0.72em;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    text-align: right;
+    flex-shrink: 0;
+    min-width: 40px;
+}
 /* A bar only glows while its card is actually doing work (util > 0); idle bars
    stay flat. Soft, slow breath — never obnoxious — and off when the user has
    reduced motion enabled. */
 @media (prefers-reduced-motion: no-preference) {
-    .lilbee-placement-bar-fill.is-active {
+    .lilbee-bar-fill.is-active {
         animation: lilbee-gpu-glow 1.4s ease-in-out infinite;
     }
 }
@@ -4596,38 +4676,55 @@ button.lilbee-model-chip-select:focus-visible {
     color: var(--text-normal);
     overflow-wrap: anywhere;
 }
-.lilbee-placement-chips {
+.lilbee-placement-role-head {
     display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    flex-shrink: 0;
+    gap: 1px;
+    min-width: 62px;
 }
-.lilbee-placement-chip {
-    padding: 3px 11px;
-    border-radius: 13px;
+.lilbee-placement-role-hint {
+    font-size: 0.68em;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+}
+.lilbee-placement-toggles {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    flex: 1;
+}
+.lilbee-placement-toggle {
+    width: 24px;
+    height: 24px;
+    border-radius: 5px;
+    display: grid;
+    place-items: center;
     border: 1px solid var(--background-modifier-border);
     background: var(--background-primary);
     color: var(--text-muted);
-    font-size: 0.8em;
+    font-size: 0.78em;
+    font-variant-numeric: tabular-nums;
     cursor: pointer;
 }
-.lilbee-placement-chip.is-on {
+.lilbee-placement-toggle.is-radio {
+    border-radius: 50%;
+}
+.lilbee-placement-toggle.is-on {
     background: var(--interactive-accent);
     border-color: var(--interactive-accent);
     color: var(--text-on-accent);
+    font-weight: 600;
 }
-.lilbee-placement-chip.is-readonly {
+.lilbee-placement-toggle.is-readonly {
     cursor: default;
     border-style: dashed;
     background: transparent;
 }
-.lilbee-placement-chip.is-on.is-readonly {
+.lilbee-placement-toggle.is-on.is-readonly {
     background: transparent;
     color: var(--interactive-accent);
     border-color: var(--interactive-accent);
-}
-.lilbee-placement-split {
-    color: var(--text-muted);
-    font-size: 0.78em;
 }
 .lilbee-placement-stepper {
     display: flex;
@@ -4738,10 +4835,4 @@ button.lilbee-model-chip-select:focus-visible {
 }
 .lilbee-placement-overlay-text {
     font-weight: 600;
-}
-.lilbee-placement-role-mem {
-    color: var(--text-muted);
-    font-size: 0.8em;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
 }

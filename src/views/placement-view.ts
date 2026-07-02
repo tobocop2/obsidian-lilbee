@@ -6,6 +6,7 @@ import {
     PLACEMENT_MODE,
     REPLICA_ROLES,
     SSE_EVENT,
+    WORKER_ROLE,
     type GpuInfo,
     type GpuStat,
     type GpuStatsPayload,
@@ -49,11 +50,6 @@ function formatGb(bytes: number): string {
     return `${(bytes / GB).toFixed(1)} GB`;
 }
 
-/** Memory for a single role's footprint: MB under a gigabyte, GB above. */
-function formatMem(bytes: number): string {
-    return bytes < GB ? `${Math.round(bytes / 1_000_000)} MB` : formatGb(bytes);
-}
-
 export class PlacementView extends ItemView {
     private plugin: LilbeePlugin;
     private current: PlacementResponse | null = null;
@@ -65,8 +61,11 @@ export class PlacementView extends ItemView {
     private multiDevice = false;
     private previewTimer: number | null = null;
     private statsController: AbortController | null = null;
-    /** Live utilization bar + util/memory text per device index, updated in place by the stats stream. */
-    private gpuBars: Map<number, { fill: HTMLElement; util: HTMLElement; mem: HTMLElement }> = new Map();
+    /** Live util + vram bars and their text per device index, updated in place by the stats stream. */
+    private gpuBars: Map<
+        number,
+        { utilFill: HTMLElement; utilText: HTMLElement; vramFill: HTMLElement; memText: HTMLElement }
+    > = new Map();
     private bodyEl: HTMLElement | null = null;
 
     constructor(leaf: WorkspaceLeaf, plugin: LilbeePlugin) {
@@ -177,7 +176,7 @@ export class PlacementView extends ItemView {
         this.renderSectionTitle(container, MESSAGES.PLACEMENT_SECTION_HARDWARE);
         const hw = container.createDiv({ cls: "lilbee-placement-hw" });
         if (data.gpus.length === 1) {
-            this.renderDeviceCard(hw, data.gpus[0]);
+            this.renderGpuRow(hw, data.gpus[0], data);
         } else {
             this.renderHostCard(hw);
         }
@@ -198,20 +197,52 @@ export class PlacementView extends ItemView {
         }
     }
 
-    private renderDeviceCard(container: HTMLElement, gpu: GpuInfo): void {
-        const card = container.createDiv({ cls: "lilbee-placement-card" });
-        const head = card.createDiv({ cls: "lilbee-placement-card-head" });
-        head.createSpan({ cls: "lilbee-placement-card-name", text: gpu.name });
-        head.createSpan({ cls: "lilbee-placement-card-sub", text: gpu.label });
-        const meter = card.createDiv({ cls: "lilbee-placement-meter" });
-        const fill = this.renderBar(meter);
-        const util = meter.createSpan({ cls: "lilbee-placement-util", text: MESSAGES.PLACEMENT_UTIL_NA });
-        const mem = meter.createSpan({
-            cls: "lilbee-placement-mem",
-            text: MESSAGES.PLACEMENT_MEM_FREE(formatGb(gpu.free_bytes), formatGb(gpu.total_bytes)),
+    /** One GPU as a compact row: index chip, name, role badges, and util + vram
+     *  mini-bars. Scales to many GPUs where a card-per-GPU layout would not. */
+    private renderGpuRow(container: HTMLElement, gpu: GpuInfo, data: PlacementResponse): void {
+        const row = container.createDiv({ cls: "lilbee-gpu-row" });
+        row.createSpan({ cls: "lilbee-gpu-idx", text: String(gpu.index) });
+        const top = row.createDiv({ cls: "lilbee-gpu-top" });
+        top.createSpan({ cls: "lilbee-gpu-name", text: gpu.name });
+        const badges = top.createDiv({ cls: "lilbee-gpu-roles" });
+        for (const role of data.roles) {
+            if (role.devices.includes(gpu.index)) {
+                badges.createSpan({ cls: `lilbee-role-badge is-${role.role}`, text: role.role });
+            }
+        }
+        const meters = row.createDiv({ cls: "lilbee-gpu-meters" });
+        const util = this.renderMeter(meters, "util", MESSAGES.PLACEMENT_METER_UTIL);
+        util.val.setText(MESSAGES.PLACEMENT_UTIL_NA);
+        const vram = this.renderMeter(meters, "vram", MESSAGES.PLACEMENT_METER_VRAM);
+        this.setVram(vram, gpu.free_bytes, gpu.total_bytes);
+        // Keep refs so the live stats stream can move the bars without a full re-render.
+        this.gpuBars.set(gpu.index, {
+            utilFill: util.fill,
+            utilText: util.val,
+            vramFill: vram.fill,
+            memText: vram.val,
         });
-        // Keep refs so the live stats stream can move the bar without a full re-render.
-        this.gpuBars.set(gpu.index, { fill, util, mem });
+    }
+
+    /** A labelled mini-bar ("util" / "vram"): label, track+fill, value text. */
+    private renderMeter(
+        container: HTMLElement,
+        variant: "util" | "vram",
+        label: string,
+    ): { fill: HTMLElement; val: HTMLElement } {
+        const meter = container.createDiv({ cls: `lilbee-meter lilbee-meter-${variant}` });
+        meter.createSpan({ cls: "lilbee-meter-label", text: label });
+        const bar = meter.createDiv({ cls: "lilbee-bar" });
+        const fill = bar.createDiv({ cls: "lilbee-bar-fill" });
+        const val = meter.createSpan({ cls: "lilbee-meter-val" });
+        return { fill, val };
+    }
+
+    /** Fill the vram bar to the used fraction and set its free/total text. */
+    private setVram(vram: { fill: HTMLElement; val: HTMLElement }, freeBytes: number, totalBytes: number): void {
+        const usedPct = totalBytes > 0 ? this.clampPct(((totalBytes - freeBytes) / totalBytes) * 100) : 0;
+        vram.fill.setCssProps({ width: `${usedPct}%` });
+        vram.val.setText(MESSAGES.PLACEMENT_MEM_FREE(formatGb(freeBytes), formatGb(totalBytes)));
     }
 
     // ---- roles ----------------------------------------------------------------
@@ -229,30 +260,33 @@ export class PlacementView extends ItemView {
         const row = container.createDiv({ cls: "lilbee-placement-role-row" });
         row.dataset.role = role.role;
         if (this.unplaceable.includes(role.role)) row.addClass("lilbee-placement-role-unfit");
-        row.createSpan({ cls: `lilbee-placement-badge is-${role.role}`, text: role.role });
+        const head = row.createDiv({ cls: "lilbee-placement-role-head" });
+        head.createSpan({ cls: `lilbee-placement-badge is-${role.role}`, text: role.role });
+        head.createSpan({ cls: "lilbee-placement-role-hint", text: this.roleHint(role.role) });
         row.createSpan({
             cls: "lilbee-placement-role-model",
             text: role.model ? displayLabelForRef(role.model) : MESSAGES.PLACEMENT_NOT_SET,
         });
-        if (role.vram_bytes) {
-            row.createSpan({
-                cls: "lilbee-placement-role-mem",
-                text: MESSAGES.PLACEMENT_ROLE_MEM(formatMem(role.vram_bytes)),
-            });
-        }
         if (gpus) {
-            const chips = row.createDiv({ cls: "lilbee-placement-chips" });
+            const toggles = row.createDiv({ cls: "lilbee-placement-toggles" });
             for (const gpu of gpus) {
-                this.renderChip(chips, role.role, gpu);
-            }
-            if (role.tensor_split && role.tensor_split.length > 0) {
-                row.createSpan({
-                    cls: "lilbee-placement-split",
-                    text: MESSAGES.PLACEMENT_SPLIT(role.tensor_split.join("/")),
-                });
+                this.renderToggle(toggles, role.role, gpu);
             }
         }
         if (REPLICA_ROLES.has(role.role)) this.renderStepper(row, role.role);
+    }
+
+    /** A single-instance role (rerank) pins to exactly one card: it is neither
+     *  tensor-split like chat nor data-parallel replicated like embed/vision. */
+    private isSingleSelect(role: WorkerRole): boolean {
+        return role !== WORKER_ROLE.CHAT && !REPLICA_ROLES.has(role);
+    }
+
+    /** The one-word placement rule shown under each role: split / mirror / one card. */
+    private roleHint(role: WorkerRole): string {
+        if (role === WORKER_ROLE.CHAT) return MESSAGES.PLACEMENT_HINT_SPLIT;
+        if (REPLICA_ROLES.has(role)) return MESSAGES.PLACEMENT_HINT_MIRROR;
+        return MESSAGES.PLACEMENT_HINT_SINGLE;
     }
 
     // ---- multi-GPU matrix -----------------------------------------------------
@@ -261,23 +295,22 @@ export class PlacementView extends ItemView {
         this.renderSectionTitle(container, MESSAGES.PLACEMENT_SECTION_HARDWARE);
         const hw = container.createDiv({ cls: "lilbee-placement-hw" });
         for (const gpu of data.gpus) {
-            this.renderDeviceCard(hw, gpu);
+            this.renderGpuRow(hw, gpu, data);
         }
         this.renderRoleSection(container, data, data.gpus);
     }
 
-    private renderChip(container: HTMLElement, role: WorkerRole, gpu: GpuInfo): void {
+    private renderToggle(container: HTMLElement, role: WorkerRole, gpu: GpuInfo): void {
         const draft = this.draftFor(role);
-        const on = draft.devices.has(gpu.index);
-        const chip = container.createEl("button", {
-            cls: on ? "lilbee-placement-chip is-on" : "lilbee-placement-chip",
-            text: gpu.label,
-        });
+        let cls = "lilbee-placement-toggle";
+        if (this.isSingleSelect(role)) cls += " is-radio";
+        if (draft.devices.has(gpu.index)) cls += " is-on";
+        const toggle = container.createEl("button", { cls, text: String(gpu.index) });
         if (this.isEditable()) {
-            this.tip(chip, MESSAGES.PLACEMENT_TIP_CHIP(role, gpu.label));
-            chip.addEventListener("click", () => this.toggleDevice(role, gpu.index));
+            this.tip(toggle, MESSAGES.PLACEMENT_TIP_CHIP(role, gpu.label));
+            toggle.addEventListener("click", () => this.toggleDevice(role, gpu.index));
         } else {
-            this.makeReadOnly(chip);
+            this.makeReadOnly(toggle);
         }
     }
 
@@ -318,11 +351,6 @@ export class PlacementView extends ItemView {
         return this.multiDevice ? MESSAGES.PLACEMENT_HINT_EDIT_MANUALLY : MESSAGES.PLACEMENT_HINT_REPLICAS_SETTINGS;
     }
 
-    private renderBar(container: HTMLElement): HTMLElement {
-        const bar = container.createDiv({ cls: "lilbee-placement-bar" });
-        return bar.createDiv({ cls: "lilbee-placement-bar-fill" });
-    }
-
     private clampPct(pct: number): number {
         return Math.min(100, Math.max(0, Math.round(pct)));
     }
@@ -351,11 +379,11 @@ export class PlacementView extends ItemView {
             if (!refs) continue;
             const pct = gpu.utilization_pct;
             const clamped = pct === null ? 0 : this.clampPct(pct);
-            refs.fill.setCssProps({ width: `${clamped}%` });
+            refs.utilFill.setCssProps({ width: `${clamped}%` });
             // Glow only while the card is actually working; idle bars stay flat.
-            refs.fill.toggleClass("is-active", clamped > 0);
-            refs.util.setText(pct === null ? MESSAGES.PLACEMENT_UTIL_NA : MESSAGES.PLACEMENT_UTIL(this.clampPct(pct)));
-            refs.mem.setText(MESSAGES.PLACEMENT_MEM_FREE(formatGb(gpu.free_bytes), formatGb(gpu.total_bytes)));
+            refs.utilFill.toggleClass("is-active", clamped > 0);
+            refs.utilText.setText(pct === null ? MESSAGES.PLACEMENT_UTIL_NA : MESSAGES.PLACEMENT_UTIL(clamped));
+            this.setVram({ fill: refs.vramFill, val: refs.memText }, gpu.free_bytes, gpu.total_bytes);
         }
     }
 
@@ -426,7 +454,10 @@ export class PlacementView extends ItemView {
 
     private toggleDevice(role: WorkerRole, deviceIndex: number): void {
         const draft = this.draftFor(role);
-        if (draft.devices.has(deviceIndex)) {
+        if (this.isSingleSelect(role)) {
+            // rerank is a single pinned instance: picking a card replaces the pin.
+            draft.devices = new Set([deviceIndex]);
+        } else if (draft.devices.has(deviceIndex)) {
             // Keep at least one device per role — the server rejects an empty set.
             if (draft.devices.size > 1) draft.devices.delete(deviceIndex);
         } else {
