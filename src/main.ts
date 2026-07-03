@@ -106,6 +106,11 @@ const PENDING_SYNC_HINT_DEBOUNCE_MS = 1000;
 
 const SUPPORTED_SYNC_EXTENSIONS = new Set(["md", "pdf", "txt", "html"]);
 
+// A single /api/add/upload request is bounded server-side by file count and
+// body size, so large folders upload in sequential batches that stay under both.
+const UPLOAD_BATCH_MAX_FILES = 90;
+const UPLOAD_BATCH_MAX_BYTES = 8 * BYTES_PER_MB;
+
 // Vault-relative folder where managed mode stores lilbee's documents
 // (see configureManagedStorage). It is the only scope `Sync vault` reconciles.
 const MANAGED_DOCS_PREFIX = "lilbee/";
@@ -210,6 +215,29 @@ function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
         failed: Array.isArray(obj.failed) ? (obj.failed as string[]) : [],
         skipped: Array.isArray(obj.skipped) ? (obj.skipped as string[]) : [],
     };
+}
+
+type UploadPayload = { name: string; data: ArrayBuffer };
+
+/** Split uploads into batches that stay under the server's per-request file
+ *  count and body-size limits. A lone file over the byte budget still gets its
+ *  own batch (the server rejects only if it also exceeds its hard cap). */
+export function batchUploads(files: UploadPayload[]): UploadPayload[][] {
+    const batches: UploadPayload[][] = [];
+    let current: UploadPayload[] = [];
+    let bytes = 0;
+    for (const file of files) {
+        const size = file.data.byteLength;
+        if (current.length > 0 && (current.length >= UPLOAD_BATCH_MAX_FILES || bytes + size > UPLOAD_BATCH_MAX_BYTES)) {
+            batches.push(current);
+            current = [];
+            bytes = 0;
+        }
+        current.push(file);
+        bytes += size;
+    }
+    if (current.length > 0) batches.push(current);
+    return batches;
 }
 
 export default class LilbeePlugin extends Plugin {
@@ -1797,9 +1825,52 @@ export default class LilbeePlugin extends Plugin {
             files.map((f) => f.name),
             retryKeys,
             retry,
-            (signal) => this.api.uploadFiles(files, signal),
+            (signal) => this.uploadInBatches(files, signal),
             "Uploading files",
         );
+    }
+
+    /** Upload files in server-safe batches while presenting one continuous
+     *  stream: progress counters are renumbered across the whole set, and a
+     *  single merged done event is emitted after the last batch. */
+    private async *uploadInBatches(files: UploadPayload[], signal: AbortSignal): AsyncGenerator<SSEEvent, void> {
+        const batches = batchUploads(files);
+        // One request: the server's counters already span the whole set — stream through untouched.
+        if (batches.length <= 1) {
+            yield* this.api.uploadFiles(files, signal);
+            return;
+        }
+        const total = files.length;
+        const merged: SyncDone = { added: [], updated: [], removed: [], unchanged: 0, failed: [], skipped: [] };
+        let done = 0;
+        for (const batch of batches) {
+            for await (const event of this.api.uploadFiles(batch, signal)) {
+                if (event.event === SSE_EVENT.DONE) {
+                    const parsed = parseAddDoneEvent(event.data);
+                    if (parsed) {
+                        merged.added.push(...parsed.added);
+                        merged.updated.push(...parsed.updated);
+                        merged.removed.push(...parsed.removed);
+                        merged.failed.push(...parsed.failed);
+                        merged.skipped.push(...parsed.skipped);
+                        merged.unchanged += parsed.unchanged;
+                    }
+                } else if (event.event === SSE_EVENT.FILE_START) {
+                    const d = event.data as { current_file: number; total_files: number };
+                    yield {
+                        event: SSE_EVENT.FILE_START,
+                        data: { current_file: done + d.current_file, total_files: total },
+                    };
+                } else if (event.event === SSE_EVENT.BATCH_PROGRESS) {
+                    const d = event.data as BatchProgressPayload;
+                    yield { event: SSE_EVENT.BATCH_PROGRESS, data: { ...d, current: done + d.current, total } };
+                } else {
+                    yield event;
+                }
+            }
+            done += batch.length;
+        }
+        yield { event: SSE_EVENT.DONE, data: merged };
     }
 
     cancelSync(): void {

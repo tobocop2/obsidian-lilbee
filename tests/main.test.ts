@@ -546,10 +546,111 @@ describe("LilbeePlugin", () => {
             await (plugin as any).runUpload([{ name: "a.py", data: new ArrayBuffer(1) }], ["/vault/a.py"]);
             expect(runAddSpy.mock.calls[0][0]).toEqual(["a.py"]);
             expect(runAddSpy.mock.calls[0][4]).toBe("Uploading files");
-            // Exercise the makeStream factory so the api.uploadFiles call is covered.
+            // Draining the makeStream factory drives uploadInBatches -> api.uploadFiles.
             (plugin as any).api.uploadFiles = vi.fn().mockReturnValue((async function* () {})());
-            (runAddSpy.mock.calls[0][3] as (s: AbortSignal) => unknown)(new AbortController().signal);
+            const stream = (runAddSpy.mock.calls[0][3] as (s: AbortSignal) => AsyncGenerator<unknown>)(
+                new AbortController().signal,
+            );
+            for await (const _ of stream) void _;
             expect((plugin as any).api.uploadFiles).toHaveBeenCalled();
+        });
+
+        it("batchUploads splits by file count and byte budget", async () => {
+            const { batchUploads } = await import("../src/main");
+            // 200 tiny files -> 90/90/20 (under the 90-file cap)
+            const many = Array.from({ length: 200 }, (_, i) => ({ name: `f${i}.py`, data: new ArrayBuffer(1) }));
+            expect(batchUploads(many).map((b) => b.length)).toEqual([90, 90, 20]);
+            // byte budget forces a split before the count cap
+            const big = [
+                { name: "a", data: new ArrayBuffer(7 * 1_000_000) },
+                { name: "b", data: new ArrayBuffer(7 * 1_000_000) },
+            ];
+            expect(batchUploads(big).map((b) => b.length)).toEqual([1, 1]);
+            // a single oversized file still gets its own batch
+            expect(batchUploads([{ name: "big", data: new ArrayBuffer(20 * 1_000_000) }])).toHaveLength(1);
+            expect(batchUploads([])).toEqual([]);
+        });
+
+        it("uploadInBatches renumbers progress and merges one done event", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const files = Array.from({ length: 95 }, (_, i) => ({ name: `f${i}.py`, data: new ArrayBuffer(1) }));
+            // Each batch reports batch-local counters + its own done summary.
+            (plugin as any).api.uploadFiles = vi.fn((batch: { name: string }[]) =>
+                (async function* () {
+                    yield { event: SSE_EVENT.FILE_START, data: { current_file: 1, total_files: batch.length } };
+                    yield { event: SSE_EVENT.EMBED, data: { chunk: 1, total_chunks: 2 } };
+                    yield {
+                        event: SSE_EVENT.BATCH_PROGRESS,
+                        data: { file: batch[0].name, status: "added", current: 1, total: batch.length },
+                    };
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data: {
+                            added: batch.map((f) => f.name),
+                            updated: [],
+                            removed: [],
+                            unchanged: 0,
+                            failed: [],
+                            skipped: [],
+                        },
+                    };
+                })(),
+            );
+            const events: { event: string; data: any }[] = [];
+            for await (const e of (plugin as any).uploadInBatches(files, new AbortController().signal)) events.push(e);
+            // 95 files -> two batches (90 + 5)
+            expect((plugin as any).api.uploadFiles).toHaveBeenCalledTimes(2);
+            // second batch's FILE_START is renumbered against the global total
+            const starts = events.filter((e) => e.event === SSE_EVENT.FILE_START);
+            expect(starts[0].data).toEqual({ current_file: 1, total_files: 95 });
+            expect(starts[1].data).toEqual({ current_file: 91, total_files: 95 });
+            expect(events.filter((e) => e.event === SSE_EVENT.BATCH_PROGRESS)[1].data.current).toBe(91);
+            // exactly one merged done carrying every file
+            const dones = events.filter((e) => e.event === SSE_EVENT.DONE);
+            expect(dones).toHaveLength(1);
+            expect(dones[0].data.added).toHaveLength(95);
+        });
+
+        it("uploadInBatches ignores an unparseable done from a batch", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const files = Array.from({ length: 95 }, (_, i) => ({ name: `f${i}.py`, data: new ArrayBuffer(1) }));
+            let call = 0;
+            (plugin as any).api.uploadFiles = vi.fn(() =>
+                (async function* () {
+                    // first batch: valid summary; second batch: malformed (parseAddDoneEvent -> null)
+                    yield {
+                        event: SSE_EVENT.DONE,
+                        data:
+                            call++ === 0
+                                ? { added: ["a"], updated: [], removed: [], unchanged: 0, failed: [], skipped: [] }
+                                : { garbage: true },
+                    };
+                })(),
+            );
+            const events: { event: string; data: any }[] = [];
+            for await (const e of (plugin as any).uploadInBatches(files, new AbortController().signal)) events.push(e);
+            const dones = events.filter((e) => e.event === SSE_EVENT.DONE);
+            expect(dones).toHaveLength(1);
+            expect(dones[0].data.added).toEqual(["a"]); // the malformed batch contributes nothing
+        });
+
+        it("uploadInBatches passes through embed/error events unchanged", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            (plugin as any).api.uploadFiles = vi.fn(() =>
+                (async function* () {
+                    yield { event: SSE_EVENT.EMBED, data: { chunk: 1, total_chunks: 3 } };
+                    yield { event: SSE_EVENT.ERROR, data: { message: "boom" } };
+                })(),
+            );
+            const events: { event: string; data: any }[] = [];
+            for await (const e of (plugin as any).uploadInBatches(
+                [{ name: "a.py", data: new ArrayBuffer(1) }],
+                new AbortController().signal,
+            )) {
+                events.push(e);
+            }
+            expect(events.some((e) => e.event === SSE_EVENT.EMBED && e.data.total_chunks === 3)).toBe(true);
+            expect(events.some((e) => e.event === SSE_EVENT.ERROR)).toBe(true);
         });
 
         it("collectVaultUploads reads a single file", async () => {
