@@ -207,6 +207,7 @@ function makePlugin(): LilbeePlugin {
         triggerSync: vi.fn().mockResolvedValue(undefined),
         notifyChatStart: vi.fn(),
         notifyChatEnd: vi.fn(),
+        assertFleetReady: vi.fn().mockReturnValue(true),
         refreshMemoryViews: vi.fn(),
         taskQueue: new TaskQueue(),
         app: {
@@ -557,6 +558,25 @@ describe("ChatView.sendMessage — bubble structure", () => {
         const p = userBubble.children.find((c) => c.tagName === "P");
         expect(p).toBeDefined();
         expect(p!.textContent).toBe("my question");
+    });
+
+    it("does not send while the fleet is warming", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        (plugin.assertFleetReady as ReturnType<typeof vi.fn>).mockReturnValue(false);
+        plugin.api.chatStream = vi.fn();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "question";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        expect(plugin.api.chatStream).not.toHaveBeenCalled();
+        expect(messagesEl.children.length).toBe(0);
     });
 });
 

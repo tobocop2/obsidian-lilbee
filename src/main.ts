@@ -1656,6 +1656,14 @@ export default class LilbeePlugin extends Plugin {
         return false;
     }
 
+    /** Block chat and ingest while the fleet is (re)loading (chat_ready:false), so
+     *  requests never hit a half-built fleet. Public so the chat view gates on it too. */
+    assertFleetReady(): boolean {
+        if (!this.chatWarming) return true;
+        new Notice(MESSAGES.NOTICE_FLEET_WARMING);
+        return false;
+    }
+
     private async confirmReindexIfNeeded(name: string): Promise<boolean> {
         try {
             const searchName = name.replace(/\.md$/, "");
@@ -1674,6 +1682,7 @@ export default class LilbeePlugin extends Plugin {
     async addExternalFiles(paths: string[]): Promise<void> {
         if (!this.statusBarEl || paths.length === 0) return;
         if (!this.assertActiveModel()) return;
+        if (!this.assertFleetReady()) return;
         const label = paths.length === 1 ? paths[0].split("/").pop() || paths[0] : `${paths.length} files`;
 
         const isRetry = paths.length === 1 && this.failedAddPaths.has(paths[0]);
@@ -1802,6 +1811,7 @@ export default class LilbeePlugin extends Plugin {
     async addToLilbee(file: TAbstractFile): Promise<void> {
         if (!this.statusBarEl) return;
         if (!this.assertActiveModel()) return;
+        if (!this.assertFleetReady()) return;
         const absolutePath = `${this.getVaultBasePath()}/${file.path}`;
         // The vault root's name is the empty string and its path is "/", so
         // `?? file.path` doesn't fall back; both have to be checked.

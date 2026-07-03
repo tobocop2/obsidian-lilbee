@@ -2996,6 +2996,41 @@ describe("LilbeePlugin", () => {
         });
     });
 
+    describe("fleet readiness gate", () => {
+        it("assertFleetReady blocks and notices while the fleet is warming", async () => {
+            const plugin = await createPlugin();
+            (plugin as any).chatWarming = true;
+            expect((plugin as any).assertFleetReady()).toBe(false);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FLEET_WARMING)).toBe(true);
+            (plugin as any).chatWarming = false;
+            expect((plugin as any).assertFleetReady()).toBe(true);
+        });
+
+        it("blocks addToLilbee while the fleet is warming", async () => {
+            const plugin = await createPlugin();
+            (plugin as any).statusBarEl = {};
+            plugin.activeModel = "llama3";
+            (plugin as any).chatWarming = true;
+            const runUpload = vi.spyOn(plugin as any, "runUpload").mockResolvedValue(undefined);
+            const runAdd = vi.spyOn(plugin as any, "runAdd").mockResolvedValue(undefined);
+            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            expect(runUpload).not.toHaveBeenCalled();
+            expect(runAdd).not.toHaveBeenCalled();
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FLEET_WARMING)).toBe(true);
+        });
+
+        it("blocks addExternalFiles while the fleet is warming", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            (plugin as any).statusBarEl = {};
+            plugin.activeModel = "llama3";
+            (plugin as any).chatWarming = true;
+            const runAdd = vi.spyOn(plugin as any, "runAdd").mockResolvedValue(undefined);
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+            expect(runAdd).not.toHaveBeenCalled();
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FLEET_WARMING)).toBe(true);
+        });
+    });
+
     describe("triggerSync event handling", () => {
         it("handles EXTRACT events by updating taskQueue", async () => {
             const plugin = await createPlugin();

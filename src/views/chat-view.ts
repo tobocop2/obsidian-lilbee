@@ -829,6 +829,7 @@ export class ChatView extends ItemView {
 
     private async sendMessage(text: string): Promise<void> {
         if (!this.messagesEl || this.sending) return;
+        if (!this.plugin.assertFleetReady()) return;
         this.sending = true;
         this.streamController = new AbortController();
         this.plugin.notifyChatStart();

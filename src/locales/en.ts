@@ -600,6 +600,7 @@ export const MESSAGES = {
         `lilbee: server is already ingesting ${source} — waiting for it to finish`,
 
     NOTICE_NO_CHAT_MODEL: "lilbee: no chat model set — select one in settings",
+    NOTICE_FLEET_WARMING: "lilbee: the model is still loading — try again in a moment",
     NOTICE_MODEL_ACTIVATED: (model: string) => `Now using ${model}`,
     NOTICE_PULL_CANCELLED: "lilbee: pull cancelled",
     NOTICE_PULL_FAILED: "lilbee: failed to pull model",
