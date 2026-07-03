@@ -831,7 +831,7 @@ export class ChatView extends ItemView {
         this.sending = true;
         this.streamController = new AbortController();
         this.plugin.notifyChatStart();
-        if (this.sendBtn) this.sendBtn.textContent = MESSAGES.BUTTON_STOP;
+        if (this.sendBtn) this.sendBtn.setText(MESSAGES.BUTTON_STOP);
         if (this.textareaEl) this.textareaEl.disabled = true;
 
         const userBubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message user" });
@@ -903,7 +903,7 @@ export class ChatView extends ItemView {
                     void this.renderMarkdown(textEl, `${state.fullContent}\n\n${MESSAGES.LABEL_STOPPED_MD}`);
                     this.history.push({ role: "assistant", content: state.fullContent });
                 } else {
-                    textEl.textContent = MESSAGES.LABEL_STOPPED;
+                    textEl.setText(MESSAGES.LABEL_STOPPED);
                 }
             } else if (err instanceof RateLimitedError) {
                 this.renderInlineError(assistantBubble, MESSAGES.ERROR_RATE_LIMITED(err.retryAfterSeconds));
@@ -922,7 +922,7 @@ export class ChatView extends ItemView {
             this.streamController = null;
             this.plugin.notifyChatEnd();
             if (this.sendBtn) {
-                this.sendBtn.textContent = MESSAGES.BUTTON_SEND;
+                this.sendBtn.setText(MESSAGES.BUTTON_SEND);
             }
             if (this.textareaEl) this.textareaEl.disabled = false;
         }

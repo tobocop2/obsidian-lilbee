@@ -53,17 +53,17 @@ export class TaskCenterView extends ItemView {
         this.capPill.hide();
 
         const clearBtn = header.createEl("button", { cls: "lilbee-tasks-clear" });
-        clearBtn.textContent = MESSAGES.BUTTON_CLEAR_TASKS;
+        clearBtn.setText(MESSAGES.BUTTON_CLEAR_TASKS);
         clearBtn.addEventListener("click", () => {
             this.plugin.taskQueue.clearHistory();
             this.render();
         });
 
         this.activeSection = contentEl.createDiv({ cls: "lilbee-tasks-section" });
-        this.activeSection.createDiv({ cls: "lilbee-tasks-section-header" }).textContent = MESSAGES.LABEL_ACTIVE_TASKS;
+        this.activeSection.createDiv({ cls: "lilbee-tasks-section-header" }).setText(MESSAGES.LABEL_ACTIVE_TASKS);
 
         this.queuedSection = contentEl.createDiv({ cls: "lilbee-tasks-section" });
-        this.queuedSection.createDiv({ cls: "lilbee-tasks-section-header" }).textContent = MESSAGES.LABEL_QUEUED_TASKS;
+        this.queuedSection.createDiv({ cls: "lilbee-tasks-section-header" }).setText(MESSAGES.LABEL_QUEUED_TASKS);
 
         this.completedSection = contentEl.createDiv({ cls: "lilbee-tasks-section" });
         this.completedSection.createDiv({ cls: "lilbee-tasks-section-header" }).textContent =
@@ -111,9 +111,11 @@ export class TaskCenterView extends ItemView {
         const active = this.plugin.taskQueue.activeAll.length;
         const queued = this.plugin.taskQueue.queued.length;
         const done = this.plugin.taskQueue.completed.length;
-        this.countersEl.textContent = MESSAGES.LABEL_TASK_COUNTERS.replace("{active}", String(active))
-            .replace("{queued}", String(queued))
-            .replace("{done}", String(done));
+        this.countersEl.setText(
+            MESSAGES.LABEL_TASK_COUNTERS.replace("{active}", String(active))
+                .replace("{queued}", String(queued))
+                .replace("{done}", String(done)),
+        );
     }
 
     private renderCapPill(): void {
@@ -123,13 +125,15 @@ export class TaskCenterView extends ItemView {
         ).length;
         const cap = TASK_QUEUE.MAX_CONCURRENT_BACKGROUND;
         if (backgroundActive >= cap) {
-            this.capPill.textContent = MESSAGES.LABEL_TASK_CAP_PILL.replace(
-                "{active}",
-                String(backgroundActive),
-            ).replace("{cap}", String(cap));
+            this.capPill.setText(
+                MESSAGES.LABEL_TASK_CAP_PILL.replace("{active}", String(backgroundActive)).replace(
+                    "{cap}",
+                    String(cap),
+                ),
+            );
             this.capPill.show();
         } else {
-            this.capPill.textContent = "";
+            this.capPill.setText("");
             this.capPill.hide();
         }
     }
@@ -144,7 +148,7 @@ export class TaskCenterView extends ItemView {
 
         if (allActive.length === 0) {
             const empty = container.createDiv({ cls: "lilbee-tasks-empty" });
-            empty.textContent = MESSAGES.LABEL_NO_ACTIVE_TASKS;
+            empty.setText(MESSAGES.LABEL_NO_ACTIVE_TASKS);
             return;
         }
 
@@ -163,7 +167,7 @@ export class TaskCenterView extends ItemView {
 
         if (queued.length === 0) {
             const empty = container.createDiv({ cls: "lilbee-tasks-empty" });
-            empty.textContent = MESSAGES.LABEL_NO_QUEUED_TASKS;
+            empty.setText(MESSAGES.LABEL_NO_QUEUED_TASKS);
             return;
         }
 
@@ -182,7 +186,7 @@ export class TaskCenterView extends ItemView {
 
         if (completed.length === 0) {
             const empty = container.createDiv({ cls: "lilbee-tasks-empty" });
-            empty.textContent = MESSAGES.LABEL_NO_COMPLETED_TASKS;
+            empty.setText(MESSAGES.LABEL_NO_COMPLETED_TASKS);
             return;
         }
 
@@ -216,16 +220,16 @@ export class TaskCenterView extends ItemView {
 
         const head = body.createDiv({ cls: "lilbee-task-head" });
         const typeBadge = head.createSpan({ cls: `lilbee-task-type-badge lilbee-task-badge-${task.type}` });
-        typeBadge.textContent = task.type.toUpperCase();
+        typeBadge.setText(task.type.toUpperCase());
         head.createSpan({ cls: "lilbee-task-name", text: task.name });
         const meta = head.createSpan({ cls: "lilbee-task-meta" });
-        meta.textContent = metaForRow(task, state);
+        meta.setText(metaForRow(task, state));
 
         const stats = body.createDiv({ cls: "lilbee-task-stats" });
         const statsLabel = stats.createSpan({ cls: "lilbee-task-stats-label" });
-        statsLabel.textContent = statsLine(task, state);
+        statsLabel.setText(statsLine(task, state));
         const pctLabel = stats.createSpan({ cls: "lilbee-task-pct" });
-        pctLabel.textContent = isIndeterminate || !isActive ? "" : `${Math.round(pct)}%`;
+        pctLabel.setText(isIndeterminate || !isActive ? "" : `${Math.round(pct)}%`);
 
         const barContainer = body.createDiv({ cls: "lilbee-task-progress-bar" });
         const barFill = barContainer.createDiv({ cls: "lilbee-task-progress-fill" });
@@ -234,7 +238,7 @@ export class TaskCenterView extends ItemView {
 
         if (isActive && task.canCancel) {
             const cancelBtn = row.createEl("button", { cls: "lilbee-task-cancel" });
-            cancelBtn.textContent = MESSAGES.LABEL_CLOSE_GLYPH;
+            cancelBtn.setText(MESSAGES.LABEL_CLOSE_GLYPH);
             cancelBtn.title = MESSAGES.LABEL_CANCEL_TASK;
             cancelBtn.addEventListener("click", (e) => {
                 e.stopPropagation();
@@ -244,7 +248,7 @@ export class TaskCenterView extends ItemView {
 
         if ((state === TASK_STATUS.FAILED || state === TASK_STATUS.CANCELLED) && task.retry) {
             const retryBtn = row.createEl("button", { cls: "lilbee-task-retry" });
-            retryBtn.textContent = MESSAGES.LABEL_RETRY_TASK;
+            retryBtn.setText(MESSAGES.LABEL_RETRY_TASK);
             retryBtn.title = MESSAGES.LABEL_RETRY_TASK;
             retryBtn.addEventListener("click", (e) => {
                 e.stopPropagation();

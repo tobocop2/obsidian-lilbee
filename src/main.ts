@@ -106,6 +106,10 @@ const BYTES_PER_MB = 1_000_000;
 
 const PENDING_SYNC_HINT_DEBOUNCE_MS = 1000;
 
+// How long terminateOwningProcess waits for the previous owner to exit.
+const PROCESS_EXIT_POLLS = 50;
+const PROCESS_EXIT_POLL_INTERVAL_MS = 100;
+
 const SUPPORTED_SYNC_EXTENSIONS = new Set(["md", "pdf", "txt", "html"]);
 
 // A single /api/add/upload request is bounded server-side by file count and
@@ -566,13 +570,13 @@ export default class LilbeePlugin extends Plugin {
         } catch {
             // already gone — fine
         }
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < PROCESS_EXIT_POLLS; i++) {
             try {
                 node.processKill(owner.pid, 0);
             } catch {
                 return true;
             }
-            await new Promise((r) => window.setTimeout(r, 100));
+            await new Promise((r) => window.setTimeout(r, PROCESS_EXIT_POLL_INTERVAL_MS));
         }
         return false;
     }

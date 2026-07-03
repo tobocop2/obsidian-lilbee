@@ -68,7 +68,7 @@ export class CrawlModal extends Modal {
 
         const notice = contentEl.createDiv({ cls: "lilbee-crawl-notice" });
         notice.setAttribute("hidden", "hidden");
-        notice.textContent = MESSAGES.NOTICE_CRAWL_RECURSIVE;
+        notice.setText(MESSAGES.NOTICE_CRAWL_RECURSIVE);
 
         let noticeOpen = false;
         const setNoticeOpen = (open: boolean): void => {
@@ -137,7 +137,7 @@ export class CrawlModal extends Modal {
             advanced.style.display = recursive ? "" : "none";
             infoBtn.style.display = recursive ? "" : "none";
             if (!recursive) {
-                errorEl.textContent = "";
+                errorEl.setText("");
                 setNoticeOpen(false);
             }
         };
@@ -161,17 +161,17 @@ export class CrawlModal extends Modal {
             if (!recursive) {
                 depth = 0;
                 maxPages = null;
-                errorEl.textContent = "";
+                errorEl.setText("");
             } else {
                 const depthRes = parseOptionalCount(asInput(depthInput).value, { allowZero: true });
                 const maxRes = parseOptionalCount(asInput(maxInput).value, { allowZero: false });
                 const err = maxRes.error ?? depthRes.error;
                 if (err) {
-                    errorEl.textContent = err;
+                    errorEl.setText(err);
                     advanced.open = true;
                     return;
                 }
-                errorEl.textContent = "";
+                errorEl.setText("");
                 depth = depthRes.value;
                 maxPages = maxRes.value;
             }
