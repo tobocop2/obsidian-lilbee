@@ -2450,7 +2450,7 @@ describe("LilbeePlugin", () => {
 
     describe("addExternalFiles()", () => {
         it("shows Notice and returns when no chat model is set", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "";
 
@@ -2461,7 +2461,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("copies external files into the vault imports dir before indexing", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2480,8 +2480,58 @@ describe("LilbeePlugin", () => {
             );
         });
 
+        it("uploads the copied bytes instead of paths in external mode", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            const { node } = await import("../src/binary-manager");
+            (node.readFileSync as ReturnType<typeof vi.fn>).mockReturnValueOnce(Buffer.from("print('hi')"));
+            const runUploadSpy = vi.spyOn(plugin as any, "runUpload").mockResolvedValue(undefined);
+
+            await plugin.addExternalFiles(["/home/user/foo.py"]);
+
+            expect(runUploadSpy).toHaveBeenCalled();
+            const uploads = runUploadSpy.mock.calls[0][0] as { name: string; data: ArrayBuffer }[];
+            expect(uploads[0].name).toBe("foo.py");
+            expect(uploads[0].data.byteLength).toBeGreaterThan(0);
+            expect(plugin.api.addFiles).not.toHaveBeenCalled();
+        });
+
+        it("surfaces a Notice when reading disk bytes fails in external mode", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            const { node } = await import("../src/binary-manager");
+            (node.readFileSync as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+                throw new Error("EACCES");
+            });
+            const runUploadSpy = vi.spyOn(plugin as any, "runUpload").mockResolvedValue(undefined);
+
+            await plugin.addExternalFiles(["/home/user/foo.py"]);
+
+            expect(runUploadSpy).not.toHaveBeenCalled();
+            expect(Notice.instances.some((n) => n.message.includes("EACCES"))).toBe(true);
+        });
+
+        it("readUploadsFromDisk recurses picked directories", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const { node } = await import("../src/binary-manager");
+            const statSync = node.statSync as ReturnType<typeof vi.fn>;
+            const readFileSync = node.readFileSync as ReturnType<typeof vi.fn>;
+            statSync.mockImplementation((p: string) => ({ isDirectory: () => p.endsWith("pkg"), dev: 1, size: 1 }));
+            (node.readdirSync as ReturnType<typeof vi.fn>).mockReturnValueOnce(["a.py", "b.py"]);
+            readFileSync.mockReturnValue(Buffer.from("x"));
+            try {
+                const uploads = (plugin as any).readUploadsFromDisk(["/root/pkg"]) as { name: string }[];
+                expect(uploads.map((u) => u.name).sort()).toEqual(["a.py", "b.py"]);
+            } finally {
+                statSync.mockImplementation(() => ({ isDirectory: () => false, dev: 1, size: 0 }));
+                readFileSync.mockReset();
+            }
+        });
+
         it("returns early when paths array is empty", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.api.addFiles = vi.fn();
 
@@ -2491,7 +2541,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("handles path with trailing slash gracefully", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
             plugin.api.addFiles = vi.fn().mockImplementation(async function* () {
@@ -2506,7 +2556,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("returns early when statusBarEl is null", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
             (plugin as any).statusBarEl = null;
@@ -2518,7 +2568,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("shows summary Notice on done event", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2536,7 +2586,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("includes skipped count in summary Notice when server reports skipped files", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2562,7 +2612,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("updates status bar on FILE_START during addExternalFiles", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2577,7 +2627,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("addExternalFiles shows confirmation when single file is already indexed", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2604,7 +2654,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("addExternalFiles cancels when user declines re-add", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2630,7 +2680,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("shows error Notice on API failure", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2645,7 +2695,7 @@ describe("LilbeePlugin", () => {
 
         it("fails the task and shows idle-stream notice when add stream hangs", async () => {
             const { StreamIdleError } = await import("../src/utils");
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2661,7 +2711,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("shows failed count in Notice", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2680,7 +2730,7 @@ describe("LilbeePlugin", () => {
 
         it("passes through sources already under the vault root without copying", async () => {
             const { node } = await import("../src/binary-manager");
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2700,7 +2750,7 @@ describe("LilbeePlugin", () => {
 
         it("drops files that fail to copy and proceeds with the rest", async () => {
             const { node } = await import("../src/binary-manager");
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2723,7 +2773,7 @@ describe("LilbeePlugin", () => {
 
         it("returns without indexing when every external file fails to copy", async () => {
             const { node } = await import("../src/binary-manager");
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
             plugin.api.addFiles = vi.fn();
@@ -2739,7 +2789,7 @@ describe("LilbeePlugin", () => {
 
         it("appends a -N suffix when the target import filename already exists", async () => {
             const { node } = await import("../src/binary-manager");
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2762,7 +2812,7 @@ describe("LilbeePlugin", () => {
 
         it("falls back to a timestamp suffix when 999 sequential collisions are exhausted", async () => {
             const { node } = await import("../src/binary-manager");
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2787,7 +2837,7 @@ describe("LilbeePlugin", () => {
 
         it("appends -N to extensionless filenames without adding a spurious dot", async () => {
             const { node } = await import("../src/binary-manager");
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2810,7 +2860,7 @@ describe("LilbeePlugin", () => {
 
         it("surfaces a Notice and returns early when the imports dir can't be created", async () => {
             const { node } = await import("../src/binary-manager");
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
             plugin.api.addFiles = vi.fn();
@@ -2828,7 +2878,7 @@ describe("LilbeePlugin", () => {
 
         it("detects Windows-style vault-local paths so disk picks on the same drive don't double-copy", async () => {
             const { node } = await import("../src/binary-manager");
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2856,7 +2906,7 @@ describe("LilbeePlugin", () => {
 
         it("recursively copies picked directories into imports/", async () => {
             const { node } = await import("../src/binary-manager");
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2889,7 +2939,7 @@ describe("LilbeePlugin", () => {
 
         it("handles a mixed batch of file and directory sources", async () => {
             const { node } = await import("../src/binary-manager");
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -2918,7 +2968,7 @@ describe("LilbeePlugin", () => {
 
         it("surfaces a Notice when a directory copy fails and keeps the rest of the batch", async () => {
             const { node } = await import("../src/binary-manager");
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -5617,8 +5667,11 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "llama3";
+            const { node } = await import("../src/binary-manager");
+            (node.readFileSync as ReturnType<typeof vi.fn>).mockReturnValueOnce(Buffer.from("x"));
 
-            plugin.api.addFiles = vi.fn().mockImplementation(async function* () {
+            // External mode uploads bytes, so the token error comes off the upload stream.
+            plugin.api.uploadFiles = vi.fn().mockImplementation(async function* () {
                 throw new SessionTokenError(401, "stale");
             });
 
@@ -5632,7 +5685,7 @@ describe("LilbeePlugin", () => {
 
         it("skips the reindex-confirm prompt when retrying a file whose previous add just failed", async () => {
             const { StreamIdleError } = await import("../src/utils");
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -5699,7 +5752,7 @@ describe("LilbeePlugin", () => {
 
         it("clears the retry marker after a successful add so future adds prompt normally again", async () => {
             const { StreamIdleError } = await import("../src/utils");
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
 
@@ -7137,13 +7190,31 @@ describe("LilbeePlugin", () => {
         });
 
         it("addExternalFiles stores a retry that re-runs the external add", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             plugin.activeModel = "llama3";
             async function* withError() {
                 yield { event: SSE_EVENT.ERROR, data: { message: "boom" } };
             }
             plugin.api.addFiles = vi.fn().mockReturnValue(withError());
+            await plugin.addExternalFiles(["/home/user/doc.pdf"]);
+            const failed = plugin.taskQueue.completed.find((t) => t.status === "failed");
+            expect(failed?.retry).toBeDefined();
+            const addSpy = vi.spyOn(plugin, "addExternalFiles").mockResolvedValue(undefined);
+            await failed!.retry!();
+            expect(addSpy).toHaveBeenCalledWith(["/home/user/doc.pdf"]);
+        });
+
+        it("addExternalFiles stores a retry that re-uploads in external mode", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "llama3";
+            const { node } = await import("../src/binary-manager");
+            (node.readFileSync as ReturnType<typeof vi.fn>).mockReturnValueOnce(Buffer.from("x"));
+            async function* withError() {
+                yield { event: SSE_EVENT.ERROR, data: { message: "boom" } };
+            }
+            plugin.api.uploadFiles = vi.fn().mockReturnValue(withError());
             await plugin.addExternalFiles(["/home/user/doc.pdf"]);
             const failed = plugin.taskQueue.completed.find((t) => t.status === "failed");
             expect(failed?.retry).toBeDefined();

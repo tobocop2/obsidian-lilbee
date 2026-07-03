@@ -1689,7 +1689,40 @@ export default class LilbeePlugin extends Plugin {
         if (copiedPaths.length === 0) return;
 
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", label));
-        await this.runAdd(copiedPaths, paths, () => this.addExternalFiles(paths));
+        if (this.settings.serverMode === SERVER_MODE.EXTERNAL) {
+            // A remote server can't read the just-copied local paths, so send
+            // the bytes — same upload route as the right-click "Add to lilbee".
+            let uploads: UploadPayload[];
+            try {
+                uploads = this.readUploadsFromDisk(copiedPaths);
+            } catch (err) {
+                console.error("[lilbee] add failed:", err);
+                new Notice(MESSAGES.ERROR_ADD_FAILED_DETAIL(errorMessage(err, MESSAGES.ERROR_CANNOT_CONNECT)));
+                return;
+            }
+            await this.runUpload(uploads, paths, () => this.addExternalFiles(paths));
+        } else {
+            await this.runAdd(copiedPaths, paths, () => this.addExternalFiles(paths));
+        }
+    }
+
+    /** Read every file under each path (recursing directories) off disk as
+     *  upload payloads — for external mode, where the server can't read paths. */
+    private readUploadsFromDisk(paths: string[]): UploadPayload[] {
+        const out: UploadPayload[] = [];
+        const walk = (p: string): void => {
+            if (node.statSync(p).isDirectory()) {
+                for (const child of node.readdirSync(p)) walk(node.join(p, child));
+            } else {
+                const buf = node.readFileSync(p);
+                out.push({
+                    name: node.basename(p),
+                    data: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
+                });
+            }
+        };
+        for (const p of paths) walk(p);
+        return out;
     }
 
     /**
