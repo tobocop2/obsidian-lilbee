@@ -3150,6 +3150,7 @@ describe("LilbeePlugin", () => {
                 50,
                 expect.any(AbortSignal),
                 undefined,
+                undefined,
             );
             expect(Notice.instances.some((n) => n.message.includes("crawl done"))).toBe(true);
             expect(syncSpy).toHaveBeenCalled();
@@ -3175,6 +3176,7 @@ describe("LilbeePlugin", () => {
                 null,
                 expect.any(AbortSignal),
                 undefined,
+                undefined,
             );
         });
 
@@ -3197,6 +3199,30 @@ describe("LilbeePlugin", () => {
                 null,
                 expect.any(AbortSignal),
                 "browser",
+                undefined,
+            );
+        });
+
+        it("forwards include-subdomains to api.crawl", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.api.crawl = vi.fn().mockReturnValue(
+                (async function* () {
+                    yield { event: SSE_EVENT.CRAWL_DONE, data: { pages_crawled: 3 } };
+                })(),
+            );
+            vi.spyOn(plugin, "triggerSync").mockResolvedValue(undefined);
+
+            await plugin.runCrawl("https://example.com", null, null, "http", true);
+
+            expect(plugin.api.crawl).toHaveBeenCalledWith(
+                "https://example.com",
+                null,
+                null,
+                expect.any(AbortSignal),
+                "http",
+                true,
             );
         });
 
@@ -5928,6 +5954,68 @@ describe("LilbeePlugin", () => {
 
             const result = await plugin.checkForUpdate();
             expect(result.available).toBe(false);
+        });
+    });
+
+    describe("external server outdated warning", () => {
+        const RELEASE = { tag: "v0.6.74", assetUrl: "u", variant: "default", sizeBytes: 1, digest: null };
+
+        async function setupExternal(version: string, release: unknown = RELEASE) {
+            const { ok } = await import("../src/result");
+            const { getLatestRelease } = await import("../src/binary-manager");
+            (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue(release);
+            const plugin = await createPlugin({ serverMode: "external" });
+            plugin.api.health = vi.fn().mockResolvedValue(ok({ status: "ok", version }));
+            return plugin;
+        }
+
+        it("shows a dismissible notice on launch when the server is behind the latest release", async () => {
+            const plugin = await setupExternal("0.6.60");
+            await plugin.onload();
+            await flush();
+
+            const notice = Notice.instances.find((n) => n.message.includes("behind the latest release"));
+            expect(notice?.message).toBe(MESSAGES.NOTICE_EXTERNAL_SERVER_OUTDATED("0.6.60", "0.6.74"));
+            // permanent → stays until the user dismisses it
+            expect(notice?.duration).toBe(0);
+        });
+
+        it("stays quiet when the server already runs the latest release", async () => {
+            const plugin = await setupExternal("0.6.74");
+            await (plugin as any).warnExternalServerOutdated();
+            expect(Notice.instances.some((n) => n.message.includes("behind the latest release"))).toBe(false);
+        });
+
+        it("stays quiet when the server is unreachable", async () => {
+            const { err } = await import("../src/result");
+            const plugin = await setupExternal("0.6.60");
+            plugin.api.health = vi.fn().mockResolvedValue(err(new Error("down")));
+            await (plugin as any).warnExternalServerOutdated();
+
+            plugin.api.health = vi.fn().mockRejectedValue(new Error("thrown"));
+            await (plugin as any).warnExternalServerOutdated();
+
+            expect(Notice.instances.some((n) => n.message.includes("behind the latest release"))).toBe(false);
+        });
+
+        it("stays quiet when the release lookup fails or reports no tag", async () => {
+            const { getLatestRelease } = await import("../src/binary-manager");
+            const plugin = await setupExternal("0.6.60");
+            (getLatestRelease as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
+            await (plugin as any).warnExternalServerOutdated();
+
+            const bare = await setupExternal("0.6.60", { ...RELEASE, tag: "v" });
+            await (bare as any).warnExternalServerOutdated();
+
+            expect(Notice.instances.some((n) => n.message.includes("behind the latest release"))).toBe(false);
+        });
+
+        it("does not run in managed mode", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const warn = vi.spyOn(plugin as any, "warnExternalServerOutdated");
+            await plugin.onload();
+            await flush();
+            expect(warn).not.toHaveBeenCalled();
         });
     });
 

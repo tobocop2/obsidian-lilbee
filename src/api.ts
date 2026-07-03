@@ -1,4 +1,12 @@
-import { CAPABILITY, JSON_HEADERS, OCTET_STREAM_HEADERS, SEARCH_CHUNK_TYPE, SSE_EVENT, ERROR_NAME } from "./types";
+import {
+    CAPABILITY,
+    JSON_HEADERS,
+    OCTET_STREAM_HEADERS,
+    REQUEST_OUTCOME,
+    SEARCH_CHUNK_TYPE,
+    SSE_EVENT,
+    ERROR_NAME,
+} from "./types";
 import { ok, err, Result } from "./result";
 
 import type {
@@ -27,6 +35,7 @@ import type {
     RememberResponse,
     ModelsResponse,
     ModelTask,
+    RequestOutcome,
     SearchChunkType,
     SourceContent,
     SSEEvent,
@@ -96,8 +105,6 @@ export class RateLimitedError extends Error {
         this.retryAfterSeconds = retryAfterSeconds;
     }
 }
-
-export type RequestOutcome = "ok" | "auth_error" | "server_error" | "unreachable" | "starting";
 
 /**
  * True when a `fetchResult` error came from a specific HTTP status. `assertOk`
@@ -232,7 +239,7 @@ export class LilbeeClient {
                 await new Promise((r) => window.setTimeout(r, STARTUP_POLL_INTERVAL_MS));
             }
             if (!this.baseUrl) {
-                this.recordOutcome("starting");
+                this.recordOutcome(REQUEST_OUTCOME.STARTING);
                 throw new ServerStartingError();
             }
         }
@@ -268,11 +275,11 @@ export class LilbeeClient {
                         // token still failed. The stored session token is stale — surface a
                         // typed error so the UI can tell the user what to do.
                         const text = await res.text().catch(() => "");
-                        this.recordOutcome("auth_error");
+                        this.recordOutcome(REQUEST_OUTCOME.AUTH_ERROR);
                         throw new SessionTokenError(res.status, text);
                     }
                     const okRes = await this.assertOk(res);
-                    this.recordOutcome("ok");
+                    this.recordOutcome(REQUEST_OUTCOME.OK);
                     return okRes;
                 } finally {
                     if (timer !== undefined) window.clearTimeout(timer);
@@ -283,7 +290,7 @@ export class LilbeeClient {
                     throw err;
                 }
                 if (err instanceof RateLimitedError) {
-                    this.recordOutcome("server_error");
+                    this.recordOutcome(REQUEST_OUTCOME.SERVER_ERROR);
                     throw err;
                 }
                 if (err instanceof Error && err.message.startsWith("Server responded")) {
@@ -291,7 +298,7 @@ export class LilbeeClient {
                     // not-found, conflict) that the caller handles — don't flag a
                     // global server error. Only 5xx flips the status to error.
                     const status = parseInt(err.message.slice("Server responded ".length), 10);
-                    this.recordOutcome(status >= 500 ? "server_error" : "ok");
+                    this.recordOutcome(status >= 500 ? REQUEST_OUTCOME.SERVER_ERROR : REQUEST_OUTCOME.OK);
                     throw err;
                 }
                 if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
@@ -299,7 +306,7 @@ export class LilbeeClient {
                 }
             }
         }
-        this.recordOutcome("unreachable");
+        this.recordOutcome(REQUEST_OUTCOME.UNREACHABLE);
         throw lastError;
     }
 

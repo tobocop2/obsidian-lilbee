@@ -379,7 +379,7 @@ describe("uploadFiles()", () => {
     it("POSTs multipart file content to /api/add/upload and yields SSE events", async () => {
         fetchMock.mockResolvedValue(
             sseResponse([
-                'event: done\ndata: {"added":["a.py"],"updated":[],"removed":[],"failed":[],"unchanged":0}\n\n',
+                'event: done\ndata: {"added":["a.py"],"updated":[],"removed":[],"failed":[],"skipped":[],"unchanged":0}\n\n',
             ]),
         );
         const data = new TextEncoder().encode("print(1)").buffer;
@@ -390,6 +390,8 @@ describe("uploadFiles()", () => {
         expect(url).toBe(`${BASE_URL}/api/add/upload`);
         expect(opts.method).toBe("POST");
         expect(opts.body).toBeInstanceOf(FormData);
+        const parts = (opts.body as FormData).getAll("data");
+        expect(parts).toHaveLength(1);
         // FormData sets its own multipart content-type; no JSON header.
         expect(opts.headers["Content-Type"]).toBeUndefined();
         expect(events[0].event).toBe("done");

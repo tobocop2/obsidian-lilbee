@@ -25,7 +25,7 @@ const PAGE_SIZE = 50;
 export const SET_MODEL_RETRIES = 4;
 export const SET_MODEL_RETRY_MS = 600;
 
-export type PickerScope = "chat" | "embedding";
+export type PickerScope = typeof MODEL_TASK.CHAT | typeof MODEL_TASK.EMBEDDING;
 
 export class ModelPickerModal extends Modal {
     private plugin: LilbeePlugin;
@@ -50,7 +50,10 @@ export class ModelPickerModal extends Modal {
         contentEl.empty();
         contentEl.addClass("lilbee-model-picker-modal");
         contentEl.createEl("h2", {
-            text: this.pickerScope === "chat" ? MESSAGES.MODEL_PICKER_TITLE_CHAT : MESSAGES.MODEL_PICKER_TITLE_EMBED,
+            text:
+                this.pickerScope === MODEL_TASK.CHAT
+                    ? MESSAGES.MODEL_PICKER_TITLE_CHAT
+                    : MESSAGES.MODEL_PICKER_TITLE_EMBED,
         });
         this.renderSearchInput(contentEl);
         this.listEl = contentEl.createDiv({ cls: "lilbee-model-picker-list" });
@@ -125,7 +128,7 @@ export class ModelPickerModal extends Modal {
     }
 
     private async fetchAndRender(): Promise<void> {
-        const taskFilter: ModelTask = this.pickerScope === "chat" ? MODEL_TASK.CHAT : MODEL_TASK.EMBEDDING;
+        const taskFilter: ModelTask = this.pickerScope;
         const result = await this.plugin.api.catalog({ task: taskFilter, limit: PAGE_SIZE });
         if (result.isErr()) {
             new Notice(MESSAGES.ERROR_LOAD_CATALOG);
@@ -217,7 +220,7 @@ export class ModelPickerModal extends Modal {
             new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", row.hf_repo));
             return;
         }
-        if (this.pickerScope === "chat") this.plugin.activeModel = row.hf_repo;
+        if (this.pickerScope === MODEL_TASK.CHAT) this.plugin.activeModel = row.hf_repo;
         void this.plugin.fetchActiveModel();
         this.plugin.refreshSettingsTab();
         new Notice(MESSAGES.NOTICE_MODEL_ACTIVATED(row.display_name));
@@ -234,7 +237,9 @@ export class ModelPickerModal extends Modal {
      */
     private async setActiveModelWithRetry(repo: string): Promise<Result<void, Error>> {
         const set = (m: string): Promise<Result<void, Error>> =>
-            this.pickerScope === "chat" ? this.plugin.api.setChatModel(m) : this.plugin.api.setEmbeddingModel(m);
+            this.pickerScope === MODEL_TASK.CHAT
+                ? this.plugin.api.setChatModel(m)
+                : this.plugin.api.setEmbeddingModel(m);
         let result = await set(repo);
         for (let attempt = 0; attempt < SET_MODEL_RETRIES && result.isErr(); attempt++) {
             await new Promise((resolve) => window.setTimeout(resolve, SET_MODEL_RETRY_MS));

@@ -166,6 +166,8 @@ describe("PlacementView multi-GPU (auto)", () => {
         expect(rowFor(contentEl, "chat").find("lilbee-placement-role-hint")!.textContent).toBe("split");
         expect(rowFor(contentEl, "embed").find("lilbee-placement-role-hint")!.textContent).toBe("mirror");
         expect(rowFor(contentEl, "rerank").find("lilbee-placement-role-hint")!.textContent).toBe("one card");
+        // older servers omit vram_bytes → no footprint span
+        expect(rowFor(contentEl, "chat").find("lilbee-placement-role-vram")).toBeNull();
         // footer: auto-managed message + edit button, no apply
         expect(contentEl.find("lilbee-placement-fit")!.classList.contains("is-muted")).toBe(true);
         const btns = contentEl.findAll("lilbee-placement-btn").map((b) => b.textContent);
@@ -220,6 +222,18 @@ describe("PlacementView single device", () => {
         expect(contentEl.findAll("lilbee-placement-step").every((s) => s.classList.contains("is-readonly"))).toBe(true);
         // no edit / apply buttons on a single device
         expect(contentEl.findAll("lilbee-placement-btn").length).toBe(0);
+    });
+
+    it("shows each role's estimated memory footprint, skipping roles without one", async () => {
+        const { contentEl } = await openView(
+            makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(single())) })),
+        );
+        const chatVram = rowFor(contentEl, "chat").find("lilbee-placement-role-vram")!;
+        expect(chatVram.textContent).toBe("~6.1 GB");
+        expect(chatVram.getAttribute("aria-label")).toBe("Estimated memory the chat model needs");
+        expect(rowFor(contentEl, "embed").find("lilbee-placement-role-vram")!.textContent).toBe("~0.3 GB");
+        // vision has no model loaded (vram_bytes 0) → no footprint span
+        expect(rowFor(contentEl, "vision").find("lilbee-placement-role-vram")).toBeNull();
     });
 
     it("a single-device stepper is read-only: shows guidance, builds no spec, has a tooltip", async () => {

@@ -60,6 +60,7 @@ export class StatusModal extends Modal {
         if (chatModel) {
             await this.renderModelDetails(table, chatModel);
         }
+        await this.renderServedContext(table);
 
         const ocrValue = status.config.enable_ocr;
         const ocrLabel =
@@ -83,6 +84,15 @@ export class StatusModal extends Modal {
         } catch {
             // Model details not available — not critical
         }
+    }
+
+    /** Context window the chat fleet actually serves per slot; absent on older servers or while cold. */
+    private async renderServedContext(table: HTMLTableElement): Promise<void> {
+        const health = await this.plugin.api.health();
+        if (health.isErr()) return;
+        const ctx = health.value.chat_ctx;
+        if (ctx === null || ctx === undefined) return;
+        this.addRow(table, MESSAGES.LABEL_STATUS_SERVED_CONTEXT, String(ctx));
     }
 
     private renderWiki(container: HTMLElement, status: StatusResponse): void {

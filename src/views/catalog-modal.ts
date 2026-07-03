@@ -813,7 +813,7 @@ export class CatalogModal extends Modal {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
         }
-        btn.textContent = MESSAGES.STATUS_REMOVING;
+        btn.setText(MESSAGES.STATUS_REMOVING);
         (btn as HTMLButtonElement).disabled = true;
         this.plugin.taskQueue.update(taskId, -1, entry.hf_repo);
 
@@ -823,7 +823,7 @@ export class CatalogModal extends Modal {
                 noticeForResultError(result.error, MESSAGES.ERROR_REMOVE_MODEL.replace("{model}", entry.hf_repo)),
             );
             this.plugin.taskQueue.fail(taskId, errorMessage(result.error, result.error.message));
-            btn.textContent = MESSAGES.BUTTON_REMOVE;
+            btn.setText(MESSAGES.BUTTON_REMOVE);
             (btn as HTMLButtonElement).disabled = false;
             return;
         }
@@ -835,14 +835,14 @@ export class CatalogModal extends Modal {
     }
 
     private async handleUse(entry: CatalogEntry, btn: HTMLElement): Promise<void> {
-        btn.textContent = MESSAGES.STATUS_SETTING;
+        btn.setText(MESSAGES.STATUS_SETTING);
         (btn as HTMLButtonElement).disabled = true;
 
         const result = await this.setActiveFor(entry);
 
         if (result.isErr()) {
             new Notice(noticeForResultError(result.error, MESSAGES.ERROR_SET_MODEL.replace("{model}", entry.hf_repo)));
-            btn.textContent = MESSAGES.BUTTON_USE;
+            btn.setText(MESSAGES.BUTTON_USE);
             (btn as HTMLButtonElement).disabled = false;
             return;
         }

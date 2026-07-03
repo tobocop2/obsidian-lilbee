@@ -81,10 +81,11 @@ function railTriggerLabel(options: RailOption[]): string {
     return (options.find((o) => o.checked) ?? options[0])?.label ?? "";
 }
 
+type OptionalRoleTask = typeof MODEL_TASK.VISION | typeof MODEL_TASK.RERANK;
+
 /** Static description of an optional rail role (Vision, Rerank). Dynamic state lives on the view. */
 interface OptionalRoleSpec {
-    key: "vision" | "rerank";
-    task: typeof MODEL_TASK.VISION | typeof MODEL_TASK.RERANK;
+    task: OptionalRoleTask;
     label: string;
     dotClass: string;
     triggerClass: string;
@@ -109,7 +110,6 @@ interface StreamState {
 
 const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
     {
-        key: "vision",
         task: MODEL_TASK.VISION,
         label: MESSAGES.RAIL_LABEL_VISION,
         dotClass: "is-vision",
@@ -121,7 +121,6 @@ const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
         failNotice: MESSAGES.RAIL_LABEL_VISION,
     },
     {
-        key: "rerank",
         task: MODEL_TASK.RERANK,
         label: MESSAGES.RAIL_LABEL_RERANK,
         dotClass: "is-rerank",
@@ -173,12 +172,12 @@ export class ChatView extends ItemView {
     private chatModeContainer: HTMLElement | null = null;
     private chatModeCurrent: ChatMode | null = null;
     // Optional model roles (Vision, Rerank) surfaced in the rail. Keyed by the
-    // spec's `key`; data refreshed alongside the chat/embed selectors. Options
+    // spec's task; data refreshed alongside the chat/embed selectors. Options
     // come from the per-task catalog (so only role-capable models show), exactly
     // like the Settings model manager.
     private optionalRailEl: HTMLElement | null = null;
-    private optionalCatalog: Record<string, CatalogEntry[]> = { vision: [], rerank: [] };
-    private optionalActive: Record<string, string> = { vision: "", rerank: "" };
+    private optionalCatalog: Record<OptionalRoleTask, CatalogEntry[]> = { vision: [], rerank: [] };
+    private optionalActive: Record<OptionalRoleTask, string> = { vision: "", rerank: "" };
     private static readonly OFFLINE_THRESHOLD = 3;
     private retryTimer: number | null = null;
     private retryCount = 0;
@@ -683,7 +682,7 @@ export class ChatView extends ItemView {
      * models appear. Un-installed catalog builds are reached via "Browse catalog".
      */
     private optionalRoleOptions(spec: OptionalRoleSpec): { value: string; label: string }[] {
-        const entries = this.optionalCatalog[spec.key];
+        const entries = this.optionalCatalog[spec.task];
         const localInstalled = entries.filter((e) => !HOSTED_SOURCES.has(e.source) && e.installed);
         const hosted = entries.filter(isUsableHostedRow);
         const options = localInstalled.map((e) => ({ value: e.hf_repo, label: e.display_name }));
@@ -695,7 +694,7 @@ export class ChatView extends ItemView {
 
     /** Full menu entry list for an optional role: Disabled, role-capable models, Browse catalog. */
     private optionalRoleMenuOptions(spec: OptionalRoleSpec): RailOption[] {
-        const active = this.optionalActive[spec.key];
+        const active = this.optionalActive[spec.task];
         const activeRepo = extractHfRepo(active);
         // "Disabled" turns the role off (model ref ""); the role stays visible
         // even with nothing installed, and "Browse catalog" downloads one.
@@ -708,7 +707,7 @@ export class ChatView extends ItemView {
     }
 
     private renderOptionalRoleRow(rail: HTMLElement, spec: OptionalRoleSpec): void {
-        const active = this.optionalActive[spec.key];
+        const active = this.optionalActive[spec.task];
         const chip = rail.createDiv({ cls: "lilbee-model-chip lilbee-model-chip-optional" });
         chip.setAttribute("aria-label", spec.tooltip);
         chip.setAttribute("aria-label-position", "top");
@@ -736,7 +735,7 @@ export class ChatView extends ItemView {
                 new Notice(MESSAGES.NOTICE_FAILED_UPDATE(spec.failNotice));
                 return;
             }
-            this.optionalActive[spec.key] = value;
+            this.optionalActive[spec.task] = value;
             this.fillOptionalRoles();
             void this.plugin.fetchActiveModel();
             this.plugin.refreshSettingsTab();
@@ -833,7 +832,7 @@ export class ChatView extends ItemView {
         this.sending = true;
         this.streamController = new AbortController();
         this.plugin.notifyChatStart();
-        if (this.sendBtn) this.sendBtn.textContent = MESSAGES.BUTTON_STOP;
+        if (this.sendBtn) this.sendBtn.setText(MESSAGES.BUTTON_STOP);
         if (this.textareaEl) this.textareaEl.disabled = true;
 
         const userBubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message user" });
@@ -905,7 +904,7 @@ export class ChatView extends ItemView {
                     void this.renderMarkdown(textEl, `${state.fullContent}\n\n${MESSAGES.LABEL_STOPPED_MD}`);
                     this.history.push({ role: "assistant", content: state.fullContent });
                 } else {
-                    textEl.textContent = MESSAGES.LABEL_STOPPED;
+                    textEl.setText(MESSAGES.LABEL_STOPPED);
                 }
             } else if (err instanceof RateLimitedError) {
                 this.renderInlineError(assistantBubble, MESSAGES.ERROR_RATE_LIMITED(err.retryAfterSeconds));
@@ -924,7 +923,7 @@ export class ChatView extends ItemView {
             this.streamController = null;
             this.plugin.notifyChatEnd();
             if (this.sendBtn) {
-                this.sendBtn.textContent = MESSAGES.BUTTON_SEND;
+                this.sendBtn.setText(MESSAGES.BUTTON_SEND);
             }
             if (this.textareaEl) this.textareaEl.disabled = false;
         }

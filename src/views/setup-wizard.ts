@@ -1,7 +1,14 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import { SessionTokenError } from "../api";
-import type { BatchProgressPayload, CatalogEntry, ManagedServerProgressPhase, SSEEvent, SyncDone } from "../types";
+import type {
+    BatchProgressPayload,
+    CatalogEntry,
+    ManagedServerProgressPhase,
+    ServerMode,
+    SSEEvent,
+    SyncDone,
+} from "../types";
 import {
     CATALOG_TAB,
     LILBEE_REPO_URL,
@@ -295,7 +302,7 @@ export class SetupWizard extends Modal {
                 circle.addClass("is-done");
                 slot.addClass("is-done");
             }
-            circle.textContent = isDone ? "✓" : String(i + 1);
+            circle.setText(isDone ? "✓" : String(i + 1));
             slot.createDiv({ cls: "lilbee-wizard-step-label", text: meta.label });
         }
     }
@@ -309,10 +316,12 @@ export class SetupWizard extends Modal {
         const header = container.createDiv({ cls: "lilbee-wizard-step-header" });
         if (meta) {
             const badge = header.createSpan({ cls: "lilbee-wizard-step-badge" });
-            badge.textContent = MESSAGES.WIZARD_STEP_BADGE.replace(
-                "{num}",
-                String(INDICATOR_STEPS.indexOf(meta) + 1).padStart(2, "0"),
-            ).replace("{label}", meta.label.toUpperCase());
+            badge.setText(
+                MESSAGES.WIZARD_STEP_BADGE.replace(
+                    "{num}",
+                    String(INDICATOR_STEPS.indexOf(meta) + 1).padStart(2, "0"),
+                ).replace("{label}", meta.label.toUpperCase()),
+            );
         }
         header.createEl("h2", { text: title });
     }
@@ -351,7 +360,7 @@ export class SetupWizard extends Modal {
         const step = this.beginStep();
         this.renderStepHeader(step, MESSAGES.TITLE_SERVER_MODE);
 
-        let mode: "managed" | "external" =
+        let mode: ServerMode =
             this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL ? SERVER_MODE.EXTERNAL : SERVER_MODE.MANAGED;
 
         const managedOption = step.createDiv({
@@ -374,7 +383,7 @@ export class SetupWizard extends Modal {
         externalFields.style.display = mode === SERVER_MODE.EXTERNAL ? "" : "none";
 
         const urlLabel = externalFields.createDiv({ cls: "lilbee-wizard-field-label" });
-        urlLabel.textContent = MESSAGES.LABEL_SERVER_URL;
+        urlLabel.setText(MESSAGES.LABEL_SERVER_URL);
         const urlInput = externalFields.createEl("input", {
             cls: "lilbee-wizard-url-input",
             placeholder: MESSAGES.PLACEHOLDER_HTTP_LOCALHOST,
@@ -383,7 +392,7 @@ export class SetupWizard extends Modal {
         urlInput.value = this.plugin.settings.serverUrl;
 
         const tokenLabel = externalFields.createDiv({ cls: "lilbee-wizard-field-label" });
-        tokenLabel.textContent = MESSAGES.LABEL_MANUAL_TOKEN;
+        tokenLabel.setText(MESSAGES.LABEL_MANUAL_TOKEN);
         const tokenInput = externalFields.createEl("input", {
             cls: "lilbee-wizard-url-input",
             placeholder: MESSAGES.PLACEHOLDER_MANUAL_TOKEN,
@@ -403,7 +412,7 @@ export class SetupWizard extends Modal {
             managedOption.classList.add("selected");
             externalOption.classList.remove("selected");
             externalFields.hide();
-            statusEl.textContent = "";
+            statusEl.setText("");
         };
         const selectExternal = (): void => {
             mode = SERVER_MODE.EXTERNAL;
@@ -430,7 +439,7 @@ export class SetupWizard extends Modal {
                 this.plugin.settings.serverUrl = String(urlInput.value || "").trim() || "http://127.0.0.1:7433";
                 this.plugin.settings.manualToken = String(tokenInput.value || "").trim();
                 this.plugin.settings.serverMode = SERVER_MODE.EXTERNAL;
-                statusEl.textContent = MESSAGES.STATUS_CHECKING_CONNECTION;
+                statusEl.setText(MESSAGES.STATUS_CHECKING_CONNECTION);
                 nextBtn.disabled = true;
                 void this.checkExternalAndAdvance(statusEl, nextBtn);
             }
@@ -445,7 +454,7 @@ export class SetupWizard extends Modal {
         nextBtn: HTMLElement,
         selectExternal: () => void,
     ): Promise<void> {
-        statusEl.textContent = "";
+        statusEl.setText("");
 
         // The setup panel only reveals once the download/start actually begins,
         // so it stays hidden behind the consent modal while the user decides.
@@ -482,7 +491,7 @@ export class SetupWizard extends Modal {
             // phase and resolves), so resolve alone is not proof of a live
             // server — only advance if no error phase was observed.
             if (failed) {
-                statusEl.textContent = MESSAGES.ERROR_START_SERVER;
+                statusEl.setText(MESSAGES.ERROR_START_SERVER);
                 (nextBtn as HTMLButtonElement).disabled = false;
                 return;
             }
@@ -491,7 +500,7 @@ export class SetupWizard extends Modal {
             this.renderStep();
         } catch {
             panel.hide();
-            statusEl.textContent = MESSAGES.ERROR_START_SERVER;
+            statusEl.setText(MESSAGES.ERROR_START_SERVER);
             (nextBtn as HTMLButtonElement).disabled = false;
         }
     }
@@ -592,11 +601,11 @@ export class SetupWizard extends Modal {
             this.plugin.api.setToken(this.plugin.settings.manualToken || null);
             const result = await this.plugin.api.health();
             if (result.isErr()) throw result.error;
-            statusEl.textContent = "";
+            statusEl.setText("");
             this.step = WIZARD_STEP.MODEL_PICKER;
             this.renderStep();
         } catch {
-            statusEl.textContent = MESSAGES.ERROR_COULD_NOT_CONNECT_EXT;
+            statusEl.setText(MESSAGES.ERROR_COULD_NOT_CONNECT_EXT);
             (nextBtn as HTMLButtonElement).disabled = false;
         }
     }
@@ -695,11 +704,11 @@ export class SetupWizard extends Modal {
         const downloadBtn = actions.createEl("button", { text: MESSAGES.BUTTON_DOWNLOAD_CONTINUE, cls: "mod-cta" });
         downloadBtn.addEventListener("click", () => {
             if (!this.selectedModel) {
-                statusEl.textContent = MESSAGES.WIZARD_SELECT_MODEL;
+                statusEl.setText(MESSAGES.WIZARD_SELECT_MODEL);
                 return;
             }
             downloadBtn.disabled = true;
-            statusEl.textContent = "";
+            statusEl.setText("");
             void this.pullSelectedModel(downloadBtn, progressEl, progressFill, progressLabel, statusEl, step);
         });
 
@@ -731,7 +740,7 @@ export class SetupWizard extends Modal {
             this.featuredModels = pickNativeChatModels(result.value.models);
         } catch {
             this.featuredModels = [];
-            statusEl.textContent = MESSAGES.ERROR_LOAD_MODELS;
+            statusEl.setText(MESSAGES.ERROR_LOAD_MODELS);
             return;
         }
 
@@ -773,7 +782,7 @@ export class SetupWizard extends Modal {
         if (!this.selectedModel) return;
         const model = this.selectedModel;
         progressEl.show();
-        progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL.replace("{model}", model.hf_repo);
+        progressLabel.setText(MESSAGES.STATUS_DOWNLOADING_MODEL.replace("{model}", model.hf_repo));
         this.pullController = new AbortController();
         this.updateProgress(step, progressFill, undefined);
 
@@ -784,16 +793,18 @@ export class SetupWizard extends Modal {
                     const pct = percentFromSse(d);
                     if (pct !== undefined) {
                         this.updateProgress(step, progressFill, pct);
-                        progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL_PCT.replace(
-                            "{model}",
-                            model.hf_repo,
-                        ).replace("{pct}", String(pct));
+                        progressLabel.setText(
+                            MESSAGES.STATUS_DOWNLOADING_MODEL_PCT.replace("{model}", model.hf_repo).replace(
+                                "{pct}",
+                                String(pct),
+                            ),
+                        );
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
                     const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     new Notice(MESSAGES.ERROR_DOWNLOAD_FAILED);
-                    statusEl.textContent = msg;
+                    statusEl.setText(msg);
                     break;
                 }
             }
@@ -801,7 +812,7 @@ export class SetupWizard extends Modal {
             const setResult = await this.plugin.api.setChatModel(model.hf_repo);
             if (setResult.isErr()) {
                 new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.display_name));
-                statusEl.textContent = setResult.error.message;
+                statusEl.setText(setResult.error.message);
                 progressEl.hide();
                 (downloadBtn as HTMLButtonElement).disabled = false;
                 return;
@@ -817,9 +828,9 @@ export class SetupWizard extends Modal {
             } else if (err instanceof SessionTokenError) {
                 const msg = sessionTokenInvalidMessage(this.plugin.settings.serverMode);
                 new Notice(msg);
-                statusEl.textContent = msg;
+                statusEl.setText(msg);
             } else {
-                statusEl.textContent = MESSAGES.ERROR_DOWNLOAD_FAILED;
+                statusEl.setText(MESSAGES.ERROR_DOWNLOAD_FAILED);
             }
             progressEl.hide();
             (downloadBtn as HTMLButtonElement).disabled = false;
@@ -871,7 +882,7 @@ export class SetupWizard extends Modal {
                 return;
             }
             downloadBtn.disabled = true;
-            statusEl.textContent = "";
+            statusEl.setText("");
             void this.pullEmbeddingModel(downloadBtn, progressEl, progressFill, progressLabel, statusEl, step);
         });
 
@@ -896,7 +907,7 @@ export class SetupWizard extends Modal {
             this.embeddingModels = result.value.models.slice(0, MAX_FEATURED_PICKS);
         } catch {
             this.embeddingModels = [];
-            statusEl.textContent = MESSAGES.ERROR_LOAD_MODELS;
+            statusEl.setText(MESSAGES.ERROR_LOAD_MODELS);
             return;
         }
 
@@ -939,7 +950,7 @@ export class SetupWizard extends Modal {
         if (!this.selectedEmbedding) return;
         const model = this.selectedEmbedding;
         progressEl.show();
-        progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL.replace("{model}", model.hf_repo);
+        progressLabel.setText(MESSAGES.STATUS_DOWNLOADING_MODEL.replace("{model}", model.hf_repo));
         this.pullController = new AbortController();
         this.updateProgress(step, progressFill, undefined);
 
@@ -950,16 +961,18 @@ export class SetupWizard extends Modal {
                     const pct = percentFromSse(d);
                     if (pct !== undefined) {
                         this.updateProgress(step, progressFill, pct);
-                        progressLabel.textContent = MESSAGES.STATUS_DOWNLOADING_MODEL_PCT.replace(
-                            "{model}",
-                            model.hf_repo,
-                        ).replace("{pct}", String(pct));
+                        progressLabel.setText(
+                            MESSAGES.STATUS_DOWNLOADING_MODEL_PCT.replace("{model}", model.hf_repo).replace(
+                                "{pct}",
+                                String(pct),
+                            ),
+                        );
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
                     const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
                     new Notice(MESSAGES.ERROR_DOWNLOAD_FAILED);
-                    statusEl.textContent = msg;
+                    statusEl.setText(msg);
                     break;
                 }
             }
@@ -967,7 +980,7 @@ export class SetupWizard extends Modal {
             const setResult = await this.plugin.api.setEmbeddingModel(model.hf_repo);
             if (setResult.isErr()) {
                 new Notice(MESSAGES.ERROR_SET_MODEL.replace("{model}", model.display_name));
-                statusEl.textContent = setResult.error.message;
+                statusEl.setText(setResult.error.message);
                 progressEl.hide();
                 (downloadBtn as HTMLButtonElement).disabled = false;
                 return;
@@ -980,9 +993,9 @@ export class SetupWizard extends Modal {
             } else if (err instanceof SessionTokenError) {
                 const msg = sessionTokenInvalidMessage(this.plugin.settings.serverMode);
                 new Notice(msg);
-                statusEl.textContent = msg;
+                statusEl.setText(msg);
             } else {
-                statusEl.textContent = MESSAGES.ERROR_DOWNLOAD_FAILED;
+                statusEl.setText(MESSAGES.ERROR_DOWNLOAD_FAILED);
             }
             progressEl.hide();
             (downloadBtn as HTMLButtonElement).disabled = false;
@@ -998,7 +1011,7 @@ export class SetupWizard extends Modal {
 
         const { progressEl, progressFill, progressLabel } = this.renderProgressPanel(step);
         progressEl.show();
-        progressLabel.textContent = MESSAGES.WIZARD_STATUS_STARTING;
+        progressLabel.setText(MESSAGES.WIZARD_STATUS_STARTING);
         this.updateProgress(step, progressFill, undefined);
 
         const actions = step.createDiv({ cls: "lilbee-wizard-actions" });
@@ -1025,24 +1038,26 @@ export class SetupWizard extends Modal {
                     const d = event.data as { current_file: number; total_files: number; file?: string };
                     const pct = d.total_files > 0 ? Math.round((d.current_file / d.total_files) * 100) : 0;
                     this.updateProgress(step, progressFill, pct);
-                    progressLabel.textContent = MESSAGES.STATUS_PROCESSING_FILES.replace(
-                        "{current}",
-                        String(d.current_file),
-                    ).replace("{total}", String(d.total_files));
+                    progressLabel.setText(
+                        MESSAGES.STATUS_PROCESSING_FILES.replace("{current}", String(d.current_file)).replace(
+                            "{total}",
+                            String(d.total_files),
+                        ),
+                    );
                 } else if (event.event === SSE_EVENT.BATCH_PROGRESS) {
                     const d = event.data as BatchProgressPayload;
                     this.updateProgress(step, progressFill, Math.round((d.current / d.total) * 100));
-                    progressLabel.textContent = MESSAGES.STATUS_TASK_BATCH(d.current, d.total, d.file, d.status);
+                    progressLabel.setText(MESSAGES.STATUS_TASK_BATCH(d.current, d.total, d.file, d.status));
                 }
                 if (event.event === SSE_EVENT.EMBED) {
                     const d = event.data as { file?: string };
                     if (d.file) {
-                        progressLabel.textContent = MESSAGES.STATUS_INDEXING.replace("{file}", d.file);
+                        progressLabel.setText(MESSAGES.STATUS_INDEXING.replace("{file}", d.file));
                     }
                 } else if (event.event === SSE_EVENT.ERROR) {
                     const d = event.data as { message?: string } | string;
                     const msg = extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN);
-                    progressLabel.textContent = msg;
+                    progressLabel.setText(msg);
                     throw new Error(msg);
                 }
                 lastEvent = event;
@@ -1052,7 +1067,7 @@ export class SetupWizard extends Modal {
                 this.syncResult = lastEvent.data as SyncDone;
             }
             this.updateProgress(step, progressFill, 100);
-            progressLabel.textContent = MESSAGES.STATUS_DONE;
+            progressLabel.setText(MESSAGES.STATUS_DONE);
             this.step = WIZARD_STEP.WIKI;
             this.renderStep();
         } catch (err) {
@@ -1061,9 +1076,9 @@ export class SetupWizard extends Modal {
             } else if (err instanceof SessionTokenError) {
                 const msg = sessionTokenInvalidMessage(this.plugin.settings.serverMode);
                 new Notice(msg);
-                progressLabel.textContent = msg;
+                progressLabel.setText(msg);
             } else {
-                progressLabel.textContent = MESSAGES.ERROR_INDEXING_FAILED;
+                progressLabel.setText(MESSAGES.ERROR_INDEXING_FAILED);
             }
         } finally {
             this.syncController = null;

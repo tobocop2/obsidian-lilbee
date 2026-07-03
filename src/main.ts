@@ -10,7 +10,6 @@ import {
     type WorkspaceLeaf,
 } from "obsidian";
 import { LilbeeClient, SessionTokenError } from "./api";
-import type { RequestOutcome } from "./api";
 import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { exportDiagnostics } from "./diagnostics-export";
@@ -29,6 +28,8 @@ import {
     LOGS_DIR,
     MANAGED_CONSENT_RESULT,
     MANAGED_PHASE,
+    MODEL_TASK,
+    REQUEST_OUTCOME,
     SERVER_MODE,
     SERVER_STATE,
     SETUP_OUTCOME,
@@ -43,6 +44,7 @@ import {
     type HealthResponse,
     type LilbeeSettings,
     type ManagedServerProgressHandler,
+    type RequestOutcome,
     type ServerMode,
     type SetupOutcome,
     type ServerState,
@@ -103,6 +105,10 @@ interface PruneData {
 const BYTES_PER_MB = 1_000_000;
 
 const PENDING_SYNC_HINT_DEBOUNCE_MS = 1000;
+
+// How long terminateOwningProcess waits for the previous owner to exit.
+const PROCESS_EXIT_POLLS = 50;
+const PROCESS_EXIT_POLL_INTERVAL_MS = 100;
 
 const SUPPORTED_SYNC_EXTENSIONS = new Set(["md", "pdf", "txt", "html"]);
 
@@ -269,9 +275,7 @@ export default class LilbeePlugin extends Plugin {
     wikiSync: WikiSync | null = null;
     private healthProbeHandle: number | null = null;
     private serverUnreachable = false;
-    // Chat-engine warmth from /api/health (feat/local-model-api). `chatWarming`
-    // is true when the server is up but the chat role is still cold-loading;
-    // `chatCtx` is the per-slot context window it serves once ready.
+    // True when the server is up but the chat role is still cold-loading (from /api/health).
     private chatWarming = false;
     // While > 0, probeServerHealth() bails: llama.cpp serializes requests,
     // so /api/health stalls behind the active stream and would falsely flip
@@ -381,6 +385,7 @@ export default class LilbeePlugin extends Plugin {
                 this.configureApi(this.settings.serverUrl);
                 this.setStatusReady();
                 void this.fetchActiveModel();
+                void this.warnExternalServerOutdated();
             }
         }
 
@@ -566,13 +571,13 @@ export default class LilbeePlugin extends Plugin {
         } catch {
             // already gone — fine
         }
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < PROCESS_EXIT_POLLS; i++) {
             try {
                 node.processKill(owner.pid, 0);
             } catch {
                 return true;
             }
-            await new Promise((r) => window.setTimeout(r, 100));
+            await new Promise((r) => window.setTimeout(r, PROCESS_EXIT_POLL_INTERVAL_MS));
         }
         return false;
     }
@@ -735,6 +740,21 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    /** External mode: on launch, tell the user when the running server is not the
+     *  latest release. Best-effort — silent when offline or the server is unreachable. */
+    private async warnExternalServerOutdated(): Promise<void> {
+        try {
+            const health = await this.api.health();
+            if (health.isErr()) return;
+            const latest = (await getLatestRelease()).tag.replace(/^v/, "");
+            if (!latest || health.value.version === latest) return;
+            // NOTICE_PERMANENT keeps it up until the user clicks it away.
+            new Notice(MESSAGES.NOTICE_EXTERNAL_SERVER_OUTDATED(health.value.version, latest), NOTICE_PERMANENT);
+        } catch {
+            // offline, unreachable, or rate-limited — stay quiet
+        }
+    }
+
     async updateServer(release: ReleaseInfo, onProgress?: (msg: string) => void): Promise<void> {
         const registry = this.vaultRegistry;
         if (!registry) return;
@@ -890,16 +910,16 @@ export default class LilbeePlugin extends Plugin {
 
     /** Update the status bar to reflect the latest API outcome. */
     private handleRequestOutcome(outcome: RequestOutcome): void {
-        if (outcome === "ok") {
+        if (outcome === REQUEST_OUTCOME.OK) {
             this.setStatusReady();
             return;
         }
-        if (outcome === "auth_error") {
+        if (outcome === REQUEST_OUTCOME.AUTH_ERROR) {
             this.updateStatusBar(MESSAGES.STATUS_AUTH_ERROR, DOT_STATE.ERROR);
             this.setStatusClass("lilbee-status-error");
             return;
         }
-        if (outcome === "server_error" || outcome === "unreachable") {
+        if (outcome === REQUEST_OUTCOME.SERVER_ERROR || outcome === REQUEST_OUTCOME.UNREACHABLE) {
             // Before the managed server has ever reached READY, a failed
             // request means it's still coming up — don't flash a red error.
             if (this.settings.serverMode === SERVER_MODE.MANAGED && !this.serverEverReady) return;
@@ -929,7 +949,7 @@ export default class LilbeePlugin extends Plugin {
     private registerCommands(): void {
         this.addCommand({
             id: "search",
-            name: "Search knowledge base",
+            name: MESSAGES.COMMAND_SEARCH,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) new SearchModal(this.app, this).open();
@@ -939,7 +959,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "chat",
-            name: "Open chat",
+            name: MESSAGES.COMMAND_CHAT,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) void this.activateChatView();
@@ -949,7 +969,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "open-memories",
-            name: "Open memories",
+            name: MESSAGES.COMMAND_MEMORIES,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) void this.activateMemoriesView();
@@ -959,7 +979,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "open-placement",
-            name: "Open GPU placement",
+            name: MESSAGES.COMMAND_PLACEMENT,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) void this.activatePlacementView();
@@ -969,7 +989,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "open-placement-beside-chat",
-            name: "Show GPU activity beside chat",
+            name: MESSAGES.COMMAND_PLACEMENT_BESIDE_CHAT,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 const chatLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
@@ -981,7 +1001,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "remember",
-            name: "Remember…",
+            name: MESSAGES.COMMAND_REMEMBER,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) new RememberModal(this.app, this).open();
@@ -991,7 +1011,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "add-file",
-            name: "Add current file",
+            name: MESSAGES.COMMAND_ADD_FILE,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 const file = this.app.workspace.getActiveFile();
@@ -1003,7 +1023,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "add-folder",
-            name: "Add current folder",
+            name: MESSAGES.COMMAND_ADD_FOLDER,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 const file = this.app.workspace.getActiveFile();
@@ -1072,7 +1092,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "catalog",
-            name: "Browse model catalog",
+            name: MESSAGES.COMMAND_CATALOG,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) new CatalogModal(this.app, this).open();
@@ -1085,7 +1105,7 @@ export default class LilbeePlugin extends Plugin {
             name: MESSAGES.COMMAND_MODEL_PICKER_CHAT,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
-                if (!checking) new ModelPickerModal(this.app, this, "chat").open();
+                if (!checking) new ModelPickerModal(this.app, this, MODEL_TASK.CHAT).open();
                 return true;
             },
         });
@@ -1095,7 +1115,7 @@ export default class LilbeePlugin extends Plugin {
             name: MESSAGES.COMMAND_MODEL_PICKER_EMBED,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
-                if (!checking) new ModelPickerModal(this.app, this, "embedding").open();
+                if (!checking) new ModelPickerModal(this.app, this, MODEL_TASK.EMBEDDING).open();
                 return true;
             },
         });
@@ -1105,7 +1125,7 @@ export default class LilbeePlugin extends Plugin {
             name: MESSAGES.COMMAND_MODEL_INFO_CHAT,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
-                if (!checking) void this.openModelInfoForActiveTask("chat");
+                if (!checking) void this.openModelInfoForActiveTask(MODEL_TASK.CHAT);
                 return true;
             },
         });
@@ -1115,14 +1135,14 @@ export default class LilbeePlugin extends Plugin {
             name: MESSAGES.COMMAND_MODEL_INFO_EMBED,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
-                if (!checking) void this.openModelInfoForActiveTask("embedding");
+                if (!checking) void this.openModelInfoForActiveTask(MODEL_TASK.EMBEDDING);
                 return true;
             },
         });
 
         this.addCommand({
             id: "crawl",
-            name: "Crawl web page",
+            name: MESSAGES.COMMAND_CRAWL,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) new CrawlModal(this.app, this).open();
@@ -1132,7 +1152,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "documents",
-            name: "Browse documents",
+            name: MESSAGES.COMMAND_DOCUMENTS,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) new DocumentsModal(this.app, this).open();
@@ -1142,13 +1162,13 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "setup",
-            name: "Run setup wizard",
+            name: MESSAGES.COMMAND_SETUP,
             callback: () => new SetupWizard(this.app, this).open(),
         });
 
         this.addCommand({
             id: "tasks",
-            name: "Show task center",
+            name: MESSAGES.COMMAND_TASKS,
             callback: () => this.activateTaskView(),
         });
 
@@ -1196,7 +1216,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "status",
-            name: "Show status",
+            name: MESSAGES.COMMAND_STATUS,
             callback: () => new StatusModal(this.app, this).open(),
         });
 
@@ -1551,7 +1571,7 @@ export default class LilbeePlugin extends Plugin {
         this.setStatusReady();
     }
 
-    async openModelInfoForActiveTask(task: "chat" | "embedding"): Promise<void> {
+    async openModelInfoForActiveTask(task: typeof MODEL_TASK.CHAT | typeof MODEL_TASK.EMBEDDING): Promise<void> {
         let cfg: Record<string, unknown>;
         try {
             cfg = await this.api.config();
@@ -1559,7 +1579,7 @@ export default class LilbeePlugin extends Plugin {
             new Notice(MESSAGES.NOTICE_NO_ACTIVE_MODEL(task));
             return;
         }
-        const key = task === "chat" ? "chat_model" : "embedding_model";
+        const key = task === MODEL_TASK.CHAT ? "chat_model" : "embedding_model";
         const ref = typeof cfg[key] === "string" ? cfg[key] : "";
         if (!ref) {
             new Notice(MESSAGES.NOTICE_NO_ACTIVE_MODEL(task));
@@ -2362,6 +2382,7 @@ export default class LilbeePlugin extends Plugin {
         depth: number | null,
         maxPages: number | null,
         renderMode?: CrawlRenderMode,
+        includeSubdomains?: boolean,
     ): Promise<void> {
         const taskId = this.taskQueue.enqueue(`Crawl ${url}`, TASK_TYPE.CRAWL);
         if (taskId === null) {
@@ -2374,7 +2395,7 @@ export default class LilbeePlugin extends Plugin {
         let setupResolved = false;
         try {
             let pageCount = 0;
-            const rawStream = this.api.crawl(url, depth, maxPages, controller.signal, renderMode);
+            const rawStream = this.api.crawl(url, depth, maxPages, controller.signal, renderMode, includeSubdomains);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 switch (event.event) {
                     case SSE_EVENT.SETUP_START: {

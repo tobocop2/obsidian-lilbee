@@ -1,6 +1,6 @@
 import { App } from "obsidian";
 import type { LilbeeClient } from "../api";
-import { SEARCH_CHUNK_TYPE, type DocumentResult, type Source } from "../types";
+import { CLAIM_TYPE, SEARCH_CHUNK_TYPE, type DocumentResult, type Source } from "../types";
 import { executeSourceClick, sourceClickAction } from "../utils/source-click";
 
 const MAX_EXCERPT_CHARS = 200;
@@ -112,9 +112,9 @@ export function renderSourceChip(
     const cls = isWiki ? "lilbee-source-chip lilbee-source-chip-wiki" : "lilbee-source-chip";
     const chip = container.createEl("span", { cls });
 
-    if (source.claim_type === "fact") {
+    if (source.claim_type === CLAIM_TYPE.FACT) {
         chip.addClass("lilbee-claim-fact");
-    } else if (source.claim_type === "inference") {
+    } else if (source.claim_type === CLAIM_TYPE.INFERENCE) {
         chip.addClass("lilbee-claim-inference");
     }
 

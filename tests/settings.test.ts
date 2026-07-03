@@ -598,9 +598,10 @@ describe("LilbeeSettingTab", () => {
     describe("storeContentInVault toggle", () => {
         function storeToggleIdx(toggleOnChanges: unknown[]): number {
             // Store-content toggle is rendered first inside the Advanced section,
-            // which runs after the Wiki section. The auto-open-cockpit toggle is
-            // the last toggle in Advanced; storeContentInVault sits one before it.
-            return toggleOnChanges.length - 2;
+            // which runs after the Wiki section. After Advanced comes the Fleet
+            // section's flash_attention toggle (last overall), then auto-open-cockpit,
+            // then storeContentInVault one before that.
+            return toggleOnChanges.length - 3;
         }
 
         it("onChange true persists and triggers configureManagedStorage", async () => {
@@ -643,8 +644,9 @@ describe("LilbeeSettingTab", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
-            // The cockpit toggle is the last toggle in Advanced.
-            await toggleOnChanges[toggleOnChanges.length - 1](false);
+            // The cockpit toggle is the last toggle in Advanced; the Fleet
+            // section's flash_attention toggle renders after it.
+            await toggleOnChanges[toggleOnChanges.length - 2](false);
             expect(plugin.settings.autoOpenCockpit).toBe(false);
             expect(plugin.saveSettings).toHaveBeenCalled();
         });
@@ -4170,7 +4172,7 @@ describe("managed mode settings", () => {
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
             // wiki prune toggle is before the sync-to-vault toggle
-            const wikiPruneToggleIdx = toggleOnChanges.length - 4;
+            const wikiPruneToggleIdx = toggleOnChanges.length - 5;
             await toggleOnChanges[wikiPruneToggleIdx](true);
             expect(plugin.settings.wikiPruneRaw).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -4245,7 +4247,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const wikiPruneToggleIdx = toggleOnChanges.length - 4;
+            const wikiPruneToggleIdx = toggleOnChanges.length - 5;
             await toggleOnChanges[wikiPruneToggleIdx](true);
             expect(
                 Notice.instances.some((n: any) => n.message.includes("failed to update Remove source duplicates")),
@@ -4259,7 +4261,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const syncToggleIdx = toggleOnChanges.length - 3;
+            const syncToggleIdx = toggleOnChanges.length - 4;
             await toggleOnChanges[syncToggleIdx](true);
             expect(plugin.settings.wikiSyncToVault).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -4274,7 +4276,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const syncToggleIdx = toggleOnChanges.length - 3;
+            const syncToggleIdx = toggleOnChanges.length - 4;
             await toggleOnChanges[syncToggleIdx](false);
             expect(plugin.settings.wikiSyncToVault).toBe(false);
             expect(plugin.wikiSync).toBeNull();
@@ -4414,6 +4416,38 @@ describe("managed mode settings", () => {
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
             await dropdownOnChanges[dropdownOnChanges.length - 1]("q4_0");
             expect(Notice.instances.some((n: any) => n.message.includes("KV cache type"))).toBe(true);
+        });
+
+        it("flash_attention toggle PATCHes the config", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            // flash_attention is the last toggle (fleet section renders last).
+            await toggleOnChanges[toggleOnChanges.length - 1](true);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ flash_attention: true });
+        });
+
+        it("flash_attention toggle shows an error notice on failure", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            await toggleOnChanges[toggleOnChanges.length - 1](false);
+            expect(Notice.instances.some((n: any) => n.message.includes("Flash attention"))).toBe(true);
+        });
+
+        it("suppresses flash_attention echo-patches while the suppress flag is set", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            (tab as any).suppressToggleChanges = true;
+            await toggleOnChanges[toggleOnChanges.length - 1](true);
+            (tab as any).suppressToggleChanges = false;
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
         it("gpu_devices PATCHes a non-empty value and null when cleared", async () => {
@@ -4867,7 +4901,13 @@ describe("managed mode settings", () => {
             // The previous code mapped any 422 to NOTICE_RERANKER_NEEDS_KEY ("configure LiteLLM API key");
             // that misled users hitting unrelated 422 paths. Now the generic fallback fires.
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_RERANKER)).toBe(true);
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_NEEDS_KEY)).toBe(false);
+            expect(
+                Notice.instances.some(
+                    (n) =>
+                        n.message ===
+                        "Configure the LiteLLM API key in the LLM provider settings to use this reranker.",
+                ),
+            ).toBe(false);
         });
 
         it("role-mismatch 422 surfaces the server's detail verbatim (not the API-key notice)", async () => {
@@ -4917,7 +4957,13 @@ describe("managed mode settings", () => {
 
             await dropdowns[0]("lightonocr:2-1b");
             expect(Notice.instances.some((n) => n.message === roleMismatchDetail)).toBe(true);
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_NEEDS_KEY)).toBe(false);
+            expect(
+                Notice.instances.some(
+                    (n) =>
+                        n.message ===
+                        "Configure the LiteLLM API key in the LLM provider settings to use this reranker.",
+                ),
+            ).toBe(false);
         });
 
         it("falls back to notice when initial load fails", async () => {
@@ -5718,7 +5764,13 @@ describe("managed mode settings", () => {
 
             await dropdowns[0]("openai/gpt-4o");
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_VISION)).toBe(true);
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_NEEDS_KEY)).toBe(false);
+            expect(
+                Notice.instances.some(
+                    (n) =>
+                        n.message ===
+                        "Configure the LiteLLM API key in the LLM provider settings to use this vision model.",
+                ),
+            ).toBe(false);
         });
 
         it("role-mismatch 422 surfaces the server's detail verbatim (not the API-key notice)", async () => {
@@ -5765,7 +5817,13 @@ describe("managed mode settings", () => {
 
             await dropdowns[0]("BAAI/bge-reranker-v2-m3");
             expect(Notice.instances.some((n) => n.message === roleMismatchDetail)).toBe(true);
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_NEEDS_KEY)).toBe(false);
+            expect(
+                Notice.instances.some(
+                    (n) =>
+                        n.message ===
+                        "Configure the LiteLLM API key in the LLM provider settings to use this vision model.",
+                ),
+            ).toBe(false);
         });
 
         it("falls back to notice when initial load fails", async () => {

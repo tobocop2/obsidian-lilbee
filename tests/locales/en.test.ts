@@ -38,7 +38,6 @@ describe("MESSAGES", () => {
 
     describe("LABEL_ constants", () => {
         it("has all label constants", () => {
-            expect(MESSAGES.LABEL_DISABLED).toBe("Disabled");
             expect(MESSAGES.LABEL_NOT_SET).toBe("Not set");
             expect(MESSAGES.LABEL_NO_MODEL_SELECTED).toBe("no model selected");
             expect(MESSAGES.LABEL_ALL_TASKS).toBe("All tasks");
@@ -68,12 +67,10 @@ describe("MESSAGES", () => {
             expect(MESSAGES.LABEL_VIEW_TOGGLE_CTA).toBe("Switch to list view for the full catalog");
             expect(MESSAGES.LABEL_NO_MODELS_FOUND).toBe("No models match your filters.");
             expect(MESSAGES.LABEL_TASK).toBe("Task");
-            expect(MESSAGES.LABEL_QUANT).toBe("Quant");
             expect(MESSAGES.LABEL_DOWNLOADS_COUNT("1.5K")).toBe("1.5K downloads");
             expect(MESSAGES.LABEL_SIZE_SMALL).toBe("Small");
             expect(MESSAGES.LABEL_SIZE_MEDIUM).toBe("Medium");
             expect(MESSAGES.LABEL_SIZE_LARGE).toBe("Large");
-            expect(MESSAGES.LABEL_DOWNLOAD_QUEUED).toBe("+{count} queued");
         });
     });
 
@@ -126,9 +123,6 @@ describe("MESSAGES", () => {
             );
             expect(MESSAGES.DESC_LLM_PROVIDER_AUTO).toBe("Auto (recommended)");
             expect(MESSAGES.DESC_LLM_PROVIDER_EXTERNAL).toBe("External (OpenAI, Claude, etc.)");
-            expect(MESSAGES.DESC_API_KEY).toBe(
-                "Your API key for external AI services (OpenAI, Anthropic, etc.). Stored securely on the server.",
-            );
             expect(MESSAGES.LABEL_OPENAI_API_KEY).toBe("OpenAI API key");
             expect(MESSAGES.DESC_OPENAI_API_KEY).toBe("For GPT models via litellm");
             expect(MESSAGES.LABEL_ANTHROPIC_API_KEY).toBe("Anthropic API key");
@@ -196,7 +190,6 @@ describe("MESSAGES", () => {
     describe("ERROR_ constants", () => {
         it("has all error constants", () => {
             expect(MESSAGES.ERROR_COULD_NOT_CONNECT).toBe("lilbee: cannot connect to server");
-            expect(MESSAGES.ERROR_COULD_NOT_REACH).toBe("Could not connect to lilbee server. Is it running?");
             expect(MESSAGES.ERROR_LOAD_CATALOG).toBe("lilbee: failed to load catalog");
             expect(MESSAGES.ERROR_LOAD_DOCUMENTS).toBe("lilbee: failed to load documents");
             expect(MESSAGES.ERROR_SERVER_UNREACHABLE).toBe("Could not connect to lilbee server. Is it running?");
@@ -236,11 +229,6 @@ describe("MESSAGES", () => {
             expect(MESSAGES.NOTICE_FIELD_UPDATED("Temperature")).toBe("lilbee: Temperature updated");
         });
 
-        it("NOTICE_STATUS produces correct output", () => {
-            expect(MESSAGES.NOTICE_STATUS(10, 50)).toBe("lilbee: 10 documents, 50 chunks");
-            expect(MESSAGES.NOTICE_STATUS(0, 0)).toBe("lilbee: 0 documents, 0 chunks");
-        });
-
         it("NOTICE_DELETED produces correct output", () => {
             expect(MESSAGES.NOTICE_DELETED(5)).toBe("lilbee: deleted 5 documents");
             expect(MESSAGES.NOTICE_DELETED(1)).toBe("lilbee: deleted 1 documents");
@@ -274,11 +262,6 @@ describe("MESSAGES", () => {
 
         it("NOTICE_FAILED_UPDATE produces correct output", () => {
             expect(MESSAGES.NOTICE_FAILED_UPDATE("Chunk size")).toBe("lilbee: failed to update Chunk size");
-        });
-
-        it("NOTICE_STATUS produces correct output", () => {
-            expect(MESSAGES.NOTICE_STATUS(10, 50)).toBe("lilbee: 10 documents, 50 chunks");
-            expect(MESSAGES.NOTICE_STATUS(0, 0)).toBe("lilbee: 0 documents, 0 chunks");
         });
 
         it("NOTICE_DELETED produces correct output", () => {
