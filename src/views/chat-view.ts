@@ -106,6 +106,9 @@ interface StreamState {
     reasoningContentEl: HTMLElement | null;
     reasoningDetailsEl: HTMLElement | null;
     answerStarted: boolean;
+    /** Set at DONE/stop/error so a queued animation-frame plain-text repaint
+     *  can't overwrite the final markdown render. */
+    streamEnded: boolean;
 }
 
 const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
@@ -857,6 +860,7 @@ export class ChatView extends ItemView {
             reasoningContentEl: null,
             reasoningDetailsEl: null,
             answerStarted: false,
+            streamEnded: false,
         };
 
         const spinnerCreatedAt = Date.now();
@@ -877,6 +881,9 @@ export class ChatView extends ItemView {
             state.renderPending = true;
             window.requestAnimationFrame(() => {
                 state.renderPending = false;
+                // A frame queued before DONE can fire after the final markdown
+                // render; painting it would wipe the formatting with plain text.
+                if (state.streamEnded) return;
                 // Stream as lightweight plain text (markdown markers stripped, so
                 // no raw `**` shows): a synchronous setText that can't stall under
                 // load, so the answer never freezes mid-stream. The DONE event
@@ -899,6 +906,7 @@ export class ChatView extends ItemView {
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 revealContent();
+                state.streamEnded = true;
                 state.reasoningDetailsEl?.removeAttribute("open");
                 if (state.fullContent) {
                     void this.renderMarkdown(textEl, `${state.fullContent}\n\n${MESSAGES.LABEL_STOPPED_MD}`);
@@ -919,6 +927,7 @@ export class ChatView extends ItemView {
                 );
             }
         } finally {
+            state.streamEnded = true;
             this.sending = false;
             this.streamController = null;
             this.plugin.notifyChatEnd();
@@ -962,6 +971,7 @@ export class ChatView extends ItemView {
                 break;
             case SSE_EVENT.DONE: {
                 revealContent();
+                state.streamEnded = true;
                 const rendered = state.fullContent;
                 // Banner and sources grow the bubble after the last token; render
                 // them inside one follow so the view ends pinned to the bottom.
@@ -979,6 +989,7 @@ export class ChatView extends ItemView {
                 break;
             }
             case SSE_EVENT.ERROR: {
+                state.streamEnded = true;
                 const errMsg = extractString(event.data, "message");
                 assistantBubble.empty();
                 // Match the thrown-error path: drop the assistant skin so the
@@ -1030,6 +1041,7 @@ export class ChatView extends ItemView {
         state.reasoningRenderPending = true;
         window.requestAnimationFrame(() => {
             state.reasoningRenderPending = false;
+            if (state.streamEnded) return;
             // Same lightweight plain-text streaming as the answer (reasoning can
             // be long — the heavy per-token markdown render stuttered most here).
             void this.renderFollowing(() => el.setText(plainStream(state.reasoningContent)));

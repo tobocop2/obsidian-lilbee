@@ -725,6 +725,72 @@ describe("ChatView.sendMessage — reasoning tokens", () => {
         }
     });
 
+    it("a frame queued before DONE does not overwrite the final markdown render", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const origRAF = globalThis.requestAnimationFrame;
+        const frames: FrameRequestCallback[] = [];
+        globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+            frames.push(cb);
+            return frames.length;
+        };
+        try {
+            const { mockFn, done } = makeStream([
+                { event: SSE_EVENT.TOKEN, data: { token: "**bold** answer" } },
+                { event: SSE_EVENT.DONE, data: {} },
+            ]);
+            plugin.api.chatStream = mockFn;
+            const view = new ChatView(makeLeaf(), plugin);
+            await view.onOpen();
+            const container = view.containerEl.children[1] as unknown as MockElement;
+            container.find("lilbee-chat-textarea")!.value = "q";
+            container.find("lilbee-chat-send")!.trigger("click");
+            await done;
+            await tick();
+            const textEl = container.find("lilbee-chat-content")!;
+            expect(textEl.textContent).toBe("**bold** answer"); // final markdown render
+            // Fire the frame the token queued before DONE landed: it must not
+            // repaint the plain-text stream over the rendered markdown.
+            frames.forEach((cb) => cb(0));
+            await tick();
+            expect(textEl.textContent).toBe("**bold** answer");
+        } finally {
+            globalThis.requestAnimationFrame = origRAF;
+        }
+    });
+
+    it("a reasoning frame queued before DONE does not overwrite the rendered reasoning", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const origRAF = globalThis.requestAnimationFrame;
+        const frames: FrameRequestCallback[] = [];
+        globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+            frames.push(cb);
+            return frames.length;
+        };
+        try {
+            const { mockFn, done } = makeStream([
+                { event: SSE_EVENT.REASONING, data: { token: "*weighing* options" } },
+                { event: SSE_EVENT.DONE, data: {} },
+            ]);
+            plugin.api.chatStream = mockFn;
+            const view = new ChatView(makeLeaf(), plugin);
+            await view.onOpen();
+            const container = view.containerEl.children[1] as unknown as MockElement;
+            container.find("lilbee-chat-textarea")!.value = "q";
+            container.find("lilbee-chat-send")!.trigger("click");
+            await done;
+            await tick();
+            const reasoningEl = container.find("lilbee-reasoning-content")!;
+            expect(reasoningEl.textContent).toBe("*weighing* options"); // final markdown render
+            frames.forEach((cb) => cb(0));
+            await tick();
+            expect(reasoningEl.textContent).toBe("*weighing* options");
+        } finally {
+            globalThis.requestAnimationFrame = origRAF;
+        }
+    });
+
     it("collapses the reasoning block when the stream is stopped mid-thinking", async () => {
         Notice.clear();
         const plugin = makePlugin();
