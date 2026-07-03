@@ -90,6 +90,7 @@ interface ApiOverrides {
     applyPlacement?: ReturnType<typeof vi.fn>;
     clearPlacement?: ReturnType<typeof vi.fn>;
     gpuStatsStream?: ReturnType<typeof vi.fn>;
+    health?: ReturnType<typeof vi.fn>;
 }
 
 async function* emptyStatsStream(): AsyncGenerator<SSEEvent, void> {}
@@ -101,6 +102,7 @@ function makeApi(overrides: ApiOverrides = {}) {
         applyPlacement: vi.fn().mockResolvedValue(ok(multiManual())),
         clearPlacement: vi.fn().mockResolvedValue(ok(multi())),
         gpuStatsStream: vi.fn(() => emptyStatsStream()),
+        health: vi.fn().mockResolvedValue(ok({ chat_ready: true })),
         ...overrides,
     };
 }
@@ -513,6 +515,42 @@ describe("PlacementView apply", () => {
         resolveApply(ok(multiManual()));
         await flush();
         expect(contentEl.find("lilbee-placement-overlay")).toBeNull();
+    });
+
+    it("holds the rebuilding overlay until the fleet reports ready", async () => {
+        const health = vi
+            .fn()
+            .mockResolvedValueOnce(ok({ chat_ready: false }))
+            .mockResolvedValue(ok({ chat_ready: true }));
+        const api = makeApi({ placement: vi.fn().mockResolvedValue(ok(multiManual())), health });
+        const { contentEl } = await openView(makePlugin(api));
+        contentEl
+            .findAll("lilbee-placement-btn")
+            .find((b) => b.textContent === "Apply")!
+            .trigger("click");
+        await flush();
+        // First health check reports the fleet still reloading — overlay stays up.
+        expect(contentEl.find("lilbee-placement-overlay")).not.toBeNull();
+        await new Promise((r) => setTimeout(r, 1700));
+        await flush();
+        // Second check reports ready — overlay clears.
+        expect(contentEl.find("lilbee-placement-overlay")).toBeNull();
+        expect(health).toHaveBeenCalledTimes(2);
+    });
+
+    it("stops waiting when the health check errors after apply", async () => {
+        const api = makeApi({
+            placement: vi.fn().mockResolvedValue(ok(multiManual())),
+            health: vi.fn().mockResolvedValue(err(new Error("down"))),
+        });
+        const { contentEl } = await openView(makePlugin(api));
+        contentEl
+            .findAll("lilbee-placement-btn")
+            .find((b) => b.textContent === "Apply")!
+            .trigger("click");
+        await flush();
+        expect(contentEl.find("lilbee-placement-overlay")).toBeNull();
+        expect(Notice.instances.map((n) => n.message)).toContain("Placement applied.");
     });
 
     it("disables apply and shows a neutral message on a 409", async () => {

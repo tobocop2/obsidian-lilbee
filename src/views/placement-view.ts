@@ -539,14 +539,31 @@ export class PlacementView extends ItemView {
         this.applying = true;
         this.render();
         const result = await this.plugin.api.applyPlacement(this.buildSpec());
-        this.applying = false;
         if (result.isErr()) {
+            this.applying = false;
             this.handleMutationError(result.error);
             this.render();
             return;
         }
-        new Notice(MESSAGES.PLACEMENT_APPLIED);
         this.adoptResponse(result.value);
+        // The model reloads on the new device layout — keep the "Rebuilding fleet"
+        // overlay up until it reports ready, so the view isn't a silent idle screen.
+        this.applying = true;
+        this.render();
+        await this.waitForFleetReady();
+        this.applying = false;
+        this.render();
+        new Notice(MESSAGES.PLACEMENT_APPLIED);
+    }
+
+    /** Poll health until the fleet reports ready after a placement change; stops
+     *  early on an errored/absent health signal so it never blocks indefinitely. */
+    private async waitForFleetReady(): Promise<void> {
+        for (let i = 0; i < 200; i++) {
+            const health = await this.plugin.api.health();
+            if (health.isErr() || health.value.chat_ready !== false) return;
+            await new Promise((r) => setTimeout(r, 1500));
+        }
     }
 
     private async runReset(): Promise<void> {
