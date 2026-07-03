@@ -743,14 +743,16 @@ export default class LilbeePlugin extends Plugin {
     /** External mode: on launch, tell the user when the running server is not the
      *  latest release. Best-effort — silent when offline or the server is unreachable. */
     private async warnExternalServerOutdated(): Promise<void> {
-        const health = await this.api.health().catch(() => null);
-        if (!health?.isOk()) return;
-        const latest = await getLatestRelease()
-            .then((release) => release.tag.replace(/^v/, ""))
-            .catch(() => null);
-        if (!latest || health.value.version === latest) return;
-        // NOTICE_PERMANENT keeps it up until the user clicks it away.
-        new Notice(MESSAGES.NOTICE_EXTERNAL_SERVER_OUTDATED(health.value.version, latest), NOTICE_PERMANENT);
+        try {
+            const health = await this.api.health();
+            if (health.isErr()) return;
+            const latest = (await getLatestRelease()).tag.replace(/^v/, "");
+            if (!latest || health.value.version === latest) return;
+            // NOTICE_PERMANENT keeps it up until the user clicks it away.
+            new Notice(MESSAGES.NOTICE_EXTERNAL_SERVER_OUTDATED(health.value.version, latest), NOTICE_PERMANENT);
+        } catch {
+            // offline, unreachable, or rate-limited — stay quiet
+        }
     }
 
     async updateServer(release: ReleaseInfo, onProgress?: (msg: string) => void): Promise<void> {
