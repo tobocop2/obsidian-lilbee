@@ -108,6 +108,18 @@ export class CrawlModal extends Modal {
         const advanced = contentEl.createEl("details", { cls: "lilbee-crawl-advanced" });
         advanced.createEl("summary", { text: MESSAGES.LABEL_CRAWL_ADVANCED });
 
+        const subdomainsRow = advanced.createDiv({ cls: "lilbee-crawl-subdomains-row" });
+        const subdomainsLabel = subdomainsRow.createEl("label", {
+            cls: "lilbee-crawl-subdomains",
+            attr: { title: MESSAGES.TOOLTIP_CRAWL_SUBDOMAINS },
+        });
+        const subdomainsInput = subdomainsLabel.createEl("input", {
+            cls: "lilbee-crawl-subdomains-input",
+            attr: { type: "checkbox" },
+        });
+        asInput(subdomainsInput).checked = false;
+        subdomainsLabel.createSpan({ text: MESSAGES.LABEL_CRAWL_SUBDOMAINS });
+
         const options = advanced.createDiv({ cls: "lilbee-crawl-options" });
 
         const depthLabel = options.createEl("label", { text: MESSAGES.LABEL_DEPTH });
@@ -182,7 +194,9 @@ export class CrawlModal extends Modal {
             // Persist the sticky default; non-fatal since runCrawl below drives this crawl explicitly.
             void this.plugin.api.updateConfig({ [CONFIG_KEY.CRAWL_RENDER_MODE]: renderMode }).catch(() => {});
 
-            void this.plugin.runCrawl(url, depth, maxPages, renderMode);
+            // Subdomain scope only applies to link discovery, so a single-page crawl omits it.
+            const includeSubdomains = recursive ? asInput(subdomainsInput).checked : undefined;
+            void this.plugin.runCrawl(url, depth, maxPages, renderMode, includeSubdomains);
             this.close();
         });
 

@@ -978,6 +978,26 @@ export class LilbeeSettingTab extends PluginSettingTab {
         kvContainer.hide();
         this.serverConfigHideableEls.set("kv_cache_type", kvContainer);
 
+        const flashContainer = details.createDiv();
+        const flashSetting = new Setting(flashContainer)
+            .setName(MESSAGES.LABEL_FLASH_ATTENTION)
+            .setDesc(MESSAGES.DESC_FLASH_ATTENTION)
+            .addToggle((toggle) => {
+                toggle.onChange(async (value) => {
+                    if (this.suppressToggleChanges) return;
+                    try {
+                        await this.plugin.api.updateConfig({ flash_attention: value });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_FLASH_ATTENTION));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_FLASH_ATTENTION));
+                    }
+                });
+                this.serverConfigToggles.set("flash_attention", toggle);
+            });
+        this.appendResetAffordance(flashSetting, "flash_attention", MESSAGES.LABEL_FLASH_ATTENTION);
+        flashContainer.hide();
+        this.serverConfigHideableEls.set("flash_attention", flashContainer);
+
         const layers = this.renderHideableNumberField(
             details,
             "n_gpu_layers",

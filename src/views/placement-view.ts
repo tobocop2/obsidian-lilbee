@@ -267,6 +267,14 @@ export class PlacementView extends ItemView {
             cls: "lilbee-placement-role-model",
             text: role.model ? displayLabelForRef(role.model) : MESSAGES.PLACEMENT_NOT_SET,
         });
+        // Truthy: absent on older servers, 0 for a role with no model loaded.
+        if (role.vram_bytes) {
+            const vram = row.createSpan({
+                cls: "lilbee-placement-role-vram",
+                text: MESSAGES.PLACEMENT_ROLE_VRAM(formatGb(role.vram_bytes)),
+            });
+            this.tip(vram, MESSAGES.PLACEMENT_TIP_ROLE_VRAM(role.role));
+        }
         if (gpus) {
             const toggles = row.createDiv({ cls: "lilbee-placement-toggles" });
             for (const gpu of gpus) {

@@ -1302,14 +1302,16 @@
     cursor: pointer;
 }
 
-.lilbee-crawl-browser-row {
+.lilbee-crawl-browser-row,
+.lilbee-crawl-subdomains-row {
     display: flex;
     align-items: center;
     gap: var(--size-4-1, 4px);
     margin: var(--size-4-2, 8px) 0;
 }
 
-.lilbee-crawl-browser {
+.lilbee-crawl-browser,
+.lilbee-crawl-subdomains {
     display: flex;
     align-items: center;
     gap: var(--size-4-2, 8px);
@@ -4505,6 +4507,11 @@ button.lilbee-model-chip-select:focus-visible {
     min-width: 90px;
     color: var(--text-normal);
     overflow-wrap: anywhere;
+}
+.lilbee-placement-role-vram {
+    font-size: var(--font-smallest, 11px);
+    color: var(--text-muted);
+    white-space: nowrap;
 }
 .lilbee-placement-role-head {
     display: flex;

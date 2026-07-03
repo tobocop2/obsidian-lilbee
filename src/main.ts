@@ -385,6 +385,7 @@ export default class LilbeePlugin extends Plugin {
                 this.configureApi(this.settings.serverUrl);
                 this.setStatusReady();
                 void this.fetchActiveModel();
+                void this.warnExternalServerOutdated();
             }
         }
 
@@ -737,6 +738,19 @@ export default class LilbeePlugin extends Plugin {
         } finally {
             notice.hide();
         }
+    }
+
+    /** External mode: on launch, tell the user when the running server is not the
+     *  latest release. Best-effort — silent when offline or the server is unreachable. */
+    private async warnExternalServerOutdated(): Promise<void> {
+        const health = await this.api.health().catch(() => null);
+        if (!health?.isOk()) return;
+        const latest = await getLatestRelease()
+            .then((release) => release.tag.replace(/^v/, ""))
+            .catch(() => null);
+        if (!latest || health.value.version === latest) return;
+        // NOTICE_PERMANENT keeps it up until the user clicks it away.
+        new Notice(MESSAGES.NOTICE_EXTERNAL_SERVER_OUTDATED(health.value.version, latest), NOTICE_PERMANENT);
     }
 
     async updateServer(release: ReleaseInfo, onProgress?: (msg: string) => void): Promise<void> {
@@ -2356,6 +2370,7 @@ export default class LilbeePlugin extends Plugin {
         depth: number | null,
         maxPages: number | null,
         renderMode?: CrawlRenderMode,
+        includeSubdomains?: boolean,
     ): Promise<void> {
         const taskId = this.taskQueue.enqueue(`Crawl ${url}`, TASK_TYPE.CRAWL);
         if (taskId === null) {
@@ -2368,7 +2383,7 @@ export default class LilbeePlugin extends Plugin {
         let setupResolved = false;
         try {
             let pageCount = 0;
-            const rawStream = this.api.crawl(url, depth, maxPages, controller.signal, renderMode);
+            const rawStream = this.api.crawl(url, depth, maxPages, controller.signal, renderMode, includeSubdomains);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 switch (event.event) {
                     case SSE_EVENT.SETUP_START: {

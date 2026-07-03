@@ -61,7 +61,6 @@ export const MESSAGES = {
     BUTTON_OPEN_CHAT: "Open chat",
     BUTTON_OPEN_TASK_CENTER: "→ Open Task Center",
 
-    LABEL_DISABLED: "Disabled",
     LABEL_NOT_SET: "Not set",
     LABEL_NO_MODEL_SELECTED: "no model selected",
     LABEL_UPTODATE: "Up to date",
@@ -91,8 +90,11 @@ export const MESSAGES = {
     NOTICE_CRAWL_RECURSIVE:
         "Whole-site crawl follows every internal link it finds on the same origin. Large sites can fetch hundreds of pages and take a while. Use Advanced to cap depth or page count. Request delay, concurrency and retry behavior live in Settings → Crawling.",
     LABEL_CRAWL_USE_BROWSER: "Use browser (enables JavaScript, uses more memory)",
+    LABEL_CRAWL_SUBDOMAINS: "Include subdomains",
     TOOLTIP_CRAWL_URL: "Web page to crawl. A scheme is added for you if you leave it off.",
     TOOLTIP_CRAWL_RECURSIVE: "Follow internal links on the same site instead of crawling just this page.",
+    TOOLTIP_CRAWL_SUBDOMAINS:
+        "Also follow links to subdomains of the starting site (for example docs.example.com from example.com).",
     TOOLTIP_CRAWL_USE_BROWSER:
         "Render pages in Chromium so content built with JavaScript is captured. Use it for sites that render client-side.",
     TOOLTIP_CRAWL_DEPTH: "How many links deep to follow from the starting page. Blank means no limit.",
@@ -254,7 +256,6 @@ export const MESSAGES = {
     DESC_RERANKER_CANDIDATES: "How many candidate results to rerank (1-100). Higher = slower but more accurate.",
     NOTICE_FAILED_RERANKER: "lilbee: failed to update reranker model",
     NOTICE_RERANKER_UPDATED: "lilbee: reranker model updated",
-    NOTICE_RERANKER_NEEDS_KEY: "Configure the LiteLLM API key in the LLM provider settings to use this reranker.",
     NOTICE_RERANKER_LOAD_FAILED: "lilbee: failed to load reranker options",
     LABEL_VISION_TITLE: "Vision model",
     LABEL_VISION_DISABLED: "(disabled)",
@@ -264,7 +265,6 @@ export const MESSAGES = {
     NOTICE_VISION_UPDATED: "lilbee: vision model updated",
     NOTICE_FAILED_VISION: "lilbee: failed to update vision model",
     NOTICE_VISION_LOAD_FAILED: "lilbee: failed to load vision options",
-    NOTICE_VISION_NEEDS_KEY: "Configure the LiteLLM API key in the LLM provider settings to use this vision model.",
     PLACEHOLDER_RERANK_CANDIDATES: "20",
     LABEL_LLM_PROVIDER: "AI backend",
     LABEL_OPENAI_API_KEY: "OpenAI API key",
@@ -292,7 +292,6 @@ export const MESSAGES = {
     LABEL_NO_COMPLETED_TASKS: "No completed tasks",
     LABEL_CANCEL_TASK: "Cancel task",
     LABEL_RETRY_TASK: "Retry",
-    LABEL_DOWNLOAD_QUEUED: "+{count} queued",
     LABEL_TASK_STATE_QUEUED: "queued",
     LABEL_TASK_STATE_DONE: "done",
     LABEL_TASK_STATE_FAILED: "failed",
@@ -358,7 +357,6 @@ export const MESSAGES = {
     COMMAND_MODEL_INFO_EMBED: "Show info for active embedding model",
     NOTICE_NO_ACTIVE_MODEL: (task: string): string => `No active ${task} model is set.`,
     LABEL_TASK: "Task",
-    LABEL_QUANT: "Quant",
     LABEL_DOWNLOADS_COUNT: (count: string) => `${count} downloads`,
     LABEL_SIZE_SMALL: "Small",
     LABEL_SIZE_MEDIUM: "Medium",
@@ -432,7 +430,6 @@ export const MESSAGES = {
     DESC_LLM_PROVIDER_AUTO: "Auto (recommended)",
     DESC_LLM_PROVIDER_LOCAL: "Local only (llama-cpp)",
     DESC_LLM_PROVIDER_EXTERNAL: "External (OpenAI, Claude, etc.)",
-    DESC_API_KEY: "Your API key for external AI services (OpenAI, Anthropic, etc.). Stored securely on the server.",
     DESC_HF_TOKEN: "Needed for some models. Get one free at huggingface.co/settings/tokens",
     DESC_OLLAMA_BASE_URL:
         "Where your Ollama server is listening. Leave blank for the default (http://localhost:11434).",
@@ -536,8 +533,9 @@ export const MESSAGES = {
     NOTICE_SERVER_AUTO_UPDATING: (version: string) => `lilbee: updating server to ${version}...`,
     NOTICE_SERVER_AUTO_UPDATED: (version: string) => `lilbee server updated to ${version}`,
     NOTICE_SERVER_AUTO_UPDATE_FAILED: "lilbee: automatic server update failed. You can retry from settings.",
+    NOTICE_EXTERNAL_SERVER_OUTDATED: (current: string, latest: string): string =>
+        `Your lilbee server (${current}) is behind the latest release (${latest}). Update it to get the newest features and fixes.`,
     ERROR_COULD_NOT_CHECK: "lilbee: could not check for updates",
-    ERROR_COULD_NOT_REACH: "Could not connect to lilbee server. Is it running?",
     ERROR_LOAD_CATALOG: "lilbee: failed to load catalog",
     ERROR_LOAD_DOCUMENTS: "lilbee: failed to load documents",
     ERROR_DELETE_DOCUMENTS: "lilbee: failed to delete documents",
@@ -618,7 +616,6 @@ export const MESSAGES = {
     NOTICE_EMBEDDING_UPDATED: "lilbee: embedding model updated",
     NOTICE_FAILED_EMBEDDING: "lilbee: failed to update embedding model",
     NOTICE_UPDATED_TO: (version: string) => `lilbee: updated to ${version}`,
-    NOTICE_STATUS: (docs: number, chunks: number) => `lilbee: ${docs} documents, ${chunks} chunks`,
     NOTICE_DELETED: (count: number) => `lilbee: deleted ${count} documents`,
     NOTICE_SAVED: (path: string) => `Saved to ${path}`,
     NOTICE_REMOVED: (model: string) => `Deleted ${model}`,
@@ -667,6 +664,7 @@ export const MESSAGES = {
     STATUS_VALUE_OCR_OFF: "Off",
     LABEL_STATUS_ARCHITECTURE: "Architecture",
     LABEL_STATUS_CONTEXT_LENGTH: "Context length",
+    LABEL_STATUS_SERVED_CONTEXT: "Serving context",
     LABEL_STATUS_WIKI: "Wiki",
     LABEL_STATUS_WIKI_PAGES: "Pages",
     LABEL_STATUS_WIKI_DRAFTS: "Drafts",
@@ -905,6 +903,8 @@ export const MESSAGES = {
     PLACEMENT_HINT_REPLICAS_SETTINGS:
         "This device runs everything together. Set worker counts in Settings → lilbee → Hardware / fleet.",
     PLACEMENT_MEM_FREE: (free: string, total: string): string => `${free} / ${total} free`,
+    PLACEMENT_ROLE_VRAM: (size: string): string => `~${size}`,
+    PLACEMENT_TIP_ROLE_VRAM: (role: WorkerRole): string => `Estimated memory the ${roleNoun(role)} model needs`,
     PLACEMENT_UTIL: (pct: number): string => `${pct}%`,
     PLACEMENT_UTIL_NA: "—",
     PLACEMENT_METER_UTIL: "util",
@@ -923,6 +923,9 @@ export const MESSAGES = {
     LABEL_FLEET: "Hardware / fleet",
     LABEL_FLEET_HELP:
         "How the model fleet uses your GPUs. These apply to local (managed) and self-hosted servers; they have no effect when lilbee points at a hosted provider.",
+    LABEL_FLASH_ATTENTION: "Flash attention",
+    DESC_FLASH_ATTENTION:
+        "Faster attention kernels that cut chat context memory on supported GPUs. Reset to let lilbee decide per model.",
     LABEL_KV_CACHE_TYPE: "KV cache type",
     DESC_KV_CACHE_TYPE:
         "Smaller types use less memory for the chat context. q8_0 roughly halves it versus f16 with no noticeable quality loss; q4_0 quarters it.",
