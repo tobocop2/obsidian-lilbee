@@ -1,7 +1,14 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import { SessionTokenError } from "../api";
-import type { BatchProgressPayload, CatalogEntry, ManagedServerProgressPhase, SSEEvent, SyncDone } from "../types";
+import type {
+    BatchProgressPayload,
+    CatalogEntry,
+    ManagedServerProgressPhase,
+    ServerMode,
+    SSEEvent,
+    SyncDone,
+} from "../types";
 import {
     CATALOG_TAB,
     LILBEE_REPO_URL,
@@ -351,7 +358,7 @@ export class SetupWizard extends Modal {
         const step = this.beginStep();
         this.renderStepHeader(step, MESSAGES.TITLE_SERVER_MODE);
 
-        let mode: "managed" | "external" =
+        let mode: ServerMode =
             this.plugin.settings.serverMode === SERVER_MODE.EXTERNAL ? SERVER_MODE.EXTERNAL : SERVER_MODE.MANAGED;
 
         const managedOption = step.createDiv({

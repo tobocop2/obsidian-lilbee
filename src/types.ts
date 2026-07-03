@@ -35,6 +35,25 @@ export interface HealthResponse {
     chat_ctx?: number | null;
 }
 
+/** Whether a citation states a fact from the source or an inference drawn from it. */
+export type ClaimType = "fact" | "inference";
+
+export const CLAIM_TYPE = {
+    FACT: "fact",
+    INFERENCE: "inference",
+} as const satisfies Record<string, ClaimType>;
+
+/** How a `fetchResult` request concluded, reported to the status bar. */
+export type RequestOutcome = "ok" | "auth_error" | "server_error" | "unreachable" | "starting";
+
+export const REQUEST_OUTCOME = {
+    OK: "ok",
+    AUTH_ERROR: "auth_error",
+    SERVER_ERROR: "server_error",
+    UNREACHABLE: "unreachable",
+    STARTING: "starting",
+} as const satisfies Record<string, RequestOutcome>;
+
 export interface Source {
     source: string;
     content_type: string;
@@ -45,7 +64,7 @@ export interface Source {
     line_start: number | null;
     line_end: number | null;
     chunk_type?: "raw" | "wiki";
-    claim_type?: "fact" | "inference";
+    claim_type?: ClaimType;
     /**
      * Relative path within the vault when the server is managed and
      * `documents_dir` is inside the user's vault. `null` for external servers
@@ -778,7 +797,7 @@ export interface WikiPageDetail extends WikiPage {
 
 export interface WikiCitation {
     citation_key: string;
-    claim_type: "fact" | "inference";
+    claim_type: ClaimType;
     source_filename: string;
     source_hash: string;
     page_start: number | null;

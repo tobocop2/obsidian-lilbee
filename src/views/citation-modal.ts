@@ -1,6 +1,6 @@
 import { App, Modal } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { Source, WikiCitation, WikiCitationChain } from "../types";
+import { CLAIM_TYPE, type Source, type WikiCitation, type WikiCitationChain } from "../types";
 import { MESSAGES } from "../locales/en";
 import { formatLocation } from "./results";
 import { executeSourceClick, sourceClickAction } from "../utils/source-click";
@@ -73,7 +73,10 @@ export class CitationModal extends Modal {
         });
 
         header.createEl("span", {
-            text: citation.claim_type === "fact" ? MESSAGES.LABEL_CITATION_FACT : MESSAGES.LABEL_CITATION_INFERENCE,
+            text:
+                citation.claim_type === CLAIM_TYPE.FACT
+                    ? MESSAGES.LABEL_CITATION_FACT
+                    : MESSAGES.LABEL_CITATION_INFERENCE,
             cls: `lilbee-citation-claim-badge lilbee-claim-${citation.claim_type}`,
         });
 
