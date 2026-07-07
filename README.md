@@ -21,6 +21,7 @@ This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives y
   <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg">
   <a href="https://community.obsidian.md/plugins/lilbee"><img alt="Obsidian community plugin" src="https://img.shields.io/badge/Obsidian-Community%20plugin-7c3aed?logo=obsidian&logoColor=white"></a>
   <a href="https://github.com/tobocop2/obsidian-lilbee/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/tobocop2/obsidian-lilbee/total"></a>
+  <a href="https://web.libera.chat/#lilbee"><img alt="#lilbee on Libera.Chat" src="https://img.shields.io/badge/IRC-%23lilbee%20on%20Libera.Chat-5865F2?logo=liberadotchat&logoColor=white"></a>
 </p>
 
 Ask a question in plain English and lilbee answers from your vault, with citations that click straight back to the source line.

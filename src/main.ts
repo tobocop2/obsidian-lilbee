@@ -227,6 +227,8 @@ export default class LilbeePlugin extends Plugin {
     private startingServer = false;
     private serverStartFailed = false;
     private unloaded = false;
+    // Guards chat-leaf creation against re-entrant duplicate tabs while setViewState is in flight (issue #169).
+    private openingChatLeaf = false;
     taskQueue: TaskQueue = new TaskQueue();
     /** Paths whose most-recent add failed — retry skips the reindex confirm. */
     private failedAddPaths = new Set<string>();
@@ -1895,10 +1897,16 @@ export default class LilbeePlugin extends Plugin {
             void this.app.workspace.revealLeaf(existing[0]);
             return;
         }
-        const leaf = this.app.workspace.getRightLeaf(false);
-        if (leaf) {
-            await leaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
-            void this.app.workspace.revealLeaf(leaf);
+        if (this.openingChatLeaf) return;
+        this.openingChatLeaf = true;
+        try {
+            const leaf = this.app.workspace.getRightLeaf(false);
+            if (leaf) {
+                await leaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
+                void this.app.workspace.revealLeaf(leaf);
+            }
+        } finally {
+            this.openingChatLeaf = false;
         }
     }
 
@@ -1910,31 +1918,37 @@ export default class LilbeePlugin extends Plugin {
      * duplicates.
      */
     async openCockpit(): Promise<void> {
-        const workspace = this.app.workspace;
-        const existingChat = workspace.getLeavesOfType(VIEW_TYPE_CHAT);
-        const existingTasks = workspace.getLeavesOfType(VIEW_TYPE_TASKS);
+        if (this.openingChatLeaf) return;
+        this.openingChatLeaf = true;
+        try {
+            const workspace = this.app.workspace;
+            const existingChat = workspace.getLeavesOfType(VIEW_TYPE_CHAT);
+            const existingTasks = workspace.getLeavesOfType(VIEW_TYPE_TASKS);
 
-        // Chat gets a main-area tab: the post-wizard workspace is empty, and
-        // a sidebar leaf compresses the conversation into a narrow column.
-        let chatLeaf = existingChat[0] ?? null;
-        if (!chatLeaf) {
-            const leaf = workspace.getLeaf(true);
-            if (!leaf) return;
-            chatLeaf = leaf;
-            await chatLeaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
-        }
-
-        let tasksLeaf = existingTasks[0] ?? null;
-        if (!tasksLeaf) {
-            const leaf = workspace.getRightLeaf(false);
-            if (leaf) {
-                tasksLeaf = leaf;
-                await tasksLeaf.setViewState({ type: VIEW_TYPE_TASKS, active: true });
+            // Chat gets a main-area tab: the post-wizard workspace is empty, and
+            // a sidebar leaf compresses the conversation into a narrow column.
+            let chatLeaf = existingChat[0] ?? null;
+            if (!chatLeaf) {
+                const leaf = workspace.getLeaf(true);
+                if (!leaf) return;
+                chatLeaf = leaf;
+                await chatLeaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
             }
-        }
 
-        void workspace.revealLeaf(chatLeaf);
-        if (tasksLeaf) void workspace.revealLeaf(tasksLeaf);
+            let tasksLeaf = existingTasks[0] ?? null;
+            if (!tasksLeaf) {
+                const leaf = workspace.getRightLeaf(false);
+                if (leaf) {
+                    tasksLeaf = leaf;
+                    await tasksLeaf.setViewState({ type: VIEW_TYPE_TASKS, active: true });
+                }
+            }
+
+            void workspace.revealLeaf(chatLeaf);
+            if (tasksLeaf) void workspace.revealLeaf(tasksLeaf);
+        } finally {
+            this.openingChatLeaf = false;
+        }
     }
 
     private registerPendingSyncHintWatchers(): void {
