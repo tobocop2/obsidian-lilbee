@@ -18,6 +18,25 @@ jobs:
           node-version: "20"
           cache: npm
       - run: npm ci
+      - name: Resolve latest lilbee server version
+        id: meta
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=$(curl -sSL -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/repos/tobocop2/lilbee/releases/latest | jq -r .tag_name)
+          DIR="$RUNNER_TEMP/lilbee-bin"
+          mkdir -p "$DIR"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+      # Cache the downloaded server binary keyed on its version, so runs only
+      # re-download when a newer lilbee release ships.
+      - name: Cache lilbee server binary
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.meta.outputs.dir }}
+          key: lilbee-server-${{ runner.os }}-${{ steps.meta.outputs.tag }}
       - run: npm run test:integration
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LILBEE_TEST_BIN_DIR: ${{ steps.meta.outputs.dir }}
