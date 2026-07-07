@@ -783,6 +783,24 @@ describe("LilbeePlugin", () => {
 
             await expect((plugin as any).activateChatView()).resolves.not.toThrow();
         });
+
+        it("does not open a second chat leaf when re-entered before the first registers (issue #169)", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            const rightLeaf = {
+                setViewState: vi.fn().mockImplementation(async () => {
+                    await Promise.resolve();
+                }),
+            };
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(rightLeaf);
+            plugin.app.workspace.revealLeaf = vi.fn();
+
+            await Promise.all([(plugin as any).activateChatView(), (plugin as any).activateChatView()]);
+
+            expect(plugin.app.workspace.getRightLeaf).toHaveBeenCalledTimes(1);
+        });
     });
 
     describe("memory commands and views", () => {
@@ -3620,6 +3638,37 @@ describe("LilbeePlugin", () => {
             await plugin.openCockpit();
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(1);
+        });
+
+        it("does not spawn duplicate main-area tabs when re-entered before the chat leaf registers (issue #169)", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+
+            // Reproduce the affected environment: getLeavesOfType("lilbee-chat")
+            // keeps reporting [] until setViewState's promise resolves, so the
+            // existence check straddles the await. A re-entrant call would then
+            // pass the guard a second time and open another tab.
+            let registered = false;
+            const created: unknown[] = [];
+            plugin.app.workspace.getLeavesOfType = vi
+                .fn()
+                .mockImplementation((type: string) => (type === "lilbee-chat" && registered ? created : []));
+            plugin.app.workspace.getLeaf = vi.fn().mockImplementation(() => {
+                const leaf = {
+                    setViewState: vi.fn().mockImplementation(async () => {
+                        await Promise.resolve();
+                        registered = true;
+                        created.push(leaf);
+                    }),
+                };
+                return leaf;
+            });
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
+            plugin.app.workspace.revealLeaf = vi.fn();
+
+            await Promise.all([plugin.openCockpit(), plugin.openCockpit()]);
+
+            expect(plugin.app.workspace.getLeaf).toHaveBeenCalledTimes(1);
         });
     });
 

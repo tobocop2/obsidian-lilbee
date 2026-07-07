@@ -4,8 +4,17 @@ export default defineConfig({
     test: {
         globals: true,
         environment: "node",
-        setupFiles: ["tests/setup.ts"],
-        exclude: ["**/node_modules/**", "**/.worktrees/**", "**/.claude/**", "**/*.bak/**", "**/tests.bak/**"],
+        setupFiles: ["tests/setup.ts", "tests/setup-node-paths.ts"],
+        // integration.test.ts hits the network (real binary download) and runs on its
+        // own 3-OS workflow (integration.yml); keep the unit suite fast and deterministic.
+        exclude: [
+            "**/node_modules/**",
+            "**/.worktrees/**",
+            "**/.claude/**",
+            "**/*.bak/**",
+            "**/tests.bak/**",
+            "**/integration.test.ts",
+        ],
         coverage: {
             provider: "v8",
             include: ["src/**/*.ts"],

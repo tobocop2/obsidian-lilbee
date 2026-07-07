@@ -310,7 +310,8 @@ describe("BinaryManager", () => {
             const mgr = new BinaryManager("/plugins/lilbee/bin");
             expect(mgr.binaryPath).toContain("lilbee");
             expect(mgr.binaryPath).not.toContain(".exe");
-            expect(mgr.binaryPath).toBe("/plugins/lilbee/bin/lilbee");
+            // binaryPath joins with the host separator; compare on the logical path.
+            expect(mgr.binaryPath.replace(/\\/g, "/")).toBe("/plugins/lilbee/bin/lilbee");
         });
 
         it("returns .exe binary path on win32", () => {
