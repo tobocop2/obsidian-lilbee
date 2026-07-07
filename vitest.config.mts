@@ -4,7 +4,7 @@ export default defineConfig({
     test: {
         globals: true,
         environment: "node",
-        setupFiles: ["tests/setup.ts"],
+        setupFiles: ["tests/setup.ts", "tests/setup-node-paths.ts"],
         // integration.test.ts hits the network (real binary download) and runs on its
         // own 3-OS workflow (integration.yml); keep the unit suite fast and deterministic.
         exclude: [
