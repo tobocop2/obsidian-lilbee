@@ -598,9 +598,8 @@ describe("LilbeeSettingTab", () => {
     describe("storeContentInVault toggle", () => {
         function storeToggleIdx(toggleOnChanges: unknown[]): number {
             // Store-content toggle is rendered first inside the Advanced section,
-            // which runs after the Wiki section. The auto-open-cockpit toggle is
-            // the last toggle in Advanced; storeContentInVault sits one before it.
-            return toggleOnChanges.length - 2;
+            // which runs after the Wiki section, and is now the last toggle overall.
+            return toggleOnChanges.length - 1;
         }
 
         it("onChange true persists and triggers configureManagedStorage", async () => {
@@ -634,19 +633,6 @@ describe("LilbeeSettingTab", () => {
 
             const rows = tab.containerEl.querySelectorAll(".lilbee-setting-disabled");
             expect(rows.length).toBeGreaterThan(0);
-        });
-    });
-
-    describe("auto-open cockpit toggle", () => {
-        it("persists the new value through saveSettings when the toggle is flipped", async () => {
-            const plugin = makePlugin({ autoOpenCockpit: true });
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
-            // The cockpit toggle is the last toggle in Advanced.
-            await toggleOnChanges[toggleOnChanges.length - 1](false);
-            expect(plugin.settings.autoOpenCockpit).toBe(false);
-            expect(plugin.saveSettings).toHaveBeenCalled();
         });
     });
 
@@ -4170,7 +4156,7 @@ describe("managed mode settings", () => {
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
             // wiki prune toggle is before the sync-to-vault toggle
-            const wikiPruneToggleIdx = toggleOnChanges.length - 4;
+            const wikiPruneToggleIdx = toggleOnChanges.length - 3;
             await toggleOnChanges[wikiPruneToggleIdx](true);
             expect(plugin.settings.wikiPruneRaw).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -4243,7 +4229,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const wikiPruneToggleIdx = toggleOnChanges.length - 4;
+            const wikiPruneToggleIdx = toggleOnChanges.length - 3;
             await toggleOnChanges[wikiPruneToggleIdx](true);
             expect(
                 Notice.instances.some((n: any) => n.message.includes("failed to update Remove source duplicates")),
@@ -4257,7 +4243,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const syncToggleIdx = toggleOnChanges.length - 3;
+            const syncToggleIdx = toggleOnChanges.length - 2;
             await toggleOnChanges[syncToggleIdx](true);
             expect(plugin.settings.wikiSyncToVault).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -4272,7 +4258,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const syncToggleIdx = toggleOnChanges.length - 3;
+            const syncToggleIdx = toggleOnChanges.length - 2;
             await toggleOnChanges[syncToggleIdx](false);
             expect(plugin.settings.wikiSyncToVault).toBe(false);
             expect(plugin.wikiSync).toBeNull();
