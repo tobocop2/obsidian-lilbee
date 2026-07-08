@@ -19,7 +19,7 @@ jobs:
       - name: Install Obsidian
         shell: pwsh
         run: |
-          $ver = "1.12.7"
+          $ver = "1.13.1"
           $url = "https://github.com/obsidianmd/obsidian-releases/releases/download/v$ver/Obsidian-$ver.exe"
           $inst = Join-Path $env:RUNNER_TEMP "ObsidianSetup.exe"
           Write-Host "Downloading $url"
