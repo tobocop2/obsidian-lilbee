@@ -82,14 +82,14 @@ jobs:
           $result = $null
           for ($i=0; $i -lt 20; $i++) {
             Start-Sleep -Seconds 3
-            $line = node scripts/win-repro/drive.mjs scripts/win-repro/measure.js 2>&1 | Select-String "RESULT_JSON:"
+            $raw = (node scripts/win-repro/drive.mjs scripts/win-repro/measure.js 2>&1 | Out-String)
+            Write-Host "----- driver output (attempt $i) -----"
+            Write-Host $raw
+            $line = ($raw -split "`n") | Select-String "RESULT_JSON:" | Select-Object -First 1
             if ($line) {
-              $json = ($line -replace ".*RESULT_JSON:","")
-              Write-Host "measure -> $json"
+              $json = ($line.ToString() -replace ".*RESULT_JSON:","")
               $obj = $json | ConvertFrom-Json
               if ($obj.pluginLoaded) { $result = $obj; break }
-            } else {
-              Write-Host "(no result yet, attempt $i)"
             }
           }
           if (-not $result) { throw "plugin never loaded / no measurement" }
