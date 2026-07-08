@@ -3588,7 +3588,7 @@ describe("LilbeePlugin", () => {
             plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(tasksLeaf);
             plugin.app.workspace.revealLeaf = vi.fn();
             await plugin.openCockpit();
-            expect(plugin.app.workspace.getLeaf).toHaveBeenCalledWith(true);
+            expect(plugin.app.workspace.getLeaf).toHaveBeenCalledWith("tab");
             expect(chatLeaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-chat", active: true });
             expect(tasksLeaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-tasks", active: true });
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);

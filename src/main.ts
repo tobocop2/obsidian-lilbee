@@ -1929,7 +1929,8 @@ export default class LilbeePlugin extends Plugin {
             // a sidebar leaf compresses the conversation into a narrow column.
             let chatLeaf = existingChat[0] ?? null;
             if (!chatLeaf) {
-                const leaf = workspace.getLeaf(true);
+                // "tab" is the explicit form; the boolean getLeaf(true) is deprecated.
+                const leaf = workspace.getLeaf("tab");
                 if (!leaf) return;
                 chatLeaf = leaf;
                 await chatLeaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
