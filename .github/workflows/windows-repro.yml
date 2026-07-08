@@ -19,12 +19,27 @@ jobs:
       - name: Install Obsidian
         shell: pwsh
         run: |
-          choco install obsidian -y --no-progress
-          $exe = Get-ChildItem -Path "$env:LOCALAPPDATA\Obsidian","$env:ProgramFiles\Obsidian","${env:ProgramFiles(x86)}\Obsidian" -Filter Obsidian.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $exe) { $exe = Get-ChildItem -Path C:\ -Filter Obsidian.exe -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'chocolatey\\bin' } | Select-Object -First 1 }
-          if (-not $exe) { throw "Obsidian.exe not found" }
-          "OBSIDIAN_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
-          Write-Host "Obsidian: $($exe.FullName)"
+          $ver = "1.12.7"
+          $url = "https://github.com/obsidianmd/obsidian-releases/releases/download/v$ver/Obsidian-$ver.exe"
+          $inst = Join-Path $env:RUNNER_TEMP "ObsidianSetup.exe"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile $inst
+          # electron-builder one-click installer, run as the runner user (not elevated),
+          # so it lands in this user's %LOCALAPPDATA%\Programs\Obsidian.
+          Start-Process -Wait -FilePath $inst -ArgumentList "/S"
+          Start-Sleep -Seconds 5
+          $candidates = @(
+            (Join-Path $env:LOCALAPPDATA "Programs\Obsidian\Obsidian.exe"),
+            (Join-Path $env:LOCALAPPDATA "Obsidian\Obsidian.exe")
+          )
+          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) {
+            $found = Get-ChildItem -Path "$env:LOCALAPPDATA\Programs" -Filter Obsidian.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) { $exe = $found.FullName }
+          }
+          if (-not $exe) { throw "Obsidian.exe not found after install" }
+          "OBSIDIAN_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Obsidian: $exe"
 
       - name: Seed vault + plugin + Obsidian config
         shell: pwsh
