@@ -36,7 +36,7 @@ The first time you enable the plugin, a setup wizard opens and walks you through
 6. **Wiki (experimental).** Optionally turn on the auto-generated wiki. The step lists the tradeoffs before you decide.
 7. **Done.** A summary of what was set up, plus where to go next. Choosing **Open Chat** drops you into the chat sidebar.
 
-By default the chat sidebar and Task Center open side by side in the right sidebar after setup. You can turn that off in Settings → Advanced → **Auto-open chat & task center**.
+Finishing setup opens the chat sidebar once, so you don't land on an empty editor. On later launches nothing is forced open: Obsidian reopens whatever panes you left from your previous session.
 
 ---
 
@@ -57,10 +57,9 @@ By default the chat sidebar and Task Center open side by side in the right sideb
 
 Click the status bar to jump to settings. A separate pill with a refresh icon and a count appears when files have changed and a sync is pending.
 
-**Ribbon icons** (left gutter):
+**Ribbon icon** (left gutter):
 
-- **Open lilbee chat** (speech-bubble icon) — opens the chat sidebar.
-- **Open lilbee Task Center** (checklist icon) — opens the Task Center. It glows while jobs are running and briefly flashes green on success or red on failure.
+- **Open lilbee chat** (speech-bubble icon) — opens the chat sidebar. Open the Task Center from the command palette ("Show task center"); background-job progress shows in the status bar.
 
 ---
 
@@ -246,7 +245,7 @@ Settings → Community plugins → **lilbee**. A filter box at the top searches 
 | **Worker pool** | Timeouts and idle behavior for the background model workers; whether to start them eagerly. |
 | **Crawling** | Depth, page limit, timeouts, request pacing, rate-limit retry/backoff, and URL exclude patterns. |
 | **Wiki (beta)** | Enable the wiki, summary accuracy, default search mode, sync-to-vault and its folder, plus health-check and clean-up buttons. |
-| **Advanced** | Store content in vault, rerank candidate count, **AI backend** (auto / local / external), API keys (OpenAI, Anthropic, Gemini, Hugging Face), the external endpoint, auto-open chat & Task Center, and **Reset all** server-backed settings. |
+| **Advanced** | Store content in vault, rerank candidate count, **AI backend** (auto / local / external), API keys (OpenAI, Anthropic, Gemini, Hugging Face), the external endpoint, and **Reset all** server-backed settings. |
 
 Most knobs in Generation, Retrieval, Ingest, and Worker pool are revealed only when the server reports them, so an older server shows fewer. Server-backed settings have a per-row reset; **Reset all** restores them to defaults while leaving your API keys and local preferences untouched.
 
