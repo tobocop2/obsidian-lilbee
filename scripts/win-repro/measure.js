@@ -30,6 +30,10 @@
             ["lilbee-chat", "lilbee-tasks"].forEach((t) => w.getLeavesOfType(t).forEach((l) => l.detach()));
         const chatCount = () => w.getLeavesOfType("lilbee-chat").length;
 
+        // Persistent anchor so getLeaf(true) always has a tab group to add to
+        // (the CI vault opens nearly empty; detaching to zero removes the group).
+        w.getLeaf(true);
+
         // (1) synchronous-reflection probe
         detachChat();
         const leaf = w.getLeaf(true);
