@@ -381,11 +381,11 @@ describe("LilbeePlugin", () => {
             expect(startSpy).toHaveBeenCalled();
         });
 
-        it("adds all twenty-seven commands", async () => {
+        it("adds all twenty-eight commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(27);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(28);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("model-picker-chat");
             expect(allIds).toContain("model-picker-embedding");
@@ -409,6 +409,7 @@ describe("LilbeePlugin", () => {
             expect(ids).toContain("setup");
             expect(ids).toContain("status");
             expect(ids).toContain("tasks");
+            expect(ids).toContain("arrange-views");
             expect(ids).toContain("wiki");
             expect(ids).toContain("wiki-lint");
             expect(ids).toContain("wiki-drafts");
@@ -3582,6 +3583,118 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             expect(getLeaf).not.toHaveBeenCalled();
             expect(getRightLeaf).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("arrangeViews()", () => {
+        // Stateful workspace: getLeavesOfType reflects leaves created via
+        // setViewState, so the reveal pass finds what the layout pass opened.
+        function wireWorkspace(plugin: any, opened: Record<string, unknown[]> = {}) {
+            const store: Record<string, any[]> = {
+                "lilbee-chat": [],
+                "lilbee-tasks": [],
+                "lilbee-wiki": [],
+                "lilbee-memories": [],
+                ...opened,
+            };
+            const make = () => {
+                const leaf: any = {
+                    setViewState: vi.fn().mockImplementation(async (s: { type: string }) => {
+                        (store[s.type] ??= []).push(leaf);
+                    }),
+                };
+                return leaf;
+            };
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockImplementation((t: string) => store[t] ?? []);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockImplementation(() => make());
+            plugin.app.workspace.createLeafBySplit = vi.fn().mockImplementation(() => make());
+            plugin.app.workspace.revealLeaf = vi.fn();
+            return store;
+        }
+
+        it("opens chat via the sidebar and stacks the task center as a split", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            wireWorkspace(plugin);
+            await (plugin as any).arrangeViews();
+            expect(plugin.app.workspace.getRightLeaf).toHaveBeenCalledTimes(1);
+            expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledTimes(1);
+            expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledWith(expect.anything(), "horizontal");
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(2);
+        });
+
+        it("reveals existing leaves without creating new ones", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            wireWorkspace(plugin, {
+                "lilbee-chat": [{ setViewState: vi.fn() }],
+                "lilbee-tasks": [{ setViewState: vi.fn() }],
+                "lilbee-wiki": [{ setViewState: vi.fn() }],
+                "lilbee-memories": [{ setViewState: vi.fn() }],
+            });
+            await (plugin as any).arrangeViews();
+            expect(plugin.app.workspace.getRightLeaf).not.toHaveBeenCalled();
+            expect(plugin.app.workspace.createLeafBySplit).not.toHaveBeenCalled();
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(4);
+        });
+
+        it("includes wiki and memories only when they are already open", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            wireWorkspace(plugin, {
+                "lilbee-wiki": [{ setViewState: vi.fn() }],
+                "lilbee-memories": [{ setViewState: vi.fn() }],
+            });
+            await (plugin as any).arrangeViews();
+            // chat (sidebar) + tasks (split); wiki + memories reused; reveal all four.
+            expect(plugin.app.workspace.getRightLeaf).toHaveBeenCalledTimes(1);
+            expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledTimes(1);
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(4);
+        });
+
+        it("bails per-view when no leaf can be created and does not throw", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
+            plugin.app.workspace.createLeafBySplit = vi.fn().mockReturnValue(null);
+            plugin.app.workspace.revealLeaf = vi.fn();
+            await expect((plugin as any).arrangeViews()).resolves.not.toThrow();
+            expect(plugin.app.workspace.revealLeaf).not.toHaveBeenCalled();
+        });
+
+        it("skips a view when its split cannot be created but keeps the anchor", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const store = wireWorkspace(plugin);
+            // chat opens via the sidebar; the task-center split fails.
+            plugin.app.workspace.createLeafBySplit = vi.fn().mockReturnValue(null);
+            await (plugin as any).arrangeViews();
+            expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledTimes(1);
+            expect(store["lilbee-chat"]).toHaveLength(1);
+            expect(store["lilbee-tasks"]).toHaveLength(0);
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(1);
+        });
+
+        it("is a no-op while a chat leaf is already opening", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            wireWorkspace(plugin);
+            (plugin as any).openingChatLeaf = true;
+            await (plugin as any).arrangeViews();
+            expect(plugin.app.workspace.getRightLeaf).not.toHaveBeenCalled();
+            expect(plugin.app.workspace.createLeafBySplit).not.toHaveBeenCalled();
+        });
+
+        it("is registered as the 'arrange-views' command", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const spy = vi.spyOn(plugin as any, "arrangeViews").mockResolvedValue(undefined);
+            const calls = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls;
+            const cmd = calls.map((c) => c[0]).find((c: any) => c.id === "arrange-views");
+            expect(cmd).toBeTruthy();
+            cmd.callback();
+            expect(spy).toHaveBeenCalledTimes(1);
         });
     });
 

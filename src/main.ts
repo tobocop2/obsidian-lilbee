@@ -1082,6 +1082,12 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "arrange-views",
+            name: "Arrange views",
+            callback: () => this.arrangeViews(),
+        });
+
+        this.addCommand({
             id: "wiki",
             name: MESSAGES.COMMAND_WIKI,
             checkCallback: (checking) => {
@@ -1873,6 +1879,40 @@ export default class LilbeePlugin extends Plugin {
             if (leaf) {
                 await leaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
                 void this.app.workspace.revealLeaf(leaf);
+            }
+        } finally {
+            this.openingChatLeaf = false;
+        }
+    }
+
+    /**
+     * Tile the plugin's views into evenly split panes: chat and the Task Center
+     * always, plus wiki and memories when they are already open. Reuses open
+     * leaves (chat keeps its conversation) and stacks any it has to create off
+     * the previous one. Bind a hotkey in Settings → Hotkeys.
+     */
+    async arrangeViews(): Promise<void> {
+        if (this.openingChatLeaf) return;
+        this.openingChatLeaf = true;
+        try {
+            const workspace = this.app.workspace;
+            const included = [VIEW_TYPE_CHAT, VIEW_TYPE_TASKS, VIEW_TYPE_WIKI, VIEW_TYPE_MEMORIES].filter(
+                (type) =>
+                    type === VIEW_TYPE_CHAT || type === VIEW_TYPE_TASKS || workspace.getLeavesOfType(type).length > 0,
+            );
+            let anchor: WorkspaceLeaf | null = null;
+            for (const type of included) {
+                let leaf = workspace.getLeavesOfType(type)[0] ?? null;
+                if (!leaf) {
+                    leaf = anchor ? workspace.createLeafBySplit(anchor, "horizontal") : workspace.getRightLeaf(false);
+                    if (!leaf) continue;
+                    await leaf.setViewState({ type, active: true });
+                }
+                anchor = leaf;
+            }
+            for (const type of included) {
+                const leaf = workspace.getLeavesOfType(type)[0];
+                if (leaf) void workspace.revealLeaf(leaf);
             }
         } finally {
             this.openingChatLeaf = false;

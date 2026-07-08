@@ -69,6 +69,7 @@
 
 ### Added
 
+- An **Arrange views** command tiles the plugin's views (chat and the Task Center, plus any open wiki or memories panes) into even splits. Bind a hotkey in Settings → Hotkeys.
 - A separate "When answering without documents" prompt (`general_system_prompt`) sits next to the cited-answer prompt in Settings → Generation. The cited-answer prompt is now labelled "When answering with documents".
 - A Search / Chat mode toggle in the chat header switches the server's `cfg.chat_mode`. Disabled (with a tooltip) when no embedding model is configured. Hidden when the connected server predates the field.
 - Banners returned by the chat stream render verbatim above the answer bubble — copy like "Search needs an embedding model" comes from the server, not the plugin.
