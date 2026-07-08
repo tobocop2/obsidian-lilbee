@@ -4,6 +4,18 @@
 //  2. Unfixed openCockpit logic, two overlapping opens -> how many chat tabs? (repro: >1 means the bug)
 //  3. The real (fixed) openCockpit, two overlapping opens -> how many chat tabs? (fix: must be 1)
 (async () => {
+    // A fresh vault opens in Restricted Mode, so community plugins aren't loaded
+    // by config alone. Turn them on and load lilbee programmatically.
+    if (!app.plugins.plugins.lilbee) {
+        try {
+            if (app.plugins.setEnable) await app.plugins.setEnable(true);
+        } catch {}
+        try {
+            await app.plugins.enablePlugin("lilbee");
+        } catch (e) {
+            return { platform: process.platform, pluginLoaded: false, enableError: String(e) };
+        }
+    }
     const w = app.workspace;
     const P = app.plugins.plugins.lilbee;
     const out = { platform: process.platform, pluginLoaded: !!P };
