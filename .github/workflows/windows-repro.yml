@@ -1,0 +1,81 @@
+name: Windows repro (#169)
+on:
+  workflow_dispatch:
+
+jobs:
+  repro:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm run build
+
+      - name: Install Obsidian
+        shell: pwsh
+        run: |
+          choco install obsidian -y --no-progress
+          $exe = Get-ChildItem -Path "$env:LOCALAPPDATA\Obsidian","$env:ProgramFiles\Obsidian","${env:ProgramFiles(x86)}\Obsidian" -Filter Obsidian.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { $exe = Get-ChildItem -Path C:\ -Filter Obsidian.exe -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch 'chocolatey\\bin' } | Select-Object -First 1 }
+          if (-not $exe) { throw "Obsidian.exe not found" }
+          "OBSIDIAN_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Obsidian: $($exe.FullName)"
+
+      - name: Seed vault + plugin + Obsidian config
+        shell: pwsh
+        run: |
+          $vault = Join-Path $env:RUNNER_TEMP "vault"
+          $pdir  = Join-Path $vault ".obsidian\plugins\lilbee"
+          New-Item -ItemType Directory -Force -Path $pdir | Out-Null
+          Copy-Item main.js,manifest.json,styles.css $pdir
+          '["lilbee"]' | Set-Content (Join-Path $vault ".obsidian\community-plugins.json")
+          # external mode so no server download; setup done so no wizard; no auto-open (we drive it)
+          $data = @{ serverMode="external"; serverUrl="http://127.0.0.1:7433"; manualToken="x"; setupCompleted=$true; autoOpenCockpit=$false } | ConvertTo-Json
+          $data | Set-Content (Join-Path $pdir "data.json")
+          # register the vault as the open one
+          $cfgDir = Join-Path $env:APPDATA "obsidian"
+          New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
+          $vaultJson = ($vault -replace '\\','\\')
+          $obs = '{"vaults":{"aaaaaaaaaaaaaaaa":{"path":"' + $vaultJson + '","ts":1700000000000,"open":true}}}'
+          $obs | Set-Content (Join-Path $cfgDir "obsidian.json")
+          "VAULT=$vault" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "obsidian.json:"; Get-Content (Join-Path $cfgDir "obsidian.json")
+
+      - name: Launch Obsidian + drive via CDP
+        shell: pwsh
+        run: |
+          $args = @("--remote-debugging-port=9222","--remote-allow-origins=*")
+          Write-Host "Launching $env:OBSIDIAN_EXE $args"
+          Start-Process -FilePath $env:OBSIDIAN_EXE -ArgumentList $args
+          # wait for the CDP endpoint
+          $ok = $false
+          for ($i=0; $i -lt 40; $i++) {
+            Start-Sleep -Seconds 3
+            try {
+              $t = Invoke-RestMethod -Uri "http://127.0.0.1:9222/json" -TimeoutSec 3
+              $page = $t | Where-Object { $_.type -eq "page" -and $_.url -like "*obsidian.md*" }
+              if ($page) { Write-Host "CDP up after ~$($i*3)s; targets:"; $t | ForEach-Object { Write-Host "  $($_.type) $($_.url)" }; $ok=$true; break }
+            } catch { }
+          }
+          if (-not $ok) { throw "CDP endpoint / obsidian page never appeared" }
+          # give the plugin a moment to load, retry the measurement until pluginLoaded
+          $result = $null
+          for ($i=0; $i -lt 20; $i++) {
+            Start-Sleep -Seconds 3
+            $line = node scripts/win-repro/drive.mjs scripts/win-repro/measure.js 2>&1 | Select-String "RESULT_JSON:"
+            if ($line) {
+              $json = ($line -replace ".*RESULT_JSON:","")
+              Write-Host "measure -> $json"
+              $obj = $json | ConvertFrom-Json
+              if ($obj.pluginLoaded) { $result = $obj; break }
+            } else {
+              Write-Host "(no result yet, attempt $i)"
+            }
+          }
+          if (-not $result) { throw "plugin never loaded / no measurement" }
+          Write-Host "=================== WINDOWS REPRO RESULT ==================="
+          $result | ConvertTo-Json
+          Write-Host "==========================================================="
