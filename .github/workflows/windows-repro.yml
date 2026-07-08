@@ -49,8 +49,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path $pdir | Out-Null
           Copy-Item main.js,manifest.json,styles.css $pdir
           '["lilbee"]' | Set-Content (Join-Path $vault ".obsidian\community-plugins.json")
-          # external mode so no server download; setup done so no wizard; no auto-open (we drive it)
-          $data = @{ serverMode="external"; serverUrl="http://127.0.0.1:7433"; manualToken="x"; setupCompleted=$true; autoOpenCockpit=$false } | ConvertTo-Json
+          # managed mode + auto-open, to reproduce the reporter's real flow (managed setup -> chat opens)
+          $data = @{ serverMode="managed"; setupCompleted=$true; autoOpenCockpit=$true; sharedRoot="" } | ConvertTo-Json
           $data | Set-Content (Join-Path $pdir "data.json")
           # register the vault as the open one
           $cfgDir = Join-Path $env:APPDATA "obsidian"
@@ -61,38 +61,44 @@ jobs:
           "VAULT=$vault" | Out-File -FilePath $env:GITHUB_ENV -Append
           Write-Host "obsidian.json:"; Get-Content (Join-Path $cfgDir "obsidian.json")
 
-      - name: Launch Obsidian + drive via CDP
+      - name: Launch Obsidian + observe the real boot flow via CDP
         shell: pwsh
         run: |
-          $args = @("--remote-debugging-port=9222","--remote-allow-origins=*")
-          Write-Host "Launching $env:OBSIDIAN_EXE $args"
-          Start-Process -FilePath $env:OBSIDIAN_EXE -ArgumentList $args
-          # wait for the CDP endpoint
-          $ok = $false
-          for ($i=0; $i -lt 40; $i++) {
-            Start-Sleep -Seconds 3
-            try {
-              $t = Invoke-RestMethod -Uri "http://127.0.0.1:9222/json" -TimeoutSec 3
-              $page = $t | Where-Object { $_.type -eq "page" -and $_.url -like "*obsidian.md*" }
-              if ($page) { Write-Host "CDP up after ~$($i*3)s; targets:"; $t | ForEach-Object { Write-Host "  $($_.type) $($_.url)" }; $ok=$true; break }
-            } catch { }
+          function Wait-Cdp {
+            for ($i=0; $i -lt 40; $i++) {
+              Start-Sleep -Seconds 3
+              try {
+                $t = Invoke-RestMethod -Uri "http://127.0.0.1:9222/json" -TimeoutSec 3
+                if ($t | Where-Object { $_.type -eq "page" -and $_.url -like "*obsidian.md*" }) { return $true }
+              } catch { }
+            }
+            return $false
           }
-          if (-not $ok) { throw "CDP endpoint / obsidian page never appeared" }
-          # give the plugin a moment to load, retry the measurement until pluginLoaded
+          $a = @("--remote-debugging-port=9222","--remote-allow-origins=*")
+          Write-Host "Launching $env:OBSIDIAN_EXE"
+          Start-Process -FilePath $env:OBSIDIAN_EXE -ArgumentList $a
+          if (-not (Wait-Cdp)) { throw "CDP never appeared (initial)" }
+          Write-Host "CDP up. Enabling community plugins + reloading so lilbee loads at boot..."
+          node scripts/win-repro/drive.mjs scripts/win-repro/bootstrap.js 2>&1 | Write-Host
+          Start-Sleep -Seconds 6
+          if (-not (Wait-Cdp)) { throw "CDP never reappeared after reload" }
+          # Managed mode downloads + starts the server; give it time, then observe.
           $result = $null
-          for ($i=0; $i -lt 20; $i++) {
-            Start-Sleep -Seconds 3
-            $raw = (node scripts/win-repro/drive.mjs scripts/win-repro/measure.js 2>&1 | Out-String)
-            Write-Host "----- driver output (attempt $i) -----"
-            Write-Host $raw
+          for ($i=0; $i -lt 25; $i++) {
+            Start-Sleep -Seconds 5
+            $raw = (node scripts/win-repro/drive.mjs scripts/win-repro/observe.js 2>&1 | Out-String)
             $line = ($raw -split "`n") | Select-String "RESULT_JSON:" | Select-Object -First 1
             if ($line) {
               $json = ($line.ToString() -replace ".*RESULT_JSON:","")
               $obj = $json | ConvertFrom-Json
+              Write-Host "attempt $i pluginLoaded=$($obj.pluginLoaded) samples=$($obj.samples -join ',')"
               if ($obj.pluginLoaded) { $result = $obj; break }
+            } else {
+              Write-Host "attempt $i (no result): $raw"
             }
           }
-          if (-not $result) { throw "plugin never loaded / no measurement" }
-          Write-Host "=================== WINDOWS REPRO RESULT ==================="
-          $result | ConvertTo-Json
-          Write-Host "==========================================================="
+          if (-not $result) { throw "plugin never loaded" }
+          Write-Host "=================== WINDOWS OBSERVE RESULT ==================="
+          $result | ConvertTo-Json -Depth 6
+          Write-Host "============================================================="
+
