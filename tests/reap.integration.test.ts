@@ -1,7 +1,8 @@
 // Real-process integration tests for orphan reaping. Unlike the unit tests,
 // these spawn actual OS processes and exercise the real `ps` / `powershell` /
-// `taskkill` / process-group code paths. Run on Linux, macOS, and Windows in CI
-// via `npm run test:reap` (vitest.reap.config.ts).
+// `taskkill` / process-group code paths. Part of the integration suite
+// (`npm run test:integration`), run on Linux, macOS, and Windows via
+// integration.yml.
 import { afterEach, describe, expect, it } from "vitest";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
