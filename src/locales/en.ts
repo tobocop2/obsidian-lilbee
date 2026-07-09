@@ -48,6 +48,7 @@ export const MESSAGES = {
     BUTTON_UNINSTALL_SERVER: "Uninstall server",
     BUTTON_UNINSTALL: "Uninstall",
     BUTTON_DOWNLOADING: "Downloading...",
+    BUTTON_CANCEL_DOWNLOAD: "Cancel download",
     BUTTON_INSTALL_TAG: (tag: string) => `Install ${tag}`,
     BUTTON_UPDATE_TO: (tag: string) => `Update to ${tag}`,
     BUTTON_DOWNGRADE_TO: (tag: string) => `Downgrade to ${tag}`,
@@ -403,6 +404,7 @@ export const MESSAGES = {
         `Deletes the executable, the models, and this vault's index. Frees ${size}. Your notes are not touched.`,
     DESC_INSTALL_SERVER: (size: string) =>
         `Downloads the lilbee server, about ${size}. Models are pulled on demand afterwards.`,
+    DESC_SERVER_DOWNLOADING: "The lilbee server is downloading. Progress is in the status bar.",
     DESC_SERVER_NOT_INSTALLED:
         "The server is not installed. Chat, search, and sync are unavailable until you install it.",
 
@@ -420,6 +422,7 @@ export const MESSAGES = {
 
     NOTICE_UNINSTALLED: (size: string) => `lilbee server uninstalled. ${size} freed.`,
     NOTICE_INSTALLED: (tag: string) => `lilbee server ${tag} installed.`,
+    NOTICE_DOWNLOAD_CANCELED: "lilbee server download cancelled.",
     ERROR_UNINSTALL_FAILED: "Could not uninstall the lilbee server",
     ERROR_UNINSTALL_SERVER_IN_USE: (vaultName: string) =>
         `The lilbee server is running for ${vaultName}. Close that vault, then uninstall.`,
@@ -531,6 +534,10 @@ export const MESSAGES = {
     TITLE_RECOMMENDED: "Recommended",
 
     STATUS_DOWNLOADING: "lilbee: downloading...",
+    STATUS_DOWNLOADING_PERCENT: (percent: number) => `lilbee: downloading ${percent}%`,
+    STATUS_DOWNLOAD_PROGRESS: (percent: number, received: string, total: string) =>
+        `Downloading... ${percent}% (${received} of ${total})`,
+    STATUS_DOWNLOAD_RECEIVED: (received: string) => `Downloading... ${received}`,
     STATUS_UPDATE_SIZE: (tag: string, size: string) => `Updating to ${tag} · ${size} download`,
     STATUS_STARTING: "lilbee: starting...",
     STATUS_READY: "lilbee: ready",

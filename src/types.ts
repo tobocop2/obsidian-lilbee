@@ -278,6 +278,8 @@ export interface ManagedServerProgress {
     phase: ManagedServerProgressPhase;
     message: string;
     url?: string;
+    /** 0-100 while the server binary downloads; absent when the size is unknown. */
+    percent?: number;
 }
 
 export type ManagedServerProgressHandler = (event: ManagedServerProgress) => void;

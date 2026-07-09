@@ -1,6 +1,6 @@
 import { App, ButtonComponent, DropdownComponent, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
-import { listReleases } from "./binary-manager";
+import { DownloadCanceledError, listReleases } from "./binary-manager";
 import type { ReleaseInfo } from "./binary-manager";
 import {
     CAPABILITY,
@@ -39,6 +39,7 @@ import {
     noticeForResultError,
     getRelevantSystemMemoryGB,
     noticeServerUnreachableIfApplicable,
+    setDeterminateProgress,
 } from "./utils";
 
 const CHECK_TIMEOUT_MS = 5000;
@@ -64,11 +65,19 @@ const CREDENTIAL_FIELDS = new Set([
 
 export { SEPARATOR_KEY, SEPARATOR_LABEL };
 
+/** Paint the phase line, and grow the bar once a real percentage arrives. */
+function showPhase(progress: UpdateProgressEls, message: string, percent?: number): void {
+    progress.phase.setText(message);
+    if (percent !== undefined) setDeterminateProgress(progress.fill, percent);
+}
+
 /** Elements of the managed-server update progress panel. */
 interface UpdateProgressEls {
     panel: HTMLElement;
     phase: HTMLElement;
     size: HTMLElement;
+    fill: HTMLElement;
+    cancel: HTMLElement;
 }
 
 export class LilbeeSettingTab extends PluginSettingTab {
@@ -405,6 +414,22 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     /** Recovery path after an uninstall: pick a release and pull the server back. */
     private renderInstallServer(containerEl: HTMLElement): void {
+        // A download kicked off outside Settings (first run, consent modal) is still
+        // in flight: offer to stop it rather than a dead Install button.
+        if (this.plugin.isDownloadingServer()) {
+            new Setting(containerEl)
+                .setName(MESSAGES.LABEL_SERVER_STATUS)
+                .setDesc(MESSAGES.DESC_SERVER_DOWNLOADING)
+                .addButton((btn) => {
+                    btn.setButtonText(MESSAGES.BUTTON_CANCEL_DOWNLOAD).onClick(() => {
+                        this.plugin.cancelServerDownload();
+                        this.render();
+                    });
+                    btn.buttonEl.addClass("mod-warning");
+                });
+            return;
+        }
+
         new Setting(containerEl).setName(MESSAGES.LABEL_SERVER_STATUS).setDesc(MESSAGES.DESC_SERVER_NOT_INSTALLED);
 
         const setting = new Setting(containerEl)
@@ -471,12 +496,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
         progress.panel.show();
         progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatBytes(release.sizeBytes)));
         try {
-            await this.plugin.installServer(release, (msg) => progress.phase.setText(msg));
+            await this.plugin.installServer(release, (msg, percent) => showPhase(progress, msg, percent));
             new Notice(MESSAGES.NOTICE_INSTALLED(release.tag));
             this.render();
         } catch (err) {
-            new Notice(errorMessage(err, MESSAGES.ERROR_INSTALL_FAILED));
-            console.error("[lilbee] install failed:", err);
+            if (err instanceof DownloadCanceledError) {
+                new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELED);
+            } else {
+                new Notice(errorMessage(err, MESSAGES.ERROR_INSTALL_FAILED));
+                console.error("[lilbee] install failed:", err);
+            }
             progress.panel.hide();
             btn.setButtonText(MESSAGES.BUTTON_INSTALL_SERVER);
             btn.setDisabled(false);
@@ -488,10 +517,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const panel = containerEl.createDiv({ cls: "lilbee-update-progress" });
         panel.hide();
         const bar = panel.createDiv({ cls: "lilbee-progress-bar-container" });
-        bar.createDiv({ cls: "lilbee-progress-bar lilbee-wizard-progress-fill lilbee-wizard-progress-indeterminate" });
+        const fill = bar.createDiv({
+            cls: "lilbee-progress-bar lilbee-wizard-progress-fill lilbee-wizard-progress-indeterminate",
+        });
         const phase = panel.createDiv({ cls: "lilbee-update-progress-phase" });
         const size = panel.createDiv({ cls: "lilbee-update-progress-size" });
-        return { panel, phase, size };
+        const cancel = panel.createEl("button", {
+            cls: "lilbee-update-progress-cancel",
+            text: MESSAGES.BUTTON_CANCEL_DOWNLOAD,
+        });
+        cancel.addEventListener("click", () => this.plugin.cancelServerDownload());
+        return { panel, phase, size, fill, cancel };
     }
 
     /** Download and install *release*, surfacing phase + total download size. Returns false on failure. */
@@ -506,14 +542,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
         progress.panel.show();
         progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatBytes(release.sizeBytes)));
         try {
-            await this.plugin.updateServer(release, (msg) => progress.phase.setText(msg));
+            await this.plugin.updateServer(release, (msg, percent) => showPhase(progress, msg, percent));
             new Notice(MESSAGES.NOTICE_UPDATED_TO(release.tag));
             this.render();
             return true;
         } catch (err) {
-            // errorMessage carries the server's reason, e.g. insufficient disk space.
-            new Notice(errorMessage(err, MESSAGES.ERROR_FAILED_UPDATE));
-            console.error("[lilbee] update failed:", err);
+            if (err instanceof DownloadCanceledError) {
+                new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELED);
+            } else {
+                // errorMessage carries the server's reason, e.g. insufficient disk space.
+                new Notice(errorMessage(err, MESSAGES.ERROR_FAILED_UPDATE));
+                console.error("[lilbee] update failed:", err);
+            }
             progress.panel.hide();
             actionBtn.setButtonText(restoreLabel);
             actionBtn.setDisabled(false);
