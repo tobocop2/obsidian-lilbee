@@ -49,7 +49,8 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 - [How it works](#how-it-works)
 - [Privacy & network use](#privacy--network-use)
 - [Updating the plugin](#updating-the-plugin)
-- [Updating the server](#updating-the-server)
+- [Changing the server version](#changing-the-server-version)
+- [Uninstalling](#uninstalling)
 - [Documentation](#documentation)
 
 ---
@@ -206,11 +207,37 @@ Vaults on the same computer share one lilbee install and one model cache, so dow
 
 Obsidian handles plugin updates: **Settings → Community plugins → Check for updates**, then update lilbee like any other plugin.
 
-## Updating the server
+## Changing the server version
 
-The plugin tracks the installed lilbee server version. Go to Settings → lilbee → **Check for updates**. If a newer release is available the button changes to **Update to vX.Y.Z**: one click stops the running server, downloads the new version, verifies it, and restarts.
+The plugin tracks the installed lilbee server version and shows it under Settings → lilbee → **Server version**, next to a dropdown of recent releases. Pick a release and the button says what it will do:
 
-This updates only the lilbee **server**, never the plugin itself. The plugin's own code is updated through Obsidian like any other community plugin; the **Check for updates** button only manages the separate server it downloads. Each server download is checked against the SHA256 digest GitHub publishes for the release before it runs, so a corrupted or tampered download is discarded instead of executed.
+- a newer release: **Update to 0.6.76**
+- the one you already have: **Reinstall**, which also repairs a corrupted download
+- an older release: **Downgrade to 0.6.72**, for when a new build misbehaves
+
+Whichever you pick, one click stops the running server, downloads the build, verifies it, and starts it again.
+
+The plugin is built and tested against the latest server release. Older releases still install and run, but they are not supported, and features the plugin expects may be missing.
+
+This changes only the lilbee **server**, never the plugin itself. The plugin's own code is updated through Obsidian like any other community plugin. Each server download is checked against the SHA256 digest GitHub publishes for the release before it runs, so a corrupted or tampered download is discarded instead of executed.
+
+## Uninstalling
+
+In **managed mode** (the default) the plugin downloaded a server executable and a model cache that live outside your vault. Obsidian doesn't know about either, so removing the plugin won't remove them.
+
+Open Settings → lilbee → **Uninstall server** first. It deletes the executable, the downloaded models, and this vault's search index, and tells you how much space that frees before you confirm. Your notes are never touched. Then remove the plugin the usual way, from **Community plugins**.
+
+Uninstalling the server doesn't disable the plugin. Settings shows an **Install server** button, and lilbee stays quiet until you click it.
+
+If you already removed the plugin, delete the data directory yourself:
+
+```
+macOS     ~/Library/Application Support/obsidian-lilbee
+Linux     ~/.local/share/obsidian-lilbee
+Windows   %LOCALAPPDATA%\obsidian-lilbee
+```
+
+In **external mode** the plugin downloads nothing, so there's nothing to clean up beyond the server you installed yourself.
 
 ## Advanced
 

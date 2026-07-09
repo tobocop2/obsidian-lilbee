@@ -43,7 +43,14 @@ export const MESSAGES = {
     BUTTON_TEST: "Test",
     BUTTON_RESET_MANAGED: "Reset to managed",
     BUTTON_RUN_SETUP_WIZARD: "Run setup wizard",
-    BUTTON_CHECK_UPDATES: "Check for updates",
+    BUTTON_INSTALL_SERVER: "Install server",
+    BUTTON_REINSTALL: "Reinstall",
+    BUTTON_UNINSTALL_SERVER: "Uninstall server",
+    BUTTON_UNINSTALL: "Uninstall",
+    BUTTON_DOWNLOADING: "Downloading...",
+    BUTTON_INSTALL_TAG: (tag: string) => `Install ${tag}`,
+    BUTTON_UPDATE_TO: (tag: string) => `Update to ${tag}`,
+    BUTTON_DOWNGRADE_TO: (tag: string) => `Downgrade to ${tag}`,
     BUTTON_CLEAR_CHAT: "Clear chat",
     BUTTON_CLEAR_TASKS: "Clear",
     BUTTON_SEND: "Send",
@@ -53,7 +60,6 @@ export const MESSAGES = {
     LABEL_DISABLED: "Disabled",
     LABEL_NOT_SET: "Not set",
     LABEL_NO_MODEL_SELECTED: "no model selected",
-    LABEL_UPTODATE: "Up to date",
     LABEL_UNKNOWN: "unknown version",
     LABEL_ALL_TASKS: "All tasks",
     LABEL_ALL_SIZES: "All sizes",
@@ -94,6 +100,9 @@ export const MESSAGES = {
     LABEL_SERVER_STATUS: "Server status",
     LABEL_SERVER_CONTROLS: "Server controls",
     LABEL_SERVER_VERSION: "Server version",
+    LABEL_UNINSTALL: "Uninstall",
+    LABEL_UNINSTALL_SERVER: "Uninstall server",
+    LABEL_INSTALL_SERVER: "Install server",
     LABEL_SERVER_URL: "Server URL",
     LABEL_SESSION_TOKEN: "Session token",
     LABEL_SETUP_WIZARD: "Setup wizard",
@@ -371,6 +380,51 @@ export const MESSAGES = {
     DESC_SERVER_STATUS_CURRENT: "Current state of the managed lilbee server",
     DESC_SERVER_CONTROLS_START_STOP: "Start, stop, or restart the managed server",
     DESC_SERVER_VERSION_UNKNOWN: "Unknown",
+    DESC_SERVER_VERSION_INSTALLED: (tag: string) => `${tag} installed. This is the latest release.`,
+    DESC_SERVER_VERSION_OUTDATED: (tag: string) => `${tag} installed. Newer releases are available.`,
+    DESC_SERVER_VERSION_PLAIN: (tag: string) => `${tag} installed.`,
+    DESC_SERVER_VERSION_UPDATE: (installed: string, tag: string) => `${installed} installed. ${tag} is available.`,
+    DESC_SERVER_VERSION_DOWNGRADE: (installed: string) =>
+        `${installed} installed. Downgrading replaces it with an older build.`,
+    DESC_SERVER_VERSION_LOADING: "Reading the release list from GitHub...",
+    DESC_SERVER_VERSION_OFFLINE: (tag: string) => `${tag} installed. The release list could not be read from GitHub.`,
+
+    TOOLTIP_SERVER_VERSION_SUPPORT:
+        "This plugin is built and tested against the latest server release. Older releases still install and run, " +
+        "but they are not supported, and features the plugin expects may be missing.",
+    TOOLTIP_UNINSTALL_SECTION:
+        "Obsidian does not manage the lilbee server executable or its models, this plugin does. " +
+        "Removing the plugin from Obsidian's Community plugins pane leaves both on disk. Uninstall here first.",
+    CALLOUT_UNINSTALL_FIRST:
+        "Removing the plugin does not remove the server. The executable, the downloaded models, and this vault's " +
+        "index live outside your vault, so Obsidian never touches them. Uninstall here before you remove the plugin " +
+        "and nothing is left behind.",
+    DESC_UNINSTALL_SERVER: (size: string) =>
+        `Deletes the executable, the models, and this vault's index. Frees ${size}. Your notes are not touched.`,
+    DESC_INSTALL_SERVER: (size: string) =>
+        `Downloads the lilbee server, about ${size}. Models are pulled on demand afterwards.`,
+    DESC_SERVER_NOT_INSTALLED:
+        "The server is not installed. Chat, search, and sync are unavailable until you install it.",
+
+    CONFIRM_UNINSTALL_TITLE: "Uninstall the lilbee server?",
+    CONFIRM_UNINSTALL_BODY:
+        "This removes everything lilbee downloaded or built for this vault. It cannot be undone, but you can " +
+        "install the server again at any time.",
+    LABEL_UNINSTALL_BINARY: "Server executable",
+    LABEL_UNINSTALL_MODELS: "Downloaded models",
+    LABEL_UNINSTALL_INDEX: "Search index for this vault",
+    LABEL_UNINSTALL_KEEP: "Your notes and attachments",
+    LABEL_UNINSTALL_KEEP_VALUE: "untouched",
+    LABEL_UNINSTALL_DELETE_TAG: "Delete",
+    LABEL_UNINSTALL_KEEP_TAG: "Keep",
+
+    NOTICE_UNINSTALLED: (size: string) => `lilbee server uninstalled. ${size} freed.`,
+    NOTICE_INSTALLED: (tag: string) => `lilbee server ${tag} installed.`,
+    ERROR_UNINSTALL_FAILED: "Could not uninstall the lilbee server",
+    ERROR_UNINSTALL_SERVER_IN_USE: (vaultName: string) =>
+        `The lilbee server is running for ${vaultName}. Close that vault, then uninstall.`,
+    ERROR_INSTALL_FAILED: "Could not install the lilbee server",
+    ERROR_RELEASE_LIST: "Could not read the lilbee release list from GitHub",
     DESC_SERVER_URL_HELP: "Address of the lilbee HTTP server",
     DESC_SESSION_TOKEN_AUTO:
         "Read automatically from the lilbee data directory on every request. Works when the server runs on the same machine as Obsidian. Set LILBEE_DATA if you use a non-default data directory.",
@@ -485,6 +539,7 @@ export const MESSAGES = {
     STATUS_AUTH_ERROR: "lilbee: auth error",
     NOTICE_SERVER_UNREACHABLE: "lilbee: server unreachable",
     STATUS_STOPPED: "lilbee: stopped",
+    STATUS_NOT_INSTALLED: "lilbee: server not installed",
     STATUS_ADDING: "lilbee: adding {label}...",
     STATUS_NOTHING_NEW: "lilbee: nothing new to add",
     STATUS_ADD_CANCELLED: "lilbee: add cancelled",
@@ -542,11 +597,9 @@ export const MESSAGES = {
     ERROR_FAILED_START: "lilbee: failed to start server",
     ERROR_FAILED_UPDATE: "lilbee: update failed",
     ERROR_ALREADY_UPTODATE: "lilbee: already up to date",
-    NOTICE_SERVER_UPTODATE: (version: string) => `lilbee server is up to date (${version})`,
     NOTICE_SERVER_AUTO_UPDATING: (version: string) => `lilbee: updating server to ${version}...`,
     NOTICE_SERVER_AUTO_UPDATED: (version: string) => `lilbee server updated to ${version}`,
     NOTICE_SERVER_AUTO_UPDATE_FAILED: "lilbee: automatic server update failed. You can retry from settings.",
-    ERROR_COULD_NOT_CHECK: "lilbee: could not check for updates",
     ERROR_COULD_NOT_REACH: "Could not connect to lilbee server. Is it running?",
     ERROR_LOAD_CATALOG: "lilbee: failed to load catalog",
     ERROR_LOAD_DOCUMENTS: "lilbee: failed to load documents",

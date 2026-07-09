@@ -448,6 +448,8 @@ export interface SharedConfig {
     hfToken: string;
     /** Plugin version that last ran the automatic server-update check. */
     lastUpdateCheckPluginVersion: string;
+    /** The user removed the managed server; never download it again until they ask. */
+    serverUninstalled: boolean;
 }
 
 export const DEFAULT_SHARED_CONFIG: SharedConfig = {
@@ -455,7 +457,38 @@ export const DEFAULT_SHARED_CONFIG: SharedConfig = {
     lilbeeVariant: "",
     hfToken: "",
     lastUpdateCheckPluginVersion: "",
+    serverUninstalled: false,
 };
+
+/** What a managed-mode uninstall deletes. Documents in the vault are never a target. */
+export type UninstallTargetKind = "binary" | "models" | "index";
+
+export const UNINSTALL_TARGET = {
+    BINARY: "binary",
+    MODELS: "models",
+    INDEX: "index",
+} as const satisfies Record<string, UninstallTargetKind>;
+
+export interface UninstallTarget {
+    kind: UninstallTargetKind;
+    path: string;
+    bytes: number;
+}
+
+export interface UninstallPlan {
+    targets: UninstallTarget[];
+    totalBytes: number;
+}
+
+/** How the selected server version relates to the installed one. */
+export type VersionAction = "install" | "reinstall" | "update" | "downgrade";
+
+export const VERSION_ACTION = {
+    INSTALL: "install",
+    REINSTALL: "reinstall",
+    UPDATE: "update",
+    DOWNGRADE: "downgrade",
+} as const satisfies Record<string, VersionAction>;
 
 /** One row in `<shared-root>/registry.json` — one per Obsidian vault. */
 export interface VaultRegistryEntry {
