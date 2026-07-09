@@ -467,7 +467,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         progress: UpdateProgressEls,
     ): Promise<void> {
         btn.setDisabled(true);
-        btn.setButtonText(MESSAGES.STATUS_DOWNLOADING);
+        btn.setButtonText(MESSAGES.BUTTON_DOWNLOADING);
         progress.panel.show();
         progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatBytes(release.sizeBytes)));
         try {
@@ -502,7 +502,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         restoreLabel: string,
     ): Promise<boolean> {
         actionBtn.setDisabled(true);
-        actionBtn.setButtonText(MESSAGES.STATUS_DOWNLOADING);
+        actionBtn.setButtonText(MESSAGES.BUTTON_DOWNLOADING);
         progress.panel.show();
         progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatBytes(release.sizeBytes)));
         try {

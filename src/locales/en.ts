@@ -47,6 +47,7 @@ export const MESSAGES = {
     BUTTON_REINSTALL: "Reinstall",
     BUTTON_UNINSTALL_SERVER: "Uninstall server",
     BUTTON_UNINSTALL: "Uninstall",
+    BUTTON_DOWNLOADING: "Downloading...",
     BUTTON_INSTALL_TAG: (tag: string) => `Install ${tag}`,
     BUTTON_UPDATE_TO: (tag: string) => `Update to ${tag}`,
     BUTTON_DOWNGRADE_TO: (tag: string) => `Downgrade to ${tag}`,
