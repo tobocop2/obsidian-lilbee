@@ -115,6 +115,7 @@ vi.mock("../src/server-manager", () => {
                 },
             };
         }),
+        killServerTree: vi.fn().mockResolvedValue(undefined),
     };
 });
 
@@ -430,6 +431,24 @@ describe("terminateOwningProcess", () => {
             startedAt: 1,
         });
         expect(result).toBe(true);
+    });
+
+    it("also tears down the owner's server tree when the lock records a server pid", async () => {
+        const plugin = await createPlugin();
+        const { killServerTree } = await import("../src/server-manager");
+        (killServerTree as any).mockClear();
+        (node.processKill as any).mockImplementation((pid: number, signal?: number) => {
+            if (signal === 0) throw new Error("owner gone");
+        });
+        const result = await (plugin as any).terminateOwningProcess({
+            vaultId: "x",
+            pid: 1,
+            serverPid: 4242,
+            port: 1,
+            startedAt: 1,
+        });
+        expect(result).toBe(true);
+        expect(killServerTree).toHaveBeenCalledWith(4242);
     });
 });
 

@@ -12,6 +12,128 @@ function describeExit(code: number | null, signal: NodeJS.Signals | null): strin
     return "unknown cause";
 }
 
+interface ProcRow {
+    pid: number;
+    ppid: number;
+    command: string;
+}
+
+/** Parse `ps -axo pid=,ppid=,command=` rows; ignores malformed lines. */
+export function parsePsOutput(stdout: string): ProcRow[] {
+    const rows: ProcRow[] = [];
+    for (const line of stdout.split("\n")) {
+        const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
+        if (!match) continue;
+        rows.push({ pid: Number(match[1]), ppid: Number(match[2]), command: match[3] });
+    }
+    return rows;
+}
+
+/** A `lilbee serve` process is ours if it carries this vault's data dir. */
+function isServerFor(command: string, dataDir: string): boolean {
+    return command.includes("lilbee") && command.includes("serve") && command.includes(dataDir);
+}
+
+/** Collect the given roots plus every descendant (the server's worker forks). */
+export function collectProcessTree(rows: ProcRow[], roots: number[]): number[] {
+    const childrenOf = new Map<number, number[]>();
+    for (const row of rows) {
+        const kids = childrenOf.get(row.ppid) ?? [];
+        kids.push(row.pid);
+        childrenOf.set(row.ppid, kids);
+    }
+    const seen = new Set<number>();
+    const stack = [...roots];
+    while (stack.length > 0) {
+        const pid = stack.pop()!;
+        if (seen.has(pid)) continue;
+        seen.add(pid);
+        for (const child of childrenOf.get(pid) ?? []) stack.push(child);
+    }
+    return [...seen];
+}
+
+/**
+ * Kill orphaned `lilbee serve` processes bound to *dataDir* — and their worker
+ * forks — left behind by a session that ended without a clean stop. Returns the
+ * pids it terminated. Best-effort: enumeration or kill failures are swallowed.
+ */
+export async function reapOrphanServers(dataDir: string): Promise<number[]> {
+    if (process.platform === PLATFORM.WIN32) {
+        return reapOrphanServersWindows(dataDir);
+    }
+    let stdout: string;
+    try {
+        ({ stdout } = await node.execFile("ps", ["-axo", "pid=,ppid=,command="]));
+    } catch {
+        return [];
+    }
+    const rows = parsePsOutput(stdout);
+    const roots = rows.filter((r) => isServerFor(r.command, dataDir)).map((r) => r.pid);
+    if (roots.length === 0) return [];
+    const tree = collectProcessTree(rows, roots);
+    for (const pid of tree) {
+        try {
+            node.processKill(pid, "SIGKILL");
+        } catch {
+            // already gone
+        }
+    }
+    return tree;
+}
+
+/** Force-kill a known server pid and its worker forks. Best-effort. */
+export async function killServerTree(pid: number): Promise<void> {
+    if (process.platform === PLATFORM.WIN32) {
+        try {
+            await node.execFile("taskkill", ["/pid", String(pid), "/f", "/t"]);
+        } catch {
+            // already gone
+        }
+        return;
+    }
+    try {
+        node.processKill(-pid, "SIGKILL");
+    } catch {
+        try {
+            node.processKill(pid, "SIGKILL");
+        } catch {
+            // already gone
+        }
+    }
+}
+
+/** Windows can't signal a group; taskkill /t tree-kills each matching root. */
+async function reapOrphanServersWindows(dataDir: string): Promise<number[]> {
+    let stdout: string;
+    try {
+        ({ stdout } = await node.execFile("powershell", [
+            "-NoProfile",
+            "-Command",
+            'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId)`t$($_.CommandLine)" }',
+        ]));
+    } catch {
+        return [];
+    }
+    const roots: number[] = [];
+    for (const line of stdout.split("\n")) {
+        const tab = line.indexOf("\t");
+        if (tab < 0) continue;
+        const pid = Number(line.slice(0, tab).trim());
+        const command = line.slice(tab + 1);
+        if (Number.isNaN(pid) || !isServerFor(command, dataDir)) continue;
+        roots.push(pid);
+    }
+    for (const pid of roots) {
+        try {
+            await node.execFile("taskkill", ["/pid", String(pid), "/f", "/t"]);
+        } catch {
+            // already gone
+        }
+    }
+    return roots;
+}
+
 const SERVER_MANAGER_CONFIG = {
     HEALTH_POLL_INTERVAL_MS: 1000,
     HEALTH_POLL_MAX_ATTEMPTS: 120,
@@ -71,6 +193,11 @@ export class ServerManager {
 
     get dataDir(): string {
         return this.opts.dataDir;
+    }
+
+    /** PID of the running server child, for the vault lock. Null when stopped. */
+    get serverPid(): number | null {
+        return this.child?.pid ?? null;
     }
 
     private get portFilePath(): string {
@@ -213,7 +340,9 @@ export class ServerManager {
         const child = node.spawn(this.opts.binaryPath, args, {
             env: this.buildSpawnEnv(),
             stdio: ["ignore", "pipe", "pipe"],
-            detached: false,
+            // POSIX: own process group so stop() can signal the server *and* its
+            // worker forks as a unit. Windows uses taskkill /t for the tree.
+            detached: process.platform !== PLATFORM.WIN32,
         });
         this.attachOutputCapture(child);
         this.attachLifecycleHandlers(child);
@@ -231,6 +360,10 @@ export class ServerManager {
         // A leftover server.port from a previous run would be adopted as this
         // child's port, so it must be gone before the spawn.
         this.cleanupPortFile();
+
+        // Clear orphaned servers from a prior session before spawning; two
+        // servers on one data dir contend and SIGKILL each other.
+        await reapOrphanServers(this.opts.dataDir);
 
         this.child = this.spawnChild();
 
@@ -276,7 +409,24 @@ export class ServerManager {
             }
             return;
         }
-        child.kill("SIGTERM");
+        this.signalGroup(child, "SIGTERM");
+    }
+
+    /**
+     * Signal the child's whole process group (server + worker forks). The child
+     * leads its own group because it was spawned detached; fall back to the bare
+     * child if the group send fails (e.g. it already exited).
+     */
+    private signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+        if (child.pid) {
+            try {
+                node.processKill(-child.pid, signal);
+                return;
+            } catch {
+                // group gone; fall through to the direct kill
+            }
+        }
+        child.kill(signal);
     }
 
     private cleanupPortFile(): void {
@@ -310,7 +460,11 @@ export class ServerManager {
         ]);
 
         if (!exited && this.child) {
-            this.child.kill("SIGKILL");
+            if (process.platform === PLATFORM.WIN32) {
+                this.child.kill("SIGKILL");
+            } else {
+                this.signalGroup(this.child, "SIGKILL");
+            }
         }
 
         this.child = null;

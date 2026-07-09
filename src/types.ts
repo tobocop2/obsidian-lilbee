@@ -471,6 +471,8 @@ export interface VaultRegistryEntry {
 export interface ActiveLock {
     vaultId: string;
     pid: number;
+    /** PID of the managed server process. Absent in locks written before this field. */
+    serverPid?: number;
     port: number;
     startedAt: number;
 }
