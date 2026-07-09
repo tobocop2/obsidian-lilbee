@@ -483,10 +483,10 @@ describe("BinaryManager", () => {
             const mgr = new BinaryManager("/plugins/lilbee/bin");
             await mgr.download("https://example.com/dl", 4, sha256Digest(data));
 
-            expect(createStream).toHaveBeenCalledWith("/plugins/lilbee/bin/lilbee.part");
+            expect(createStream).toHaveBeenCalledWith(`${mgr.binaryPath}.part`);
             expect(written.flat()).toEqual([1, 2, 3, 4]);
-            expect(rename).toHaveBeenCalledWith("/plugins/lilbee/bin/lilbee.part", "/plugins/lilbee/bin/lilbee");
-            expect(node.chmodSync).toHaveBeenCalledWith("/plugins/lilbee/bin/lilbee", 0o755);
+            expect(rename).toHaveBeenCalledWith(`${mgr.binaryPath}.part`, mgr.binaryPath);
+            expect(node.chmodSync).toHaveBeenCalledWith(mgr.binaryPath, 0o755);
         });
 
         it("reports bytes received against the content length", async () => {
@@ -596,8 +596,8 @@ describe("BinaryManager", () => {
             );
 
             expect(rename).not.toHaveBeenCalled();
-            expect(unlink).toHaveBeenCalledWith("/plugins/lilbee/bin/lilbee.part");
-            expect(unlink).not.toHaveBeenCalledWith("/plugins/lilbee/bin/lilbee");
+            expect(unlink).toHaveBeenCalledWith(`${mgr.binaryPath}.part`);
+            expect(unlink).not.toHaveBeenCalledWith(mgr.binaryPath);
         });
 
         it("removes the renamed binary when chmod fails", async () => {
@@ -616,7 +616,7 @@ describe("BinaryManager", () => {
             const mgr = new BinaryManager("/plugins/lilbee/bin");
             await expect(mgr.download("https://example.com/dl", 1, sha256Digest(data))).rejects.toThrow("chmod boom");
 
-            expect(unlink).toHaveBeenCalledWith("/plugins/lilbee/bin/lilbee");
+            expect(unlink).toHaveBeenCalledWith(mgr.binaryPath);
         });
 
         it("surfaces a transport error", async () => {
@@ -741,7 +741,7 @@ describe("BinaryManager", () => {
             const mgr = new BinaryManager("/plugins/lilbee/bin");
             await mgr.download("https://example.com/dl", 1, sha256Digest(data));
 
-            expect(execSpy).toHaveBeenCalledWith("xattr", ["-cr", "/plugins/lilbee/bin/lilbee"]);
+            expect(execSpy).toHaveBeenCalledWith("xattr", ["-cr", mgr.binaryPath]);
         });
 
         it("reports a quarantine failure without failing the download", async () => {
