@@ -219,7 +219,7 @@ Whichever you pick, one click stops the running server, downloads the build, ver
 
 The plugin is built and tested against the latest server release. Older releases still install and run, but they are not supported, and features the plugin expects may be missing.
 
-This changes only the lilbee **server**, never the plugin itself. The plugin's own code is updated through Obsidian like any other community plugin. Each server download is checked against the SHA256 digest GitHub publishes for the release before it runs, so a corrupted or tampered download is discarded instead of executed.
+This changes only the lilbee **server**, never the plugin itself. The plugin's own code is updated through Obsidian like any other community plugin. The download streams to disk and reports its progress as a percentage, and every server download is checked against the SHA256 digest GitHub publishes for the release before it runs. A corrupted or tampered download is discarded instead of executed, and a failed download never replaces the server you already have.
 
 ## Uninstalling
 

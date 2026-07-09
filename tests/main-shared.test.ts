@@ -81,6 +81,12 @@ vi.mock("../src/binary-manager", () => {
     };
     return {
         node: nodeMock,
+        DownloadCanceledError: class DownloadCanceledError extends Error {
+            constructor() {
+                super("The lilbee server download was cancelled.");
+                this.name = "DownloadCanceledError";
+            }
+        },
         BinaryManager: vi.fn().mockImplementation(function () {
             return {
                 binaryExists: vi.fn().mockReturnValue(true),
@@ -497,8 +503,9 @@ describe("ensureBinaryWithUi guards", () => {
         expect(events.find((e) => e.phase === "error")).toBeDefined();
     });
 
-    it("hides the download notice when ensureBinary throws after firing progress", async () => {
+    it("raises no progress toast when ensureBinary throws after firing progress", async () => {
         const plugin = await createPlugin();
+        Notice.clear?.();
         (plugin as any).binaryManager = {
             binaryExists: () => false,
             ensureBinary: vi.fn(async (_includeDev: boolean, cb: (m: string, u?: string) => void) => {
@@ -508,6 +515,43 @@ describe("ensureBinaryWithUi guards", () => {
         };
         const result = await (plugin as any).ensureBinaryWithUi();
         expect(result).toBeNull();
+        expect(Notice.instances.some((n) => n.duration === 0)).toBe(false);
+    });
+
+    it("cancelling a download is reported as a choice, not a failure", async () => {
+        const { DownloadCanceledError } = await import("../src/binary-manager");
+        const plugin = await createPlugin();
+        Notice.clear?.();
+        (plugin as any).binaryManager = {
+            binaryExists: () => false,
+            ensureBinary: vi.fn(async () => {
+                throw new DownloadCanceledError();
+            }),
+        };
+
+        const result = await (plugin as any).ensureBinaryWithUi();
+
+        expect(result).toBeNull();
+        expect(Notice.instances.map((n) => n.message)).toContain("lilbee server download cancelled.");
+    });
+
+    it("cancelServerDownload aborts the in-flight download", async () => {
+        const plugin = await createPlugin();
+        let seenSignal: AbortSignal | undefined;
+        (plugin as any).binaryManager = {
+            binaryExists: () => false,
+            ensureBinary: vi.fn(async (_includeDev: boolean, _cb: unknown, _q: unknown, signal: AbortSignal) => {
+                seenSignal = signal;
+                expect(plugin.isDownloadingServer()).toBe(true);
+                plugin.cancelServerDownload();
+                return "/fake/bin/lilbee";
+            }),
+        };
+
+        await (plugin as any).ensureBinaryWithUi();
+
+        expect(seenSignal?.aborted).toBe(true);
+        expect(plugin.isDownloadingServer()).toBe(false);
     });
 
     it("returns the path without creating a notice when the binary already exists", async () => {
@@ -522,20 +566,20 @@ describe("ensureBinaryWithUi guards", () => {
         expect(Notice.instances.length).toBe(before);
     });
 
-    it("hides the download notice in the finally block", async () => {
+    it("clears the download controller once the download finishes", async () => {
         const plugin = await createPlugin();
-        const fakeBm = {
+        Notice.clear?.();
+        (plugin as any).binaryManager = {
             binaryExists: () => false,
             ensureBinary: vi.fn(async (_includeDev: boolean, cb: (m: string, u?: string) => void) => {
                 cb("Downloading", "https://example.com");
                 return "/fake/bin/lilbee";
             }),
         };
-        (plugin as any).binaryManager = fakeBm;
         const result = await (plugin as any).ensureBinaryWithUi();
         expect(result).toBe("/fake/bin/lilbee");
-        // The Notice was constructed (counts in instances).
-        expect(Notice.instances.length).toBeGreaterThan(0);
+        expect(plugin.isDownloadingServer()).toBe(false);
+        expect(Notice.instances.some((n) => n.duration === 0)).toBe(false);
     });
 });
 

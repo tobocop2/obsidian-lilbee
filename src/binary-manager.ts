@@ -1,7 +1,10 @@
 import { requestUrl } from "obsidian";
 import { execFile, spawn } from "child_process";
+import { get as httpsGet } from "https";
+import type { ClientRequest, IncomingMessage } from "http";
 import {
     appendFileSync,
+    createWriteStream,
     existsSync,
     mkdirSync,
     chmodSync,
@@ -42,6 +45,7 @@ export const node = {
     renameSync,
     readdirSync,
     rmSync,
+    createWriteStream,
     join,
     basename,
     resolve,
@@ -49,6 +53,10 @@ export const node = {
     createHash,
     processKill: process.kill.bind(process),
     requestUrl,
+    // Node's https, not the renderer's fetch: GitHub's asset redirect fails CORS
+    // in the renderer, which is why requestUrl was adopted for it originally.
+    // Unlike requestUrl, this streams, so the download reports real progress.
+    httpsGet,
     fetch: window.fetch.bind(window),
 };
 
@@ -199,8 +207,85 @@ export function checkForUpdate(currentVersion: string, latestTag: string): boole
     return currentVersion !== latestTag && latestTag !== "";
 }
 
-/** Headroom over the asset size: the whole file is buffered in memory before the write. */
-const DISK_SPACE_FACTOR = 1.5;
+/** Slack over the asset size: the download streams straight to disk, so only the file itself lands. */
+const DISK_SPACE_FACTOR = 1.1;
+
+/** Redirects to follow before giving up (GitHub sends assets to objects.githubusercontent.com). */
+const MAX_REDIRECTS = 5;
+
+/** Give up when the asset host sends no bytes for this long, rather than hanging on a dead socket. */
+const DOWNLOAD_IDLE_TIMEOUT_MS = 60_000;
+
+const DOWNLOAD_STALLED = "The lilbee server download stalled. Check your connection and try again.";
+
+export const DOWNLOAD_CANCELED = "The lilbee server download was cancelled.";
+
+/** Thrown when the caller aborts the download; callers treat it as a no-op, not a failure. */
+export class DownloadCanceledError extends Error {
+    constructor() {
+        super(DOWNLOAD_CANCELED);
+        this.name = "DownloadCanceledError";
+    }
+}
+
+/** Suffix of the partial download; renamed onto the real path only after the digest checks out. */
+const PART_SUFFIX = ".part";
+
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+/** Bytes received so far, and the total when the server reports a Content-Length. */
+export interface DownloadProgress {
+    receivedBytes: number;
+    totalBytes: number | null;
+}
+
+/** Resolve *url* through redirects to the response that carries the body. */
+function openStream(url: string, redirectsLeft = MAX_REDIRECTS): Promise<IncomingMessage> {
+    return new Promise((resolve, reject) => {
+        const req: ClientRequest = node.httpsGet(url, (res: IncomingMessage) => {
+            req.setTimeout?.(0);
+            const status = res.statusCode ?? 0;
+            const location = res.headers.location;
+            if (REDIRECT_STATUSES.has(status) && location) {
+                res.resume();
+                if (redirectsLeft === 0) {
+                    reject(new Error("Download failed: too many redirects"));
+                    return;
+                }
+                openStream(new URL(location, url).toString(), redirectsLeft - 1).then(resolve, reject);
+                return;
+            }
+            // Anything but a 2xx body: a bare redirect, an error, or a response
+            // with no status at all. None of them carry the asset.
+            if (status < 200 || status >= 300) {
+                res.resume();
+                reject(new Error(`Download failed: ${status}`));
+                return;
+            }
+            resolve(res);
+        });
+        req.on("error", reject);
+        // Covers a connect/headers stall. Once the body starts, streamToFile owns the clock.
+        req.setTimeout?.(DOWNLOAD_IDLE_TIMEOUT_MS, () => {
+            req.destroy(new Error(DOWNLOAD_STALLED));
+        });
+    });
+}
+
+/** Best-effort removal during error cleanup: a failure here must not mask the real error. */
+function discard(path: string): void {
+    try {
+        if (node.existsSync(path)) node.unlinkSync(path);
+    } catch {
+        // nothing else to do; the caller is already throwing
+    }
+}
+
+function contentLength(res: IncomingMessage): number | null {
+    const raw = res.headers["content-length"];
+    const parsed = Number(raw);
+    return raw !== undefined && Number.isFinite(parsed) ? parsed : null;
+}
 
 function formatBytes(bytes: number): string {
     const gb = bytes / 1024 ** 3;
@@ -222,13 +307,21 @@ export class BinaryManager {
 
     async ensureBinary(
         includeDev: boolean,
-        onProgress?: (msg: string, url?: string) => void,
+        onProgress?: (msg: string, url?: string, progress?: DownloadProgress) => void,
         onQuarantineFailed?: () => void,
+        signal?: AbortSignal,
     ): Promise<string> {
         if (this.binaryExists()) return this.binaryPath;
         onProgress?.("Fetching latest release info...");
         const release = await getLatestRelease(includeDev);
-        await this.download(release.assetUrl, release.sizeBytes, release.digest, onProgress, onQuarantineFailed);
+        await this.download(
+            release.assetUrl,
+            release.sizeBytes,
+            release.digest,
+            onProgress,
+            onQuarantineFailed,
+            signal,
+        );
         return this.binaryPath;
     }
 
@@ -246,21 +339,70 @@ export class BinaryManager {
     }
 
     /** Reject the download unless its SHA256 matches the digest GitHub reports for the asset. */
-    private verifyDigest(data: Buffer, expectedDigest: string | null): void {
-        const actual = `sha256:${node.createHash("sha256").update(data).digest("hex")}`;
-        if (actual !== (expectedDigest ?? "").toLowerCase()) {
+    private assertDigest(actualHex: string, expectedDigest: string | null): void {
+        if (`sha256:${actualHex}` !== (expectedDigest ?? "").toLowerCase()) {
             throw new Error(
                 "The downloaded lilbee server could not be verified against its checksum and was discarded. Please try again.",
             );
         }
     }
 
+    /** Stream *assetUrl* to *partPath*, hashing as it goes. Returns the SHA256 of what landed. */
+    private async streamToFile(
+        assetUrl: string,
+        partPath: string,
+        onBytes: (progress: DownloadProgress) => void,
+        signal?: AbortSignal,
+    ): Promise<string> {
+        if (signal?.aborted) throw new DownloadCanceledError();
+        const res = await openStream(assetUrl);
+        const totalBytes = contentLength(res);
+        const hash = node.createHash("sha256");
+        const file = node.createWriteStream(partPath);
+        let receivedBytes = 0;
+
+        return new Promise<string>((resolve, reject) => {
+            let idleTimer: ReturnType<typeof setTimeout>;
+            const stopClock = (): void => clearTimeout(idleTimer);
+            const restartClock = (): void => {
+                stopClock();
+                idleTimer = setTimeout(() => fail(new Error(DOWNLOAD_STALLED)), DOWNLOAD_IDLE_TIMEOUT_MS);
+            };
+            const fail = (err: Error): void => {
+                stopClock();
+                signal?.removeEventListener("abort", onAbort);
+                res.destroy();
+                file.destroy();
+                reject(err);
+            };
+            const onAbort = (): void => fail(new DownloadCanceledError());
+            signal?.addEventListener("abort", onAbort, { once: true });
+
+            res.on("data", (chunk: Buffer) => {
+                restartClock();
+                hash.update(chunk);
+                receivedBytes += chunk.length;
+                onBytes({ receivedBytes, totalBytes });
+            });
+            res.on("error", fail);
+            file.on("error", fail);
+            res.pipe(file);
+            file.on("finish", () => {
+                stopClock();
+                signal?.removeEventListener("abort", onAbort);
+                resolve(hash.digest("hex"));
+            });
+            restartClock();
+        });
+    }
+
     async download(
         assetUrl: string,
         sizeBytes: number,
         expectedDigest: string | null,
-        onProgress?: (msg: string, url?: string) => void,
+        onProgress?: (msg: string, url?: string, progress?: DownloadProgress) => void,
         onQuarantineFailed?: () => void,
+        signal?: AbortSignal,
     ): Promise<void> {
         if (!node.existsSync(this.binDir)) {
             node.mkdirSync(this.binDir, { recursive: true });
@@ -268,21 +410,27 @@ export class BinaryManager {
         await this.assertEnoughSpace(sizeBytes);
 
         onProgress?.("Downloading...", assetUrl);
-        const res = await node.requestUrl({ url: assetUrl });
-        if (res.status >= 400) throw new Error(`Download failed: ${res.status}`);
-
-        const data = Buffer.from(res.arrayBuffer);
-        this.verifyDigest(data, expectedDigest);
-
         const dest = this.binaryPath;
+        const partPath = `${dest}${PART_SUFFIX}`;
+        let renamed = false;
         try {
-            node.writeFileSync(dest, data);
+            const actualHex = await this.streamToFile(
+                assetUrl,
+                partPath,
+                (progress) => onProgress?.("Downloading...", assetUrl, progress),
+                signal,
+            );
+            this.assertDigest(actualHex, expectedDigest);
+            node.renameSync(partPath, dest);
+            renamed = true;
             if (process.platform !== PLATFORM.WIN32) {
                 node.chmodSync(dest, 0o755);
             }
         } catch (err) {
-            // Leave no half-written binary behind; binaryExists() would treat it as good.
-            if (node.existsSync(dest)) node.unlinkSync(dest);
+            // Discard the partial. A failure before the rename leaves any previously
+            // installed binary alone; after it, dest is the new file and must go.
+            discard(partPath);
+            if (renamed) discard(dest);
             throw err;
         }
 

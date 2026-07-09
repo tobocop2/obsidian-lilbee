@@ -182,6 +182,12 @@ vi.mock("../src/binary-manager", () => ({
     checkForUpdate: vi.fn(),
     listReleases: vi.fn(async () => []),
     isDevBuild: (tag: string) => /\.dev\d*$/i.test(tag),
+    DownloadCanceledError: class DownloadCanceledError extends Error {
+        constructor() {
+            super("The lilbee server download was cancelled.");
+            this.name = "DownloadCanceledError";
+        }
+    },
     GITHUB_REPO: "tobocop2/lilbee",
     LILBEE_GITHUB_REPO_URL: "https://github.com/tobocop2/lilbee",
     node: {
@@ -4771,31 +4777,38 @@ describe("LilbeePlugin", () => {
             expect(mockEnsureBinary).toHaveBeenCalled();
         });
 
-        it("shows download Notice with URL when binary is missing", async () => {
-            // Missing-binary flow checks binaryExists twice (consent gate + download UI).
+        it("shows the download percentage in the status bar and the notice", async () => {
             mockBinaryExists.mockReturnValue(false);
-            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
-                cb?.("Downloading...", "https://example.com/dl");
-                cb?.("Download complete.", "https://example.com/dl");
-                return "/fake/bin/lilbee";
-            });
-
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
+            Notice.clear();
 
-            const downloadNotice = Notice.instances.find((n) => n.duration === 0);
-            expect(downloadNotice).toBeDefined();
-            expect(downloadNotice!.message).toContain("Download complete.");
-            expect(downloadNotice!.message).toContain("https://example.com/dl");
-            expect(downloadNotice!.hidden).toBe(true);
+            // Re-run the download UI with a progress-carrying callback; onload's own
+            // call already consumed the default mock.
+            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
+                cb?.("Downloading...", "https://example.com/dl", {
+                    receivedBytes: 128_000_000,
+                    totalBytes: 256_000_000,
+                });
+                return "/fake/bin/lilbee";
+            });
+            const phases: Array<{ message: string; percent?: number }> = [];
+            await (plugin as any).ensureBinaryWithUi((e: any) => phases.push(e));
+
+            expect(phases).toContainEqual(
+                expect.objectContaining({ message: "Downloading... 50% (128 MB of 256 MB)", percent: 50 }),
+            );
+            // The status bar carries the ambient percentage; no progress toast is raised.
+            expect((plugin as any).statusBarEl?.textContent).toContain("lilbee: downloading 50%");
+            expect(Notice.instances.some((n) => n.duration === 0)).toBe(false);
         });
 
-        it("shows download Notice without URL when url is not provided", async () => {
+        it("raises no progress toast while the binary downloads", async () => {
             mockBinaryExists.mockReturnValue(false);
             mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
-                cb?.("Fetching latest release info...");
-                cb?.("Still going...");
+                cb?.("Downloading...", "https://example.com/dl", { receivedBytes: 1, totalBytes: 4 });
+                cb?.("Downloading...", "https://example.com/dl", { receivedBytes: 4, totalBytes: 4 });
                 return "/fake/bin/lilbee";
             });
 
@@ -4803,9 +4816,8 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             await flush();
 
-            const downloadNotice = Notice.instances.find((n) => n.duration === 0);
-            expect(downloadNotice).toBeDefined();
-            expect(downloadNotice!.message).toBe("lilbee: Still going...");
+            // Progress is ambient (status bar). Outcomes, not progress, get toasts.
+            expect(Notice.instances.some((n) => n.duration === 0)).toBe(false);
         });
 
         it("does not show download Notice when binary already exists", async () => {
@@ -4819,20 +4831,19 @@ describe("LilbeePlugin", () => {
             expect(downloadNotice).toBeUndefined();
         });
 
-        it("hides download Notice on ensureBinary failure", async () => {
+        it("raises no progress toast when the download fails", async () => {
             mockBinaryExists.mockReturnValue(false);
             mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
-                cb?.("Downloading...", "https://example.com/dl");
-                throw new Error("network error");
+                cb?.("Downloading...", "https://example.com/dl", { receivedBytes: 1, totalBytes: 4 });
+                throw new Error("network down");
             });
 
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
             await flush();
 
-            const downloadNotice = Notice.instances.find((n) => n.duration === 0);
-            expect(downloadNotice).toBeDefined();
-            expect(downloadNotice!.hidden).toBe(true);
+            expect(Notice.instances.some((n) => n.duration === 0)).toBe(false);
+            expect(Notice.instances.some((n) => n.message.includes("network down"))).toBe(true);
         });
 
         it("startManagedServer onProgress fires downloading/starting/ready during first boot", async () => {
@@ -6418,6 +6429,7 @@ describe("LilbeePlugin", () => {
                 "sha256:test",
                 expect.any(Function),
                 expect.any(Function),
+                expect.any(AbortSignal),
             );
             expect(setSpy).toHaveBeenCalledWith("v0.3.0");
             expect(variantSpy).toHaveBeenCalledWith("cu125");
@@ -6425,6 +6437,61 @@ describe("LilbeePlugin", () => {
             expect(progress).toContain("Downloading...");
             expect(progress).toContain("Starting server...");
             expect(progress).toContain("Update complete.");
+        });
+
+        it("turns download bytes into a percentage and a human line", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            mockDownload.mockImplementationOnce(
+                async (_url: string, _size: number, _digest: string, onProgress: any) => {
+                    onProgress("Downloading...");
+                    onProgress("Downloading...", "https://e/dl", {
+                        receivedBytes: 128_000_000,
+                        totalBytes: 256_000_000,
+                    });
+                },
+            );
+
+            const seen: Array<[string, number | undefined]> = [];
+            await plugin.updateServer(
+                { tag: "v1", assetUrl: "https://e/dl", variant: "default", sizeBytes: 1, digest: null } as any,
+                (msg, percent) => seen.push([msg, percent]),
+            );
+
+            expect(seen).toContainEqual(["Downloading... 50% (128 MB of 256 MB)", 50]);
+        });
+
+        it("reports bytes only when the asset host sends no length", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            mockDownload.mockImplementationOnce(
+                async (_url: string, _size: number, _digest: string, onProgress: any) => {
+                    onProgress("Downloading...", "https://e/dl", { receivedBytes: 5_000_000, totalBytes: null });
+                },
+            );
+
+            const seen: Array<[string, number | undefined]> = [];
+            await plugin.updateServer(
+                { tag: "v1", assetUrl: "https://e/dl", variant: "default", sizeBytes: 1, digest: null } as any,
+                (msg, percent) => seen.push([msg, percent]),
+            );
+
+            expect(seen).toContainEqual(["Downloading... 5.00 MB", undefined]);
+        });
+
+        it("falls back to a plain downloading label when the size is unknown", async () => {
+            mockBinaryExists.mockReturnValue(false);
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+
+            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
+                cb?.("Downloading...", undefined, { receivedBytes: 5, totalBytes: null });
+                return "/fake/bin/lilbee";
+            });
+            await (plugin as any).ensureBinaryWithUi();
+
+            expect((plugin as any).statusBarEl?.textContent).toContain("lilbee: downloading...");
         });
 
         it("opens the Gatekeeper help modal when an update can't clear quarantine", async () => {
