@@ -1886,10 +1886,10 @@ export default class LilbeePlugin extends Plugin {
     }
 
     /**
-     * Tile the plugin's views into evenly split panes: chat and the Task Center
-     * always, plus wiki and memories when they are already open. Reuses open
-     * leaves (chat keeps its conversation) and stacks any it has to create off
-     * the previous one. Bind a hotkey in Settings → Hotkeys.
+     * Tile the plugin's views as side-by-side columns in the main area: chat and
+     * the Task Center always, plus wiki and memories when they are already open.
+     * Reuses open leaves (chat keeps its conversation) and splits any it has to
+     * create beside the previous one. Bind a hotkey in Settings → Hotkeys.
      */
     async arrangeViews(): Promise<void> {
         if (this.openingChatLeaf) return;
@@ -1904,7 +1904,9 @@ export default class LilbeePlugin extends Plugin {
             for (const type of included) {
                 let leaf = workspace.getLeavesOfType(type)[0] ?? null;
                 if (!leaf) {
-                    leaf = anchor ? workspace.createLeafBySplit(anchor, "horizontal") : workspace.getRightLeaf(false);
+                    // Tile as side-by-side columns in the main area: a fresh tab
+                    // for the first view, then vertical splits beside it.
+                    leaf = anchor ? workspace.createLeafBySplit(anchor, "vertical") : workspace.getLeaf("tab");
                     if (!leaf) continue;
                     await leaf.setViewState({ type, active: true });
                 }

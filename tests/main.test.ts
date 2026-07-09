@@ -3606,20 +3606,20 @@ describe("LilbeePlugin", () => {
                 return leaf;
             };
             plugin.app.workspace.getLeavesOfType = vi.fn().mockImplementation((t: string) => store[t] ?? []);
-            plugin.app.workspace.getRightLeaf = vi.fn().mockImplementation(() => make());
+            plugin.app.workspace.getLeaf = vi.fn().mockImplementation(() => make());
             plugin.app.workspace.createLeafBySplit = vi.fn().mockImplementation(() => make());
             plugin.app.workspace.revealLeaf = vi.fn();
             return store;
         }
 
-        it("opens chat via the sidebar and stacks the task center as a split", async () => {
+        it("opens chat as a main-area tab and tiles the task center beside it", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             wireWorkspace(plugin);
             await (plugin as any).arrangeViews();
-            expect(plugin.app.workspace.getRightLeaf).toHaveBeenCalledTimes(1);
+            expect(plugin.app.workspace.getLeaf).toHaveBeenCalledWith("tab");
             expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledTimes(1);
-            expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledWith(expect.anything(), "horizontal");
+            expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledWith(expect.anything(), "vertical");
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(2);
         });
 
@@ -3633,7 +3633,7 @@ describe("LilbeePlugin", () => {
                 "lilbee-memories": [{ setViewState: vi.fn() }],
             });
             await (plugin as any).arrangeViews();
-            expect(plugin.app.workspace.getRightLeaf).not.toHaveBeenCalled();
+            expect(plugin.app.workspace.getLeaf).not.toHaveBeenCalled();
             expect(plugin.app.workspace.createLeafBySplit).not.toHaveBeenCalled();
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(4);
         });
@@ -3646,8 +3646,8 @@ describe("LilbeePlugin", () => {
                 "lilbee-memories": [{ setViewState: vi.fn() }],
             });
             await (plugin as any).arrangeViews();
-            // chat (sidebar) + tasks (split); wiki + memories reused; reveal all four.
-            expect(plugin.app.workspace.getRightLeaf).toHaveBeenCalledTimes(1);
+            // chat (main tab) + tasks (split); wiki + memories reused; reveal all four.
+            expect(plugin.app.workspace.getLeaf).toHaveBeenCalledWith("tab");
             expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledTimes(1);
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(4);
         });
@@ -3656,7 +3656,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
-            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
+            plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(null);
             plugin.app.workspace.createLeafBySplit = vi.fn().mockReturnValue(null);
             plugin.app.workspace.revealLeaf = vi.fn();
             await expect((plugin as any).arrangeViews()).resolves.not.toThrow();
@@ -3667,7 +3667,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             const store = wireWorkspace(plugin);
-            // chat opens via the sidebar; the task-center split fails.
+            // chat opens as a main tab; the task-center split fails.
             plugin.app.workspace.createLeafBySplit = vi.fn().mockReturnValue(null);
             await (plugin as any).arrangeViews();
             expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledTimes(1);
@@ -3682,7 +3682,7 @@ describe("LilbeePlugin", () => {
             wireWorkspace(plugin);
             (plugin as any).openingChatLeaf = true;
             await (plugin as any).arrangeViews();
-            expect(plugin.app.workspace.getRightLeaf).not.toHaveBeenCalled();
+            expect(plugin.app.workspace.getLeaf).not.toHaveBeenCalled();
             expect(plugin.app.workspace.createLeafBySplit).not.toHaveBeenCalled();
         });
 

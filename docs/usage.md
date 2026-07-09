@@ -61,7 +61,7 @@ Click the status bar to jump to settings. A separate pill with a refresh icon an
 
 - **Open lilbee chat** (speech-bubble icon) — opens the chat sidebar. Open the Task Center from the command palette ("Show task center"); background-job progress shows in the status bar.
 
-To lay everything out at once, run **Arrange views** — it tiles chat, the Task Center, and any open wiki or memories panes into even splits. Bind it to a hotkey in Settings → Hotkeys. Obsidian doesn't let plugins set exact pane sizes, so the splits open evenly; to fine-tune and recall a precise layout, arrange the panes by hand and save them with the core **Workspaces** plugin.
+To lay everything out at once, run **Arrange views** — it tiles chat, the Task Center, and any open wiki or memories panes into side-by-side columns in the main area. Bind it to a hotkey in Settings → Hotkeys. Obsidian doesn't let plugins set exact pane sizes, so the columns open evenly; to fine-tune and recall a precise layout of your own, arrange the panes by hand and save them with the core **Workspaces** plugin (load it back with a hotkey).
 
 ---
 
