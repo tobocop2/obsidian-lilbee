@@ -3,6 +3,7 @@ import type { StatsFs } from "fs";
 import { createHash } from "crypto";
 import { Readable, Writable } from "stream";
 import {
+    DownloadCanceledError,
     node,
     getPlatformAssetName,
     getLatestRelease,
@@ -655,6 +656,50 @@ describe("BinaryManager", () => {
 
             const mgr = new BinaryManager("/plugins/lilbee/bin");
             await expect(mgr.download("https://example.com/dl", 4, null)).rejects.toThrow("connection reset");
+        });
+
+        it("aborts when the caller cancels mid-stream", async () => {
+            restore = stubPlatform("linux", "x64");
+            vi.spyOn(node, "existsSync").mockReturnValue(true);
+            stubEnoughSpace();
+            const controller = new AbortController();
+            vi.spyOn(node, "httpsGet").mockImplementation(((_url: string, cb: (res: any) => void) => {
+                const res: any = new Readable({ read() {} });
+                res.statusCode = 200;
+                res.headers = { "content-length": "99" };
+                queueMicrotask(() => {
+                    cb(res);
+                    res.push(Buffer.from([1]));
+                    setTimeout(() => controller.abort(), 0);
+                });
+                return { on: () => {}, setTimeout: () => {}, destroy: () => {} } as any;
+            }) as any);
+            stubSinkStream();
+            const unlink = vi.spyOn(node, "unlinkSync").mockImplementation(() => {});
+
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
+            await expect(
+                mgr.download("https://example.com/dl", 99, null, undefined, undefined, controller.signal),
+            ).rejects.toThrow(DownloadCanceledError);
+
+            expect(unlink).toHaveBeenCalledWith(`${mgr.binaryPath}.part`);
+            expect(unlink).not.toHaveBeenCalledWith(mgr.binaryPath);
+        });
+
+        it("does not start when the signal is already aborted", async () => {
+            restore = stubPlatform("linux", "x64");
+            vi.spyOn(node, "existsSync").mockReturnValue(true);
+            stubEnoughSpace();
+            const get = vi.spyOn(node, "httpsGet");
+            vi.spyOn(node, "unlinkSync").mockImplementation(() => {});
+            const controller = new AbortController();
+            controller.abort();
+
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
+            await expect(
+                mgr.download("https://example.com/dl", 1, null, undefined, undefined, controller.signal),
+            ).rejects.toThrow("was cancelled");
+            expect(get).not.toHaveBeenCalled();
         });
 
         it("gives up when the asset host never answers", async () => {

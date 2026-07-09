@@ -14,10 +14,20 @@ const mockGetLatestRelease = vi.fn();
 const mockCheckForUpdate = vi.fn();
 const mockListReleases = vi.fn(async () => [] as unknown[]);
 
+const { FakeDownloadCanceledError } = vi.hoisted(() => ({
+    FakeDownloadCanceledError: class DownloadCanceledError extends Error {
+        constructor() {
+            super("The lilbee server download was cancelled.");
+            this.name = "DownloadCanceledError";
+        }
+    },
+}));
+
 vi.mock("../src/binary-manager", () => ({
     getLatestRelease: (...args: any[]) => mockGetLatestRelease(...args),
     checkForUpdate: (...args: any[]) => mockCheckForUpdate(...args),
     listReleases: (...args: any[]) => mockListReleases(...args),
+    DownloadCanceledError: FakeDownloadCanceledError,
     BinaryManager: vi.fn(),
     node: {
         existsSync: vi.fn(() => false),
@@ -161,6 +171,8 @@ function makePlugin(overrides: Partial<LilbeeSettings> & { lilbeeVersion?: strin
         },
         isServerInstalled: () => true,
         isServerUninstalled: () => false,
+        isDownloadingServer: () => false,
+        cancelServerDownload: vi.fn(),
         planServerUninstall: () => ({ targets: [], totalBytes: 0 }),
         uninstallServer: vi.fn().mockResolvedValue(0),
         installServer: vi.fn().mockResolvedValue(undefined),
@@ -7206,6 +7218,82 @@ describe("managed mode with no server installed", () => {
         expect(setDesc.mock.calls.some(([d]) => String(d) === MESSAGES.ERROR_RELEASE_LIST)).toBe(true);
         expect(captured.buttons.find((b) => b.name === MESSAGES.LABEL_INSTALL_SERVER)!.disabled).toBe(true);
         setDesc.mockRestore();
+    });
+});
+
+describe("cancelling a server download", () => {
+    const RELEASES = [
+        { tag: "v0.3.0", assetUrl: "https://e/3", variant: "default", sizeBytes: 412_000_000, digest: null },
+    ];
+
+    async function settle(): Promise<void> {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    beforeEach(() => {
+        Notice.clear();
+        mockListReleases.mockResolvedValue(RELEASES);
+    });
+
+    it("offers a cancel button on the progress panel", () => {
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
+        const cancelServerDownload = vi.fn();
+        (plugin as any).cancelServerDownload = cancelServerDownload;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        tab.display();
+        const cancel = tab.containerEl.find("lilbee-update-progress-cancel")!;
+        expect(cancel.textContent).toBe("Cancel download");
+
+        cancel.trigger("click");
+        expect(cancelServerDownload).toHaveBeenCalled();
+    });
+
+    it("reports a cancelled update as a choice, not a failure", async () => {
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
+        (plugin as any).updateServer = vi.fn().mockRejectedValue(new FakeDownloadCanceledError());
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        await settle();
+        await buttonOnClicks[2]();
+
+        expect(Notice.instances.map((n) => n.message)).toContain("lilbee server download cancelled.");
+        expect(Notice.instances.some((n) => n.message.includes("Could not"))).toBe(false);
+        expect(tab.containerEl.find("lilbee-update-progress")!.style.display).toBe("none");
+    });
+
+    it("reports a cancelled first install as a choice, not a failure", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).isServerInstalled = () => false;
+        (plugin as any).installServer = vi.fn().mockRejectedValue(new FakeDownloadCanceledError());
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await settle();
+        await clickButton(captured, MESSAGES.LABEL_INSTALL_SERVER);
+
+        expect(Notice.instances.map((n) => n.message)).toContain("lilbee server download cancelled.");
+    });
+
+    it("offers to stop a download that started outside settings", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).isServerInstalled = () => false;
+        (plugin as any).isDownloadingServer = () => true;
+        const cancelServerDownload = vi.fn();
+        (plugin as any).cancelServerDownload = cancelServerDownload;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        vi.spyOn(tab, "render").mockImplementation(() => {});
+        await clickButton(captured, MESSAGES.LABEL_SERVER_STATUS);
+
+        expect(cancelServerDownload).toHaveBeenCalled();
+        expect(captured.buttons.some((b) => b.name === MESSAGES.LABEL_INSTALL_SERVER)).toBe(false);
     });
 });
 

@@ -219,6 +219,16 @@ const DOWNLOAD_IDLE_TIMEOUT_MS = 60_000;
 
 const DOWNLOAD_STALLED = "The lilbee server download stalled. Check your connection and try again.";
 
+export const DOWNLOAD_CANCELED = "The lilbee server download was cancelled.";
+
+/** Thrown when the caller aborts the download; callers treat it as a no-op, not a failure. */
+export class DownloadCanceledError extends Error {
+    constructor() {
+        super(DOWNLOAD_CANCELED);
+        this.name = "DownloadCanceledError";
+    }
+}
+
 /** Suffix of the partial download; renamed onto the real path only after the digest checks out. */
 const PART_SUFFIX = ".part";
 
@@ -299,11 +309,19 @@ export class BinaryManager {
     async ensureBinary(
         onProgress?: (msg: string, url?: string, progress?: DownloadProgress) => void,
         onQuarantineFailed?: () => void,
+        signal?: AbortSignal,
     ): Promise<string> {
         if (this.binaryExists()) return this.binaryPath;
         onProgress?.("Fetching latest release info...");
         const release = await getLatestRelease();
-        await this.download(release.assetUrl, release.sizeBytes, release.digest, onProgress, onQuarantineFailed);
+        await this.download(
+            release.assetUrl,
+            release.sizeBytes,
+            release.digest,
+            onProgress,
+            onQuarantineFailed,
+            signal,
+        );
         return this.binaryPath;
     }
 
@@ -334,7 +352,9 @@ export class BinaryManager {
         assetUrl: string,
         partPath: string,
         onBytes: (progress: DownloadProgress) => void,
+        signal?: AbortSignal,
     ): Promise<string> {
+        if (signal?.aborted) throw new DownloadCanceledError();
         const res = await openStream(assetUrl);
         const totalBytes = contentLength(res);
         const hash = node.createHash("sha256");
@@ -350,10 +370,13 @@ export class BinaryManager {
             };
             const fail = (err: Error): void => {
                 stopClock();
+                signal?.removeEventListener("abort", onAbort);
                 res.destroy();
                 file.destroy();
                 reject(err);
             };
+            const onAbort = (): void => fail(new DownloadCanceledError());
+            signal?.addEventListener("abort", onAbort, { once: true });
 
             res.on("data", (chunk: Buffer) => {
                 restartClock();
@@ -366,6 +389,7 @@ export class BinaryManager {
             res.pipe(file);
             file.on("finish", () => {
                 stopClock();
+                signal?.removeEventListener("abort", onAbort);
                 resolve(hash.digest("hex"));
             });
             restartClock();
@@ -378,6 +402,7 @@ export class BinaryManager {
         expectedDigest: string | null,
         onProgress?: (msg: string, url?: string, progress?: DownloadProgress) => void,
         onQuarantineFailed?: () => void,
+        signal?: AbortSignal,
     ): Promise<void> {
         if (!node.existsSync(this.binDir)) {
             node.mkdirSync(this.binDir, { recursive: true });
@@ -389,8 +414,11 @@ export class BinaryManager {
         const partPath = `${dest}${PART_SUFFIX}`;
         let renamed = false;
         try {
-            const actualHex = await this.streamToFile(assetUrl, partPath, (progress) =>
-                onProgress?.("Downloading...", assetUrl, progress),
+            const actualHex = await this.streamToFile(
+                assetUrl,
+                partPath,
+                (progress) => onProgress?.("Downloading...", assetUrl, progress),
+                signal,
             );
             this.assertDigest(actualHex, expectedDigest);
             node.renameSync(partPath, dest);

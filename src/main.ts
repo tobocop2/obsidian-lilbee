@@ -13,6 +13,7 @@ import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { exportDiagnostics } from "./diagnostics-export";
 import { ErrorJournal } from "./error-journal";
+import { DownloadCanceledError } from "./binary-manager";
 import type { DownloadProgress, ReleaseInfo } from "./binary-manager";
 import { ServerManager, killServerTree } from "./server-manager";
 import { executeUninstall, planUninstall } from "./server-uninstall";
@@ -220,6 +221,13 @@ function downloadMessage(progress: DownloadProgress): string {
     const percent = percentOfBytes(progress.receivedBytes, progress.totalBytes);
     if (percent === undefined || progress.totalBytes === null) return MESSAGES.STATUS_DOWNLOAD_RECEIVED(received);
     return MESSAGES.STATUS_DOWNLOAD_PROGRESS(percent, received, formatBytes(progress.totalBytes));
+}
+
+/** The status bar is narrow: percent only, with the byte detail left to Settings. */
+function downloadStatusBar(progress: DownloadProgress): string {
+    const percent = percentOfBytes(progress.receivedBytes, progress.totalBytes);
+    if (percent === undefined) return MESSAGES.STATUS_DOWNLOADING;
+    return MESSAGES.STATUS_DOWNLOADING_PERCENT(percent);
 }
 
 export default class LilbeePlugin extends Plugin {
@@ -566,6 +574,28 @@ export default class LilbeePlugin extends Plugin {
         return false;
     }
 
+    /** Aborts the in-flight server download, if any. Set while a download runs. */
+    private downloadController: AbortController | null = null;
+
+    private startDownloadController(): AbortController {
+        this.downloadController = new AbortController();
+        return this.downloadController;
+    }
+
+    private finishDownload(): void {
+        this.downloadController = null;
+    }
+
+    /** True while a server binary is downloading, so the UI can offer to stop it. */
+    isDownloadingServer(): boolean {
+        return this.downloadController !== null;
+    }
+
+    /** Stop an in-flight server download. The partial file is discarded; any installed binary stays. */
+    cancelServerDownload(): void {
+        this.downloadController?.abort();
+    }
+
     private async ensureBinaryWithUi(onProgress?: ManagedServerProgressHandler): Promise<string | null> {
         const bm = this.binaryManager;
         if (!bm) return null;
@@ -575,31 +605,30 @@ export default class LilbeePlugin extends Plugin {
             this.setStatusClass("lilbee-status-downloading");
             onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: MESSAGES.STATUS_DOWNLOADING });
         }
-        let downloadNotice: Notice | undefined;
         try {
             const path = await bm.ensureBinary(
                 (rawMsg, url, progress) => {
                     const percent = progress ? percentOfBytes(progress.receivedBytes, progress.totalBytes) : undefined;
                     const msg = progress ? downloadMessage(progress) : rawMsg;
-                    this.updateStatusBar(`lilbee: ${msg}`, DOT_STATE.PRIMARY);
+                    this.updateStatusBar(progress ? downloadStatusBar(progress) : `lilbee: ${msg}`, DOT_STATE.PRIMARY);
                     onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: msg, url, percent });
-                    if (!downloadNotice && needsDownload) {
-                        const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
-                        downloadNotice = new Notice(text, NOTICE_PERMANENT);
-                    } else if (downloadNotice) {
-                        const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
-                        downloadNotice.setMessage(text);
-                    }
                 },
                 () => this.showGatekeeperHelp(),
+                this.startDownloadController().signal,
             );
-            downloadNotice?.hide();
+            this.finishDownload();
             this.setStatusClass(null);
             return path;
         } catch (err) {
-            downloadNotice?.hide();
+            this.finishDownload();
             this.setStatusClass(null);
-            this.showError("failed to download server", err);
+            // Cancelling is a choice, not a failure: say so plainly and skip the error journal.
+            if (err instanceof DownloadCanceledError) {
+                new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELED);
+                this.updateStatusBar(MESSAGES.STATUS_NOT_INSTALLED, DOT_STATE.MUTED, false);
+            } else {
+                this.showError("failed to download server", err);
+            }
             onProgress?.({ phase: MANAGED_PHASE.ERROR, message: errorMessage(err, String(err)) });
             return null;
         }
@@ -812,19 +841,27 @@ export default class LilbeePlugin extends Plugin {
 
         // Download the new binary (replaces the old one once its checksum clears)
         onProgress?.("Downloading...");
-        await this.binaryManager.download(
-            release.assetUrl,
-            release.sizeBytes,
-            release.digest,
-            (msg, _url, progress) => {
-                if (!progress) {
-                    onProgress?.(msg);
-                    return;
-                }
-                onProgress?.(downloadMessage(progress), percentOfBytes(progress.receivedBytes, progress.totalBytes));
-            },
-            () => this.showGatekeeperHelp(),
-        );
+        try {
+            await this.binaryManager.download(
+                release.assetUrl,
+                release.sizeBytes,
+                release.digest,
+                (msg, _url, progress) => {
+                    if (!progress) {
+                        onProgress?.(msg);
+                        return;
+                    }
+                    onProgress?.(
+                        downloadMessage(progress),
+                        percentOfBytes(progress.receivedBytes, progress.totalBytes),
+                    );
+                },
+                () => this.showGatekeeperHelp(),
+                this.startDownloadController().signal,
+            );
+        } finally {
+            this.finishDownload();
+        }
 
         // Save the new version and the build variant we just installed
         this.setSharedLilbeeVersion(release.tag);
