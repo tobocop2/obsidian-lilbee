@@ -34,6 +34,9 @@ jobs:
       - run: npm test
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Real-process orphan-reaping test: spawns actual processes and exercises
+      # the platform-specific ps/taskkill/process-group code on each OS.
+      - run: npm run test:reap
       - run: npm run build
       - name: Generate coverage badge
         if: matrix.os == 'ubuntu-latest'

@@ -64,7 +64,9 @@ export async function reapOrphanServers(dataDir: string): Promise<number[]> {
     }
     let stdout: string;
     try {
-        ({ stdout } = await node.execFile("ps", ["-axo", "pid=,ppid=,command="]));
+        // -A all processes, -ww no command-line truncation (a long --data-dir
+        // must survive), portable across macOS and Linux.
+        ({ stdout } = await node.execFile("ps", ["-A", "-ww", "-o", "pid=,ppid=,command="]));
     } catch {
         return [];
     }
