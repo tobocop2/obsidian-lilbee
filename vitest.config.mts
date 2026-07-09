@@ -5,8 +5,9 @@ export default defineConfig({
         globals: true,
         environment: "node",
         setupFiles: ["tests/setup.ts", "tests/setup-node-paths.ts"],
-        // integration.test.ts hits the network (real binary download) and runs on its
-        // own 3-OS workflow (integration.yml); keep the unit suite fast and deterministic.
+        // integration.test.ts hits the network (real binary download); *.integration.test.ts
+        // spawns real processes. Both run on their own 3-OS workflows; keep the unit suite
+        // fast and deterministic.
         exclude: [
             "**/node_modules/**",
             "**/.worktrees/**",
@@ -14,6 +15,7 @@ export default defineConfig({
             "**/*.bak/**",
             "**/tests.bak/**",
             "**/integration.test.ts",
+            "**/*.integration.test.ts",
         ],
         coverage: {
             provider: "v8",

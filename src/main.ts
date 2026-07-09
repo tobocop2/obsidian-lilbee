@@ -14,7 +14,7 @@ import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { exportDiagnostics } from "./diagnostics-export";
 import { ErrorJournal } from "./error-journal";
 import type { ReleaseInfo } from "./binary-manager";
-import { ServerManager } from "./server-manager";
+import { ServerManager, killServerTree } from "./server-manager";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
 import { LilbeeSettingTab } from "./settings";
 import { VaultRegistry, computeVaultId, resolveSharedRoot, sharedBinDir, sharedModelsDir } from "./vault-registry";
@@ -525,6 +525,8 @@ export default class LilbeePlugin extends Plugin {
 
     private async terminateOwningProcess(owner: ActiveLock | null): Promise<boolean> {
         if (!owner) return true;
+        // Stop the other vault's server too, or it orphans when its Obsidian goes.
+        if (owner.serverPid) await killServerTree(owner.serverPid);
         try {
             node.processKill(owner.pid);
         } catch {
@@ -601,7 +603,13 @@ export default class LilbeePlugin extends Plugin {
         if (!sm || !registry) return;
         const port = parseInt(sm.serverUrl.split(":").pop() || "0", 10);
         const now = Date.now();
-        registry.writeLock({ vaultId: this.vaultId, pid: process.pid, port, startedAt: now });
+        registry.writeLock({
+            vaultId: this.vaultId,
+            pid: process.pid,
+            serverPid: sm.serverPid ?? undefined,
+            port,
+            startedAt: now,
+        });
         const existing = registry.get(this.vaultId);
         registry.upsert({
             id: this.vaultId,
