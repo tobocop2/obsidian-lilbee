@@ -275,20 +275,15 @@ async function createPlugin(overrideData?: Record<string, unknown>) {
     // Also treat setup as complete so the onload server-start path runs —
     // otherwise the wizard-gated first-run branch silences behaviour tests that
     // aren't about the wizard.
-    // autoOpenCockpit defaults to true in production, but in tests it would
-    // call getRightLeaf during onload and pollute mock-call assertions in
-    // every other test. Default off; tests that exercise it pass an override.
     if (overrideData) {
         plugin.loadData = vi.fn().mockResolvedValue({
             setupCompleted: true,
-            autoOpenCockpit: false,
             ...overrideData,
         });
     } else {
         plugin.loadData = vi.fn().mockResolvedValue({
             setupCompleted: true,
             serverMode: "external",
-            autoOpenCockpit: false,
         });
     }
     return plugin;
@@ -422,11 +417,11 @@ describe("LilbeePlugin", () => {
             expect(startSpy).toHaveBeenCalled();
         });
 
-        it("adds all twenty-seven commands", async () => {
+        it("adds all twenty-eight commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(27);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(28);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("model-picker-chat");
             expect(allIds).toContain("model-picker-embedding");
@@ -450,6 +445,7 @@ describe("LilbeePlugin", () => {
             expect(ids).toContain("setup");
             expect(ids).toContain("status");
             expect(ids).toContain("tasks");
+            expect(ids).toContain("arrange-views");
             expect(ids).toContain("wiki");
             expect(ids).toContain("wiki-lint");
             expect(ids).toContain("wiki-drafts");
@@ -3613,98 +3609,128 @@ describe("LilbeePlugin", () => {
         });
     });
 
-    describe("openCockpit()", () => {
-        it("opens chat in the main area and the task center in the right sidebar", async () => {
+    describe("startup view behavior (issue #173)", () => {
+        it("does not force-open chat or the task center on load", async () => {
+            const plugin = await createPlugin({ serverMode: "external", setupCompleted: true });
+            const getLeaf = vi.fn().mockReturnValue(null);
+            const getRightLeaf = vi.fn().mockReturnValue(null);
+            plugin.app.workspace.getLeaf = getLeaf;
+            plugin.app.workspace.getRightLeaf = getRightLeaf;
+            await plugin.onload();
+            expect(getLeaf).not.toHaveBeenCalled();
+            expect(getRightLeaf).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("arrangeViews()", () => {
+        // Stateful workspace: getLeavesOfType reflects leaves created via
+        // setViewState, so the reveal pass finds what the layout pass opened.
+        function wireWorkspace(plugin: any, opened: Record<string, unknown[]> = {}) {
+            const store: Record<string, any[]> = {
+                "lilbee-chat": [],
+                "lilbee-tasks": [],
+                "lilbee-wiki": [],
+                "lilbee-memories": [],
+                ...opened,
+            };
+            const make = () => {
+                const leaf: any = {
+                    setViewState: vi.fn().mockImplementation(async (s: { type: string }) => {
+                        (store[s.type] ??= []).push(leaf);
+                    }),
+                };
+                return leaf;
+            };
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockImplementation((t: string) => store[t] ?? []);
+            plugin.app.workspace.getLeaf = vi.fn().mockImplementation(() => make());
+            plugin.app.workspace.createLeafBySplit = vi.fn().mockImplementation(() => make());
+            plugin.app.workspace.revealLeaf = vi.fn();
+            return store;
+        }
+
+        it("opens chat as a main-area tab and tiles the task center beside it", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
-            const chatLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
-            const tasksLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
-            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
-            plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(chatLeaf);
-            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(tasksLeaf);
-            plugin.app.workspace.revealLeaf = vi.fn();
-            await plugin.openCockpit();
+            wireWorkspace(plugin);
+            await (plugin as any).arrangeViews();
             expect(plugin.app.workspace.getLeaf).toHaveBeenCalledWith("tab");
-            expect(chatLeaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-chat", active: true });
-            expect(tasksLeaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-tasks", active: true });
-            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
-            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(tasksLeaf);
+            expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledTimes(1);
+            expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledWith(expect.anything(), "vertical");
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(2);
         });
 
         it("reveals existing leaves without creating new ones", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
-            const existingChat = { setViewState: vi.fn() };
-            const existingTasks = { setViewState: vi.fn() };
-            plugin.app.workspace.getLeavesOfType = vi.fn().mockImplementation((type: string) => {
-                if (type === "lilbee-chat") return [existingChat];
-                if (type === "lilbee-tasks") return [existingTasks];
-                return [];
+            wireWorkspace(plugin, {
+                "lilbee-chat": [{ setViewState: vi.fn() }],
+                "lilbee-tasks": [{ setViewState: vi.fn() }],
+                "lilbee-wiki": [{ setViewState: vi.fn() }],
+                "lilbee-memories": [{ setViewState: vi.fn() }],
             });
-            plugin.app.workspace.getLeaf = vi.fn();
-            plugin.app.workspace.getRightLeaf = vi.fn();
-            plugin.app.workspace.revealLeaf = vi.fn();
-            await plugin.openCockpit();
+            await (plugin as any).arrangeViews();
             expect(plugin.app.workspace.getLeaf).not.toHaveBeenCalled();
-            expect(plugin.app.workspace.getRightLeaf).not.toHaveBeenCalled();
-            expect(existingChat.setViewState).not.toHaveBeenCalled();
-            expect(existingTasks.setViewState).not.toHaveBeenCalled();
-            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(existingChat);
-            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(existingTasks);
+            expect(plugin.app.workspace.createLeafBySplit).not.toHaveBeenCalled();
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(4);
         });
 
-        it("bails when getLeaf returns null and no chat leaf exists", async () => {
+        it("includes wiki and memories only when they are already open", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            wireWorkspace(plugin, {
+                "lilbee-wiki": [{ setViewState: vi.fn() }],
+                "lilbee-memories": [{ setViewState: vi.fn() }],
+            });
+            await (plugin as any).arrangeViews();
+            // chat (main tab) + tasks (split); wiki + memories reused; reveal all four.
+            expect(plugin.app.workspace.getLeaf).toHaveBeenCalledWith("tab");
+            expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledTimes(1);
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(4);
+        });
+
+        it("bails per-view when no leaf can be created and does not throw", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
             plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(null);
+            plugin.app.workspace.createLeafBySplit = vi.fn().mockReturnValue(null);
             plugin.app.workspace.revealLeaf = vi.fn();
-            await plugin.openCockpit();
+            await expect((plugin as any).arrangeViews()).resolves.not.toThrow();
             expect(plugin.app.workspace.revealLeaf).not.toHaveBeenCalled();
         });
 
-        it("opens chat alone when getRightLeaf returns null", async () => {
+        it("skips a view when its split cannot be created but keeps the anchor", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
-            const chatLeaf = { setViewState: vi.fn().mockResolvedValue(undefined) };
-            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
-            plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(chatLeaf);
-            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
-            plugin.app.workspace.revealLeaf = vi.fn();
-            await plugin.openCockpit();
-            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(chatLeaf);
+            const store = wireWorkspace(plugin);
+            // chat opens as a main tab; the task-center split fails.
+            plugin.app.workspace.createLeafBySplit = vi.fn().mockReturnValue(null);
+            await (plugin as any).arrangeViews();
+            expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledTimes(1);
+            expect(store["lilbee-chat"]).toHaveLength(1);
+            expect(store["lilbee-tasks"]).toHaveLength(0);
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(1);
         });
 
-        it("does not spawn duplicate main-area tabs when re-entered before the chat leaf registers (issue #169)", async () => {
+        it("is a no-op while a chat leaf is already opening", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
+            wireWorkspace(plugin);
+            (plugin as any).openingChatLeaf = true;
+            await (plugin as any).arrangeViews();
+            expect(plugin.app.workspace.getLeaf).not.toHaveBeenCalled();
+            expect(plugin.app.workspace.createLeafBySplit).not.toHaveBeenCalled();
+        });
 
-            // Reproduce the affected environment: getLeavesOfType("lilbee-chat")
-            // keeps reporting [] until setViewState's promise resolves, so the
-            // existence check straddles the await. A re-entrant call would then
-            // pass the guard a second time and open another tab.
-            let registered = false;
-            const created: unknown[] = [];
-            plugin.app.workspace.getLeavesOfType = vi
-                .fn()
-                .mockImplementation((type: string) => (type === "lilbee-chat" && registered ? created : []));
-            plugin.app.workspace.getLeaf = vi.fn().mockImplementation(() => {
-                const leaf = {
-                    setViewState: vi.fn().mockImplementation(async () => {
-                        await Promise.resolve();
-                        registered = true;
-                        created.push(leaf);
-                    }),
-                };
-                return leaf;
-            });
-            plugin.app.workspace.getRightLeaf = vi.fn().mockReturnValue(null);
-            plugin.app.workspace.revealLeaf = vi.fn();
-
-            await Promise.all([plugin.openCockpit(), plugin.openCockpit()]);
-
-            expect(plugin.app.workspace.getLeaf).toHaveBeenCalledTimes(1);
+        it("is registered as the 'arrange-views' command", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const spy = vi.spyOn(plugin as any, "arrangeViews").mockResolvedValue(undefined);
+            const calls = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls;
+            const cmd = calls.map((c) => c[0]).find((c: any) => c.id === "arrange-views");
+            expect(cmd).toBeTruthy();
+            cmd.callback();
+            expect(spy).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -4074,17 +4100,6 @@ describe("LilbeePlugin", () => {
             }).not.toThrow();
         });
 
-        it("ribbon icon click invokes activateTaskView", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            const spy = vi.spyOn(plugin, "activateTaskView").mockResolvedValue(undefined);
-            const calls = (plugin.addRibbonIcon as ReturnType<typeof vi.fn>).mock.calls;
-            const taskCenterCall = calls.find((c) => c[0] === "list-checks")!;
-            const callback = taskCenterCall[2] as () => void;
-            callback();
-            expect(spy).toHaveBeenCalledTimes(1);
-        });
-
         it("status bar click opens the lilbee plugin settings tab", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -4117,103 +4132,16 @@ describe("LilbeePlugin", () => {
             expect(() => plugin.openPluginSettings()).not.toThrow();
         });
 
-        it("ribbon icon toggles lilbee-ribbon-active while any task is active", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            const ribbon = (plugin as any).ribbonIconEl as any;
-            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
-
-            plugin.taskQueue.enqueue("Sync vault", "sync");
-            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(true);
-        });
-
-        it("ribbon icon shows success dot during flash window after done", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            const ribbon = (plugin as any).ribbonIconEl as any;
-
-            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
-            plugin.taskQueue.complete(id);
-
-            expect(ribbon.classList.contains("lilbee-ribbon-success")).toBe(true);
-            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
-        });
-
-        it("ribbon icon shows error dot during flash window after fail", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            const ribbon = (plugin as any).ribbonIconEl as any;
-
-            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
-            plugin.taskQueue.fail(id, "boom");
-
-            expect(ribbon.classList.contains("lilbee-ribbon-error")).toBe(true);
-        });
-
-        it("ribbon icon clears after flash window expires", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            const ribbon = (plugin as any).ribbonIconEl as any;
-
-            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
-            plugin.taskQueue.complete(id);
-            const completed = plugin.taskQueue.completed[0]!;
-            (completed as any).completedAt = Date.now() - 10_000;
-            (plugin as any).updateRibbonFromQueue();
-
-            expect(ribbon.classList.contains("lilbee-ribbon-success")).toBe(false);
-            expect(ribbon.classList.contains("lilbee-ribbon-error")).toBe(false);
-            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
-        });
-
-        it("updateRibbonFromQueue no-ops when ribbonIconEl is null", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            (plugin as any).ribbonIconEl = null;
-            expect(() => {
-                (plugin as any).updateRibbonFromQueue();
-            }).not.toThrow();
-        });
-
-        it("updateRibbonFromQueue no-ops when last completed has null completedAt", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            const ribbon = (plugin as any).ribbonIconEl as any;
-            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
-            plugin.taskQueue.complete(id);
-            (plugin.taskQueue.completed[0] as any).completedAt = null;
-            (plugin as any).updateRibbonFromQueue();
-            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
-            expect(ribbon.classList.contains("lilbee-ribbon-success")).toBe(false);
-        });
-
-        it("updateRibbonFromQueue leaves classes cleared when no tasks at all", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            const ribbon = (plugin as any).ribbonIconEl as any;
-            (plugin as any).updateRibbonFromQueue();
-            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
-        });
-
-        it("ribbon icon does not highlight for cancelled tasks", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            const ribbon = (plugin as any).ribbonIconEl as any;
-            const id = plugin.taskQueue.enqueue("Sync vault", "sync");
-            plugin.taskQueue.cancel(id);
-            expect(ribbon.classList.contains("lilbee-ribbon-success")).toBe(false);
-            expect(ribbon.classList.contains("lilbee-ribbon-error")).toBe(false);
-            expect(ribbon.classList.contains("lilbee-ribbon-active")).toBe(false);
-        });
-
-        it("registers a chat ribbon icon distinct from the task ribbon", async () => {
+        it("registers a single lilbee ribbon icon (chat only, no Task Center icon)", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             const chatRibbon = (plugin as any).chatRibbonIconEl as any;
-            const taskRibbon = (plugin as any).ribbonIconEl as any;
             expect(chatRibbon).toBeTruthy();
-            expect(chatRibbon).not.toBe(taskRibbon);
             expect(chatRibbon.classList.contains("lilbee-ribbon-chat")).toBe(true);
+            const calls = (plugin.addRibbonIcon as ReturnType<typeof vi.fn>).mock.calls;
+            expect(calls).toHaveLength(1);
+            expect(calls[0]![0]).toBe("messages-square");
+            expect(calls.some((c) => c[0] === "list-checks")).toBe(false);
         });
 
         it("chat ribbon click activates the chat view", async () => {

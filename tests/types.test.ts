@@ -76,7 +76,6 @@ describe("DEFAULT_SETTINGS", () => {
         const keys = Object.keys(DEFAULT_SETTINGS).sort();
         const expected = [
             "adaptiveThreshold",
-            "autoOpenCockpit",
             "reasoningDefaulted",
             "manualToken",
             "maxDistance",

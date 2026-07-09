@@ -236,7 +236,6 @@ export default class LilbeePlugin extends Plugin {
     activeModel = "";
     statusBarEl: HTMLElement | null = null;
     syncPillEl: HTMLElement | null = null;
-    ribbonIconEl: HTMLElement | null = null;
     chatRibbonIconEl: HTMLElement | null = null;
     binaryManager: BinaryManager | null = null;
     serverManager: ServerManager | null = null;
@@ -310,10 +309,6 @@ export default class LilbeePlugin extends Plugin {
             this.activateChatView(),
         );
         this.chatRibbonIconEl.addClass("lilbee-ribbon-icon", "lilbee-ribbon-chat");
-        this.ribbonIconEl = this.addRibbonIcon("list-checks", MESSAGES.LABEL_RIBBON_OPEN_TASK_CENTER, () =>
-            this.activateTaskView(),
-        );
-        this.ribbonIconEl.addClass("lilbee-ribbon-icon");
         // Guard against Obsidian holding stale view registrations from a
         // previous plugin instance that didn't unload cleanly (e.g. an
         // onload that threw before registerView ran, or a disable that
@@ -332,7 +327,6 @@ export default class LilbeePlugin extends Plugin {
         safeRegisterView(VIEW_TYPE_MEMORIES, (leaf) => new MemoriesView(leaf, this));
         this.addSettingTab(new LilbeeSettingTab(this.app, this));
         this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
-        this.taskQueue.onChange(() => this.updateRibbonFromQueue());
         this.taskQueue.onChange(() => this.schedulePersistHistory());
         // Add/sync/crawl tasks completing is when the server's set of known
         // documents changes, so re-count pending sync then. Vault file events
@@ -383,20 +377,13 @@ export default class LilbeePlugin extends Plugin {
 
         this.startHealthProbe();
 
-        // Auto-open chat + task center for returning users so the workspace
-        // is immediately usable. Defer until the workspace layout is up so
-        // sidebar splits land in the right place. New users go through the
-        // wizard, which calls openCockpit on completion.
-        if (this.settings.setupCompleted && this.settings.autoOpenCockpit) {
-            this.app.workspace.onLayoutReady(() => {
-                void this.openCockpit();
-            });
-        }
+        // No view is force-opened here: Obsidian restores whatever leaves the
+        // user left open. New users get the chat panel once, from the wizard.
 
         // Defend against duplicate sidebar leaves persisted in workspace.json
-        // from prior sessions. activateChatView() / openCockpit() are
-        // idempotent for one leaf, but Obsidian restores whatever was saved,
-        // so a workspace that ended up with two chat panes restores both.
+        // from prior sessions. activateChatView() is idempotent for one leaf,
+        // but Obsidian restores whatever was saved, so a workspace that ended
+        // up with two chat panes restores both.
         this.app.workspace.onLayoutReady(() => {
             this.dedupeLilbeeLeaves();
         });
@@ -1239,6 +1226,12 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "arrange-views",
+            name: "Arrange views",
+            callback: () => this.arrangeViews(),
+        });
+
+        this.addCommand({
             id: "wiki",
             name: MESSAGES.COMMAND_WIKI,
             checkCallback: (checking) => {
@@ -1592,24 +1585,6 @@ export default class LilbeePlugin extends Plugin {
             this.updateStatusBar(`lilbee: ${text}${suffix}`, DOT_STATE.PRIMARY);
         }
         this.setStatusClass("lilbee-status-adding");
-    }
-
-    private updateRibbonFromQueue(): void {
-        if (!this.ribbonIconEl) return;
-        const el = this.ribbonIconEl;
-        el.removeClass("lilbee-ribbon-active", "lilbee-ribbon-success", "lilbee-ribbon-error");
-        const allActive = this.taskQueue.activeAll;
-        const queued = this.taskQueue.queued;
-        const completed = this.taskQueue.completed;
-        if (allActive.length > 0 || queued.length > 0) {
-            el.addClass("lilbee-ribbon-active");
-            return;
-        }
-        const recent = completed[0];
-        if (!recent || recent.completedAt === null) return;
-        if (Date.now() - recent.completedAt >= TASK_FLASH_WINDOW_MS) return;
-        if (recent.status === TASK_STATUS.DONE) el.addClass("lilbee-ribbon-success");
-        else if (recent.status === TASK_STATUS.FAILED) el.addClass("lilbee-ribbon-error");
     }
 
     private renderStatusFlash(recent: TaskEntry, completed: readonly TaskEntry[]): void {
@@ -2076,42 +2051,36 @@ export default class LilbeePlugin extends Plugin {
     }
 
     /**
-     * Open the chat view in the main editor area and the task center in the
-     * right sidebar so a fresh-install user lands on a usable workspace
-     * without having to discover the ribbon icon and the slash command.
-     * Idempotent — if either view is already open, just reveal it; no
-     * duplicates.
+     * Tile the plugin's views as side-by-side columns in the main area: chat and
+     * the Task Center always, plus wiki and memories when they are already open.
+     * Reuses open leaves (chat keeps its conversation) and splits any it has to
+     * create beside the previous one. Bind a hotkey in Settings → Hotkeys.
      */
-    async openCockpit(): Promise<void> {
+    async arrangeViews(): Promise<void> {
         if (this.openingChatLeaf) return;
         this.openingChatLeaf = true;
         try {
             const workspace = this.app.workspace;
-            const existingChat = workspace.getLeavesOfType(VIEW_TYPE_CHAT);
-            const existingTasks = workspace.getLeavesOfType(VIEW_TYPE_TASKS);
-
-            // Chat gets a main-area tab: the post-wizard workspace is empty, and
-            // a sidebar leaf compresses the conversation into a narrow column.
-            let chatLeaf = existingChat[0] ?? null;
-            if (!chatLeaf) {
-                // "tab" is the explicit form; the boolean getLeaf(true) is deprecated.
-                const leaf = workspace.getLeaf("tab");
-                if (!leaf) return;
-                chatLeaf = leaf;
-                await chatLeaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
-            }
-
-            let tasksLeaf = existingTasks[0] ?? null;
-            if (!tasksLeaf) {
-                const leaf = workspace.getRightLeaf(false);
-                if (leaf) {
-                    tasksLeaf = leaf;
-                    await tasksLeaf.setViewState({ type: VIEW_TYPE_TASKS, active: true });
+            const included = [VIEW_TYPE_CHAT, VIEW_TYPE_TASKS, VIEW_TYPE_WIKI, VIEW_TYPE_MEMORIES].filter(
+                (type) =>
+                    type === VIEW_TYPE_CHAT || type === VIEW_TYPE_TASKS || workspace.getLeavesOfType(type).length > 0,
+            );
+            let anchor: WorkspaceLeaf | null = null;
+            for (const type of included) {
+                let leaf = workspace.getLeavesOfType(type)[0] ?? null;
+                if (!leaf) {
+                    // Tile as side-by-side columns in the main area: a fresh tab
+                    // for the first view, then vertical splits beside it.
+                    leaf = anchor ? workspace.createLeafBySplit(anchor, "vertical") : workspace.getLeaf("tab");
+                    if (!leaf) continue;
+                    await leaf.setViewState({ type, active: true });
                 }
+                anchor = leaf;
             }
-
-            void workspace.revealLeaf(chatLeaf);
-            if (tasksLeaf) void workspace.revealLeaf(tasksLeaf);
+            for (const type of included) {
+                const leaf = workspace.getLeavesOfType(type)[0];
+                if (leaf) void workspace.revealLeaf(leaf);
+            }
         } finally {
             this.openingChatLeaf = false;
         }

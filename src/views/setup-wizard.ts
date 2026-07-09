@@ -1238,13 +1238,8 @@ export class SetupWizard extends Modal {
         this.plugin.settings.setupCompleted = true;
         await this.plugin.saveSettings();
         this.close();
-        // Open chat and task center side by side so the user lands on a
-        // workspace that's ready to use, not an empty editor. Honors the
-        // autoOpenCockpit setting in case a power user has disabled it.
-        if (this.plugin.settings.autoOpenCockpit) {
-            void this.plugin.openCockpit();
-        } else {
-            void this.plugin.activateChatView();
-        }
+        // The done step's action is an explicit "Open chat", so land the user
+        // in the chat panel once. Nothing else is force-opened.
+        void this.plugin.activateChatView();
     }
 }
