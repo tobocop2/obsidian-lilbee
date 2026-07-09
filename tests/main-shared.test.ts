@@ -501,7 +501,7 @@ describe("ensureBinaryWithUi guards", () => {
         const plugin = await createPlugin();
         (plugin as any).binaryManager = {
             binaryExists: () => false,
-            ensureBinary: vi.fn(async (cb: (m: string, u?: string) => void) => {
+            ensureBinary: vi.fn(async (_includeDev: boolean, cb: (m: string, u?: string) => void) => {
                 cb("Downloading", "https://example.com");
                 throw new Error("network gone");
             }),
@@ -526,7 +526,7 @@ describe("ensureBinaryWithUi guards", () => {
         const plugin = await createPlugin();
         const fakeBm = {
             binaryExists: () => false,
-            ensureBinary: vi.fn(async (cb: (m: string, u?: string) => void) => {
+            ensureBinary: vi.fn(async (_includeDev: boolean, cb: (m: string, u?: string) => void) => {
                 cb("Downloading", "https://example.com");
                 return "/fake/bin/lilbee";
             }),

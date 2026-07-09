@@ -3942,6 +3942,16 @@
     font-size: var(--font-small, 13px);
 }
 
+.lilbee-dev-builds-feedback {
+    margin: calc(-1 * var(--size-4-2, 8px)) 0 var(--size-4-2, 8px);
+    color: var(--text-muted);
+    font-size: var(--font-smaller, 12px);
+}
+
+.lilbee-dev-builds-feedback a {
+    color: var(--text-accent);
+}
+
 .lilbee-storage-row {
     display: grid;
     grid-template-columns: minmax(120px, 1fr) auto;

@@ -18,6 +18,8 @@ vi.mock("../src/binary-manager", () => ({
     getLatestRelease: (...args: any[]) => mockGetLatestRelease(...args),
     checkForUpdate: (...args: any[]) => mockCheckForUpdate(...args),
     listReleases: (...args: any[]) => mockListReleases(...args),
+    isDevBuild: (tag: string) => /\.dev\d*$/i.test(tag),
+    LILBEE_GITHUB_REPO_URL: "https://github.com/tobocop2/lilbee",
     BinaryManager: vi.fn(),
     node: {
         existsSync: vi.fn(() => false),
@@ -628,8 +630,8 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // [0] is show_reasoning (Chat section, rendered first); [1] is adaptiveThreshold.
-            await toggleOnChanges[1](true);
+            // [0] is includeDevBuilds (managed server section), [1] show_reasoning (Chat), [2] adaptiveThreshold.
+            await toggleOnChanges[2](true);
             expect(plugin.settings.adaptiveThreshold).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
         });
@@ -2317,6 +2319,93 @@ describe("managed mode settings", () => {
         expect(Object.keys(dropdownOptions[1])).toEqual(["v0.3.0", "v0.2.0", "v0.1.0"]);
     });
 
+    const DEV_AHEAD = [
+        {
+            tag: "v0.4.0.dev9",
+            assetUrl: "https://example.com/d",
+            variant: "default",
+            sizeBytes: 267000000,
+            digest: null,
+        },
+        ...RELEASES,
+    ];
+
+    it("hides dev builds from the picker and nudges toward them by default", async () => {
+        mockListReleases.mockResolvedValue(DEV_AHEAD);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const setDesc = vi.spyOn(Setting.prototype, "setDesc");
+
+        const { dropdownOptions } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+
+        expect(Object.keys(dropdownOptions[1])).toEqual(["v0.3.0", "v0.2.0", "v0.1.0"]);
+        const descs = setDesc.mock.calls.map(([d]) => String(d));
+        expect(descs.some((d) => d.includes(MESSAGES.DESC_DEV_BUILD_AVAILABLE("v0.4.0.dev9")))).toBe(true);
+        setDesc.mockRestore();
+    });
+
+    it("does not nudge toward a dev build the user is already running", async () => {
+        mockListReleases.mockResolvedValue(DEV_AHEAD);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.4.0.dev9" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const setDesc = vi.spyOn(Setting.prototype, "setDesc");
+
+        captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+
+        const descs = setDesc.mock.calls.map(([d]) => String(d));
+        expect(descs.some((d) => d.includes(MESSAGES.DESC_DEV_BUILD_AVAILABLE("v0.4.0.dev9")))).toBe(false);
+        setDesc.mockRestore();
+    });
+
+    it("offers dev builds in the picker when they are included", async () => {
+        mockListReleases.mockResolvedValue(DEV_AHEAD);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0", includeDevBuilds: true });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { dropdownOptions } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+
+        expect(Object.keys(dropdownOptions[1])).toEqual(["v0.4.0.dev9", "v0.3.0", "v0.2.0", "v0.1.0"]);
+    });
+
+    it("the dev-builds toggle persists the setting and re-renders", async () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+        // Spy after the first render so the toggle's own re-render is what we assert.
+        const renderSpy = vi.spyOn(tab, "render").mockImplementation(() => {});
+        // [0] is the includeDevBuilds toggle (managed server section, before Chat).
+        await toggleOnChanges[0](true);
+
+        expect(plugin.settings.includeDevBuilds).toBe(true);
+        expect(plugin.saveSettings).toHaveBeenCalled();
+        expect(renderSpy).toHaveBeenCalled();
+        renderSpy.mockRestore();
+    });
+
+    it("links to Libera Chat and GitHub issues for dev-build feedback", () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const setAttribute = vi.spyOn(MockElement.prototype, "setAttribute");
+
+        tab.display();
+
+        const hrefs = setAttribute.mock.calls.filter(([name]) => name === "href").map(([, value]) => value);
+        expect(hrefs).toContain("https://web.libera.chat/#lilbee");
+        expect(hrefs).toContain("https://github.com/tobocop2/lilbee/issues");
+        setAttribute.mockRestore();
+    });
+
     it("selecting an older release turns the button into a downgrade", async () => {
         mockListReleases.mockResolvedValue(RELEASES);
         const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
@@ -3152,10 +3241,10 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Toggle order: [0] show_reasoning (Chat), [1] adaptiveThreshold (search/retrieval),
-            // [2] worker_pool_eager_start (worker-pool),
-            // [3] crawl_retry_on_rate_limit (crawling), [4+] wiki toggles.
-            await toggleOnChanges[3](false);
+            // Toggle order: [0] includeDevBuilds (managed server), [1] show_reasoning (Chat),
+            // [2] adaptiveThreshold (search/retrieval), [3] worker_pool_eager_start (worker-pool),
+            // [4] crawl_retry_on_rate_limit (crawling), [5+] wiki toggles.
+            await toggleOnChanges[4](false);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: false });
         });
 
@@ -3166,7 +3255,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[3](false);
+            await toggleOnChanges[4](false);
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -3323,9 +3412,9 @@ describe("managed mode settings", () => {
             // load-bearing (if the flag failed to set, updateConfig WOULD be called).
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = false;
-            // toggleOnChanges[3] is crawl_retry_on_rate_limit; [0]=show_reasoning,
-            // [1]=adaptiveThreshold, [2]=worker_pool_eager_start.
-            await toggleOnChanges[3](true);
+            // toggleOnChanges[4] is crawl_retry_on_rate_limit; [0]=includeDevBuilds,
+            // [1]=show_reasoning, [2]=adaptiveThreshold, [3]=worker_pool_eager_start.
+            await toggleOnChanges[4](true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: true });
         });
 
@@ -3337,7 +3426,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = true;
-            await toggleOnChanges[3](true);
+            await toggleOnChanges[4](true);
             (tab as any).suppressToggleChanges = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
@@ -6409,7 +6498,7 @@ describe("managed mode settings", () => {
         // ([0]=adaptiveThreshold).
         const POOL_CALL_TIMEOUT_IDX = 19;
         const POOL_MAX_IDLE_IDX = 20;
-        const POOL_EAGER_TOGGLE_IDX = 2;
+        const POOL_EAGER_TOGGLE_IDX = 3;
 
         it("hides each worker-pool row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
@@ -6498,7 +6587,7 @@ describe("managed mode settings", () => {
 
     describe("show reasoning toggle", () => {
         // toggleOnChanges[0] is show_reasoning (Chat section, top); [1]=adaptiveThreshold.
-        const SHOW_REASONING_TOGGLE_IDX = 0;
+        const SHOW_REASONING_TOGGLE_IDX = 1;
 
         it("PATCHes show_reasoning when the toggle flips", async () => {
             const plugin = makePlugin();

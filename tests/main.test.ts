@@ -180,6 +180,8 @@ vi.mock("../src/binary-manager", () => ({
     }),
     getLatestRelease: vi.fn(),
     checkForUpdate: vi.fn(),
+    listReleases: vi.fn(async () => []),
+    isDevBuild: (tag: string) => /\.dev\d*$/i.test(tag),
     GITHUB_REPO: "tobocop2/lilbee",
     LILBEE_GITHUB_REPO_URL: "https://github.com/tobocop2/lilbee",
     node: {
@@ -4365,7 +4367,7 @@ describe("LilbeePlugin", () => {
         it("managed mode opens the Gatekeeper help modal when clearing quarantine fails", async () => {
             mockGatekeeperOpen.mockClear();
             // Simulate the download succeeding but xattr failing: the callback fires.
-            mockEnsureBinary.mockImplementationOnce(async (_onProgress, onQuarantineFailed) => {
+            mockEnsureBinary.mockImplementationOnce(async (_includeDev, _onProgress, onQuarantineFailed) => {
                 onQuarantineFailed?.();
                 return "/fake/bin/lilbee";
             });
@@ -4757,7 +4759,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("ensureBinary progress callback updates status bar", async () => {
-            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
                 cb?.("Downloading 50%");
                 return "/fake/bin/lilbee";
             });
@@ -4772,7 +4774,7 @@ describe("LilbeePlugin", () => {
         it("shows download Notice with URL when binary is missing", async () => {
             // Missing-binary flow checks binaryExists twice (consent gate + download UI).
             mockBinaryExists.mockReturnValue(false);
-            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
                 cb?.("Downloading...", "https://example.com/dl");
                 cb?.("Download complete.", "https://example.com/dl");
                 return "/fake/bin/lilbee";
@@ -4791,7 +4793,7 @@ describe("LilbeePlugin", () => {
 
         it("shows download Notice without URL when url is not provided", async () => {
             mockBinaryExists.mockReturnValue(false);
-            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
                 cb?.("Fetching latest release info...");
                 cb?.("Still going...");
                 return "/fake/bin/lilbee";
@@ -4819,7 +4821,7 @@ describe("LilbeePlugin", () => {
 
         it("hides download Notice on ensureBinary failure", async () => {
             mockBinaryExists.mockReturnValue(false);
-            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
                 cb?.("Downloading...", "https://example.com/dl");
                 throw new Error("network error");
             });
@@ -4835,7 +4837,7 @@ describe("LilbeePlugin", () => {
 
         it("startManagedServer onProgress fires downloading/starting/ready during first boot", async () => {
             mockBinaryExists.mockReturnValueOnce(false);
-            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
                 cb?.("Downloading archive...", "https://example.com/bin");
                 return "/fake/bin/lilbee";
             });

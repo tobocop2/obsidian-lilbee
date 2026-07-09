@@ -409,6 +409,12 @@ export interface LilbeeSettings {
     sharedRoot: string;
     /** Set once the plugin has applied its one-time `show_reasoning` on-by-default. */
     reasoningDefaulted: boolean;
+    /**
+     * Offer in-development (`.dev`) server builds in the version picker and make
+     * them the auto-install/update target. Off by default: the plugin tracks the
+     * latest stable release unless the user opts in.
+     */
+    includeDevBuilds: boolean;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -434,6 +440,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     autoOpenCockpit: true,
     sharedRoot: "",
     reasoningDefaulted: false,
+    includeDevBuilds: false,
 };
 
 /**

@@ -20,7 +20,7 @@ type MockedReleaseFn = ReturnType<typeof vi.fn>;
 const mockedGetLatestRelease = binMgr.getLatestRelease as unknown as MockedReleaseFn;
 
 function openModal(): { modal: ManagedConsentModal; promise: Promise<unknown>; root: MockElement } {
-    const modal = new ManagedConsentModal(new App());
+    const modal = new ManagedConsentModal(new App(), false);
     const promise = modal.openConsent();
     const root = modal.contentEl as unknown as MockElement;
     return { modal, promise, root };

@@ -16,7 +16,10 @@ export class ManagedConsentModal extends Modal {
     /** Populated synchronously by renderManagedCard during onOpen, before any helper reads it. */
     private provBody!: HTMLElement;
 
-    constructor(app: App) {
+    constructor(
+        app: App,
+        private includeDev: boolean,
+    ) {
         super(app);
     }
 
@@ -139,7 +142,7 @@ export class ManagedConsentModal extends Modal {
 
     private async fetchProvenance(): Promise<void> {
         try {
-            const release = await getLatestRelease();
+            const release = await getLatestRelease(this.includeDev);
             if (!this.resolved) this.renderProvResolved(release);
         } catch {
             if (!this.resolved) this.renderProvFailed();

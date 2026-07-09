@@ -16,6 +16,8 @@ const mockCheckForUpdate = vi.fn();
 
 vi.mock("../src/binary-manager", () => ({
     listReleases: vi.fn(async () => []),
+    isDevBuild: (tag: string) => /\.dev\d*$/i.test(tag),
+    LILBEE_GITHUB_REPO_URL: "https://github.com/tobocop2/lilbee",
     BinaryManager: vi.fn().mockImplementation(function () {
         return {
             ensureBinary: mockEnsureBinary,

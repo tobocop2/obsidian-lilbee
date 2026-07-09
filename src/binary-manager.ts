@@ -54,7 +54,6 @@ export const node = {
 
 export const GITHUB_REPO = "tobocop2/lilbee";
 export const LILBEE_GITHUB_REPO_URL = `https://github.com/${GITHUB_REPO}`;
-const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 const RELEASE_LIST_API = `https://api.github.com/repos/${GITHUB_REPO}/releases`;
 
 /** How many recent releases the version picker offers. */
@@ -133,19 +132,10 @@ export interface ReleaseInfo {
 }
 
 /** Choose the CUDA asset when detected and shipped; otherwise the default build. */
-function selectAsset(
-    data: GitHubRelease,
-    cudaTag: CudaTag | null,
-    warnOnFallback = true,
-): { variant: ServerVariant; asset: GitHubAsset } {
+function selectAsset(data: GitHubRelease, cudaTag: CudaTag | null): { variant: ServerVariant; asset: GitHubAsset } {
     if (cudaTag) {
         const cudaAsset = data.assets.find((a) => a.name === getPlatformAssetName(cudaTag));
         if (cudaAsset) return { variant: cudaTag, asset: cudaAsset };
-        if (warnOnFallback) {
-            console.warn(
-                `[lilbee] GPU detected (${cudaTag}) but ${data.tag_name} ships no matching build; using the default build instead.`,
-            );
-        }
     }
     const defaultName = getPlatformAssetName(null);
     const asset = data.assets.find((a) => a.name === defaultName);
@@ -153,8 +143,8 @@ function selectAsset(
     return { variant: SERVER_VARIANT.DEFAULT, asset };
 }
 
-function toReleaseInfo(data: GitHubRelease, cudaTag: CudaTag | null, warnOnFallback = true): ReleaseInfo {
-    const { variant, asset } = selectAsset(data, cudaTag, warnOnFallback);
+function toReleaseInfo(data: GitHubRelease, cudaTag: CudaTag | null): ReleaseInfo {
+    const { variant, asset } = selectAsset(data, cudaTag);
     return {
         tag: data.tag_name,
         assetUrl: asset.browser_download_url,
@@ -164,20 +154,16 @@ function toReleaseInfo(data: GitHubRelease, cudaTag: CudaTag | null, warnOnFallb
     };
 }
 
-export async function getLatestRelease(): Promise<ReleaseInfo> {
-    const res = await node.requestUrl({
-        url: RELEASES_API,
-        headers: { Accept: "application/vnd.github.v3+json" },
-    });
-    if (res.status >= 400) throw new Error(`GitHub API responded ${res.status}`);
-    return toReleaseInfo(res.json as GitHubRelease, await detectCudaTag());
+/** An in-development build, tagged with a trailing `.dev<n>` (e.g. v0.6.90b420.dev711). */
+export function isDevBuild(tag: string): boolean {
+    return /\.dev\d*$/i.test(tag);
 }
 
 /**
  * Recent published releases, newest first, that ship a build for this machine.
  * Drafts, prereleases, and releases without a matching asset are left out.
  */
-export async function listReleases(limit = RELEASE_HISTORY_LIMIT): Promise<ReleaseInfo[]> {
+async function fetchInstallableReleases(limit: number): Promise<ReleaseInfo[]> {
     const res = await node.requestUrl({
         url: `${RELEASE_LIST_API}?per_page=${limit}`,
         headers: { Accept: "application/vnd.github.v3+json" },
@@ -188,12 +174,25 @@ export async function listReleases(limit = RELEASE_HISTORY_LIMIT): Promise<Relea
     for (const data of res.json as GitHubRelease[]) {
         if (data.draft || data.prerelease) continue;
         try {
-            releases.push(toReleaseInfo(data, cudaTag, false));
+            releases.push(toReleaseInfo(data, cudaTag));
         } catch {
             // Release ships no build for this platform; it isn't installable here.
         }
     }
     return releases;
+}
+
+/** Installable releases for the version picker, newest first; dev builds left out unless includeDev. */
+export async function listReleases(includeDev: boolean, limit = RELEASE_HISTORY_LIMIT): Promise<ReleaseInfo[]> {
+    const all = await fetchInstallableReleases(limit);
+    return includeDev ? all : all.filter((r) => !isDevBuild(r.tag));
+}
+
+/** Newest installable release, honouring the dev-build preference. */
+export async function getLatestRelease(includeDev: boolean): Promise<ReleaseInfo> {
+    const releases = await listReleases(includeDev);
+    if (releases.length === 0) throw new Error("No installable lilbee release was found.");
+    return releases[0];
 }
 
 export function checkForUpdate(currentVersion: string, latestTag: string): boolean {
@@ -222,12 +221,13 @@ export class BinaryManager {
     }
 
     async ensureBinary(
+        includeDev: boolean,
         onProgress?: (msg: string, url?: string) => void,
         onQuarantineFailed?: () => void,
     ): Promise<string> {
         if (this.binaryExists()) return this.binaryPath;
         onProgress?.("Fetching latest release info...");
-        const release = await getLatestRelease();
+        const release = await getLatestRelease(includeDev);
         await this.download(release.assetUrl, release.sizeBytes, release.digest, onProgress, onQuarantineFailed);
         return this.binaryPath;
     }

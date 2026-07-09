@@ -1,7 +1,10 @@
 import { App, ButtonComponent, DropdownComponent, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
-import { listReleases } from "./binary-manager";
+import { listReleases, isDevBuild, LILBEE_GITHUB_REPO_URL } from "./binary-manager";
 import type { ReleaseInfo } from "./binary-manager";
+
+/** Community IRC channel for dev-build feedback. */
+const LIBERA_LILBEE_URL = "https://web.libera.chat/#lilbee";
 import {
     CAPABILITY,
     CHAT_MODE,
@@ -278,6 +281,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderAdoptDataDir(containerEl);
         this.renderStorageReport(containerEl);
         this.renderVersionSetting(containerEl);
+        this.renderDevBuildsToggle(containerEl);
     }
 
     /**
@@ -295,6 +299,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         let releases: ReleaseInfo[] = [];
         let selectedTag = installed;
+        // A dev build newer than the newest stable, shown as a nudge when dev builds are off.
+        let newerDevTag: string | null = null;
         // addDropdown / addButton run their callback synchronously, so both are set below.
         let dropdown!: DropdownComponent;
         let actionBtn!: ButtonComponent;
@@ -302,7 +308,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const refresh = (): void => {
             const tags = releases.map((r) => r.tag);
             const action = versionActionFor(tags, installed, selectedTag);
-            setting.setDesc(versionDescription(action, installed, selectedTag, tags[0] === installed));
+            let desc = versionDescription(action, installed, selectedTag, tags[0] === installed);
+            if (newerDevTag) desc += ` ${MESSAGES.DESC_DEV_BUILD_AVAILABLE(newerDevTag)}`;
+            setting.setDesc(desc);
             actionBtn.setButtonText(versionButtonLabel(action, selectedTag));
             actionBtn.buttonEl.toggleClass("mod-cta", action === VERSION_ACTION.UPDATE);
             actionBtn.buttonEl.toggleClass("mod-warning", action === VERSION_ACTION.DOWNGRADE);
@@ -342,7 +350,14 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 );
                 return;
             }
-            releases = loaded;
+            const includeDev = this.plugin.settings.includeDevBuilds;
+            // loaded holds every installable release (dev builds included); when dev builds are
+            // off, hide them and nudge toward the newest one if it leads the stable line and the
+            // user isn't already running it.
+            const newest = loaded[0];
+            newerDevTag =
+                !includeDev && newest && isDevBuild(newest.tag) && newest.tag !== installed ? newest.tag : null;
+            releases = includeDev ? loaded : loaded.filter((r) => !isDevBuild(r.tag));
             if (releases.length === 0) return;
             if (!releases.some((r) => r.tag === selectedTag)) selectedTag = releases[0].tag;
             for (const release of releases) dropdown.addOption(release.tag, release.tag);
@@ -353,13 +368,38 @@ export class LilbeeSettingTab extends PluginSettingTab {
         });
     }
 
-    /** Null when GitHub could not be reached. */
+    /** Every installable release (dev builds included); null when GitHub could not be reached. */
     private async loadReleases(): Promise<ReleaseInfo[] | null> {
         try {
-            return await listReleases();
+            return await listReleases(true);
         } catch {
             return null;
         }
+    }
+
+    /** Opt in to in-development builds, with a pointer to where feedback goes. */
+    private renderDevBuildsToggle(containerEl: HTMLElement): void {
+        new Setting(containerEl)
+            .setName(MESSAGES.LABEL_INCLUDE_DEV_BUILDS)
+            .setDesc(MESSAGES.DESC_INCLUDE_DEV_BUILDS)
+            .addToggle((toggle) =>
+                toggle.setValue(this.plugin.settings.includeDevBuilds).onChange(async (value) => {
+                    this.plugin.settings.includeDevBuilds = value;
+                    await this.plugin.saveSettings();
+                    this.render();
+                }),
+            );
+
+        const feedback = containerEl.createDiv({ cls: "lilbee-dev-builds-feedback" });
+        feedback.createSpan({ text: MESSAGES.DEV_BUILDS_FEEDBACK_PREFIX });
+        const irc = feedback.createEl("a", { text: MESSAGES.DEV_BUILDS_FEEDBACK_IRC });
+        irc.setAttribute("href", LIBERA_LILBEE_URL);
+        irc.setAttribute("target", "_blank");
+        feedback.createSpan({ text: " or " });
+        const gh = feedback.createEl("a", { text: MESSAGES.DEV_BUILDS_FEEDBACK_GITHUB });
+        gh.setAttribute("href", `${LILBEE_GITHUB_REPO_URL}/issues`);
+        gh.setAttribute("target", "_blank");
+        feedback.createSpan({ text: "." });
     }
 
     /**
