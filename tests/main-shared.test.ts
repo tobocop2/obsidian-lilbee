@@ -508,7 +508,7 @@ describe("ensureBinaryWithUi guards", () => {
         Notice.clear?.();
         (plugin as any).binaryManager = {
             binaryExists: () => false,
-            ensureBinary: vi.fn(async (cb: (m: string, u?: string) => void) => {
+            ensureBinary: vi.fn(async (_includeDev: boolean, cb: (m: string, u?: string) => void) => {
                 cb("Downloading", "https://example.com");
                 throw new Error("network gone");
             }),
@@ -540,7 +540,7 @@ describe("ensureBinaryWithUi guards", () => {
         let seenSignal: AbortSignal | undefined;
         (plugin as any).binaryManager = {
             binaryExists: () => false,
-            ensureBinary: vi.fn(async (_cb: unknown, _q: unknown, signal: AbortSignal) => {
+            ensureBinary: vi.fn(async (_includeDev: boolean, _cb: unknown, _q: unknown, signal: AbortSignal) => {
                 seenSignal = signal;
                 expect(plugin.isDownloadingServer()).toBe(true);
                 plugin.cancelServerDownload();
@@ -571,7 +571,7 @@ describe("ensureBinaryWithUi guards", () => {
         Notice.clear?.();
         (plugin as any).binaryManager = {
             binaryExists: () => false,
-            ensureBinary: vi.fn(async (cb: (m: string, u?: string) => void) => {
+            ensureBinary: vi.fn(async (_includeDev: boolean, cb: (m: string, u?: string) => void) => {
                 cb("Downloading", "https://example.com");
                 return "/fake/bin/lilbee";
             }),

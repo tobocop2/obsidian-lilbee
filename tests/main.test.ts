@@ -180,6 +180,8 @@ vi.mock("../src/binary-manager", () => ({
     }),
     getLatestRelease: vi.fn(),
     checkForUpdate: vi.fn(),
+    listReleases: vi.fn(async () => []),
+    isDevBuild: (tag: string) => /\.dev\d*$/i.test(tag),
     DownloadCanceledError: class DownloadCanceledError extends Error {
         constructor() {
             super("The lilbee server download was cancelled.");
@@ -4299,7 +4301,7 @@ describe("LilbeePlugin", () => {
         it("managed mode opens the Gatekeeper help modal when clearing quarantine fails", async () => {
             mockGatekeeperOpen.mockClear();
             // Simulate the download succeeding but xattr failing: the callback fires.
-            mockEnsureBinary.mockImplementationOnce(async (_onProgress, onQuarantineFailed) => {
+            mockEnsureBinary.mockImplementationOnce(async (_includeDev, _onProgress, onQuarantineFailed) => {
                 onQuarantineFailed?.();
                 return "/fake/bin/lilbee";
             });
@@ -4691,7 +4693,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("ensureBinary progress callback updates status bar", async () => {
-            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
                 cb?.("Downloading 50%");
                 return "/fake/bin/lilbee";
             });
@@ -4712,7 +4714,7 @@ describe("LilbeePlugin", () => {
 
             // Re-run the download UI with a progress-carrying callback; onload's own
             // call already consumed the default mock.
-            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
                 cb?.("Downloading...", "https://example.com/dl", {
                     receivedBytes: 128_000_000,
                     totalBytes: 256_000_000,
@@ -4732,7 +4734,7 @@ describe("LilbeePlugin", () => {
 
         it("raises no progress toast while the binary downloads", async () => {
             mockBinaryExists.mockReturnValue(false);
-            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
                 cb?.("Downloading...", "https://example.com/dl", { receivedBytes: 1, totalBytes: 4 });
                 cb?.("Downloading...", "https://example.com/dl", { receivedBytes: 4, totalBytes: 4 });
                 return "/fake/bin/lilbee";
@@ -4759,7 +4761,7 @@ describe("LilbeePlugin", () => {
 
         it("raises no progress toast when the download fails", async () => {
             mockBinaryExists.mockReturnValue(false);
-            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
                 cb?.("Downloading...", "https://example.com/dl", { receivedBytes: 1, totalBytes: 4 });
                 throw new Error("network down");
             });
@@ -4774,7 +4776,7 @@ describe("LilbeePlugin", () => {
 
         it("startManagedServer onProgress fires downloading/starting/ready during first boot", async () => {
             mockBinaryExists.mockReturnValueOnce(false);
-            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
                 cb?.("Downloading archive...", "https://example.com/bin");
                 return "/fake/bin/lilbee";
             });
@@ -6411,7 +6413,7 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             await flush();
 
-            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+            mockEnsureBinary.mockImplementationOnce(async (_includeDev: any, cb: any) => {
                 cb?.("Downloading...", undefined, { receivedBytes: 5, totalBytes: null });
                 return "/fake/bin/lilbee";
             });

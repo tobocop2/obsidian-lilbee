@@ -459,7 +459,7 @@ export default class LilbeePlugin extends Plugin {
         // The gate owns the server lifecycle for each outcome, so it persists
         // directly via persistAll() rather than saveSettings() — the latter
         // would fire its own startManagedServer on a mode switch and race ours.
-        const result = await new ManagedConsentModal(this.app).openConsent();
+        const result = await new ManagedConsentModal(this.app, this.settings.includeDevBuilds).openConsent();
         if (result.kind === MANAGED_CONSENT_RESULT.DOWNLOAD) {
             this.settings.serverMode = SERVER_MODE.MANAGED;
             this.previousServerMode = SERVER_MODE.MANAGED;
@@ -594,6 +594,7 @@ export default class LilbeePlugin extends Plugin {
         }
         try {
             const path = await bm.ensureBinary(
+                this.settings.includeDevBuilds,
                 (rawMsg, url, progress) => {
                     const percent = progress ? percentOfBytes(progress.receivedBytes, progress.totalBytes) : undefined;
                     const msg = progress ? downloadMessage(progress) : rawMsg;
@@ -629,7 +630,7 @@ export default class LilbeePlugin extends Plugin {
     private async recordLilbeeVersionAfterDownload(): Promise<void> {
         if (this.getSharedLilbeeVersion()) return;
         try {
-            const release = await getLatestRelease();
+            const release = await getLatestRelease(this.settings.includeDevBuilds);
             this.setSharedLilbeeVersion(release.tag);
             this.setSharedLilbeeVariant(release.variant);
         } catch {
@@ -772,7 +773,7 @@ export default class LilbeePlugin extends Plugin {
     }
 
     async checkForUpdate(): Promise<{ available: boolean; release?: ReleaseInfo }> {
-        const release = await getLatestRelease();
+        const release = await getLatestRelease(this.settings.includeDevBuilds);
         const versionChanged = checkForUpdate(this.getSharedLilbeeVersion(), release.tag);
         // A known installed variant that differs from the detected one means the
         // hardware-appropriate build changed (e.g. an NVIDIA driver was added).

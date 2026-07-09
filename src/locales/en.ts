@@ -101,6 +101,7 @@ export const MESSAGES = {
     LABEL_SERVER_STATUS: "Server status",
     LABEL_SERVER_CONTROLS: "Server controls",
     LABEL_SERVER_VERSION: "Server version",
+    LABEL_INCLUDE_DEV_BUILDS: "Include dev builds",
     LABEL_UNINSTALL: "Uninstall",
     LABEL_UNINSTALL_SERVER: "Uninstall server",
     LABEL_INSTALL_SERVER: "Install server",
@@ -385,6 +386,15 @@ export const MESSAGES = {
         `${installed} installed. Downgrading replaces it with an older build.`,
     DESC_SERVER_VERSION_LOADING: "Reading the release list from GitHub...",
     DESC_SERVER_VERSION_OFFLINE: (tag: string) => `${tag} installed. The release list could not be read from GitHub.`,
+    DESC_DEV_BUILD_AVAILABLE: (tag: string) =>
+        `A newer dev build (${tag}) is out. Turn on "Include dev builds" to try it.`,
+    DESC_INCLUDE_DEV_BUILDS:
+        "Offer in-development builds in the version list and track them for updates. They ship the newest features " +
+        "but get less testing than a stable release.",
+    DEV_BUILDS_FEEDBACK_PREFIX:
+        "Found a bug in a dev build? Reporting it helps improve lilbee, and reporters get credited in the release notes. Tell us on ",
+    DEV_BUILDS_FEEDBACK_IRC: "#lilbee on Libera Chat",
+    DEV_BUILDS_FEEDBACK_GITHUB: "GitHub issues",
 
     TOOLTIP_SERVER_VERSION_SUPPORT:
         "This plugin is built and tested against the latest server release. Older releases still install and run, " +
