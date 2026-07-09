@@ -657,6 +657,91 @@ describe("BinaryManager", () => {
             await expect(mgr.download("https://example.com/dl", 4, null)).rejects.toThrow("connection reset");
         });
 
+        it("gives up when the asset host never answers", async () => {
+            restore = stubPlatform("linux", "x64");
+            vi.spyOn(node, "existsSync").mockReturnValue(true);
+            stubEnoughSpace();
+            // Mirrors Node: setTimeout arms a callback, destroy(err) surfaces on "error".
+            vi.spyOn(node, "httpsGet").mockImplementation(((_url: string, _cb: unknown) => {
+                let onError: ((e: Error) => void) | undefined;
+                const req = {
+                    on: (event: string, handler: (e: Error) => void) => {
+                        if (event === "error") onError = handler;
+                    },
+                    destroy: (err: Error) => onError?.(err),
+                    setTimeout: (_ms: number, cb: () => void) => queueMicrotask(cb),
+                };
+                return req as any;
+            }) as any);
+
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
+            await expect(mgr.download("https://example.com/dl", 1, null)).rejects.toThrow("download stalled");
+        });
+
+        it("gives up when the asset host goes quiet mid-stream", async () => {
+            vi.useFakeTimers();
+            restore = stubPlatform("linux", "x64");
+            vi.spyOn(node, "existsSync").mockReturnValue(true);
+            stubEnoughSpace();
+            vi.spyOn(node, "httpsGet").mockImplementation(((_url: string, cb: (res: any) => void) => {
+                const res: any = new Readable({ read() {} });
+                res.statusCode = 200;
+                res.headers = { "content-length": "999" };
+                queueMicrotask(() => {
+                    cb(res);
+                    res.push(Buffer.from([1])); // one chunk, then silence forever
+                });
+                return { on: () => {}, setTimeout: () => {}, destroy: () => {} } as any;
+            }) as any);
+            stubSinkStream();
+            const unlink = vi.spyOn(node, "unlinkSync").mockImplementation(() => {});
+
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
+            const pending = mgr.download("https://example.com/dl", 999, null);
+            const assertion = expect(pending).rejects.toThrow("download stalled");
+            await vi.advanceTimersByTimeAsync(60_000);
+            await assertion;
+
+            expect(unlink).toHaveBeenCalledWith(`${mgr.binaryPath}.part`);
+            expect(unlink).not.toHaveBeenCalledWith(mgr.binaryPath);
+            vi.useRealTimers();
+        });
+
+        it("keeps waiting while bytes are still arriving", async () => {
+            vi.useFakeTimers();
+            restore = stubPlatform("linux", "x64");
+            vi.spyOn(node, "existsSync").mockReturnValue(true);
+            stubEnoughSpace();
+            const data = new Uint8Array([1, 2]);
+            let push!: (b: Buffer | null) => void;
+            vi.spyOn(node, "httpsGet").mockImplementation(((_url: string, cb: (res: any) => void) => {
+                const res: any = new Readable({ read() {} });
+                res.statusCode = 200;
+                res.headers = { "content-length": "2" };
+                push = (b) => res.push(b);
+                queueMicrotask(() => cb(res));
+                return { on: () => {}, setTimeout: () => {}, destroy: () => {} } as any;
+            }) as any);
+            stubSinkStream();
+            vi.spyOn(node, "renameSync").mockImplementation(() => {});
+            vi.spyOn(node, "chmodSync").mockImplementation(() => {});
+
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
+            const pending = mgr.download("https://example.com/dl", 2, sha256Digest(data));
+            await vi.advanceTimersByTimeAsync(0);
+
+            // Each chunk lands just under the idle limit, so the clock keeps resetting.
+            push(Buffer.from([1]));
+            await vi.advanceTimersByTimeAsync(50_000);
+            push(Buffer.from([2]));
+            await vi.advanceTimersByTimeAsync(50_000);
+            push(null);
+            await vi.advanceTimersByTimeAsync(0);
+
+            await expect(pending).resolves.toBeUndefined();
+            vi.useRealTimers();
+        });
+
         it("surfaces a disk write error", async () => {
             restore = stubPlatform("linux", "x64");
             vi.spyOn(node, "existsSync").mockReturnValue(true);

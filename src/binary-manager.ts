@@ -214,6 +214,11 @@ const DISK_SPACE_FACTOR = 1.1;
 /** Redirects to follow before giving up (GitHub sends assets to objects.githubusercontent.com). */
 const MAX_REDIRECTS = 5;
 
+/** Give up when the asset host sends no bytes for this long, rather than hanging on a dead socket. */
+const DOWNLOAD_IDLE_TIMEOUT_MS = 60_000;
+
+const DOWNLOAD_STALLED = "The lilbee server download stalled. Check your connection and try again.";
+
 /** Suffix of the partial download; renamed onto the real path only after the digest checks out. */
 const PART_SUFFIX = ".part";
 
@@ -229,6 +234,7 @@ export interface DownloadProgress {
 function openStream(url: string, redirectsLeft = MAX_REDIRECTS): Promise<IncomingMessage> {
     return new Promise((resolve, reject) => {
         const req: ClientRequest = node.httpsGet(url, (res: IncomingMessage) => {
+            req.setTimeout?.(0);
             const status = res.statusCode ?? 0;
             const location = res.headers.location;
             if (REDIRECT_STATUSES.has(status) && location) {
@@ -250,6 +256,10 @@ function openStream(url: string, redirectsLeft = MAX_REDIRECTS): Promise<Incomin
             resolve(res);
         });
         req.on("error", reject);
+        // Covers a connect/headers stall. Once the body starts, streamToFile owns the clock.
+        req.setTimeout?.(DOWNLOAD_IDLE_TIMEOUT_MS, () => {
+            req.destroy(new Error(DOWNLOAD_STALLED));
+        });
     });
 }
 
@@ -332,12 +342,21 @@ export class BinaryManager {
         let receivedBytes = 0;
 
         return new Promise<string>((resolve, reject) => {
+            let idleTimer: ReturnType<typeof setTimeout>;
+            const stopClock = (): void => clearTimeout(idleTimer);
+            const restartClock = (): void => {
+                stopClock();
+                idleTimer = setTimeout(() => fail(new Error(DOWNLOAD_STALLED)), DOWNLOAD_IDLE_TIMEOUT_MS);
+            };
             const fail = (err: Error): void => {
+                stopClock();
                 res.destroy();
                 file.destroy();
                 reject(err);
             };
+
             res.on("data", (chunk: Buffer) => {
+                restartClock();
                 hash.update(chunk);
                 receivedBytes += chunk.length;
                 onBytes({ receivedBytes, totalBytes });
@@ -345,7 +364,11 @@ export class BinaryManager {
             res.on("error", fail);
             file.on("error", fail);
             res.pipe(file);
-            file.on("finish", () => resolve(hash.digest("hex")));
+            file.on("finish", () => {
+                stopClock();
+                resolve(hash.digest("hex"));
+            });
+            restartClock();
         });
     }
 
