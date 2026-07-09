@@ -4769,6 +4769,32 @@ describe("LilbeePlugin", () => {
             expect(mockEnsureBinary).toHaveBeenCalled();
         });
 
+        it("shows the download percentage in the status bar and the notice", async () => {
+            mockBinaryExists.mockReturnValue(false);
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+            Notice.clear();
+
+            // Re-run the download UI with a progress-carrying callback; onload's own
+            // call already consumed the default mock.
+            mockEnsureBinary.mockImplementationOnce(async (cb: any) => {
+                cb?.("Downloading...", "https://example.com/dl", {
+                    receivedBytes: 128_000_000,
+                    totalBytes: 256_000_000,
+                });
+                return "/fake/bin/lilbee";
+            });
+            const phases: Array<{ message: string; percent?: number }> = [];
+            await (plugin as any).ensureBinaryWithUi((e: any) => phases.push(e));
+
+            expect(phases).toContainEqual(
+                expect.objectContaining({ message: "Downloading... 50% (128 MB of 256 MB)", percent: 50 }),
+            );
+            const notice = Notice.instances.find((n) => n.message.includes("50%"));
+            expect(notice).toBeDefined();
+        });
+
         it("shows download Notice with URL when binary is missing", async () => {
             // Missing-binary flow checks binaryExists twice (consent gate + download UI).
             mockBinaryExists.mockReturnValue(false);
@@ -6423,6 +6449,46 @@ describe("LilbeePlugin", () => {
             expect(progress).toContain("Downloading...");
             expect(progress).toContain("Starting server...");
             expect(progress).toContain("Update complete.");
+        });
+
+        it("turns download bytes into a percentage and a human line", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            mockDownload.mockImplementationOnce(
+                async (_url: string, _size: number, _digest: string, onProgress: any) => {
+                    onProgress("Downloading...");
+                    onProgress("Downloading...", "https://e/dl", {
+                        receivedBytes: 128_000_000,
+                        totalBytes: 256_000_000,
+                    });
+                },
+            );
+
+            const seen: Array<[string, number | undefined]> = [];
+            await plugin.updateServer(
+                { tag: "v1", assetUrl: "https://e/dl", variant: "default", sizeBytes: 1, digest: null } as any,
+                (msg, percent) => seen.push([msg, percent]),
+            );
+
+            expect(seen).toContainEqual(["Downloading... 50% (128 MB of 256 MB)", 50]);
+        });
+
+        it("reports bytes only when the asset host sends no length", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            mockDownload.mockImplementationOnce(
+                async (_url: string, _size: number, _digest: string, onProgress: any) => {
+                    onProgress("Downloading...", "https://e/dl", { receivedBytes: 5_000_000, totalBytes: null });
+                },
+            );
+
+            const seen: Array<[string, number | undefined]> = [];
+            await plugin.updateServer(
+                { tag: "v1", assetUrl: "https://e/dl", variant: "default", sizeBytes: 1, digest: null } as any,
+                (msg, percent) => seen.push([msg, percent]),
+            );
+
+            expect(seen).toContainEqual(["Downloading... 5.00 MB", undefined]);
         });
 
         it("opens the Gatekeeper help modal when an update can't clear quarantine", async () => {

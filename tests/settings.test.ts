@@ -2388,6 +2388,29 @@ describe("managed mode settings", () => {
         displaySpy.mockRestore();
     });
 
+    it("grows the progress bar as the download reports a percentage", async () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
+        (plugin as any).updateServer = vi
+            .fn()
+            .mockImplementation(async (_r: any, onProgress?: (msg: string, percent?: number) => void) => {
+                onProgress?.("Downloading... 50% (128 MB of 256 MB)", 50);
+            });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { dropdownOnChanges, buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+        dropdownOnChanges[1]("v0.3.0");
+        vi.spyOn(tab, "render").mockImplementation(() => {});
+        await buttonOnClicks[2]();
+
+        const fill = tab.containerEl.find("lilbee-progress-bar")!;
+        expect(fill.style.width).toBe("50%");
+        expect(fill.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(false);
+        expect(tab.containerEl.find("lilbee-update-progress-phase")!.textContent).toContain("50%");
+    });
+
     it("a failed install surfaces the reason and restores the button label", async () => {
         Notice.clear();
         mockListReleases.mockResolvedValue(RELEASES);

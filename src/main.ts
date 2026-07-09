@@ -13,7 +13,7 @@ import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { exportDiagnostics } from "./diagnostics-export";
 import { ErrorJournal } from "./error-journal";
-import type { ReleaseInfo } from "./binary-manager";
+import type { DownloadProgress, ReleaseInfo } from "./binary-manager";
 import { ServerManager, killServerTree } from "./server-manager";
 import { executeUninstall, planUninstall } from "./server-uninstall";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
@@ -64,11 +64,13 @@ import {
     NOTICE_DURATION_MS,
     NOTICE_ERROR_DURATION_MS,
     NOTICE_PERMANENT,
+    percentOfBytes,
     sessionTokenInvalidMessage,
     STREAM_IDLE_TIMEOUT_MS,
     StreamIdleError,
     withIdleTimeout,
 } from "./utils";
+import { formatBytes } from "./storage-stats";
 import { CatalogModal } from "./views/catalog-modal";
 import { ManagedConsentModal } from "./views/managed-consent-modal";
 import { ModelInfoModal } from "./views/model-info-modal";
@@ -207,6 +209,17 @@ function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
         failed: Array.isArray(obj.failed) ? (obj.failed as string[]) : [],
         skipped: Array.isArray(obj.skipped) ? (obj.skipped as string[]) : [],
     };
+}
+
+/** Progress for a settings-driven install/update: a phase line plus a percent when known. */
+export type ServerDownloadProgressHandler = (msg: string, percent?: number) => void;
+
+/** "Downloading... 45% (128 MB of 283 MB)", or bytes-only when the server sends no length. */
+function downloadMessage(progress: DownloadProgress): string {
+    const received = formatBytes(progress.receivedBytes);
+    const percent = percentOfBytes(progress.receivedBytes, progress.totalBytes);
+    if (percent === undefined || progress.totalBytes === null) return MESSAGES.STATUS_DOWNLOAD_RECEIVED(received);
+    return MESSAGES.STATUS_DOWNLOAD_PROGRESS(percent, received, formatBytes(progress.totalBytes));
 }
 
 export default class LilbeePlugin extends Plugin {
@@ -565,9 +578,11 @@ export default class LilbeePlugin extends Plugin {
         let downloadNotice: Notice | undefined;
         try {
             const path = await bm.ensureBinary(
-                (msg, url) => {
+                (rawMsg, url, progress) => {
+                    const percent = progress ? percentOfBytes(progress.receivedBytes, progress.totalBytes) : undefined;
+                    const msg = progress ? downloadMessage(progress) : rawMsg;
                     this.updateStatusBar(`lilbee: ${msg}`, DOT_STATE.PRIMARY);
-                    onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: msg, url });
+                    onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: msg, url, percent });
                     if (!downloadNotice && needsDownload) {
                         const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
                         downloadNotice = new Notice(text, NOTICE_PERMANENT);
@@ -730,7 +745,7 @@ export default class LilbeePlugin extends Plugin {
     }
 
     /** Download *release* and start it, clearing an earlier uninstall. */
-    async installServer(release: ReleaseInfo, onProgress?: (msg: string) => void): Promise<void> {
+    async installServer(release: ReleaseInfo, onProgress?: ServerDownloadProgressHandler): Promise<void> {
         this.setServerUninstalled(false);
         await this.updateServer(release, onProgress);
     }
@@ -781,7 +796,7 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    async updateServer(release: ReleaseInfo, onProgress?: (msg: string) => void): Promise<void> {
+    async updateServer(release: ReleaseInfo, onProgress?: ServerDownloadProgressHandler): Promise<void> {
         const registry = this.vaultRegistry;
         if (!registry) return;
         if (!this.binaryManager) {
@@ -795,10 +810,20 @@ export default class LilbeePlugin extends Plugin {
             this.serverManager = null;
         }
 
-        // Download the new binary (overwrites the old one)
+        // Download the new binary (replaces the old one once its checksum clears)
         onProgress?.("Downloading...");
-        await this.binaryManager.download(release.assetUrl, release.sizeBytes, release.digest, onProgress, () =>
-            this.showGatekeeperHelp(),
+        await this.binaryManager.download(
+            release.assetUrl,
+            release.sizeBytes,
+            release.digest,
+            (msg, _url, progress) => {
+                if (!progress) {
+                    onProgress?.(msg);
+                    return;
+                }
+                onProgress?.(downloadMessage(progress), percentOfBytes(progress.receivedBytes, progress.totalBytes));
+            },
+            () => this.showGatekeeperHelp(),
         );
 
         // Save the new version and the build variant we just installed
