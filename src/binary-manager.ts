@@ -58,7 +58,7 @@ const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/lates
 const RELEASE_LIST_API = `https://api.github.com/repos/${GITHUB_REPO}/releases`;
 
 /** How many recent releases the version picker offers. */
-export const RELEASE_HISTORY_LIMIT = 10;
+const RELEASE_HISTORY_LIMIT = 10;
 
 /** Run `nvidia-smi` and return its stdout, or null if it is absent or fails. */
 async function runNvidiaSmi(): Promise<string | null> {

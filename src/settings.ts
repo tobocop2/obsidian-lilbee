@@ -134,7 +134,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderWikiSettings(this.wikiContainerEl);
         this.renderDiagnostics(containerEl);
         this.renderAdvancedSettings(containerEl);
-        if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED && this.plugin.isServerInstalled()) {
+        if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED && this.hasManagedServer()) {
             this.renderUninstallSection(containerEl, this.storageTotalBytes);
         }
         this.loadServerDefaults();
@@ -213,8 +213,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
+    /**
+     * A binary on disk that the plugin is still allowed to run. An uninstalled
+     * server never starts, even if a binary was put back by hand, until an
+     * explicit install clears the flag.
+     */
+    private hasManagedServer(): boolean {
+        return this.plugin.isServerInstalled() && !this.plugin.isServerUninstalled();
+    }
+
     private renderManagedSettings(containerEl: HTMLElement): void {
-        if (!this.plugin.isServerInstalled()) {
+        if (!this.hasManagedServer()) {
             this.renderInstallServer(containerEl);
             this.renderSharedRootSetting(containerEl);
             return;
@@ -363,7 +372,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         heading.settingEl.setAttribute("title", MESSAGES.TOOLTIP_UNINSTALL_SECTION);
 
         const callout = containerEl.createDiv({ cls: "lilbee-uninstall-callout" });
-        callout.createSpan({ cls: "lilbee-uninstall-callout-mark", text: "!" });
+        const mark = callout.createSpan({ cls: "lilbee-uninstall-callout-mark", text: "!" });
+        mark.setAttribute("aria-hidden", "true");
         callout.createEl("p", { text: MESSAGES.CALLOUT_UNINSTALL_FIRST });
 
         new Setting(containerEl)

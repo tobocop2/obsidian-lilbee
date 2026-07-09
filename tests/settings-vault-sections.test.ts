@@ -99,6 +99,7 @@ function makePlugin(settings: Partial<LilbeeSettings> = {}, registry: any = null
         getSharedLilbeeVersion: () => "",
         setSharedLilbeeVersion: vi.fn(),
         isServerInstalled: () => true,
+        isServerUninstalled: () => false,
         planServerUninstall: () => ({ targets: [], totalBytes: 0 }),
         uninstallServer: vi.fn().mockResolvedValue(0),
         installServer: vi.fn().mockResolvedValue(undefined),

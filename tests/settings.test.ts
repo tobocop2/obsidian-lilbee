@@ -160,6 +160,7 @@ function makePlugin(overrides: Partial<LilbeeSettings> & { lilbeeVersion?: strin
             sharedVersion = v;
         },
         isServerInstalled: () => true,
+        isServerUninstalled: () => false,
         planServerUninstall: () => ({ targets: [], totalBytes: 0 }),
         uninstallServer: vi.fn().mockResolvedValue(0),
         installServer: vi.fn().mockResolvedValue(undefined),
@@ -7047,6 +7048,20 @@ describe("managed mode with no server installed", () => {
         mockChatPicker(plugin);
         return plugin;
     }
+
+    it("offers to install even when a binary was put back by hand", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).isServerInstalled = () => true;
+        (plugin as any).isServerUninstalled = () => true;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await settle();
+
+        expect(captured.buttons.some((b) => b.name === MESSAGES.LABEL_INSTALL_SERVER)).toBe(true);
+        expect(captured.buttons.some((b) => b.name === MESSAGES.LABEL_UNINSTALL_SERVER)).toBe(false);
+    });
 
     beforeEach(() => {
         Notice.clear();

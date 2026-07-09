@@ -29,7 +29,6 @@ export class UninstallModal extends Modal {
     onOpen(): void {
         const { contentEl } = this;
         contentEl.empty();
-        contentEl.addClass("lilbee-uninstall-modal");
 
         contentEl.createEl("h3", { text: MESSAGES.CONFIRM_UNINSTALL_TITLE });
         contentEl.createEl("p", { text: MESSAGES.CONFIRM_UNINSTALL_BODY });
