@@ -15,6 +15,7 @@ import { exportDiagnostics } from "./diagnostics-export";
 import { ErrorJournal } from "./error-journal";
 import type { ReleaseInfo } from "./binary-manager";
 import { ServerManager } from "./server-manager";
+import { executeUninstall, planUninstall } from "./server-uninstall";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
 import { LilbeeSettingTab } from "./settings";
 import { VaultRegistry, computeVaultId, resolveSharedRoot, sharedBinDir, sharedModelsDir } from "./vault-registry";
@@ -50,6 +51,7 @@ import {
     type SyncDone,
     type SyncOptions,
     type TaskEntry,
+    type UninstallPlan,
     type VaultAdapter,
 } from "./types";
 import { MESSAGES } from "./locales/en";
@@ -334,7 +336,10 @@ export default class LilbeePlugin extends Plugin {
         // wizard arrives at the Model step against a server that isn't
         // actually ready yet (empty catalog, failed reads).
         if (this.settings.setupCompleted) {
-            if (this.settings.serverMode === SERVER_MODE.MANAGED) {
+            if (this.settings.serverMode === SERVER_MODE.MANAGED && this.serverUninstalled) {
+                // The user removed the server on purpose. Wait to be asked.
+                this.showNotInstalledStatus();
+            } else if (this.settings.serverMode === SERVER_MODE.MANAGED) {
                 void this.ensureManagedConsentThenStart().then((outcome) => {
                     // If the user opts into external mode from the consent modal,
                     // drop them on the plugin's external-server settings.
@@ -389,6 +394,10 @@ export default class LilbeePlugin extends Plugin {
         if (this.startingServer) return;
         const registry = this.vaultRegistry;
         if (!registry) return;
+        if (this.serverUninstalled) {
+            this.showNotInstalledStatus();
+            return;
+        }
         this.startingServer = true;
         this.serverStartFailed = false;
 
@@ -434,7 +443,7 @@ export default class LilbeePlugin extends Plugin {
         if (!registry) return { kind: SETUP_OUTCOME.CANCELED };
 
         const binaryPresent = new BinaryManager(sharedBinDir(registry.sharedRoot)).binaryExists();
-        if (binaryPresent) {
+        if (binaryPresent && !this.serverUninstalled) {
             await this.startManagedServer(onProgress);
             return { kind: SETUP_OUTCOME.STARTED, mode: SERVER_MODE.MANAGED };
         }
@@ -447,6 +456,7 @@ export default class LilbeePlugin extends Plugin {
             this.settings.serverMode = SERVER_MODE.MANAGED;
             this.previousServerMode = SERVER_MODE.MANAGED;
             await this.persistAll();
+            this.setServerUninstalled(false);
             await this.startManagedServer(onProgress);
             return { kind: SETUP_OUTCOME.STARTED, mode: SERVER_MODE.MANAGED };
         }
@@ -659,6 +669,60 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    /** True when the shared bin dir holds a server binary this vault can run. */
+    isServerInstalled(): boolean {
+        const registry = this.vaultRegistry;
+        if (!registry) return false;
+        return new BinaryManager(sharedBinDir(registry.sharedRoot)).binaryExists();
+    }
+
+    /** Size what an uninstall would delete, so the confirmation can list it. */
+    planServerUninstall(): UninstallPlan | null {
+        const registry = this.vaultRegistry;
+        if (!registry) return null;
+        return planUninstall(registry.sharedRoot, registry.resolveDataDir(this.vaultId));
+    }
+
+    /**
+     * Delete the server binary, the shared models, and this vault's index, then
+     * remember the choice so no later launch downloads the server again.
+     * Returns the bytes freed. Vault documents are never touched.
+     */
+    async uninstallServer(plan: UninstallPlan): Promise<number> {
+        const registry = this.vaultRegistry;
+        if (!registry) return 0;
+
+        await this.serverManager?.stop();
+        this.serverManager = null;
+        this.binaryManager = null;
+        registry.releaseLock(this.vaultId);
+
+        executeUninstall(plan);
+
+        registry.saveConfig({
+            ...registry.loadConfig(),
+            lilbeeVersion: "",
+            lilbeeVariant: "",
+            serverUninstalled: true,
+        });
+        this.serverUninstalled = true;
+        this.serverEverReady = false;
+        this.serverUnreachable = false;
+        this.showNotInstalledStatus();
+        return plan.totalBytes;
+    }
+
+    /** Download *release* and start it, clearing an earlier uninstall. */
+    async installServer(release: ReleaseInfo, onProgress?: (msg: string) => void): Promise<void> {
+        this.setServerUninstalled(false);
+        await this.updateServer(release, onProgress);
+    }
+
+    private showNotInstalledStatus(): void {
+        this.updateStatusBar(MESSAGES.STATUS_NOT_INSTALLED, DOT_STATE.MUTED, false);
+        this.setStatusClass(null);
+    }
+
     async checkForUpdate(): Promise<{ available: boolean; release?: ReleaseInfo }> {
         const release = await getLatestRelease();
         const versionChanged = checkForUpdate(this.getSharedLilbeeVersion(), release.tag);
@@ -676,6 +740,7 @@ export default class LilbeePlugin extends Plugin {
     private async autoUpdateServerBinary(): Promise<void> {
         const registry = this.vaultRegistry;
         if (!registry) return;
+        if (this.serverUninstalled) return;
         const config = registry.loadConfig();
         if (config.lastUpdateCheckPluginVersion === this.manifest.version) return;
         let result: { available: boolean; release?: ReleaseInfo };
@@ -1214,6 +1279,21 @@ export default class LilbeePlugin extends Plugin {
         this.taskQueue.loadFromJSON(raw?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
         this.vaultId = computeVaultId(this.getVaultBasePath());
         this.vaultRegistry = new VaultRegistry(resolveSharedRoot(this.settings.sharedRoot));
+        this.serverUninstalled = this.vaultRegistry.loadConfig().serverUninstalled;
+    }
+
+    /** Mirrors `SharedConfig.serverUninstalled`; read on every status paint and health probe. */
+    private serverUninstalled = false;
+
+    isServerUninstalled(): boolean {
+        return this.serverUninstalled;
+    }
+
+    setServerUninstalled(uninstalled: boolean): void {
+        this.serverUninstalled = uninstalled;
+        const reg = this.vaultRegistry;
+        if (!reg) return;
+        reg.saveConfig({ ...reg.loadConfig(), serverUninstalled: uninstalled });
     }
 
     getSharedLilbeeVersion(): string {
@@ -1311,6 +1391,10 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private setStatusReady(): void {
+        if (this.settings.serverMode === SERVER_MODE.MANAGED && this.serverUninstalled) {
+            this.showNotInstalledStatus();
+            return;
+        }
         // Managed mode without a running serverManager is the "released"
         // state (after switch-to-another-vault or onunload). Stay stuck
         // on STOPPED instead of cheerfully claiming "ready" against a
@@ -1339,6 +1423,8 @@ export default class LilbeePlugin extends Plugin {
         if (this.taskQueue.activeAll.length > 0) return;
         if (this.startingServer) return;
         if (this.chatInFlight > 0) return;
+        // Nothing to probe, and "error" would misread a deliberate uninstall.
+        if (this.serverUninstalled) return;
         // Re-read the token before probing — the server writes a fresh one on
         // every restart, and this is the cheapest way to stay in sync.
         this.api.setToken(this.readCurrentToken());

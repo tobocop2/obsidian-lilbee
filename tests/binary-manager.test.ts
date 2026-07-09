@@ -5,6 +5,7 @@ import {
     node,
     getPlatformAssetName,
     getLatestRelease,
+    listReleases,
     checkForUpdate,
     detectCudaTag,
     BinaryManager,
@@ -654,5 +655,91 @@ describe("BinaryManager.download digest verification", () => {
         const mgr = new BinaryManager("/plugins/lilbee/bin");
         await expect(mgr.download("https://example.com/dl", 4, null)).rejects.toThrow(/checksum/i);
         expect(writeSpy).not.toHaveBeenCalled();
+    });
+});
+
+describe("listReleases", () => {
+    let restore: () => void;
+    afterEach(() => restore?.());
+
+    /** One GitHub release entry carrying the default linux asset. */
+    function release(tag: string, extra: Record<string, unknown> = {}) {
+        return {
+            tag_name: tag,
+            assets: [{ name: "lilbee-linux-x86_64", browser_download_url: `https://e/${tag}`, size: 10, digest: null }],
+            ...extra,
+        };
+    }
+
+    it("returns installable releases newest first", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        vi.spyOn(node, "requestUrl").mockResolvedValue(releaseResponse([release("v1.1.0"), release("v1.0.0")]));
+
+        const releases = await listReleases();
+
+        expect(releases.map((r) => r.tag)).toEqual(["v1.1.0", "v1.0.0"]);
+        expect(releases[0]).toEqual({
+            tag: "v1.1.0",
+            assetUrl: "https://e/v1.1.0",
+            variant: "default",
+            sizeBytes: 10,
+            digest: null,
+        });
+    });
+
+    it("asks GitHub for the requested number of releases", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        const requestUrl = vi.spyOn(node, "requestUrl").mockResolvedValue(releaseResponse([]));
+
+        await listReleases(3);
+
+        expect(requestUrl.mock.calls[0][0].url).toContain("per_page=3");
+    });
+
+    it("leaves out drafts and prereleases", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        vi.spyOn(node, "requestUrl").mockResolvedValue(
+            releaseResponse([
+                release("v2.0.0-rc1", { prerelease: true }),
+                release("v2.0.0-draft", { draft: true }),
+                release("v1.0.0"),
+            ]),
+        );
+
+        expect((await listReleases()).map((r) => r.tag)).toEqual(["v1.0.0"]);
+    });
+
+    it("leaves out releases that ship no build for this platform", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        vi.spyOn(node, "requestUrl").mockResolvedValue(
+            releaseResponse([{ tag_name: "v1.0.0", assets: [] }, release("v0.9.0")]),
+        );
+
+        expect((await listReleases()).map((r) => r.tag)).toEqual(["v0.9.0"]);
+    });
+
+    it("falls back to the default build without warning when a CUDA asset is missing", async () => {
+        restore = stubPlatform("linux", "x64");
+        vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "CUDA Version: 12.5", stderr: "" });
+        vi.spyOn(node, "requestUrl").mockResolvedValue(releaseResponse([release("v1.0.0")]));
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+        const releases = await listReleases();
+
+        expect(releases[0].variant).toBe("default");
+        expect(warn).not.toHaveBeenCalled();
+        warn.mockRestore();
+    });
+
+    it("throws when GitHub rejects the request", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        vi.spyOn(node, "requestUrl").mockResolvedValue({ status: 403, json: [], arrayBuffer: new ArrayBuffer(0) });
+
+        await expect(listReleases()).rejects.toThrow("GitHub API responded 403");
     });
 });

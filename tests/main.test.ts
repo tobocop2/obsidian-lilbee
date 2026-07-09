@@ -2,7 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { windowStub } from "./window-stub";
 import { Notice } from "obsidian";
 import { App, MockElement, WorkspaceLeaf } from "./__mocks__/obsidian";
-import { SETUP_OUTCOME, SSE_EVENT } from "../src/types";
+import { DEFAULT_SHARED_CONFIG, SETUP_OUTCOME, SSE_EVENT } from "../src/types";
 import { VaultRegistry } from "../src/vault-registry";
 import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
@@ -339,6 +339,32 @@ describe("LilbeePlugin", () => {
             } finally {
                 (globalThis as { activeDocument?: unknown }).activeDocument = stash;
             }
+        });
+
+        it("stays out of the way on load when the managed server was uninstalled", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const loadConfig = vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                ...DEFAULT_SHARED_CONFIG,
+                serverUninstalled: true,
+            });
+            const consent = vi.spyOn(plugin, "ensureManagedConsentThenStart");
+
+            await plugin.onload();
+
+            expect(consent).not.toHaveBeenCalled();
+            expect(plugin.isServerUninstalled()).toBe(true);
+            loadConfig.mockRestore();
+        });
+
+        it("starts the managed server on load when it is installed", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const consent = vi
+                .spyOn(plugin, "ensureManagedConsentThenStart")
+                .mockResolvedValue({ kind: "canceled" } as any);
+
+            await plugin.onload();
+
+            expect(consent).toHaveBeenCalled();
         });
 
         it("swallows duplicate-view-type errors from registerView so a stale view registration doesn't crash onload", async () => {

@@ -55,6 +55,10 @@ export const node = {
 export const GITHUB_REPO = "tobocop2/lilbee";
 export const LILBEE_GITHUB_REPO_URL = `https://github.com/${GITHUB_REPO}`;
 const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+const RELEASE_LIST_API = `https://api.github.com/repos/${GITHUB_REPO}/releases`;
+
+/** How many recent releases the version picker offers. */
+export const RELEASE_HISTORY_LIMIT = 10;
 
 /** Run `nvidia-smi` and return its stdout, or null if it is absent or fails. */
 async function runNvidiaSmi(): Promise<string | null> {
@@ -115,6 +119,8 @@ interface GitHubAsset {
 interface GitHubRelease {
     tag_name: string;
     assets: GitHubAsset[];
+    draft?: boolean;
+    prerelease?: boolean;
 }
 
 export interface ReleaseInfo {
@@ -127,18 +133,35 @@ export interface ReleaseInfo {
 }
 
 /** Choose the CUDA asset when detected and shipped; otherwise the default build. */
-function selectAsset(data: GitHubRelease, cudaTag: CudaTag | null): { variant: ServerVariant; asset: GitHubAsset } {
+function selectAsset(
+    data: GitHubRelease,
+    cudaTag: CudaTag | null,
+    warnOnFallback = true,
+): { variant: ServerVariant; asset: GitHubAsset } {
     if (cudaTag) {
         const cudaAsset = data.assets.find((a) => a.name === getPlatformAssetName(cudaTag));
         if (cudaAsset) return { variant: cudaTag, asset: cudaAsset };
-        console.warn(
-            `[lilbee] GPU detected (${cudaTag}) but ${data.tag_name} ships no matching build; using the default build instead.`,
-        );
+        if (warnOnFallback) {
+            console.warn(
+                `[lilbee] GPU detected (${cudaTag}) but ${data.tag_name} ships no matching build; using the default build instead.`,
+            );
+        }
     }
     const defaultName = getPlatformAssetName(null);
     const asset = data.assets.find((a) => a.name === defaultName);
     if (!asset) throw new Error(`No asset "${defaultName}" in release ${data.tag_name}`);
     return { variant: SERVER_VARIANT.DEFAULT, asset };
+}
+
+function toReleaseInfo(data: GitHubRelease, cudaTag: CudaTag | null, warnOnFallback = true): ReleaseInfo {
+    const { variant, asset } = selectAsset(data, cudaTag, warnOnFallback);
+    return {
+        tag: data.tag_name,
+        assetUrl: asset.browser_download_url,
+        variant,
+        sizeBytes: asset.size,
+        digest: asset.digest,
+    };
 }
 
 export async function getLatestRelease(): Promise<ReleaseInfo> {
@@ -147,15 +170,30 @@ export async function getLatestRelease(): Promise<ReleaseInfo> {
         headers: { Accept: "application/vnd.github.v3+json" },
     });
     if (res.status >= 400) throw new Error(`GitHub API responded ${res.status}`);
-    const data = res.json as GitHubRelease;
-    const { variant, asset } = selectAsset(data, await detectCudaTag());
-    return {
-        tag: data.tag_name,
-        assetUrl: asset.browser_download_url,
-        variant,
-        sizeBytes: asset.size,
-        digest: asset.digest,
-    };
+    return toReleaseInfo(res.json as GitHubRelease, await detectCudaTag());
+}
+
+/**
+ * Recent published releases, newest first, that ship a build for this machine.
+ * Drafts, prereleases, and releases without a matching asset are left out.
+ */
+export async function listReleases(limit = RELEASE_HISTORY_LIMIT): Promise<ReleaseInfo[]> {
+    const res = await node.requestUrl({
+        url: `${RELEASE_LIST_API}?per_page=${limit}`,
+        headers: { Accept: "application/vnd.github.v3+json" },
+    });
+    if (res.status >= 400) throw new Error(`GitHub API responded ${res.status}`);
+    const cudaTag = await detectCudaTag();
+    const releases: ReleaseInfo[] = [];
+    for (const data of res.json as GitHubRelease[]) {
+        if (data.draft || data.prerelease) continue;
+        try {
+            releases.push(toReleaseInfo(data, cudaTag, false));
+        } catch {
+            // Release ships no build for this platform; it isn't installable here.
+        }
+    }
+    return releases;
 }
 
 export function checkForUpdate(currentVersion: string, latestTag: string): boolean {
