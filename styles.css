@@ -2962,41 +2962,7 @@
 }
 
 .side-dock-ribbon-action.lilbee-ribbon-icon svg {
-    transition:
-        color 180ms ease,
-        filter 220ms ease;
-}
-
-.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-active svg {
-    color: var(--interactive-accent);
-    animation: lilbee-ribbon-icon-pulse 1.8s ease-in-out infinite;
-}
-
-@keyframes lilbee-ribbon-icon-pulse {
-    0%,
-    100% {
-        filter: drop-shadow(0 0 2px color-mix(in srgb, var(--interactive-accent) 55%, transparent));
-    }
-    50% {
-        filter: drop-shadow(0 0 7px color-mix(in srgb, var(--interactive-accent) 90%, transparent));
-    }
-}
-
-.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-success svg {
-    color: var(--text-success, #22c55e);
-    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--text-success, #22c55e) 65%, transparent));
-}
-
-.side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-error svg {
-    color: var(--text-error, #ef4444);
-    filter: drop-shadow(0 0 5px color-mix(in srgb, var(--text-error, #ef4444) 65%, transparent));
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .side-dock-ribbon-action.lilbee-ribbon-icon.lilbee-ribbon-active svg {
-        animation: none;
-        filter: drop-shadow(0 0 4px color-mix(in srgb, var(--interactive-accent) 70%, transparent));
-    }
+    transition: color 180ms ease;
 }
 
 .lilbee-task-cancel {

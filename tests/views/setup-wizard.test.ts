@@ -82,7 +82,6 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         saveSettings: vi.fn().mockResolvedValue(undefined),
         activateChatView: vi.fn().mockResolvedValue(undefined),
         activateTaskView: vi.fn().mockResolvedValue(undefined),
-        openCockpit: vi.fn().mockResolvedValue(undefined),
         ...overrides,
     };
     // Default consent gate: delegate to startManagedServer (so per-test
@@ -1808,22 +1807,6 @@ describe("SetupWizard", () => {
             expect(plugin.saveSettings).toHaveBeenCalled();
             expect(plugin.activateChatView).toHaveBeenCalled();
             expect(closeSpy).toHaveBeenCalled();
-        });
-
-        it("Open chat opens the cockpit when autoOpenCockpit is enabled", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external", autoOpenCockpit: true } });
-            const wizard = new SetupWizard(plugin.app as any, plugin as any);
-            wizard.open();
-            (wizard as any).step = 6;
-            (wizard as any).renderStep();
-
-            const el = wizard.contentEl as unknown as MockElement;
-            const openChatBtn = findButtons(el).find((b) => b.textContent === "Open chat")!;
-            openChatBtn.trigger("click");
-            await tick();
-
-            expect(plugin.openCockpit).toHaveBeenCalled();
-            expect(plugin.activateChatView).not.toHaveBeenCalled();
         });
 
         it("shows tips about what to try", () => {
