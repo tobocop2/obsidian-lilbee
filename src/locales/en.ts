@@ -388,6 +388,9 @@ export const MESSAGES = {
     DESC_SERVER_VERSION_LOADING: "Reading the release list from GitHub...",
     DESC_SERVER_VERSION_OFFLINE: (tag: string) => `${tag} installed. The release list could not be read from GitHub.`,
 
+    TOOLTIP_SERVER_VERSION_SUPPORT:
+        "This plugin is built and tested against the latest server release. Older releases still install and run, " +
+        "but they are not supported, and features the plugin expects may be missing.",
     TOOLTIP_UNINSTALL_SECTION:
         "Obsidian does not manage the lilbee server executable or its models, this plugin does. " +
         "Removing the plugin from Obsidian's Community plugins pane leaves both on disk. Uninstall here first.",

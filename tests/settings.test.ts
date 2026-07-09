@@ -2289,6 +2289,21 @@ describe("managed mode settings", () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
     }
 
+    it("warns that only the latest server release is supported", () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const setAttribute = vi.spyOn(MockElement.prototype, "setAttribute");
+
+        tab.display();
+
+        const tooltips = setAttribute.mock.calls.filter(([name]) => name === "title").map(([, value]) => value);
+        expect(tooltips).toContain(MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
+        expect(MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT).toContain("not supported");
+        setAttribute.mockRestore();
+    });
+
     it("version dropdown offers the recent releases newest first", async () => {
         mockListReleases.mockResolvedValue(RELEASES);
         const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });

@@ -289,6 +289,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const setting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_SERVER_VERSION)
             .setDesc(MESSAGES.DESC_SERVER_VERSION_LOADING);
+        setting.settingEl.setAttribute("aria-label", MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
+        setting.settingEl.setAttribute("title", MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
         const progress = this.renderUpdateProgress(containerEl);
 
         let releases: ReleaseInfo[] = [];
