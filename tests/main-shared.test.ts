@@ -115,6 +115,7 @@ vi.mock("../src/server-manager", () => {
                 },
             };
         }),
+        killServerTree: vi.fn().mockResolvedValue(undefined),
     };
 });
 
@@ -431,6 +432,24 @@ describe("terminateOwningProcess", () => {
         });
         expect(result).toBe(true);
     });
+
+    it("also tears down the owner's server tree when the lock records a server pid", async () => {
+        const plugin = await createPlugin();
+        const { killServerTree } = await import("../src/server-manager");
+        (killServerTree as any).mockClear();
+        (node.processKill as any).mockImplementation((pid: number, signal?: number) => {
+            if (signal === 0) throw new Error("owner gone");
+        });
+        const result = await (plugin as any).terminateOwningProcess({
+            vaultId: "x",
+            pid: 1,
+            serverPid: 4242,
+            port: 1,
+            startedAt: 1,
+        });
+        expect(result).toBe(true);
+        expect(killServerTree).toHaveBeenCalledWith(4242);
+    });
 });
 
 describe("acquireLockOrBail edge branches", () => {
@@ -746,6 +765,42 @@ describe("managed-server uninstall", () => {
         const reloaded = await createPlugin();
 
         expect(reloaded.isServerUninstalled()).toBe(true);
+    });
+
+    it("refuses while another vault's server is running", async () => {
+        const plugin = await createPlugin();
+        seedInstall(plugin);
+        const plan = plugin.planServerUninstall()!;
+        plugin.vaultRegistry!.upsert({
+            id: "other",
+            displayName: "Notes",
+            dataDir: "/d",
+            obsidianVaultPath: "/p",
+            addedAt: 1,
+            lastActiveAt: 1,
+        });
+        plugin.vaultRegistry!.writeLock({ vaultId: "other", pid: process.pid, port: 1, startedAt: 1 });
+
+        await expect(plugin.uninstallServer(plan)).rejects.toThrow("The lilbee server is running for Notes");
+        expect(plugin.isServerUninstalled()).toBe(false);
+    });
+
+    it("reaps a server orphaned by a crashed Obsidian before deleting", async () => {
+        const { killServerTree } = await import("../src/server-manager");
+        (killServerTree as any).mockClear();
+        const plugin = await createPlugin();
+        seedInstall(plugin);
+        plugin.vaultRegistry!.writeLock({
+            vaultId: plugin.vaultId,
+            pid: process.pid,
+            port: 1,
+            startedAt: 1,
+            serverPid: 4242,
+        });
+
+        await plugin.uninstallServer(plugin.planServerUninstall()!);
+
+        expect(killServerTree).toHaveBeenCalledWith(4242);
     });
 
     it("installing a release clears the uninstall and downloads it", async () => {

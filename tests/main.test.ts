@@ -239,9 +239,13 @@ vi.mock("../src/server-manager", () => ({
             get lastOutput() {
                 return mockLastStderr;
             },
+            get serverPid() {
+                return 4321;
+            },
             opts,
         };
     }),
+    killServerTree: vi.fn().mockResolvedValue(undefined),
 }));
 
 /** Flush the microtask queue so fire-and-forget promises settle. */

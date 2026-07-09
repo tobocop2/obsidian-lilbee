@@ -14,7 +14,7 @@ import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { exportDiagnostics } from "./diagnostics-export";
 import { ErrorJournal } from "./error-journal";
 import type { ReleaseInfo } from "./binary-manager";
-import { ServerManager } from "./server-manager";
+import { ServerManager, killServerTree } from "./server-manager";
 import { executeUninstall, planUninstall } from "./server-uninstall";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
 import { LilbeeSettingTab } from "./settings";
@@ -535,6 +535,8 @@ export default class LilbeePlugin extends Plugin {
 
     private async terminateOwningProcess(owner: ActiveLock | null): Promise<boolean> {
         if (!owner) return true;
+        // Stop the other vault's server too, or it orphans when its Obsidian goes.
+        if (owner.serverPid) await killServerTree(owner.serverPid);
         try {
             node.processKill(owner.pid);
         } catch {
@@ -611,7 +613,13 @@ export default class LilbeePlugin extends Plugin {
         if (!sm || !registry) return;
         const port = parseInt(sm.serverUrl.split(":").pop() || "0", 10);
         const now = Date.now();
-        registry.writeLock({ vaultId: this.vaultId, pid: process.pid, port, startedAt: now });
+        registry.writeLock({
+            vaultId: this.vaultId,
+            pid: process.pid,
+            serverPid: sm.serverPid ?? undefined,
+            port,
+            startedAt: now,
+        });
         const existing = registry.get(this.vaultId);
         registry.upsert({
             id: this.vaultId,
@@ -692,9 +700,18 @@ export default class LilbeePlugin extends Plugin {
         const registry = this.vaultRegistry;
         if (!registry) return 0;
 
+        // The binary and the models are shared. Deleting them under another
+        // vault's running server would break it mid-query.
+        const owner = registry.readLock();
+        if (owner !== null && registry.lockState(this.vaultId) === LOCK_STATE.LIVE_OTHER) {
+            throw new Error(MESSAGES.ERROR_UNINSTALL_SERVER_IN_USE(this.lookupVaultName(owner.vaultId)));
+        }
+
         await this.serverManager?.stop();
         this.serverManager = null;
         this.binaryManager = null;
+        // A server orphaned by a crashed Obsidian still writes to the data dir.
+        if (owner?.serverPid) await killServerTree(owner.serverPid);
         registry.releaseLock(this.vaultId);
 
         executeUninstall(plan);

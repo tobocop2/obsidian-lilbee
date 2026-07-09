@@ -18,7 +18,7 @@ import {
     ERROR_NAME,
     VERSION_ACTION,
 } from "./types";
-import type { CatalogEntry, ConfigResponse, InstalledModel, LilbeeSettings, ServerMode, UninstallPlan } from "./types";
+import type { CatalogEntry, ConfigResponse, InstalledModel, LilbeeSettings, ServerMode } from "./types";
 import { exportDiagnostics } from "./diagnostics-export";
 import { formatBytes, reportForVault } from "./storage-stats";
 import { MESSAGES } from "./locales/en";
@@ -73,6 +73,8 @@ interface UpdateProgressEls {
 
 export class LilbeeSettingTab extends PluginSettingTab {
     plugin: LilbeePlugin;
+    /** Total bytes of the shared install, set by the storage report each render. */
+    private storageTotalBytes = 0;
     private serverConfigInputs: Map<string, HTMLInputElement> = new Map();
     private serverConfigToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private memoryToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
@@ -133,7 +135,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderDiagnostics(containerEl);
         this.renderAdvancedSettings(containerEl);
         if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED && this.plugin.isServerInstalled()) {
-            this.renderUninstallSection(containerEl);
+            this.renderUninstallSection(containerEl, this.storageTotalBytes);
         }
         this.loadServerDefaults();
         this.loadConfigDefaults();
@@ -349,11 +351,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    /** Managed mode only: Obsidian never removes the server this plugin downloaded. */
-    private renderUninstallSection(containerEl: HTMLElement): void {
-        const plan = this.plugin.planServerUninstall();
-        if (!plan) return;
-
+    /**
+     * Managed mode only: Obsidian never removes the server this plugin downloaded.
+     * Sized from the storage report so the model cache is walked once per render;
+     * the delete plan is built when the button is clicked.
+     */
+    private renderUninstallSection(containerEl: HTMLElement, totalBytes: number): void {
         const heading = new Setting(containerEl).setName(MESSAGES.LABEL_UNINSTALL).setHeading();
         heading.settingEl.addClass("lilbee-danger-heading");
         heading.settingEl.setAttribute("aria-label", MESSAGES.TOOLTIP_UNINSTALL_SECTION);
@@ -365,14 +368,16 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName(MESSAGES.LABEL_UNINSTALL_SERVER)
-            .setDesc(MESSAGES.DESC_UNINSTALL_SERVER(formatBytes(plan.totalBytes)))
+            .setDesc(MESSAGES.DESC_UNINSTALL_SERVER(formatBytes(totalBytes)))
             .addButton((btn) => {
-                btn.setButtonText(MESSAGES.BUTTON_UNINSTALL_SERVER).onClick(() => void this.confirmUninstall(plan));
+                btn.setButtonText(MESSAGES.BUTTON_UNINSTALL_SERVER).onClick(() => void this.confirmUninstall());
                 btn.buttonEl.addClass("mod-warning");
             });
     }
 
-    private async confirmUninstall(plan: UninstallPlan): Promise<void> {
+    private async confirmUninstall(): Promise<void> {
+        const plan = this.plugin.planServerUninstall();
+        if (!plan) return;
         const modal = new UninstallModal(this.app, plan);
         modal.open();
         if (!(await modal.result)) return;
@@ -545,10 +550,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
     }
 
+    /** Walks the shared install; the total is reused by the uninstall section. */
     private renderStorageReport(containerEl: HTMLElement): void {
         const registry = this.plugin.vaultRegistry;
         if (!registry) return;
         const report = reportForVault(registry.sharedRoot, registry.resolveDataDir(this.plugin.vaultId));
+        this.storageTotalBytes = report.totalBytes;
         new Setting(containerEl).setName(MESSAGES.LABEL_STORAGE_REPORT).setDesc(MESSAGES.DESC_STORAGE_REPORT);
 
         const list = containerEl.createDiv({ cls: "lilbee-storage-report" });

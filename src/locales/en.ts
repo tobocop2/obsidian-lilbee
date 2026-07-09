@@ -417,6 +417,8 @@ export const MESSAGES = {
     NOTICE_UNINSTALLED: (size: string) => `lilbee server uninstalled. ${size} freed.`,
     NOTICE_INSTALLED: (tag: string) => `lilbee server ${tag} installed.`,
     ERROR_UNINSTALL_FAILED: "Could not uninstall the lilbee server",
+    ERROR_UNINSTALL_SERVER_IN_USE: (vaultName: string) =>
+        `The lilbee server is running for ${vaultName}. Close that vault, then uninstall.`,
     ERROR_INSTALL_FAILED: "Could not install the lilbee server",
     ERROR_RELEASE_LIST: "Could not read the lilbee release list from GitHub",
     DESC_SERVER_URL_HELP: "Address of the lilbee HTTP server",

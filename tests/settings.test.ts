@@ -7004,15 +7004,18 @@ describe("managed-mode uninstall section", () => {
         expect(Notice.instances.some((n) => n.message.includes("permission denied"))).toBe(true);
     });
 
-    it("is skipped when there is nothing to plan", () => {
+    it("does nothing when there is nothing to plan", async () => {
         const plugin = makePlugin({ serverMode: "managed" });
         (plugin as any).planServerUninstall = () => null;
+        const uninstallServer = vi.fn();
+        (plugin as any).uninstallServer = uninstallServer;
         mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const captured = captureSettingCallbacks(() => tab.display());
+        await clickButton(captured, MESSAGES.LABEL_UNINSTALL_SERVER);
 
-        expect(captured.buttons.some((b) => b.name === MESSAGES.LABEL_UNINSTALL_SERVER)).toBe(false);
+        expect(uninstallServer).not.toHaveBeenCalled();
     });
 
     it("is absent in external mode", () => {
