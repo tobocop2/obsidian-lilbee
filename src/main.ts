@@ -816,7 +816,7 @@ export default class LilbeePlugin extends Plugin {
         const release = result.release;
         const notice = new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATING(release.tag), NOTICE_PERMANENT);
         try {
-            await this.updateServer(release, (msg) => notice.setMessage(msg));
+            await this.updateServer(release);
             new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATED(release.tag));
         } catch {
             new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATE_FAILED, NOTICE_ERROR_DURATION_MS);
