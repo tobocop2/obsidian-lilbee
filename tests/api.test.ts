@@ -147,13 +147,13 @@ describe("chat()", () => {
         expect(result).toEqual(data);
     });
 
-    it("defaults top_k to 0 when omitted", async () => {
+    it("omits top_k when not provided so the server uses its configured default", async () => {
         fetchMock.mockResolvedValue(jsonResponse({ answer: "", sources: [] }));
 
         await client.chat("q", []);
 
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-        expect(body.top_k).toBe(0);
+        expect("top_k" in body).toBe(false);
     });
 });
 
@@ -256,13 +256,13 @@ describe("chatStream()", () => {
         expect(body.top_k).toBe(8);
     });
 
-    it("defaults top_k to 0 when topK omitted", async () => {
+    it("omits top_k when topK is not provided so the server uses its configured default", async () => {
         fetchMock.mockResolvedValue(sseResponse([]));
 
         await collect(client.chatStream("q", []));
 
         const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-        expect(body.top_k).toBe(0);
+        expect("top_k" in body).toBe(false);
     });
 
     it("includes options in request body when provided", async () => {

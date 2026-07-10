@@ -377,10 +377,13 @@ export class LilbeeClient {
     }
 
     async chat(question: string, history: Message[], topK?: number): Promise<AskResponse> {
+        // Omitted top_k uses the server's configured default; an explicit 0 disables retrieval.
+        const body: Record<string, unknown> = { question, history };
+        if (topK !== undefined) body.top_k = topK;
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/chat`, {
             method: "POST",
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
-            body: JSON.stringify({ question, history, top_k: topK ?? 0 }),
+            body: JSON.stringify(body),
         });
         return (await res.json()) as AskResponse;
     }
@@ -425,7 +428,9 @@ export class LilbeeClient {
         options?: GenerationOptions,
         chunkType?: SearchChunkType,
     ): AsyncGenerator<SSEEvent, void> {
-        const body: Record<string, unknown> = { question, history, top_k: topK ?? 0 };
+        // Omitted top_k uses the server's configured default; an explicit 0 disables retrieval.
+        const body: Record<string, unknown> = { question, history };
+        if (topK !== undefined) body.top_k = topK;
         if (options && Object.keys(options).length > 0) body.options = options;
         // "all" is the UI-side label for no filter; the field is omitted on the wire.
         if (chunkType && chunkType !== SEARCH_CHUNK_TYPE.ALL) body.chunk_type = chunkType;
