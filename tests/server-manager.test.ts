@@ -1,6 +1,12 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { node } from "../src/binary-manager";
-import { ServerManager } from "../src/server-manager";
+import {
+    ServerManager,
+    parsePsOutput,
+    collectProcessTree,
+    reapOrphanServers,
+    killServerTree,
+} from "../src/server-manager";
 import type { ServerManagerOptions } from "../src/server-manager";
 
 // ── Mock child process ──────────────────────────────────────────────
@@ -64,6 +70,7 @@ describe("ServerManager", () => {
     let spawnSpy: ReturnType<typeof vi.spyOn>;
     let fetchSpy: ReturnType<typeof vi.spyOn>;
     let execFileSpy: ReturnType<typeof vi.spyOn>;
+    let processKillSpy: ReturnType<typeof vi.spyOn>;
     let existsSyncSpy: ReturnType<typeof vi.spyOn>;
     let readFileSyncSpy: ReturnType<typeof vi.spyOn>;
     let unlinkSyncSpy: ReturnType<typeof vi.spyOn>;
@@ -77,6 +84,12 @@ describe("ServerManager", () => {
         fetchSpy = vi.spyOn(node, "fetch").mockResolvedValue({ ok: true } as any);
         execFileSpy = vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "", stderr: "" } as any);
         existsSyncSpy = vi.spyOn(node, "existsSync").mockReturnValue(true);
+        // Never signal a real process group from tests. Default to "no such
+        // group" so terminateChild falls back to child.kill (which the stop
+        // tests hook to emit exit); success is covered explicitly where needed.
+        processKillSpy = vi.spyOn(node, "processKill").mockImplementation(() => {
+            throw new Error("ESRCH");
+        });
         readFileSyncSpy = vi.spyOn(node, "readFileSync").mockReturnValue("9999");
         unlinkSyncSpy = vi.spyOn(node, "unlinkSync").mockImplementation(() => {});
         appendFileSyncSpy = vi.spyOn(node, "appendFileSync").mockImplementation(() => {});
@@ -138,7 +151,9 @@ describe("ServerManager", () => {
             expect(opts.env.LILBEE_RAG_SYSTEM_PROMPT).toBeUndefined();
             expect(opts.env.LILBEE_GENERAL_SYSTEM_PROMPT).toBeUndefined();
             expect(opts.stdio).toEqual(["ignore", "pipe", "pipe"]);
-            expect(opts.detached).toBe(false);
+            // POSIX: detached so the server leads its own group and stop() can
+            // signal the worker forks too.
+            expect(opts.detached).toBe(true);
 
             expect(mgr.state).toBe("ready");
             expect(stateChanges).toContain("starting");
@@ -366,7 +381,8 @@ describe("ServerManager", () => {
             await p1;
 
             // Let execFile resolve, then emit exit so stop() can finish
-            execFileSpy.mockImplementation(async () => {
+            execFileSpy.mockImplementation(async (cmd: string) => {
+                if (cmd !== "taskkill") return { stdout: "", stderr: "" };
                 // Schedule exit emission after taskkill "completes"
                 setTimeout(() => child._emit("exit", 0, null), 10);
                 return { stdout: "", stderr: "" };
@@ -385,7 +401,8 @@ describe("ServerManager", () => {
         it("surfaces taskkill failures on Windows via onShutdownFailure callback", async () => {
             const originalPlatform = process.platform;
             Object.defineProperty(process, "platform", { value: "win32" });
-            execFileSpy.mockImplementation(async () => {
+            execFileSpy.mockImplementation(async (cmd: string) => {
+                if (cmd !== "taskkill") return { stdout: "", stderr: "" };
                 setTimeout(() => child._emit("exit", 0, null), 10);
                 throw new Error("process not found");
             });
@@ -411,7 +428,8 @@ describe("ServerManager", () => {
         it("does not invoke onShutdownFailure when no callback is registered", async () => {
             const originalPlatform = process.platform;
             Object.defineProperty(process, "platform", { value: "win32" });
-            execFileSpy.mockImplementation(async () => {
+            execFileSpy.mockImplementation(async (cmd: string) => {
+                if (cmd !== "taskkill") return { stdout: "", stderr: "" };
                 setTimeout(() => child._emit("exit", 0, null), 10);
                 throw new Error("process not found");
             });
@@ -433,7 +451,8 @@ describe("ServerManager", () => {
         it("wraps a non-Error thrown value when surfacing a shutdown failure", async () => {
             const originalPlatform = process.platform;
             Object.defineProperty(process, "platform", { value: "win32" });
-            execFileSpy.mockImplementation(async () => {
+            execFileSpy.mockImplementation(async (cmd: string) => {
+                if (cmd !== "taskkill") return { stdout: "", stderr: "" };
                 setTimeout(() => child._emit("exit", 0, null), 10);
                 throw "some string failure";
             });
@@ -643,6 +662,9 @@ describe("ServerManager", () => {
             const rejection = expect(startPromise).rejects.toThrow(
                 "Server exited (signal SIGKILL) and did not come back after 3 restarts",
             );
+            // Let the orphan-reap await resolve so the first child is spawned
+            // and its exit handler is attached before we start emitting.
+            await vi.advanceTimersByTimeAsync(0);
 
             for (let i = 0; i < 3; i++) {
                 const nextChild = mockChild();
@@ -761,8 +783,14 @@ describe("ServerManager", () => {
             const stateChanges: string[] = [];
             const mgr = new ServerManager(defaultOpts({ onStateChange: (s) => stateChanges.push(s) }));
 
+            // Keep the port file absent so start() stays pending after spawn,
+            // giving us a window to fire the launch error.
+            existsSyncSpy.mockReturnValue(false);
             const p1 = mgr.start();
             const rejection = expect(p1).rejects.toThrow("Failed to launch server: spawn ENOENT");
+            // Let the orphan-reap await resolve so the child is spawned and its
+            // error handler is attached before we fire.
+            await vi.advanceTimersByTimeAsync(0);
             // Fire error before health check completes
             child._emit("error", new Error("spawn ENOENT"));
             await vi.advanceTimersByTimeAsync(1_000);
@@ -776,8 +804,10 @@ describe("ServerManager", () => {
         it("snapshots the launch failure to the crash log", async () => {
             const mgr = new ServerManager(defaultOpts());
 
+            existsSyncSpy.mockReturnValue(false);
             const p1 = mgr.start();
             const rejection = expect(p1).rejects.toThrow("Failed to launch server: spawn EACCES");
+            await vi.advanceTimersByTimeAsync(0);
             child._emit("error", new Error("spawn EACCES"));
             await vi.advanceTimersByTimeAsync(1_000);
             await rejection;
@@ -975,5 +1005,270 @@ describe("ServerManager", () => {
             await p;
             expect(mgr.state).toBe("ready");
         });
+    });
+
+    // ── Windows SIGKILL fallback ────────────────────────────────────
+
+    describe("stop() SIGKILL fallback on Windows", () => {
+        it("force-kills the child when it outlives the grace window", async () => {
+            const originalPlatform = process.platform;
+            Object.defineProperty(process, "platform", { value: "win32" });
+            // taskkill/powershell resolve but the child never exits.
+            execFileSpy.mockResolvedValue({ stdout: "", stderr: "" } as never);
+            const mgr = new ServerManager(defaultOpts());
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+
+            const stopPromise = mgr.stop();
+            await vi.advanceTimersByTimeAsync(5000);
+            await stopPromise;
+
+            expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+            expect(mgr.state).toBe("stopped");
+            Object.defineProperty(process, "platform", { value: originalPlatform });
+        });
+    });
+
+    // ── serverPid getter ────────────────────────────────────────────
+
+    describe("serverPid", () => {
+        it("is null when stopped and the child pid once running", async () => {
+            const mgr = new ServerManager(defaultOpts());
+            expect(mgr.serverPid).toBeNull();
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+            expect(mgr.serverPid).toBe(1234);
+        });
+    });
+
+    // ── process-group termination (POSIX) ───────────────────────────
+
+    describe("stop() process-group signalling on POSIX", () => {
+        it("signals the child's group with SIGTERM, no fallback when the group send succeeds", async () => {
+            processKillSpy.mockReturnValue(undefined as never);
+            const mgr = new ServerManager(defaultOpts());
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+
+            const stopPromise = mgr.stop();
+            await vi.advanceTimersByTimeAsync(0);
+            child._emit("exit", 0, null);
+            await stopPromise;
+
+            expect(processKillSpy).toHaveBeenCalledWith(-1234, "SIGTERM");
+            expect(child.kill).not.toHaveBeenCalled();
+        });
+
+        it("SIGKILLs the group when the child outlives the grace window", async () => {
+            processKillSpy.mockReturnValue(undefined as never);
+            const mgr = new ServerManager(defaultOpts());
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+
+            const stopPromise = mgr.stop();
+            await vi.advanceTimersByTimeAsync(5000);
+            await stopPromise;
+
+            expect(processKillSpy).toHaveBeenCalledWith(-1234, "SIGKILL");
+            expect(mgr.state).toBe("stopped");
+        });
+
+        it("falls back to a direct child kill when the child has no pid", async () => {
+            const pidless = mockChild();
+            (pidless as any).pid = undefined;
+            pidless.kill = vi.fn(() => {
+                setTimeout(() => pidless._emit("exit", 0, null), 10);
+            });
+            spawnSpy.mockReturnValue(pidless as never);
+            const mgr = new ServerManager(defaultOpts());
+            const p = mgr.start();
+            await vi.advanceTimersByTimeAsync(1000);
+            await p;
+
+            const stopPromise = mgr.stop();
+            await vi.advanceTimersByTimeAsync(50);
+            await stopPromise;
+
+            expect(pidless.kill).toHaveBeenCalledWith("SIGTERM");
+            expect(processKillSpy).not.toHaveBeenCalled();
+        });
+    });
+});
+
+// ── Orphan-reaping helpers ──────────────────────────────────────────
+
+describe("parsePsOutput", () => {
+    it("parses pid/ppid/command rows and skips malformed lines", () => {
+        const rows = parsePsOutput(
+            ["  100   1 /bin/lilbee serve --data-dir /d", "", "garbage line", "200 100 worker fork"].join("\n"),
+        );
+        expect(rows).toEqual([
+            { pid: 100, ppid: 1, command: "/bin/lilbee serve --data-dir /d" },
+            { pid: 200, ppid: 100, command: "worker fork" },
+        ]);
+    });
+});
+
+describe("collectProcessTree", () => {
+    it("collects roots plus every descendant", () => {
+        const rows = [
+            { pid: 100, ppid: 1, command: "server" },
+            { pid: 200, ppid: 100, command: "worker" },
+            { pid: 300, ppid: 200, command: "grandchild" },
+            { pid: 400, ppid: 1, command: "unrelated" },
+        ];
+        expect(collectProcessTree(rows, [100]).sort((a, b) => a - b)).toEqual([100, 200, 300]);
+    });
+
+    it("does not loop on a self-referential parent", () => {
+        const rows = [{ pid: 100, ppid: 100, command: "weird" }];
+        expect(collectProcessTree(rows, [100])).toEqual([100]);
+    });
+});
+
+describe("reapOrphanServers", () => {
+    let execFileSpy: ReturnType<typeof vi.spyOn>;
+    let processKillSpy: ReturnType<typeof vi.spyOn>;
+    const originalPlatform = process.platform;
+
+    beforeEach(() => {
+        execFileSpy = vi.spyOn(node, "execFile");
+        processKillSpy = vi.spyOn(node, "processKill").mockImplementation(() => {
+            throw new Error("ESRCH");
+        });
+    });
+    afterEach(() => {
+        Object.defineProperty(process, "platform", { value: originalPlatform });
+        vi.restoreAllMocks();
+    });
+
+    it("returns [] when process enumeration fails", async () => {
+        Object.defineProperty(process, "platform", { value: "darwin" });
+        execFileSpy.mockRejectedValue(new Error("no ps"));
+        expect(await reapOrphanServers("/tmp/data")).toEqual([]);
+    });
+
+    it("returns [] when no server matches the data dir", async () => {
+        Object.defineProperty(process, "platform", { value: "darwin" });
+        execFileSpy.mockResolvedValue({ stdout: "500 1 /usr/bin/vim\n", stderr: "" } as never);
+        expect(await reapOrphanServers("/tmp/data")).toEqual([]);
+    });
+
+    it("kills a matching server and its workers, swallowing kill failures (POSIX)", async () => {
+        Object.defineProperty(process, "platform", { value: "darwin" });
+        execFileSpy.mockResolvedValue({
+            stdout: [
+                "100 1 /shared/lilbee serve --host 127.0.0.1 --data-dir /tmp/data",
+                "200 100 /cache/lilbee-worker --multiprocessing-fork",
+                "300 1 /other/lilbee serve --data-dir /tmp/OTHER",
+            ].join("\n"),
+            stderr: "",
+        } as never);
+        const killed = await reapOrphanServers("/tmp/data");
+        expect(killed.sort((a, b) => a - b)).toEqual([100, 200]);
+        expect(processKillSpy).toHaveBeenCalledWith(100, "SIGKILL");
+        expect(processKillSpy).toHaveBeenCalledWith(200, "SIGKILL");
+        expect(processKillSpy).not.toHaveBeenCalledWith(300, "SIGKILL");
+    });
+
+    it("kills successfully when the signal does not throw (POSIX)", async () => {
+        Object.defineProperty(process, "platform", { value: "darwin" });
+        processKillSpy.mockReturnValue(undefined as never);
+        execFileSpy.mockResolvedValue({
+            stdout: "100 1 /shared/lilbee serve --data-dir /tmp/data\n",
+            stderr: "",
+        } as never);
+        expect(await reapOrphanServers("/tmp/data")).toEqual([100]);
+    });
+
+    it("returns [] when the Windows enumeration fails", async () => {
+        Object.defineProperty(process, "platform", { value: "win32" });
+        execFileSpy.mockRejectedValue(new Error("no powershell"));
+        expect(await reapOrphanServers("C:\\data")).toEqual([]);
+    });
+
+    it("taskkills matching roots on Windows, skipping malformed and non-matching rows", async () => {
+        Object.defineProperty(process, "platform", { value: "win32" });
+        execFileSpy.mockImplementation(async (cmd: string) => {
+            if (cmd === "powershell") {
+                return {
+                    stdout: [
+                        "4321\tC:\\shared\\lilbee.exe serve --data-dir C:\\data",
+                        "no-tab-line",
+                        "notanumber\tlilbee serve --data-dir C:\\data",
+                        "9999\tC:\\other\\notepad.exe",
+                    ].join("\n"),
+                    stderr: "",
+                } as never;
+            }
+            return { stdout: "", stderr: "" } as never;
+        });
+        const killed = await reapOrphanServers("C:\\data");
+        expect(killed).toEqual([4321]);
+        expect(execFileSpy).toHaveBeenCalledWith("taskkill", ["/pid", "4321", "/f", "/t"]);
+    });
+
+    it("swallows a Windows taskkill failure", async () => {
+        Object.defineProperty(process, "platform", { value: "win32" });
+        execFileSpy.mockImplementation(async (cmd: string) => {
+            if (cmd === "powershell") {
+                return { stdout: "4321\tlilbee serve --data-dir C:\\data\n", stderr: "" } as never;
+            }
+            throw new Error("access denied");
+        });
+        expect(await reapOrphanServers("C:\\data")).toEqual([4321]);
+    });
+});
+
+describe("killServerTree", () => {
+    let execFileSpy: ReturnType<typeof vi.spyOn>;
+    let processKillSpy: ReturnType<typeof vi.spyOn>;
+    const originalPlatform = process.platform;
+
+    beforeEach(() => {
+        execFileSpy = vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "", stderr: "" } as never);
+        processKillSpy = vi.spyOn(node, "processKill");
+    });
+    afterEach(() => {
+        Object.defineProperty(process, "platform", { value: originalPlatform });
+        vi.restoreAllMocks();
+    });
+
+    it("signals the group on POSIX when the group send succeeds", async () => {
+        Object.defineProperty(process, "platform", { value: "darwin" });
+        processKillSpy.mockReturnValue(undefined as never);
+        await killServerTree(555);
+        expect(processKillSpy).toHaveBeenCalledWith(-555, "SIGKILL");
+        expect(processKillSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back to the bare pid when the group send fails", async () => {
+        Object.defineProperty(process, "platform", { value: "darwin" });
+        processKillSpy.mockImplementation((pid: number) => {
+            if (pid < 0) throw new Error("ESRCH");
+        });
+        await killServerTree(555);
+        expect(processKillSpy).toHaveBeenCalledWith(-555, "SIGKILL");
+        expect(processKillSpy).toHaveBeenCalledWith(555, "SIGKILL");
+    });
+
+    it("swallows the error when both group and bare kills fail", async () => {
+        Object.defineProperty(process, "platform", { value: "darwin" });
+        processKillSpy.mockImplementation(() => {
+            throw new Error("ESRCH");
+        });
+        await expect(killServerTree(555)).resolves.toBeUndefined();
+    });
+
+    it("uses taskkill on Windows and swallows failures", async () => {
+        Object.defineProperty(process, "platform", { value: "win32" });
+        await killServerTree(555);
+        expect(execFileSpy).toHaveBeenCalledWith("taskkill", ["/pid", "555", "/f", "/t"]);
+        execFileSpy.mockRejectedValue(new Error("access denied"));
+        await expect(killServerTree(555)).resolves.toBeUndefined();
     });
 });

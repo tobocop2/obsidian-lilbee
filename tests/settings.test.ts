@@ -12,10 +12,24 @@ import { ConfirmPullModal } from "../src/views/confirm-pull-modal";
 
 const mockGetLatestRelease = vi.fn();
 const mockCheckForUpdate = vi.fn();
+const mockListReleases = vi.fn(async () => [] as unknown[]);
+
+const { FakeDownloadCanceledError } = vi.hoisted(() => ({
+    FakeDownloadCanceledError: class DownloadCanceledError extends Error {
+        constructor() {
+            super("The lilbee server download was cancelled.");
+            this.name = "DownloadCanceledError";
+        }
+    },
+}));
 
 vi.mock("../src/binary-manager", () => ({
     getLatestRelease: (...args: any[]) => mockGetLatestRelease(...args),
     checkForUpdate: (...args: any[]) => mockCheckForUpdate(...args),
+    listReleases: (...args: any[]) => mockListReleases(...args),
+    isDevBuild: (tag: string) => /\.dev\d*$/i.test(tag),
+    LILBEE_GITHUB_REPO_URL: "https://github.com/tobocop2/lilbee",
+    DownloadCanceledError: FakeDownloadCanceledError,
     BinaryManager: vi.fn(),
     node: {
         existsSync: vi.fn(() => false),
@@ -41,6 +55,19 @@ vi.mock("../src/binary-manager", () => ({
         }),
         processKill: vi.fn(),
     },
+}));
+
+let mockUninstallConfirmed = true;
+vi.mock("../src/views/uninstall-modal", () => ({
+    UninstallModal: vi.fn().mockImplementation(function () {
+        return {
+            open: vi.fn(),
+            get result() {
+                return Promise.resolve(mockUninstallConfirmed);
+            },
+            close: vi.fn(),
+        };
+    }),
 }));
 
 let mockConfirmResult = true;
@@ -144,6 +171,14 @@ function makePlugin(overrides: Partial<LilbeeSettings> & { lilbeeVersion?: strin
         setSharedLilbeeVersion: (v: string) => {
             sharedVersion = v;
         },
+        isServerInstalled: () => true,
+        isServerUninstalled: () => false,
+        isDownloadingServer: () => false,
+        cancelServerDownload: vi.fn(),
+        planServerUninstall: () => ({ targets: [], totalBytes: 0 }),
+        uninstallServer: vi.fn().mockResolvedValue(0),
+        installServer: vi.fn().mockResolvedValue(undefined),
+        updateServer: vi.fn().mockResolvedValue(undefined),
         getSharedHfToken: () => sharedHfToken,
         setSharedHfToken: (t: string) => {
             sharedHfToken = t;
@@ -239,7 +274,16 @@ interface Captured {
     dropdownSetValues: string[][];
     toggleOnChanges: ToggleOnChange[];
     buttonOnClicks: ButtonOnClick[];
+    buttons: FakeButton[];
     extraButtonOnClicks: ButtonOnClick[];
+}
+
+/** Records what the code under test did to a ButtonComponent. */
+interface FakeButton {
+    /** Name of the Setting row the button belongs to. */
+    name: string;
+    text: string;
+    disabled: boolean;
 }
 
 function captureSettingCallbacks(fn: () => void): Captured {
@@ -252,6 +296,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
     const dropdownSetValues: string[][] = [];
     const toggleOnChanges: ToggleOnChange[] = [];
     const buttonOnClicks: ButtonOnClick[] = [];
+    const buttons: FakeButton[] = [];
     const extraButtonOnClicks: ButtonOnClick[] = [];
 
     const origAddText = Setting.prototype.addText;
@@ -342,6 +387,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
                 setValues.push(v);
                 return fakeDropdown;
             },
+            setDisabled: () => fakeDropdown,
             onChange: (handler: DropdownOnChange) => {
                 dropdownOnChanges.push(handler);
                 return fakeDropdown;
@@ -375,10 +421,19 @@ function captureSettingCallbacks(fn: () => void): Captured {
     };
 
     Setting.prototype.addButton = function (cb: (btn: any) => void) {
+        const record: FakeButton = { name: (this as any)._name ?? "", text: "", disabled: false };
+        buttons.push(record);
         const fakeBtn = {
-            setButtonText: () => fakeBtn,
-            setDisabled: () => fakeBtn,
+            setButtonText: (text: string) => {
+                record.text = text;
+                return fakeBtn;
+            },
+            setDisabled: (disabled: boolean) => {
+                record.disabled = disabled;
+                return fakeBtn;
+            },
             setWarning: () => fakeBtn,
+            buttonEl: new MockElement(),
             setClass: () => fakeBtn,
             onClick: (handler: ButtonOnClick) => {
                 buttonOnClicks.push(handler);
@@ -424,8 +479,16 @@ function captureSettingCallbacks(fn: () => void): Captured {
         dropdownSetValues,
         toggleOnChanges,
         buttonOnClicks,
+        buttons,
         extraButtonOnClicks,
     };
+}
+
+/** Click the button belonging to the Setting row named *name*. */
+async function clickButton(captured: Captured, name: string): Promise<void> {
+    const index = captured.buttons.findIndex((b) => b.name === name);
+    if (index === -1) throw new Error(`no button on a setting named "${name}"`);
+    await captured.buttonOnClicks[index]();
 }
 
 function captureDropdownOptions(fn: () => void): Array<Record<string, string>> {
@@ -579,8 +642,8 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // [0] is show_reasoning (Chat section, rendered first); [1] is adaptiveThreshold.
-            await toggleOnChanges[1](true);
+            // [0] is includeDevBuilds (managed server section), [1] show_reasoning (Chat), [2] adaptiveThreshold.
+            await toggleOnChanges[2](true);
             expect(plugin.settings.adaptiveThreshold).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
         });
@@ -598,10 +661,9 @@ describe("LilbeeSettingTab", () => {
     describe("storeContentInVault toggle", () => {
         function storeToggleIdx(toggleOnChanges: unknown[]): number {
             // Store-content toggle is rendered first inside the Advanced section,
-            // which runs after the Wiki section. After Advanced comes the Fleet
-            // section's flash_attention toggle (last overall), then auto-open-cockpit,
-            // then storeContentInVault one before that.
-            return toggleOnChanges.length - 3;
+            // which runs after the Wiki section. The Fleet section's
+            // flash_attention toggle renders after it (last overall).
+            return toggleOnChanges.length - 2;
         }
 
         it("onChange true persists and triggers configureManagedStorage", async () => {
@@ -635,20 +697,6 @@ describe("LilbeeSettingTab", () => {
 
             const rows = tab.containerEl.querySelectorAll(".lilbee-setting-disabled");
             expect(rows.length).toBeGreaterThan(0);
-        });
-    });
-
-    describe("auto-open cockpit toggle", () => {
-        it("persists the new value through saveSettings when the toggle is flipped", async () => {
-            const plugin = makePlugin({ autoOpenCockpit: true });
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
-            // The cockpit toggle is the last toggle in Advanced; the Fleet
-            // section's flash_attention toggle renders after it.
-            await toggleOnChanges[toggleOnChanges.length - 2](false);
-            expect(plugin.settings.autoOpenCockpit).toBe(false);
-            expect(plugin.saveSettings).toHaveBeenCalled();
         });
     });
 
@@ -758,9 +806,8 @@ describe("LilbeeSettingTab", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
-            // Generation-section chat_mode is the first dropdown rendered there;
-            // 0=serverMode (in connection), 1=chat_mode (in generation).
-            await dropdownOnChanges[1]("chat");
+            // 0=serverMode, 1=server version (both in connection), 2=chat_mode (in generation).
+            await dropdownOnChanges[2]("chat");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chat_mode: "chat" });
         });
 
@@ -771,7 +818,7 @@ describe("LilbeeSettingTab", () => {
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
-            await dropdownOnChanges[1]("chat");
+            await dropdownOnChanges[2]("chat");
             expect(Notice.instances.some((n) => n.message.includes("Chat mode"))).toBe(true);
         });
 
@@ -936,8 +983,9 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
 
-            // Setup wizard + Start + Check for updates + Refresh + Browse Catalog + Wiki Lint + Wiki Prune + Export diagnostics + Reset all = 9
-            expect(buttonOnClicks.length).toBe(9);
+            // Setup wizard + Start + Server version + Refresh + Browse Catalog + Wiki Lint + Wiki Prune
+            // + Export diagnostics + Reset all + Uninstall server = 10
+            expect(buttonOnClicks.length).toBe(10);
             // Refresh is the fourth button (index 3)
             await expect(buttonOnClicks[3]()).resolves.not.toThrow();
         });
@@ -2231,94 +2279,180 @@ describe("managed mode settings", () => {
         expect(plugin.saveSettings).toHaveBeenCalled();
         expect(displaySpy).toHaveBeenCalled();
     });
+    const RELEASES = [
+        { tag: "v0.3.0", assetUrl: "https://example.com/3", variant: "default", sizeBytes: 266000000, digest: null },
+        { tag: "v0.2.0", assetUrl: "https://example.com/2", variant: "default", sizeBytes: 265000000, digest: null },
+        { tag: "v0.1.0", assetUrl: "https://example.com/1", variant: "default", sizeBytes: 264000000, digest: null },
+    ];
 
-    it("check for updates button offers update when newer version exists", async () => {
-        Notice.clear();
+    /** The release list loads asynchronously; let its promise settle. */
+    async function settleReleases(): Promise<void> {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
 
-        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
-        (plugin as any).checkForUpdate = vi
-            .fn()
-            .mockResolvedValue({ available: true, release: { tag: "v0.2.0", assetUrl: "https://example.com" } });
+    it("warns that only the latest server release is supported", () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
         mockChatPicker(plugin);
         const tab = makeTab(plugin);
+        const setAttribute = vi.spyOn(MockElement.prototype, "setAttribute");
 
-        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        tab.display();
 
-        // buttonOnClicks[0] = Setup wizard, [1] = Start (server controls), [2] = Check for updates
-        await buttonOnClicks[2]();
-
-        // No notice on check — button transforms to "Update to vX.Y.Z" instead
-        expect(Notice.instances.some((n) => n.message.includes("update available"))).toBe(false);
+        const tooltips = setAttribute.mock.calls.filter(([name]) => name === "title").map(([, value]) => value);
+        expect(tooltips).toContain(MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
+        expect(MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT).toContain("not supported");
+        setAttribute.mockRestore();
     });
 
-    it("51g: check for updates with no newer version surfaces a 'up to date' Notice naming the current version", async () => {
-        Notice.clear();
-
-        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
-        (plugin as any).checkForUpdate = vi.fn().mockResolvedValue({ available: false });
+    it("version dropdown offers the recent releases newest first", async () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
         mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
-        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        const { dropdownOptions } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
 
-        // buttonOnClicks[0] = Setup wizard, [1] = Start, [2] = Check for updates
-        await buttonOnClicks[2]();
-
-        // Notice mentions the current version so the click visibly registered.
-        expect(Notice.instances.some((n) => n.message.includes("up to date") && n.message.includes("v0.1.0"))).toBe(
-            true,
-        );
+        // dropdownOptions[0] is the server-mode dropdown; [1] is the version picker.
+        expect(Object.keys(dropdownOptions[1])).toEqual(["v0.3.0", "v0.2.0", "v0.1.0"]);
     });
 
-    it("51g: check for updates with no version persisted falls back to a generic 'unknown version' label", async () => {
-        Notice.clear();
+    const DEV_AHEAD = [
+        {
+            tag: "v0.4.0.dev9",
+            assetUrl: "https://example.com/d",
+            variant: "default",
+            sizeBytes: 267000000,
+            digest: null,
+        },
+        ...RELEASES,
+    ];
 
-        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "" });
-        (plugin as any).checkForUpdate = vi.fn().mockResolvedValue({ available: false });
+    it("hides dev builds from the picker and nudges toward them by default", async () => {
+        mockListReleases.mockResolvedValue(DEV_AHEAD);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
         mockChatPicker(plugin);
         const tab = makeTab(plugin);
+        const setDesc = vi.spyOn(Setting.prototype, "setDesc");
 
-        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        const { dropdownOptions } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
 
-        await buttonOnClicks[2]();
-
-        expect(Notice.instances.some((n) => n.message.includes("unknown version"))).toBe(true);
+        expect(Object.keys(dropdownOptions[1])).toEqual(["v0.3.0", "v0.2.0", "v0.1.0"]);
+        const descs = setDesc.mock.calls.map(([d]) => String(d));
+        expect(descs.some((d) => d.includes(MESSAGES.DESC_DEV_BUILD_AVAILABLE("v0.4.0.dev9")))).toBe(true);
+        setDesc.mockRestore();
     });
 
-    it("update button calls updateServer and shows success notice", async () => {
-        Notice.clear();
+    it("does not nudge toward a dev build the user is already running", async () => {
+        mockListReleases.mockResolvedValue(DEV_AHEAD);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.4.0.dev9" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const setDesc = vi.spyOn(Setting.prototype, "setDesc");
 
-        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
-        (plugin as any).checkForUpdate = vi
-            .fn()
-            .mockResolvedValue({ available: true, release: { tag: "v0.2.0", assetUrl: "https://example.com" } });
-        (plugin as any).updateServer = vi
-            .fn()
-            .mockImplementation(async (_release: any, onProgress?: (msg: string) => void) => {
-                onProgress?.("Downloading...");
-            });
+        captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+
+        const descs = setDesc.mock.calls.map(([d]) => String(d));
+        expect(descs.some((d) => d.includes(MESSAGES.DESC_DEV_BUILD_AVAILABLE("v0.4.0.dev9")))).toBe(false);
+        setDesc.mockRestore();
+    });
+
+    it("offers dev builds in the picker when they are included", async () => {
+        mockListReleases.mockResolvedValue(DEV_AHEAD);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0", includeDevBuilds: true });
         mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
-        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        const { dropdownOptions } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
 
-        // First click: check for updates (sets pendingRelease)
-        await buttonOnClicks[2]();
-        // Same handler clicked again: now triggers update via pendingRelease
+        expect(Object.keys(dropdownOptions[1])).toEqual(["v0.4.0.dev9", "v0.3.0", "v0.2.0", "v0.1.0"]);
+    });
+
+    it("the dev-builds toggle persists the setting and re-renders", async () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+        // Spy after the first render so the toggle's own re-render is what we assert.
+        const renderSpy = vi.spyOn(tab, "render").mockImplementation(() => {});
+        // [0] is the includeDevBuilds toggle (managed server section, before Chat).
+        await toggleOnChanges[0](true);
+
+        expect(plugin.settings.includeDevBuilds).toBe(true);
+        expect(plugin.saveSettings).toHaveBeenCalled();
+        expect(renderSpy).toHaveBeenCalled();
+        renderSpy.mockRestore();
+    });
+
+    it("links to Libera Chat and GitHub issues for dev-build feedback", () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const setAttribute = vi.spyOn(MockElement.prototype, "setAttribute");
+
+        tab.display();
+
+        const hrefs = setAttribute.mock.calls.filter(([name]) => name === "href").map(([, value]) => value);
+        expect(hrefs).toContain("https://web.libera.chat/#lilbee");
+        expect(hrefs).toContain("https://github.com/tobocop2/lilbee/issues");
+        setAttribute.mockRestore();
+    });
+
+    it("selecting an older release turns the button into a downgrade", async () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { dropdownOnChanges, buttons } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+        dropdownOnChanges[1]("v0.1.0");
+
+        expect(buttons[2].text).toBe("Downgrade to v0.1.0");
+    });
+
+    it("selecting a newer release turns the button into an update", async () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { dropdownOnChanges, buttons } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+        dropdownOnChanges[1]("v0.3.0");
+
+        expect(buttons[2].text).toBe("Update to v0.3.0");
+    });
+
+    it("the installed release reads Reinstall and installs the same tag", async () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
+        const updateServer = vi.fn().mockResolvedValue(undefined);
+        (plugin as any).updateServer = updateServer;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks, buttons } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+        expect(buttons[2].text).toBe("Reinstall");
+
+        vi.spyOn(tab, "render").mockImplementation(() => {});
         await buttonOnClicks[2]();
 
-        expect((plugin as any).updateServer).toHaveBeenCalled();
-        expect(Notice.instances.some((n) => n.message.includes("updated to v0.2.0"))).toBe(true);
+        expect(updateServer.mock.calls[0][0].tag).toBe("v0.3.0");
     });
 
     it("update progress panel surfaces the phase message and the total download size", async () => {
         Notice.clear();
-
-        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
-        (plugin as any).checkForUpdate = vi.fn().mockResolvedValue({
-            available: true,
-            release: { tag: "v0.2.0", assetUrl: "https://example.com", variant: "default", sizeBytes: 266000000 },
-        });
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
         (plugin as any).updateServer = vi
             .fn()
             .mockImplementation(async (_release: any, onProgress?: (msg: string) => void) => {
@@ -2327,79 +2461,94 @@ describe("managed mode settings", () => {
         mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
-        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        const { dropdownOnChanges, buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+        dropdownOnChanges[1]("v0.3.0");
         // Stop the post-update re-render so the in-progress panel persists for assertion.
         const displaySpy = vi.spyOn(tab, "render").mockImplementation(() => {});
 
-        await buttonOnClicks[2](); // check → sets pendingRelease
-        await buttonOnClicks[2](); // update → drives the progress panel
+        await buttonOnClicks[2]();
 
         const panel = tab.containerEl.find("lilbee-update-progress")!;
         expect(panel.style.display).toBe("");
         expect(panel.find("lilbee-update-progress-phase")!.textContent).toBe("Downloading...");
-        expect(panel.find("lilbee-update-progress-size")!.textContent).toBe("Updating to v0.2.0 · 266 MB download");
+        expect(panel.find("lilbee-update-progress-size")!.textContent).toBe("Updating to v0.3.0 · 266 MB download");
         displaySpy.mockRestore();
     });
 
-    it("update button does not add duplicate click handlers", async () => {
-        Notice.clear();
-
-        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
-        (plugin as any).checkForUpdate = vi
+    it("grows the progress bar as the download reports a percentage", async () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
+        (plugin as any).updateServer = vi
             .fn()
-            .mockResolvedValue({ available: true, release: { tag: "v0.2.0", assetUrl: "https://example.com" } });
+            .mockImplementation(async (_r: any, onProgress?: (msg: string, percent?: number) => void) => {
+                onProgress?.("Downloading... 50% (128 MB of 256 MB)", 50);
+            });
         mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
-        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
-        const countBefore = buttonOnClicks.length;
-
-        // Click check for updates — should NOT add a new handler
+        const { dropdownOnChanges, buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+        dropdownOnChanges[1]("v0.3.0");
+        vi.spyOn(tab, "render").mockImplementation(() => {});
         await buttonOnClicks[2]();
 
-        expect(buttonOnClicks.length).toBe(countBefore);
+        const fill = tab.containerEl.find("lilbee-progress-bar")!;
+        expect(fill.style.width).toBe("50%");
+        expect(fill.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(false);
+        expect(tab.containerEl.find("lilbee-update-progress-phase")!.textContent).toContain("50%");
     });
 
-    it("update button shows failure notice when updateServer throws", async () => {
+    it("a failed install surfaces the reason and restores the button label", async () => {
         Notice.clear();
-
-        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.1.0" });
-        (plugin as any).checkForUpdate = vi.fn().mockResolvedValue({
-            available: true,
-            release: { tag: "v0.2.0", assetUrl: "https://example.com", variant: "default", sizeBytes: 262144000 },
-        });
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
         (plugin as any).updateServer = vi
             .fn()
             .mockRejectedValue(new Error("Not enough disk space for the lilbee server"));
         mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
-        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        const { dropdownOnChanges, buttonOnClicks, buttons } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+        dropdownOnChanges[1]("v0.1.0");
 
-        // First click: check (sets pendingRelease); second click: update (fails)
-        await buttonOnClicks[2]();
         await buttonOnClicks[2]();
 
-        // The notice surfaces the actual reason (e.g. disk space), not just a generic failure.
         expect(Notice.instances.some((n) => n.message.includes("Not enough disk space"))).toBe(true);
-        // A failed update collapses the progress panel rather than leaving a dead bar up.
+        // A failed install collapses the progress panel rather than leaving a dead bar up.
         expect(tab.containerEl.find("lilbee-update-progress")!.style.display).toBe("none");
+        expect(buttons[2].text).toBe("Downgrade to v0.1.0");
     });
 
-    it("check for updates button shows error on failure", async () => {
-        Notice.clear();
+    it("an unreachable GitHub leaves the version button disabled and says so", async () => {
+        mockListReleases.mockRejectedValue(new Error("network error"));
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
 
-        const plugin = makePlugin({ serverMode: "managed" });
-        (plugin as any).checkForUpdate = vi.fn().mockRejectedValue(new Error("network error"));
+        const setDesc = vi.spyOn(Setting.prototype, "setDesc");
+        const { buttons } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+
+        expect(buttons[2].disabled).toBe(true);
+        expect(setDesc.mock.calls.some(([desc]) => String(desc).includes("could not be read from GitHub"))).toBe(true);
+        setDesc.mockRestore();
+    });
+
+    it("clicking the version button with no matching release does nothing", async () => {
+        mockListReleases.mockResolvedValue([]);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
+        const updateServer = vi.fn();
+        (plugin as any).updateServer = updateServer;
         mockChatPicker(plugin);
         const tab = makeTab(plugin);
 
         const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
-
-        // buttonOnClicks[0] = Setup wizard, [1] = Start, [2] = Check for updates
+        await settleReleases();
         await buttonOnClicks[2]();
 
-        expect(Notice.instances.some((n) => n.message.includes("could not check"))).toBe(true);
+        expect(updateServer).not.toHaveBeenCalled();
     });
 
     it("renders server status indicator in managed mode", () => {
@@ -3114,10 +3263,10 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Toggle order: [0] show_reasoning (Chat), [1] adaptiveThreshold (search/retrieval),
-            // [2] worker_pool_eager_start (worker-pool),
-            // [3] crawl_retry_on_rate_limit (crawling), [4+] wiki toggles.
-            await toggleOnChanges[3](false);
+            // Toggle order: [0] includeDevBuilds (managed server), [1] show_reasoning (Chat),
+            // [2] adaptiveThreshold (search/retrieval), [3] worker_pool_eager_start (worker-pool),
+            // [4] crawl_retry_on_rate_limit (crawling), [5+] wiki toggles.
+            await toggleOnChanges[4](false);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: false });
         });
 
@@ -3128,7 +3277,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[3](false);
+            await toggleOnChanges[4](false);
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -3285,9 +3434,9 @@ describe("managed mode settings", () => {
             // load-bearing (if the flag failed to set, updateConfig WOULD be called).
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = false;
-            // toggleOnChanges[3] is crawl_retry_on_rate_limit; [0]=show_reasoning,
-            // [1]=adaptiveThreshold, [2]=worker_pool_eager_start.
-            await toggleOnChanges[3](true);
+            // toggleOnChanges[4] is crawl_retry_on_rate_limit; [0]=includeDevBuilds,
+            // [1]=show_reasoning, [2]=adaptiveThreshold, [3]=worker_pool_eager_start.
+            await toggleOnChanges[4](true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: true });
         });
 
@@ -3299,7 +3448,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = true;
-            await toggleOnChanges[3](true);
+            await toggleOnChanges[4](true);
             (tab as any).suppressToggleChanges = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
@@ -3569,10 +3718,10 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+            const captured = captureSettingCallbacks(() => tab.display());
             (tab as any).configDefaults = { chunk_size: 512 };
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
-            await buttonOnClicks[buttonOnClicks.length - 1]();
+            await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
             mockGenericConfirmResult = true;
         });
@@ -3583,7 +3732,7 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+            const captured = captureSettingCallbacks(() => tab.display());
             (tab as any).configDefaults = {
                 chunk_size: 512,
                 crawl_max_depth: 2,
@@ -3591,7 +3740,7 @@ describe("managed mode settings", () => {
                 hf_token: "",
             };
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
-            await buttonOnClicks[buttonOnClicks.length - 1]();
+            await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512, crawl_max_depth: 2 });
             expect(Notice.instances.some((n) => n.message.includes("reset to defaults"))).toBe(true);
         });
@@ -3601,10 +3750,10 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+            const captured = captureSettingCallbacks(() => tab.display());
             (tab as any).configDefaults = { openai_api_key: "", hf_token: "" };
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
-            await buttonOnClicks[buttonOnClicks.length - 1]();
+            await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -3615,9 +3764,9 @@ describe("managed mode settings", () => {
             mockChatPicker(plugin);
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             const tab = makeTab(plugin);
-            const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+            const captured = captureSettingCallbacks(() => tab.display());
             (tab as any).configDefaults = { chunk_size: 512 };
-            await buttonOnClicks[buttonOnClicks.length - 1]();
+            await clickButton(captured, MESSAGES.LABEL_RESET_ALL_SETTINGS);
             expect(Notice.instances.some((n) => n.message.includes("failed to reset"))).toBe(true);
         });
     });
@@ -4172,7 +4321,7 @@ describe("managed mode settings", () => {
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
             // wiki prune toggle is before the sync-to-vault toggle
-            const wikiPruneToggleIdx = toggleOnChanges.length - 5;
+            const wikiPruneToggleIdx = toggleOnChanges.length - 4;
             await toggleOnChanges[wikiPruneToggleIdx](true);
             expect(plugin.settings.wikiPruneRaw).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -4218,12 +4367,9 @@ describe("managed mode settings", () => {
             (plugin as any).wikiEnabled = true;
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+            const captured = captureSettingCallbacks(() => tab.display());
 
-            // Wiki section renders before the Diagnostics and Advanced sections, so lint/prune sit
-            // 4th/3rd from the end: … lint, prune, export-diagnostics, reset-all.
-            const lintIdx = buttonOnClicks.length - 4;
-            await buttonOnClicks[lintIdx]();
+            await clickButton(captured, MESSAGES.LABEL_WIKI_RUN_LINT);
             expect(plugin.runWikiLint).toHaveBeenCalled();
         });
 
@@ -4232,10 +4378,9 @@ describe("managed mode settings", () => {
             (plugin as any).wikiEnabled = true;
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+            const captured = captureSettingCallbacks(() => tab.display());
 
-            const pruneIdx = buttonOnClicks.length - 3;
-            await buttonOnClicks[pruneIdx]();
+            await clickButton(captured, MESSAGES.LABEL_WIKI_RUN_PRUNE);
             expect(plugin.runWikiPrune).toHaveBeenCalled();
         });
 
@@ -4247,7 +4392,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const wikiPruneToggleIdx = toggleOnChanges.length - 5;
+            const wikiPruneToggleIdx = toggleOnChanges.length - 4;
             await toggleOnChanges[wikiPruneToggleIdx](true);
             expect(
                 Notice.instances.some((n: any) => n.message.includes("failed to update Remove source duplicates")),
@@ -4261,7 +4406,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const syncToggleIdx = toggleOnChanges.length - 4;
+            const syncToggleIdx = toggleOnChanges.length - 3;
             await toggleOnChanges[syncToggleIdx](true);
             expect(plugin.settings.wikiSyncToVault).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -4276,7 +4421,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const syncToggleIdx = toggleOnChanges.length - 4;
+            const syncToggleIdx = toggleOnChanges.length - 3;
             await toggleOnChanges[syncToggleIdx](false);
             expect(plugin.settings.wikiSyncToVault).toBe(false);
             expect(plugin.wikiSync).toBeNull();
@@ -6283,6 +6428,7 @@ describe("managed mode settings", () => {
                     setButtonText: () => fakeBtn,
                     setDisabled: () => fakeBtn,
                     setWarning: () => fakeBtn,
+                    buttonEl: new MockElement(),
                     setClass: () => fakeBtn,
                     onClick: (handler: ButtonOnClick) => {
                         buttonOnClicks.push(handler);
@@ -6482,7 +6628,7 @@ describe("managed mode settings", () => {
         // ([0]=adaptiveThreshold).
         const POOL_CALL_TIMEOUT_IDX = 19;
         const POOL_MAX_IDLE_IDX = 20;
-        const POOL_EAGER_TOGGLE_IDX = 2;
+        const POOL_EAGER_TOGGLE_IDX = 3;
 
         it("hides each worker-pool row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
@@ -6571,7 +6717,7 @@ describe("managed mode settings", () => {
 
     describe("show reasoning toggle", () => {
         // toggleOnChanges[0] is show_reasoning (Chat section, top); [1]=adaptiveThreshold.
-        const SHOW_REASONING_TOGGLE_IDX = 0;
+        const SHOW_REASONING_TOGGLE_IDX = 1;
 
         it("PATCHes show_reasoning when the toggle flips", async () => {
             const plugin = makePlugin();
@@ -6997,6 +7143,7 @@ describe("Export diagnostics button", () => {
                 setButtonText: () => fakeBtn,
                 setDisabled: () => fakeBtn,
                 setWarning: () => fakeBtn,
+                buttonEl: new MockElement(),
                 setClass: () => fakeBtn,
                 onClick: (handler: () => unknown) => {
                     namedButtons.push({ name, onClick: handler });
@@ -7018,5 +7165,350 @@ describe("Export diagnostics button", () => {
 
         expect(plugin.diagnosticsContext).toHaveBeenCalledTimes(1);
         expect(exportDiagnostics).toHaveBeenCalledWith(ctx);
+    });
+});
+
+describe("managed-mode uninstall section", () => {
+    const PLAN = {
+        targets: [{ kind: "binary", path: "/root/bin", bytes: 412_000_000 }],
+        totalBytes: 13_632_000_000,
+    };
+
+    beforeEach(() => {
+        Notice.clear();
+        mockUninstallConfirmed = true;
+        mockListReleases.mockResolvedValue([]);
+    });
+
+    it("names the freed space and warns that removing the plugin leaves the server behind", () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).planServerUninstall = () => PLAN;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+
+        const uninstall = captured.buttons.find((b) => b.name === MESSAGES.LABEL_UNINSTALL_SERVER);
+        expect(uninstall?.text).toBe("Uninstall server");
+        const callout = tab.containerEl.find("lilbee-uninstall-callout");
+        expect(callout?.textContent).toContain("Removing the plugin does not remove the server");
+    });
+
+    it("uninstalls and reports the freed space when the user confirms", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).planServerUninstall = () => PLAN;
+        const uninstallServer = vi.fn().mockResolvedValue(13_632_000_000);
+        (plugin as any).uninstallServer = uninstallServer;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        vi.spyOn(tab, "render").mockImplementation(() => {});
+        await clickButton(captured, MESSAGES.LABEL_UNINSTALL_SERVER);
+
+        expect(uninstallServer).toHaveBeenCalledWith(PLAN);
+        expect(Notice.instances.some((n) => n.message.includes("13.6 GB freed"))).toBe(true);
+    });
+
+    it("does nothing when the user cancels", async () => {
+        mockUninstallConfirmed = false;
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).planServerUninstall = () => PLAN;
+        const uninstallServer = vi.fn();
+        (plugin as any).uninstallServer = uninstallServer;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await clickButton(captured, MESSAGES.LABEL_UNINSTALL_SERVER);
+
+        expect(uninstallServer).not.toHaveBeenCalled();
+    });
+
+    it("surfaces the reason when the uninstall fails", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).planServerUninstall = () => PLAN;
+        (plugin as any).uninstallServer = vi.fn().mockRejectedValue(new Error("permission denied"));
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        vi.spyOn(tab, "render").mockImplementation(() => {});
+        await clickButton(captured, MESSAGES.LABEL_UNINSTALL_SERVER);
+
+        expect(Notice.instances.some((n) => n.message.includes("permission denied"))).toBe(true);
+    });
+
+    it("does nothing when there is nothing to plan", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).planServerUninstall = () => null;
+        const uninstallServer = vi.fn();
+        (plugin as any).uninstallServer = uninstallServer;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await clickButton(captured, MESSAGES.LABEL_UNINSTALL_SERVER);
+
+        expect(uninstallServer).not.toHaveBeenCalled();
+    });
+
+    it("is absent in external mode", () => {
+        const plugin = makePlugin({ serverMode: "external" });
+        (plugin as any).planServerUninstall = () => PLAN;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+
+        expect(captured.buttons.some((b) => b.name === MESSAGES.LABEL_UNINSTALL_SERVER)).toBe(false);
+        expect(tab.containerEl.find("lilbee-uninstall-callout")).toBeNull();
+    });
+});
+
+describe("managed mode with no server installed", () => {
+    const RELEASES = [
+        { tag: "v0.3.0", assetUrl: "https://e/3", variant: "default", sizeBytes: 412_000_000, digest: null },
+        { tag: "v0.2.0", assetUrl: "https://e/2", variant: "default", sizeBytes: 410_000_000, digest: null },
+    ];
+
+    async function settle(): Promise<void> {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    function makeUninstalledPlugin() {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).isServerInstalled = () => false;
+        mockChatPicker(plugin);
+        return plugin;
+    }
+
+    it("offers to install even when a binary was put back by hand", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).isServerInstalled = () => true;
+        (plugin as any).isServerUninstalled = () => true;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await settle();
+
+        expect(captured.buttons.some((b) => b.name === MESSAGES.LABEL_INSTALL_SERVER)).toBe(true);
+        expect(captured.buttons.some((b) => b.name === MESSAGES.LABEL_UNINSTALL_SERVER)).toBe(false);
+    });
+
+    beforeEach(() => {
+        Notice.clear();
+        mockListReleases.mockResolvedValue(RELEASES);
+    });
+
+    it("explains that the server is missing and offers to install the newest release", async () => {
+        const plugin = makeUninstalledPlugin();
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await settle();
+
+        const install = captured.buttons.find((b) => b.name === MESSAGES.LABEL_INSTALL_SERVER)!;
+        expect(install.text).toBe("Install server");
+        expect(install.disabled).toBe(false);
+        expect(Object.keys(captured.dropdownOptions[1])).toEqual(["v0.3.0", "v0.2.0"]);
+    });
+
+    it("hides the uninstall section while nothing is installed", async () => {
+        const plugin = makeUninstalledPlugin();
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await settle();
+
+        expect(captured.buttons.some((b) => b.name === MESSAGES.LABEL_UNINSTALL_SERVER)).toBe(false);
+    });
+
+    it("installs the selected release and announces it", async () => {
+        const plugin = makeUninstalledPlugin();
+        const installServer = vi.fn().mockResolvedValue(undefined);
+        (plugin as any).installServer = installServer;
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await settle();
+        captured.dropdownOnChanges[1]("v0.2.0");
+        vi.spyOn(tab, "render").mockImplementation(() => {});
+        await clickButton(captured, MESSAGES.LABEL_INSTALL_SERVER);
+
+        expect(installServer.mock.calls[0][0].tag).toBe("v0.2.0");
+        expect(Notice.instances.some((n) => n.message.includes("v0.2.0 installed"))).toBe(true);
+    });
+
+    it("surfaces the phase and size while installing", async () => {
+        const plugin = makeUninstalledPlugin();
+        (plugin as any).installServer = vi
+            .fn()
+            .mockImplementation(async (_r: any, onProgress?: (msg: string) => void) => {
+                onProgress?.("Downloading...");
+            });
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await settle();
+        vi.spyOn(tab, "render").mockImplementation(() => {});
+        await clickButton(captured, MESSAGES.LABEL_INSTALL_SERVER);
+
+        const panel = tab.containerEl.find("lilbee-update-progress")!;
+        expect(panel.find("lilbee-update-progress-phase")!.textContent).toBe("Downloading...");
+        expect(panel.find("lilbee-update-progress-size")!.textContent).toBe("Updating to v0.3.0 · 412 MB download");
+    });
+
+    it("restores the install button when the download fails", async () => {
+        const plugin = makeUninstalledPlugin();
+        (plugin as any).installServer = vi.fn().mockRejectedValue(new Error("Not enough disk space"));
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await settle();
+        await clickButton(captured, MESSAGES.LABEL_INSTALL_SERVER);
+
+        expect(Notice.instances.some((n) => n.message.includes("Not enough disk space"))).toBe(true);
+        expect(tab.containerEl.find("lilbee-update-progress")!.style.display).toBe("none");
+        const install = captured.buttons.find((b) => b.name === MESSAGES.LABEL_INSTALL_SERVER)!;
+        expect(install.text).toBe("Install server");
+        expect(install.disabled).toBe(false);
+    });
+
+    it("does nothing when clicked before the release list arrives", async () => {
+        mockListReleases.mockResolvedValue([]);
+        const plugin = makeUninstalledPlugin();
+        const installServer = vi.fn();
+        (plugin as any).installServer = installServer;
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await settle();
+        await clickButton(captured, MESSAGES.LABEL_INSTALL_SERVER);
+
+        expect(installServer).not.toHaveBeenCalled();
+    });
+
+    it("says so when the release list cannot be read", async () => {
+        mockListReleases.mockRejectedValue(new Error("offline"));
+        const plugin = makeUninstalledPlugin();
+        const tab = makeTab(plugin);
+        const setDesc = vi.spyOn(Setting.prototype, "setDesc");
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await settle();
+
+        expect(setDesc.mock.calls.some(([d]) => String(d) === MESSAGES.ERROR_RELEASE_LIST)).toBe(true);
+        expect(captured.buttons.find((b) => b.name === MESSAGES.LABEL_INSTALL_SERVER)!.disabled).toBe(true);
+        setDesc.mockRestore();
+    });
+});
+
+describe("cancelling a server download", () => {
+    const RELEASES = [
+        { tag: "v0.3.0", assetUrl: "https://e/3", variant: "default", sizeBytes: 412_000_000, digest: null },
+    ];
+
+    async function settle(): Promise<void> {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    beforeEach(() => {
+        Notice.clear();
+        mockListReleases.mockResolvedValue(RELEASES);
+    });
+
+    it("offers a cancel button on the progress panel", () => {
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
+        const cancelServerDownload = vi.fn();
+        (plugin as any).cancelServerDownload = cancelServerDownload;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        tab.display();
+        const cancel = tab.containerEl.find("lilbee-update-progress-cancel")!;
+        expect(cancel.textContent).toBe("Cancel download");
+
+        cancel.trigger("click");
+        expect(cancelServerDownload).toHaveBeenCalled();
+    });
+
+    it("reports a cancelled update as a choice, not a failure", async () => {
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
+        (plugin as any).updateServer = vi.fn().mockRejectedValue(new FakeDownloadCanceledError());
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        await settle();
+        await buttonOnClicks[2]();
+
+        expect(Notice.instances.map((n) => n.message)).toContain("lilbee server download cancelled.");
+        expect(Notice.instances.some((n) => n.message.includes("Could not"))).toBe(false);
+        expect(tab.containerEl.find("lilbee-update-progress")!.style.display).toBe("none");
+    });
+
+    it("reports a cancelled first install as a choice, not a failure", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).isServerInstalled = () => false;
+        (plugin as any).installServer = vi.fn().mockRejectedValue(new FakeDownloadCanceledError());
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        await settle();
+        await clickButton(captured, MESSAGES.LABEL_INSTALL_SERVER);
+
+        expect(Notice.instances.map((n) => n.message)).toContain("lilbee server download cancelled.");
+    });
+
+    it("offers to stop a download that started outside settings", async () => {
+        const plugin = makePlugin({ serverMode: "managed" });
+        (plugin as any).isServerInstalled = () => false;
+        (plugin as any).isDownloadingServer = () => true;
+        const cancelServerDownload = vi.fn();
+        (plugin as any).cancelServerDownload = cancelServerDownload;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const captured = captureSettingCallbacks(() => tab.display());
+        vi.spyOn(tab, "render").mockImplementation(() => {});
+        await clickButton(captured, MESSAGES.LABEL_SERVER_STATUS);
+
+        expect(cancelServerDownload).toHaveBeenCalled();
+        expect(captured.buttons.some((b) => b.name === MESSAGES.LABEL_INSTALL_SERVER)).toBe(false);
+    });
+});
+
+describe("version picker when the installed tag is unknown to GitHub", () => {
+    it("selects the newest release instead", async () => {
+        mockListReleases.mockResolvedValue([
+            { tag: "v0.3.0", assetUrl: "https://e/3", variant: "default", sizeBytes: 1, digest: null },
+        ]);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v9.9.9-local" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { dropdownSetValues } = captureSettingCallbacks(() => tab.display());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(dropdownSetValues[1]).toContain("v0.3.0");
+    });
+});
+
+describe("version picker with no version recorded", () => {
+    it("says the version is unknown when GitHub cannot be reached", async () => {
+        mockListReleases.mockRejectedValue(new Error("offline"));
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const setDesc = vi.spyOn(Setting.prototype, "setDesc");
+
+        captureSettingCallbacks(() => tab.display());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(setDesc.mock.calls.some(([d]) => String(d) === MESSAGES.DESC_SERVER_VERSION_UNKNOWN)).toBe(true);
+        setDesc.mockRestore();
     });
 });

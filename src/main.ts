@@ -14,8 +14,10 @@ import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { exportDiagnostics } from "./diagnostics-export";
 import { ErrorJournal } from "./error-journal";
-import type { ReleaseInfo } from "./binary-manager";
-import { ServerManager } from "./server-manager";
+import { DownloadCanceledError } from "./binary-manager";
+import type { DownloadProgress, ReleaseInfo } from "./binary-manager";
+import { ServerManager, killServerTree } from "./server-manager";
+import { executeUninstall, planUninstall } from "./server-uninstall";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
 import { LilbeeSettingTab } from "./settings";
 import { VaultRegistry, computeVaultId, resolveSharedRoot, sharedBinDir, sharedModelsDir } from "./vault-registry";
@@ -56,6 +58,7 @@ import {
     type SSEEvent,
     type SyncOptions,
     type TaskEntry,
+    type UninstallPlan,
     type VaultAdapter,
 } from "./types";
 import { MESSAGES } from "./locales/en";
@@ -63,11 +66,13 @@ import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import {
     errorMessage,
     extractSseErrorMessage,
+    formatDiskSize,
     HEALTH_FAILURE_STREAK_THRESHOLD,
     HEALTH_PROBE_INTERVAL_MS,
     NOTICE_DURATION_MS,
     NOTICE_ERROR_DURATION_MS,
     NOTICE_PERMANENT,
+    percentOfBytes,
     sessionTokenInvalidMessage,
     STREAM_IDLE_TIMEOUT_MS,
     StreamIdleError,
@@ -246,13 +251,30 @@ export function batchUploads(files: UploadPayload[]): UploadPayload[][] {
     return batches;
 }
 
+/** Progress for a settings-driven install/update: a phase line plus a percent when known. */
+export type ServerDownloadProgressHandler = (msg: string, percent?: number) => void;
+
+/** "Downloading... 45% (128 MB of 283 MB)", or bytes-only when the server sends no length. */
+function downloadMessage(progress: DownloadProgress): string {
+    const received = formatDiskSize(progress.receivedBytes);
+    const percent = percentOfBytes(progress.receivedBytes, progress.totalBytes);
+    if (percent === undefined || progress.totalBytes === null) return MESSAGES.STATUS_DOWNLOAD_RECEIVED(received);
+    return MESSAGES.STATUS_DOWNLOAD_PROGRESS(percent, received, formatDiskSize(progress.totalBytes));
+}
+
+/** The status bar is narrow: percent only, with the byte detail left to Settings. */
+function downloadStatusBar(progress: DownloadProgress): string {
+    const percent = percentOfBytes(progress.receivedBytes, progress.totalBytes);
+    if (percent === undefined) return MESSAGES.STATUS_DOWNLOADING;
+    return MESSAGES.STATUS_DOWNLOADING_PERCENT(percent);
+}
+
 export default class LilbeePlugin extends Plugin {
     settings: LilbeeSettings = { ...DEFAULT_SETTINGS };
     api: LilbeeClient = new LilbeeClient("");
     activeModel = "";
     statusBarEl: HTMLElement | null = null;
     syncPillEl: HTMLElement | null = null;
-    ribbonIconEl: HTMLElement | null = null;
     chatRibbonIconEl: HTMLElement | null = null;
     binaryManager: BinaryManager | null = null;
     serverManager: ServerManager | null = null;
@@ -266,6 +288,8 @@ export default class LilbeePlugin extends Plugin {
     private startingServer = false;
     private serverStartFailed = false;
     private unloaded = false;
+    // Guards chat-leaf creation against re-entrant duplicate tabs while setViewState is in flight (issue #169).
+    private openingChatLeaf = false;
     taskQueue: TaskQueue = new TaskQueue();
     /** Paths whose most-recent add failed — retry skips the reindex confirm. */
     private failedAddPaths = new Set<string>();
@@ -326,10 +350,6 @@ export default class LilbeePlugin extends Plugin {
             this.activateChatView(),
         );
         this.chatRibbonIconEl.addClass("lilbee-ribbon-icon", "lilbee-ribbon-chat");
-        this.ribbonIconEl = this.addRibbonIcon("list-checks", MESSAGES.LABEL_RIBBON_OPEN_TASK_CENTER, () =>
-            this.activateTaskView(),
-        );
-        this.ribbonIconEl.addClass("lilbee-ribbon-icon");
         // Guard against Obsidian holding stale view registrations from a
         // previous plugin instance that didn't unload cleanly (e.g. an
         // onload that threw before registerView ran, or a disable that
@@ -349,7 +369,6 @@ export default class LilbeePlugin extends Plugin {
         safeRegisterView(VIEW_TYPE_PLACEMENT, (leaf) => new PlacementView(leaf, this));
         this.addSettingTab(new LilbeeSettingTab(this.app, this));
         this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
-        this.taskQueue.onChange(() => this.updateRibbonFromQueue());
         this.taskQueue.onChange(() => this.schedulePersistHistory());
         // Add/sync/crawl tasks completing is when the server's set of known
         // documents changes, so re-count pending sync then. Vault file events
@@ -374,7 +393,10 @@ export default class LilbeePlugin extends Plugin {
         // wizard arrives at the Model step against a server that isn't
         // actually ready yet (empty catalog, failed reads).
         if (this.settings.setupCompleted) {
-            if (this.settings.serverMode === SERVER_MODE.MANAGED) {
+            if (this.settings.serverMode === SERVER_MODE.MANAGED && this.serverUninstalled) {
+                // The user removed the server on purpose. Wait to be asked.
+                this.showNotInstalledStatus();
+            } else if (this.settings.serverMode === SERVER_MODE.MANAGED) {
                 void this.ensureManagedConsentThenStart().then((outcome) => {
                     // If the user opts into external mode from the consent modal,
                     // drop them on the plugin's external-server settings.
@@ -398,20 +420,13 @@ export default class LilbeePlugin extends Plugin {
 
         this.startHealthProbe();
 
-        // Auto-open chat + task center for returning users so the workspace
-        // is immediately usable. Defer until the workspace layout is up so
-        // sidebar splits land in the right place. New users go through the
-        // wizard, which calls openCockpit on completion.
-        if (this.settings.setupCompleted && this.settings.autoOpenCockpit) {
-            this.app.workspace.onLayoutReady(() => {
-                void this.openCockpit();
-            });
-        }
+        // No view is force-opened here: Obsidian restores whatever leaves the
+        // user left open. New users get the chat panel once, from the wizard.
 
         // Defend against duplicate sidebar leaves persisted in workspace.json
-        // from prior sessions. activateChatView() / openCockpit() are
-        // idempotent for one leaf, but Obsidian restores whatever was saved,
-        // so a workspace that ended up with two chat panes restores both.
+        // from prior sessions. activateChatView() is idempotent for one leaf,
+        // but Obsidian restores whatever was saved, so a workspace that ended
+        // up with two chat panes restores both.
         this.app.workspace.onLayoutReady(() => {
             this.dedupeLilbeeLeaves();
         });
@@ -430,6 +445,10 @@ export default class LilbeePlugin extends Plugin {
         if (this.startingServer) return;
         const registry = this.vaultRegistry;
         if (!registry) return;
+        if (this.serverUninstalled) {
+            this.showNotInstalledStatus();
+            return;
+        }
         this.startingServer = true;
         this.serverStartFailed = false;
 
@@ -475,7 +494,7 @@ export default class LilbeePlugin extends Plugin {
         if (!registry) return { kind: SETUP_OUTCOME.CANCELED };
 
         const binaryPresent = new BinaryManager(sharedBinDir(registry.sharedRoot)).binaryExists();
-        if (binaryPresent) {
+        if (binaryPresent && !this.serverUninstalled) {
             await this.startManagedServer(onProgress);
             return { kind: SETUP_OUTCOME.STARTED, mode: SERVER_MODE.MANAGED };
         }
@@ -483,11 +502,12 @@ export default class LilbeePlugin extends Plugin {
         // The gate owns the server lifecycle for each outcome, so it persists
         // directly via persistAll() rather than saveSettings() — the latter
         // would fire its own startManagedServer on a mode switch and race ours.
-        const result = await new ManagedConsentModal(this.app).openConsent();
+        const result = await new ManagedConsentModal(this.app, this.settings.includeDevBuilds).openConsent();
         if (result.kind === MANAGED_CONSENT_RESULT.DOWNLOAD) {
             this.settings.serverMode = SERVER_MODE.MANAGED;
             this.previousServerMode = SERVER_MODE.MANAGED;
             await this.persistAll();
+            this.setServerUninstalled(false);
             await this.startManagedServer(onProgress);
             return { kind: SETUP_OUTCOME.STARTED, mode: SERVER_MODE.MANAGED };
         }
@@ -566,6 +586,8 @@ export default class LilbeePlugin extends Plugin {
 
     private async terminateOwningProcess(owner: ActiveLock | null): Promise<boolean> {
         if (!owner) return true;
+        // Stop the other vault's server too, or it orphans when its Obsidian goes.
+        if (owner.serverPid) await killServerTree(owner.serverPid);
         try {
             node.processKill(owner.pid);
         } catch {
@@ -582,6 +604,28 @@ export default class LilbeePlugin extends Plugin {
         return false;
     }
 
+    /** Aborts the in-flight server download, if any. Set while a download runs. */
+    private downloadController: AbortController | null = null;
+
+    private startDownloadController(): AbortController {
+        this.downloadController = new AbortController();
+        return this.downloadController;
+    }
+
+    private finishDownload(): void {
+        this.downloadController = null;
+    }
+
+    /** True while a server binary is downloading, so the UI can offer to stop it. */
+    isDownloadingServer(): boolean {
+        return this.downloadController !== null;
+    }
+
+    /** Stop an in-flight server download. The partial file is discarded; any installed binary stays. */
+    cancelServerDownload(): void {
+        this.downloadController?.abort();
+    }
+
     private async ensureBinaryWithUi(onProgress?: ManagedServerProgressHandler): Promise<string | null> {
         const bm = this.binaryManager;
         if (!bm) return null;
@@ -591,29 +635,31 @@ export default class LilbeePlugin extends Plugin {
             this.setStatusClass("lilbee-status-downloading");
             onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: MESSAGES.STATUS_DOWNLOADING });
         }
-        let downloadNotice: Notice | undefined;
         try {
             const path = await bm.ensureBinary(
-                (msg, url) => {
-                    this.updateStatusBar(`lilbee: ${msg}`, DOT_STATE.PRIMARY);
-                    onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: msg, url });
-                    if (!downloadNotice && needsDownload) {
-                        const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
-                        downloadNotice = new Notice(text, NOTICE_PERMANENT);
-                    } else if (downloadNotice) {
-                        const text = url ? `lilbee: ${msg}\n${url}` : `lilbee: ${msg}`;
-                        downloadNotice.setMessage(text);
-                    }
+                this.settings.includeDevBuilds,
+                (rawMsg, url, progress) => {
+                    const percent = progress ? percentOfBytes(progress.receivedBytes, progress.totalBytes) : undefined;
+                    const msg = progress ? downloadMessage(progress) : rawMsg;
+                    this.updateStatusBar(progress ? downloadStatusBar(progress) : `lilbee: ${msg}`, DOT_STATE.PRIMARY);
+                    onProgress?.({ phase: MANAGED_PHASE.DOWNLOADING, message: msg, url, percent });
                 },
                 () => this.showGatekeeperHelp(),
+                this.startDownloadController().signal,
             );
-            downloadNotice?.hide();
+            this.finishDownload();
             this.setStatusClass(null);
             return path;
         } catch (err) {
-            downloadNotice?.hide();
+            this.finishDownload();
             this.setStatusClass(null);
-            this.showError("failed to download server", err);
+            // Cancelling is a choice, not a failure: say so plainly and skip the error journal.
+            if (err instanceof DownloadCanceledError) {
+                new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELED);
+                this.updateStatusBar(MESSAGES.STATUS_NOT_INSTALLED, DOT_STATE.MUTED, false);
+            } else {
+                this.showError("failed to download server", err);
+            }
             onProgress?.({ phase: MANAGED_PHASE.ERROR, message: errorMessage(err, String(err)) });
             return null;
         }
@@ -627,7 +673,7 @@ export default class LilbeePlugin extends Plugin {
     private async recordLilbeeVersionAfterDownload(): Promise<void> {
         if (this.getSharedLilbeeVersion()) return;
         try {
-            const release = await getLatestRelease();
+            const release = await getLatestRelease(this.settings.includeDevBuilds);
             this.setSharedLilbeeVersion(release.tag);
             this.setSharedLilbeeVariant(release.variant);
         } catch {
@@ -642,7 +688,13 @@ export default class LilbeePlugin extends Plugin {
         if (!sm || !registry) return;
         const port = parseInt(sm.serverUrl.split(":").pop() || "0", 10);
         const now = Date.now();
-        registry.writeLock({ vaultId: this.vaultId, pid: process.pid, port, startedAt: now });
+        registry.writeLock({
+            vaultId: this.vaultId,
+            pid: process.pid,
+            serverPid: sm.serverPid ?? undefined,
+            port,
+            startedAt: now,
+        });
         const existing = registry.get(this.vaultId);
         registry.upsert({
             id: this.vaultId,
@@ -700,8 +752,71 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    /** True when the shared bin dir holds a server binary this vault can run. */
+    isServerInstalled(): boolean {
+        const registry = this.vaultRegistry;
+        if (!registry) return false;
+        return new BinaryManager(sharedBinDir(registry.sharedRoot)).binaryExists();
+    }
+
+    /** Size what an uninstall would delete, so the confirmation can list it. */
+    planServerUninstall(): UninstallPlan | null {
+        const registry = this.vaultRegistry;
+        if (!registry) return null;
+        return planUninstall(registry.sharedRoot, registry.resolveDataDir(this.vaultId));
+    }
+
+    /**
+     * Delete the server binary, the shared models, and this vault's index, then
+     * remember the choice so no later launch downloads the server again.
+     * Returns the bytes freed. Vault documents are never touched.
+     */
+    async uninstallServer(plan: UninstallPlan): Promise<number> {
+        const registry = this.vaultRegistry;
+        if (!registry) return 0;
+
+        // The binary and the models are shared. Deleting them under another
+        // vault's running server would break it mid-query.
+        const owner = registry.readLock();
+        if (owner !== null && registry.lockState(this.vaultId) === LOCK_STATE.LIVE_OTHER) {
+            throw new Error(MESSAGES.ERROR_UNINSTALL_SERVER_IN_USE(this.lookupVaultName(owner.vaultId)));
+        }
+
+        await this.serverManager?.stop();
+        this.serverManager = null;
+        this.binaryManager = null;
+        // A server orphaned by a crashed Obsidian still writes to the data dir.
+        if (owner?.serverPid) await killServerTree(owner.serverPid);
+        registry.releaseLock(this.vaultId);
+
+        executeUninstall(plan);
+
+        registry.saveConfig({
+            ...registry.loadConfig(),
+            lilbeeVersion: "",
+            lilbeeVariant: "",
+            serverUninstalled: true,
+        });
+        this.serverUninstalled = true;
+        this.serverEverReady = false;
+        this.serverUnreachable = false;
+        this.showNotInstalledStatus();
+        return plan.totalBytes;
+    }
+
+    /** Download *release* and start it, clearing an earlier uninstall. */
+    async installServer(release: ReleaseInfo, onProgress?: ServerDownloadProgressHandler): Promise<void> {
+        this.setServerUninstalled(false);
+        await this.updateServer(release, onProgress);
+    }
+
+    private showNotInstalledStatus(): void {
+        this.updateStatusBar(MESSAGES.STATUS_NOT_INSTALLED, DOT_STATE.MUTED, false);
+        this.setStatusClass(null);
+    }
+
     async checkForUpdate(): Promise<{ available: boolean; release?: ReleaseInfo }> {
-        const release = await getLatestRelease();
+        const release = await getLatestRelease(this.settings.includeDevBuilds);
         const versionChanged = checkForUpdate(this.getSharedLilbeeVersion(), release.tag);
         // A known installed variant that differs from the detected one means the
         // hardware-appropriate build changed (e.g. an NVIDIA driver was added).
@@ -717,6 +832,7 @@ export default class LilbeePlugin extends Plugin {
     private async autoUpdateServerBinary(): Promise<void> {
         const registry = this.vaultRegistry;
         if (!registry) return;
+        if (this.serverUninstalled) return;
         const config = registry.loadConfig();
         if (config.lastUpdateCheckPluginVersion === this.manifest.version) return;
         let result: { available: boolean; release?: ReleaseInfo };
@@ -731,7 +847,7 @@ export default class LilbeePlugin extends Plugin {
         const release = result.release;
         const notice = new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATING(release.tag), NOTICE_PERMANENT);
         try {
-            await this.updateServer(release, (msg) => notice.setMessage(msg));
+            await this.updateServer(release);
             new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATED(release.tag));
         } catch {
             new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATE_FAILED, NOTICE_ERROR_DURATION_MS);
@@ -746,7 +862,7 @@ export default class LilbeePlugin extends Plugin {
         try {
             const health = await this.api.health();
             if (health.isErr()) return;
-            const latest = (await getLatestRelease()).tag.replace(/^v/, "");
+            const latest = (await getLatestRelease(this.settings.includeDevBuilds)).tag.replace(/^v/, "");
             if (!latest || health.value.version === latest) return;
             // NOTICE_PERMANENT keeps it up until the user clicks it away.
             new Notice(MESSAGES.NOTICE_EXTERNAL_SERVER_OUTDATED(health.value.version, latest), NOTICE_PERMANENT);
@@ -755,7 +871,7 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    async updateServer(release: ReleaseInfo, onProgress?: (msg: string) => void): Promise<void> {
+    async updateServer(release: ReleaseInfo, onProgress?: ServerDownloadProgressHandler): Promise<void> {
         const registry = this.vaultRegistry;
         if (!registry) return;
         if (!this.binaryManager) {
@@ -769,11 +885,29 @@ export default class LilbeePlugin extends Plugin {
             this.serverManager = null;
         }
 
-        // Download the new binary (overwrites the old one)
+        // Download the new binary (replaces the old one once its checksum clears)
         onProgress?.("Downloading...");
-        await this.binaryManager.download(release.assetUrl, release.sizeBytes, release.digest, onProgress, () =>
-            this.showGatekeeperHelp(),
-        );
+        try {
+            await this.binaryManager.download(
+                release.assetUrl,
+                release.sizeBytes,
+                release.digest,
+                (msg, _url, progress) => {
+                    if (!progress) {
+                        onProgress?.(msg);
+                        return;
+                    }
+                    onProgress?.(
+                        downloadMessage(progress),
+                        percentOfBytes(progress.receivedBytes, progress.totalBytes),
+                    );
+                },
+                () => this.showGatekeeperHelp(),
+                this.startDownloadController().signal,
+            );
+        } finally {
+            this.finishDownload();
+        }
 
         // Save the new version and the build variant we just installed
         this.setSharedLilbeeVersion(release.tag);
@@ -1173,6 +1307,12 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "arrange-views",
+            name: "Arrange views",
+            callback: () => this.arrangeViews(),
+        });
+
+        this.addCommand({
             id: "wiki",
             name: MESSAGES.COMMAND_WIKI,
             checkCallback: (checking) => {
@@ -1292,6 +1432,21 @@ export default class LilbeePlugin extends Plugin {
         this.taskQueue.loadFromJSON(raw?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
         this.vaultId = computeVaultId(this.getVaultBasePath());
         this.vaultRegistry = new VaultRegistry(resolveSharedRoot(this.settings.sharedRoot));
+        this.serverUninstalled = this.vaultRegistry.loadConfig().serverUninstalled;
+    }
+
+    /** Mirrors `SharedConfig.serverUninstalled`; read on every status paint and health probe. */
+    private serverUninstalled = false;
+
+    isServerUninstalled(): boolean {
+        return this.serverUninstalled;
+    }
+
+    setServerUninstalled(uninstalled: boolean): void {
+        this.serverUninstalled = uninstalled;
+        const reg = this.vaultRegistry;
+        if (!reg) return;
+        reg.saveConfig({ ...reg.loadConfig(), serverUninstalled: uninstalled });
     }
 
     getSharedLilbeeVersion(): string {
@@ -1389,6 +1544,10 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private setStatusReady(): void {
+        if (this.settings.serverMode === SERVER_MODE.MANAGED && this.serverUninstalled) {
+            this.showNotInstalledStatus();
+            return;
+        }
         // Managed mode without a running serverManager is the "released"
         // state (after switch-to-another-vault or onunload). Stay stuck
         // on STOPPED instead of cheerfully claiming "ready" against a
@@ -1417,6 +1576,8 @@ export default class LilbeePlugin extends Plugin {
         if (this.taskQueue.activeAll.length > 0) return;
         if (this.startingServer) return;
         if (this.chatInFlight > 0) return;
+        // Nothing to probe, and "error" would misread a deliberate uninstall.
+        if (this.serverUninstalled) return;
         // Re-read the token before probing — the server writes a fresh one on
         // every restart, and this is the cheapest way to stay in sync.
         this.api.setToken(this.readCurrentToken());
@@ -1526,24 +1687,6 @@ export default class LilbeePlugin extends Plugin {
             this.updateStatusBar(`lilbee: ${text}${suffix}`, DOT_STATE.PRIMARY);
         }
         this.setStatusClass("lilbee-status-adding");
-    }
-
-    private updateRibbonFromQueue(): void {
-        if (!this.ribbonIconEl) return;
-        const el = this.ribbonIconEl;
-        el.removeClass("lilbee-ribbon-active", "lilbee-ribbon-success", "lilbee-ribbon-error");
-        const allActive = this.taskQueue.activeAll;
-        const queued = this.taskQueue.queued;
-        const completed = this.taskQueue.completed;
-        if (allActive.length > 0 || queued.length > 0) {
-            el.addClass("lilbee-ribbon-active");
-            return;
-        }
-        const recent = completed[0];
-        if (!recent || recent.completedAt === null) return;
-        if (Date.now() - recent.completedAt >= TASK_FLASH_WINDOW_MS) return;
-        if (recent.status === TASK_STATUS.DONE) el.addClass("lilbee-ribbon-success");
-        else if (recent.status === TASK_STATUS.FAILED) el.addClass("lilbee-ribbon-error");
     }
 
     private renderStatusFlash(recent: TaskEntry, completed: readonly TaskEntry[]): void {
@@ -2163,46 +2306,53 @@ export default class LilbeePlugin extends Plugin {
             void this.app.workspace.revealLeaf(existing[0]);
             return;
         }
-        const leaf = this.app.workspace.getRightLeaf(false);
-        if (leaf) {
-            await leaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
-            void this.app.workspace.revealLeaf(leaf);
+        if (this.openingChatLeaf) return;
+        this.openingChatLeaf = true;
+        try {
+            const leaf = this.app.workspace.getRightLeaf(false);
+            if (leaf) {
+                await leaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
+                void this.app.workspace.revealLeaf(leaf);
+            }
+        } finally {
+            this.openingChatLeaf = false;
         }
     }
 
     /**
-     * Open the chat view in the main editor area and the task center in the
-     * right sidebar so a fresh-install user lands on a usable workspace
-     * without having to discover the ribbon icon and the slash command.
-     * Idempotent — if either view is already open, just reveal it; no
-     * duplicates.
+     * Tile the plugin's views as side-by-side columns in the main area: chat and
+     * the Task Center always, plus wiki and memories when they are already open.
+     * Reuses open leaves (chat keeps its conversation) and splits any it has to
+     * create beside the previous one. Bind a hotkey in Settings → Hotkeys.
      */
-    async openCockpit(): Promise<void> {
-        const workspace = this.app.workspace;
-        const existingChat = workspace.getLeavesOfType(VIEW_TYPE_CHAT);
-        const existingTasks = workspace.getLeavesOfType(VIEW_TYPE_TASKS);
-
-        // Chat gets a main-area tab: the post-wizard workspace is empty, and
-        // a sidebar leaf compresses the conversation into a narrow column.
-        let chatLeaf = existingChat[0] ?? null;
-        if (!chatLeaf) {
-            const leaf = workspace.getLeaf(true);
-            if (!leaf) return;
-            chatLeaf = leaf;
-            await chatLeaf.setViewState({ type: VIEW_TYPE_CHAT, active: true });
-        }
-
-        let tasksLeaf = existingTasks[0] ?? null;
-        if (!tasksLeaf) {
-            const leaf = workspace.getRightLeaf(false);
-            if (leaf) {
-                tasksLeaf = leaf;
-                await tasksLeaf.setViewState({ type: VIEW_TYPE_TASKS, active: true });
+    async arrangeViews(): Promise<void> {
+        if (this.openingChatLeaf) return;
+        this.openingChatLeaf = true;
+        try {
+            const workspace = this.app.workspace;
+            const included = [VIEW_TYPE_CHAT, VIEW_TYPE_TASKS, VIEW_TYPE_WIKI, VIEW_TYPE_MEMORIES].filter(
+                (type) =>
+                    type === VIEW_TYPE_CHAT || type === VIEW_TYPE_TASKS || workspace.getLeavesOfType(type).length > 0,
+            );
+            let anchor: WorkspaceLeaf | null = null;
+            for (const type of included) {
+                let leaf = workspace.getLeavesOfType(type)[0] ?? null;
+                if (!leaf) {
+                    // Tile as side-by-side columns in the main area: a fresh tab
+                    // for the first view, then vertical splits beside it.
+                    leaf = anchor ? workspace.createLeafBySplit(anchor, "vertical") : workspace.getLeaf("tab");
+                    if (!leaf) continue;
+                    await leaf.setViewState({ type, active: true });
+                }
+                anchor = leaf;
             }
+            for (const type of included) {
+                const leaf = workspace.getLeavesOfType(type)[0];
+                if (leaf) void workspace.revealLeaf(leaf);
+            }
+        } finally {
+            this.openingChatLeaf = false;
         }
-
-        void workspace.revealLeaf(chatLeaf);
-        if (tasksLeaf) void workspace.revealLeaf(tasksLeaf);
     }
 
     private registerPendingSyncHintWatchers(): void {

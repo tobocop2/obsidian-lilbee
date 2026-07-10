@@ -29,6 +29,7 @@ import {
     extractSseErrorMessage,
     getSystemMemoryGB,
     percentFromSse,
+    setDeterminateProgress,
     sessionTokenInvalidMessage,
 } from "../utils";
 
@@ -449,7 +450,7 @@ export class SetupWizard extends Modal {
     private async startManagedAndAdvance(
         step: HTMLElement,
         panel: HTMLElement,
-        setPhase: (phase: ManagedServerProgressPhase, message?: string) => void,
+        setPhase: (phase: ManagedServerProgressPhase, message?: string, percent?: number) => void,
         statusEl: HTMLElement,
         nextBtn: HTMLElement,
         selectExternal: () => void,
@@ -460,13 +461,13 @@ export class SetupWizard extends Modal {
         // so it stays hidden behind the consent modal while the user decides.
         let panelShown = false;
         let failed = false;
-        const onProgress = (event: { phase: ManagedServerProgressPhase; message?: string }): void => {
+        const onProgress = (event: { phase: ManagedServerProgressPhase; message?: string; percent?: number }): void => {
             if (!panelShown) {
                 panel.show();
                 step.querySelector<HTMLElement>(".lilbee-wizard-rail")?.classList.add("is-active");
                 panelShown = true;
             }
-            setPhase(event.phase, event.message);
+            setPhase(event.phase, event.message, event.percent);
             if (event.phase === MANAGED_PHASE.ERROR) failed = true;
         };
 
@@ -515,7 +516,7 @@ export class SetupWizard extends Modal {
      */
     private renderServerSetupPanel(step: HTMLElement): {
         panel: HTMLElement;
-        setPhase: (phase: ManagedServerProgressPhase, message?: string) => void;
+        setPhase: (phase: ManagedServerProgressPhase, message?: string, percent?: number) => void;
     } {
         const panel = step.createDiv({ cls: "lilbee-wizard-setup" });
         panel.hide();
@@ -533,9 +534,9 @@ export class SetupWizard extends Modal {
             const detail = row.createDiv({ cls: "lilbee-wizard-phase-detail" });
             detail.hide();
             const bar = detail.createDiv({ cls: "lilbee-progress-bar-container" });
-            bar.createDiv({ cls: "lilbee-wizard-progress-fill lilbee-wizard-progress-indeterminate" });
+            const fill = bar.createDiv({ cls: "lilbee-wizard-progress-fill lilbee-wizard-progress-indeterminate" });
             detail.createDiv({ cls: "lilbee-wizard-phase-hint", text: meta.hint });
-            return { meta, row, label, detail };
+            return { meta, row, label, detail, fill };
         });
 
         const gate = panel.createDiv({ cls: "lilbee-wizard-setup-gate", text: MESSAGES.WIZARD_SETUP_GATE });
@@ -545,8 +546,9 @@ export class SetupWizard extends Modal {
         sourceLink.setAttribute("href", LILBEE_REPO_URL);
 
         const order = SERVER_SETUP_PHASES.map((m) => m.key);
-        const setPhase = (phase: ManagedServerProgressPhase, message?: string): void => {
+        const setPhase = (phase: ManagedServerProgressPhase, message?: string, percent?: number): void => {
             const idx = order.indexOf(phase);
+            if (percent !== undefined && idx >= 0) setDeterminateProgress(rows[idx].fill, percent);
             // An unknown/error phase isn't one of the three rows: surface the
             // message in the header and leave the rows showing where progress
             // stalled rather than blanking them.
@@ -1251,13 +1253,8 @@ export class SetupWizard extends Modal {
         this.plugin.settings.setupCompleted = true;
         await this.plugin.saveSettings();
         this.close();
-        // Open chat and task center side by side so the user lands on a
-        // workspace that's ready to use, not an empty editor. Honors the
-        // autoOpenCockpit setting in case a power user has disabled it.
-        if (this.plugin.settings.autoOpenCockpit) {
-            void this.plugin.openCockpit();
-        } else {
-            void this.plugin.activateChatView();
-        }
+        // The done step's action is an explicit "Open chat", so land the user
+        // in the chat panel once. Nothing else is force-opened.
+        void this.plugin.activateChatView();
     }
 }

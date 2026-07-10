@@ -28,7 +28,6 @@ describe("MESSAGES", () => {
             expect(MESSAGES.BUTTON_TEST).toBe("Test");
             expect(MESSAGES.BUTTON_RESET_MANAGED).toBe("Reset to managed");
             expect(MESSAGES.BUTTON_RUN_SETUP_WIZARD).toBe("Run setup wizard");
-            expect(MESSAGES.BUTTON_CHECK_UPDATES).toBe("Check for updates");
             expect(MESSAGES.BUTTON_CLEAR_TASKS).toBe("Clear");
             expect(MESSAGES.BUTTON_CLEAR_CHAT).toBe("Clear chat");
             expect(MESSAGES.BUTTON_SEND).toBe("Send");
@@ -178,6 +177,10 @@ describe("MESSAGES", () => {
     describe("STATUS_ constants", () => {
         it("has all status constants", () => {
             expect(MESSAGES.STATUS_DOWNLOADING).toBe("lilbee: downloading...");
+            expect(MESSAGES.STATUS_DOWNLOAD_PROGRESS(50, "128 MB", "256 MB")).toBe(
+                "Downloading... 50% (128 MB of 256 MB)",
+            );
+            expect(MESSAGES.STATUS_DOWNLOAD_RECEIVED("5.00 MB")).toBe("Downloading... 5.00 MB");
             expect(MESSAGES.STATUS_STARTING).toBe("lilbee: starting...");
             expect(MESSAGES.STATUS_READY).toBe("lilbee: ready");
             expect(MESSAGES.STATUS_READY_EXTERNAL).toBe("lilbee: ready [external]");

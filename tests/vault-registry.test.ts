@@ -148,6 +148,7 @@ describe("VaultRegistry.loadConfig", () => {
             lilbeeVariant: "",
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
+            serverUninstalled: false,
         });
     });
 
@@ -160,6 +161,7 @@ describe("VaultRegistry.loadConfig", () => {
             lilbeeVariant: "",
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
+            serverUninstalled: false,
         });
     });
 
@@ -172,6 +174,7 @@ describe("VaultRegistry.loadConfig", () => {
             lilbeeVariant: "",
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
+            serverUninstalled: false,
         });
     });
 });
@@ -187,6 +190,7 @@ describe("VaultRegistry.saveConfig", () => {
             lilbeeVariant: "cu125",
             hfToken: "tok",
             lastUpdateCheckPluginVersion: "",
+            serverUninstalled: false,
         });
         expect(fs.exists("/r/config.json")).toBe(true);
         expect(fs.exists("/r/config.json.tmp")).toBe(false);
@@ -195,6 +199,7 @@ describe("VaultRegistry.saveConfig", () => {
             lilbeeVariant: "cu125",
             hfToken: "tok",
             lastUpdateCheckPluginVersion: "",
+            serverUninstalled: false,
         });
     });
 
@@ -206,6 +211,7 @@ describe("VaultRegistry.saveConfig", () => {
             lilbeeVariant: "",
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
+            serverUninstalled: false,
         });
         expect(fs.dirs.has("/r")).toBe(true);
     });

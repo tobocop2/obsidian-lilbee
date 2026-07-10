@@ -5,9 +5,15 @@ import { tmpdir } from "os";
 import { node, BinaryManager } from "../src/binary-manager";
 import { ServerManager } from "../src/server-manager";
 
-const tempDir = mkdtempSync(join(tmpdir(), "lilbee-integration-"));
+// CI passes a stable, version-keyed dir (LILBEE_TEST_BIN_DIR) so a cached
+// binary is reused across runs; locally we download into a throwaway temp dir.
+const providedBinDir = process.env.LILBEE_TEST_BIN_DIR;
+const tempDir = providedBinDir ?? mkdtempSync(join(tmpdir(), "lilbee-integration-"));
+const binDir = providedBinDir ?? join(tempDir, "bin");
 
 afterAll(async () => {
+    // A caller-provided bin dir is the CI cache — leave it for actions/cache to save.
+    if (providedBinDir) return;
     // Windows can briefly hold a file lock on the just-stopped lilbee binary,
     // making rmdir bin/ throw ENOTEMPTY. Retry briefly, then give up — the CI
     // runner reclaims the temp dir on job exit either way.
@@ -43,7 +49,7 @@ describe("integration: binary download", () => {
     let bm: BinaryManager;
 
     it("downloads the binary from GitHub releases", async () => {
-        bm = new BinaryManager(`${tempDir}/bin`);
+        bm = new BinaryManager(binDir);
         const path = await bm.ensureBinary();
 
         expect(existsSync(path)).toBe(true);

@@ -1,7 +1,11 @@
-import { App, ButtonComponent, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
+import { App, ButtonComponent, DropdownComponent, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
 import { LilbeeClient } from "./api";
+import { DownloadCanceledError, listReleases, isDevBuild, LILBEE_GITHUB_REPO_URL } from "./binary-manager";
 import type { ReleaseInfo } from "./binary-manager";
+
+/** Community IRC channel for dev-build feedback. */
+const LIBERA_LILBEE_URL = "https://web.libera.chat/#lilbee";
 import {
     CAPABILITY,
     CHAT_MODE,
@@ -18,6 +22,7 @@ import {
     SSE_EVENT,
     TASK_TYPE,
     ERROR_NAME,
+    VERSION_ACTION,
 } from "./types";
 import type {
     CatalogEntry,
@@ -31,11 +36,13 @@ import { exportDiagnostics } from "./diagnostics-export";
 import { reportForVault } from "./storage-stats";
 import { MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo, matchModelOption } from "./utils/model-ref";
+import { versionActionFor, versionButtonLabel, versionDescription } from "./utils/server-version";
 import { CatalogModal } from "./views/catalog-modal";
 import { hostedOptions } from "./views/catalog-helpers";
 import { ConfirmModal } from "./views/confirm-modal";
 import { ConfirmPullModal } from "./views/confirm-pull-modal";
 import { SetupWizard } from "./views/setup-wizard";
+import { UninstallModal } from "./views/uninstall-modal";
 import {
     debounce,
     DEBOUNCE_MS,
@@ -46,6 +53,7 @@ import {
     noticeForResultError,
     getRelevantSystemMemoryGB,
     noticeServerUnreachableIfApplicable,
+    setDeterminateProgress,
 } from "./utils";
 
 const CHECK_TIMEOUT_MS = 5000;
@@ -71,15 +79,25 @@ const CREDENTIAL_FIELDS = new Set([
 
 export { SEPARATOR_KEY, SEPARATOR_LABEL };
 
+/** Paint the phase line, and grow the bar once a real percentage arrives. */
+function showPhase(progress: UpdateProgressEls, message: string, percent?: number): void {
+    progress.phase.setText(message);
+    if (percent !== undefined) setDeterminateProgress(progress.fill, percent);
+}
+
 /** Elements of the managed-server update progress panel. */
 interface UpdateProgressEls {
     panel: HTMLElement;
     phase: HTMLElement;
     size: HTMLElement;
+    fill: HTMLElement;
+    cancel: HTMLElement;
 }
 
 export class LilbeeSettingTab extends PluginSettingTab {
     plugin: LilbeePlugin;
+    /** Total bytes of the shared install, set by the storage report each render. */
+    private storageTotalBytes = 0;
     private serverConfigInputs: Map<string, HTMLInputElement> = new Map();
     private serverConfigToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private memoryToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
@@ -140,6 +158,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderDiagnostics(containerEl);
         this.renderAdvancedSettings(containerEl);
         this.renderFleetSettings(containerEl);
+        if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED && this.hasManagedServer()) {
+            this.renderUninstallSection(containerEl, this.storageTotalBytes);
+        }
         this.loadServerDefaults();
         this.loadConfigDefaults();
         void this.applyCapabilityGating();
@@ -216,7 +237,22 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
+    /**
+     * A binary on disk that the plugin is still allowed to run. An uninstalled
+     * server never starts, even if a binary was put back by hand, until an
+     * explicit install clears the flag.
+     */
+    private hasManagedServer(): boolean {
+        return this.plugin.isServerInstalled() && !this.plugin.isServerUninstalled();
+    }
+
     private renderManagedSettings(containerEl: HTMLElement): void {
+        if (!this.hasManagedServer()) {
+            this.renderInstallServer(containerEl);
+            this.renderSharedRootSetting(containerEl);
+            return;
+        }
+
         const statusSetting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_SERVER_STATUS)
             .setDesc(MESSAGES.DESC_SERVER_STATUS_CURRENT);
@@ -265,50 +301,267 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderSharedRootSetting(containerEl);
         this.renderAdoptDataDir(containerEl);
         this.renderStorageReport(containerEl);
+        this.renderVersionSetting(containerEl);
+        this.renderDevBuildsToggle(containerEl);
+    }
 
-        const updateSetting = new Setting(containerEl)
+    /**
+     * One control for upgrade, downgrade, and reinstall. The dropdown lists
+     * recent releases newest-first; the button names what the selection does.
+     */
+    private renderVersionSetting(containerEl: HTMLElement): void {
+        const installed = this.plugin.getSharedLilbeeVersion();
+        const setting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_SERVER_VERSION)
-            .setDesc(this.plugin.getSharedLilbeeVersion() || MESSAGES.DESC_SERVER_VERSION_UNKNOWN);
-
+            .setDesc(MESSAGES.DESC_SERVER_VERSION_LOADING);
+        setting.settingEl.setAttribute("aria-label", MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
+        setting.settingEl.setAttribute("title", MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
         const progress = this.renderUpdateProgress(containerEl);
 
-        let pendingRelease: ReleaseInfo | null = null;
-        updateSetting.addButton((checkBtn) =>
-            checkBtn.setButtonText(MESSAGES.BUTTON_CHECK_UPDATES).onClick(async () => {
-                if (pendingRelease) {
-                    if (!(await this.runServerUpdate(pendingRelease, checkBtn, progress))) {
-                        pendingRelease = null;
-                    }
-                    return;
-                }
+        let releases: ReleaseInfo[] = [];
+        let selectedTag = installed;
+        // A dev build newer than the newest stable, shown as a nudge when dev builds are off.
+        let newerDevTag: string | null = null;
+        // addDropdown / addButton run their callback synchronously, so both are set below.
+        let dropdown!: DropdownComponent;
+        let actionBtn!: ButtonComponent;
 
-                checkBtn.setDisabled(true);
-                checkBtn.setButtonText(MESSAGES.STATUS_CHECKING_CONNECTION);
-                try {
-                    const result = await this.plugin.checkForUpdate();
-                    if (result.available && result.release) {
-                        pendingRelease = result.release;
-                        checkBtn.setButtonText(`Update to ${result.release.tag}`);
-                        checkBtn.setDisabled(false);
-                    } else {
-                        // 51g: explicit feedback on the no-update path so the
-                        // click visibly registers. Surface the *current*
-                        // version so the user can see what was checked, and
-                        // pin the inline button label to "Up to date" until
-                        // the next click — both the toast and the button
-                        // change confirm the action.
-                        const current = this.plugin.getSharedLilbeeVersion() || MESSAGES.LABEL_UNKNOWN;
-                        new Notice(MESSAGES.NOTICE_SERVER_UPTODATE(current));
-                        checkBtn.setButtonText(MESSAGES.LABEL_UPTODATE);
-                        checkBtn.setDisabled(false);
-                    }
-                } catch {
-                    new Notice(MESSAGES.ERROR_COULD_NOT_CHECK);
-                    checkBtn.setButtonText(MESSAGES.BUTTON_CHECK_UPDATES);
-                    checkBtn.setDisabled(false);
-                }
-            }),
-        );
+        const refresh = (): void => {
+            const tags = releases.map((r) => r.tag);
+            const action = versionActionFor(tags, installed, selectedTag);
+            let desc = versionDescription(action, installed, selectedTag, tags[0] === installed);
+            if (newerDevTag) desc += ` ${MESSAGES.DESC_DEV_BUILD_AVAILABLE(newerDevTag)}`;
+            setting.setDesc(desc);
+            actionBtn.setButtonText(versionButtonLabel(action, selectedTag));
+            actionBtn.buttonEl.toggleClass("mod-cta", action === VERSION_ACTION.UPDATE);
+            actionBtn.buttonEl.toggleClass("mod-warning", action === VERSION_ACTION.DOWNGRADE);
+        };
+
+        setting.addDropdown((dd) => {
+            dropdown = dd;
+            dd.setDisabled(true);
+            dd.onChange((value) => {
+                selectedTag = value;
+                refresh();
+            });
+        });
+
+        setting.addButton((btn) => {
+            actionBtn = btn;
+            btn.setDisabled(true);
+            btn.setButtonText(MESSAGES.BUTTON_REINSTALL).onClick(async () => {
+                const release = releases.find((r) => r.tag === selectedTag);
+                if (!release) return;
+                const label = versionButtonLabel(
+                    versionActionFor(
+                        releases.map((r) => r.tag),
+                        installed,
+                        selectedTag,
+                    ),
+                    selectedTag,
+                );
+                await this.runServerUpdate(release, btn, progress, label);
+            });
+        });
+
+        void this.loadReleases().then((loaded) => {
+            if (loaded === null) {
+                setting.setDesc(
+                    installed ? MESSAGES.DESC_SERVER_VERSION_OFFLINE(installed) : MESSAGES.DESC_SERVER_VERSION_UNKNOWN,
+                );
+                return;
+            }
+            const includeDev = this.plugin.settings.includeDevBuilds;
+            // loaded holds every installable release (dev builds included); when dev builds are
+            // off, hide them and nudge toward the newest one if it leads the stable line and the
+            // user isn't already running it.
+            const newest = loaded[0];
+            newerDevTag =
+                !includeDev && newest && isDevBuild(newest.tag) && newest.tag !== installed ? newest.tag : null;
+            releases = includeDev ? loaded : loaded.filter((r) => !isDevBuild(r.tag));
+            if (releases.length === 0) return;
+            if (!releases.some((r) => r.tag === selectedTag)) selectedTag = releases[0].tag;
+            for (const release of releases) dropdown.addOption(release.tag, release.tag);
+            dropdown.setValue(selectedTag);
+            dropdown.setDisabled(false);
+            actionBtn.setDisabled(false);
+            refresh();
+        });
+    }
+
+    /** Every installable release (dev builds included); null when GitHub could not be reached. */
+    private async loadReleases(): Promise<ReleaseInfo[] | null> {
+        try {
+            return await listReleases(true);
+        } catch {
+            return null;
+        }
+    }
+
+    /** Opt in to in-development builds, with a pointer to where feedback goes. */
+    private renderDevBuildsToggle(containerEl: HTMLElement): void {
+        new Setting(containerEl)
+            .setName(MESSAGES.LABEL_INCLUDE_DEV_BUILDS)
+            .setDesc(MESSAGES.DESC_INCLUDE_DEV_BUILDS)
+            .addToggle((toggle) =>
+                toggle.setValue(this.plugin.settings.includeDevBuilds).onChange(async (value) => {
+                    this.plugin.settings.includeDevBuilds = value;
+                    await this.plugin.saveSettings();
+                    this.render();
+                }),
+            );
+
+        const feedback = containerEl.createDiv({ cls: "lilbee-dev-builds-feedback" });
+        feedback.createSpan({ text: MESSAGES.DEV_BUILDS_FEEDBACK_PREFIX });
+        const irc = feedback.createEl("a", { text: MESSAGES.DEV_BUILDS_FEEDBACK_IRC });
+        irc.setAttribute("href", LIBERA_LILBEE_URL);
+        irc.setAttribute("target", "_blank");
+        feedback.createSpan({ text: " or " });
+        const gh = feedback.createEl("a", { text: MESSAGES.DEV_BUILDS_FEEDBACK_GITHUB });
+        gh.setAttribute("href", `${LILBEE_GITHUB_REPO_URL}/issues`);
+        gh.setAttribute("target", "_blank");
+        feedback.createSpan({ text: "." });
+    }
+
+    /**
+     * Managed mode only: Obsidian never removes the server this plugin downloaded.
+     * Sized from the storage report so the model cache is walked once per render;
+     * the delete plan is built when the button is clicked.
+     */
+    private renderUninstallSection(containerEl: HTMLElement, totalBytes: number): void {
+        const heading = new Setting(containerEl).setName(MESSAGES.LABEL_UNINSTALL).setHeading();
+        heading.settingEl.addClass("lilbee-danger-heading");
+        heading.settingEl.setAttribute("aria-label", MESSAGES.TOOLTIP_UNINSTALL_SECTION);
+        heading.settingEl.setAttribute("title", MESSAGES.TOOLTIP_UNINSTALL_SECTION);
+
+        const callout = containerEl.createDiv({ cls: "lilbee-uninstall-callout" });
+        const mark = callout.createSpan({ cls: "lilbee-uninstall-callout-mark", text: "!" });
+        mark.setAttribute("aria-hidden", "true");
+        callout.createEl("p", { text: MESSAGES.CALLOUT_UNINSTALL_FIRST });
+
+        new Setting(containerEl)
+            .setName(MESSAGES.LABEL_UNINSTALL_SERVER)
+            .setDesc(MESSAGES.DESC_UNINSTALL_SERVER(formatDiskSize(totalBytes)))
+            .addButton((btn) => {
+                btn.setButtonText(MESSAGES.BUTTON_UNINSTALL_SERVER).onClick(() => void this.confirmUninstall());
+                btn.buttonEl.addClass("mod-warning");
+            });
+    }
+
+    private async confirmUninstall(): Promise<void> {
+        const plan = this.plugin.planServerUninstall();
+        if (!plan) return;
+        const modal = new UninstallModal(this.app, plan);
+        modal.open();
+        if (!(await modal.result)) return;
+        try {
+            const freed = await this.plugin.uninstallServer(plan);
+            new Notice(MESSAGES.NOTICE_UNINSTALLED(formatDiskSize(freed)));
+        } catch (err) {
+            new Notice(errorMessage(err, MESSAGES.ERROR_UNINSTALL_FAILED));
+            console.error("[lilbee] uninstall failed:", err);
+        }
+        this.render();
+    }
+
+    /** Recovery path after an uninstall: pick a release and pull the server back. */
+    private renderInstallServer(containerEl: HTMLElement): void {
+        // A download kicked off outside Settings (first run, consent modal) is still
+        // in flight: offer to stop it rather than a dead Install button.
+        if (this.plugin.isDownloadingServer()) {
+            new Setting(containerEl)
+                .setName(MESSAGES.LABEL_SERVER_STATUS)
+                .setDesc(MESSAGES.DESC_SERVER_DOWNLOADING)
+                .addButton((btn) => {
+                    btn.setButtonText(MESSAGES.BUTTON_CANCEL_DOWNLOAD).onClick(() => {
+                        this.plugin.cancelServerDownload();
+                        this.render();
+                    });
+                    btn.buttonEl.addClass("mod-warning");
+                });
+            return;
+        }
+
+        new Setting(containerEl).setName(MESSAGES.LABEL_SERVER_STATUS).setDesc(MESSAGES.DESC_SERVER_NOT_INSTALLED);
+
+        const setting = new Setting(containerEl)
+            .setName(MESSAGES.LABEL_INSTALL_SERVER)
+            .setDesc(MESSAGES.DESC_SERVER_VERSION_LOADING);
+        const progress = this.renderUpdateProgress(containerEl);
+
+        let releases: ReleaseInfo[] = [];
+        let selectedTag = "";
+        // addDropdown / addButton run their callback synchronously, so both are set below.
+        let dropdown!: DropdownComponent;
+        let installBtn!: ButtonComponent;
+
+        const describe = (): void => {
+            const release = releases.find((r) => r.tag === selectedTag);
+            /* v8 ignore next -- the dropdown only ever offers tags from `releases` */
+            if (!release) return;
+            setting.setDesc(MESSAGES.DESC_INSTALL_SERVER(formatDiskSize(release.sizeBytes)));
+        };
+
+        setting.addDropdown((dd) => {
+            dropdown = dd;
+            dd.setDisabled(true);
+            dd.onChange((value) => {
+                selectedTag = value;
+                describe();
+            });
+        });
+
+        setting.addButton((btn) => {
+            installBtn = btn;
+            btn.setDisabled(true);
+            btn.buttonEl.addClass("mod-cta");
+            btn.setButtonText(MESSAGES.BUTTON_INSTALL_SERVER).onClick(async () => {
+                const release = releases.find((r) => r.tag === selectedTag);
+                if (!release) return;
+                await this.runServerInstall(release, btn, progress);
+            });
+        });
+
+        void this.loadReleases().then((loaded) => {
+            if (loaded === null) {
+                setting.setDesc(MESSAGES.ERROR_RELEASE_LIST);
+                return;
+            }
+            releases = loaded;
+            if (releases.length === 0) return;
+            selectedTag = releases[0].tag;
+            for (const release of releases) dropdown.addOption(release.tag, release.tag);
+            dropdown.setValue(selectedTag);
+            dropdown.setDisabled(false);
+            installBtn.setDisabled(false);
+            describe();
+        });
+    }
+
+    private async runServerInstall(
+        release: ReleaseInfo,
+        btn: ButtonComponent,
+        progress: UpdateProgressEls,
+    ): Promise<void> {
+        btn.setDisabled(true);
+        btn.setButtonText(MESSAGES.BUTTON_DOWNLOADING);
+        progress.panel.show();
+        progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatDiskSize(release.sizeBytes)));
+        try {
+            await this.plugin.installServer(release, (msg, percent) => showPhase(progress, msg, percent));
+            new Notice(MESSAGES.NOTICE_INSTALLED(release.tag));
+            this.render();
+        } catch (err) {
+            if (err instanceof DownloadCanceledError) {
+                new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELED);
+            } else {
+                new Notice(errorMessage(err, MESSAGES.ERROR_INSTALL_FAILED));
+                console.error("[lilbee] install failed:", err);
+            }
+            progress.panel.hide();
+            btn.setButtonText(MESSAGES.BUTTON_INSTALL_SERVER);
+            btn.setDisabled(false);
+        }
     }
 
     /** Indeterminate progress panel for the managed-server update; hidden until an update runs. */
@@ -316,34 +569,46 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const panel = containerEl.createDiv({ cls: "lilbee-update-progress" });
         panel.hide();
         const bar = panel.createDiv({ cls: "lilbee-progress-bar-container" });
-        bar.createDiv({ cls: "lilbee-progress-bar lilbee-wizard-progress-fill lilbee-wizard-progress-indeterminate" });
+        const fill = bar.createDiv({
+            cls: "lilbee-progress-bar lilbee-wizard-progress-fill lilbee-wizard-progress-indeterminate",
+        });
         const phase = panel.createDiv({ cls: "lilbee-update-progress-phase" });
         const size = panel.createDiv({ cls: "lilbee-update-progress-size" });
-        return { panel, phase, size };
+        const cancel = panel.createEl("button", {
+            cls: "lilbee-update-progress-cancel",
+            text: MESSAGES.BUTTON_CANCEL_DOWNLOAD,
+        });
+        cancel.addEventListener("click", () => this.plugin.cancelServerDownload());
+        return { panel, phase, size, fill, cancel };
     }
 
-    /** Download and install a server update, surfacing phase + total download size. Returns false on failure. */
+    /** Download and install *release*, surfacing phase + total download size. Returns false on failure. */
     private async runServerUpdate(
         release: ReleaseInfo,
-        checkBtn: ButtonComponent,
+        actionBtn: ButtonComponent,
         progress: UpdateProgressEls,
+        restoreLabel: string,
     ): Promise<boolean> {
-        checkBtn.setDisabled(true);
-        checkBtn.setButtonText(MESSAGES.STATUS_DOWNLOADING);
+        actionBtn.setDisabled(true);
+        actionBtn.setButtonText(MESSAGES.BUTTON_DOWNLOADING);
         progress.panel.show();
         progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatDiskSize(release.sizeBytes)));
         try {
-            await this.plugin.updateServer(release, (msg) => progress.phase.setText(msg));
+            await this.plugin.updateServer(release, (msg, percent) => showPhase(progress, msg, percent));
             new Notice(MESSAGES.NOTICE_UPDATED_TO(release.tag));
             this.render();
             return true;
         } catch (err) {
-            // errorMessage carries the server's reason, e.g. insufficient disk space.
-            new Notice(errorMessage(err, MESSAGES.ERROR_FAILED_UPDATE));
-            console.error("[lilbee] update failed:", err);
+            if (err instanceof DownloadCanceledError) {
+                new Notice(MESSAGES.NOTICE_DOWNLOAD_CANCELED);
+            } else {
+                // errorMessage carries the server's reason, e.g. insufficient disk space.
+                new Notice(errorMessage(err, MESSAGES.ERROR_FAILED_UPDATE));
+                console.error("[lilbee] update failed:", err);
+            }
             progress.panel.hide();
-            checkBtn.setButtonText(MESSAGES.BUTTON_CHECK_UPDATES);
-            checkBtn.setDisabled(false);
+            actionBtn.setButtonText(restoreLabel);
+            actionBtn.setDisabled(false);
             return false;
         }
     }
@@ -389,10 +654,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
     }
 
+    /** Walks the shared install; the total is reused by the uninstall section. */
     private renderStorageReport(containerEl: HTMLElement): void {
         const registry = this.plugin.vaultRegistry;
         if (!registry) return;
         const report = reportForVault(registry.sharedRoot, registry.resolveDataDir(this.plugin.vaultId));
+        this.storageTotalBytes = report.totalBytes;
         new Setting(containerEl).setName(MESSAGES.LABEL_STORAGE_REPORT).setDesc(MESSAGES.DESC_STORAGE_REPORT);
 
         const list = containerEl.createDiv({ cls: "lilbee-storage-report" });
@@ -2158,17 +2425,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 });
             this.appendResetAffordance(setting, field.configKey, field.label);
         }
-
-        const cockpitSetting = new Setting(details)
-            .setName(MESSAGES.LABEL_AUTO_OPEN_COCKPIT)
-            .setDesc(MESSAGES.DESC_AUTO_OPEN_COCKPIT)
-            .addToggle((toggle) =>
-                toggle.setValue(this.plugin.settings.autoOpenCockpit).onChange(async (value) => {
-                    this.plugin.settings.autoOpenCockpit = value;
-                    await this.plugin.saveSettings();
-                }),
-            );
-        this.appendLocalResetAffordance(cockpitSetting, "autoOpenCockpit", MESSAGES.LABEL_AUTO_OPEN_COCKPIT);
 
         new Setting(details)
             .setName(MESSAGES.LABEL_RESET_ALL_SETTINGS)

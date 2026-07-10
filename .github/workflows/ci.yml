@@ -15,36 +15,44 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: "20"
           cache: npm
       - run: npm ci
       - run: npm run lint
+        if: matrix.os == 'ubuntu-latest'
       - run: npm run format:check
+        if: matrix.os == 'ubuntu-latest'
       - run: npm test
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: npm run build
       - name: Generate coverage badge
+        if: matrix.os == 'ubuntu-latest'
         run: |
           PCT=$(node -p "require('./coverage/coverage-summary.json').total.lines.pct")
           COLOR=$(node -p "const p=require('./coverage/coverage-summary.json').total.lines.pct; p===100?'brightgreen':p>=90?'green':p>=70?'yellow':'red'")
           npx badge-maker coverage "${PCT}%" ":${COLOR}" > coverage/badge.svg
       - name: Assemble site
+        if: matrix.os == 'ubuntu-latest'
         run: |
           mkdir -p _site
           cp -r site/. _site/
           cp -r coverage _site/coverage
       - name: Upload Pages artifact
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: matrix.os == 'ubuntu-latest' && github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: actions/upload-pages-artifact@v5
         with:
           path: _site
       - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: matrix.os == 'ubuntu-latest' && github.ref == 'refs/heads/main' && github.event_name == 'push'
         id: deployment
         uses: actions/deploy-pages@v5

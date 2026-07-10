@@ -334,6 +334,8 @@ export interface ManagedServerProgress {
     phase: ManagedServerProgressPhase;
     message: string;
     url?: string;
+    /** 0-100 while the server binary downloads; absent when the size is unknown. */
+    percent?: number;
 }
 
 export type ManagedServerProgressHandler = (event: ManagedServerProgress) => void;
@@ -360,9 +362,7 @@ export const MANAGED_CONSENT_RESULT = {
 export type SetupOutcomeKind = "started" | "switched-to-external" | "canceled";
 
 export type SetupOutcome =
-    | { kind: "started"; mode: ServerMode }
-    | { kind: "switched-to-external" }
-    | { kind: "canceled" };
+    { kind: "started"; mode: ServerMode } | { kind: "switched-to-external" } | { kind: "canceled" };
 
 export const SETUP_OUTCOME = {
     STARTED: "started",
@@ -454,13 +454,6 @@ export interface LilbeeSettings {
     storeContentInVault: boolean;
     lastCatalogTab: CatalogTab;
     /**
-     * When true (default), the chat view and task center auto-open in the
-     * right sidebar on plugin load and right after the setup wizard finishes.
-     * Users who keep their right sidebar busy with other plugins can disable
-     * this in Settings → Connection.
-     */
-    autoOpenCockpit: boolean;
-    /**
      * Filesystem root that holds the shared lilbee binary, models cache, and
      * per-vault data directories. Empty string means "use platform default"
      * (resolved via getDefaultLilbeeDataRoot). Set explicitly to point the
@@ -469,6 +462,12 @@ export interface LilbeeSettings {
     sharedRoot: string;
     /** Set once the plugin has applied its one-time `show_reasoning` on-by-default. */
     reasoningDefaulted: boolean;
+    /**
+     * Offer in-development (`.dev`) server builds in the version picker and make
+     * them the auto-install/update target. Off by default: the plugin tracks the
+     * latest stable release unless the user opts in.
+     */
+    includeDevBuilds: boolean;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -491,9 +490,9 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     manualToken: "",
     storeContentInVault: true,
     lastCatalogTab: "discover",
-    autoOpenCockpit: true,
     sharedRoot: "",
     reasoningDefaulted: false,
+    includeDevBuilds: false,
 };
 
 /**
@@ -508,6 +507,8 @@ export interface SharedConfig {
     hfToken: string;
     /** Plugin version that last ran the automatic server-update check. */
     lastUpdateCheckPluginVersion: string;
+    /** The user removed the managed server; never download it again until they ask. */
+    serverUninstalled: boolean;
 }
 
 export const DEFAULT_SHARED_CONFIG: SharedConfig = {
@@ -515,7 +516,38 @@ export const DEFAULT_SHARED_CONFIG: SharedConfig = {
     lilbeeVariant: "",
     hfToken: "",
     lastUpdateCheckPluginVersion: "",
+    serverUninstalled: false,
 };
+
+/** What a managed-mode uninstall deletes. Documents in the vault are never a target. */
+export type UninstallTargetKind = "binary" | "models" | "index";
+
+export const UNINSTALL_TARGET = {
+    BINARY: "binary",
+    MODELS: "models",
+    INDEX: "index",
+} as const satisfies Record<string, UninstallTargetKind>;
+
+export interface UninstallTarget {
+    kind: UninstallTargetKind;
+    path: string;
+    bytes: number;
+}
+
+export interface UninstallPlan {
+    targets: UninstallTarget[];
+    totalBytes: number;
+}
+
+/** How the selected server version relates to the installed one. */
+export type VersionAction = "install" | "reinstall" | "update" | "downgrade";
+
+export const VERSION_ACTION = {
+    INSTALL: "install",
+    REINSTALL: "reinstall",
+    UPDATE: "update",
+    DOWNGRADE: "downgrade",
+} as const satisfies Record<string, VersionAction>;
 
 /** One row in `<shared-root>/registry.json` — one per Obsidian vault. */
 export interface VaultRegistryEntry {
@@ -531,6 +563,8 @@ export interface VaultRegistryEntry {
 export interface ActiveLock {
     vaultId: string;
     pid: number;
+    /** PID of the managed server process. Absent in locks written before this field. */
+    serverPid?: number;
     port: number;
     startedAt: number;
 }

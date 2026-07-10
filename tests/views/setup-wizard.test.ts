@@ -82,7 +82,6 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         saveSettings: vi.fn().mockResolvedValue(undefined),
         activateChatView: vi.fn().mockResolvedValue(undefined),
         activateTaskView: vi.fn().mockResolvedValue(undefined),
-        openCockpit: vi.fn().mockResolvedValue(undefined),
         ...overrides,
     };
     // Default consent gate: delegate to startManagedServer (so per-test
@@ -496,6 +495,33 @@ describe("SetupWizard", () => {
         // see Downloading → Starting → Ready as three phase rows that light up.
         // We simulate the plugin firing each phase and assert the rows reach the
         // ready state before the wizard advances.
+        it("hands the download bar from indeterminate to a real width", () => {
+            const plugin = makePlugin({ serverManager: null });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            const step = new MockElement() as unknown as HTMLElement;
+
+            const { setPhase } = (wizard as any).renderServerSetupPanel(step);
+            const fill = (step as unknown as MockElement).findAll("lilbee-wizard-progress-fill")[0];
+            expect(fill.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(true);
+
+            setPhase("downloading", "Downloading... 40%", 40);
+
+            expect(fill.style.width).toBe("40%");
+            expect(fill.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(false);
+        });
+
+        it("leaves the bar indeterminate when no percentage is reported", () => {
+            const plugin = makePlugin({ serverManager: null });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            const step = new MockElement() as unknown as HTMLElement;
+
+            const { setPhase } = (wizard as any).renderServerSetupPanel(step);
+            setPhase("downloading", "Downloading...");
+
+            const fill = (step as unknown as MockElement).findAll("lilbee-wizard-progress-fill")[0];
+            expect(fill.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(true);
+        });
+
         it("managed mode: surfaces each progress phase in the setup panel", async () => {
             const plugin = makePlugin({ serverManager: null });
             plugin.startManagedServer = vi
@@ -1781,22 +1807,6 @@ describe("SetupWizard", () => {
             expect(plugin.saveSettings).toHaveBeenCalled();
             expect(plugin.activateChatView).toHaveBeenCalled();
             expect(closeSpy).toHaveBeenCalled();
-        });
-
-        it("Open chat opens the cockpit when autoOpenCockpit is enabled", async () => {
-            const plugin = makePlugin({ settings: { serverMode: "external", autoOpenCockpit: true } });
-            const wizard = new SetupWizard(plugin.app as any, plugin as any);
-            wizard.open();
-            (wizard as any).step = 6;
-            (wizard as any).renderStep();
-
-            const el = wizard.contentEl as unknown as MockElement;
-            const openChatBtn = findButtons(el).find((b) => b.textContent === "Open chat")!;
-            openChatBtn.trigger("click");
-            await tick();
-
-            expect(plugin.openCockpit).toHaveBeenCalled();
-            expect(plugin.activateChatView).not.toHaveBeenCalled();
         });
 
         it("shows tips about what to try", () => {

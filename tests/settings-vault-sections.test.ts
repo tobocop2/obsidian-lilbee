@@ -15,6 +15,10 @@ const mockGetLatestRelease = vi.fn();
 const mockCheckForUpdate = vi.fn();
 
 vi.mock("../src/binary-manager", () => ({
+    listReleases: vi.fn(async () => []),
+    isDevBuild: (tag: string) => /\.dev\d*$/i.test(tag),
+    LILBEE_GITHUB_REPO_URL: "https://github.com/tobocop2/lilbee",
+    DownloadCanceledError: class extends Error {},
     BinaryManager: vi.fn().mockImplementation(function () {
         return {
             ensureBinary: mockEnsureBinary,
@@ -97,6 +101,13 @@ function makePlugin(settings: Partial<LilbeeSettings> = {}, registry: any = null
         vaultRegistry: registry,
         getSharedLilbeeVersion: () => "",
         setSharedLilbeeVersion: vi.fn(),
+        isServerInstalled: () => true,
+        isServerUninstalled: () => false,
+        isDownloadingServer: () => false,
+        cancelServerDownload: vi.fn(),
+        planServerUninstall: () => ({ targets: [], totalBytes: 0 }),
+        uninstallServer: vi.fn().mockResolvedValue(0),
+        installServer: vi.fn().mockResolvedValue(undefined),
         getSharedHfToken: () => "",
         setSharedHfToken: vi.fn(),
         activeModel: "",

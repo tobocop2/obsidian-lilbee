@@ -61,13 +61,16 @@
 
 ### Fixed
 
+- Managed mode no longer piles up leftover server processes. A session that ended without a clean shutdown (a crash, a force quit, or a version upgrade) used to leave the old server running; the next launch would start a second one, the two would fight over the same data folder, and the new server would be killed in a loop ("server crashed after multiple restarts"). The plugin now clears any orphaned server for the vault before starting, tracks the server process directly, and shuts it down together with its background workers.
 - Managed mode no longer wedges into a "didn't produce a session token" loop when another process is already listening on 7433. The plugin lets the server pick any free port on every start.
 - The chat header dropdown always shows the active model name now, instead of falling back to "── Other... ──" when the featured catalog hadn't loaded yet.
 - Sending a chat (or any lilbee action) in the brief gap between enabling the plugin and the server becoming reachable now waits for the server and goes through, instead of failing with "Server is still starting up".
 - The crawler's first-run browser warmup shows a "preparing crawler" stage on the crawl row instead of a misleading 0 MB download sub-task. The sync pill clears once an ingest finishes.
+- The plugin no longer forces its views open on startup. Obsidian reopens whatever panes you left from your last session, so a closed Task Center stays closed. Finishing the setup wizard still opens the chat sidebar once. Chat now docks in the right sidebar instead of taking a main-editor tab, the Task Center drops its ribbon icon (open it from the command palette; job progress still shows in the status bar) so lilbee uses a single ribbon icon, and the now-unused "auto-open" setting is gone.
 
 ### Added
 
+- An **Arrange views** command tiles the plugin's views (chat and the Task Center, plus any open wiki or memories panes) into even splits. Bind a hotkey in Settings → Hotkeys.
 - A separate "When answering without documents" prompt (`general_system_prompt`) sits next to the cited-answer prompt in Settings → Generation. The cited-answer prompt is now labelled "When answering with documents".
 - A Search / Chat mode toggle in the chat header switches the server's `cfg.chat_mode`. Disabled (with a tooltip) when no embedding model is configured. Hidden when the connected server predates the field.
 - Banners returned by the chat stream render verbatim above the answer bubble — copy like "Search needs an embedding model" comes from the server, not the plugin.

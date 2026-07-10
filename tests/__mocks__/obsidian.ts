@@ -819,7 +819,14 @@ class MockDropdownComponent {
     private _onChange: ((v: string) => void) | null = null;
     private _value = "";
     selectEl = { disabled: false, title: "" };
-    addOption(_value: string, _label: string): this {
+    disabled = false;
+    options: string[] = [];
+    setDisabled(disabled: boolean): this {
+        this.disabled = disabled;
+        return this;
+    }
+    addOption(value: string, _label: string): this {
+        this.options.push(value);
         return this;
     }
     addOptions(_opts: Record<string, string>): this {
@@ -863,10 +870,15 @@ class MockToggleComponent {
 class MockButtonComponent {
     private _onClick: (() => void) | null = null;
     warning = false;
-    setButtonText(_text: string): this {
+    text = "";
+    disabled = false;
+    buttonEl = new MockElement();
+    setButtonText(text: string): this {
+        this.text = text;
         return this;
     }
-    setDisabled(_disabled: boolean): this {
+    setDisabled(disabled: boolean): this {
+        this.disabled = disabled;
         return this;
     }
     setTooltip(_text: string): this {

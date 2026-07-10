@@ -297,6 +297,18 @@ export function isModelUnavailableError(code: string | null, message: string): b
  * otherwise derives from `current/total`. Returns undefined when neither is usable
  * (e.g. total is zero/missing, or current is missing).
  */
+/** Hand a progress bar from its indeterminate animation to a real width. */
+export function setDeterminateProgress(fill: HTMLElement, percent: number): void {
+    fill.classList.remove("lilbee-wizard-progress-indeterminate");
+    fill.style.width = `${percent}%`;
+}
+
+/** Whole-number percent of *received* against *total*, or undefined when the total is unknown. */
+export function percentOfBytes(received: number, total: number | null): number | undefined {
+    if (!total || total <= 0) return undefined;
+    return Math.min(100, Math.round((received / total) * 100));
+}
+
 export function percentFromSse(data: { percent?: number; current?: number; total?: number }): number | undefined {
     if (data.percent !== undefined) return data.percent;
     if (data.total && data.current !== undefined) {

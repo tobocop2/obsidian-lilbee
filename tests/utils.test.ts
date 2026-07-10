@@ -1,27 +1,30 @@
+import { MockElement } from "./__mocks__/obsidian";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Notice } from "obsidian";
 import {
+    StreamIdleError,
     _resetServerUnreachableDebounce,
     ensureUrlScheme,
     errorMessage,
     extractServerErrorDetail,
     extractSseErrorCode,
     extractSseErrorMessage,
-    isModelUnavailableError,
     formatBytes,
     formatDiskSize,
-    formatRate,
     formatElapsed,
+    formatRate,
     getRelevantSystemMemoryGB,
+    isModelUnavailableError,
     isRoleMismatchDetail,
     isStreamInterruptedError,
-    streamInterruptedMessage,
     noticeForResultError,
     noticeServerUnreachableIfApplicable,
     percentFromSse,
+    percentOfBytes,
     relativeTimeFromIso,
     sessionTokenInvalidMessage,
-    StreamIdleError,
+    setDeterminateProgress,
+    streamInterruptedMessage,
     withIdleTimeout,
 } from "../src/utils";
 import { ServerStartingError, SessionTokenError } from "../src/api";
@@ -508,5 +511,33 @@ describe("noticeServerUnreachableIfApplicable()", () => {
             Date.now = realDateNow;
         }
         expect(Notice.instances).toHaveLength(2);
+    });
+});
+
+describe("percentOfBytes", () => {
+    it("rounds to a whole percent", () => {
+        expect(percentOfBytes(1, 3)).toBe(33);
+        expect(percentOfBytes(2, 4)).toBe(50);
+    });
+
+    it("has no answer without a total", () => {
+        expect(percentOfBytes(10, null)).toBeUndefined();
+        expect(percentOfBytes(10, 0)).toBeUndefined();
+    });
+
+    it("never exceeds 100 when the server undercounts the length", () => {
+        expect(percentOfBytes(120, 100)).toBe(100);
+    });
+});
+
+describe("setDeterminateProgress", () => {
+    it("drops the indeterminate animation and sets the width", () => {
+        const fill = new MockElement() as unknown as HTMLElement;
+        fill.classList.add("lilbee-wizard-progress-indeterminate");
+
+        setDeterminateProgress(fill, 42);
+
+        expect(fill.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(false);
+        expect(fill.style.width).toBe("42%");
     });
 });

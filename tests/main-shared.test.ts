@@ -81,6 +81,12 @@ vi.mock("../src/binary-manager", () => {
     };
     return {
         node: nodeMock,
+        DownloadCanceledError: class DownloadCanceledError extends Error {
+            constructor() {
+                super("The lilbee server download was cancelled.");
+                this.name = "DownloadCanceledError";
+            }
+        },
         BinaryManager: vi.fn().mockImplementation(function () {
             return {
                 binaryExists: vi.fn().mockReturnValue(true),
@@ -115,6 +121,7 @@ vi.mock("../src/server-manager", () => {
                 },
             };
         }),
+        killServerTree: vi.fn().mockResolvedValue(undefined),
     };
 });
 
@@ -431,6 +438,24 @@ describe("terminateOwningProcess", () => {
         });
         expect(result).toBe(true);
     });
+
+    it("also tears down the owner's server tree when the lock records a server pid", async () => {
+        const plugin = await createPlugin();
+        const { killServerTree } = await import("../src/server-manager");
+        (killServerTree as any).mockClear();
+        (node.processKill as any).mockImplementation((pid: number, signal?: number) => {
+            if (signal === 0) throw new Error("owner gone");
+        });
+        const result = await (plugin as any).terminateOwningProcess({
+            vaultId: "x",
+            pid: 1,
+            serverPid: 4242,
+            port: 1,
+            startedAt: 1,
+        });
+        expect(result).toBe(true);
+        expect(killServerTree).toHaveBeenCalledWith(4242);
+    });
 });
 
 describe("acquireLockOrBail edge branches", () => {
@@ -478,17 +503,55 @@ describe("ensureBinaryWithUi guards", () => {
         expect(events.find((e) => e.phase === "error")).toBeDefined();
     });
 
-    it("hides the download notice when ensureBinary throws after firing progress", async () => {
+    it("raises no progress toast when ensureBinary throws after firing progress", async () => {
         const plugin = await createPlugin();
+        Notice.clear?.();
         (plugin as any).binaryManager = {
             binaryExists: () => false,
-            ensureBinary: vi.fn(async (cb: (m: string, u?: string) => void) => {
+            ensureBinary: vi.fn(async (_includeDev: boolean, cb: (m: string, u?: string) => void) => {
                 cb("Downloading", "https://example.com");
                 throw new Error("network gone");
             }),
         };
         const result = await (plugin as any).ensureBinaryWithUi();
         expect(result).toBeNull();
+        expect(Notice.instances.some((n) => n.duration === 0)).toBe(false);
+    });
+
+    it("cancelling a download is reported as a choice, not a failure", async () => {
+        const { DownloadCanceledError } = await import("../src/binary-manager");
+        const plugin = await createPlugin();
+        Notice.clear?.();
+        (plugin as any).binaryManager = {
+            binaryExists: () => false,
+            ensureBinary: vi.fn(async () => {
+                throw new DownloadCanceledError();
+            }),
+        };
+
+        const result = await (plugin as any).ensureBinaryWithUi();
+
+        expect(result).toBeNull();
+        expect(Notice.instances.map((n) => n.message)).toContain("lilbee server download cancelled.");
+    });
+
+    it("cancelServerDownload aborts the in-flight download", async () => {
+        const plugin = await createPlugin();
+        let seenSignal: AbortSignal | undefined;
+        (plugin as any).binaryManager = {
+            binaryExists: () => false,
+            ensureBinary: vi.fn(async (_includeDev: boolean, _cb: unknown, _q: unknown, signal: AbortSignal) => {
+                seenSignal = signal;
+                expect(plugin.isDownloadingServer()).toBe(true);
+                plugin.cancelServerDownload();
+                return "/fake/bin/lilbee";
+            }),
+        };
+
+        await (plugin as any).ensureBinaryWithUi();
+
+        expect(seenSignal?.aborted).toBe(true);
+        expect(plugin.isDownloadingServer()).toBe(false);
     });
 
     it("returns the path without creating a notice when the binary already exists", async () => {
@@ -503,20 +566,20 @@ describe("ensureBinaryWithUi guards", () => {
         expect(Notice.instances.length).toBe(before);
     });
 
-    it("hides the download notice in the finally block", async () => {
+    it("clears the download controller once the download finishes", async () => {
         const plugin = await createPlugin();
-        const fakeBm = {
+        Notice.clear?.();
+        (plugin as any).binaryManager = {
             binaryExists: () => false,
-            ensureBinary: vi.fn(async (cb: (m: string, u?: string) => void) => {
+            ensureBinary: vi.fn(async (_includeDev: boolean, cb: (m: string, u?: string) => void) => {
                 cb("Downloading", "https://example.com");
                 return "/fake/bin/lilbee";
             }),
         };
-        (plugin as any).binaryManager = fakeBm;
         const result = await (plugin as any).ensureBinaryWithUi();
         expect(result).toBe("/fake/bin/lilbee");
-        // The Notice was constructed (counts in instances).
-        expect(Notice.instances.length).toBeGreaterThan(0);
+        expect(plugin.isDownloadingServer()).toBe(false);
+        expect(Notice.instances.some((n) => n.duration === 0)).toBe(false);
     });
 });
 
@@ -643,5 +706,204 @@ describe("SHARED_PATH names used by the registry", () => {
         plugin.setSharedLilbeeVersion("v0.5.1");
         const expected = `${plugin.vaultRegistry!.sharedRoot}/${SHARED_PATH.CONFIG}`;
         expect(fsState.files.has(expected)).toBe(true);
+    });
+});
+
+describe("managed-server uninstall", () => {
+    /** Seed the shared root with a binary, a model cache, and this vault's index. */
+    function seedInstall(plugin: LilbeePlugin): string {
+        const root = plugin.vaultRegistry!.sharedRoot;
+        fsState.dirs.add(`${root}/bin`);
+        fsState.dirs.add(`${root}/models`);
+        fsState.dirs.add(`${root}/vaults/${plugin.vaultId}`);
+        fsState.files.set(`${root}/bin/lilbee`, "x".repeat(10));
+        fsState.files.set(`${root}/models/a.gguf`, "y".repeat(20));
+        fsState.files.set(`${root}/vaults/${plugin.vaultId}/index.db`, "z".repeat(30));
+        return root;
+    }
+
+    it("plans the binary, the models, and this vault's index", async () => {
+        const plugin = await createPlugin();
+        const root = seedInstall(plugin);
+
+        const plan = plugin.planServerUninstall()!;
+
+        expect(plan.targets.map((t) => t.path)).toEqual([
+            `${root}/bin`,
+            `${root}/models`,
+            `${root}/vaults/${plugin.vaultId}`,
+        ]);
+    });
+
+    it("has no plan without a vault registry", async () => {
+        const plugin = await createPlugin();
+        (plugin as any).vaultRegistry = null;
+
+        expect(plugin.planServerUninstall()).toBeNull();
+    });
+
+    it("deletes the planned paths, forgets the version, and remembers the choice", async () => {
+        const plugin = await createPlugin();
+        const root = seedInstall(plugin);
+        plugin.setSharedLilbeeVersion("v0.5.1");
+        const plan = plugin.planServerUninstall()!;
+
+        const freed = await plugin.uninstallServer(plan);
+
+        expect(freed).toBe(plan.totalBytes);
+        expect(fsState.dirs.has(`${root}/bin`)).toBe(false);
+        expect(fsState.dirs.has(`${root}/models`)).toBe(false);
+        expect(plugin.getSharedLilbeeVersion()).toBe("");
+        expect(plugin.isServerUninstalled()).toBe(true);
+        expect(plugin.vaultRegistry!.loadConfig().serverUninstalled).toBe(true);
+    });
+
+    it("stops the running server and releases the shared lock", async () => {
+        const plugin = await createPlugin();
+        seedInstall(plugin);
+        const stop = vi.fn().mockResolvedValue(undefined);
+        (plugin as any).serverManager = { stop };
+        const releaseLock = vi.spyOn(plugin.vaultRegistry!, "releaseLock");
+
+        await plugin.uninstallServer(plugin.planServerUninstall()!);
+
+        expect(stop).toHaveBeenCalled();
+        expect(releaseLock).toHaveBeenCalledWith(plugin.vaultId);
+        expect(plugin.serverManager).toBeNull();
+    });
+
+    it("returns nothing to free without a vault registry", async () => {
+        const plugin = await createPlugin();
+        const plan = plugin.planServerUninstall()!;
+        (plugin as any).vaultRegistry = null;
+
+        expect(await plugin.uninstallServer(plan)).toBe(0);
+    });
+
+    it("never starts the managed server once uninstalled", async () => {
+        const plugin = await createPlugin();
+        seedInstall(plugin);
+        await plugin.uninstallServer(plugin.planServerUninstall()!);
+
+        await plugin.startManagedServer();
+
+        expect(plugin.serverManager).toBeNull();
+    });
+
+    it("skips the automatic server update once uninstalled", async () => {
+        const plugin = await createPlugin();
+        seedInstall(plugin);
+        await plugin.uninstallServer(plugin.planServerUninstall()!);
+        const checkForUpdate = vi.spyOn(plugin, "checkForUpdate");
+
+        await (plugin as any).autoUpdateServerBinary();
+
+        expect(checkForUpdate).not.toHaveBeenCalled();
+    });
+
+    it("remembers the uninstall across a reload", async () => {
+        const plugin = await createPlugin();
+        seedInstall(plugin);
+        await plugin.uninstallServer(plugin.planServerUninstall()!);
+
+        const reloaded = await createPlugin();
+
+        expect(reloaded.isServerUninstalled()).toBe(true);
+    });
+
+    it("refuses while another vault's server is running", async () => {
+        const plugin = await createPlugin();
+        seedInstall(plugin);
+        const plan = plugin.planServerUninstall()!;
+        plugin.vaultRegistry!.upsert({
+            id: "other",
+            displayName: "Notes",
+            dataDir: "/d",
+            obsidianVaultPath: "/p",
+            addedAt: 1,
+            lastActiveAt: 1,
+        });
+        plugin.vaultRegistry!.writeLock({ vaultId: "other", pid: process.pid, port: 1, startedAt: 1 });
+
+        await expect(plugin.uninstallServer(plan)).rejects.toThrow("The lilbee server is running for Notes");
+        expect(plugin.isServerUninstalled()).toBe(false);
+    });
+
+    it("reaps a server orphaned by a crashed Obsidian before deleting", async () => {
+        const { killServerTree } = await import("../src/server-manager");
+        (killServerTree as any).mockClear();
+        const plugin = await createPlugin();
+        seedInstall(plugin);
+        plugin.vaultRegistry!.writeLock({
+            vaultId: plugin.vaultId,
+            pid: process.pid,
+            port: 1,
+            startedAt: 1,
+            serverPid: 4242,
+        });
+
+        await plugin.uninstallServer(plugin.planServerUninstall()!);
+
+        expect(killServerTree).toHaveBeenCalledWith(4242);
+    });
+
+    it("installing a release clears the uninstall and downloads it", async () => {
+        const plugin = await createPlugin();
+        seedInstall(plugin);
+        await plugin.uninstallServer(plugin.planServerUninstall()!);
+        const updateServer = vi.spyOn(plugin, "updateServer").mockResolvedValue(undefined);
+        const release = { tag: "v0.5.1", assetUrl: "https://e/dl", variant: "default", sizeBytes: 1, digest: null };
+
+        await plugin.installServer(release as any);
+
+        expect(plugin.isServerUninstalled()).toBe(false);
+        expect(plugin.vaultRegistry!.loadConfig().serverUninstalled).toBe(false);
+        expect(updateServer).toHaveBeenCalledWith(release, undefined);
+    });
+
+    it("tracks whether a binary is on disk", async () => {
+        const plugin = await createPlugin();
+
+        expect(plugin.isServerInstalled()).toBe(true);
+
+        (plugin as any).vaultRegistry = null;
+        expect(plugin.isServerInstalled()).toBe(false);
+    });
+
+    it("keeps the uninstalled flag out of the shared config when there is no registry", async () => {
+        const plugin = await createPlugin();
+        (plugin as any).vaultRegistry = null;
+
+        plugin.setServerUninstalled(true);
+
+        expect(plugin.isServerUninstalled()).toBe(true);
+    });
+});
+
+describe("status bar after an uninstall", () => {
+    it("reads 'server not installed' instead of 'stopped'", async () => {
+        const plugin = await createPlugin();
+        plugin.settings.serverMode = "managed";
+        const texts: string[] = [];
+        (plugin as any).statusBarEl = null;
+        const updateStatusBar = vi
+            .spyOn(plugin as any, "updateStatusBar")
+            .mockImplementation((text: unknown) => texts.push(String(text)));
+
+        plugin.setServerUninstalled(true);
+        (plugin as any).setStatusReady();
+
+        expect(texts).toEqual(["lilbee: server not installed"]);
+        updateStatusBar.mockRestore();
+    });
+
+    it("does not probe a server that is not installed", async () => {
+        const plugin = await createPlugin();
+        plugin.setServerUninstalled(true);
+        const health = vi.spyOn(plugin.api, "health");
+
+        await (plugin as any).probeServerHealth();
+
+        expect(health).not.toHaveBeenCalled();
     });
 });
