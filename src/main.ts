@@ -290,6 +290,8 @@ export default class LilbeePlugin extends Plugin {
     private unloaded = false;
     // Guards chat-leaf creation against re-entrant duplicate tabs while setViewState is in flight (issue #169).
     private openingChatLeaf = false;
+    // Same re-entrancy guard for the placement view's main-area tab and beside-chat split.
+    private openingPlacementLeaf = false;
     taskQueue: TaskQueue = new TaskQueue();
     /** Paths whose most-recent add failed — retry skips the reindex confirm. */
     private failedAddPaths = new Set<string>();
@@ -1128,7 +1130,7 @@ export default class LilbeePlugin extends Plugin {
                 if (!this.isLilbeeReady()) return false;
                 const chatLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
                 if (!chatLeaf) return false;
-                if (!checking) void revealPlacementBeside(this.app, chatLeaf);
+                if (!checking) void this.openPlacementBesideChat(chatLeaf);
                 return true;
             },
         });
@@ -2247,10 +2249,27 @@ export default class LilbeePlugin extends Plugin {
             void this.app.workspace.revealLeaf(existing[0]);
             return;
         }
-        const leaf = this.app.workspace.getLeaf(true);
-        if (leaf) {
-            await leaf.setViewState({ type: VIEW_TYPE_PLACEMENT, active: true });
-            void this.app.workspace.revealLeaf(leaf);
+        if (this.openingPlacementLeaf) return;
+        this.openingPlacementLeaf = true;
+        try {
+            // "tab" is the explicit form; the boolean getLeaf(true) is deprecated.
+            const leaf = this.app.workspace.getLeaf("tab");
+            if (leaf) {
+                await leaf.setViewState({ type: VIEW_TYPE_PLACEMENT, active: true });
+                void this.app.workspace.revealLeaf(leaf);
+            }
+        } finally {
+            this.openingPlacementLeaf = false;
+        }
+    }
+
+    private async openPlacementBesideChat(chatLeaf: WorkspaceLeaf): Promise<void> {
+        if (this.openingPlacementLeaf) return;
+        this.openingPlacementLeaf = true;
+        try {
+            await revealPlacementBeside(this.app, chatLeaf);
+        } finally {
+            this.openingPlacementLeaf = false;
         }
     }
 
@@ -2321,16 +2340,22 @@ export default class LilbeePlugin extends Plugin {
 
     /**
      * Tile the plugin's views as side-by-side columns in the main area: chat and
-     * the Task Center always, plus wiki and memories when they are already open.
-     * Reuses open leaves (chat keeps its conversation) and splits any it has to
-     * create beside the previous one. Bind a hotkey in Settings → Hotkeys.
+     * the Task Center always, plus wiki, memories, and placement when they are
+     * already open. Reuses open leaves (chat keeps its conversation) and splits
+     * any it has to create beside the previous one. Bind a hotkey in Settings → Hotkeys.
      */
     async arrangeViews(): Promise<void> {
         if (this.openingChatLeaf) return;
         this.openingChatLeaf = true;
         try {
             const workspace = this.app.workspace;
-            const included = [VIEW_TYPE_CHAT, VIEW_TYPE_TASKS, VIEW_TYPE_WIKI, VIEW_TYPE_MEMORIES].filter(
+            const included = [
+                VIEW_TYPE_CHAT,
+                VIEW_TYPE_TASKS,
+                VIEW_TYPE_WIKI,
+                VIEW_TYPE_MEMORIES,
+                VIEW_TYPE_PLACEMENT,
+            ].filter(
                 (type) =>
                     type === VIEW_TYPE_CHAT || type === VIEW_TYPE_TASKS || workspace.getLeavesOfType(type).length > 0,
             );

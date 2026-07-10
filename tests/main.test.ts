@@ -524,6 +524,17 @@ describe("LilbeePlugin", () => {
             expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledWith(chatLeaf, "vertical");
         });
 
+        it("open-placement-beside-chat is a no-op while a placement leaf is already opening", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const chatLeaf = new WorkspaceLeaf();
+            plugin.app.workspace.getLeavesOfType = vi.fn((t: string) => (t === "lilbee-chat" ? [chatLeaf] : []));
+            plugin.app.workspace.createLeafBySplit = vi.fn();
+            (plugin as any).openingPlacementLeaf = true;
+            await (plugin as any).openPlacementBesideChat(chatLeaf);
+            expect(plugin.app.workspace.createLeafBySplit).not.toHaveBeenCalled();
+        });
+
         it("add-folder command returns false when no active file", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -1185,13 +1196,14 @@ describe("LilbeePlugin", () => {
             expect(plugin.app.workspace.getLeaf).not.toHaveBeenCalled();
         });
 
-        it("activatePlacementView opens a new main-area leaf when none exists", async () => {
+        it("activatePlacementView opens a new main-area tab when none exists", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
             const leaf = new WorkspaceLeaf(plugin.app as any);
             plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(leaf);
             await (plugin as any).activatePlacementView();
+            expect(plugin.app.workspace.getLeaf).toHaveBeenCalledWith("tab");
             expect(leaf.setViewState).toHaveBeenCalledWith({ type: "lilbee-placement", active: true });
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
         });
@@ -1202,6 +1214,16 @@ describe("LilbeePlugin", () => {
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
             plugin.app.workspace.getLeaf = vi.fn().mockReturnValue(null);
             await expect((plugin as any).activatePlacementView()).resolves.not.toThrow();
+        });
+
+        it("activatePlacementView is a no-op while a placement leaf is already opening", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            plugin.app.workspace.getLeaf = vi.fn();
+            (plugin as any).openingPlacementLeaf = true;
+            await (plugin as any).activatePlacementView();
+            expect(plugin.app.workspace.getLeaf).not.toHaveBeenCalled();
         });
 
         it("shows a warming pill while the chat engine cold-loads", async () => {
@@ -4177,6 +4199,19 @@ describe("LilbeePlugin", () => {
             expect(plugin.app.workspace.getLeaf).toHaveBeenCalledWith("tab");
             expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledTimes(1);
             expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(4);
+        });
+
+        it("includes the placement view only when it is already open", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            const placementLeaf = { setViewState: vi.fn() };
+            wireWorkspace(plugin, { "lilbee-placement": [placementLeaf] });
+            await (plugin as any).arrangeViews();
+            // chat (main tab) + tasks (split); placement reused; reveal all three.
+            expect(plugin.app.workspace.getLeaf).toHaveBeenCalledWith("tab");
+            expect(plugin.app.workspace.createLeafBySplit).toHaveBeenCalledTimes(1);
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledTimes(3);
+            expect(plugin.app.workspace.revealLeaf).toHaveBeenCalledWith(placementLeaf);
         });
 
         it("bails per-view when no leaf can be created and does not throw", async () => {
