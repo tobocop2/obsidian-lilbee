@@ -139,6 +139,114 @@
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-settings"  aria-controls="tutorial-pane-settings"  aria-selected="false" tabindex="-1">settings</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-tour"      aria-controls="tutorial-pane-tour"      aria-selected="false" tabindex="-1">tour</button>
         </div>
+
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-ollama" aria-labelledby="tutorial-tab-ollama" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/ollama.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">Point lilbee at a running Ollama server and pick one model for embedding and another for chat from the Hosted tab. Add a PDF, watch it index, then ask a question and get a cited answer, served end to end by Ollama.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-gemini" aria-labelledby="tutorial-tab-gemini" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/gemini.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">With your own key, hosted frontier models show up under Hosted too. Pick a free-tier Gemini model for chat, keep embedding local, and the answer comes from Gemini while still citing your own documents.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-lmstudio" aria-labelledby="tutorial-tab-lmstudio" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/lmstudio.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">The same as Ollama, with LM Studio's local server: pick its embedder and chat model from the Hosted tab, index a PDF, and get a cited answer powered end to end by LM Studio.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-multipart" aria-labelledby="tutorial-tab-multipart" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/multipart.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">Ask a multi-part question in one shot, a bulb part number and the engine's firing order, from different sections of a manual. A local model answers both and cites each.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-vision" aria-labelledby="tutorial-tab-vision" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/vision.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">A scanned, image-only PDF read by a local vision model. The Task Center streams the OCR page by page, then a cited answer reads the support number and publisher straight off the scanned cover, a detail only OCR could surface.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-onlilbee" aria-labelledby="tutorial-tab-onlilbee">
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">The plugin's own source code added to the library on an Apple M1 Pro: the Task Center embeds all 58 files beside the live GPU placement view, then <em>what is lilbee for Obsidian?</em> gets a cited answer and the citation opens the README at the source.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-ask" aria-labelledby="tutorial-tab-ask" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/add.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">Add a PDF from the command palette, watch the Task Center index it, then ask a question and get a cited answer. Click the citation and the <em>source preview</em> opens at the exact page.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-crawl" aria-labelledby="tutorial-tab-crawl" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">Crawl a Wikipedia page into your vault and ask it a question, then jump from the citation straight to the cited section of the rendered source.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-crawlsite" aria-labelledby="tutorial-tab-crawlsite" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl_site.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">Crawl a whole site one link deep into an empty vault, hundreds of pages streaming into the explorer as they index, then ask one multi-part question that only makes sense across all of it. A local model answers with reranking and cites several of the crawled pages.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-catalog" aria-labelledby="tutorial-tab-catalog" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/catalog.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">Browse the model catalog without leaving Obsidian: Chat, Embed, Vision, and Rerank tabs, each pulled live from Hugging Face Hub. Models the bundled engine can't run are flagged before you pull.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-download" aria-labelledby="tutorial-tab-download" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/download_model.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">Search the catalog for a small chat model, watch the download stream start to finish in the Task Center, then activate it, switch to Chat mode, and use it, the full pull-and-use loop without leaving Obsidian.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-models" aria-labelledby="tutorial-tab-models" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/models.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">Four roles on one rail: chat writes the answers, embedding indexes your notes, vision reads scanned PDFs, reranking sharpens the results. Hover each to see what it does, then flip between Search and Chat mode.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-firststart" aria-labelledby="tutorial-tab-firststart" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first_start.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">Brand-new on a fresh vault: install lilbee from the community plugin store, walk the setup wizard (pick a chat model and an embedder), then ask your first question and get a cited answer from your own notes, with a click-through to the source.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-tour" aria-labelledby="tutorial-tab-tour" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/tour.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">The palette as an async control surface: fire a crawl, a file add, and a model download back to back without waiting, watch all three run at once in the Task Center, then ask the just-crawled page a cited question.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-settings" aria-labelledby="tutorial-tab-settings" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/settings.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">50+ settings: search depth, reranking, sampling, parsers, the wiki. Sane defaults; tune the moment you want to. Long model names and large sizes stay on aligned rows.</p>
+        </div>
+
+      </div>
     </section>
 
     <section>
