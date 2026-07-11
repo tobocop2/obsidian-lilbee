@@ -292,6 +292,8 @@ export default class LilbeePlugin extends Plugin {
     private openingChatLeaf = false;
     // Same re-entrancy guard for the placement view's main-area tab and beside-chat split.
     private openingPlacementLeaf = false;
+    /** Set by the placement dev-builds prompt so the settings tab scrolls to the toggle. */
+    revealDevBuildsInSettings = false;
     taskQueue: TaskQueue = new TaskQueue();
     /** Paths whose most-recent add failed — retry skips the reindex confirm. */
     private failedAddPaths = new Set<string>();
@@ -2253,7 +2255,10 @@ export default class LilbeePlugin extends Plugin {
         }
         const modal = new ConfirmModal(this.app, MESSAGES.PLACEMENT_DEV_BUILDS_PROMPT);
         modal.open();
-        if (await modal.result) this.openPluginSettings();
+        if (await modal.result) {
+            this.revealDevBuildsInSettings = true;
+            this.openPluginSettings();
+        }
     }
 
     /** Open the placement view in a main-area tab (it is wider than the sidebar views). */

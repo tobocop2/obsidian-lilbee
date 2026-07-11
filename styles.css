@@ -4763,3 +4763,24 @@ button.lilbee-model-chip-select:focus-visible {
     color: var(--text-error);
     border-color: var(--text-error);
 }
+
+/* Flash the dev-builds row when the placement prompt lands the user on it. */
+.lilbee-setting-flash {
+    animation: lilbee-setting-flash 1.2s ease-in-out 2;
+    border-radius: var(--radius-s, 4px);
+}
+@keyframes lilbee-setting-flash {
+    0%,
+    100% {
+        background: transparent;
+    }
+    50% {
+        background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .lilbee-setting-flash {
+        animation: none;
+        background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+    }
+}
