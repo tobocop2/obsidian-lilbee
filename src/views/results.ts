@@ -1,6 +1,6 @@
 import { App } from "obsidian";
 import type { LilbeeClient } from "../api";
-import type { DocumentResult, Source } from "../types";
+import { CLAIM_TYPE, SEARCH_CHUNK_TYPE, type DocumentResult, type Source } from "../types";
 import { executeSourceClick, sourceClickAction } from "../utils/source-click";
 
 const MAX_EXCERPT_CHARS = 200;
@@ -108,13 +108,13 @@ export function renderSourceChip(
     api: LilbeeClient,
     onWikiClick?: (slug: string) => void,
 ): void {
-    const isWiki = source.chunk_type === "wiki";
+    const isWiki = source.chunk_type === SEARCH_CHUNK_TYPE.WIKI;
     const cls = isWiki ? "lilbee-source-chip lilbee-source-chip-wiki" : "lilbee-source-chip";
     const chip = container.createEl("span", { cls });
 
-    if (source.claim_type === "fact") {
+    if (source.claim_type === CLAIM_TYPE.FACT) {
         chip.addClass("lilbee-claim-fact");
-    } else if (source.claim_type === "inference") {
+    } else if (source.claim_type === CLAIM_TYPE.INFERENCE) {
         chip.addClass("lilbee-claim-inference");
     }
 
@@ -157,7 +157,7 @@ export function renderAggregatedSourceChips(
     const groups = groupSourcesByFile(sources);
     for (const group of groups) {
         const first = group[0];
-        if (first.chunk_type === "wiki") {
+        if (first.chunk_type === SEARCH_CHUNK_TYPE.WIKI) {
             for (const s of group) renderSourceChip(container, s, app, api);
             continue;
         }
@@ -180,7 +180,7 @@ function groupSourcesByFile(sources: Source[]): Source[][] {
     const order: string[] = [];
     const buckets = new Map<string, Source[]>();
     for (const source of sources) {
-        const key = `${source.chunk_type ?? "raw"}::${source.source}`;
+        const key = `${source.chunk_type ?? SEARCH_CHUNK_TYPE.RAW}::${source.source}`;
         if (!buckets.has(key)) {
             buckets.set(key, []);
             order.push(key);

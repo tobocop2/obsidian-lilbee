@@ -457,7 +457,7 @@ describe("BinaryManager", () => {
         /** Chunks the fake https response yields, plus optional redirect hops. */
         function stubHttps(
             chunks: Uint8Array[],
-            opts: { status?: number; headers?: Record<string, string>; hops?: number } = {},
+            opts: { status?: number; headers?: Record<string, string>; hops?: number; noLength?: boolean } = {},
         ) {
             let hop = 0;
             const hops = opts.hops ?? 0;
@@ -470,7 +470,9 @@ describe("BinaryManager", () => {
                 } else {
                     res.statusCode = opts.status ?? 200;
                     res.headers = {
-                        "content-length": String(chunks.reduce((n, c) => n + c.length, 0)),
+                        ...(opts.noLength
+                            ? {}
+                            : { "content-length": String(chunks.reduce((n, c) => n + c.length, 0)) }),
                         ...(opts.headers ?? {}),
                     };
                 }
@@ -557,7 +559,26 @@ describe("BinaryManager", () => {
             ]);
         });
 
-        it("reports a null total when the server sends no content length", async () => {
+        it("reports an unknown total when neither content-length nor the release size is known", async () => {
+            restore = stubPlatform("linux", "x64");
+            const data = new Uint8Array([1, 2, 3, 4]);
+            vi.spyOn(node, "existsSync").mockReturnValue(true);
+            stubEnoughSpace();
+            stubHttps([data], { noLength: true });
+            stubWriteStream([]);
+            vi.spyOn(node, "renameSync").mockImplementation(() => {});
+            vi.spyOn(node, "chmodSync").mockImplementation(() => {});
+
+            const seen: Array<{ receivedBytes: number; totalBytes: number | null }> = [];
+            const mgr = new BinaryManager("/plugins/lilbee/bin");
+            await mgr.download("https://example.com/dl", 0, sha256Digest(data), (_m, _u, p) => {
+                if (p) seen.push(p);
+            });
+
+            expect(seen).toEqual([{ receivedBytes: 4, totalBytes: null }]);
+        });
+
+        it("falls back to the release size when the server sends no content length", async () => {
             restore = stubPlatform("linux", "x64");
             const data = new Uint8Array([7]);
             vi.spyOn(node, "existsSync").mockReturnValue(true);
@@ -583,7 +604,7 @@ describe("BinaryManager", () => {
                 if (p) seen.push(p);
             });
 
-            expect(seen).toEqual([{ receivedBytes: 1, totalBytes: null }]);
+            expect(seen).toEqual([{ receivedBytes: 1, totalBytes: 1 }]);
         });
 
         it("follows redirects to the asset host", async () => {
@@ -899,7 +920,8 @@ describe("BinaryManager", () => {
             vi.spyOn(node, "statfs").mockResolvedValue(fakeStatfs(1));
 
             const mgr = new BinaryManager("/plugins/lilbee/bin");
-            await expect(mgr.download("https://example.com/dl", 4 * 1024 ** 3, null)).rejects.toThrow(/4\.4 GB free/);
+            // Disk figures render in decimal (SI) units: 4 GiB * 1.1 = 4.72e9 bytes.
+            await expect(mgr.download("https://example.com/dl", 4 * 1024 ** 3, null)).rejects.toThrow(/4\.72 GB free/);
         });
 
         it("calls xattr on darwin", async () => {

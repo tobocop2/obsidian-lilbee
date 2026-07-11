@@ -1,4 +1,15 @@
-import { MODEL_TASK } from "../types";
+import { MODEL_TASK, type WorkerRole } from "../types";
+
+// Natural-language noun for each worker role, so tooltips read "embedding
+// worker" rather than the internal "embed".
+const ROLE_NOUN: Record<WorkerRole, string> = {
+    chat: "chat",
+    embed: "embedding",
+    vision: "vision",
+    rerank: "reranking",
+};
+const roleNoun = (role: WorkerRole): string => ROLE_NOUN[role];
+const indefinite = (word: string): string => (/^[aeiou]/i.test(word) ? "an" : "a");
 
 export const MESSAGES = {
     CONFIRM_REINDEX: (name: string): string => `"${name}" is already indexed. Re-add it?`,
@@ -58,7 +69,6 @@ export const MESSAGES = {
     BUTTON_OPEN_CHAT: "Open chat",
     BUTTON_OPEN_TASK_CENTER: "→ Open Task Center",
 
-    LABEL_DISABLED: "Disabled",
     LABEL_NOT_SET: "Not set",
     LABEL_NO_MODEL_SELECTED: "no model selected",
     LABEL_UNKNOWN: "unknown version",
@@ -77,7 +87,6 @@ export const MESSAGES = {
     LABEL_MIN_RAM: "Minimum RAM:",
     LABEL_DESCRIPTION: "Description",
     LABEL_CHAT_MODEL: "Chat Model",
-    LABEL_ACTIVE_MODEL: "Active",
     LABEL_REASONING: "Reasoning",
     LABEL_SOURCES: "Sources",
     LABEL_DEPTH: "Depth cap",
@@ -88,8 +97,11 @@ export const MESSAGES = {
     NOTICE_CRAWL_RECURSIVE:
         "Whole-site crawl follows every internal link it finds on the same origin. Large sites can fetch hundreds of pages and take a while. Use Advanced to cap depth or page count. Request delay, concurrency and retry behavior live in Settings → Crawling.",
     LABEL_CRAWL_USE_BROWSER: "Use browser (enables JavaScript, uses more memory)",
+    LABEL_CRAWL_SUBDOMAINS: "Include subdomains",
     TOOLTIP_CRAWL_URL: "Web page to crawl. A scheme is added for you if you leave it off.",
     TOOLTIP_CRAWL_RECURSIVE: "Follow internal links on the same site instead of crawling just this page.",
+    TOOLTIP_CRAWL_SUBDOMAINS:
+        "Also follow links to subdomains of the starting site (for example docs.example.com from example.com).",
     TOOLTIP_CRAWL_USE_BROWSER:
         "Render pages in Chromium so content built with JavaScript is captured. Use it for sites that render client-side.",
     TOOLTIP_CRAWL_DEPTH: "How many links deep to follow from the starting page. Blank means no limit.",
@@ -106,7 +118,6 @@ export const MESSAGES = {
     LABEL_UNINSTALL_SERVER: "Uninstall server",
     LABEL_INSTALL_SERVER: "Install server",
     LABEL_SERVER_URL: "Server URL",
-    LABEL_SESSION_TOKEN: "Session token",
     LABEL_SETUP_WIZARD: "Setup wizard",
     LABEL_SWITCH_MANAGED: "Switch to managed server",
     LABEL_MODELS: "Models",
@@ -142,7 +153,6 @@ export const MESSAGES = {
     MODEL_PICKER_TITLE_CHAT: "Pick chat model",
     MODEL_PICKER_TITLE_EMBED: "Pick embedding model",
     MODEL_PICKER_SEARCH_PLACEHOLDER: "Search models…",
-    MODEL_PICKER_NEEDS_KEY_HINT: "Click a Needs-key row to set the provider's API key.",
     MODEL_PICKER_LOCAL_HEADING: "Local",
     MODEL_PICKER_EMPTY: "No models match.",
     COMMAND_MODEL_PICKER_CHAT: "Pick chat model",
@@ -159,7 +169,6 @@ export const MESSAGES = {
     LABEL_GEN_TOP_P: "Top P",
     LABEL_GEN_TOP_K: "Top K (sampling)",
     LABEL_GEN_REPEAT_PENALTY: "Repetition penalty",
-    LABEL_GEN_NUM_CTX: "Context window",
     LABEL_GEN_SEED: "Seed",
     LABEL_GEN_MAX_TOKENS: "Max tokens",
     LABEL_SHOW_REASONING: "Show thinking",
@@ -257,7 +266,6 @@ export const MESSAGES = {
     DESC_RERANKER_CANDIDATES: "How many candidate results to rerank (1-100). Higher = slower but more accurate.",
     NOTICE_FAILED_RERANKER: "lilbee: failed to update reranker model",
     NOTICE_RERANKER_UPDATED: "lilbee: reranker model updated",
-    NOTICE_RERANKER_NEEDS_KEY: "Configure the LiteLLM API key in the LLM provider settings to use this reranker.",
     NOTICE_RERANKER_LOAD_FAILED: "lilbee: failed to load reranker options",
     LABEL_VISION_TITLE: "Vision model",
     LABEL_VISION_DISABLED: "(disabled)",
@@ -267,10 +275,8 @@ export const MESSAGES = {
     NOTICE_VISION_UPDATED: "lilbee: vision model updated",
     NOTICE_FAILED_VISION: "lilbee: failed to update vision model",
     NOTICE_VISION_LOAD_FAILED: "lilbee: failed to load vision options",
-    NOTICE_VISION_NEEDS_KEY: "Configure the LiteLLM API key in the LLM provider settings to use this vision model.",
     PLACEHOLDER_RERANK_CANDIDATES: "20",
     LABEL_LLM_PROVIDER: "AI backend",
-    LABEL_API_KEY: "API key",
     LABEL_OPENAI_API_KEY: "OpenAI API key",
     DESC_OPENAI_API_KEY: "For GPT models via litellm",
     LABEL_ANTHROPIC_API_KEY: "Anthropic API key",
@@ -296,7 +302,6 @@ export const MESSAGES = {
     LABEL_NO_COMPLETED_TASKS: "No completed tasks",
     LABEL_CANCEL_TASK: "Cancel task",
     LABEL_RETRY_TASK: "Retry",
-    LABEL_DOWNLOAD_QUEUED: "+{count} queued",
     LABEL_TASK_STATE_QUEUED: "queued",
     LABEL_TASK_STATE_DONE: "done",
     LABEL_TASK_STATE_FAILED: "failed",
@@ -310,11 +315,9 @@ export const MESSAGES = {
     STATUS_TASKS_DONE_FLASH: "{count} tasks done · {name}",
     STATUS_TASK_FAILED_FLASH: "{count} task failed · {name}",
     STATUS_TASKS_FAILED_FLASH: "{count} tasks failed · {name}",
-    LABEL_CHAT_MODEL_ICON: "Chat model",
-    LABEL_EMBEDDING_MODEL_ICON: "Embed",
     LABEL_ADD_FILE: "Add file",
     LABEL_SAVE_VAULT: "Save to vault",
-    LABEL_THINKING: "Thinking...",
+    LABEL_OPEN_GPU_ACTIVITY: "GPU activity beside chat",
     LABEL_STOPPED: "(stopped)",
     LABEL_STOPPED_MD: "*(stopped)*",
     LABEL_CONNECTING: "(connecting...)",
@@ -324,7 +327,6 @@ export const MESSAGES = {
     LABEL_RIBBON_OPEN_CHAT: "Open lilbee chat",
     LABEL_STATUSBAR_OPEN_SETTINGS: "Open lilbee settings",
     ERROR_STREAM_IDLE: "server stopped sending events — check that lilbee is running",
-    LABEL_SKIP_SETUP: "Skip setup",
     LABEL_OUR_PICKS: "Our picks",
     LABEL_SECTION_INSTALLED: "Installed",
     LABEL_SECTION_CHAT: "Chat",
@@ -359,13 +361,11 @@ export const MESSAGES = {
     MODEL_INFO_QUANT: "Quantization",
     MODEL_INFO_RAM: "Recommended RAM",
     MODEL_INFO_DOWNLOADS: "Downloads",
-    MODEL_INFO_INSTALL_STATUS: "Status",
     MODEL_INFO_HF_LINK_LABEL: "View on Hugging Face",
     COMMAND_MODEL_INFO_CHAT: "Show info for active chat model",
     COMMAND_MODEL_INFO_EMBED: "Show info for active embedding model",
     NOTICE_NO_ACTIVE_MODEL: (task: string): string => `No active ${task} model is set.`,
     LABEL_TASK: "Task",
-    LABEL_QUANT: "Quant",
     LABEL_DOWNLOADS_COUNT: (count: string) => `${count} downloads`,
     LABEL_SIZE_SMALL: "Small",
     LABEL_SIZE_MEDIUM: "Medium",
@@ -391,10 +391,10 @@ export const MESSAGES = {
     DESC_INCLUDE_DEV_BUILDS:
         "Offer in-development builds in the version list and track them for updates. They ship the newest features " +
         "but get less testing than a stable release.",
-    DEV_BUILDS_FEEDBACK_PREFIX:
-        "Found a bug in a dev build? Reporting it helps improve lilbee, and reporters get credited in the release notes. Tell us on ",
-    DEV_BUILDS_FEEDBACK_IRC: "#lilbee on Libera Chat",
-    DEV_BUILDS_FEEDBACK_GITHUB: "GitHub issues",
+    BUG_FEEDBACK_PREFIX: "Found a bug? Report it on ",
+    BUG_FEEDBACK_GITHUB: "GitHub issues",
+    BUG_FEEDBACK_IRC: "#lilbee on Libera Chat",
+    BUG_FEEDBACK_SUFFIX: ". Reports help improve lilbee, and reporters get credited in the release notes.",
 
     TOOLTIP_SERVER_VERSION_SUPPORT:
         "This plugin is built and tested against the latest server release. Older releases still install and run, " +
@@ -435,8 +435,6 @@ export const MESSAGES = {
     ERROR_INSTALL_FAILED: "Could not install the lilbee server",
     ERROR_RELEASE_LIST: "Could not read the lilbee release list from GitHub",
     DESC_SERVER_URL_HELP: "Address of the lilbee HTTP server",
-    DESC_SESSION_TOKEN_AUTO:
-        "Read automatically from the lilbee data directory on every request. Works when the server runs on the same machine as Obsidian. Set LILBEE_DATA if you use a non-default data directory.",
     LABEL_MANUAL_TOKEN: "Session token",
     DESC_MANUAL_TOKEN:
         "Paste the server's session token (required for remote servers). When the lilbee server runs on this machine the plugin discovers the token automatically — leave this blank.",
@@ -455,7 +453,6 @@ export const MESSAGES = {
     DESC_GEN_TOP_P: "Controls response diversity. Most users should leave this at the default.",
     DESC_GEN_TOP_K: "Limits which words the AI considers. Most users should leave this at the default.",
     DESC_GEN_REPEAT_PENALTY: "How strongly to avoid repeating the same phrases",
-    DESC_GEN_NUM_CTX: "Maximum amount of text the AI can consider at once",
     DESC_GEN_SEED: "Set a number for reproducible responses. Leave blank for varied answers.",
     DESC_GEN_MAX_TOKENS: "Hard cap on generated tokens per response (blank = no cap)",
     DESC_SHOW_REASONING:
@@ -496,7 +493,6 @@ export const MESSAGES = {
     DESC_LLM_PROVIDER_AUTO: "Auto (recommended)",
     DESC_LLM_PROVIDER_LOCAL: "Local only (llama-cpp)",
     DESC_LLM_PROVIDER_EXTERNAL: "External (OpenAI, Claude, etc.)",
-    DESC_API_KEY: "Your API key for external AI services (OpenAI, Anthropic, etc.). Stored securely on the server.",
     DESC_HF_TOKEN: "Needed for some models. Get one free at huggingface.co/settings/tokens",
     DESC_OLLAMA_BASE_URL:
         "Where your Ollama server is listening. Leave blank for the default (http://localhost:11434).",
@@ -517,8 +513,6 @@ export const MESSAGES = {
     PLACEHOLDER_HF_TOKEN: "hf_...",
     PLACEHOLDER_PICK_VAULT_FILE: "Pick a vault file to add to lilbee...",
     PLACEHOLDER_URL: "https://example.com",
-    PLACEHOLDER_0: "0",
-    PLACEHOLDER_50: "50",
     PLACEHOLDER_30: "30",
 
     LABEL_ENTER_QUERY: "Enter a query to begin.",
@@ -537,7 +531,6 @@ export const MESSAGES = {
     TITLE_ALL_SET: "You're all set!",
     TITLE_MANAGED_RECOMMENDED: "Managed (recommended)",
     TITLE_EXTERNAL: "External",
-    TITLE_RECOMMENDED: "Recommended",
 
     STATUS_DOWNLOADING: "lilbee: downloading...",
     STATUS_DOWNLOADING_PERCENT: (percent: number) => `lilbee: downloading ${percent}%`,
@@ -546,6 +539,7 @@ export const MESSAGES = {
     STATUS_DOWNLOAD_RECEIVED: (received: string) => `Downloading... ${received}`,
     STATUS_UPDATE_SIZE: (tag: string, size: string) => `Updating to ${tag} · ${size} download`,
     STATUS_STARTING: "lilbee: starting...",
+    STATUS_WARMING: "lilbee: warming up...",
     STATUS_READY: "lilbee: ready",
     STATUS_READY_EXTERNAL: "lilbee: ready [external]",
     STATUS_ERROR: "lilbee: error",
@@ -556,7 +550,6 @@ export const MESSAGES = {
     STATUS_ADDING: "lilbee: adding {label}...",
     STATUS_NOTHING_NEW: "lilbee: nothing new to add",
     STATUS_ADD_CANCELLED: "lilbee: add cancelled",
-    STATUS_ADD_FAILED: "lilbee: add failed",
     STATUS_SYNCED: "lilbee: synced — {summary}",
     STATUS_SYNC_CANCELLED: "lilbee: sync cancelled",
     STATUS_SYNC_FAILED: "lilbee: sync failed",
@@ -595,9 +588,6 @@ export const MESSAGES = {
     STATUS_TASK_SETUP_PROGRESS_INDETERMINATE: "chromium: {downloaded} MB",
     STATUS_INDEXING: "Indexing: {file}",
     STATUS_DONE: "Done!",
-    STATUS_CRAWLING: "Crawling...",
-    STATUS_CRAWL_STARTED: "Crawl started...",
-    STATUS_CRAWLED_PAGES: "Crawled {count} pages — {url}",
     STATUS_REMOVING: "Removing...",
     STATUS_SETTING: "Setting...",
     ERROR_UNKNOWN: "unknown error",
@@ -606,20 +596,17 @@ export const MESSAGES = {
     ERROR_COULD_NOT_CONNECT: "lilbee: cannot connect to server",
     ERROR_SERVER_CRASHED: "lilbee: server crashed after multiple restarts",
     ERROR_SERVER_SHUTDOWN_FAILED: "lilbee: failed to stop the managed server",
-    ERROR_FAILED_DOWNLOAD: "lilbee: failed to download server",
-    ERROR_FAILED_START: "lilbee: failed to start server",
     ERROR_FAILED_UPDATE: "lilbee: update failed",
-    ERROR_ALREADY_UPTODATE: "lilbee: already up to date",
     NOTICE_SERVER_AUTO_UPDATING: (version: string) => `lilbee: updating server to ${version}...`,
     NOTICE_SERVER_AUTO_UPDATED: (version: string) => `lilbee server updated to ${version}`,
     NOTICE_SERVER_AUTO_UPDATE_FAILED: "lilbee: automatic server update failed. You can retry from settings.",
-    ERROR_COULD_NOT_REACH: "Could not connect to lilbee server. Is it running?",
+    NOTICE_EXTERNAL_SERVER_OUTDATED: (current: string, latest: string): string =>
+        `Your lilbee server (${current}) is behind the latest release (${latest}). Update it to get the newest features and fixes.`,
     ERROR_LOAD_CATALOG: "lilbee: failed to load catalog",
     ERROR_LOAD_DOCUMENTS: "lilbee: failed to load documents",
     ERROR_DELETE_DOCUMENTS: "lilbee: failed to delete documents",
     ERROR_SWITCH_MODEL: "lilbee: failed to switch model",
     ERROR_PULL_MODEL: "lilbee: failed to pull {model}",
-    ERROR_PULL_FAILED: "lilbee: failed to pull model",
     ERROR_REMOVE_MODEL: "Failed to remove {model}",
     ERROR_SET_MODEL: "Failed to set {model}",
     ERROR_DELETE_MODEL: "Failed to delete {model}",
@@ -630,7 +617,6 @@ export const MESSAGES = {
     ERROR_COULD_NOT_CONNECT_EXT: "Could not connect. Check the URL and make sure the server is running.",
     ERROR_DOWNLOAD_FAILED: "Download failed. Please try again or pick a different model.",
     ERROR_INDEXING_FAILED: "Indexing failed. You can retry from the settings tab.",
-    ERROR_SELECT_MODEL: "Please select a model first.",
     ERROR_CRAWL_FAILED: "lilbee: crawl failed — {msg}",
     ERROR_CRAWL_ERROR: "lilbee: crawl error — {msg}",
     ERROR_CRAWLER_SETUP_FAILED:
@@ -653,9 +639,9 @@ export const MESSAGES = {
         `lilbee: server is already ingesting ${source} — waiting for it to finish`,
 
     NOTICE_NO_CHAT_MODEL: "lilbee: no chat model set — select one in settings",
+    NOTICE_FLEET_WARMING: "lilbee: the model is still loading — try again in a moment",
     NOTICE_MODEL_ACTIVATED: (model: string) => `Now using ${model}`,
     NOTICE_PULL_CANCELLED: "lilbee: pull cancelled",
-    NOTICE_PULL_FAILED: "lilbee: failed to pull model",
     NOTICE_NO_TOKEN_MANAGED: "lilbee: managed server didn't produce a session token — try restarting the plugin",
     NOTICE_NO_TOKEN_EXTERNAL:
         "lilbee: no session token — run 'lilbee token' and paste it in Settings → Session token, or set LILBEE_DATA",
@@ -697,7 +683,6 @@ export const MESSAGES = {
     NOTICE_EMBEDDING_UPDATED: "lilbee: embedding model updated",
     NOTICE_FAILED_EMBEDDING: "lilbee: failed to update embedding model",
     NOTICE_UPDATED_TO: (version: string) => `lilbee: updated to ${version}`,
-    NOTICE_STATUS: (docs: number, chunks: number) => `lilbee: ${docs} documents, ${chunks} chunks`,
     NOTICE_DELETED: (count: number) => `lilbee: deleted ${count} documents`,
     NOTICE_SAVED: (path: string) => `Saved to ${path}`,
     NOTICE_REMOVED: (model: string) => `Deleted ${model}`,
@@ -717,6 +702,10 @@ export const MESSAGES = {
 
     COMMAND_SEARCH: "Search knowledge base",
     COMMAND_CHAT: "Open chat",
+    COMMAND_MEMORIES: "Open memories",
+    COMMAND_PLACEMENT: "Open GPU placement",
+    COMMAND_PLACEMENT_BESIDE_CHAT: "Show GPU activity beside chat",
+    COMMAND_REMEMBER: "Remember…",
     COMMAND_ADD_FILE: "Add current file",
     COMMAND_ADD_FOLDER: "Add current folder",
     COMMAND_SYNC: "Sync vault",
@@ -742,6 +731,7 @@ export const MESSAGES = {
     STATUS_VALUE_OCR_OFF: "Off",
     LABEL_STATUS_ARCHITECTURE: "Architecture",
     LABEL_STATUS_CONTEXT_LENGTH: "Context length",
+    LABEL_STATUS_SERVED_CONTEXT: "Serving context",
     LABEL_STATUS_WIKI: "Wiki",
     LABEL_STATUS_WIKI_PAGES: "Pages",
     LABEL_STATUS_WIKI_DRAFTS: "Drafts",
@@ -758,8 +748,6 @@ export const MESSAGES = {
     LABEL_WIKI_SUMMARIES: "Summaries",
     LABEL_WIKI_CONCEPTS: "Concepts",
     LABEL_WIKI_NO_PAGES: "No wiki pages yet",
-    LABEL_WIKI_SCORE: "Score",
-    LABEL_WIKI_GENERATED_BY: "Generated by",
     LABEL_WIKI_SOURCES_COUNT: (n: number) => `${n} sources`,
 
     // Citation modal
@@ -822,7 +810,6 @@ export const MESSAGES = {
 
     // Wiki settings
     LABEL_WIKI_SECTION: "Wiki (beta)",
-    LABEL_WIKI_NOT_ENABLED: "Wiki (not enabled)",
     LABEL_WIKI_ENABLE_TOGGLE: "Enable wiki",
     DESC_WIKI_ENABLE_TOGGLE: "Generate AI-written summaries of your documents. This feature is in beta.",
     LABEL_WIKI_STATUS: "Wiki status",
@@ -831,8 +818,6 @@ export const MESSAGES = {
     LABEL_WIKI_SEARCH_MODE: "Default search mode",
     LABEL_WIKI_RUN_LINT: "Check wiki health",
     LABEL_WIKI_RUN_PRUNE: "Clean up wiki",
-    DESC_WIKI_NOT_ENABLED:
-        "Enable wiki on the server with LILBEE_WIKI=true and install dependencies with pip install lilbee[wiki]",
     DESC_WIKI_PRUNE_RAW: "After wiki summaries are created, remove the original text chunks that were summarized",
     DESC_WIKI_FAITHFULNESS: "How accurate wiki summaries must be. Higher = stricter quality, lower = more content",
     DESC_WIKI_RUN_LINT: "Scan wiki pages for broken references, missing sources, or outdated content",
@@ -875,7 +860,6 @@ export const MESSAGES = {
     WIZARD_SYSTEM_RAM: "Your system: {ram} GB RAM",
     WIZARD_SYNC_HELP:
         "lilbee needs to read your notes once to make them searchable. This happens locally on your machine.",
-    WIZARD_SYNC_HINT: "After this, new and changed files are indexed automatically (or manually, your choice).",
     WIZARD_STEP_BADGE: "Step {num} · {label}",
     WIZARD_PROGRESS_BACKGROUND: "Downloads continue in the background — track any time in the Task Center.",
     WIZARD_WIKI_TRADEOFFS_LABEL: "See the tradeoffs",
@@ -890,7 +874,6 @@ export const MESSAGES = {
     WIZARD_CHANGE_SETTINGS: "You can change models and settings anytime in the lilbee settings tab.",
     WIZARD_MANAGED_DESC: "lilbee starts and stops automatically with Obsidian. No terminal needed.",
     WIZARD_EXTERNAL_DESC: "You run the lilbee server yourself. For advanced users or shared setups.",
-    WIZARD_MIN_RAM: "Minimum {ram} GB RAM",
     WIZARD_STATUS_STARTING: "Starting...",
     WIZARD_SELECT_MODEL: "Please select a model first.",
 
@@ -957,14 +940,80 @@ export const MESSAGES = {
     RAIL_LABEL_RERANK: "Rerank",
     RAIL_BROWSE_CATALOG: "Browse catalog…",
 
+    // GPU placement / fleet
+    LABEL_PLACEMENT_VIEW: "lilbee GPU placement",
+    PLACEMENT_TITLE: "GPU placement",
+    PLACEMENT_SECTION_HARDWARE: "Hardware",
+    PLACEMENT_SECTION_ROLES: "Roles",
+    PLACEMENT_HOST_APPLE: "Apple Silicon",
+    PLACEMENT_HOST_APPLE_SUB: "unified memory · Metal",
+    PLACEMENT_HOST_CPU: "CPU",
+    PLACEMENT_HOST_CPU_SUB: "no GPU detected",
+    PLACEMENT_STATE_AUTO: "auto",
+    PLACEMENT_STATE_MANUAL: "manual",
+    PLACEMENT_STATE_EDITED: "edited",
+    PLACEMENT_STATE_APPLYING: "applying…",
+    PLACEMENT_AUTO_MANAGED: "Auto-managed. The planner balances roles across your hardware.",
+    PLACEMENT_EDIT: "Edit manually",
+    PLACEMENT_PREVIEW: "Preview",
+    PLACEMENT_APPLY: "Apply",
+    PLACEMENT_RESET: "Reset to auto",
+    PLACEMENT_FITS: "Fits all roles",
+    PLACEMENT_WONT_FIT: (roles: string): string => `Won't fit: ${roles}. Move it to another GPU or free up memory.`,
+    PLACEMENT_NOT_SET: "not set",
+    PLACEMENT_TIP_CHIP: (role: WorkerRole, gpu: string): string => `Run ${roleNoun(role)} on ${gpu}`,
+    PLACEMENT_TIP_REPLICA_ADD: (role: WorkerRole): string =>
+        `Add ${indefinite(roleNoun(role))} ${roleNoun(role)} worker`,
+    PLACEMENT_TIP_REPLICA_REMOVE: (role: WorkerRole): string =>
+        `Remove ${indefinite(roleNoun(role))} ${roleNoun(role)} worker`,
+    PLACEMENT_HINT_EDIT_MANUALLY: 'Click "Edit manually" first to change GPU placement.',
+    PLACEMENT_HINT_REPLICAS_SETTINGS:
+        "This device runs everything together. Set worker counts in Settings → lilbee → Hardware / fleet.",
+    PLACEMENT_MEM_FREE: (free: string, total: string): string => `${free} / ${total} free`,
+    PLACEMENT_MEM_UNIFIED: (total: string): string => `${total} unified`,
+    PLACEMENT_ROLE_VRAM: (size: string): string => `~${size}`,
+    PLACEMENT_TIP_ROLE_VRAM: (role: WorkerRole): string => `Estimated memory the ${roleNoun(role)} model needs`,
+    PLACEMENT_UTIL: (pct: number): string => `${pct}%`,
+    PLACEMENT_UTIL_NA: "—",
+    PLACEMENT_METER_UTIL: "util",
+    PLACEMENT_METER_VRAM: "vram",
+    PLACEMENT_HINT_SPLIT: "split",
+    PLACEMENT_HINT_MIRROR: "mirror",
+    PLACEMENT_HINT_SINGLE: "one card",
+    PLACEMENT_REBUILDING: "Rebuilding fleet…",
+    PLACEMENT_APPLIED: "Placement applied.",
+    PLACEMENT_RESET_DONE: "Back to automatic placement.",
+    PLACEMENT_APPLY_NOT_ENABLED: "Applying placement isn't enabled on this lilbee server.",
+    PLACEMENT_APPLY_FAILED: (msg: string): string => `Couldn't apply placement: ${msg}`,
+    PLACEMENT_LOAD_FAILED: (msg: string): string => `Couldn't load placement: ${msg}`,
+    PLACEMENT_WAITING_SERVER: "Waiting for the lilbee server to start. This view loads automatically once it's up.",
+
+    // Hardware / fleet settings
+    LABEL_FLEET: "Hardware / fleet",
+    LABEL_FLEET_HELP:
+        "How the model fleet uses your GPUs. These apply to local (managed) and self-hosted servers; they have no effect when lilbee points at a hosted provider.",
+    LABEL_FLASH_ATTENTION: "Flash attention",
+    DESC_FLASH_ATTENTION:
+        "Faster attention kernels that cut chat context memory on supported GPUs. Reset to let lilbee decide per model.",
+    LABEL_KV_CACHE_TYPE: "KV cache type",
+    DESC_KV_CACHE_TYPE:
+        "Smaller types use less memory for the chat context. q8_0 roughly halves it versus f16 with no noticeable quality loss; q4_0 quarters it.",
+    LABEL_N_GPU_LAYERS: "GPU layers (chat)",
+    DESC_N_GPU_LAYERS:
+        "How many chat-model layers to offload to the GPU. Leave empty to offload all; lower it to fit a large model in limited VRAM.",
+    LABEL_EMBED_REPLICAS: "Embedding replicas",
+    DESC_EMBED_REPLICAS: "How many embedding workers to run while indexing. 0 lets lilbee pick (one per GPU).",
+    LABEL_VISION_REPLICAS: "Vision replicas",
+    DESC_VISION_REPLICAS: "How many OCR workers to run while indexing. 0 lets lilbee pick (one per GPU).",
+    LABEL_GPU_DEVICES: "Visible GPUs",
+    DESC_GPU_DEVICES:
+        "Restrict lilbee to specific GPUs by index, comma separated (for example 0,1). Leave empty to use all.",
+    PLACEHOLDER_GPU_DEVICES: "all",
+
     // Memory
     LABEL_MEMORIES_VIEW: "lilbee Memories",
     LABEL_MEMORIES_TITLE: "Memories",
-    LABEL_RIBBON_OPEN_MEMORIES: "Open lilbee memories",
     MEMORIES_SEARCH_PLACEHOLDER: "Filter memories…",
-    MEMORIES_COLUMN_KIND: "Kind",
-    MEMORIES_COLUMN_SHARED: "Shared",
-    MEMORIES_COLUMN_TEXT: "Memory",
     MEMORIES_FLAG_YES: "yes",
     MEMORIES_FLAG_NO: "no",
     MEMORIES_EMPTY: "No memories stored. Use the Remember command to add one.",

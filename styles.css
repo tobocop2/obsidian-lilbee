@@ -200,42 +200,6 @@
     flex: 1;
 }
 
-.lilbee-progress-banner,
-.lilbee-progress-banner-pull {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
-    background-color: var(--background-secondary);
-    border-bottom: 1px solid var(--background-modifier-border);
-    flex-shrink: 0;
-    transition: opacity 150ms ease;
-    opacity: 1;
-}
-
-.lilbee-progress-banner[data-hidden],
-.lilbee-progress-banner-pull[data-hidden] {
-    opacity: 0;
-    pointer-events: none;
-}
-
-.lilbee-progress-top-label {
-    font-size: var(--font-smallest, 10px);
-    color: var(--text-normal);
-    font-weight: var(--font-medium, 500);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.lilbee-progress-sub-label {
-    font-size: 9px;
-    color: var(--text-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
 .lilbee-progress-bar-container {
     height: 4px;
     background-color: var(--background-modifier-border);
@@ -497,27 +461,6 @@
     text-align: center;
 }
 
-.lilbee-ask-answer {
-    padding: 14px;
-    color: var(--text-normal);
-    font-size: var(--font-text-size, 15px);
-    line-height: var(--line-height-normal, 1.5);
-    border-radius: 12px;
-    background-color: var(--background-secondary);
-    border: 1px solid var(--background-modifier-border);
-    margin-bottom: var(--size-4-2, 8px);
-}
-
-.lilbee-ask-sources {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    align-items: center;
-    padding: var(--size-4-1, 4px) 0;
-    color: var(--text-muted);
-    font-size: var(--font-smallest, 10px);
-}
-
 .lilbee-models-container {
     margin-top: var(--size-4-3, 12px);
 }
@@ -593,33 +536,9 @@
     line-height: 1.4;
 }
 
-.lilbee-progress-row {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.lilbee-progress-row .lilbee-progress-top-label {
-    flex: 1;
-}
-
-.lilbee-progress-cancel {
-    flex-shrink: 0;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--text-muted);
-    padding: 2px;
-    border-radius: var(--radius-s, 4px);
-}
-
-.lilbee-progress-cancel:hover {
-    color: var(--text-error);
-    background-color: var(--background-modifier-hover);
-}
-
 .lilbee-chat-save,
-.lilbee-chat-clear {
+.lilbee-chat-clear,
+.lilbee-chat-gpu {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -634,7 +553,8 @@
 }
 
 .lilbee-chat-save:hover,
-.lilbee-chat-clear:hover {
+.lilbee-chat-clear:hover,
+.lilbee-chat-gpu:hover {
     background-color: var(--background-modifier-hover);
     color: var(--text-normal);
 }
@@ -658,44 +578,6 @@
 .lilbee-model-delete:hover {
     color: var(--text-error);
     background-color: var(--background-modifier-hover);
-}
-
-.lilbee-toolbar-icon {
-    color: var(--text-muted);
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-}
-
-.lilbee-toolbar-icon svg {
-    width: 14px;
-    height: 14px;
-}
-
-.lilbee-ocr-toggle {
-    display: flex;
-    align-items: center;
-    cursor: pointer;
-    padding: 2px 4px;
-    border-radius: var(--radius-s, 4px);
-}
-
-.lilbee-ocr-toggle:hover {
-    background-color: var(--background-modifier-hover);
-}
-
-.lilbee-ocr-toggle.is-auto .lilbee-toolbar-icon {
-    color: var(--text-muted);
-    opacity: 0.6;
-}
-
-.lilbee-ocr-toggle.is-on .lilbee-toolbar-icon {
-    color: var(--text-accent);
-}
-
-.lilbee-ocr-toggle.is-off .lilbee-toolbar-icon {
-    color: var(--text-faint);
-    opacity: 0.4;
 }
 
 .lilbee-generation-details summary {
@@ -1255,37 +1137,9 @@
     font-weight: 500;
 }
 
-.lilbee-pill-pick {
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-}
-
-.lilbee-pill-task-chat,
-.lilbee-pill-task-embedding,
-.lilbee-pill-task-vision {
-    background: var(--background-secondary);
-    color: var(--text-muted);
-}
-
-.lilbee-pill-task-rerank {
-    background: rgba(56, 139, 176, 0.15);
-    color: rgb(56, 139, 176);
-}
-
 .lilbee-pill-installed {
     background: var(--background-modifier-success);
     color: var(--text-on-accent);
-}
-
-.lilbee-pill-active {
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-}
-
-.lilbee-pill-provider {
-    background: var(--background-modifier-border);
-    color: var(--text-muted);
-    font-style: italic;
 }
 
 /* Section Headings */
@@ -1387,10 +1241,6 @@
     font-variant-numeric: tabular-nums;
 }
 
-.lilbee-catalog-list-col-quant {
-    flex: 0 0 80px;
-}
-
 .lilbee-catalog-list-col-downloads {
     flex: 0 0 72px;
     text-align: right;
@@ -1452,14 +1302,16 @@
     cursor: pointer;
 }
 
-.lilbee-crawl-browser-row {
+.lilbee-crawl-browser-row,
+.lilbee-crawl-subdomains-row {
     display: flex;
     align-items: center;
     gap: var(--size-4-1, 4px);
     margin: var(--size-4-2, 8px) 0;
 }
 
-.lilbee-crawl-browser {
+.lilbee-crawl-browser,
+.lilbee-crawl-subdomains {
     display: flex;
     align-items: center;
     gap: var(--size-4-2, 8px);
@@ -1575,13 +1427,6 @@
     min-height: 1em;
 }
 
-.lilbee-crawl-progress {
-    font-size: var(--font-small, 13px);
-    color: var(--text-muted);
-    margin-bottom: var(--size-4-2, 8px);
-    min-height: 1.5em;
-}
-
 .lilbee-crawl-actions {
     display: flex;
     gap: var(--size-4-2, 8px);
@@ -1679,11 +1524,6 @@
     white-space: nowrap;
 }
 
-.lilbee-documents-sentinel {
-    height: 1px;
-    margin-top: 8px;
-}
-
 /* Chat Empty State */
 
 .lilbee-chat-empty-state {
@@ -1766,12 +1606,6 @@
         opacity: 1;
         transform: scale(1);
     }
-}
-
-/* Server Defaults (read-only config display) */
-
-.lilbee-server-defaults {
-    margin-top: var(--size-4-2, 8px);
 }
 
 /* Advanced details */
@@ -2047,28 +1881,6 @@
     font-size: var(--font-small, 13px);
     color: var(--text-muted);
     line-height: 1.45;
-}
-
-.lilbee-wizard-model-header {
-    display: flex;
-    align-items: center;
-    gap: var(--size-4-2, 8px);
-    margin-bottom: var(--size-4-1, 4px);
-}
-
-.lilbee-wizard-model-ram.lilbee-wizard-model-ram {
-    font-size: var(--font-smallest, 10px);
-    color: var(--text-faint);
-}
-
-.lilbee-wizard-recommended {
-    display: inline-block;
-    padding: 1px var(--size-4-2, 8px);
-    border-radius: 999px;
-    background-color: var(--wizard-step-color, var(--interactive-accent));
-    color: var(--text-on-accent);
-    font-size: var(--font-smallest, 10px);
-    font-weight: var(--font-medium, 500);
 }
 
 .lilbee-wizard-system-info.lilbee-wizard-system-info {
@@ -2409,12 +2221,6 @@
 
 .lilbee-wizard-summary-card strong {
     color: var(--text-normal);
-}
-
-.lilbee-wizard-done-icon {
-    font-size: 36px;
-    text-align: center;
-    margin-bottom: var(--size-4-2, 8px);
 }
 
 .lilbee-wizard-tip {
@@ -3908,13 +3714,25 @@
     font-size: var(--font-small, 13px);
 }
 
-.lilbee-dev-builds-feedback {
-    margin: calc(-1 * var(--size-4-2, 8px)) 0 var(--size-4-2, 8px);
+/* Settings filter */
+.lilbee-settings-filter {
+    width: 100%;
+    padding: var(--size-4-2, 8px);
+    margin-bottom: var(--size-4-4, 16px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: var(--font-ui-medium, 14px);
+}
+
+.lilbee-bug-feedback {
+    margin: 0 0 var(--size-4-4, 16px);
     color: var(--text-muted);
     font-size: var(--font-smaller, 12px);
 }
 
-.lilbee-dev-builds-feedback a {
+.lilbee-bug-feedback a {
     color: var(--text-accent);
 }
 
@@ -4414,6 +4232,440 @@ button.lilbee-model-chip-select:focus-visible {
 /* Cursor affordance for clickable status-bar items and chips. */
 .lilbee-clickable {
     cursor: pointer;
+}
+
+/* ── GPU placement view ─────────────────────────────────────────────────── */
+.lilbee-placement-container {
+    padding: 18px 22px;
+    overflow-y: auto;
+}
+.lilbee-placement-body {
+    position: relative;
+    max-width: 760px;
+    margin: 0 auto;
+}
+.lilbee-placement-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+.lilbee-placement-header h2 {
+    margin: 0;
+    font-size: 1.25em;
+}
+.lilbee-placement-state {
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 9px;
+    border-radius: 10px;
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+}
+.lilbee-placement-state.is-manual,
+.lilbee-placement-state.is-applying {
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+}
+.lilbee-placement-empty {
+    color: var(--text-muted);
+    padding: 28px 0;
+    text-align: center;
+}
+.lilbee-placement-waiting {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+.lilbee-placement-section-title {
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin: 18px 0 8px;
+}
+.lilbee-placement-hw {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.lilbee-placement-card {
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 9px;
+    padding: 12px 14px;
+}
+.lilbee-placement-card-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.lilbee-placement-card-name {
+    font-weight: 600;
+    font-size: 1em;
+}
+.lilbee-placement-card-sub {
+    color: var(--text-muted);
+    font-size: 0.82em;
+}
+/* --- compact GPU rows: one line per card, scales to many GPUs --- */
+.lilbee-gpu-row {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    grid-template-rows: auto auto;
+    column-gap: 9px;
+    row-gap: 4px;
+    align-items: center;
+    padding: 7px 9px;
+    border-radius: 8px;
+    background: var(--background-secondary);
+    border: 1px solid transparent;
+}
+.lilbee-gpu-row:hover {
+    border-color: var(--background-modifier-border);
+}
+.lilbee-gpu-idx {
+    grid-row: 1 / 3;
+    align-self: center;
+    justify-self: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    display: grid;
+    place-items: center;
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+    font-size: 0.78em;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.lilbee-gpu-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+.lilbee-gpu-name {
+    font-size: 0.86em;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.lilbee-gpu-roles {
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+.lilbee-role-badge {
+    font-size: 0.66em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: lowercase;
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+}
+.lilbee-role-badge.is-embed {
+    background: var(--color-green, #3fb950);
+}
+.lilbee-role-badge.is-rerank {
+    background: var(--color-orange, #d29922);
+}
+.lilbee-role-badge.is-vision {
+    background: var(--color-purple, #a371f7);
+}
+.lilbee-gpu-meters {
+    grid-column: 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.lilbee-meter {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.lilbee-meter-label {
+    font-size: 0.7em;
+    color: var(--text-muted);
+    width: 24px;
+    flex-shrink: 0;
+}
+.lilbee-bar {
+    position: relative;
+    height: 6px;
+    flex: 1;
+    min-width: 0;
+    border-radius: 3px;
+    background: var(--background-modifier-border);
+    /* visible: let the active-bar glow spill past the track */
+    overflow: visible;
+}
+.lilbee-bar-fill {
+    height: 100%;
+    width: 0;
+    border-radius: 3px;
+    transition:
+        width 0.6s ease,
+        box-shadow 0.5s ease,
+        filter 0.5s ease;
+}
+.lilbee-meter-util .lilbee-bar-fill {
+    background: var(--interactive-accent);
+}
+.lilbee-meter-vram .lilbee-bar-fill {
+    background: var(--text-muted);
+}
+.lilbee-meter-val {
+    font-size: 0.72em;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    text-align: right;
+    flex-shrink: 0;
+    min-width: 40px;
+}
+/* A bar only glows while its card is actually doing work (util > 0); idle bars
+   stay flat. Soft, slow breath — never obnoxious — and off when the user has
+   reduced motion enabled. */
+@media (prefers-reduced-motion: no-preference) {
+    .lilbee-bar-fill.is-active {
+        animation: lilbee-gpu-glow 1.4s ease-in-out infinite;
+    }
+}
+@keyframes lilbee-gpu-glow {
+    0%,
+    100% {
+        box-shadow: 0 0 2px 0 color-mix(in srgb, var(--interactive-accent) 45%, transparent);
+        filter: brightness(1);
+    }
+    50% {
+        box-shadow: 0 0 9px 1px color-mix(in srgb, var(--interactive-accent) 80%, transparent);
+        filter: brightness(1.13);
+    }
+}
+.lilbee-placement-roles {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 9px;
+    overflow: hidden;
+}
+.lilbee-placement-role-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 11px 14px;
+    background: var(--background-secondary);
+    border-top: 1px solid var(--background-modifier-border);
+}
+.lilbee-placement-role-row:first-child {
+    border-top: none;
+}
+.lilbee-placement-role-unfit {
+    box-shadow: inset 2px 0 0 var(--text-error);
+    background: rgba(var(--color-red-rgb, 233, 49, 71), 0.06);
+}
+.lilbee-placement-badge {
+    flex-shrink: 0;
+    min-width: 58px;
+    text-align: center;
+    font-size: 0.72em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 3px 8px;
+    border-radius: 6px;
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+}
+.lilbee-placement-badge.is-embed {
+    background: var(--color-green, #3fb950);
+}
+.lilbee-placement-badge.is-rerank {
+    background: var(--color-orange, #d29922);
+}
+.lilbee-placement-badge.is-vision {
+    background: var(--color-purple, #a371f7);
+}
+.lilbee-placement-role-model {
+    flex: 1 1 120px;
+    min-width: 90px;
+    color: var(--text-normal);
+    overflow-wrap: anywhere;
+}
+.lilbee-placement-role-vram {
+    font-size: var(--font-smallest, 11px);
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.lilbee-placement-role-head {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    gap: 1px;
+    min-width: 62px;
+}
+.lilbee-placement-role-hint {
+    font-size: 0.68em;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+}
+.lilbee-placement-toggles {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    flex: 1;
+}
+.lilbee-placement-toggle {
+    width: 24px;
+    height: 24px;
+    border-radius: 5px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-muted);
+    font-size: 0.78em;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+.lilbee-placement-toggle.is-radio {
+    border-radius: 50%;
+}
+.lilbee-placement-toggle.is-on {
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    font-weight: 600;
+}
+.lilbee-placement-toggle.is-readonly {
+    cursor: default;
+    border-style: dashed;
+    background: transparent;
+}
+.lilbee-placement-toggle.is-on.is-readonly {
+    background: transparent;
+    color: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+}
+.lilbee-placement-stepper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 0.82em;
+}
+.lilbee-placement-step {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    cursor: pointer;
+    line-height: 1;
+}
+.lilbee-placement-step.is-readonly {
+    cursor: default;
+    opacity: 0.4;
+}
+.lilbee-placement-step-count {
+    min-width: 26px;
+    text-align: center;
+    color: var(--text-normal);
+}
+.lilbee-placement-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+/* Fit status reads as a bold pill with a status dot, not thin throwaway text. */
+.lilbee-placement-fit {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.95em;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 999px;
+    color: var(--text-success);
+    background: color-mix(in srgb, var(--text-success) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--text-success) 42%, transparent);
+}
+.lilbee-placement-fit-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 7px currentColor;
+    flex: 0 0 auto;
+}
+/* Auto-managed is informational, not a pass/fail verdict: keep it understated. */
+.lilbee-placement-fit.is-muted {
+    color: var(--text-muted);
+    font-weight: 500;
+    background: transparent;
+    border-color: transparent;
+}
+.lilbee-placement-fit.is-muted .lilbee-placement-fit-dot {
+    box-shadow: none;
+}
+.lilbee-placement-fit.is-unfit {
+    color: var(--text-error);
+    background: color-mix(in srgb, var(--text-error) 16%, transparent);
+    border-color: color-mix(in srgb, var(--text-error) 48%, transparent);
+}
+.lilbee-placement-btn {
+    padding: 6px 13px;
+    border-radius: 7px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    cursor: pointer;
+    font-size: 0.85em;
+}
+.lilbee-placement-btn-primary {
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+.lilbee-placement-btn.is-disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+.lilbee-placement-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: var(--background-primary);
+    opacity: 0.92;
+}
+.lilbee-placement-spinner {
+    width: 26px;
+    height: 26px;
+    border: 3px solid var(--background-modifier-border);
+    border-top-color: var(--interactive-accent);
+    border-radius: 50%;
+    animation: lilbee-spin 0.7s linear infinite;
+}
+.lilbee-placement-overlay-text {
+    font-weight: 600;
 }
 
 /* Managed-mode uninstall: the section heading, its warning callout, and the

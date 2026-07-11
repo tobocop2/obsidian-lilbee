@@ -322,6 +322,7 @@ export class App {
         getFiles: vi.fn().mockReturnValue([]),
         getAbstractFileByPath: vi.fn().mockReturnValue(null),
         createFolder: vi.fn().mockResolvedValue(undefined),
+        readBinary: vi.fn().mockResolvedValue(new Uint8Array().buffer),
         create: vi.fn().mockResolvedValue(undefined),
         modify: vi.fn().mockResolvedValue(undefined),
     };
@@ -331,6 +332,13 @@ export class TFile {
     path = "";
     name = "";
     parent: { path: string; name: string } | null = null;
+}
+
+export class TFolder {
+    path = "";
+    name = "";
+    parent: { path: string; name: string } | null = null;
+    children: Array<TFile | TFolder> = [];
 }
 
 type ModalKeyHandler = (e: KeyboardEvent) => unknown;

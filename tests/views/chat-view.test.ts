@@ -20,7 +20,7 @@ if (typeof (globalThis as any).activeDocument === "undefined") {
     (globalThis as any).activeDocument = (globalThis as any).document;
 }
 
-import { Menu, MockMenuItem, MockMenuSeparator, Notice, Platform, WorkspaceLeaf } from "../__mocks__/obsidian";
+import { App, Menu, MockMenuItem, MockMenuSeparator, Notice, Platform, WorkspaceLeaf } from "../__mocks__/obsidian";
 import { MockElement } from "../__mocks__/obsidian";
 import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal } from "../../src/views/chat-view";
 import { electronDialog } from "../../src/utils/file-dialog";
@@ -207,6 +207,7 @@ function makePlugin(): LilbeePlugin {
         triggerSync: vi.fn().mockResolvedValue(undefined),
         notifyChatStart: vi.fn(),
         notifyChatEnd: vi.fn(),
+        assertFleetReady: vi.fn().mockReturnValue(true),
         refreshMemoryViews: vi.fn(),
         taskQueue: new TaskQueue(),
         app: {
@@ -342,6 +343,20 @@ describe("ChatView.onOpen — DOM structure", () => {
         expect(clearBtn!.tagName).toBe("BUTTON");
         // Icon button (matches the save action), with the label on aria-label.
         expect(clearBtn!.getAttribute("aria-label")).toBe("Clear chat");
+    });
+
+    it("creates a GPU activity button that splits placement beside the chat", () => {
+        const gpuBtn = container.find("lilbee-chat-gpu");
+        expect(gpuBtn).not.toBeNull();
+        expect(gpuBtn!.tagName).toBe("BUTTON");
+        expect(gpuBtn!.getAttribute("aria-label")).toBe("GPU activity beside chat");
+        const app = (view as unknown as { app: App }).app;
+        const splitLeaf = new WorkspaceLeaf();
+        app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+        app.workspace.createLeafBySplit = vi.fn().mockReturnValue(splitLeaf);
+        app.workspace.revealLeaf = vi.fn();
+        gpuBtn!.trigger("click");
+        expect(app.workspace.createLeafBySplit).toHaveBeenCalled();
     });
 
     it("creates a paperclip add-file button inside the input area", () => {
@@ -544,6 +559,25 @@ describe("ChatView.sendMessage — bubble structure", () => {
         expect(p).toBeDefined();
         expect(p!.textContent).toBe("my question");
     });
+
+    it("does not send while the fleet is warming", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        (plugin.assertFleetReady as ReturnType<typeof vi.fn>).mockReturnValue(false);
+        plugin.api.chatStream = vi.fn();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "question";
+
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        expect(plugin.api.chatStream).not.toHaveBeenCalled();
+        expect(messagesEl.children.length).toBe(0);
+    });
 });
 
 describe("ChatView.sendMessage — token streaming", () => {
@@ -686,6 +720,72 @@ describe("ChatView.sendMessage — reasoning tokens", () => {
             // Three reasoning tokens, but the pending guard collapses them to a single frame.
             const reasoningFrames = frames.length;
             expect(reasoningFrames).toBe(1);
+        } finally {
+            globalThis.requestAnimationFrame = origRAF;
+        }
+    });
+
+    it("a frame queued before DONE does not overwrite the final markdown render", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const origRAF = globalThis.requestAnimationFrame;
+        const frames: FrameRequestCallback[] = [];
+        globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+            frames.push(cb);
+            return frames.length;
+        };
+        try {
+            const { mockFn, done } = makeStream([
+                { event: SSE_EVENT.TOKEN, data: { token: "**bold** answer" } },
+                { event: SSE_EVENT.DONE, data: {} },
+            ]);
+            plugin.api.chatStream = mockFn;
+            const view = new ChatView(makeLeaf(), plugin);
+            await view.onOpen();
+            const container = view.containerEl.children[1] as unknown as MockElement;
+            container.find("lilbee-chat-textarea")!.value = "q";
+            container.find("lilbee-chat-send")!.trigger("click");
+            await done;
+            await tick();
+            const textEl = container.find("lilbee-chat-content")!;
+            expect(textEl.textContent).toBe("**bold** answer"); // final markdown render
+            // Fire the frame the token queued before DONE landed: it must not
+            // repaint the plain-text stream over the rendered markdown.
+            frames.forEach((cb) => cb(0));
+            await tick();
+            expect(textEl.textContent).toBe("**bold** answer");
+        } finally {
+            globalThis.requestAnimationFrame = origRAF;
+        }
+    });
+
+    it("a reasoning frame queued before DONE does not overwrite the rendered reasoning", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        const origRAF = globalThis.requestAnimationFrame;
+        const frames: FrameRequestCallback[] = [];
+        globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+            frames.push(cb);
+            return frames.length;
+        };
+        try {
+            const { mockFn, done } = makeStream([
+                { event: SSE_EVENT.REASONING, data: { token: "*weighing* options" } },
+                { event: SSE_EVENT.DONE, data: {} },
+            ]);
+            plugin.api.chatStream = mockFn;
+            const view = new ChatView(makeLeaf(), plugin);
+            await view.onOpen();
+            const container = view.containerEl.children[1] as unknown as MockElement;
+            container.find("lilbee-chat-textarea")!.value = "q";
+            container.find("lilbee-chat-send")!.trigger("click");
+            await done;
+            await tick();
+            const reasoningEl = container.find("lilbee-reasoning-content")!;
+            expect(reasoningEl.textContent).toBe("*weighing* options"); // final markdown render
+            frames.forEach((cb) => cb(0));
+            await tick();
+            expect(reasoningEl.textContent).toBe("*weighing* options");
         } finally {
             globalThis.requestAnimationFrame = origRAF;
         }
@@ -966,6 +1066,17 @@ describe("ChatView — extractBanner helper", () => {
         expect(extractBanner({})).toBeNull();
         expect(extractBanner({ banner: "" })).toBeNull();
         expect(extractBanner({ banner: 42 })).toBeNull();
+    });
+});
+
+describe("ChatView — plainStream helper", () => {
+    it("strips bold and code markers but keeps the words and citations", async () => {
+        const { plainStream } = await import("../../src/views/chat-view");
+        expect(plainStream("lilbee uses **tensor-splitting** to spread it [1]")).toBe(
+            "lilbee uses tensor-splitting to spread it [1]",
+        );
+        expect(plainStream("call `fit_split_ctx()` here")).toBe("call fit_split_ctx() here");
+        expect(plainStream("plain text, no markers")).toBe("plain text, no markers");
     });
 });
 

@@ -140,6 +140,8 @@ describe("ServerManager", () => {
             expect(opts.env.LILBEE_CORS_ORIGINS).toBe("app://obsidian.md");
             expect(opts.env.LILBEE_PARENT_PID).toBe(String(process.pid));
             expect(opts.env.LILBEE_MODELS_DIR).toBe("/tmp/models");
+            // Managed server is single-client, so HTTP placement apply is enabled.
+            expect(opts.env.LILBEE_ALLOW_HTTP_PLACEMENT).toBe("true");
             // UTF-8 locale so the server's Python doesn't fall back to ASCII
             // stdio and crash crawling pages with non-ASCII output (e.g. "→").
             expect(opts.env.LANG).toBe("en_US.UTF-8");

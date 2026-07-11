@@ -566,8 +566,8 @@ describe("LilbeeSettingTab", () => {
             const { textOnChanges } = captureSettingCallbacks(() => tab.display());
             // sharedRoot + 9 generation + 5 retrieval-advanced + 4 ingest + 2 worker-pool
             // + 10 crawling + wikiVaultFolder + rerank_candidates + hfToken
-            // + ollama URL + lm_studio URL = 36
-            expect(textOnChanges.length).toBe(36);
+            // + ollama URL + lm_studio URL + 4 fleet (n_gpu_layers, embed/vision replicas, gpu_devices) = 40
+            expect(textOnChanges.length).toBe(40);
         });
     });
 
@@ -661,8 +661,9 @@ describe("LilbeeSettingTab", () => {
     describe("storeContentInVault toggle", () => {
         function storeToggleIdx(toggleOnChanges: unknown[]): number {
             // Store-content toggle is rendered first inside the Advanced section,
-            // which runs after the Wiki section, and is now the last toggle overall.
-            return toggleOnChanges.length - 1;
+            // which runs after the Wiki section. The Fleet section's
+            // flash_attention toggle renders after it (last overall).
+            return toggleOnChanges.length - 2;
         }
 
         it("onChange true persists and triggers configureManagedStorage", async () => {
@@ -2389,19 +2390,21 @@ describe("managed mode settings", () => {
         renderSpy.mockRestore();
     });
 
-    it("links to Libera Chat and GitHub issues for dev-build feedback", () => {
+    it("links bug reports to GitHub issues and Libera Chat in both server modes", () => {
         mockListReleases.mockResolvedValue(RELEASES);
-        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
-        mockChatPicker(plugin);
-        const tab = makeTab(plugin);
-        const setAttribute = vi.spyOn(MockElement.prototype, "setAttribute");
+        for (const serverMode of ["managed", "external"] as const) {
+            const plugin = makePlugin({ serverMode, lilbeeVersion: "v0.3.0" });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const setAttribute = vi.spyOn(MockElement.prototype, "setAttribute");
 
-        tab.display();
+            tab.display();
 
-        const hrefs = setAttribute.mock.calls.filter(([name]) => name === "href").map(([, value]) => value);
-        expect(hrefs).toContain("https://web.libera.chat/#lilbee");
-        expect(hrefs).toContain("https://github.com/tobocop2/lilbee/issues");
-        setAttribute.mockRestore();
+            const hrefs = setAttribute.mock.calls.filter(([name]) => name === "href").map(([, value]) => value);
+            expect(hrefs).toContain("https://web.libera.chat/#lilbee");
+            expect(hrefs).toContain("https://github.com/tobocop2/lilbee/issues");
+            setAttribute.mockRestore();
+        }
     });
 
     it("selecting an older release turns the button into a downgrade", async () => {
@@ -4320,7 +4323,7 @@ describe("managed mode settings", () => {
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
             // wiki prune toggle is before the sync-to-vault toggle
-            const wikiPruneToggleIdx = toggleOnChanges.length - 3;
+            const wikiPruneToggleIdx = toggleOnChanges.length - 4;
             await toggleOnChanges[wikiPruneToggleIdx](true);
             expect(plugin.settings.wikiPruneRaw).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -4353,7 +4356,9 @@ describe("managed mode settings", () => {
             // The wiki search mode is added by renderWikiSettings, which adds one dropdown
             // We need to find the right index. The wiki dropdown should have "all"/"wiki"/"raw" options.
             // It should be the second-to-last dropdown since LLM provider is last
-            const wikiSearchIdx = dropdownOnChanges.length - 2;
+            // Fleet section (last) adds the kv_cache_type dropdown after the LLM
+            // provider, so wiki search mode is now third-from-last.
+            const wikiSearchIdx = dropdownOnChanges.length - 3;
             await dropdownOnChanges[wikiSearchIdx]("wiki");
             expect(plugin.settings.searchChunkType).toBe("wiki");
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -4389,7 +4394,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const wikiPruneToggleIdx = toggleOnChanges.length - 3;
+            const wikiPruneToggleIdx = toggleOnChanges.length - 4;
             await toggleOnChanges[wikiPruneToggleIdx](true);
             expect(
                 Notice.instances.some((n: any) => n.message.includes("failed to update Remove source duplicates")),
@@ -4403,7 +4408,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const syncToggleIdx = toggleOnChanges.length - 2;
+            const syncToggleIdx = toggleOnChanges.length - 3;
             await toggleOnChanges[syncToggleIdx](true);
             expect(plugin.settings.wikiSyncToVault).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
@@ -4418,7 +4423,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const syncToggleIdx = toggleOnChanges.length - 2;
+            const syncToggleIdx = toggleOnChanges.length - 3;
             await toggleOnChanges[syncToggleIdx](false);
             expect(plugin.settings.wikiSyncToVault).toBe(false);
             expect(plugin.wikiSync).toBeNull();
@@ -4504,7 +4509,9 @@ describe("managed mode settings", () => {
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
 
             // Last dropdown is the LLM provider (after server mode, chat model, sync mode)
-            const providerIdx = dropdownOnChanges.length - 1;
+            // Fleet section (rendered last) adds the kv_cache_type dropdown after the
+            // LLM provider, so the provider is now second-to-last.
+            const providerIdx = dropdownOnChanges.length - 2;
             await dropdownOnChanges[providerIdx]("litellm");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_provider: "litellm" });
         });
@@ -4515,7 +4522,9 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const providerIdx = dropdownOnChanges.length - 1;
+            // Fleet section (rendered last) adds the kv_cache_type dropdown after the
+            // LLM provider, so the provider is now second-to-last.
+            const providerIdx = dropdownOnChanges.length - 2;
             await dropdownOnChanges[providerIdx]("auto");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ llm_provider: "auto" });
         });
@@ -4527,9 +4536,87 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            const providerIdx = dropdownOnChanges.length - 1;
+            // Fleet section (rendered last) adds the kv_cache_type dropdown after the
+            // LLM provider, so the provider is now second-to-last.
+            const providerIdx = dropdownOnChanges.length - 2;
             await dropdownOnChanges[providerIdx]("litellm");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update LLM provider"))).toBe(true);
+        });
+    });
+
+    describe("Fleet settings onChange", () => {
+        it("kv_cache_type dropdown PATCHes the config", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
+            // kv_cache_type is the last dropdown (fleet section renders last).
+            await dropdownOnChanges[dropdownOnChanges.length - 1]("q4_0");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ kv_cache_type: "q4_0" });
+        });
+
+        it("kv_cache_type dropdown shows an error notice on failure", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { dropdownOnChanges } = captureSettingCallbacks(() => tab.display());
+            await dropdownOnChanges[dropdownOnChanges.length - 1]("q4_0");
+            expect(Notice.instances.some((n: any) => n.message.includes("KV cache type"))).toBe(true);
+        });
+
+        it("flash_attention toggle PATCHes the config", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            // flash_attention is the last toggle (fleet section renders last).
+            await toggleOnChanges[toggleOnChanges.length - 1](true);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ flash_attention: true });
+        });
+
+        it("flash_attention toggle shows an error notice on failure", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            await toggleOnChanges[toggleOnChanges.length - 1](false);
+            expect(Notice.instances.some((n: any) => n.message.includes("Flash attention"))).toBe(true);
+        });
+
+        it("suppresses flash_attention echo-patches while the suppress flag is set", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            (tab as any).suppressToggleChanges = true;
+            await toggleOnChanges[toggleOnChanges.length - 1](true);
+            (tab as any).suppressToggleChanges = false;
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("gpu_devices PATCHes a non-empty value and null when cleared", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            // gpu_devices is the last text input (fleet section renders last).
+            await textOnChanges[textOnChanges.length - 1]("0,1");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ gpu_devices: "0,1" });
+            await textOnChanges[textOnChanges.length - 1]("  ");
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ gpu_devices: null });
+        });
+
+        it("gpu_devices shows an error notice on failure", async () => {
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            await textOnChanges[textOnChanges.length - 1]("0,1");
+            expect(Notice.instances.some((n: any) => n.message.includes("Visible GPUs"))).toBe(true);
         });
     });
 
@@ -4961,7 +5048,13 @@ describe("managed mode settings", () => {
             // The previous code mapped any 422 to NOTICE_RERANKER_NEEDS_KEY ("configure LiteLLM API key");
             // that misled users hitting unrelated 422 paths. Now the generic fallback fires.
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_RERANKER)).toBe(true);
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_NEEDS_KEY)).toBe(false);
+            expect(
+                Notice.instances.some(
+                    (n) =>
+                        n.message ===
+                        "Configure the LiteLLM API key in the LLM provider settings to use this reranker.",
+                ),
+            ).toBe(false);
         });
 
         it("role-mismatch 422 surfaces the server's detail verbatim (not the API-key notice)", async () => {
@@ -5011,7 +5104,13 @@ describe("managed mode settings", () => {
 
             await dropdowns[0]("lightonocr:2-1b");
             expect(Notice.instances.some((n) => n.message === roleMismatchDetail)).toBe(true);
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_NEEDS_KEY)).toBe(false);
+            expect(
+                Notice.instances.some(
+                    (n) =>
+                        n.message ===
+                        "Configure the LiteLLM API key in the LLM provider settings to use this reranker.",
+                ),
+            ).toBe(false);
         });
 
         it("falls back to notice when initial load fails", async () => {
@@ -5812,7 +5911,13 @@ describe("managed mode settings", () => {
 
             await dropdowns[0]("openai/gpt-4o");
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FAILED_VISION)).toBe(true);
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_NEEDS_KEY)).toBe(false);
+            expect(
+                Notice.instances.some(
+                    (n) =>
+                        n.message ===
+                        "Configure the LiteLLM API key in the LLM provider settings to use this vision model.",
+                ),
+            ).toBe(false);
         });
 
         it("role-mismatch 422 surfaces the server's detail verbatim (not the API-key notice)", async () => {
@@ -5859,7 +5964,13 @@ describe("managed mode settings", () => {
 
             await dropdowns[0]("BAAI/bge-reranker-v2-m3");
             expect(Notice.instances.some((n) => n.message === roleMismatchDetail)).toBe(true);
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_NEEDS_KEY)).toBe(false);
+            expect(
+                Notice.instances.some(
+                    (n) =>
+                        n.message ===
+                        "Configure the LiteLLM API key in the LLM provider settings to use this vision model.",
+                ),
+            ).toBe(false);
         });
 
         it("falls back to notice when initial load fails", async () => {

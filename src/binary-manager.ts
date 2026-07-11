@@ -23,6 +23,7 @@ import { basename, join, resolve, dirname } from "path";
 import { createHash } from "crypto";
 import { promisify } from "util";
 import { ARCH, PLATFORM, SERVER_VARIANT, type CudaTag, type ServerVariant } from "./types";
+import { formatDiskSize } from "./utils";
 
 const execFileAsync = promisify(execFile);
 const statfsAsync = promisify(statfs);
@@ -287,12 +288,6 @@ function contentLength(res: IncomingMessage): number | null {
     return raw !== undefined && Number.isFinite(parsed) ? parsed : null;
 }
 
-function formatBytes(bytes: number): string {
-    const gb = bytes / 1024 ** 3;
-    if (gb >= 1) return `${gb.toFixed(1)} GB`;
-    return `${Math.round(bytes / 1024 ** 2)} MB`;
-}
-
 export class BinaryManager {
     constructor(private binDir: string) {}
 
@@ -332,8 +327,8 @@ export class BinaryManager {
         const free = stats.bavail * stats.bsize;
         if (free < required) {
             throw new Error(
-                `Not enough disk space for the lilbee server: need about ${formatBytes(required)} free, ` +
-                    `but only ${formatBytes(free)} is available. Free up some space and try again.`,
+                `Not enough disk space for the lilbee server: need about ${formatDiskSize(required)} free, ` +
+                    `but only ${formatDiskSize(free)} is available. Free up some space and try again.`,
             );
         }
     }
@@ -351,12 +346,15 @@ export class BinaryManager {
     private async streamToFile(
         assetUrl: string,
         partPath: string,
+        fallbackTotal: number | null,
         onBytes: (progress: DownloadProgress) => void,
         signal?: AbortSignal,
     ): Promise<string> {
         if (signal?.aborted) throw new DownloadCanceledError();
         const res = await openStream(assetUrl);
-        const totalBytes = contentLength(res);
+        // The release's reported asset size keeps progress determinate when the
+        // response carries no content-length (e.g. chunked transfer).
+        const totalBytes = contentLength(res) ?? fallbackTotal;
         const hash = node.createHash("sha256");
         const file = node.createWriteStream(partPath);
         let receivedBytes = 0;
@@ -417,6 +415,7 @@ export class BinaryManager {
             const actualHex = await this.streamToFile(
                 assetUrl,
                 partPath,
+                sizeBytes > 0 ? sizeBytes : null,
                 (progress) => onProgress?.("Downloading...", assetUrl, progress),
                 signal,
             );

@@ -5,10 +5,11 @@ import {
     Notice,
     Plugin,
     type TAbstractFile,
+    TFile,
+    TFolder,
     type WorkspaceLeaf,
 } from "obsidian";
 import { LilbeeClient, SessionTokenError } from "./api";
-import type { RequestOutcome } from "./api";
 import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
 import { exportDiagnostics } from "./diagnostics-export";
@@ -29,6 +30,8 @@ import {
     LOGS_DIR,
     MANAGED_CONSENT_RESULT,
     MANAGED_PHASE,
+    MODEL_TASK,
+    REQUEST_OUTCOME,
     SERVER_MODE,
     SERVER_STATE,
     SETUP_OUTCOME,
@@ -40,8 +43,10 @@ import {
     type CrawlRenderMode,
     type DiagnosticsContext,
     type DotState,
+    type HealthResponse,
     type LilbeeSettings,
     type ManagedServerProgressHandler,
+    type RequestOutcome,
     type ServerMode,
     type SetupOutcome,
     type ServerState,
@@ -50,6 +55,7 @@ import {
     type SetupProgressPayload,
     type SetupStartPayload,
     type SyncDone,
+    type SSEEvent,
     type SyncOptions,
     type TaskEntry,
     type UninstallPlan,
@@ -60,6 +66,7 @@ import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import {
     errorMessage,
     extractSseErrorMessage,
+    formatDiskSize,
     HEALTH_FAILURE_STREAK_THRESHOLD,
     HEALTH_PROBE_INTERVAL_MS,
     NOTICE_DURATION_MS,
@@ -71,7 +78,6 @@ import {
     StreamIdleError,
     withIdleTimeout,
 } from "./utils";
-import { formatBytes } from "./storage-stats";
 import { CatalogModal } from "./views/catalog-modal";
 import { ManagedConsentModal } from "./views/managed-consent-modal";
 import { ModelInfoModal } from "./views/model-info-modal";
@@ -84,6 +90,7 @@ import { SetupWizard } from "./views/setup-wizard";
 import { TaskCenterView, VIEW_TYPE_TASKS } from "./views/task-center";
 import { WikiView, VIEW_TYPE_WIKI } from "./views/wiki-view";
 import { MemoriesView, VIEW_TYPE_MEMORIES } from "./views/memories-view";
+import { PlacementView, VIEW_TYPE_PLACEMENT, revealPlacementBeside } from "./views/placement-view";
 import { RememberModal } from "./views/remember-modal";
 import { LintModal } from "./views/lint-modal";
 import { DraftModal } from "./views/draft-modal";
@@ -104,7 +111,16 @@ const BYTES_PER_MB = 1_000_000;
 
 const PENDING_SYNC_HINT_DEBOUNCE_MS = 1000;
 
+// How long terminateOwningProcess waits for the previous owner to exit.
+const PROCESS_EXIT_POLLS = 50;
+const PROCESS_EXIT_POLL_INTERVAL_MS = 100;
+
 const SUPPORTED_SYNC_EXTENSIONS = new Set(["md", "pdf", "txt", "html"]);
+
+// A single /api/add/upload request is bounded server-side by file count and
+// body size, so large folders upload in sequential batches that stay under both.
+const UPLOAD_BATCH_MAX_FILES = 90;
+const UPLOAD_BATCH_MAX_BYTES = 8 * BYTES_PER_MB;
 
 // Vault-relative folder where managed mode stores lilbee's documents
 // (see configureManagedStorage). It is the only scope `Sync vault` reconciles.
@@ -212,15 +228,38 @@ function coerceSyncDone(obj: Record<string, unknown>): SyncDone | null {
     };
 }
 
+type UploadPayload = { name: string; data: ArrayBuffer };
+
+/** Split uploads into batches that stay under the server's per-request file
+ *  count and body-size limits. A lone file over the byte budget still gets its
+ *  own batch (the server rejects only if it also exceeds its hard cap). */
+export function batchUploads(files: UploadPayload[]): UploadPayload[][] {
+    const batches: UploadPayload[][] = [];
+    let current: UploadPayload[] = [];
+    let bytes = 0;
+    for (const file of files) {
+        const size = file.data.byteLength;
+        if (current.length > 0 && (current.length >= UPLOAD_BATCH_MAX_FILES || bytes + size > UPLOAD_BATCH_MAX_BYTES)) {
+            batches.push(current);
+            current = [];
+            bytes = 0;
+        }
+        current.push(file);
+        bytes += size;
+    }
+    if (current.length > 0) batches.push(current);
+    return batches;
+}
+
 /** Progress for a settings-driven install/update: a phase line plus a percent when known. */
 export type ServerDownloadProgressHandler = (msg: string, percent?: number) => void;
 
 /** "Downloading... 45% (128 MB of 283 MB)", or bytes-only when the server sends no length. */
 function downloadMessage(progress: DownloadProgress): string {
-    const received = formatBytes(progress.receivedBytes);
+    const received = formatDiskSize(progress.receivedBytes);
     const percent = percentOfBytes(progress.receivedBytes, progress.totalBytes);
     if (percent === undefined || progress.totalBytes === null) return MESSAGES.STATUS_DOWNLOAD_RECEIVED(received);
-    return MESSAGES.STATUS_DOWNLOAD_PROGRESS(percent, received, formatBytes(progress.totalBytes));
+    return MESSAGES.STATUS_DOWNLOAD_PROGRESS(percent, received, formatDiskSize(progress.totalBytes));
 }
 
 /** The status bar is narrow: percent only, with the byte detail left to Settings. */
@@ -251,6 +290,8 @@ export default class LilbeePlugin extends Plugin {
     private unloaded = false;
     // Guards chat-leaf creation against re-entrant duplicate tabs while setViewState is in flight (issue #169).
     private openingChatLeaf = false;
+    // Same re-entrancy guard for the placement view's main-area tab and beside-chat split.
+    private openingPlacementLeaf = false;
     taskQueue: TaskQueue = new TaskQueue();
     /** Paths whose most-recent add failed — retry skips the reindex confirm. */
     private failedAddPaths = new Set<string>();
@@ -260,6 +301,8 @@ export default class LilbeePlugin extends Plugin {
     wikiSync: WikiSync | null = null;
     private healthProbeHandle: number | null = null;
     private serverUnreachable = false;
+    // True when the server is up but the chat role is still cold-loading (from /api/health).
+    private chatWarming = false;
     // While > 0, probeServerHealth() bails: llama.cpp serializes requests,
     // so /api/health stalls behind the active stream and would falsely flip
     // the status bar to error.
@@ -325,6 +368,7 @@ export default class LilbeePlugin extends Plugin {
         safeRegisterView(VIEW_TYPE_TASKS, (leaf) => new TaskCenterView(leaf, this));
         safeRegisterView(VIEW_TYPE_WIKI, (leaf) => new WikiView(leaf, this));
         safeRegisterView(VIEW_TYPE_MEMORIES, (leaf) => new MemoriesView(leaf, this));
+        safeRegisterView(VIEW_TYPE_PLACEMENT, (leaf) => new PlacementView(leaf, this));
         this.addSettingTab(new LilbeeSettingTab(this.app, this));
         this.taskQueue.onChange(() => this.updateStatusBarFromQueue());
         this.taskQueue.onChange(() => this.schedulePersistHistory());
@@ -365,6 +409,7 @@ export default class LilbeePlugin extends Plugin {
                 this.configureApi(this.settings.serverUrl);
                 this.setStatusReady();
                 void this.fetchActiveModel();
+                void this.warnExternalServerOutdated();
             }
         }
 
@@ -391,7 +436,7 @@ export default class LilbeePlugin extends Plugin {
 
     /** Collapse multiple lilbee-chat / -tasks / -wiki leaves to one of each. */
     private dedupeLilbeeLeaves(): void {
-        for (const type of [VIEW_TYPE_CHAT, VIEW_TYPE_TASKS, VIEW_TYPE_WIKI, VIEW_TYPE_MEMORIES]) {
+        for (const type of [VIEW_TYPE_CHAT, VIEW_TYPE_TASKS, VIEW_TYPE_WIKI, VIEW_TYPE_MEMORIES, VIEW_TYPE_PLACEMENT]) {
             const leaves = this.app.workspace.getLeavesOfType(type);
             for (let i = 1; i < leaves.length; i++) leaves[i].detach();
         }
@@ -550,13 +595,13 @@ export default class LilbeePlugin extends Plugin {
         } catch {
             // already gone — fine
         }
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < PROCESS_EXIT_POLLS; i++) {
             try {
                 node.processKill(owner.pid, 0);
             } catch {
                 return true;
             }
-            await new Promise((r) => window.setTimeout(r, 100));
+            await new Promise((r) => window.setTimeout(r, PROCESS_EXIT_POLL_INTERVAL_MS));
         }
         return false;
     }
@@ -813,6 +858,21 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    /** External mode: on launch, tell the user when the running server is not the
+     *  latest release. Best-effort — silent when offline or the server is unreachable. */
+    private async warnExternalServerOutdated(): Promise<void> {
+        try {
+            const health = await this.api.health();
+            if (health.isErr()) return;
+            const latest = (await getLatestRelease(this.settings.includeDevBuilds)).tag.replace(/^v/, "");
+            if (!latest || health.value.version === latest) return;
+            // NOTICE_PERMANENT keeps it up until the user clicks it away.
+            new Notice(MESSAGES.NOTICE_EXTERNAL_SERVER_OUTDATED(health.value.version, latest), NOTICE_PERMANENT);
+        } catch {
+            // offline, unreachable, or rate-limited — stay quiet
+        }
+    }
+
     async updateServer(release: ReleaseInfo, onProgress?: ServerDownloadProgressHandler): Promise<void> {
         const registry = this.vaultRegistry;
         if (!registry) return;
@@ -986,16 +1046,16 @@ export default class LilbeePlugin extends Plugin {
 
     /** Update the status bar to reflect the latest API outcome. */
     private handleRequestOutcome(outcome: RequestOutcome): void {
-        if (outcome === "ok") {
+        if (outcome === REQUEST_OUTCOME.OK) {
             this.setStatusReady();
             return;
         }
-        if (outcome === "auth_error") {
+        if (outcome === REQUEST_OUTCOME.AUTH_ERROR) {
             this.updateStatusBar(MESSAGES.STATUS_AUTH_ERROR, DOT_STATE.ERROR);
             this.setStatusClass("lilbee-status-error");
             return;
         }
-        if (outcome === "server_error" || outcome === "unreachable") {
+        if (outcome === REQUEST_OUTCOME.SERVER_ERROR || outcome === REQUEST_OUTCOME.UNREACHABLE) {
             // Before the managed server has ever reached READY, a failed
             // request means it's still coming up — don't flash a red error.
             if (this.settings.serverMode === SERVER_MODE.MANAGED && !this.serverEverReady) return;
@@ -1025,7 +1085,7 @@ export default class LilbeePlugin extends Plugin {
     private registerCommands(): void {
         this.addCommand({
             id: "search",
-            name: "Search knowledge base",
+            name: MESSAGES.COMMAND_SEARCH,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) new SearchModal(this.app, this).open();
@@ -1035,7 +1095,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "chat",
-            name: "Open chat",
+            name: MESSAGES.COMMAND_CHAT,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) void this.activateChatView();
@@ -1045,7 +1105,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "open-memories",
-            name: "Open memories",
+            name: MESSAGES.COMMAND_MEMORIES,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) void this.activateMemoriesView();
@@ -1054,8 +1114,30 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "open-placement",
+            name: MESSAGES.COMMAND_PLACEMENT,
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                if (!checking) void this.activatePlacementView();
+                return true;
+            },
+        });
+
+        this.addCommand({
+            id: "open-placement-beside-chat",
+            name: MESSAGES.COMMAND_PLACEMENT_BESIDE_CHAT,
+            checkCallback: (checking) => {
+                if (!this.isLilbeeReady()) return false;
+                const chatLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
+                if (!chatLeaf) return false;
+                if (!checking) void this.openPlacementBesideChat(chatLeaf);
+                return true;
+            },
+        });
+
+        this.addCommand({
             id: "remember",
-            name: "Remember…",
+            name: MESSAGES.COMMAND_REMEMBER,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) new RememberModal(this.app, this).open();
@@ -1065,7 +1147,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "add-file",
-            name: "Add current file",
+            name: MESSAGES.COMMAND_ADD_FILE,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 const file = this.app.workspace.getActiveFile();
@@ -1077,7 +1159,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "add-folder",
-            name: "Add current folder",
+            name: MESSAGES.COMMAND_ADD_FOLDER,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 const file = this.app.workspace.getActiveFile();
@@ -1146,7 +1228,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "catalog",
-            name: "Browse model catalog",
+            name: MESSAGES.COMMAND_CATALOG,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) new CatalogModal(this.app, this).open();
@@ -1159,7 +1241,7 @@ export default class LilbeePlugin extends Plugin {
             name: MESSAGES.COMMAND_MODEL_PICKER_CHAT,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
-                if (!checking) new ModelPickerModal(this.app, this, "chat").open();
+                if (!checking) new ModelPickerModal(this.app, this, MODEL_TASK.CHAT).open();
                 return true;
             },
         });
@@ -1169,7 +1251,7 @@ export default class LilbeePlugin extends Plugin {
             name: MESSAGES.COMMAND_MODEL_PICKER_EMBED,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
-                if (!checking) new ModelPickerModal(this.app, this, "embedding").open();
+                if (!checking) new ModelPickerModal(this.app, this, MODEL_TASK.EMBEDDING).open();
                 return true;
             },
         });
@@ -1179,7 +1261,7 @@ export default class LilbeePlugin extends Plugin {
             name: MESSAGES.COMMAND_MODEL_INFO_CHAT,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
-                if (!checking) void this.openModelInfoForActiveTask("chat");
+                if (!checking) void this.openModelInfoForActiveTask(MODEL_TASK.CHAT);
                 return true;
             },
         });
@@ -1189,14 +1271,14 @@ export default class LilbeePlugin extends Plugin {
             name: MESSAGES.COMMAND_MODEL_INFO_EMBED,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
-                if (!checking) void this.openModelInfoForActiveTask("embedding");
+                if (!checking) void this.openModelInfoForActiveTask(MODEL_TASK.EMBEDDING);
                 return true;
             },
         });
 
         this.addCommand({
             id: "crawl",
-            name: "Crawl web page",
+            name: MESSAGES.COMMAND_CRAWL,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) new CrawlModal(this.app, this).open();
@@ -1206,7 +1288,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "documents",
-            name: "Browse documents",
+            name: MESSAGES.COMMAND_DOCUMENTS,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
                 if (!checking) new DocumentsModal(this.app, this).open();
@@ -1216,13 +1298,13 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "setup",
-            name: "Run setup wizard",
+            name: MESSAGES.COMMAND_SETUP,
             callback: () => new SetupWizard(this.app, this).open(),
         });
 
         this.addCommand({
             id: "tasks",
-            name: "Show task center",
+            name: MESSAGES.COMMAND_TASKS,
             callback: () => this.activateTaskView(),
         });
 
@@ -1276,7 +1358,7 @@ export default class LilbeePlugin extends Plugin {
 
         this.addCommand({
             id: "status",
-            name: "Show status",
+            name: MESSAGES.COMMAND_STATUS,
             callback: () => new StatusModal(this.app, this).open(),
         });
 
@@ -1501,13 +1583,19 @@ export default class LilbeePlugin extends Plugin {
         // Re-read the token before probing — the server writes a fresh one on
         // every restart, and this is the cheapest way to stay in sync.
         this.api.setToken(this.readCurrentToken());
-        const ok = (await this.api.health().catch(() => null))?.isOk() ?? false;
-        if (ok) {
+        const health = await this.api.health().catch(() => null);
+        if (health?.isOk()) {
             this.healthFailureStreak = 0;
             if (this.serverUnreachable) {
                 this.serverUnreachable = false;
                 void this.fetchActiveModel();
+            } else {
+                // Keep the status-bar model in sync with out-of-band changes
+                // (CLI/TUI/another client switching the chat model) while the
+                // server stays connected.
+                void this.refreshActiveModel();
             }
+            this.reflectChatWarmth(health.value);
             return;
         }
         this.healthFailureStreak += 1;
@@ -1522,6 +1610,21 @@ export default class LilbeePlugin extends Plugin {
         this.updateStatusBar(MESSAGES.STATUS_ERROR, DOT_STATE.ERROR);
         this.setStatusClass("lilbee-status-error");
         this.maybeWarnMissingToken();
+    }
+
+    /** Reflect the chat engine's warm state from a health snapshot: show a warming
+     * pill while it cold-loads, and revert to ready once it is warm. Older servers
+     * omit `chat_ready`, which we treat as ready. */
+    private reflectChatWarmth(health: HealthResponse): void {
+        const warming = health.chat_ready === false;
+        if (warming === this.chatWarming) return;
+        this.chatWarming = warming;
+        if (warming) {
+            this.updateStatusBar(MESSAGES.STATUS_WARMING, DOT_STATE.PRIMARY);
+            this.setStatusClass("lilbee-status-starting");
+        } else {
+            this.setStatusReady();
+        }
     }
 
     notifyChatStart(): void {
@@ -1613,7 +1716,7 @@ export default class LilbeePlugin extends Plugin {
         this.setStatusReady();
     }
 
-    async openModelInfoForActiveTask(task: "chat" | "embedding"): Promise<void> {
+    async openModelInfoForActiveTask(task: typeof MODEL_TASK.CHAT | typeof MODEL_TASK.EMBEDDING): Promise<void> {
         let cfg: Record<string, unknown>;
         try {
             cfg = await this.api.config();
@@ -1621,7 +1724,7 @@ export default class LilbeePlugin extends Plugin {
             new Notice(MESSAGES.NOTICE_NO_ACTIVE_MODEL(task));
             return;
         }
-        const key = task === "chat" ? "chat_model" : "embedding_model";
+        const key = task === MODEL_TASK.CHAT ? "chat_model" : "embedding_model";
         const ref = typeof cfg[key] === "string" ? cfg[key] : "";
         if (!ref) {
             new Notice(MESSAGES.NOTICE_NO_ACTIVE_MODEL(task));
@@ -1640,6 +1743,20 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         new ModelInfoModal(this.app, this, entry).open();
+    }
+
+    /** Lightweight active-model resync used on every healthy probe tick, so the
+     *  status bar reflects an out-of-band chat-model change. Cheaper than
+     *  fetchActiveModel (no wiki/reasoning work); repaints only on a change. */
+    private async refreshActiveModel(): Promise<void> {
+        try {
+            const models = await this.api.listModels();
+            if (models.chat.active === this.activeModel) return;
+            this.activeModel = models.chat.active;
+            if (!this.chatWarming) this.setStatusReady();
+        } catch {
+            // best-effort; the next probe tick retries
+        }
     }
 
     async fetchActiveModel(): Promise<void> {
@@ -1704,6 +1821,14 @@ export default class LilbeePlugin extends Plugin {
         return false;
     }
 
+    /** Block chat and ingest while the fleet is (re)loading (chat_ready:false), so
+     *  requests never hit a half-built fleet. Public so the chat view gates on it too. */
+    assertFleetReady(): boolean {
+        if (!this.chatWarming) return true;
+        new Notice(MESSAGES.NOTICE_FLEET_WARMING);
+        return false;
+    }
+
     private async confirmReindexIfNeeded(name: string): Promise<boolean> {
         try {
             const searchName = name.replace(/\.md$/, "");
@@ -1722,6 +1847,7 @@ export default class LilbeePlugin extends Plugin {
     async addExternalFiles(paths: string[]): Promise<void> {
         if (!this.statusBarEl || paths.length === 0) return;
         if (!this.assertActiveModel()) return;
+        if (!this.assertFleetReady()) return;
         const label = paths.length === 1 ? paths[0].split("/").pop() || paths[0] : `${paths.length} files`;
 
         const isRetry = paths.length === 1 && this.failedAddPaths.has(paths[0]);
@@ -1737,7 +1863,40 @@ export default class LilbeePlugin extends Plugin {
         if (copiedPaths.length === 0) return;
 
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", label));
-        await this.runAdd(copiedPaths, paths, () => this.addExternalFiles(paths));
+        if (this.settings.serverMode === SERVER_MODE.EXTERNAL) {
+            // A remote server can't read the just-copied local paths, so send
+            // the bytes — same upload route as the right-click "Add to lilbee".
+            let uploads: UploadPayload[];
+            try {
+                uploads = this.readUploadsFromDisk(copiedPaths);
+            } catch (err) {
+                console.error("[lilbee] add failed:", err);
+                new Notice(MESSAGES.ERROR_ADD_FAILED_DETAIL(errorMessage(err, MESSAGES.ERROR_CANNOT_CONNECT)));
+                return;
+            }
+            await this.runUpload(uploads, paths, () => this.addExternalFiles(paths));
+        } else {
+            await this.runAdd(copiedPaths, paths, () => this.addExternalFiles(paths));
+        }
+    }
+
+    /** Read every file under each path (recursing directories) off disk as
+     *  upload payloads — for external mode, where the server can't read paths. */
+    private readUploadsFromDisk(paths: string[]): UploadPayload[] {
+        const out: UploadPayload[] = [];
+        const walk = (p: string): void => {
+            if (node.statSync(p).isDirectory()) {
+                for (const child of node.readdirSync(p)) walk(node.join(p, child));
+            } else {
+                const buf = node.readFileSync(p);
+                out.push({
+                    name: node.basename(p),
+                    data: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
+                });
+            }
+        };
+        for (const p of paths) walk(p);
+        return out;
     }
 
     /**
@@ -1817,6 +1976,7 @@ export default class LilbeePlugin extends Plugin {
     async addToLilbee(file: TAbstractFile): Promise<void> {
         if (!this.statusBarEl) return;
         if (!this.assertActiveModel()) return;
+        if (!this.assertFleetReady()) return;
         const absolutePath = `${this.getVaultBasePath()}/${file.path}`;
         // The vault root's name is the empty string and its path is "/", so
         // `?? file.path` doesn't fall back; both have to be checked.
@@ -1826,7 +1986,99 @@ export default class LilbeePlugin extends Plugin {
         if (!isRetry && !(await this.confirmReindexIfNeeded(name))) return;
 
         new Notice(MESSAGES.STATUS_ADDING.replace("{label}", name));
-        await this.runAdd([absolutePath], [absolutePath], () => this.addToLilbee(file));
+        if (this.settings.serverMode === SERVER_MODE.EXTERNAL) {
+            // A remote server can't read this machine's paths, so send the file
+            // bytes straight from the vault instead of a server-side path. The
+            // read runs before runAdd's guard, so surface a failure here too.
+            let uploads: { name: string; data: ArrayBuffer }[];
+            try {
+                uploads = await this.collectVaultUploads(file);
+            } catch (err) {
+                console.error("[lilbee] add failed:", err);
+                new Notice(MESSAGES.ERROR_ADD_FAILED_DETAIL(errorMessage(err, MESSAGES.ERROR_CANNOT_CONNECT)));
+                return;
+            }
+            await this.runUpload(uploads, [absolutePath], () => this.addToLilbee(file));
+        } else {
+            await this.runAdd([absolutePath], [absolutePath], () => this.addToLilbee(file));
+        }
+    }
+
+    /** Read every file under *file* (recursing folders) as upload payloads. */
+    private async collectVaultUploads(file: TAbstractFile): Promise<{ name: string; data: ArrayBuffer }[]> {
+        const tfiles = file instanceof TFolder ? this.filesInFolder(file) : [file as TFile];
+        return Promise.all(tfiles.map(async (f) => ({ name: f.name, data: await this.app.vault.readBinary(f) })));
+    }
+
+    private filesInFolder(folder: TFolder): TFile[] {
+        const out: TFile[] = [];
+        for (const child of folder.children) {
+            if (child instanceof TFile) out.push(child);
+            else if (child instanceof TFolder) out.push(...this.filesInFolder(child));
+        }
+        return out;
+    }
+
+    /** Ingest by uploading file content (external mode); reuses runAdd's stream loop. */
+    private async runUpload(
+        files: { name: string; data: ArrayBuffer }[],
+        retryKeys: string[],
+        retry?: () => void | Promise<void>,
+    ): Promise<void> {
+        if (files.length === 0) {
+            new Notice(MESSAGES.STATUS_NOTHING_NEW);
+            return;
+        }
+        await this.runAdd(
+            files.map((f) => f.name),
+            retryKeys,
+            retry,
+            (signal) => this.uploadInBatches(files, signal),
+            "Uploading files",
+        );
+    }
+
+    /** Upload files in server-safe batches while presenting one continuous
+     *  stream: progress counters are renumbered across the whole set, and a
+     *  single merged done event is emitted after the last batch. */
+    private async *uploadInBatches(files: UploadPayload[], signal: AbortSignal): AsyncGenerator<SSEEvent, void> {
+        const batches = batchUploads(files);
+        // One request: the server's counters already span the whole set — stream through untouched.
+        if (batches.length <= 1) {
+            yield* this.api.uploadFiles(files, signal);
+            return;
+        }
+        const total = files.length;
+        const merged: SyncDone = { added: [], updated: [], removed: [], unchanged: 0, failed: [], skipped: [] };
+        let done = 0;
+        for (const batch of batches) {
+            for await (const event of this.api.uploadFiles(batch, signal)) {
+                if (event.event === SSE_EVENT.DONE) {
+                    const parsed = parseAddDoneEvent(event.data);
+                    if (parsed) {
+                        merged.added.push(...parsed.added);
+                        merged.updated.push(...parsed.updated);
+                        merged.removed.push(...parsed.removed);
+                        merged.failed.push(...parsed.failed);
+                        merged.skipped.push(...parsed.skipped);
+                        merged.unchanged += parsed.unchanged;
+                    }
+                } else if (event.event === SSE_EVENT.FILE_START) {
+                    const d = event.data as { current_file: number; total_files: number };
+                    yield {
+                        event: SSE_EVENT.FILE_START,
+                        data: { current_file: done + d.current_file, total_files: total },
+                    };
+                } else if (event.event === SSE_EVENT.BATCH_PROGRESS) {
+                    const d = event.data as BatchProgressPayload;
+                    yield { event: SSE_EVENT.BATCH_PROGRESS, data: { ...d, current: done + d.current, total } };
+                } else {
+                    yield event;
+                }
+            }
+            done += batch.length;
+        }
+        yield { event: SSE_EVENT.DONE, data: merged };
     }
 
     cancelSync(): void {
@@ -1838,8 +2090,10 @@ export default class LilbeePlugin extends Plugin {
         paths: string[],
         retryKeys: string[] = paths,
         retry?: () => void | Promise<void>,
+        makeStream?: (signal: AbortSignal) => AsyncGenerator<SSEEvent, void>,
+        label = "Adding files",
     ): Promise<void> {
-        const taskId = this.taskQueue.enqueue("Adding files", TASK_TYPE.ADD, retry);
+        const taskId = this.taskQueue.enqueue(label, TASK_TYPE.ADD, retry);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
@@ -1852,7 +2106,9 @@ export default class LilbeePlugin extends Plugin {
             const progress = new FileProgressTracker();
             let syncResult: SyncDone | null = null;
             const controller = this.syncController;
-            const rawStream = this.api.addFiles(paths, true, controller.signal);
+            const rawStream = makeStream
+                ? makeStream(controller.signal)
+                : this.api.addFiles(paths, true, controller.signal);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 if (event.event === SSE_EVENT.FILE_START) {
                     const d = event.data as { current_file: number; total_files: number };
@@ -1986,6 +2242,37 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
+    /** Open the placement view in a main-area tab (it is wider than the sidebar views). */
+    async activatePlacementView(): Promise<void> {
+        const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_PLACEMENT);
+        if (existing.length > 0) {
+            void this.app.workspace.revealLeaf(existing[0]);
+            return;
+        }
+        if (this.openingPlacementLeaf) return;
+        this.openingPlacementLeaf = true;
+        try {
+            // "tab" is the explicit form; the boolean getLeaf(true) is deprecated.
+            const leaf = this.app.workspace.getLeaf("tab");
+            if (leaf) {
+                await leaf.setViewState({ type: VIEW_TYPE_PLACEMENT, active: true });
+                void this.app.workspace.revealLeaf(leaf);
+            }
+        } finally {
+            this.openingPlacementLeaf = false;
+        }
+    }
+
+    private async openPlacementBesideChat(chatLeaf: WorkspaceLeaf): Promise<void> {
+        if (this.openingPlacementLeaf) return;
+        this.openingPlacementLeaf = true;
+        try {
+            await revealPlacementBeside(this.app, chatLeaf);
+        } finally {
+            this.openingPlacementLeaf = false;
+        }
+    }
+
     openPluginSettings(): void {
         // `app.setting` is an undocumented-but-stable Obsidian API used
         // widely by community plugins to jump straight to their own tab.
@@ -2053,16 +2340,22 @@ export default class LilbeePlugin extends Plugin {
 
     /**
      * Tile the plugin's views as side-by-side columns in the main area: chat and
-     * the Task Center always, plus wiki and memories when they are already open.
-     * Reuses open leaves (chat keeps its conversation) and splits any it has to
-     * create beside the previous one. Bind a hotkey in Settings → Hotkeys.
+     * the Task Center always, plus wiki, memories, and placement when they are
+     * already open. Reuses open leaves (chat keeps its conversation) and splits
+     * any it has to create beside the previous one. Bind a hotkey in Settings → Hotkeys.
      */
     async arrangeViews(): Promise<void> {
         if (this.openingChatLeaf) return;
         this.openingChatLeaf = true;
         try {
             const workspace = this.app.workspace;
-            const included = [VIEW_TYPE_CHAT, VIEW_TYPE_TASKS, VIEW_TYPE_WIKI, VIEW_TYPE_MEMORIES].filter(
+            const included = [
+                VIEW_TYPE_CHAT,
+                VIEW_TYPE_TASKS,
+                VIEW_TYPE_WIKI,
+                VIEW_TYPE_MEMORIES,
+                VIEW_TYPE_PLACEMENT,
+            ].filter(
                 (type) =>
                     type === VIEW_TYPE_CHAT || type === VIEW_TYPE_TASKS || workspace.getLeavesOfType(type).length > 0,
             );
@@ -2264,6 +2557,7 @@ export default class LilbeePlugin extends Plugin {
         depth: number | null,
         maxPages: number | null,
         renderMode?: CrawlRenderMode,
+        includeSubdomains?: boolean,
     ): Promise<void> {
         const taskId = this.taskQueue.enqueue(`Crawl ${url}`, TASK_TYPE.CRAWL);
         if (taskId === null) {
@@ -2276,7 +2570,7 @@ export default class LilbeePlugin extends Plugin {
         let setupResolved = false;
         try {
             let pageCount = 0;
-            const rawStream = this.api.crawl(url, depth, maxPages, controller.signal, renderMode);
+            const rawStream = this.api.crawl(url, depth, maxPages, controller.signal, renderMode, includeSubdomains);
             for await (const event of withIdleTimeout(rawStream, STREAM_IDLE_TIMEOUT_MS, () => controller.abort())) {
                 switch (event.event) {
                     case SSE_EVENT.SETUP_START: {

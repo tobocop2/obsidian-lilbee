@@ -16,6 +16,7 @@ import {
     CONFIG_KEY,
     HOSTED_SOURCES,
     MODEL_TASK,
+    SEARCH_CHUNK_TYPE,
     SSE_EVENT,
     TASK_TYPE,
     ERROR_NAME,
@@ -54,6 +55,7 @@ import {
     streamInterruptedMessage,
 } from "../utils";
 import { SetupWizard } from "./setup-wizard";
+import { revealPlacementBeside } from "./placement-view";
 import { hostedOptions, isUsableHostedRow } from "./catalog-helpers";
 import { electronDialog } from "../utils/file-dialog";
 
@@ -79,10 +81,11 @@ function railTriggerLabel(options: RailOption[]): string {
     return (options.find((o) => o.checked) ?? options[0])?.label ?? "";
 }
 
+type OptionalRoleTask = typeof MODEL_TASK.VISION | typeof MODEL_TASK.RERANK;
+
 /** Static description of an optional rail role (Vision, Rerank). Dynamic state lives on the view. */
 interface OptionalRoleSpec {
-    key: "vision" | "rerank";
-    task: typeof MODEL_TASK.VISION | typeof MODEL_TASK.RERANK;
+    task: OptionalRoleTask;
     label: string;
     dotClass: string;
     triggerClass: string;
@@ -103,11 +106,13 @@ interface StreamState {
     reasoningContentEl: HTMLElement | null;
     reasoningDetailsEl: HTMLElement | null;
     answerStarted: boolean;
+    /** Set at DONE/stop/error so a queued animation-frame plain-text repaint
+     *  can't overwrite the final markdown render. */
+    streamEnded: boolean;
 }
 
 const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
     {
-        key: "vision",
         task: MODEL_TASK.VISION,
         label: MESSAGES.RAIL_LABEL_VISION,
         dotClass: "is-vision",
@@ -119,7 +124,6 @@ const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
         failNotice: MESSAGES.RAIL_LABEL_VISION,
     },
     {
-        key: "rerank",
         task: MODEL_TASK.RERANK,
         label: MESSAGES.RAIL_LABEL_RERANK,
         dotClass: "is-rerank",
@@ -145,6 +149,13 @@ export function extractBanner(data: unknown): string | null {
     return typeof banner === "string" && banner.length > 0 ? banner : null;
 }
 
+/** Strip the markdown markers that would otherwise show as raw syntax while text
+ *  streams as plain text (bold `**`, code backticks). The full markdown — bold,
+ *  code blocks, the lot — is rendered once when the message completes. */
+export function plainStream(md: string): string {
+    return md.replace(/\*\*/g, "").replace(/`/g, "");
+}
+
 export class ChatView extends ItemView {
     private plugin: LilbeePlugin;
     private history: Message[] = [];
@@ -164,12 +175,12 @@ export class ChatView extends ItemView {
     private chatModeContainer: HTMLElement | null = null;
     private chatModeCurrent: ChatMode | null = null;
     // Optional model roles (Vision, Rerank) surfaced in the rail. Keyed by the
-    // spec's `key`; data refreshed alongside the chat/embed selectors. Options
+    // spec's task; data refreshed alongside the chat/embed selectors. Options
     // come from the per-task catalog (so only role-capable models show), exactly
     // like the Settings model manager.
     private optionalRailEl: HTMLElement | null = null;
-    private optionalCatalog: Record<string, CatalogEntry[]> = { vision: [], rerank: [] };
-    private optionalActive: Record<string, string> = { vision: "", rerank: "" };
+    private optionalCatalog: Record<OptionalRoleTask, CatalogEntry[]> = { vision: [], rerank: [] };
+    private optionalActive: Record<OptionalRoleTask, string> = { vision: "", rerank: "" };
     private static readonly OFFLINE_THRESHOLD = 3;
     private retryTimer: number | null = null;
     private retryCount = 0;
@@ -263,8 +274,8 @@ export class ChatView extends ItemView {
 
         // Search mode toggle (only shown when wiki feature is enabled)
         const wikiEnabled = this.plugin.settings.wikiEnabled;
-        if (!wikiEnabled && this.plugin.settings.searchChunkType === "wiki") {
-            this.plugin.settings.searchChunkType = "all";
+        if (!wikiEnabled && this.plugin.settings.searchChunkType === SEARCH_CHUNK_TYPE.WIKI) {
+            this.plugin.settings.searchChunkType = SEARCH_CHUNK_TYPE.ALL;
         }
         if (wikiEnabled) {
             const modeGroup = actions.createDiv({ cls: "lilbee-search-mode" });
@@ -288,6 +299,11 @@ export class ChatView extends ItemView {
         }
 
         actions.createDiv({ cls: "lilbee-toolbar-spacer" });
+
+        const gpuBtn = actions.createEl("button", { cls: "lilbee-chat-gpu" });
+        setIcon(gpuBtn, "cpu");
+        gpuBtn.setAttribute("aria-label", MESSAGES.LABEL_OPEN_GPU_ACTIVITY);
+        gpuBtn.addEventListener("click", () => void revealPlacementBeside(this.app, this.leaf));
 
         const saveBtn = actions.createEl("button", { cls: "lilbee-chat-save" });
         setIcon(saveBtn, "save");
@@ -669,7 +685,7 @@ export class ChatView extends ItemView {
      * models appear. Un-installed catalog builds are reached via "Browse catalog".
      */
     private optionalRoleOptions(spec: OptionalRoleSpec): { value: string; label: string }[] {
-        const entries = this.optionalCatalog[spec.key];
+        const entries = this.optionalCatalog[spec.task];
         const localInstalled = entries.filter((e) => !HOSTED_SOURCES.has(e.source) && e.installed);
         const hosted = entries.filter(isUsableHostedRow);
         const options = localInstalled.map((e) => ({ value: e.hf_repo, label: e.display_name }));
@@ -681,7 +697,7 @@ export class ChatView extends ItemView {
 
     /** Full menu entry list for an optional role: Disabled, role-capable models, Browse catalog. */
     private optionalRoleMenuOptions(spec: OptionalRoleSpec): RailOption[] {
-        const active = this.optionalActive[spec.key];
+        const active = this.optionalActive[spec.task];
         const activeRepo = extractHfRepo(active);
         // "Disabled" turns the role off (model ref ""); the role stays visible
         // even with nothing installed, and "Browse catalog" downloads one.
@@ -694,7 +710,7 @@ export class ChatView extends ItemView {
     }
 
     private renderOptionalRoleRow(rail: HTMLElement, spec: OptionalRoleSpec): void {
-        const active = this.optionalActive[spec.key];
+        const active = this.optionalActive[spec.task];
         const chip = rail.createDiv({ cls: "lilbee-model-chip lilbee-model-chip-optional" });
         chip.setAttribute("aria-label", spec.tooltip);
         chip.setAttribute("aria-label-position", "top");
@@ -722,7 +738,7 @@ export class ChatView extends ItemView {
                 new Notice(MESSAGES.NOTICE_FAILED_UPDATE(spec.failNotice));
                 return;
             }
-            this.optionalActive[spec.key] = value;
+            this.optionalActive[spec.task] = value;
             this.fillOptionalRoles();
             void this.plugin.fetchActiveModel();
             this.plugin.refreshSettingsTab();
@@ -815,10 +831,11 @@ export class ChatView extends ItemView {
 
     private async sendMessage(text: string): Promise<void> {
         if (!this.messagesEl || this.sending) return;
+        if (!this.plugin.assertFleetReady()) return;
         this.sending = true;
         this.streamController = new AbortController();
         this.plugin.notifyChatStart();
-        if (this.sendBtn) this.sendBtn.textContent = MESSAGES.BUTTON_STOP;
+        if (this.sendBtn) this.sendBtn.setText(MESSAGES.BUTTON_STOP);
         if (this.textareaEl) this.textareaEl.disabled = true;
 
         const userBubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message user" });
@@ -843,6 +860,7 @@ export class ChatView extends ItemView {
             reasoningContentEl: null,
             reasoningDetailsEl: null,
             answerStarted: false,
+            streamEnded: false,
         };
 
         const spinnerCreatedAt = Date.now();
@@ -863,7 +881,14 @@ export class ChatView extends ItemView {
             state.renderPending = true;
             window.requestAnimationFrame(() => {
                 state.renderPending = false;
-                void this.renderFollowing(() => this.renderMarkdown(textEl, state.fullContent));
+                // A frame queued before DONE can fire after the final markdown
+                // render; painting it would wipe the formatting with plain text.
+                if (state.streamEnded) return;
+                // Stream as lightweight plain text (markdown markers stripped, so
+                // no raw `**` shows): a synchronous setText that can't stall under
+                // load, so the answer never freezes mid-stream. The DONE event
+                // renders the full formatted markdown once.
+                void this.renderFollowing(() => textEl.setText(plainStream(state.fullContent)));
             });
         };
 
@@ -881,12 +906,13 @@ export class ChatView extends ItemView {
         } catch (err) {
             if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                 revealContent();
+                state.streamEnded = true;
                 state.reasoningDetailsEl?.removeAttribute("open");
                 if (state.fullContent) {
                     void this.renderMarkdown(textEl, `${state.fullContent}\n\n${MESSAGES.LABEL_STOPPED_MD}`);
                     this.history.push({ role: "assistant", content: state.fullContent });
                 } else {
-                    textEl.textContent = MESSAGES.LABEL_STOPPED;
+                    textEl.setText(MESSAGES.LABEL_STOPPED);
                 }
             } else if (err instanceof RateLimitedError) {
                 this.renderInlineError(assistantBubble, MESSAGES.ERROR_RATE_LIMITED(err.retryAfterSeconds));
@@ -901,11 +927,12 @@ export class ChatView extends ItemView {
                 );
             }
         } finally {
+            state.streamEnded = true;
             this.sending = false;
             this.streamController = null;
             this.plugin.notifyChatEnd();
             if (this.sendBtn) {
-                this.sendBtn.textContent = MESSAGES.BUTTON_SEND;
+                this.sendBtn.setText(MESSAGES.BUTTON_SEND);
             }
             if (this.textareaEl) this.textareaEl.disabled = false;
         }
@@ -944,6 +971,7 @@ export class ChatView extends ItemView {
                 break;
             case SSE_EVENT.DONE: {
                 revealContent();
+                state.streamEnded = true;
                 const rendered = state.fullContent;
                 // Banner and sources grow the bubble after the last token; render
                 // them inside one follow so the view ends pinned to the bottom.
@@ -961,6 +989,7 @@ export class ChatView extends ItemView {
                 break;
             }
             case SSE_EVENT.ERROR: {
+                state.streamEnded = true;
                 const errMsg = extractString(event.data, "message");
                 assistantBubble.empty();
                 // Match the thrown-error path: drop the assistant skin so the
@@ -1012,7 +1041,10 @@ export class ChatView extends ItemView {
         state.reasoningRenderPending = true;
         window.requestAnimationFrame(() => {
             state.reasoningRenderPending = false;
-            void this.renderFollowing(() => this.renderMarkdown(el, state.reasoningContent));
+            if (state.streamEnded) return;
+            // Same lightweight plain-text streaming as the answer (reasoning can
+            // be long — the heavy per-token markdown render stuttered most here).
+            void this.renderFollowing(() => el.setText(plainStream(state.reasoningContent)));
         });
     }
 

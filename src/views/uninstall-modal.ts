@@ -1,8 +1,7 @@
 import { App, Modal } from "obsidian";
 import { MESSAGES } from "../locales/en";
-import { formatBytes } from "../storage-stats";
 import { UNINSTALL_TARGET, type UninstallPlan, type UninstallTargetKind } from "../types";
-import { bindEscapeToClose } from "../utils";
+import { bindEscapeToClose, formatDiskSize } from "../utils";
 
 const TARGET_LABELS: Record<UninstallTargetKind, string> = {
     [UNINSTALL_TARGET.BINARY]: MESSAGES.LABEL_UNINSTALL_BINARY,
@@ -39,7 +38,7 @@ export class UninstallModal extends Modal {
                 ledger,
                 MESSAGES.LABEL_UNINSTALL_DELETE_TAG,
                 TARGET_LABELS[target.kind],
-                formatBytes(target.bytes),
+                formatDiskSize(target.bytes),
             );
         }
         const keep = this.appendRow(

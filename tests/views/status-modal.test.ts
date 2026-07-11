@@ -12,6 +12,7 @@ function makePlugin(overrides: Partial<{ activeModel: string }> = {}): LilbeePlu
         api: {
             status: vi.fn(),
             showModel: vi.fn(),
+            health: vi.fn().mockResolvedValue(ok({ status: "ok", version: "1" })),
         },
     } as unknown as LilbeePlugin;
 }
@@ -178,6 +179,48 @@ describe("StatusModal", () => {
         });
 
         expect(Notice.instances.some((n: any) => n.message.includes("cannot connect"))).toBe(true);
+    });
+
+    it("shows the served context window when health reports chat_ctx", async () => {
+        const plugin = makePlugin();
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus()));
+        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
+        (plugin.api.health as ReturnType<typeof vi.fn>).mockResolvedValue(
+            ok({ status: "ok", version: "1", chat_ctx: 32768 }),
+        );
+
+        const modal = new StatusModal(new App(), plugin);
+        modal.open();
+        await vi.waitFor(() => {
+            const content = (modal as any).contentEl as MockElement;
+            expect(content.findAll("lilbee-status-table").length).toBeGreaterThanOrEqual(2);
+        });
+
+        const content = (modal as any).contentEl as MockElement;
+        const labels = content.findAll("lilbee-status-label").map((l: MockElement) => l.textContent);
+        const values = content.findAll("lilbee-status-value").map((v: MockElement) => v.textContent);
+        expect(labels).toContain("Serving context");
+        expect(values).toContain("32768");
+    });
+
+    it("omits the served context row when chat_ctx is null or health fails", async () => {
+        for (const health of [ok({ status: "ok", version: "1", chat_ctx: null }), err(new Error("down"))]) {
+            const plugin = makePlugin();
+            (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus()));
+            (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            (plugin.api.health as ReturnType<typeof vi.fn>).mockResolvedValue(health);
+
+            const modal = new StatusModal(new App(), plugin);
+            modal.open();
+            await vi.waitFor(() => {
+                const content = (modal as any).contentEl as MockElement;
+                expect(content.findAll("lilbee-status-table").length).toBeGreaterThanOrEqual(2);
+            });
+
+            const content = (modal as any).contentEl as MockElement;
+            const labels = content.findAll("lilbee-status-label").map((l: MockElement) => l.textContent);
+            expect(labels).not.toContain("Serving context");
+        }
     });
 
     it("shows OCR: Auto when enable_ocr is not set", async () => {

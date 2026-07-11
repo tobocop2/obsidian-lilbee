@@ -48,13 +48,3 @@ export function reportForVault(sharedRoot: string, vaultDataDir: string): Storag
     const totalBytes = binBytes + modelsBytes + vaultBytes;
     return { sharedRoot, binBytes, modelsBytes, vaultBytes, vaultDataDir, totalBytes };
 }
-
-const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
-
-export function formatBytes(bytes: number): string {
-    if (!bytes) return "0 B";
-    const exp = Math.min(BYTE_UNITS.length - 1, Math.floor(Math.log10(bytes) / 3));
-    const value = bytes / 10 ** (exp * 3);
-    const precision = value >= 100 ? 0 : value >= 10 ? 1 : 2;
-    return `${value.toFixed(precision)} ${BYTE_UNITS[exp]}`;
-}

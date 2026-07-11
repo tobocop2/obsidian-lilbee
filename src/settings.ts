@@ -1,5 +1,6 @@
 import { App, ButtonComponent, DropdownComponent, Notice, PluginSettingTab, setIcon, Setting } from "obsidian";
 import type LilbeePlugin from "./main";
+import { LilbeeClient } from "./api";
 import { DownloadCanceledError, listReleases, isDevBuild, LILBEE_GITHUB_REPO_URL } from "./binary-manager";
 import type { ReleaseInfo } from "./binary-manager";
 
@@ -10,10 +11,12 @@ import {
     CHAT_MODE,
     CONFIG_KEY,
     CRAWL_RENDER_MODE,
+    KV_CACHE_TYPE,
     MEMORY_CONFIG_KEY,
     DEFAULT_SETTINGS,
     HOSTED_SOURCES,
     MODEL_TASK,
+    SEARCH_CHUNK_TYPE,
     SERVER_MODE,
     SERVER_STATE,
     SSE_EVENT,
@@ -21,9 +24,16 @@ import {
     ERROR_NAME,
     VERSION_ACTION,
 } from "./types";
-import type { CatalogEntry, ConfigResponse, InstalledModel, LilbeeSettings, ServerMode } from "./types";
+import type {
+    CatalogEntry,
+    ConfigResponse,
+    InstalledModel,
+    LilbeeSettings,
+    SearchChunkType,
+    ServerMode,
+} from "./types";
 import { exportDiagnostics } from "./diagnostics-export";
-import { formatBytes, reportForVault } from "./storage-stats";
+import { reportForVault } from "./storage-stats";
 import { MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo, matchModelOption } from "./utils/model-ref";
 import { versionActionFor, versionButtonLabel, versionDescription } from "./utils/server-version";
@@ -39,6 +49,7 @@ import {
     percentFromSse,
     errorMessage,
     extractSseErrorMessage,
+    formatDiskSize,
     noticeForResultError,
     getRelevantSystemMemoryGB,
     noticeServerUnreachableIfApplicable,
@@ -130,6 +141,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         filterInput.addEventListener("input", () => {
             this.filterSettings(containerEl, filterInput.value);
         });
+        this.renderBugFeedback(containerEl);
 
         this.renderConnectionSettings(containerEl);
         this.renderModelsSection(containerEl);
@@ -146,6 +158,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderWikiSettings(this.wikiContainerEl);
         this.renderDiagnostics(containerEl);
         this.renderAdvancedSettings(containerEl);
+        this.renderFleetSettings(containerEl);
         if (this.plugin.settings.serverMode === SERVER_MODE.MANAGED && this.hasManagedServer()) {
             this.renderUninstallSection(containerEl, this.storageTotalBytes);
         }
@@ -250,7 +263,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const stateText = statusEl.createEl("span");
 
         const serverState = this.plugin.serverManager?.state ?? SERVER_STATE.STOPPED;
-        stateText.textContent = serverState;
+        stateText.setText(serverState);
         dot.classList.add(`is-${serverState}`);
 
         const controlSetting = new Setting(containerEl)
@@ -386,7 +399,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    /** Opt in to in-development builds, with a pointer to where feedback goes. */
+    /** Opt in to in-development builds. */
     private renderDevBuildsToggle(containerEl: HTMLElement): void {
         new Setting(containerEl)
             .setName(MESSAGES.LABEL_INCLUDE_DEV_BUILDS)
@@ -398,17 +411,20 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.render();
                 }),
             );
+    }
 
-        const feedback = containerEl.createDiv({ cls: "lilbee-dev-builds-feedback" });
-        feedback.createSpan({ text: MESSAGES.DEV_BUILDS_FEEDBACK_PREFIX });
-        const irc = feedback.createEl("a", { text: MESSAGES.DEV_BUILDS_FEEDBACK_IRC });
-        irc.setAttribute("href", LIBERA_LILBEE_URL);
-        irc.setAttribute("target", "_blank");
-        feedback.createSpan({ text: " or " });
-        const gh = feedback.createEl("a", { text: MESSAGES.DEV_BUILDS_FEEDBACK_GITHUB });
+    /** Where bug reports go. Rendered at the top of the settings view in both server modes. */
+    private renderBugFeedback(containerEl: HTMLElement): void {
+        const feedback = containerEl.createDiv({ cls: "lilbee-bug-feedback" });
+        feedback.createSpan({ text: MESSAGES.BUG_FEEDBACK_PREFIX });
+        const gh = feedback.createEl("a", { text: MESSAGES.BUG_FEEDBACK_GITHUB });
         gh.setAttribute("href", `${LILBEE_GITHUB_REPO_URL}/issues`);
         gh.setAttribute("target", "_blank");
-        feedback.createSpan({ text: "." });
+        feedback.createSpan({ text: " or " });
+        const irc = feedback.createEl("a", { text: MESSAGES.BUG_FEEDBACK_IRC });
+        irc.setAttribute("href", LIBERA_LILBEE_URL);
+        irc.setAttribute("target", "_blank");
+        feedback.createSpan({ text: MESSAGES.BUG_FEEDBACK_SUFFIX });
     }
 
     /**
@@ -429,7 +445,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName(MESSAGES.LABEL_UNINSTALL_SERVER)
-            .setDesc(MESSAGES.DESC_UNINSTALL_SERVER(formatBytes(totalBytes)))
+            .setDesc(MESSAGES.DESC_UNINSTALL_SERVER(formatDiskSize(totalBytes)))
             .addButton((btn) => {
                 btn.setButtonText(MESSAGES.BUTTON_UNINSTALL_SERVER).onClick(() => void this.confirmUninstall());
                 btn.buttonEl.addClass("mod-warning");
@@ -444,7 +460,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         if (!(await modal.result)) return;
         try {
             const freed = await this.plugin.uninstallServer(plan);
-            new Notice(MESSAGES.NOTICE_UNINSTALLED(formatBytes(freed)));
+            new Notice(MESSAGES.NOTICE_UNINSTALLED(formatDiskSize(freed)));
         } catch (err) {
             new Notice(errorMessage(err, MESSAGES.ERROR_UNINSTALL_FAILED));
             console.error("[lilbee] uninstall failed:", err);
@@ -487,7 +503,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             const release = releases.find((r) => r.tag === selectedTag);
             /* v8 ignore next -- the dropdown only ever offers tags from `releases` */
             if (!release) return;
-            setting.setDesc(MESSAGES.DESC_INSTALL_SERVER(formatBytes(release.sizeBytes)));
+            setting.setDesc(MESSAGES.DESC_INSTALL_SERVER(formatDiskSize(release.sizeBytes)));
         };
 
         setting.addDropdown((dd) => {
@@ -534,7 +550,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         btn.setDisabled(true);
         btn.setButtonText(MESSAGES.BUTTON_DOWNLOADING);
         progress.panel.show();
-        progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatBytes(release.sizeBytes)));
+        progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatDiskSize(release.sizeBytes)));
         try {
             await this.plugin.installServer(release, (msg, percent) => showPhase(progress, msg, percent));
             new Notice(MESSAGES.NOTICE_INSTALLED(release.tag));
@@ -580,7 +596,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         actionBtn.setDisabled(true);
         actionBtn.setButtonText(MESSAGES.BUTTON_DOWNLOADING);
         progress.panel.show();
-        progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatBytes(release.sizeBytes)));
+        progress.size.setText(MESSAGES.STATUS_UPDATE_SIZE(release.tag, formatDiskSize(release.sizeBytes)));
         try {
             await this.plugin.updateServer(release, (msg, percent) => showPhase(progress, msg, percent));
             new Notice(MESSAGES.NOTICE_UPDATED_TO(release.tag));
@@ -1200,6 +1216,107 @@ export class LilbeeSettingTab extends PluginSettingTab {
             { integer: false, min: 0 },
         );
         this.appendResetAffordance(maxIdleSetting, "worker_pool_max_idle_s", MESSAGES.LABEL_WORKER_POOL_MAX_IDLE);
+    }
+
+    /** GPU / fleet tuning knobs not surfaced in the placement view. Each row stays
+     * hidden until the connected server reports the key, so older servers show none. */
+    private renderFleetSettings(containerEl: HTMLElement): void {
+        const details = containerEl.createEl("details", { cls: "lilbee-fleet-details lilbee-settings-section" });
+        details.createEl("summary", { text: MESSAGES.LABEL_FLEET });
+        details.createEl("p", { text: MESSAGES.LABEL_FLEET_HELP, cls: "setting-item-description" });
+
+        const kvContainer = details.createDiv();
+        const kvSetting = new Setting(kvContainer)
+            .setName(MESSAGES.LABEL_KV_CACHE_TYPE)
+            .setDesc(MESSAGES.DESC_KV_CACHE_TYPE)
+            .addDropdown((dropdown) => {
+                dropdown.addOption(KV_CACHE_TYPE.F16, KV_CACHE_TYPE.F16);
+                dropdown.addOption(KV_CACHE_TYPE.Q8_0, KV_CACHE_TYPE.Q8_0);
+                dropdown.addOption(KV_CACHE_TYPE.Q4_0, KV_CACHE_TYPE.Q4_0);
+                dropdown.addOption(KV_CACHE_TYPE.F32, KV_CACHE_TYPE.F32);
+                dropdown.setValue(KV_CACHE_TYPE.Q8_0);
+                dropdown.onChange(async (value) => {
+                    try {
+                        await this.plugin.api.updateConfig({ kv_cache_type: value });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_KV_CACHE_TYPE));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_KV_CACHE_TYPE));
+                    }
+                });
+                this.serverConfigDropdowns.set("kv_cache_type", dropdown);
+            });
+        this.appendResetAffordance(kvSetting, "kv_cache_type", MESSAGES.LABEL_KV_CACHE_TYPE);
+        kvContainer.hide();
+        this.serverConfigHideableEls.set("kv_cache_type", kvContainer);
+
+        const flashContainer = details.createDiv();
+        const flashSetting = new Setting(flashContainer)
+            .setName(MESSAGES.LABEL_FLASH_ATTENTION)
+            .setDesc(MESSAGES.DESC_FLASH_ATTENTION)
+            .addToggle((toggle) => {
+                toggle.onChange(async (value) => {
+                    if (this.suppressToggleChanges) return;
+                    try {
+                        await this.plugin.api.updateConfig({ flash_attention: value });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_FLASH_ATTENTION));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_FLASH_ATTENTION));
+                    }
+                });
+                this.serverConfigToggles.set("flash_attention", toggle);
+            });
+        this.appendResetAffordance(flashSetting, "flash_attention", MESSAGES.LABEL_FLASH_ATTENTION);
+        flashContainer.hide();
+        this.serverConfigHideableEls.set("flash_attention", flashContainer);
+
+        const layers = this.renderHideableNumberField(
+            details,
+            "n_gpu_layers",
+            MESSAGES.LABEL_N_GPU_LAYERS,
+            MESSAGES.DESC_N_GPU_LAYERS,
+            { integer: true, min: 0 },
+        );
+        this.appendResetAffordance(layers, "n_gpu_layers", MESSAGES.LABEL_N_GPU_LAYERS);
+
+        const embedReplicas = this.renderHideableNumberField(
+            details,
+            "embed_replicas",
+            MESSAGES.LABEL_EMBED_REPLICAS,
+            MESSAGES.DESC_EMBED_REPLICAS,
+            { integer: true, min: 0 },
+        );
+        this.appendResetAffordance(embedReplicas, "embed_replicas", MESSAGES.LABEL_EMBED_REPLICAS);
+
+        const visionReplicas = this.renderHideableNumberField(
+            details,
+            "vision_replicas",
+            MESSAGES.LABEL_VISION_REPLICAS,
+            MESSAGES.DESC_VISION_REPLICAS,
+            { integer: true, min: 0 },
+        );
+        this.appendResetAffordance(visionReplicas, "vision_replicas", MESSAGES.LABEL_VISION_REPLICAS);
+
+        const devContainer = details.createDiv();
+        const devSetting = new Setting(devContainer)
+            .setName(MESSAGES.LABEL_GPU_DEVICES)
+            .setDesc(MESSAGES.DESC_GPU_DEVICES)
+            .addText((text) => {
+                text.setPlaceholder(MESSAGES.PLACEHOLDER_GPU_DEVICES)
+                    .setValue("")
+                    .onChange(async (value) => {
+                        const trimmed = value.trim();
+                        try {
+                            await this.plugin.api.updateConfig({ gpu_devices: trimmed === "" ? null : trimmed });
+                            new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_GPU_DEVICES));
+                        } catch {
+                            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_GPU_DEVICES));
+                        }
+                    });
+                this.serverConfigInputs.set("gpu_devices", text.inputEl);
+            });
+        this.appendResetAffordance(devSetting, "gpu_devices", MESSAGES.LABEL_GPU_DEVICES);
+        devContainer.hide();
+        this.serverConfigHideableEls.set("gpu_devices", devContainer);
     }
 
     private renderIngestSettings(containerEl: HTMLElement): void {
@@ -2085,12 +2202,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
             .setDesc(MESSAGES.DESC_WIKI_SEARCH_MODE)
             .addDropdown((dropdown) => {
                 dropdown
-                    .addOption("all", MESSAGES.LABEL_SEARCH_ALL)
-                    .addOption("wiki", MESSAGES.LABEL_SEARCH_WIKI)
-                    .addOption("raw", MESSAGES.LABEL_SEARCH_RAW)
+                    .addOption(SEARCH_CHUNK_TYPE.ALL, MESSAGES.LABEL_SEARCH_ALL)
+                    .addOption(SEARCH_CHUNK_TYPE.WIKI, MESSAGES.LABEL_SEARCH_WIKI)
+                    .addOption(SEARCH_CHUNK_TYPE.RAW, MESSAGES.LABEL_SEARCH_RAW)
                     .setValue(this.plugin.settings.searchChunkType)
                     .onChange(async (value) => {
-                        this.plugin.settings.searchChunkType = value as "all" | "wiki" | "raw";
+                        this.plugin.settings.searchChunkType = value as SearchChunkType;
                         await this.plugin.saveSettings();
                     });
             });
@@ -2344,18 +2461,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         statusEl.empty();
         statusEl.classList.remove("lilbee-health-ok", "lilbee-health-error");
         const dot = statusEl.createDiv({ cls: "lilbee-health-dot" });
-        try {
-            const controller = new AbortController();
-            const timeout = window.setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
-            const response = await window.fetch(url, { signal: controller.signal });
-            window.clearTimeout(timeout);
-            const ok = response.ok;
-            dot.classList.add(ok ? "is-ok" : "is-error");
-            statusEl.classList.add(ok ? "lilbee-health-ok" : "lilbee-health-error");
-        } catch {
-            dot.classList.add("is-error");
-            statusEl.classList.add("lilbee-health-error");
-        }
+        const ok = await LilbeeClient.probe(url, CHECK_TIMEOUT_MS);
+        dot.classList.add(ok ? "is-ok" : "is-error");
+        statusEl.classList.add(ok ? "lilbee-health-ok" : "lilbee-health-error");
     }
 
     private async loadModels(container: HTMLElement): Promise<void> {
@@ -2641,6 +2749,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
 function appendStorageRow(parent: HTMLElement, label: string, bytes: number, detail?: string): void {
     const row = parent.createDiv({ cls: "lilbee-storage-row" });
     row.createSpan({ text: label, cls: "lilbee-storage-row-label" });
-    row.createSpan({ text: formatBytes(bytes), cls: "lilbee-storage-row-bytes" });
+    row.createSpan({ text: formatDiskSize(bytes), cls: "lilbee-storage-row-bytes" });
     if (detail) row.createSpan({ text: detail, cls: "lilbee-storage-row-detail" });
 }

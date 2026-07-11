@@ -49,7 +49,7 @@ locally first so the PR comes in green.
   (`createDiv`, `createEl`, `setText`), never `innerHTML`.
 - Keep user-facing strings in `src/locales/en.ts`.
 
-See `CLAUDE.md` in the repo root for the full architecture and code-style guide.
+See `AGENTS.md` in the repo root for the full architecture and code-style guide.
 
 ## Project layout
 
@@ -64,9 +64,10 @@ See `CLAUDE.md` in the repo root for the full architecture and code-style guide.
 
 ## Testing
 
-Unit tests run under jsdom with Obsidian's API mocked, so you don't need a vault to run them.
-Add or update a test alongside any change in `src/`, and keep the suite at 100% line coverage,
-the Vitest threshold fails the build below that. For flows that talk to a real server, run a
+Unit tests run in Node with Obsidian's API mocked (there is no real DOM), so you don't need a
+vault to run them. Add or update a test alongside any change in `src/`, and keep the suite at
+100% coverage on statements, branches, functions, and lines; the Vitest thresholds fail the
+build below that. For flows that talk to a real server, run a
 local `lilbee serve` and use the integration config. Run `npm test` before opening a PR so the
 coverage gate doesn't surprise you in CI.
 
