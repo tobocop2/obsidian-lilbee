@@ -26,7 +26,7 @@ This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives y
 
 Ask a question in plain English and lilbee answers from your vault, with citations that click straight back to the source line.
 
-<p align="center"><img alt="index the lilbee README, ask what lilbee is, and get a cited answer with a click-to-open source" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.gif" width="640"></p>
+<p align="center"><img alt="ask what lilbee is against its own just-indexed source code on an Apple M1 Pro, with the GPU placement view live beside the chat, and get a cited answer" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.gif" width="640"></p>
 
 > **Tutorial reel:** every recording on this page (and a few extras) as videos with longer notes at [**obsidian.lilbee.sh/tutorial**](https://obsidian.lilbee.sh/tutorial).
 
@@ -43,6 +43,7 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 - [Highlights](#highlights)
 - [Tutorial reel](https://obsidian.lilbee.sh/tutorial) (long-form videos)
 - [Why a local search engine for Obsidian](#why-a-local-search-engine-for-obsidian)
+- [How it compares](#how-it-compares)
 - [What you can do with it](#what-you-can-do-with-it)
 - [Quick start](#quick-start)
 - [Open the chat](#open-the-chat)
@@ -75,6 +76,21 @@ A vault is already a curated set of documents: notes you've taken, PDFs you've c
 An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, from your own vault, shaped to your needs.
 
 <p align="center"><img alt="a sweep through the lilbee surfaces inside Obsidian: model catalog, settings, command palette" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/tour.gif" width="640"></p>
+
+## How it compares
+
+| | lilbee | [LM Studio](https://lmstudio.ai/) | [Ollama](https://ollama.com/) |
+|---|---|---|---|
+| **Primary focus** | local search and chat over your vault, inside Obsidian | desktop app to run and chat with models | local model runner with a growing ecosystem |
+| Runs local models | ✓ | ✓ | ✓ |
+| Search your own files, with citations | ✓ [full RAG pipeline](https://github.com/tobocop2/lilbee/blob/main/docs/architecture.md#search-pipeline), inline per-line citations | per-session doc attachment ([RAG, document-level citation](https://lmstudio.ai/docs/app/basics/rag)) | — |
+| Chat, embedding, vision, rerank as one managed fleet | ✓ [all four, coordinated](https://github.com/tobocop2/lilbee/blob/main/docs/architecture.md#local-inference-engine) | chat, embed, vision (no rerank), [loaded individually](https://lmstudio.ai/docs/developer/core/server) | chat, embed, vision (no rerank), [loaded individually](https://docs.ollama.com/faq) |
+| Multi-GPU model placement | ✓ [with a live placement view](#run-a-model-bigger-than-one-card) | ✓ GPU selection + [tensor parallelism (CUDA)](https://lmstudio.ai/changelog/lmstudio-v0.4.15) | ✓ [auto multi-GPU offload](https://docs.ollama.com/faq) |
+| Web crawler built in | ✓ [built in](#offline-copies-of-websites-inside-your-vault) | — | — |
+| Long-term memory (opt-in) | ✓ [opt-in](#highlights) | — | — |
+| Use your existing Ollama / LM Studio / cloud as a backend | ✓ [how](#already-running-ollama-or-lm-studio-keep-them) | — | — |
+
+The [full comparison table](https://github.com/tobocop2/lilbee#full-comparison-table) in the lilbee README adds the many-user serving story against vLLM, sizes, and the interface list.
 
 ## What you can do with it
 
@@ -114,11 +130,21 @@ Each role sits on the chat rail, so you can see what's active and switch it mid-
 
 <p align="center"><img alt="the model rail's four roles, chat, embedding, vision, and reranking, each with a tooltip, plus the Search and Chat mode toggle" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/models.gif" width="640"></p>
 
-### Reranking, before and after
+### Reranking
 
-Reranking is an optional role that re-scores retrieved passages with a cross-encoder before the model answers. When the note that holds the answer is worded around the cause rather than your keywords, plain vector search can rank it too low to make the cut; reranking pulls it back into context. Here's the same question with reranking off, then on; the answer flips from wrong to right.
+Reranking is an optional role that re-reads the retrieved passages against your actual question before the model answers, and promotes the ones that really answer it. Plain vector search is fast but literal: when the note that holds your answer is worded around the cause rather than your question's keywords, it can rank just below the cut and the model answers from the wrong note. Turn reranking on in Settings when answers keep citing almost-right notes; it costs a moment of extra latency per question.
 
-<p align="center"><img alt="the same question asked with reranking off then on: off returns the wrong fix, on promotes the right note and the answer corrects itself" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/rerank.gif" width="640"></p>
+### Run a model bigger than one card
+
+> **Temporary note.** The multi-GPU features on this page need a lilbee dev build; the multi-GPU server is still being stabilized, which is why it's opt-in for now. To try it: open **Settings → lilbee**, turn on **Include dev builds**, then under **Server version** pick the newest dev build and install it. The plugin tracks dev builds for updates from then on, and you can switch back to a stable release from the same picker at any time. This note goes away once the multi-GPU server ships in a stable release.
+
+When a chat model won't fit on one GPU, lilbee spreads it across the cards you have and places the embedding, vision, and reranking models alongside it. The plugin's GPU placement view shows it all live: every card's utilization and memory, and which role runs where. The same view works on a single card too; the demo at the top of this page is an Apple Silicon Mac with its one GPU doing everything. Here it is on a three-A100 box, a 235B model answering from an indexed codebase while every file embeds across all three cards (how placement decides what goes where is covered in the [lilbee architecture notes](https://github.com/tobocop2/lilbee/blob/main/docs/architecture.md)):
+
+<p align="center"><img alt="right-click a source folder into lilbee on a three-A100 box: every file embeds across all three GPUs with the placement view live, then a 235B model answers grounded and cited" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/gpu-placement.gif" width="640"></p>
+
+Prefer to place things yourself? Edit manually: pin each role to the cards you choose, preview the fit before anything loads, and apply it live. Ask for a layout that can't fit and the view names the shortfall instead of failing at load time.
+
+<p align="center"><img alt="the placement editor in manual mode: roles pinned to chosen cards, the fit previewed, then applied live with the fleet rebuilding" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/gpu-placement-manual.gif" width="640"></p>
 
 ### Place models across your GPUs
 
@@ -250,9 +276,23 @@ In **external mode** the plugin downloads nothing, so there's nothing to clean u
 
 ## Advanced
 
-Most people never need this. By default the plugin downloads and runs the server for you and stores everything under your OS data directory.
+By default the plugin downloads and runs the server for you and stores everything under your OS data directory. That's the easiest path, but the plugin is just as happy talking to a server you run yourself, and that unlocks the fun setups: a beefier machine on your LAN, a GPU box in the cloud, one server shared by several tools.
 
-**Run your own server (external mode).** Instead of letting the plugin manage it, you can run the lilbee server yourself and point the plugin at its URL in Settings. How you keep it running depends on your setup: a systemd unit, a launchd / `brew services` agent, or whatever daemonization tool you prefer. See [running lilbee as a service](https://github.com/tobocop2/lilbee#running-as-a-service-optional) in the lilbee docs for the per-platform recipes.
+**Run your own server (external mode).** Run `lilbee serve` yourself and point the plugin at its URL in Settings → Server mode → External. How you keep it running is up to you: a systemd unit, a launchd / `brew services` agent, or whatever daemonization tool you prefer. See [running lilbee as a service](https://github.com/tobocop2/lilbee/blob/main/docs/usage.md#running-as-a-service) and the [HTTP server docs](https://github.com/tobocop2/lilbee/blob/main/docs/usage.md#http-server) for the per-platform recipes.
+
+**How authentication works.** On first start, `lilbee serve` generates a random session token and writes it to `server.json` in its data directory, readable only by your user. Every request that can change anything must present that token as an `Authorization: Bearer` header. On the same machine, clients prove they're you by reading the file, which is exactly what the plugin's managed mode does automatically. For external mode, open `server.json` under the server's [data directory](https://github.com/tobocop2/lilbee/blob/main/docs/usage.md#data-locations), copy the `token` value, and paste it into Settings → Session token. It's the same trust model as a Jupyter notebook token or an X11 cookie: possession of the local file is the credential.
+
+**Connect to a remote server.** The token is a bearer credential and the API speaks plain HTTP, so don't expose the port to a network raw. The recommended setup keeps the server bound to `127.0.0.1` on the remote box and reaches it over an SSH tunnel:
+
+```bash
+# on the remote box
+lilbee serve --port 7433
+
+# on your machine: forward a local port through SSH
+ssh -N -L 7433:127.0.0.1:7433 you@remote-box
+```
+
+Then set the plugin's server URL to `http://127.0.0.1:7433` and paste the remote box's session token. Anything fancier (TLS via a reverse proxy, Tailscale, a VPN) works the same way: give the plugin the reachable URL and the token, and keep the transport encrypted.
 
 **Move where lilbee stores its data.** Set `LILBEE_DATA` in your shell before launching Obsidian:
 

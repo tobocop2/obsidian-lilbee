@@ -4,7 +4,6 @@ const groups = [
     id: "what-it-is",
     heading: "What it is",
     reels: [
-      { id: "what-is-lilbee", name: "what_is_lilbee", title: "What is lilbee", desc: "Add lilbee's own README to your library and watch it ingest, then ask “what is lilbee in one sentence?” and get a cited answer straight from the README. The citation opens it at the source." },
       { id: "first-start", name: "first_start", title: "First run: install to first cited answer", desc: "Brand-new to lilbee, on a fresh vault. Install it from the community plugin store, walk the setup wizard (pick a chat model and an embedder, run the first sync), then ask a question and get a cited answer from your own notes, with a click-through to the source. The whole onboarding in one take." },
       { id: "ask", name: "add", title: "Ask &amp; cite your documents", desc: "Add a PDF from the command palette, watch the Task Center index it, then ask a question and get a cited answer. Click the citation and the source preview opens at the exact page." },
     ],
@@ -28,6 +27,16 @@ const groups = [
     ],
   },
   {
+    id: "every-gpu",
+    heading: "Every GPU in the machine",
+    reels: [
+      { id: "what-is-lilbee", name: "what_is_lilbee", title: "What is lilbee", desc: "Add the plugin's own source code to your library on an Apple M1 Pro and watch the Task Center embed it beside the live GPU placement view, then ask “what is lilbee for Obsidian?” and get a cited answer. The citation opens the README at the source." },
+      { id: "gpu-placement", name: "gpu-placement", title: "A 235B model split across three A100s", desc: "The same story on server hardware: right-click a source folder into lilbee on a three-A100 box, watch every file embed across all three GPUs with the placement matrix live, then ask how the split works and get a grounded, cited answer from a 235B model spread over all three cards." },
+      { id: "gpu-placement-manual", name: "gpu-placement-manual", title: "Manual placement, previewed before it loads", desc: "Draw the layout yourself: pin each role to the cards you choose, step the embedder up to one replica per GPU, preview the fit, and apply it live while the fleet rebuilds. Ask for a layout that can't fit and the editor names the exact shortfall instead of failing at load time." },
+      { id: "bigmodel", name: "bigmodel", title: "Reasoning in the open, at 235B", desc: "One grounded question to a 235B model split across three A100s: the reasoning streams live, the answer lands in three cited bullets, and the thinking scrolls on the record before the cited source opens." },
+    ],
+  },
+  {
     id: "bring-your-own-models",
     heading: "Bring your own models",
     reels: [
@@ -41,7 +50,6 @@ const groups = [
     heading: "Answer quality",
     reels: [
       { id: "multipart", name: "multipart", title: "Multi-part questions, each fact cited", desc: "One prompt, two unrelated facts from different sections of a manual, a bulb part number and the engine's firing order. A local model answers both in a single reply and cites each one to the page it came from." },
-      { id: "rerank", name: "rerank", title: "Reranking, before and after", desc: "The same question asked twice, with reranking off and then on, against eight short build notes. The note that holds the fix is written around the cause (voltage sag, cable gauge), not the question's keywords, so plain vector search ranks it just out of the top results and the model gives the wrong fix. Turn reranking on and a cross-encoder re-scores the candidates by true relevance, promotes that note into context, and the answer corrects itself. Both answers stay on screen, so you see the before and after." },
     ],
   },
   {
