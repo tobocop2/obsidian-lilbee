@@ -22,8 +22,8 @@ function single(): PlacementResponse {
         gpus: [
             {
                 index: 0,
-                backend: "metal",
-                label: "mps0",
+                backend: "MTL",
+                label: "MTL0",
                 name: "Apple M3 Max",
                 total_bytes: 48 * GB,
                 free_bytes: 36 * GB,

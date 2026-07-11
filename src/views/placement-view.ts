@@ -52,9 +52,11 @@ function formatGb(bytes: number): string {
     return `${(bytes / GB).toFixed(1)} GB`;
 }
 
-/** Apple's Metal backend has no live GPU-memory sampling; its memory figure is a capacity, not a gauge. */
+/** Apple's Metal backend has no live GPU-memory sampling; its memory figure is a capacity, not a gauge.
+ *  The server reports the device prefix "MTL"; older builds emit "Metal". */
+const UNIFIED_BACKENDS = new Set(["mtl", "metal"]);
 function isUnifiedMemory(gpu: GpuInfo): boolean {
-    return gpu.backend.toLowerCase() === "metal";
+    return UNIFIED_BACKENDS.has(gpu.backend.toLowerCase());
 }
 
 export class PlacementView extends ItemView {
