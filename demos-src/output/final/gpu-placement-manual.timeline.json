@@ -1,0 +1,334 @@
+{
+  "name": "gpu-placement-manual",
+  "layout": "explorer-placement",
+  "window": {
+    "x": 0,
+    "y": 38,
+    "w": 1728,
+    "h": 1079
+  },
+  "leadInMs": 500,
+  "tailMs": 1500,
+  "ffmpegStartupGapMs": 0,
+  "totalRecordedMs": 235479,
+  "beats": [
+    {
+      "index": 0,
+      "label": "Open on the placement matrix",
+      "kind": "waitForSelector",
+      "startedAt": 502,
+      "endedAt": 2930,
+      "cursor": null,
+      "caption": "Three NVIDIA A100s. Take manual control of where the 235B runs."
+    },
+    {
+      "index": 1,
+      "label": "Switch to manual editing",
+      "kind": "clickSelector",
+      "startedAt": 2931,
+      "endedAt": 7413,
+      "cursor": {
+        "x": 1277.046875,
+        "y": 565.28125,
+        "cursor": "pointer"
+      },
+      "caption": "Edit manually — you pick which cards each role runs on."
+    },
+    {
+      "index": 2,
+      "label": "Ensure the matrix is editable",
+      "kind": "runJs",
+      "startedAt": 7413,
+      "endedAt": 7716,
+      "cursor": null
+    },
+    {
+      "index": 3,
+      "label": "Add the first card to chat",
+      "kind": "clickSelector",
+      "startedAt": 7717,
+      "endedAt": 12668,
+      "cursor": {
+        "x": 1227.75,
+        "y": 485.875,
+        "cursor": "pointer"
+      },
+      "caption": "Auto splits chat across two cards. Give the 235B all three."
+    },
+    {
+      "index": 4,
+      "label": "Allow the embedder on the second card",
+      "kind": "clickSelector",
+      "startedAt": 12668,
+      "endedAt": 16214,
+      "cursor": {
+        "x": 1204.75,
+        "y": 428.5859375,
+        "cursor": "pointer"
+      }
+    },
+    {
+      "index": 5,
+      "label": "Allow the embedder on the third card",
+      "kind": "clickSelector",
+      "startedAt": 16214,
+      "endedAt": 20733,
+      "cursor": {
+        "x": 1234.75,
+        "y": 428.5859375,
+        "cursor": "pointer"
+      },
+      "caption": "The embedder too: allow it on every card."
+    },
+    {
+      "index": 6,
+      "label": "Add a second embedding worker",
+      "kind": "clickSelector",
+      "startedAt": 20733,
+      "endedAt": 24220,
+      "cursor": {
+        "x": 1463.75,
+        "y": 428.5859375,
+        "cursor": "pointer"
+      }
+    },
+    {
+      "index": 7,
+      "label": "Add a third embedding worker",
+      "kind": "clickSelector",
+      "startedAt": 24221,
+      "endedAt": 28448,
+      "cursor": {
+        "x": 1463.75,
+        "y": 428.5859375,
+        "cursor": "pointer"
+      },
+      "caption": "Three embedding workers — one per card."
+    },
+    {
+      "index": 8,
+      "label": "Confirm the drafted layout",
+      "kind": "runJs",
+      "startedAt": 28448,
+      "endedAt": 29052,
+      "cursor": null
+    },
+    {
+      "index": 9,
+      "label": "Apply the placement",
+      "kind": "clickSelector",
+      "startedAt": 29053,
+      "endedAt": 33874,
+      "cursor": {
+        "x": 980.38671875,
+        "y": 565.28125,
+        "cursor": "pointer"
+      },
+      "caption": "Apply — the fleet re-splits across the cards you picked."
+    },
+    {
+      "index": 10,
+      "label": "Ensure the placement applied",
+      "kind": "runJs",
+      "startedAt": 33874,
+      "endedAt": 34178,
+      "cursor": null
+    },
+    {
+      "index": 11,
+      "label": "Wait for the fleet to settle",
+      "kind": "runJs",
+      "startedAt": 34178,
+      "endedAt": 70961,
+      "cursor": null,
+      "speedup": 4,
+      "caption": "Changing placement reloads the fleet — chat and ingest wait until it's ready."
+    },
+    {
+      "index": 12,
+      "label": "Reveal the source folder in the explorer",
+      "kind": "runJs",
+      "startedAt": 70961,
+      "endedAt": 72115,
+      "cursor": null
+    },
+    {
+      "index": 13,
+      "label": "Right-click the source folder",
+      "kind": "rightClickSelector",
+      "startedAt": 72116,
+      "endedAt": 76873,
+      "cursor": {
+        "x": 269.75,
+        "y": 847.38671875,
+        "cursor": "default"
+      },
+      "caption": "Right-click your code in the vault."
+    },
+    {
+      "index": 14,
+      "label": "Tag the Add-to-lilbee menu item",
+      "kind": "runJs",
+      "startedAt": 76873,
+      "endedAt": 77176,
+      "cursor": null
+    },
+    {
+      "index": 15,
+      "label": "Click Add to lilbee",
+      "kind": "clickSelector",
+      "startedAt": 77177,
+      "endedAt": 80984,
+      "cursor": {
+        "x": 347.26953125,
+        "y": 766.43359375,
+        "cursor": "pointer"
+      },
+      "caption": "Add to lilbee."
+    },
+    {
+      "index": 16,
+      "label": "Split in the Task Center beside the matrix",
+      "kind": "runJs",
+      "startedAt": 80984,
+      "endedAt": 82901,
+      "cursor": null,
+      "caption": "The Task Center chews through it, the matrix live on the left."
+    },
+    {
+      "index": 17,
+      "label": "Watch it embed across the cards",
+      "kind": "runJs",
+      "startedAt": 82901,
+      "endedAt": 137524,
+      "cursor": null,
+      "speedup": 6,
+      "caption": "Every file embeds across all three GPUs — watch the bars."
+    },
+    {
+      "index": 18,
+      "label": "Open chat beside the matrix",
+      "kind": "runJs",
+      "startedAt": 137524,
+      "endedAt": 138845,
+      "cursor": null,
+      "caption": "Now put it to work, eyes on the GPUs."
+    },
+    {
+      "index": 19,
+      "label": "Ask how lilbee splits a model",
+      "kind": "fillChat",
+      "startedAt": 138845,
+      "endedAt": 144219,
+      "cursor": {
+        "x": 1289.765625,
+        "y": 1054.80078125,
+        "cursor": "text"
+      }
+    },
+    {
+      "index": 20,
+      "label": "Ensure the question is in the box",
+      "kind": "runJs",
+      "startedAt": 144219,
+      "endedAt": 144522,
+      "cursor": null
+    },
+    {
+      "index": 21,
+      "label": "Send",
+      "kind": "clickSend",
+      "startedAt": 144522,
+      "endedAt": 147946,
+      "cursor": {
+        "x": 1668.765625,
+        "y": 1043.6015625,
+        "cursor": "pointer"
+      }
+    },
+    {
+      "index": 22,
+      "label": "Ensure the message sent",
+      "kind": "runJs",
+      "startedAt": 147946,
+      "endedAt": 149450,
+      "cursor": null
+    },
+    {
+      "index": 23,
+      "label": "Stream the answer across three GPUs",
+      "kind": "waitChatIdle",
+      "startedAt": 149450,
+      "endedAt": 209083,
+      "cursor": null,
+      "speedup": 3,
+      "caption": "A 235B model answers live, grounded and cited, across all three GPUs."
+    },
+    {
+      "index": 24,
+      "label": "Expand the thinking",
+      "kind": "clickSelector",
+      "startedAt": 209083,
+      "endedAt": 213470,
+      "cursor": {
+        "x": 1227.59765625,
+        "y": 392.7890625,
+        "cursor": "auto"
+      },
+      "caption": "It reasoned before answering — open the thinking."
+    },
+    {
+      "index": 25,
+      "label": "Scroll through the reasoning",
+      "kind": "runJs",
+      "startedAt": 213470,
+      "endedAt": 218726,
+      "cursor": null,
+      "speedup": 2,
+      "caption": "Every step of the reasoning, on the record."
+    },
+    {
+      "index": 26,
+      "label": "Collapse the thinking, back to the answer",
+      "kind": "runJs",
+      "startedAt": 218726,
+      "endedAt": 220035,
+      "cursor": null
+    },
+    {
+      "index": 27,
+      "label": "Open the cited sources",
+      "kind": "clickSelector",
+      "startedAt": 220035,
+      "endedAt": 224389,
+      "cursor": {
+        "x": 1227.59765625,
+        "y": 849.73046875,
+        "cursor": "auto"
+      },
+      "caption": "Grounded in your code. Cited."
+    },
+    {
+      "index": 28,
+      "label": "Mouse to the citation and open it",
+      "kind": "clickSelector",
+      "startedAt": 224389,
+      "endedAt": 229351,
+      "cursor": {
+        "x": 1064.54296875,
+        "y": 875.0078125,
+        "cursor": "pointer"
+      },
+      "caption": "Every claim, traceable to the exact line."
+    },
+    {
+      "index": 29,
+      "label": "Scroll to the cited function",
+      "kind": "runJs",
+      "startedAt": 229351,
+      "endedAt": 233959,
+      "cursor": null,
+      "caption": "Scroll through the real source it cited."
+    }
+  ]
+}

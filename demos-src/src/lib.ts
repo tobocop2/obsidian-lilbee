@@ -64,17 +64,8 @@ export type Beat = {
   keyHint?: string;
   /** Narration caption shown at the bottom of the frame while this beat
    * plays. Sticky: it stays on screen until the next beat that sets a
-   * caption (or clears it), so a run of sub-step beats can share one
-   * explanation. */
+   * caption, so a run of sub-step beats can share one explanation. */
   caption?: string;
-  /** Bottom margin (retina px) for this beat's caption pill. Overrides the
-   * storyboard margin — lift a caption onto a dead zone when the default
-   * position would sit over content (e.g. an open note). */
-  captionMarginPx?: number;
-  /** End the running sticky caption at this beat without drawing a new one.
-   * Use on beats where a full-bleed view (an open note) leaves no clear spot
-   * for the pill, so nothing overlays the content. */
-  clearCaption?: boolean;
 };
 
 import type { LayoutName } from "./layouts.ts";
@@ -85,21 +76,17 @@ export type Storyboard = {
   layout: LayoutName;
   /** Doc names to remove from the corpus before recording (so ingest demos start fresh). */
   freshIngest?: string[];
-  /** Empty the whole index before recording, for a fresh-vault demo that adds a
-   * doc on camera: the Add is a clean first ingest and retrieval sees only it. */
-  emptyIndex?: boolean;
   /** HF repo of a model to uninstall before recording, so a download demo
    * triggers a real pull on every take. */
   freshModel?: string;
+  clearIndex?: boolean;
+  resetPlacement?: boolean;
   /** Clear Task Center (cancel active + Clear button) in pre-flight. Defaults to true. */
   clearTaskCenter?: boolean;
   /** Clear chat history in pre-flight. Defaults to true. */
   clearChat?: boolean;
   /** Fire a throwaway chat in pre-flight so the model is warm. Defaults to true. */
   preloadChatModel?: boolean;
-  /** HF ref of a reranker to pre-warm in pre-flight (enable, throwaway chat to
-   * load the cross-encoder, disable again) so the on-camera rerank toggle is warm. */
-  prewarmReranker?: string;
   /** Skip the chat-model pin entirely. For demos that don't exercise chat. */
   skipModelPin?: boolean;
   /** Skip the server-ready health gate. For demos where this vault has no
@@ -115,10 +102,6 @@ export type Storyboard = {
   postSpeedup?: number;
   /** Optional caption overlay drawn at the top-right of the final webm. */
   caption?: string;
-  /** Bottom margin (retina px) for the narration caption pill. Overrides the
-   * default 190 — raise it to clear a full-height chat answer, or lower it to
-   * sit over the input strip. */
-  captionMarginPx?: number;
   /** Which beat is the held money shot (gets extra hold). */
   moneyShotBeatIndex?: number;
   /** Cursor home position (viewport-relative coords). Cursor parks here
@@ -132,19 +115,18 @@ export type StoryboardOptions = {
   window?: [number, number];
   layout?: LayoutName;
   freshIngest?: string[];
-  emptyIndex?: boolean;
   freshModel?: string;
+  clearIndex?: boolean;
+  resetPlacement?: boolean;
   clearTaskCenter?: boolean;
   clearChat?: boolean;
   preloadChatModel?: boolean;
-  prewarmReranker?: string;
   skipModelPin?: boolean;
   skipServerCheck?: boolean;
   noLilbee?: boolean;
   vaultMatch?: string;
   postSpeedup?: number;
   caption?: string;
-  captionMarginPx?: number;
   moneyShotBeatIndex?: number;
   cursorHome?: [number, number];
   beats: Beat[];
@@ -156,19 +138,18 @@ export function storyboard(name: string, opts: StoryboardOptions): Storyboard {
     window: { w: opts.window?.[0] ?? 1400, h: opts.window?.[1] ?? 900 },
     layout: opts.layout ?? "chat-and-tasks",
     freshIngest: opts.freshIngest,
-    emptyIndex: opts.emptyIndex,
     freshModel: opts.freshModel,
+    clearIndex: opts.clearIndex,
+    resetPlacement: opts.resetPlacement,
     clearTaskCenter: opts.clearTaskCenter,
     clearChat: opts.clearChat,
     preloadChatModel: opts.preloadChatModel,
-    prewarmReranker: opts.prewarmReranker,
     skipModelPin: opts.skipModelPin,
     skipServerCheck: opts.skipServerCheck,
     noLilbee: opts.noLilbee,
     vaultMatch: opts.vaultMatch,
     postSpeedup: opts.postSpeedup,
     caption: opts.caption,
-    captionMarginPx: opts.captionMarginPx,
     moneyShotBeatIndex: opts.moneyShotBeatIndex,
     cursorHome: opts.cursorHome,
     beats: opts.beats,
@@ -185,8 +166,6 @@ export function beat(
     maxMs?: number;
     keyHint?: string;
     caption?: string;
-    captionMarginPx?: number;
-    clearCaption?: boolean;
   } = {},
 ): Beat {
   return {
@@ -198,8 +177,6 @@ export function beat(
     maxMs: options.maxMs,
     keyHint: options.keyHint,
     caption: options.caption,
-    captionMarginPx: options.captionMarginPx,
-    clearCaption: options.clearCaption,
   };
 }
 
@@ -237,3 +214,14 @@ export const wheelScroll = (selector: string, ticks: number, fast = false): Acti
   fast,
 });
 export const runJs = (js: string): Action => ({ kind: "runJs", js });
+
+// The source-preview fetch can lag right after a heavy generation; scrolling
+// before the text renders records a spinner in an empty box. Prepend to any
+// runJs that scrolls `.lilbee-preview-host`.
+export const WAIT_PREVIEW_TEXT_JS = `
+        for (let i = 0; i < 24; i++) {
+          const h = document.querySelector('.lilbee-preview-host');
+          if (h && (h.innerText || '').trim().length > 50) break;
+          await new Promise((r) => setTimeout(r, 500));
+        }
+`;

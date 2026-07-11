@@ -1,5 +1,5 @@
 *.swp
-
 demos-src/node_modules/
-demos-src/output/
-demos-src/src/.sckrecord
+demos-src/output/*
+!demos-src/output/final
+!demos-src/output/final/**

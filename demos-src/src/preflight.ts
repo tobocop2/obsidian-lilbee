@@ -51,12 +51,14 @@ export type PreflightOptions = {
   ctx: ObsidianContext;
   layout: LayoutName;
   freshIngest?: string[];
-  /** Empty the whole index before recording. For a "fresh vault" demo that adds
-   * a document on camera: the on-camera Add becomes a genuine first ingest (no
-   * "already indexed" prompt) and retrieval sees only what the demo adds. Leaves
-   * the embedder untouched, so the store must already be bound to the embedder
-   * the demo records with (native nomic for the all-local reels). */
-  emptyIndex?: boolean;
+  /** Remove EVERY indexed document so ingest sections animate from empty.
+   * Stronger than freshIngest (which removes only named files) — killed takes
+   * leave stray docs that flatten the next take's embed section. */
+  clearIndex?: boolean;
+  /** Reset GPU placement to auto and wait for the fleet (chat + embedder) to
+   * come back ready. For tapes that apply manual placement: a prior take's
+   * layout otherwise leaks into this one. */
+  resetPlacement?: boolean;
   /** HF repo to uninstall before recording so a download demo pulls fresh. */
   freshModel?: string;
   clearTaskCenter?: boolean;
@@ -69,10 +71,6 @@ export type PreflightOptions = {
   skipServerCheck?: boolean;
   /** Fire a cheap throwaway chat to warm up the model. Defaults to true for chat demos. */
   preloadChatModel?: boolean;
-  /** HF ref of a reranker to pre-warm: enable it, fire one throwaway chat so the
-   * cross-encoder loads, then disable it again. The on-camera "turn reranking on"
-   * ask then reranks immediately instead of freezing on a cold model load. */
-  prewarmReranker?: string;
   /** This demo runs in a vault where the lilbee plugin isn't installed yet
    * (first_start). Skip every lilbee-specific preflight step. */
   noLilbee?: boolean;
@@ -86,6 +84,18 @@ export const DEFAULT_MODEL = "Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q4_K_M.gguf";
 
 export async function preflight(opts: PreflightOptions): Promise<void> {
   const { ctx, layout } = opts;
+  // A busy Mac drops capture frames and shifts animation-frame timing (a
+  // pytest run alongside a take once exposed a repaint race on camera).
+  {
+    const os = await import("node:os");
+    const load = os.loadavg()[0];
+    const cores = os.cpus().length;
+    if (load > cores * 0.5) {
+      console.warn(
+        `pre-flight WARNING: load average ${load.toFixed(1)} on ${cores} cores — close heavy work before recording`,
+      );
+    }
+  }
   // Snapshot vault files first so any garbage typed during the demo
   // can be cleaned up at the end.
   snapshotVaultFiles();
@@ -133,6 +143,9 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
       document.querySelectorAll(".modal-container").forEach((m) => m.remove());
       document.querySelectorAll(".modal-bg").forEach((m) => m.remove());
       document.querySelectorAll("body > .menu").forEach((m) => m.remove());
+      // Toasts too (e.g. the external-server-outdated notice fires on plugin
+      // launch and NOTICE_PERMANENT ones linger into the recording).
+      document.querySelectorAll(".notice").forEach((n) => n.remove());
       // Close any open document tabs so the fresh-install demo opens on a
       // bare workspace, not a note left over from a prior session.
       const app = (globalThis as unknown as { app: { workspace: { detachLeavesOfType: (t: string) => void } } }).app;
@@ -194,6 +207,8 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
     document.querySelectorAll(".modal-container").forEach((m) => m.remove());
     document.querySelectorAll(".modal-bg").forEach((m) => m.remove());
     document.querySelectorAll("body > .menu").forEach((m) => m.remove());
+    // Toasts too (the external-server-outdated notice is NOTICE_PERMANENT).
+    document.querySelectorAll(".notice").forEach((n) => n.remove());
   });
 
   // 3. Pin model. ALWAYS issue the PUT (don't trust a config-string match):
@@ -241,27 +256,7 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
   });
   }
 
-  // 4. Empty the whole index (fresh-vault demos add a doc on camera; this makes
-  // that Add a clean first ingest and keeps retrieval to just what's added).
-  // delete_files:true so the managed copy is gone too — the vault originals stay.
-  if (opts.emptyIndex) {
-    await ctx.page.evaluate(async () => {
-      const p = (globalThis as unknown as { app: { plugins: { plugins: { lilbee: { settings: { serverUrl: string; manualToken?: string }; api?: { baseUrl: string; token?: string | null } } } } } }).app.plugins.plugins.lilbee;
-      const base = p.api?.baseUrl ?? p.settings.serverUrl;
-      const auth = { "Content-Type": "application/json", Authorization: "Bearer " + (p.api?.token ?? p.settings.manualToken ?? "") };
-      const r = await fetch(base + "/api/documents", { headers: auth }).then((res) => res.json()).catch(() => ({ documents: [] }));
-      const names = Array.isArray(r.documents) ? r.documents.map((d: { filename: string }) => d.filename) : [];
-      if (names.length) {
-        await fetch(base + "/api/documents/remove", {
-          method: "POST",
-          headers: auth,
-          body: JSON.stringify({ names, delete_files: true }),
-        }).catch(() => {});
-      }
-    });
-  }
-
-  // 4a. Fresh ingest cleanup
+  // 4. Fresh ingest cleanup
   for (const name of freshIngest) {
     await ctx.page.evaluate(
       async ([n]) => {
@@ -274,6 +269,61 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
       },
       [name] as const,
     );
+  }
+
+  // 4a. Full index clear: killed takes leave stray documents behind, which
+  // flattens the next take's ingest section ("unchanged") or shows a
+  // pre-filled corpus on camera.
+  if (opts.clearIndex) {
+    const cleared = await ctx.page.evaluate(async () => {
+      const p = (globalThis as unknown as { app: { plugins: { plugins: { lilbee: { settings: { serverUrl: string; manualToken?: string }; api?: { baseUrl: string; token?: string | null } } } } } }).app.plugins.plugins.lilbee;
+      const base = p.api?.baseUrl ?? p.settings.serverUrl;
+      const auth = { Authorization: "Bearer " + (p.api?.token ?? p.settings.manualToken ?? "") };
+      const docs = await fetch(base + "/api/documents?limit=1000", { headers: auth }).then((r) => r.json());
+      const names = (docs.documents ?? []).map((d: { filename: string }) => d.filename);
+      if (names.length === 0) return 0;
+      await fetch(base + "/api/documents/remove", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...auth },
+        body: JSON.stringify({ names, delete_files: false }),
+      });
+      return names.length;
+    });
+    console.log(`pre-flight: clearIndex removed ${cleared} documents`);
+  }
+
+  // 4c. Placement back to auto + fleet genuinely ready. Applying placement in
+  // a prior take leaves a manual layout AND a possibly-warming fleet; record
+  // only once chat answers AND the embedder serves (a search proves the
+  // embed replicas are healthy, not just the proxy).
+  if (opts.resetPlacement) {
+    const settled = await ctx.page.evaluate(async () => {
+      const p = (globalThis as unknown as { app: { plugins: { plugins: { lilbee: { settings: { serverUrl: string; manualToken?: string }; api?: { baseUrl: string; token?: string | null }; chatWarming?: boolean } } } } }).app.plugins.plugins.lilbee;
+      const base = p.api?.baseUrl ?? p.settings.serverUrl;
+      const auth = { Authorization: "Bearer " + (p.api?.token ?? p.settings.manualToken ?? "") };
+      const cur = await fetch(base + "/api/placement", { headers: auth }).then((r) => r.json()).catch(() => null);
+      if (cur?.manual) {
+        await fetch(base + "/api/placement", { method: "DELETE", headers: auth });
+      }
+      for (let i = 0; i < 400; i++) {
+        try {
+          const h = await fetch(base + "/api/health", { headers: auth }).then((r) => r.json());
+          if (h.chat_ready === true) {
+            const s = await fetch(base + "/api/search?q=ready", { headers: auth });
+            if (s.ok) {
+              p.chatWarming = false;
+              return { ok: true, wasManual: !!cur?.manual, polls: i };
+            }
+          }
+        } catch {}
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      return { ok: false, wasManual: !!cur?.manual };
+    });
+    if (!(settled as { ok: boolean }).ok) {
+      throw new Error(`pre-flight: fleet never settled after placement reset: ${JSON.stringify(settled)}`);
+    }
+    console.log(`pre-flight: resetPlacement ${JSON.stringify(settled)}`);
   }
 
   // 4b. Fresh-model cleanup: uninstall the named model so a download demo
@@ -299,17 +349,26 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
   await applyLayout(ctx.page, layout);
   await ctx.page.waitForTimeout(450);
 
-  // 6. Task Center: always reset to a known baseline (cancel active + Clear),
-  // then for an actively-used demo (clearTaskCenter === false) seed a clean,
-  // consistent set of completed tasks so the workspace reads as a vault that's
-  // been in use rather than fresh. Clearing first keeps the seeded set from
-  // accumulating across recordings.
-  await ctx.page.evaluate(() => {
+  // 6. Task Center: always reset to a known baseline (cancel active + clear
+  // history), then for an actively-used demo (clearTaskCenter === false) seed a
+  // clean, consistent set of completed tasks so the workspace reads as a vault
+  // that's been in use rather than fresh. Clearing first keeps the seeded set
+  // from accumulating across recordings.
+  //
+  // Clear through the taskQueue API, not the view's Clear button: a layout
+  // without a tasks leaf has no button, and the stale history then surfaces
+  // the moment the demo opens the Task Center mid-take ("failed …", "1h ago").
+  const taskState = await ctx.page.evaluate(() => {
     document.querySelectorAll(".lilbee-task-row[data-state=\"active\"] .lilbee-task-cancel").forEach((b) => (b as HTMLElement).click());
-    const taskLeaf = document.querySelector('.workspace-leaf-content[data-type="lilbee-tasks"]');
-    const clearBtn = taskLeaf?.querySelector(".lilbee-tasks-clear");
-    (clearBtn as HTMLElement | null)?.click();
+    const tq = (globalThis as unknown as { app: { plugins: { plugins: { lilbee: { taskQueue?: { cancel?: (id: string) => void; activeIds?: Set<string>; clearHistory?: () => void; history?: unknown[]; notify?: () => void } } } } } }).app.plugins.plugins.lilbee.taskQueue;
+    if (!tq) return { cleared: false };
+    for (const id of Array.from(tq.activeIds ?? [])) tq.cancel?.(id);
+    const before = tq.history?.length ?? 0;
+    tq.clearHistory?.();
+    tq.notify?.();
+    return { cleared: true, historyBefore: before, historyAfter: tq.history?.length ?? 0 };
   });
+  console.log(`pre-flight: task center ${JSON.stringify(taskState)}`);
   await ctx.page.waitForTimeout(250);
   if (!clearTaskCenter) {
     await ctx.page.evaluate(() => {
@@ -368,27 +427,6 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
     });
     const ms = Date.now() - t0;
     console.log(`pre-flight: chat model preload ${ok ? "ok" : "failed"} in ${ms} ms`);
-  }
-
-  // 10. Pre-warm the reranker (enable, one throwaway chat to load the
-  // cross-encoder, disable again) so the on-camera "turn reranking on" ask
-  // reranks immediately. The worker stays resident after loading, so toggling
-  // the model ref back off keeps the demo starting with the reranker disabled.
-  if (opts.prewarmReranker) {
-    const ok = await ctx.page.evaluate(async (model) => {
-      const p = (globalThis as unknown as { app: { plugins: { plugins: { lilbee: { settings: { serverUrl: string; manualToken?: string }; api?: { baseUrl: string; token?: string | null } } } } } }).app.plugins.plugins.lilbee;
-      const base = p.api?.baseUrl ?? p.settings.serverUrl;
-      const auth = { "Content-Type": "application/json", Authorization: "Bearer " + (p.api?.token ?? p.settings.manualToken ?? "") };
-      try {
-        await fetch(base + "/api/models/reranker", { method: "PUT", headers: auth, body: JSON.stringify({ model }) });
-        await fetch(base + "/api/chat", { method: "POST", headers: auth, body: JSON.stringify({ question: "OK", history: [], top_k: 3 }) });
-        await fetch(base + "/api/models/reranker", { method: "PUT", headers: auth, body: JSON.stringify({ model: "" }) });
-        return true;
-      } catch {
-        return false;
-      }
-    }, opts.prewarmReranker);
-    console.log(`pre-flight: reranker prewarm ${ok ? "ok" : "failed"}`);
   }
 
   console.log(`pre-flight ok: layout=${layout}, model pinned, ${freshIngest.length} freshIngest removed`);

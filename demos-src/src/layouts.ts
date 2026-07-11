@@ -14,10 +14,16 @@ import type { Page } from "playwright";
 
 export type LayoutName =
   | "chat-and-tasks"
+  | "chat-solo"
   | "blank"
   | "file-explorer-and-chat"
   | "explorer-chat-tasks"
-  | "explorer-note-tasks";
+  | "explorer-note-tasks"
+  | "placement-and-tasks"
+  | "placement-and-chat"
+  | "explorer-placement-chat"
+  | "explorer-placement"
+  | "placement-full";
 
 const SHARED_PRELUDE = `
   const app = window.app;
@@ -79,6 +85,13 @@ const LAYOUT_BODY: Record<LayoutName, string> = {
     setLeftCollapsed(true);
     setRightCollapsed(true);
   `,
+  "chat-solo": `
+    setLeftCollapsed(true);
+    setRightCollapsed(true);
+    const chat = app.workspace.getLeaf(true);
+    await chat.setViewState({ type: 'lilbee-chat', active: true });
+    app.workspace.setActiveLeaf(chat);
+  `,
   "file-explorer-and-chat": `
     setLeftCollapsed(false);
     setRightCollapsed(true);
@@ -117,6 +130,91 @@ const LAYOUT_BODY: Record<LayoutName, string> = {
     app.workspace.setActiveLeaf(note);
     await new Promise(r => setTimeout(r, 250));
     sizeSplitChildren([7, 3]);
+  `,
+  "placement-and-tasks": `
+    // GPU placement in the main pane, Task Center to its right. Used by the
+    // multi-GPU ingest reels: the placement bars and the task progress are
+    // both on screen as the codebase indexes.
+    setLeftCollapsed(true);
+    setRightCollapsed(true);
+    const placement = app.workspace.getLeaf(true);
+    await placement.setViewState({ type: 'lilbee-placement', active: true });
+    const tasks = app.workspace.createLeafBySplit(placement, 'vertical', false);
+    await tasks.setViewState({ type: 'lilbee-tasks', active: false });
+    app.workspace.setActiveLeaf(placement);
+    await new Promise(r => setTimeout(r, 250));
+    sizeSplitChildren([6, 4]);
+    // Wait for the GPU rows to render so the opening frame isn't blank.
+    for (let i = 0; i < 60; i++) {
+      if (document.querySelector('.lilbee-gpu-row')) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+  `,
+  "placement-and-chat": `
+    // GPU placement in the main pane, chat to its right. For the chat reel:
+    // the answer streams while the placement bars light up across every card.
+    setLeftCollapsed(true);
+    setRightCollapsed(true);
+    const placement = app.workspace.getLeaf(true);
+    await placement.setViewState({ type: 'lilbee-placement', active: false });
+    const chat = app.workspace.createLeafBySplit(placement, 'vertical', false);
+    await chat.setViewState({ type: 'lilbee-chat', active: true });
+    app.workspace.setActiveLeaf(chat);
+    await new Promise(r => setTimeout(r, 250));
+    sizeSplitChildren([5, 5]);
+    for (let i = 0; i < 60; i++) {
+      if (document.querySelector('.lilbee-gpu-row')) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+  `,
+  "explorer-placement-chat": `
+    // File explorer left (for the right-click "Add to lilbee"), GPU placement in
+    // the main pane, chat split to its right — the bars stay live while a vault
+    // folder is added and while the answer streams.
+    setLeftCollapsed(false);
+    setRightCollapsed(true);
+    const explorer = app.workspace.getLeavesOfType('file-explorer')[0];
+    if (explorer) app.workspace.revealLeaf(explorer);
+    const placement = app.workspace.getLeaf(true);
+    await placement.setViewState({ type: 'lilbee-placement', active: false });
+    const chat = app.workspace.createLeafBySplit(placement, 'vertical', false);
+    await chat.setViewState({ type: 'lilbee-chat', active: true });
+    app.workspace.setActiveLeaf(placement);
+    await new Promise(r => setTimeout(r, 250));
+    sizeSplitChildren([5, 5]);
+    for (let i = 0; i < 60; i++) {
+      if (document.querySelector('.lilbee-gpu-row')) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+  `,
+  "explorer-placement": `
+    // File explorer left (for the right-click "Add to lilbee"), GPU placement
+    // full in the main pane. The tape splits in the Task Center once files are
+    // adding, then swaps that for chat once they're embedded.
+    setLeftCollapsed(false);
+    setRightCollapsed(true);
+    const explorer = app.workspace.getLeavesOfType('file-explorer')[0];
+    if (explorer) app.workspace.revealLeaf(explorer);
+    const placement = app.workspace.getLeaf(true);
+    await placement.setViewState({ type: 'lilbee-placement', active: true });
+    app.workspace.setActiveLeaf(placement);
+    for (let i = 0; i < 60; i++) {
+      if (document.querySelector('.lilbee-gpu-row')) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+  `,
+  "placement-full": `
+    // GPU placement view alone, full width. For the "model too big for one
+    // card" reel: all cards and the role matrix on screen at once.
+    setLeftCollapsed(true);
+    setRightCollapsed(true);
+    const placement = app.workspace.getLeaf(true);
+    await placement.setViewState({ type: 'lilbee-placement', active: true });
+    app.workspace.setActiveLeaf(placement);
+    for (let i = 0; i < 60; i++) {
+      if (document.querySelector('.lilbee-gpu-row')) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
   `,
 };
 

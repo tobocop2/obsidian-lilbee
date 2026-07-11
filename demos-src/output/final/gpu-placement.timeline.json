@@ -1,0 +1,210 @@
+{
+  "name": "gpu-placement",
+  "layout": "explorer-placement",
+  "window": {
+    "x": 0,
+    "y": 38,
+    "w": 1728,
+    "h": 1079
+  },
+  "leadInMs": 500,
+  "tailMs": 1500,
+  "ffmpegStartupGapMs": 0,
+  "totalRecordedMs": 146874,
+  "beats": [
+    {
+      "index": 0,
+      "label": "Open on the live matrix beside the vault",
+      "kind": "waitForSelector",
+      "startedAt": 502,
+      "endedAt": 3133,
+      "cursor": null,
+      "caption": "Qwen3-235B, split across three NVIDIA A100s."
+    },
+    {
+      "index": 1,
+      "label": "Reveal the source folder in the explorer",
+      "kind": "runJs",
+      "startedAt": 3133,
+      "endedAt": 3941,
+      "cursor": null
+    },
+    {
+      "index": 2,
+      "label": "Right-click the source folder",
+      "kind": "rightClickSelector",
+      "startedAt": 3941,
+      "endedAt": 9478,
+      "cursor": {
+        "x": 269.75,
+        "y": 847.38671875,
+        "cursor": "default"
+      },
+      "caption": "Right-click your code in the vault."
+    },
+    {
+      "index": 3,
+      "label": "Tag the Add-to-lilbee menu item",
+      "kind": "runJs",
+      "startedAt": 9478,
+      "endedAt": 9681,
+      "cursor": null
+    },
+    {
+      "index": 4,
+      "label": "Click Add to lilbee",
+      "kind": "clickSelector",
+      "startedAt": 9681,
+      "endedAt": 13374,
+      "cursor": {
+        "x": 347.26953125,
+        "y": 766.43359375,
+        "cursor": "pointer"
+      },
+      "caption": "Add to lilbee."
+    },
+    {
+      "index": 5,
+      "label": "Split in the Task Center beside the matrix",
+      "kind": "runJs",
+      "startedAt": 13375,
+      "endedAt": 15292,
+      "cursor": null,
+      "caption": "The Task Center chews through it, the matrix live on the left."
+    },
+    {
+      "index": 6,
+      "label": "Watch it embed across the cards",
+      "kind": "runJs",
+      "startedAt": 15292,
+      "endedAt": 78915,
+      "cursor": null,
+      "caption": "Every file embeds across all three GPUs — watch the bars."
+    },
+    {
+      "index": 7,
+      "label": "Open chat beside the matrix",
+      "kind": "runJs",
+      "startedAt": 78915,
+      "endedAt": 80240,
+      "cursor": null,
+      "caption": "Now put it to work, eyes on the GPUs."
+    },
+    {
+      "index": 8,
+      "label": "Ask how lilbee splits a model",
+      "kind": "fillChat",
+      "startedAt": 80240,
+      "endedAt": 85599,
+      "cursor": {
+        "x": 1289.765625,
+        "y": 1054.80078125,
+        "cursor": "text"
+      }
+    },
+    {
+      "index": 9,
+      "label": "Ensure the question is in the box",
+      "kind": "runJs",
+      "startedAt": 85599,
+      "endedAt": 85903,
+      "cursor": null
+    },
+    {
+      "index": 10,
+      "label": "Send",
+      "kind": "clickSend",
+      "startedAt": 85903,
+      "endedAt": 89364,
+      "cursor": {
+        "x": 1668.765625,
+        "y": 1043.6015625,
+        "cursor": "pointer"
+      }
+    },
+    {
+      "index": 11,
+      "label": "Ensure the message sent",
+      "kind": "runJs",
+      "startedAt": 89364,
+      "endedAt": 90875,
+      "cursor": null
+    },
+    {
+      "index": 12,
+      "label": "Stream the answer across three GPUs",
+      "kind": "waitChatIdle",
+      "startedAt": 90875,
+      "endedAt": 120589,
+      "cursor": null,
+      "speedup": 3,
+      "caption": "A 235B model answers live, grounded and cited, across all three GPUs."
+    },
+    {
+      "index": 13,
+      "label": "Expand the thinking",
+      "kind": "clickSelector",
+      "startedAt": 120589,
+      "endedAt": 124828,
+      "cursor": {
+        "x": 1227.59765625,
+        "y": 392.7890625,
+        "cursor": "auto"
+      },
+      "caption": "It reasoned before answering — open the thinking."
+    },
+    {
+      "index": 14,
+      "label": "Scroll through the reasoning",
+      "kind": "runJs",
+      "startedAt": 124828,
+      "endedAt": 130085,
+      "cursor": null,
+      "speedup": 2,
+      "caption": "Every step of the reasoning, on the record."
+    },
+    {
+      "index": 15,
+      "label": "Collapse the thinking, back to the answer",
+      "kind": "runJs",
+      "startedAt": 130087,
+      "endedAt": 131396,
+      "cursor": null
+    },
+    {
+      "index": 16,
+      "label": "Open the cited sources",
+      "kind": "clickSelector",
+      "startedAt": 131396,
+      "endedAt": 135719,
+      "cursor": {
+        "x": 1227.59765625,
+        "y": 611.38671875,
+        "cursor": "auto"
+      },
+      "caption": "Grounded in your code. Cited."
+    },
+    {
+      "index": 17,
+      "label": "Mouse to the citation and open it",
+      "kind": "clickSelector",
+      "startedAt": 135720,
+      "endedAt": 140689,
+      "cursor": {
+        "x": 1064.62109375,
+        "y": 636.6640625,
+        "cursor": "pointer"
+      },
+      "caption": "Every claim, traceable to the exact line."
+    },
+    {
+      "index": 18,
+      "label": "Scroll to the cited function",
+      "kind": "runJs",
+      "startedAt": 140689,
+      "endedAt": 145299,
+      "cursor": null,
+      "caption": "Scroll through the real source it cited."
+    }
+  ]
+}
