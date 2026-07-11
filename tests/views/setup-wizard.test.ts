@@ -522,6 +522,25 @@ describe("SetupWizard", () => {
             expect(fill.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(true);
         });
 
+        it("shows the live download detail in the active row's hint", () => {
+            const plugin = makePlugin({ serverManager: null });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            const step = new MockElement() as unknown as HTMLElement;
+
+            const { setPhase } = (wizard as any).renderServerSetupPanel(step);
+            const hints = (step as unknown as MockElement).findAll("lilbee-wizard-phase-hint");
+            const staticHint = hints[0].textContent;
+
+            setPhase("downloading", "Downloading... 45% (128 MB of 283 MB)", 45);
+            expect(hints[0].textContent).toBe("Downloading... 45% (128 MB of 283 MB)");
+            // Inactive rows keep their static hints.
+            expect(hints[1].textContent).not.toBe("Downloading... 45% (128 MB of 283 MB)");
+
+            // A phase event without a message falls back to the static hint.
+            setPhase("downloading");
+            expect(hints[0].textContent).toBe(staticHint);
+        });
+
         it("managed mode: surfaces each progress phase in the setup panel", async () => {
             const plugin = makePlugin({ serverManager: null });
             plugin.startManagedServer = vi
@@ -583,7 +602,8 @@ describe("SetupWizard", () => {
             const texts = collectTexts(el);
             expect(texts.some((t) => t.includes("Downloading lilbee server"))).toBe(true);
             expect(texts.some((t) => t.includes("Start the server"))).toBe(true);
-            expect(texts.some((t) => t.includes("up to ~1 min"))).toBe(true);
+            // The live progress message replaces the row's static hint.
+            expect(texts.some((t) => t.includes("Downloading…"))).toBe(true);
             expect(texts.some((t) => t.includes("can't continue until the server is ready"))).toBe(true);
             expect(nextBtn.disabled).toBe(true);
 

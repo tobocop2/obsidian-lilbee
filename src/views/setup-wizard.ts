@@ -133,9 +133,9 @@ const MAX_FEATURED_PICKS = 8;
  * current stage (`Downloading…` → `Downloaded`), never a stale one. `hint` is
  * the line shown under the phase while it's the one in flight.
  *
- * Granular byte progress isn't available through the binary-download path (a
- * known node-fetch progress-granularity limitation), so each in-flight phase
- * shows an indeterminate bar plus its hint rather than a percentage.
+ * The in-flight phase shows a progress bar plus its hint; the download phase
+ * streams real byte progress, so its bar turns determinate and the hint carries
+ * the live received/total detail.
  */
 const SERVER_SETUP_PHASES: {
     key: ManagedServerProgressPhase;
@@ -535,8 +535,8 @@ export class SetupWizard extends Modal {
             detail.hide();
             const bar = detail.createDiv({ cls: "lilbee-progress-bar-container" });
             const fill = bar.createDiv({ cls: "lilbee-wizard-progress-fill lilbee-wizard-progress-indeterminate" });
-            detail.createDiv({ cls: "lilbee-wizard-phase-hint", text: meta.hint });
-            return { meta, row, label, detail, fill };
+            const hint = detail.createDiv({ cls: "lilbee-wizard-phase-hint", text: meta.hint });
+            return { meta, row, label, detail, fill, hint };
         });
 
         const gate = panel.createDiv({ cls: "lilbee-wizard-setup-gate", text: MESSAGES.WIZARD_SETUP_GATE });
@@ -568,7 +568,7 @@ export class SetupWizard extends Modal {
 
             const terminal = idx === order.length - 1;
             for (let i = 0; i < rows.length; i++) {
-                const { meta, row, label, detail } = rows[i];
+                const { meta, row, label, detail, hint } = rows[i];
                 row.classList.remove("is-active", "is-done");
                 detail.hide();
                 if (i < idx || (i === idx && terminal)) {
@@ -577,9 +577,13 @@ export class SetupWizard extends Modal {
                 } else if (i === idx) {
                     row.classList.add("is-active");
                     label.setText(meta.active);
+                    // Live detail (e.g. "Downloading... 45% (128 MB of 283 MB)") when
+                    // the phase reports one; the static hint otherwise.
+                    hint.setText(message ?? meta.hint);
                     detail.show();
                 } else {
                     label.setText(meta.pending);
+                    hint.setText(meta.hint);
                 }
             }
             if (terminal) {

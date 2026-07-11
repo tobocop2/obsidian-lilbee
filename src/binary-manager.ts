@@ -346,12 +346,15 @@ export class BinaryManager {
     private async streamToFile(
         assetUrl: string,
         partPath: string,
+        fallbackTotal: number | null,
         onBytes: (progress: DownloadProgress) => void,
         signal?: AbortSignal,
     ): Promise<string> {
         if (signal?.aborted) throw new DownloadCanceledError();
         const res = await openStream(assetUrl);
-        const totalBytes = contentLength(res);
+        // The release's reported asset size keeps progress determinate when the
+        // response carries no content-length (e.g. chunked transfer).
+        const totalBytes = contentLength(res) ?? fallbackTotal;
         const hash = node.createHash("sha256");
         const file = node.createWriteStream(partPath);
         let receivedBytes = 0;
@@ -412,6 +415,7 @@ export class BinaryManager {
             const actualHex = await this.streamToFile(
                 assetUrl,
                 partPath,
+                sizeBytes > 0 ? sizeBytes : null,
                 (progress) => onProgress?.("Downloading...", assetUrl, progress),
                 signal,
             );
