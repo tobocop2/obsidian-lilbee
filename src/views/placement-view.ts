@@ -52,6 +52,11 @@ function formatGb(bytes: number): string {
     return `${(bytes / GB).toFixed(1)} GB`;
 }
 
+/** Apple's Metal backend has no live GPU-memory sampling; its memory figure is a capacity, not a gauge. */
+function isUnifiedMemory(gpu: GpuInfo): boolean {
+    return gpu.backend.toLowerCase() === "metal";
+}
+
 export class PlacementView extends ItemView {
     private plugin: LilbeePlugin;
     private current: PlacementResponse | null = null;
@@ -66,9 +71,10 @@ export class PlacementView extends ItemView {
     private waitingForServer = false;
     private statsController: AbortController | null = null;
     /** Live util + vram bars and their text per device index, updated in place by the stats stream. */
+    // vramFill/memText are absent on unified-memory rows, which render a static capacity label.
     private gpuBars: Map<
         number,
-        { utilFill: HTMLElement; utilText: HTMLElement; vramFill: HTMLElement; memText: HTMLElement }
+        { utilFill: HTMLElement; utilText: HTMLElement; vramFill?: HTMLElement; memText?: HTMLElement }
     > = new Map();
     private bodyEl: HTMLElement | null = null;
 
@@ -246,6 +252,18 @@ export class PlacementView extends ItemView {
         const meters = row.createDiv({ cls: "lilbee-gpu-meters" });
         const util = this.renderMeter(meters, "util", MESSAGES.PLACEMENT_METER_UTIL);
         util.val.setText(MESSAGES.PLACEMENT_UTIL_NA);
+        if (isUnifiedMemory(gpu)) {
+            // Apple reports no live GPU-memory usage, so a free/total gauge would
+            // sit at "all free" forever. Show the unified capacity as a plain label.
+            const meter = meters.createDiv({ cls: "lilbee-meter lilbee-meter-vram" });
+            meter.createSpan({ cls: "lilbee-meter-label", text: MESSAGES.PLACEMENT_METER_VRAM });
+            meter.createSpan({
+                cls: "lilbee-meter-val",
+                text: MESSAGES.PLACEMENT_MEM_UNIFIED(formatGb(gpu.total_bytes)),
+            });
+            this.gpuBars.set(gpu.index, { utilFill: util.fill, utilText: util.val });
+            return;
+        }
         const vram = this.renderMeter(meters, "vram", MESSAGES.PLACEMENT_METER_VRAM);
         this.setVram(vram, gpu.free_bytes, gpu.total_bytes);
         // Keep refs so the live stats stream can move the bars without a full re-render.
@@ -424,7 +442,9 @@ export class PlacementView extends ItemView {
             // Glow only while the card is actually working; idle bars stay flat.
             refs.utilFill.toggleClass("is-active", clamped > 0);
             refs.utilText.setText(pct === null ? MESSAGES.PLACEMENT_UTIL_NA : MESSAGES.PLACEMENT_UTIL(clamped));
-            this.setVram({ fill: refs.vramFill, val: refs.memText }, gpu.free_bytes, gpu.total_bytes);
+            if (refs.vramFill && refs.memText) {
+                this.setVram({ fill: refs.vramFill, val: refs.memText }, gpu.free_bytes, gpu.total_bytes);
+            }
         }
     }
 

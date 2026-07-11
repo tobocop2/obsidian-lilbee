@@ -215,7 +215,9 @@ describe("PlacementView single device", () => {
             makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(single())) })),
         );
         expect(contentEl.find("lilbee-gpu-name")!.textContent).toBe("Apple M3 Max");
-        expect(vramVal(contentEl, 0).textContent).toBe("36.0 GB / 48.0 GB free");
+        // Metal has no live memory sampling: capacity label, no free/total gauge.
+        expect(vramVal(contentEl, 0).textContent).toBe("48.0 GB unified");
+        expect(contentEl.findAll("lilbee-meter-vram")[0].find("lilbee-bar-fill")).toBeNull();
         // single device has no GPU toggle matrix
         expect(contentEl.find("lilbee-placement-toggle")).toBeNull();
         // vision has no model → "not set"
@@ -781,6 +783,17 @@ describe("PlacementView live usage bars", () => {
         expect(vramVal(contentEl, 0).textContent).toBe("5.0 GB / 24.0 GB free");
         // Working cards glow; idle cards do not.
         expect(utilFill(contentEl, 0).classList.contains("is-active")).toBe(true);
+    });
+
+    it("moves util but leaves the unified capacity label alone on a Metal device", async () => {
+        const { view, contentEl } = await openView(
+            makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(single())) })),
+        );
+        (view as unknown as StatsApplier).applyStats([
+            { index: 0, utilization_pct: 55, free_bytes: 0, total_bytes: 0 },
+        ]);
+        expect(utilFill(contentEl, 0).style.width).toBe("55%");
+        expect(vramVal(contentEl, 0).textContent).toBe("48.0 GB unified");
     });
 
     it("clears the glow when a card goes idle", async () => {

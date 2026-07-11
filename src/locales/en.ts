@@ -970,6 +970,7 @@ export const MESSAGES = {
     PLACEMENT_HINT_REPLICAS_SETTINGS:
         "This device runs everything together. Set worker counts in Settings → lilbee → Hardware / fleet.",
     PLACEMENT_MEM_FREE: (free: string, total: string): string => `${free} / ${total} free`,
+    PLACEMENT_MEM_UNIFIED: (total: string): string => `${total} unified`,
     PLACEMENT_ROLE_VRAM: (size: string): string => `~${size}`,
     PLACEMENT_TIP_ROLE_VRAM: (role: WorkerRole): string => `Estimated memory the ${roleNoun(role)} model needs`,
     PLACEMENT_UTIL: (pct: number): string => `${pct}%`,
