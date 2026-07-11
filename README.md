@@ -43,6 +43,7 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 - [Highlights](#highlights)
 - [Tutorial reel](https://obsidian.lilbee.sh/tutorial) (long-form videos)
 - [Why a local search engine for Obsidian](#why-a-local-search-engine-for-obsidian)
+- [How it compares](#how-it-compares)
 - [What you can do with it](#what-you-can-do-with-it)
 - [Quick start](#quick-start)
 - [Open the chat](#open-the-chat)
@@ -74,6 +75,21 @@ A vault is already a curated set of documents: notes you've taken, PDFs you've c
 An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, from your own vault, shaped to your needs.
 
 <p align="center"><img alt="a sweep through the lilbee surfaces inside Obsidian: model catalog, settings, command palette" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/tour.gif" width="640"></p>
+
+## How it compares
+
+| | lilbee | [LM Studio](https://lmstudio.ai/) | [Ollama](https://ollama.com/) |
+|---|---|---|---|
+| **Primary focus** | local search and chat over your vault, inside Obsidian | desktop app to run and chat with models | local model runner with a growing ecosystem |
+| Runs local models | ✓ | ✓ | ✓ |
+| Search your own files, with citations | ✓ [full RAG pipeline](https://github.com/tobocop2/lilbee/blob/main/docs/architecture.md#search-pipeline), inline per-line citations | per-session doc attachment ([RAG, document-level citation](https://lmstudio.ai/docs/app/basics/rag)) | — |
+| Chat, embedding, vision, rerank as one managed fleet | ✓ [all four, coordinated](https://github.com/tobocop2/lilbee/blob/main/docs/architecture.md#local-inference-engine) | chat, embed, vision (no rerank), [loaded individually](https://lmstudio.ai/docs/developer/core/server) | chat, embed, vision (no rerank), [loaded individually](https://docs.ollama.com/faq) |
+| Multi-GPU model placement | ✓ [with a live placement view](#run-a-model-bigger-than-one-card) | ✓ GPU selection + [tensor parallelism (CUDA)](https://lmstudio.ai/changelog/lmstudio-v0.4.15) | ✓ [auto multi-GPU offload](https://docs.ollama.com/faq) |
+| Web crawler built in | ✓ [built in](#offline-copies-of-websites-inside-your-vault) | — | — |
+| Long-term memory (opt-in) | ✓ [opt-in](#highlights) | — | — |
+| Use your existing Ollama / LM Studio / cloud as a backend | ✓ [how](#already-running-ollama-or-lm-studio-keep-them) | — | — |
+
+The [full comparison table](https://github.com/tobocop2/lilbee#full-comparison-table) in the lilbee README adds the many-user serving story against vLLM, sizes, and the interface list.
 
 ## What you can do with it
 
@@ -140,21 +156,6 @@ Pick one of your Ollama models for embedding and another for chat from the catal
 The same flow works with LM Studio's local server:
 
 <p align="center"><img alt="the same flow with LM Studio's local server: its embedder and chat model picked from the Hosted tab, indexing a PDF and answering with citations" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/lmstudio.gif" width="640"></p>
-
-### How it compares
-
-| | lilbee | [LM Studio](https://lmstudio.ai/) | [Ollama](https://ollama.com/) |
-|---|---|---|---|
-| **Primary focus** | local search and chat over your vault, inside Obsidian | desktop app to run and chat with models | local model runner with a growing ecosystem |
-| Runs local models | ✓ | ✓ | ✓ |
-| Search your own files, with citations | ✓ [full RAG pipeline](https://github.com/tobocop2/lilbee/blob/main/docs/architecture.md#search-pipeline), inline per-line citations | per-session doc attachment ([RAG, document-level citation](https://lmstudio.ai/docs/app/basics/rag)) | — |
-| Chat, embedding, vision, rerank as one managed fleet | ✓ [all four, coordinated](https://github.com/tobocop2/lilbee/blob/main/docs/architecture.md#local-inference-engine) | chat, embed, vision (no rerank), [loaded individually](https://lmstudio.ai/docs/developer/core/server) | chat, embed, vision (no rerank), [loaded individually](https://docs.ollama.com/faq) |
-| Multi-GPU model placement | ✓ [with a live placement view](#run-a-model-bigger-than-one-card) | ✓ GPU selection + [tensor parallelism (CUDA)](https://lmstudio.ai/changelog/lmstudio-v0.4.15) | ✓ [auto multi-GPU offload](https://docs.ollama.com/faq) |
-| Web crawler built in | ✓ [built in](#offline-copies-of-websites-inside-your-vault) | — | — |
-| Long-term memory (opt-in) | ✓ [opt-in](#highlights) | — | — |
-| Use your existing Ollama / LM Studio / cloud as a backend | ✓ [how](#already-running-ollama-or-lm-studio-keep-them) | — | — |
-
-The [full comparison table](https://github.com/tobocop2/lilbee#full-comparison-table) in the lilbee README adds the many-user serving story against vLLM, sizes, and the interface list.
 
 ### Documents, code, and scanned images
 
