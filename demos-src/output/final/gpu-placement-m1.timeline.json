@@ -1,0 +1,210 @@
+{
+  "name": "gpu-placement-m1",
+  "layout": "explorer-placement",
+  "window": {
+    "x": 0,
+    "y": 38,
+    "w": 1728,
+    "h": 1079
+  },
+  "leadInMs": 500,
+  "tailMs": 1500,
+  "ffmpegStartupGapMs": 0,
+  "totalRecordedMs": 146581,
+  "beats": [
+    {
+      "index": 0,
+      "label": "Open on the live placement view beside the vault",
+      "kind": "waitForSelector",
+      "startedAt": 502,
+      "endedAt": 3135,
+      "cursor": null,
+      "caption": "lilbee's GPU placement, live on an Apple M1 Pro."
+    },
+    {
+      "index": 1,
+      "label": "Reveal the source folder in the explorer",
+      "kind": "runJs",
+      "startedAt": 3136,
+      "endedAt": 3949,
+      "cursor": null
+    },
+    {
+      "index": 2,
+      "label": "Right-click the source folder",
+      "kind": "rightClickSelector",
+      "startedAt": 3949,
+      "endedAt": 9680,
+      "cursor": {
+        "x": 194,
+        "y": 163.44140625,
+        "cursor": "default"
+      },
+      "caption": "Right-click the plugin's own source code."
+    },
+    {
+      "index": 3,
+      "label": "Tag the Add-to-lilbee menu item",
+      "kind": "runJs",
+      "startedAt": 9680,
+      "endedAt": 9883,
+      "cursor": null
+    },
+    {
+      "index": 4,
+      "label": "Click Add to lilbee",
+      "kind": "clickSelector",
+      "startedAt": 9884,
+      "endedAt": 13738,
+      "cursor": {
+        "x": 272.26953125,
+        "y": 485.43359375,
+        "cursor": "pointer"
+      },
+      "caption": "Add to lilbee."
+    },
+    {
+      "index": 5,
+      "label": "Split in the Task Center beside the placement view",
+      "kind": "runJs",
+      "startedAt": 13738,
+      "endedAt": 15654,
+      "cursor": null,
+      "caption": "The Task Center chews through it, placement live on the left."
+    },
+    {
+      "index": 6,
+      "label": "Watch it embed on the Apple GPU",
+      "kind": "runJs",
+      "startedAt": 15654,
+      "endedAt": 63936,
+      "cursor": null,
+      "caption": "Every file embeds in unified memory — watch the bars."
+    },
+    {
+      "index": 7,
+      "label": "Open chat beside the placement view",
+      "kind": "runJs",
+      "startedAt": 63936,
+      "endedAt": 65250,
+      "cursor": null,
+      "caption": "Now ask about what it just indexed."
+    },
+    {
+      "index": 8,
+      "label": "Ask what lilbee is",
+      "kind": "fillChat",
+      "startedAt": 65250,
+      "endedAt": 73117,
+      "cursor": {
+        "x": 1289.765625,
+        "y": 1054.80078125,
+        "cursor": "text"
+      }
+    },
+    {
+      "index": 9,
+      "label": "Ensure the question is in the box",
+      "kind": "runJs",
+      "startedAt": 73117,
+      "endedAt": 73420,
+      "cursor": null
+    },
+    {
+      "index": 10,
+      "label": "Send",
+      "kind": "clickSend",
+      "startedAt": 73420,
+      "endedAt": 76950,
+      "cursor": {
+        "x": 1668.765625,
+        "y": 1054.796875,
+        "cursor": "pointer"
+      }
+    },
+    {
+      "index": 11,
+      "label": "Ensure the message sent",
+      "kind": "runJs",
+      "startedAt": 76950,
+      "endedAt": 78453,
+      "cursor": null
+    },
+    {
+      "index": 12,
+      "label": "Stream the answer on the M1",
+      "kind": "waitChatIdle",
+      "startedAt": 78454,
+      "endedAt": 106590,
+      "cursor": null,
+      "speedup": 3,
+      "caption": "Qwen3 4B answers, grounded and cited — all local on the M1."
+    },
+    {
+      "index": 13,
+      "label": "Expand the thinking",
+      "kind": "clickSelector",
+      "startedAt": 106591,
+      "endedAt": 111255,
+      "cursor": {
+        "x": 1227.59765625,
+        "y": 340.4921875,
+        "cursor": "auto"
+      },
+      "caption": "It reasoned before answering — open the thinking."
+    },
+    {
+      "index": 14,
+      "label": "Scroll through the reasoning",
+      "kind": "runJs",
+      "startedAt": 111255,
+      "endedAt": 116511,
+      "cursor": null,
+      "speedup": 2,
+      "caption": "Every step of the reasoning, on the record."
+    },
+    {
+      "index": 15,
+      "label": "Collapse the thinking, back to the answer",
+      "kind": "runJs",
+      "startedAt": 116511,
+      "endedAt": 117817,
+      "cursor": null
+    },
+    {
+      "index": 16,
+      "label": "Open the cited sources",
+      "kind": "clickSelector",
+      "startedAt": 117817,
+      "endedAt": 122286,
+      "cursor": {
+        "x": 1227.59765625,
+        "y": 670.26171875,
+        "cursor": "auto"
+      },
+      "caption": "Grounded in the code it just indexed. Cited."
+    },
+    {
+      "index": 17,
+      "label": "Mouse to the citation and open it",
+      "kind": "clickSelector",
+      "startedAt": 122287,
+      "endedAt": 128343,
+      "cursor": {
+        "x": 1092.03515625,
+        "y": 695.5390625,
+        "cursor": "pointer"
+      },
+      "caption": "Every claim, traceable to the source."
+    },
+    {
+      "index": 18,
+      "label": "Scroll through the cited source",
+      "kind": "runJs",
+      "startedAt": 128344,
+      "endedAt": 144972,
+      "cursor": null,
+      "caption": "Scroll through the real source it cited."
+    }
+  ]
+}

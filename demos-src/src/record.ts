@@ -31,10 +31,6 @@ const DEFAULT_LEAD_IN_MS = 500;
 const DEFAULT_TAIL_MS = 1500;
 const DEFAULT_HOLD_MS = 800;
 const HOVER_BEFORE_CLICK_MS = 350;
-// Bottom margin (retina px) between the window edge and the narration caption
-// pill, which now overlays the app itself instead of a letterbox band. Tuned to
-// float just above the chat input row rather than over it.
-const CAPTION_MARGIN_PX = 190;
 // Hard ceiling for a single runJs beat. A storyboard that awaits an
 // open SSE stream (e.g. addToLilbee) would otherwise hang forever while
 // ffmpeg captures a static screen. If a beat exceeds this, abort the
@@ -67,8 +63,6 @@ type BeatRecord = {
   speedup?: number;
   keyHint?: string;
   caption?: string;
-  captionMarginPx?: number;
-  clearCaption?: boolean;
 };
 
 export async function record(storyboard: Storyboard): Promise<void> {
@@ -132,12 +126,12 @@ export async function record(storyboard: Storyboard): Promise<void> {
       ctx,
       layout: storyboard.layout,
       freshIngest: storyboard.freshIngest,
-      emptyIndex: storyboard.emptyIndex,
       freshModel: storyboard.freshModel,
+      clearIndex: storyboard.clearIndex,
+      resetPlacement: storyboard.resetPlacement,
       clearTaskCenter: storyboard.clearTaskCenter,
       clearChat: storyboard.clearChat,
       preloadChatModel: storyboard.preloadChatModel,
-      prewarmReranker: storyboard.prewarmReranker,
       skipModelPin: storyboard.skipModelPin,
       skipServerCheck: storyboard.skipServerCheck,
       noLilbee: storyboard.noLilbee,
@@ -207,7 +201,7 @@ export async function record(storyboard: Storyboard): Promise<void> {
       const hold = beat.holdMs ?? DEFAULT_HOLD_MS;
       await sleep(hold);
       const endedAt = Date.now() - recordingStartTime;
-      records.push({ index: i, label: beat.label, kind: beat.action.kind, startedAt, endedAt, cursor, speedup: beat.speedup, keyHint: beat.keyHint, caption: beat.caption, captionMarginPx: beat.captionMarginPx, clearCaption: beat.clearCaption });
+      records.push({ index: i, label: beat.label, kind: beat.action.kind, startedAt, endedAt, cursor, speedup: beat.speedup, keyHint: beat.keyHint, caption: beat.caption });
       console.log(`beat ${i} [${beat.label}] ${beat.action.kind}: ${startedAt}-${endedAt} ms${cursor ? ` cursor=(${Math.round(cursor.x)},${Math.round(cursor.y)})` : ""}`);
     }
 
@@ -244,7 +238,6 @@ export async function record(storyboard: Storyboard): Promise<void> {
       trackChild,
       postSpeedup: storyboard.postSpeedup,
       caption: storyboard.caption,
-      captionMarginPx: storyboard.captionMarginPx,
       tracePath,
       recordingStartTime,
     });
@@ -677,14 +670,12 @@ type PostOptions = {
   trackChild: (proc: ChildProcess) => ChildProcess;
   postSpeedup?: number;
   caption?: string;
-  captionMarginPx?: number;
   tracePath?: string;
   recordingStartTime?: number;
 };
 
-async function postProcess(opts: PostOptions): Promise<void> {
+export async function postProcess(opts: PostOptions): Promise<void> {
   const { rawPath, outPath, timeline, trackChild, postSpeedup, caption, tracePath, recordingStartTime } = opts;
-  const captionMargin = opts.captionMarginPx ?? CAPTION_MARGIN_PX;
   const rawDurSec = await probeDurationSec(rawPath);
   const startMs = Math.max(0, timeline.ffmpegStartupGapMs - timeline.leadInMs);
   const last = timeline.beats[timeline.beats.length - 1];
@@ -784,8 +775,13 @@ async function postProcess(opts: PostOptions): Promise<void> {
   // flickers), the cropped size, aligned 1:1 with the trimmed video (both
   // start at recording t=0 + startMs in wall-clock terms).
   const haloDir = `${rawPath}.halo`;
-  rmSync(haloDir, { recursive: true, force: true });
-  await renderHaloFrames(tracePath, haloDir, cropW, cropH, recordingStartTime + startMs, trimEnd - trimStart, 30, cropX, cropY);
+  // REUSE_HALO lets a caption-only re-encode reuse the already-rendered halo
+  // frames (no trace replay, no recordingStartTime needed). Fresh recordings
+  // leave it unset and regenerate.
+  if (!process.env.REUSE_HALO) {
+    rmSync(haloDir, { recursive: true, force: true });
+    await renderHaloFrames(tracePath, haloDir, cropW, cropH, recordingStartTime + startMs, trimEnd - trimStart, 30, cropX, cropY);
+  }
 
   // Build the ffmpeg filter graph. Input 0 = raw video; input 1 = halo PNGs.
   const ffArgs: string[] = ["-y", "-ss", String(startMs / 1000), "-i", rawPath, "-t", String((trimEnd - trimStart) / 1000)];
@@ -818,10 +814,7 @@ async function postProcess(opts: PostOptions): Promise<void> {
   }
 
   const chain: string[] = [];
-  // SCK captures the Obsidian window directly, so the raw frame IS the window
-  // (origin 0,0). Crop to the window size from 0,0 (cropX/cropY are kept only for
-  // translating the cursor trace from screen coords to window-relative below).
-  chain.push(`[0:v]crop=${cropW}:${cropH}:0:0[v_crop]`);
+  chain.push(`[0:v]crop=${cropW}:${cropH}:${cropX}:${cropY}[v_crop]`);
   // Overlay the synthetic cursor at full rate, before the speedup split, so
   // it's decimated together with the screen during sped-up segments.
   chain.push(`[v_crop][${haloInputIdx}:v]overlay=0:0:eof_action=pass[v_crop_h]`);
@@ -874,43 +867,33 @@ async function postProcess(opts: PostOptions): Promise<void> {
     lastLabel = next;
   }
 
-  // Sticky narration captions, overlaid bottom-centre on the app itself. Each
-  // caption shows from its beat's output start until the next captioned beat,
-  // a clearCaption beat, or the end — so a run of sub-step beats shares one
-  // explanation w/o flicker. A clearCaption beat ends the running caption
-  // without drawing a new one (no clear spot under a full-bleed open note).
-  // Per-beat captionMarginPx lifts an individual caption onto a dead zone;
-  // otherwise the storyboard margin holds.
-  const capPoints = timeline.beats
-    .filter((b) => !!b.caption || b.clearCaption)
+  // Sticky narration captions, bottom-centre. Each caption shows from its
+  // beat's output start until the next captioned beat (or the end), so a run
+  // of sub-step beats shares one explanation without flicker.
+  const capStarts = beatCaptions
     .map((b) => ({
-      text: b.clearCaption ? null : (b.caption as string),
-      margin: b.captionMarginPx ?? captionMargin,
+      text: b.caption as string,
       outStart: inMsToOutSec(Math.max(0, timeline.ffmpegStartupGapMs + b.startedAt - trimStart), segments),
     }))
     .sort((a, b) => a.outStart - b.outStart);
-  // One overlay per distinct caption text (each text has exactly one PNG input,
-  // so it can be consumed by exactly one filter). The margin is taken from the
-  // beat that introduced the text.
   const capWindowsByText = new Map<string, string[]>();
-  const capMarginByText = new Map<string, number>();
-  for (let i = 0; i < capPoints.length; i++) {
-    const pt = capPoints[i];
-    if (pt.text === null) continue; // clear point: only a boundary, draws nothing
-    const start = pt.outStart;
-    const end = i + 1 < capPoints.length ? capPoints[i + 1].outStart : 1e6;
-    const arr = capWindowsByText.get(pt.text) ?? [];
-    arr.push(`between(t,${start.toFixed(3)},${end.toFixed(3)})`);
-    capWindowsByText.set(pt.text, arr);
-    if (!capMarginByText.has(pt.text)) capMarginByText.set(pt.text, pt.margin);
+  for (let i = 0; i < capStarts.length; i++) {
+    const start = capStarts[i].outStart;
+    const end = i + 1 < capStarts.length ? capStarts[i + 1].outStart : 1e6;
+    const expr = `between(t,${start.toFixed(3)},${end.toFixed(3)})`;
+    const arr = capWindowsByText.get(capStarts[i].text) ?? [];
+    arr.push(expr);
+    capWindowsByText.set(capStarts[i].text, arr);
   }
   let capIdx = 0;
   for (const [text, windows] of capWindowsByText) {
     const idx = beatCaptionInputIdx.get(text);
     if (idx === undefined) continue;
-    const margin = capMarginByText.get(text) ?? captionMargin;
     const next = `v_cap${capIdx++}`;
-    chain.push(`[${lastLabel}][${idx}:v]overlay=(W-w)/2:H-h-${margin}:enable='${windows.join("+")}'[${next}]`);
+    // Narration captions sit in the lower-middle dead band — below the
+    // placement footer / answer / source-preview modal, above the chat input —
+    // so they never cover meaningful UI text.
+    chain.push(`[${lastLabel}][${idx}:v]overlay=(W-w)/2:H-h-320:enable='${windows.join("+")}'[${next}]`);
     lastLabel = next;
   }
 
@@ -1027,15 +1010,15 @@ img.save(out)
 }
 
 async function renderBeatCaptionPng(text: string, outPath: string): Promise<void> {
-  // Bottom-centre narration subtitle overlaid on the app: white text,
-  // word-wrapped, on a rounded translucent pill with a soft drop shadow so it
-  // stays legible over chat content without a letterbox band.
+  // Bottom-centre narration banner: white text, word-wrapped, on a wide
+  // translucent dark pill. Larger and wrappable (unlike the top-left global
+  // caption) so a full sentence of explanation reads cleanly.
   const py = `
 import sys
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont
 text = sys.argv[1]
 out = sys.argv[2]
-font_size = 34
+font_size = 30
 font = None
 for p in ["/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc", "/Library/Fonts/Arial.ttf"]:
     try:
@@ -1063,21 +1046,13 @@ if cur:
     lines.append(cur)
 ascent, descent = font.getmetrics()
 line_h = ascent + descent
-gap = 8
-pad_x, pad_y = 34, 20
-radius = 24
+gap = 6
+pad_x, pad_y = 26, 16
 text_w = max(line_w(l) for l in lines)
 text_h = line_h * len(lines) + gap * (len(lines) - 1)
-box_w = text_w + 2 * pad_x
-box_h = text_h + 2 * pad_y
-m = 28  # transparent margin so the blurred shadow has room
-img = Image.new("RGBA", (box_w + 2 * m, box_h + 2 * m), (0, 0, 0, 0))
-shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
-ImageDraw.Draw(shadow).rounded_rectangle([m, m + 6, m + box_w, m + box_h + 6], radius=radius, fill=(0, 0, 0, 150))
-img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(14)))
+img = Image.new("RGBA", (text_w + 2 * pad_x, text_h + 2 * pad_y), (0, 0, 0, 165))
 d = ImageDraw.Draw(img)
-d.rounded_rectangle([m, m, m + box_w, m + box_h], radius=radius, fill=(16, 16, 20, 214), outline=(255, 255, 255, 28), width=1)
-y = m + pad_y
+y = pad_y
 for l in lines:
     lw = line_w(l)
     d.text(((img.width - lw) / 2, y), l, fill=(255, 255, 255, 255), font=font)

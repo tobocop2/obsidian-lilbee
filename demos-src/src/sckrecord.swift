@@ -13,12 +13,6 @@ import AVFoundation
 import CoreMedia
 import Dispatch
 import Foundation
-import AppKit
-
-// Window capture touches window-server / CoreGraphics APIs that assert
-// (CGS_REQUIRE_INIT) unless the process is initialized as a GUI app. A plain
-// CLI gets that by creating the shared AppKit app object up front.
-_ = NSApplication.shared
 
 func err(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .utf8)!) }
 
@@ -38,23 +32,10 @@ final class Rec: NSObject, SCStreamOutput, SCStreamDelegate {
 
     func start() async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-        // Capture the Obsidian window directly (not the display) so the reel is
-        // immune to focus: the window composites even when another app is front
-        // or the user is typing in a terminal. Pick the largest on-screen window
-        // owned by Obsidian.
-        let appName = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : "Obsidian"
-        let obsidian = content.windows.filter {
-            ($0.owningApplication?.applicationName == appName || $0.owningApplication?.bundleIdentifier == "md.obsidian")
-                && $0.isOnScreen && $0.frame.width > 400 && $0.frame.height > 300
-        }
-        guard let window = obsidian.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) else {
-            throw NSError(domain: "sck", code: 2, userInfo: [NSLocalizedDescriptionKey: "no \(appName) window found"])
-        }
-        let scale = 2
-        w = Int(window.frame.width) * scale
-        h = Int(window.frame.height) * scale
-        let filter = SCContentFilter(desktopIndependentWindow: window)
-        err("sck: window \(Int(window.frame.width))x\(Int(window.frame.height)) @\(Int(window.frame.minX)),\(Int(window.frame.minY))")
+        guard let display = content.displays.first else { throw NSError(domain: "sck", code: 1) }
+        w = display.width * 2
+        h = display.height * 2
+        let filter = SCContentFilter(display: display, excludingWindows: [])
         let cfg = SCStreamConfiguration()
         cfg.width = w
         cfg.height = h

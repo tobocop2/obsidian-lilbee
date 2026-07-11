@@ -7,7 +7,7 @@
  */
 import { type Browser, chromium, type Page } from "playwright";
 
-const CDP_URL = "http://127.0.0.1:9222";
+const CDP_URL = "http://localhost:9222";
 
 export type ObsidianContext = {
   browser: Browser;

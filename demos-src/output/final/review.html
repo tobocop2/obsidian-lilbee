@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>lilbee reels — final review</title>
+<style>
+  body { background: #1e1e2e; color: #cdd6f4; font-family: -apple-system, sans-serif; margin: 2rem; }
+  h1 { font-weight: 600; }
+  h2 { margin-top: 2.5rem; color: #b4befe; font-weight: 500; }
+  video { width: 100%; max-width: 1200px; border-radius: 8px; display: block; box-shadow: 0 8px 32px rgba(0,0,0,.5); }
+  p { color: #a6adc8; max-width: 1200px; }
+</style>
+</head>
+<body>
+<h1>lilbee reels — final (3× NVIDIA L40, Qwen3-235B, feat/kreuzberg-5 + xberg rc7)</h1>
+
+<h2>1 · bigmodel</h2>
+<p>The 235B answers "what happens when a manual GPU placement doesn't fit" — live reasoning, expanded thinking scroll, verbatim-cited answer, source preview on the exact lines.</p>
+<video controls preload="metadata" src="bigmodel.webm"></video>
+
+<h2>2 · gpu-placement</h2>
+<p>Right-click → Add to lilbee → Task Center ingest with live GPU bars → chat with reasoning showcase → citation scrolled to plan_placement.</p>
+<video controls preload="metadata" src="gpu-placement.webm"></video>
+
+<h2>3 · gpu-placement-manual</h2>
+<p>Ask for the impossible → inline "Won't fit" refusal with Apply disabled → Reset to auto → "Rebuilding fleet…" → ingest → cited answer on replica placement.</p>
+<video controls preload="metadata" src="gpu-placement-manual.webm"></video>
+
+<h2>4 · gpu-placement-m1 (Apple M1 Pro, Qwen3 4B)</h2>
+<p>Fresh vault on an M1 Pro: right-click the plugin's own source (58 files) → Add to lilbee → Task Center embeds beside the live unified-memory card → "What is lilbee for Obsidian?" answered grounded + cited, citation opens the README. Measured: 57s ingest; 19s to first reasoning token, 43s to the full answer.</p>
+<video controls preload="metadata" src="gpu-placement-m1.webm"></video>
+</body>
+</html>

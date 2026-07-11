@@ -1,0 +1,141 @@
+{
+  "name": "bigmodel",
+  "layout": "placement-and-chat",
+  "window": {
+    "x": 0,
+    "y": 38,
+    "w": 1728,
+    "h": 1079
+  },
+  "leadInMs": 500,
+  "tailMs": 1500,
+  "ffmpegStartupGapMs": 0,
+  "totalRecordedMs": 72774,
+  "beats": [
+    {
+      "index": 0,
+      "label": "Open on chat beside the live matrix",
+      "kind": "waitForSelector",
+      "startedAt": 505,
+      "endedAt": 2560,
+      "cursor": null,
+      "caption": "Qwen3-235B, split across three NVIDIA A100s."
+    },
+    {
+      "index": 1,
+      "label": "Ask how lilbee splits a model",
+      "kind": "fillChat",
+      "startedAt": 2561,
+      "endedAt": 7252,
+      "cursor": {
+        "x": 1289.765625,
+        "y": 1054.80078125,
+        "cursor": "text"
+      }
+    },
+    {
+      "index": 2,
+      "label": "Ensure the question is in the box",
+      "kind": "runJs",
+      "startedAt": 7252,
+      "endedAt": 7556,
+      "cursor": null
+    },
+    {
+      "index": 3,
+      "label": "Send",
+      "kind": "clickSend",
+      "startedAt": 7557,
+      "endedAt": 11132,
+      "cursor": {
+        "x": 1668.765625,
+        "y": 1043.6015625,
+        "cursor": "pointer"
+      }
+    },
+    {
+      "index": 4,
+      "label": "Ensure the message sent",
+      "kind": "runJs",
+      "startedAt": 11132,
+      "endedAt": 12638,
+      "cursor": null
+    },
+    {
+      "index": 5,
+      "label": "Stream the answer across three GPUs",
+      "kind": "waitChatIdle",
+      "startedAt": 12638,
+      "endedAt": 45977,
+      "cursor": null,
+      "speedup": 3,
+      "caption": "A 235B model answers live, grounded and cited, across all three GPUs."
+    },
+    {
+      "index": 6,
+      "label": "Expand the thinking",
+      "kind": "clickSelector",
+      "startedAt": 45978,
+      "endedAt": 50502,
+      "cursor": {
+        "x": 1227.59765625,
+        "y": 392.7890625,
+        "cursor": "auto"
+      },
+      "caption": "It reasoned before answering — open the thinking."
+    },
+    {
+      "index": 7,
+      "label": "Scroll through the reasoning",
+      "kind": "runJs",
+      "startedAt": 50502,
+      "endedAt": 55758,
+      "cursor": null,
+      "speedup": 2,
+      "caption": "Every step of the reasoning, on the record."
+    },
+    {
+      "index": 8,
+      "label": "Collapse the thinking, back to the answer",
+      "kind": "runJs",
+      "startedAt": 55760,
+      "endedAt": 57067,
+      "cursor": null
+    },
+    {
+      "index": 9,
+      "label": "Open the cited sources",
+      "kind": "clickSelector",
+      "startedAt": 57067,
+      "endedAt": 61540,
+      "cursor": {
+        "x": 1227.59765625,
+        "y": 594.55859375,
+        "cursor": "auto"
+      },
+      "caption": "Grounded in your code. Cited."
+    },
+    {
+      "index": 10,
+      "label": "Mouse to the citation and open it",
+      "kind": "clickSelector",
+      "startedAt": 61541,
+      "endedAt": 66646,
+      "cursor": {
+        "x": 1054.00390625,
+        "y": 619.8359375,
+        "cursor": "pointer"
+      },
+      "caption": "Every claim, traceable to the exact line."
+    },
+    {
+      "index": 11,
+      "label": "Scroll to the cited function",
+      "kind": "runJs",
+      "startedAt": 66647,
+      "endedAt": 71256,
+      "cursor": null,
+      "caption": "Scroll through the real source it cited."
+    }
+  ]
+}
