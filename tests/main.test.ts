@@ -489,7 +489,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("open-placement-beside-chat returns false when lilbee is not ready", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ includeDevBuilds: true });
             await plugin.onload();
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(false);
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
@@ -499,8 +499,9 @@ describe("LilbeePlugin", () => {
         });
 
         it("open-placement-beside-chat returns false when no chat view is open", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ includeDevBuilds: true });
             await plugin.onload();
+            vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
                 (c: any[]) => c[0].id === "open-placement-beside-chat",
@@ -509,8 +510,9 @@ describe("LilbeePlugin", () => {
         });
 
         it("open-placement-beside-chat splits placement beside the chat leaf", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ includeDevBuilds: true });
             await plugin.onload();
+            vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
             const chatLeaf = new WorkspaceLeaf();
             const splitLeaf = new WorkspaceLeaf();
             plugin.app.workspace.getLeavesOfType = vi.fn((t: string) => (t === "lilbee-chat" ? [chatLeaf] : []));
@@ -1170,7 +1172,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("open-placement command activates the placement view", async () => {
-            const plugin = await createPlugin();
+            const plugin = await createPlugin({ includeDevBuilds: true });
             await plugin.onload();
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
             const activate = vi.spyOn(plugin as any, "activatePlacementView").mockResolvedValue(undefined);
@@ -1179,8 +1181,33 @@ describe("LilbeePlugin", () => {
             expect(activate).toHaveBeenCalled();
         });
 
-        it("open-placement command is gated when lilbee is not ready", async () => {
+        it("open-placement without dev builds prompts and continues to Settings", async () => {
             const plugin = await createPlugin();
+            await plugin.onload();
+            vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
+            const activate = vi.spyOn(plugin as any, "activatePlacementView").mockResolvedValue(undefined);
+            const openSettings = vi.spyOn(plugin as any, "openPluginSettings").mockImplementation(() => {});
+            mockConfirmModalResult = true;
+            expect(findCmd(plugin, "open-placement").checkCallback(true)).toBe(true);
+            findCmd(plugin, "open-placement").checkCallback(false);
+            await flush();
+            expect(activate).not.toHaveBeenCalled();
+            expect(openSettings).toHaveBeenCalled();
+        });
+
+        it("open-placement without dev builds stays put when the prompt is cancelled", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
+            const openSettings = vi.spyOn(plugin as any, "openPluginSettings").mockImplementation(() => {});
+            mockConfirmModalResult = false;
+            findCmd(plugin, "open-placement").checkCallback(false);
+            await flush();
+            expect(openSettings).not.toHaveBeenCalled();
+        });
+
+        it("open-placement command is gated when lilbee is not ready", async () => {
+            const plugin = await createPlugin({ includeDevBuilds: true });
             await plugin.onload();
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(false);
             expect(findCmd(plugin, "open-placement").checkCallback(false)).toBe(false);

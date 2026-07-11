@@ -57,6 +57,7 @@ import {
 } from "./utils";
 
 const CHECK_TIMEOUT_MS = 5000;
+const DEV_BUILDS_FLASH_MS = 2400;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
 const RERANKER_DISABLED_KEY = "";
 const VISION_DISABLED_KEY = "";
@@ -165,6 +166,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.loadServerDefaults();
         this.loadConfigDefaults();
         void this.applyCapabilityGating();
+        this.revealDevBuildsIfRequested(containerEl);
+    }
+
+    /** When the placement prompt routed here, land on the dev-builds toggle itself. */
+    private revealDevBuildsIfRequested(containerEl: HTMLElement): void {
+        if (!this.plugin.revealDevBuildsInSettings) return;
+        this.plugin.revealDevBuildsInSettings = false;
+        const row = containerEl.querySelector<HTMLElement>(".lilbee-dev-builds-setting");
+        if (!row) return;
+        row.scrollIntoView({ block: "center" });
+        row.addClass("lilbee-setting-flash");
+        window.setTimeout(() => row.removeClass("lilbee-setting-flash"), DEV_BUILDS_FLASH_MS);
     }
 
     private async applyCapabilityGating(): Promise<void> {
@@ -315,8 +328,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const setting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_SERVER_VERSION)
             .setDesc(MESSAGES.DESC_SERVER_VERSION_LOADING);
+        // aria-label only: Obsidian renders its styled tooltip from it, and a
+        // title attribute would stack the native browser tooltip on top.
         setting.settingEl.setAttribute("aria-label", MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
-        setting.settingEl.setAttribute("title", MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
         const progress = this.renderUpdateProgress(containerEl);
 
         let releases: ReleaseInfo[] = [];
@@ -401,7 +415,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     /** Opt in to in-development builds. */
     private renderDevBuildsToggle(containerEl: HTMLElement): void {
-        new Setting(containerEl)
+        const setting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_INCLUDE_DEV_BUILDS)
             .setDesc(MESSAGES.DESC_INCLUDE_DEV_BUILDS)
             .addToggle((toggle) =>
@@ -411,6 +425,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.render();
                 }),
             );
+        setting.settingEl.addClass("lilbee-dev-builds-setting");
     }
 
     /** Where bug reports go. Rendered at the top of the settings view in both server modes. */
@@ -436,7 +451,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const heading = new Setting(containerEl).setName(MESSAGES.LABEL_UNINSTALL).setHeading();
         heading.settingEl.addClass("lilbee-danger-heading");
         heading.settingEl.setAttribute("aria-label", MESSAGES.TOOLTIP_UNINSTALL_SECTION);
-        heading.settingEl.setAttribute("title", MESSAGES.TOOLTIP_UNINSTALL_SECTION);
 
         const callout = containerEl.createDiv({ cls: "lilbee-uninstall-callout" });
         const mark = callout.createSpan({ cls: "lilbee-uninstall-callout-mark", text: "!" });

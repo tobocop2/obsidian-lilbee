@@ -292,6 +292,8 @@ export default class LilbeePlugin extends Plugin {
     private openingChatLeaf = false;
     // Same re-entrancy guard for the placement view's main-area tab and beside-chat split.
     private openingPlacementLeaf = false;
+    /** Set by the placement dev-builds prompt so the settings tab scrolls to the toggle. */
+    revealDevBuildsInSettings = false;
     taskQueue: TaskQueue = new TaskQueue();
     /** Paths whose most-recent add failed — retry skips the reindex confirm. */
     private failedAddPaths = new Set<string>();
@@ -1118,7 +1120,7 @@ export default class LilbeePlugin extends Plugin {
             name: MESSAGES.COMMAND_PLACEMENT,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
-                if (!checking) void this.activatePlacementView();
+                if (!checking) void this.openPlacementGated(() => this.activatePlacementView());
                 return true;
             },
         });
@@ -1130,7 +1132,7 @@ export default class LilbeePlugin extends Plugin {
                 if (!this.isLilbeeReady()) return false;
                 const chatLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
                 if (!chatLeaf) return false;
-                if (!checking) void this.openPlacementBesideChat(chatLeaf);
+                if (!checking) void this.openPlacementGated(() => this.openPlacementBesideChat(chatLeaf));
                 return true;
             },
         });
@@ -2239,6 +2241,23 @@ export default class LilbeePlugin extends Plugin {
     refreshMemoryViews(): void {
         for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMORIES)) {
             void (leaf.view as MemoriesView).reload();
+        }
+    }
+
+    // TODO: remove this dev-builds gate once the multi-GPU server ships in a stable release.
+    /** GPU placement needs a dev-build server for now. Without the opt-in, explain
+     *  and offer to jump straight to Settings, where both the toggle and the
+     *  version picker live. */
+    private async openPlacementGated(open: () => Promise<void>): Promise<void> {
+        if (this.settings.includeDevBuilds) {
+            await open();
+            return;
+        }
+        const modal = new ConfirmModal(this.app, MESSAGES.PLACEMENT_DEV_BUILDS_PROMPT);
+        modal.open();
+        if (await modal.result) {
+            this.revealDevBuildsInSettings = true;
+            this.openPluginSettings();
         }
     }
 
