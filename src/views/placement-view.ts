@@ -6,6 +6,7 @@ import {
     ERROR_NAME,
     PLACEMENT_MODE,
     REPLICA_ROLES,
+    SERVER_MODE,
     SSE_EVENT,
     WORKER_ROLE,
     type GpuInfo,
@@ -114,7 +115,7 @@ export class PlacementView extends ItemView {
         const result = await this.plugin.api.placement();
         if (result.isErr()) {
             this.current = null;
-            if (result.error.name === ERROR_NAME.SERVER_STARTING) {
+            if (this.isTransientStartupError(result.error)) {
                 this.waitingForServer = true;
                 this.renderWaitingForServer();
                 this.scheduleStartupRetry();
@@ -134,6 +135,16 @@ export class PlacementView extends ItemView {
         // The stats stream opened at onOpen died while the server was booting;
         // reopen it so the freshly rendered cards animate.
         if (resumedAfterWait) void this.subscribeStats();
+    }
+
+    /** Whether a failed load will heal on its own if we keep polling.
+     *  A 401 in managed mode is the startup race between a restored leaf and
+     *  session-token discovery: the plugin holds the previous run's token until
+     *  it reads the fresh server.json. External mode's token is user-entered,
+     *  so a rejection there is actionable, not transient. */
+    private isTransientStartupError(error: Error): boolean {
+        if (error.name === ERROR_NAME.SERVER_STARTING) return true;
+        return error.name === ERROR_NAME.SESSION_TOKEN && this.plugin.settings.serverMode === SERVER_MODE.MANAGED;
     }
 
     /** Live holding state while the server boots; reload() polls until it answers. */

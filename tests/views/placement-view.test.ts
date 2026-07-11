@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, WorkspaceLeaf, MockElement, Notice, Platform } from "../__mocks__/obsidian";
 import { ok, err } from "../../src/result";
-import { ServerStartingError } from "../../src/api";
+import { ServerStartingError, SessionTokenError } from "../../src/api";
 import { PlacementView, VIEW_TYPE_PLACEMENT, revealPlacementBeside } from "../../src/views/placement-view";
 import type LilbeePlugin from "../../src/main";
 import type { GpuStat, PlacementResponse, SSEEvent } from "../../src/types";
@@ -336,6 +336,52 @@ describe("PlacementView load failure", () => {
             await view.onClose();
             await vi.advanceTimersByTimeAsync(10_000);
             expect(placement).toHaveBeenCalledTimes(3);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("treats a managed-mode token rejection at startup as transient and loads once discovery lands", async () => {
+        vi.useFakeTimers();
+        try {
+            const placement = vi
+                .fn()
+                .mockResolvedValueOnce(err(new SessionTokenError(401, "bad token")))
+                .mockResolvedValue(ok(multi()));
+            const api = makeApi({ placement });
+            const plugin = { api, settings: { serverMode: "managed" } } as unknown as LilbeePlugin;
+            const view = new PlacementView(new WorkspaceLeaf(), plugin);
+            await view.onOpen();
+            const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
+
+            expect(contentEl.find("lilbee-placement-waiting")).toBeTruthy();
+
+            await vi.advanceTimersByTimeAsync(2000);
+            expect(placement).toHaveBeenCalledTimes(2);
+            expect(contentEl.find("lilbee-placement-waiting")).toBeFalsy();
+            expect(contentEl.find("lilbee-placement-state")).toBeTruthy();
+            await view.onClose();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("keeps the actionable error for a token rejection in external mode", async () => {
+        vi.useFakeTimers();
+        try {
+            const placement = vi.fn().mockResolvedValue(err(new SessionTokenError(401, "bad token")));
+            const api = makeApi({ placement });
+            const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
+            await view.onOpen();
+            const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
+
+            expect(contentEl.find("lilbee-placement-waiting")).toBeFalsy();
+            expect(contentEl.find("lilbee-placement-empty")!.textContent).toContain("Couldn't load placement");
+
+            // No retry is scheduled for a non-transient failure.
+            await vi.advanceTimersByTimeAsync(10_000);
+            expect(placement).toHaveBeenCalledTimes(1);
+            await view.onClose();
         } finally {
             vi.useRealTimers();
         }
