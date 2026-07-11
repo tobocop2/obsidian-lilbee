@@ -135,6 +135,8 @@ Reranking is an optional role that re-reads the retrieved passages against your 
 
 ### Run a model bigger than one card
 
+> **Temporary note.** The multi-GPU features on this page need a lilbee dev build; the multi-GPU server is still being stabilized, which is why it's opt-in for now. To try it: open **Settings → lilbee**, turn on **Include dev builds**, then under **Server version** pick the newest dev build and install it. The plugin tracks dev builds for updates from then on, and you can switch back to a stable release from the same picker at any time. This note goes away once the multi-GPU server ships in a stable release.
+
 When a chat model won't fit on one GPU, lilbee spreads it across the cards you have and places the embedding, vision, and reranking models alongside it. The plugin's GPU placement view shows it all live: every card's utilization and memory, and which role runs where. The same view works on a single card too; the demo at the top of this page is an Apple Silicon Mac with its one GPU doing everything. Here it is on a three-A100 box, a 235B model answering from an indexed codebase while every file embeds across all three cards (how placement decides what goes where is covered in the [lilbee architecture notes](https://github.com/tobocop2/lilbee/blob/main/docs/architecture.md)):
 
 <p align="center"><img alt="right-click a source folder into lilbee on a three-A100 box: every file embeds across all three GPUs with the placement view live, then a 235B model answers grounded and cited" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/gpu-placement.gif" width="640"></p>
