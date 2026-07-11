@@ -52,11 +52,13 @@ function formatGb(bytes: number): string {
     return `${(bytes / GB).toFixed(1)} GB`;
 }
 
-/** Apple's Metal backend has no live GPU-memory sampling; its memory figure is a capacity, not a gauge.
- *  The server reports the device prefix "MTL"; older builds emit "Metal". */
+/** Apple-silicon GPUs have no live memory sampling; their memory figure is a capacity, not a gauge.
+ *  The server reports the device prefix "MTL" (older builds "Metal"). Metal alone isn't enough:
+ *  an Intel Mac's discrete AMD card is also Metal but has real dedicated VRAM, so require an
+ *  Apple-named device too. */
 const UNIFIED_BACKENDS = new Set(["mtl", "metal"]);
 function isUnifiedMemory(gpu: GpuInfo): boolean {
-    return UNIFIED_BACKENDS.has(gpu.backend.toLowerCase());
+    return UNIFIED_BACKENDS.has(gpu.backend.toLowerCase()) && gpu.name.startsWith("Apple");
 }
 
 export class PlacementView extends ItemView {

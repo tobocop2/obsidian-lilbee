@@ -785,6 +785,16 @@ describe("PlacementView live usage bars", () => {
         expect(utilFill(contentEl, 0).classList.contains("is-active")).toBe(true);
     });
 
+    it("keeps the real vram gauge for a discrete Metal GPU on an Intel Mac", async () => {
+        const intelMac = single();
+        intelMac.gpus[0].name = "AMD Radeon Pro 5500M";
+        const { contentEl } = await openView(
+            makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(intelMac)) })),
+        );
+        expect(vramVal(contentEl, 0).textContent).toBe("36.0 GB / 48.0 GB free");
+        expect(contentEl.findAll("lilbee-meter-vram")[0].find("lilbee-bar-fill")).not.toBeNull();
+    });
+
     it("moves util but leaves the unified capacity label alone on a Metal device", async () => {
         const { view, contentEl } = await openView(
             makePlugin(makeApi({ placement: vi.fn().mockResolvedValue(ok(single())) })),
