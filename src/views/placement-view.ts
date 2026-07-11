@@ -39,6 +39,7 @@ export async function revealPlacementBeside(app: App, sourceLeaf: WorkspaceLeaf)
 
 const PREVIEW_DEBOUNCE_MS = 350;
 const STARTUP_RETRY_MS = 2000;
+const HTTP_NOT_FOUND = 404;
 const HTTP_CONFLICT = 409;
 const HTTP_UNPROCESSABLE = 422;
 const GB = 1_000_000_000;
@@ -122,6 +123,12 @@ export class PlacementView extends ItemView {
                 return;
             }
             this.waitingForServer = false;
+            // No /api/placement route: a stable server. The feature ships in the
+            // dev builds for now, so point at the opt-in instead of a raw 404.
+            if (isHttpStatus(result.error, HTTP_NOT_FOUND)) {
+                this.renderMessage(MESSAGES.PLACEMENT_NEEDS_NEWER_SERVER);
+                return;
+            }
             this.renderMessage(
                 MESSAGES.PLACEMENT_LOAD_FAILED(
                     errorMessage(result.error, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode),

@@ -387,6 +387,15 @@ describe("PlacementView load failure", () => {
         }
     });
 
+    it("points at dev builds when the server has no placement API (404)", async () => {
+        const api = makeApi({
+            placement: vi.fn().mockResolvedValue(err(new Error("Server responded 404: Not Found"))),
+        });
+        const { contentEl } = await openView(makePlugin(api));
+        expect(contentEl.find("lilbee-placement-empty")!.textContent).toContain("Include dev builds");
+        expect(contentEl.find("lilbee-placement-empty")!.textContent).not.toContain("404");
+    });
+
     it("waiting state before onOpen is a no-op (no body element)", async () => {
         vi.useFakeTimers();
         try {

@@ -986,6 +986,8 @@ export const MESSAGES = {
     PLACEMENT_APPLY_NOT_ENABLED: "Applying placement isn't enabled on this lilbee server.",
     PLACEMENT_APPLY_FAILED: (msg: string): string => `Couldn't apply placement: ${msg}`,
     PLACEMENT_LOAD_FAILED: (msg: string): string => `Couldn't load placement: ${msg}`,
+    PLACEMENT_NEEDS_NEWER_SERVER:
+        "GPU placement and monitoring aren't available on this lilbee server yet. For now they ship in the dev builds: turn on Include dev builds under Settings, install the newest dev build from the Server version picker, and reopen this view.",
     PLACEMENT_WAITING_SERVER: "Waiting for the lilbee server to start. This view loads automatically once it's up.",
 
     // Hardware / fleet settings
