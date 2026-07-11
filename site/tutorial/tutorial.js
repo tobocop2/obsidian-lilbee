@@ -4,7 +4,7 @@ const groups = [
     id: "what-it-is",
     heading: "What it is",
     reels: [
-      { id: "what-is-lilbee", name: "what_is_lilbee", title: "What is lilbee", desc: "Add lilbee's own README to your library and watch it ingest, then ask “what is lilbee in one sentence?” and get a cited answer straight from the README. The citation opens it at the source." },
+      { id: "what-is-lilbee", name: "what_is_lilbee", title: "What is lilbee", desc: "Add the plugin's own source code to your library on an Apple M1 Pro and watch the Task Center embed it beside the live GPU placement view, then ask “what is lilbee for Obsidian?” and get a cited answer. The citation opens the README at the source." },
       { id: "first-start", name: "first_start", title: "First run: install to first cited answer", desc: "Brand-new to lilbee, on a fresh vault. Install it from the community plugin store, walk the setup wizard (pick a chat model and an embedder, run the first sync), then ask a question and get a cited answer from your own notes, with a click-through to the source. The whole onboarding in one take." },
       { id: "ask", name: "add", title: "Ask &amp; cite your documents", desc: "Add a PDF from the command palette, watch the Task Center index it, then ask a question and get a cited answer. Click the citation and the source preview opens at the exact page." },
     ],

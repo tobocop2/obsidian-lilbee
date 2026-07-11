@@ -26,7 +26,7 @@ This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives y
 
 Ask a question in plain English and lilbee answers from your vault, with citations that click straight back to the source line.
 
-<p align="center"><img alt="index the lilbee README, ask what lilbee is, and get a cited answer with a click-to-open source" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.gif" width="640"></p>
+<p align="center"><img alt="index the plugin's own source code on an Apple M1 Pro, watch the Task Center embed it beside the live GPU placement view, then ask what lilbee is and get a cited answer" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.gif" width="640"></p>
 
 > **Tutorial reel:** every recording on this page (and a few extras) as videos with longer notes at [**obsidian.lilbee.sh/tutorial**](https://obsidian.lilbee.sh/tutorial).
 
