@@ -1,6 +1,7 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, WorkspaceLeaf, MockElement, Notice, Platform } from "../__mocks__/obsidian";
 import { ok, err } from "../../src/result";
+import { ServerStartingError } from "../../src/api";
 import { PlacementView, VIEW_TYPE_PLACEMENT, revealPlacementBeside } from "../../src/views/placement-view";
 import type LilbeePlugin from "../../src/main";
 import type { GpuStat, PlacementResponse, SSEEvent } from "../../src/types";
@@ -280,6 +281,75 @@ describe("PlacementView load failure", () => {
         const api = makeApi({ placement: vi.fn().mockResolvedValue(err(new Error("boom"))) });
         const { contentEl } = await openView(makePlugin(api));
         expect(contentEl.find("lilbee-placement-empty")!.textContent).toContain("Couldn't load placement: boom");
+    });
+
+    it("shows a live waiting state while the server starts and loads once it's up", async () => {
+        vi.useFakeTimers();
+        try {
+            const placement = vi
+                .fn()
+                .mockResolvedValueOnce(err(new ServerStartingError()))
+                .mockResolvedValue(ok(multi()));
+            const api = makeApi({ placement });
+            const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
+            await view.onOpen();
+            const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
+
+            expect(contentEl.find("lilbee-placement-waiting")).toBeTruthy();
+            expect(contentEl.find("lilbee-placement-spinner")).toBeTruthy();
+            expect(contentEl.find("lilbee-placement-empty")!.textContent).toContain(
+                "Waiting for the lilbee server to start",
+            );
+
+            await vi.advanceTimersByTimeAsync(2000);
+
+            expect(placement).toHaveBeenCalledTimes(2);
+            expect(contentEl.find("lilbee-placement-waiting")).toBeFalsy();
+            expect(contentEl.find("lilbee-placement-state")).toBeTruthy();
+            // The stats stream that died during boot is reopened for the fresh cards.
+            expect(api.gpuStatsStream).toHaveBeenCalledTimes(2);
+            await view.onClose();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("keeps polling while the server is still starting and stops on close", async () => {
+        vi.useFakeTimers();
+        try {
+            const placement = vi.fn().mockResolvedValue(err(new ServerStartingError()));
+            const api = makeApi({ placement });
+            const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
+            await view.onOpen();
+            const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
+
+            // A manual reload while a poll is pending replaces the pending timer.
+            await view.reload();
+            expect(placement).toHaveBeenCalledTimes(2);
+
+            await vi.advanceTimersByTimeAsync(2000);
+            expect(placement).toHaveBeenCalledTimes(3);
+            expect(contentEl.find("lilbee-placement-waiting")).toBeTruthy();
+
+            await view.onClose();
+            await vi.advanceTimersByTimeAsync(10_000);
+            expect(placement).toHaveBeenCalledTimes(3);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("waiting state before onOpen is a no-op (no body element)", async () => {
+        vi.useFakeTimers();
+        try {
+            const api = makeApi({ placement: vi.fn().mockResolvedValue(err(new ServerStartingError())) });
+            const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
+            await view.reload();
+            expect((view as unknown as { bodyEl: HTMLElement | null }).bodyEl).toBeNull();
+            await view.onClose();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
 

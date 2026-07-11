@@ -4274,6 +4274,12 @@ button.lilbee-model-chip-select:focus-visible {
     padding: 28px 0;
     text-align: center;
 }
+.lilbee-placement-waiting {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
 .lilbee-placement-section-title {
     font-size: 0.72em;
     text-transform: uppercase;

@@ -3,6 +3,7 @@ import type LilbeePlugin from "../main";
 import { isHttpStatus } from "../api";
 import { displayLabelForRef } from "../utils/model-ref";
 import {
+    ERROR_NAME,
     PLACEMENT_MODE,
     REPLICA_ROLES,
     SSE_EVENT,
@@ -36,6 +37,7 @@ export async function revealPlacementBeside(app: App, sourceLeaf: WorkspaceLeaf)
 }
 
 const PREVIEW_DEBOUNCE_MS = 350;
+const STARTUP_RETRY_MS = 2000;
 const HTTP_CONFLICT = 409;
 const HTTP_UNPROCESSABLE = 422;
 const GB = 1_000_000_000;
@@ -60,6 +62,8 @@ export class PlacementView extends ItemView {
     private applyDisabled = false;
     private multiDevice = false;
     private previewTimer: number | null = null;
+    private startupRetryTimer: number | null = null;
+    private waitingForServer = false;
     private statsController: AbortController | null = null;
     /** Live util + vram bars and their text per device index, updated in place by the stats stream. */
     private gpuBars: Map<
@@ -100,6 +104,13 @@ export class PlacementView extends ItemView {
         const result = await this.plugin.api.placement();
         if (result.isErr()) {
             this.current = null;
+            if (result.error.name === ERROR_NAME.SERVER_STARTING) {
+                this.waitingForServer = true;
+                this.renderWaitingForServer();
+                this.scheduleStartupRetry();
+                return;
+            }
+            this.waitingForServer = false;
             this.renderMessage(
                 MESSAGES.PLACEMENT_LOAD_FAILED(
                     errorMessage(result.error, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode),
@@ -107,7 +118,29 @@ export class PlacementView extends ItemView {
             );
             return;
         }
+        const resumedAfterWait = this.waitingForServer;
+        this.waitingForServer = false;
         this.adoptResponse(result.value);
+        // The stats stream opened at onOpen died while the server was booting;
+        // reopen it so the freshly rendered cards animate.
+        if (resumedAfterWait) void this.subscribeStats();
+    }
+
+    /** Live holding state while the server boots; reload() polls until it answers. */
+    private renderWaitingForServer(): void {
+        if (!this.bodyEl) return;
+        this.bodyEl.empty();
+        const wait = this.bodyEl.createDiv({ cls: "lilbee-placement-empty lilbee-placement-waiting" });
+        wait.createDiv({ cls: "lilbee-placement-spinner" });
+        wait.createDiv({ text: MESSAGES.PLACEMENT_WAITING_SERVER });
+    }
+
+    private scheduleStartupRetry(): void {
+        if (this.startupRetryTimer !== null) window.clearTimeout(this.startupRetryTimer);
+        this.startupRetryTimer = window.setTimeout(() => {
+            this.startupRetryTimer = null;
+            void this.reload();
+        }, STARTUP_RETRY_MS);
     }
 
     /** Rebuild the editable draft from the current resolved plan. */
@@ -606,6 +639,10 @@ export class PlacementView extends ItemView {
         if (this.previewTimer !== null) {
             window.clearTimeout(this.previewTimer);
             this.previewTimer = null;
+        }
+        if (this.startupRetryTimer !== null) {
+            window.clearTimeout(this.startupRetryTimer);
+            this.startupRetryTimer = null;
         }
         if (this.statsController !== null) {
             this.statsController.abort();

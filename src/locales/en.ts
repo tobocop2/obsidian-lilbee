@@ -985,6 +985,7 @@ export const MESSAGES = {
     PLACEMENT_APPLY_NOT_ENABLED: "Applying placement isn't enabled on this lilbee server.",
     PLACEMENT_APPLY_FAILED: (msg: string): string => `Couldn't apply placement: ${msg}`,
     PLACEMENT_LOAD_FAILED: (msg: string): string => `Couldn't load placement: ${msg}`,
+    PLACEMENT_WAITING_SERVER: "Waiting for the lilbee server to start. This view loads automatically once it's up.",
 
     // Hardware / fleet settings
     LABEL_FLEET: "Hardware / fleet",
