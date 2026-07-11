@@ -398,7 +398,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         }
     }
 
-    /** Opt in to in-development builds, with a pointer to where feedback goes. */
+    /** Opt in to in-development builds. */
     private renderDevBuildsToggle(containerEl: HTMLElement): void {
         new Setting(containerEl)
             .setName(MESSAGES.LABEL_INCLUDE_DEV_BUILDS)
@@ -410,17 +410,20 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.render();
                 }),
             );
+    }
 
-        const feedback = containerEl.createDiv({ cls: "lilbee-dev-builds-feedback" });
-        feedback.createSpan({ text: MESSAGES.DEV_BUILDS_FEEDBACK_PREFIX });
-        const irc = feedback.createEl("a", { text: MESSAGES.DEV_BUILDS_FEEDBACK_IRC });
-        irc.setAttribute("href", LIBERA_LILBEE_URL);
-        irc.setAttribute("target", "_blank");
-        feedback.createSpan({ text: " or " });
-        const gh = feedback.createEl("a", { text: MESSAGES.DEV_BUILDS_FEEDBACK_GITHUB });
+    /** Where bug reports go. Rendered in both server modes. */
+    private renderBugFeedback(containerEl: HTMLElement): void {
+        const feedback = containerEl.createDiv({ cls: "lilbee-bug-feedback" });
+        feedback.createSpan({ text: MESSAGES.BUG_FEEDBACK_PREFIX });
+        const gh = feedback.createEl("a", { text: MESSAGES.BUG_FEEDBACK_GITHUB });
         gh.setAttribute("href", `${LILBEE_GITHUB_REPO_URL}/issues`);
         gh.setAttribute("target", "_blank");
-        feedback.createSpan({ text: "." });
+        feedback.createSpan({ text: " or " });
+        const irc = feedback.createEl("a", { text: MESSAGES.BUG_FEEDBACK_IRC });
+        irc.setAttribute("href", LIBERA_LILBEE_URL);
+        irc.setAttribute("target", "_blank");
+        feedback.createSpan({ text: MESSAGES.BUG_FEEDBACK_SUFFIX });
     }
 
     /**
@@ -678,6 +681,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     void exportDiagnostics(this.plugin.diagnosticsContext());
                 }),
             );
+        this.renderBugFeedback(containerEl);
     }
 
     private renderExternalSettings(containerEl: HTMLElement): void {

@@ -391,10 +391,10 @@ export const MESSAGES = {
     DESC_INCLUDE_DEV_BUILDS:
         "Offer in-development builds in the version list and track them for updates. They ship the newest features " +
         "but get less testing than a stable release.",
-    DEV_BUILDS_FEEDBACK_PREFIX:
-        "Found a bug in a dev build? Reporting it helps improve lilbee, and reporters get credited in the release notes. Tell us on ",
-    DEV_BUILDS_FEEDBACK_IRC: "#lilbee on Libera Chat",
-    DEV_BUILDS_FEEDBACK_GITHUB: "GitHub issues",
+    BUG_FEEDBACK_PREFIX: "Found a bug? Report it on ",
+    BUG_FEEDBACK_GITHUB: "GitHub issues",
+    BUG_FEEDBACK_IRC: "#lilbee on Libera Chat",
+    BUG_FEEDBACK_SUFFIX: ". Reports help improve lilbee, and reporters get credited in the release notes.",
 
     TOOLTIP_SERVER_VERSION_SUPPORT:
         "This plugin is built and tested against the latest server release. Older releases still install and run, " +

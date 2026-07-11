@@ -2390,19 +2390,21 @@ describe("managed mode settings", () => {
         renderSpy.mockRestore();
     });
 
-    it("links to Libera Chat and GitHub issues for dev-build feedback", () => {
+    it("links bug reports to GitHub issues and Libera Chat in both server modes", () => {
         mockListReleases.mockResolvedValue(RELEASES);
-        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
-        mockChatPicker(plugin);
-        const tab = makeTab(plugin);
-        const setAttribute = vi.spyOn(MockElement.prototype, "setAttribute");
+        for (const serverMode of ["managed", "external"] as const) {
+            const plugin = makePlugin({ serverMode, lilbeeVersion: "v0.3.0" });
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const setAttribute = vi.spyOn(MockElement.prototype, "setAttribute");
 
-        tab.display();
+            tab.display();
 
-        const hrefs = setAttribute.mock.calls.filter(([name]) => name === "href").map(([, value]) => value);
-        expect(hrefs).toContain("https://web.libera.chat/#lilbee");
-        expect(hrefs).toContain("https://github.com/tobocop2/lilbee/issues");
-        setAttribute.mockRestore();
+            const hrefs = setAttribute.mock.calls.filter(([name]) => name === "href").map(([, value]) => value);
+            expect(hrefs).toContain("https://web.libera.chat/#lilbee");
+            expect(hrefs).toContain("https://github.com/tobocop2/lilbee/issues");
+            setAttribute.mockRestore();
+        }
     });
 
     it("selecting an older release turns the button into a downgrade", async () => {
