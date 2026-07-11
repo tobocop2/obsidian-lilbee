@@ -119,6 +119,16 @@ Reranking is an optional role that re-scores retrieved passages with a cross-enc
 
 <p align="center"><img alt="the same question asked with reranking off then on: off returns the wrong fix, on promotes the right note and the answer corrects itself" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/rerank.gif" width="640"></p>
 
+### Run a model bigger than one card
+
+When a chat model won't fit on one GPU, lilbee tensor-splits it across the fewest cards that fit and places the embedder, reranker, and vision models alongside it. The plugin's GPU placement view shows it all live: every card's utilization and memory, and which role runs where. The same view works on a single card too; the demo at the top of this page is an Apple Silicon Mac with its one GPU doing everything. Here it is on a three-A100 box, a 235B model answering from an indexed codebase while every file embeds across all three cards:
+
+<p align="center"><img alt="right-click a source folder into lilbee on a three-A100 box: every file embeds across all three GPUs with the placement view live, then a 235B model answers grounded and cited" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/gpu-placement.gif" width="640"></p>
+
+Prefer to place things yourself? Edit manually: pin each role to the cards you choose, preview the fit before anything loads, and apply it live. Ask for a layout that can't fit and the view names the shortfall instead of failing at load time.
+
+<p align="center"><img alt="the placement editor in manual mode: roles pinned to chosen cards, the fit previewed, then applied live with the fleet rebuilding" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/gpu-placement-manual.gif" width="640"></p>
+
 ### Already running Ollama or LM Studio? Keep them.
 
 **lilbee has its own model manager and multi-GPU fleet, built on llama.cpp.** Downloading, running, and updating models for you is the default and the simplest path, with no second app to think about. Battle-tested managers are supported too, so you don't have to switch model managers to use lilbee.
@@ -241,9 +251,23 @@ In **external mode** the plugin downloads nothing, so there's nothing to clean u
 
 ## Advanced
 
-Most people never need this. By default the plugin downloads and runs the server for you and stores everything under your OS data directory.
+By default the plugin downloads and runs the server for you and stores everything under your OS data directory. That's the easiest path, but the plugin is just as happy talking to a server you run yourself, and that unlocks the fun setups: a beefier machine on your LAN, a GPU box in the cloud, one server shared by several tools.
 
-**Run your own server (external mode).** Instead of letting the plugin manage it, you can run the lilbee server yourself and point the plugin at its URL in Settings. How you keep it running depends on your setup: a systemd unit, a launchd / `brew services` agent, or whatever daemonization tool you prefer. See [running lilbee as a service](https://github.com/tobocop2/lilbee#running-as-a-service-optional) in the lilbee docs for the per-platform recipes.
+**Run your own server (external mode).** Run `lilbee serve` yourself and point the plugin at its URL in Settings → Server mode → External. How you keep it running is up to you: a systemd unit, a launchd / `brew services` agent, or whatever daemonization tool you prefer. See [running lilbee as a service](https://github.com/tobocop2/lilbee/blob/main/docs/usage.md#running-as-a-service) and the [HTTP server docs](https://github.com/tobocop2/lilbee/blob/main/docs/usage.md#http-server) for the per-platform recipes.
+
+**How authentication works.** On first start, `lilbee serve` generates a random session token and writes it to `server.json` in its data directory, readable only by your user. Every request that can change anything must present that token as an `Authorization: Bearer` header. On the same machine, clients prove they're you by reading the file, which is exactly what the plugin's managed mode does automatically. For external mode, open `server.json` under the server's [data directory](https://github.com/tobocop2/lilbee/blob/main/docs/usage.md#data-locations), copy the `token` value, and paste it into Settings → Session token. It's the same trust model as a Jupyter notebook token or an X11 cookie: possession of the local file is the credential.
+
+**Connect to a remote server.** The token is a bearer credential and the API speaks plain HTTP, so don't expose the port to a network raw. The recommended setup keeps the server bound to `127.0.0.1` on the remote box and reaches it over an SSH tunnel:
+
+```bash
+# on the remote box
+lilbee serve --port 7433
+
+# on your machine: forward a local port through SSH
+ssh -N -L 7433:127.0.0.1:7433 you@remote-box
+```
+
+Then set the plugin's server URL to `http://127.0.0.1:7433` and paste the remote box's session token. Anything fancier (TLS via a reverse proxy, Tailscale, a VPN) works the same way: give the plugin the reachable URL and the token, and keep the transport encrypted.
 
 **Move where lilbee stores its data.** Set `LILBEE_DATA` in your shell before launching Obsidian:
 

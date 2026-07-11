@@ -4,7 +4,6 @@ const groups = [
     id: "what-it-is",
     heading: "What it is",
     reels: [
-      { id: "what-is-lilbee", name: "what_is_lilbee", title: "What is lilbee", desc: "Add the plugin's own source code to your library on an Apple M1 Pro and watch the Task Center embed it beside the live GPU placement view, then ask “what is lilbee for Obsidian?” and get a cited answer. The citation opens the README at the source." },
       { id: "first-start", name: "first_start", title: "First run: install to first cited answer", desc: "Brand-new to lilbee, on a fresh vault. Install it from the community plugin store, walk the setup wizard (pick a chat model and an embedder, run the first sync), then ask a question and get a cited answer from your own notes, with a click-through to the source. The whole onboarding in one take." },
       { id: "ask", name: "add", title: "Ask &amp; cite your documents", desc: "Add a PDF from the command palette, watch the Task Center index it, then ask a question and get a cited answer. Click the citation and the source preview opens at the exact page." },
     ],
@@ -25,6 +24,16 @@ const groups = [
       { id: "catalog", name: "catalog", title: "Model catalog", desc: "Browse the model catalog without leaving Obsidian: Chat, Embed, Vision, and Rerank tabs, each pulled live from Hugging Face Hub. Models that won't run on your hardware are flagged before you pull." },
       { id: "download", name: "download_model", title: "Download and use a model", desc: "Search the catalog for a small chat model, watch the download stream start to finish in the Task Center, then activate it, switch to Chat mode, and use it, the full pull-and-use loop without leaving Obsidian." },
       { id: "models", name: "models", title: "The model rail, role by role", desc: "The chat rail carries four roles, each its own model: chat writes the answers, embedding indexes your notes, vision reads scanned PDFs, reranking sharpens the results. Hover each pill to see what it does, then flip between Search (answers from your vault, cited) and Chat (the model directly, no retrieval)." },
+    ],
+  },
+  {
+    id: "every-gpu",
+    heading: "Every GPU in the machine",
+    reels: [
+      { id: "what-is-lilbee", name: "what_is_lilbee", title: "What is lilbee", desc: "Add the plugin's own source code to your library on an Apple M1 Pro and watch the Task Center embed it beside the live GPU placement view, then ask “what is lilbee for Obsidian?” and get a cited answer. The citation opens the README at the source." },
+      { id: "gpu-placement", name: "gpu-placement", title: "A 235B model split across three A100s", desc: "The same story on server hardware: right-click a source folder into lilbee on a three-A100 box, watch every file embed across all three GPUs with the placement matrix live, then ask how the split works and get a grounded, cited answer from a 235B model spread over all three cards." },
+      { id: "gpu-placement-manual", name: "gpu-placement-manual", title: "Manual placement, previewed before it loads", desc: "Draw the layout yourself: pin each role to the cards you choose, step the embedder up to one replica per GPU, preview the fit, and apply it live while the fleet rebuilds. Ask for a layout that can't fit and the editor names the exact shortfall instead of failing at load time." },
+      { id: "bigmodel", name: "bigmodel", title: "Reasoning in the open, at 235B", desc: "One grounded question to a 235B model split across three A100s: the reasoning streams live, the answer lands in three cited bullets, and the thinking scrolls on the record before the cited source opens." },
     ],
   },
   {
