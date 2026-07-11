@@ -50,7 +50,6 @@ const groups = [
     heading: "Answer quality",
     reels: [
       { id: "multipart", name: "multipart", title: "Multi-part questions, each fact cited", desc: "One prompt, two unrelated facts from different sections of a manual, a bulb part number and the engine's firing order. A local model answers both in a single reply and cites each one to the page it came from." },
-      { id: "rerank", name: "rerank", title: "Reranking, before and after", desc: "The same question asked twice, with reranking off and then on, against eight short build notes. The note that holds the fix is written around the cause (voltage sag, cable gauge), not the question's keywords, so plain vector search ranks it just out of the top results and the model gives the wrong fix. Turn reranking on and a cross-encoder re-scores the candidates by true relevance, promotes that note into context, and the answer corrects itself. Both answers stay on screen, so you see the before and after." },
     ],
   },
   {
