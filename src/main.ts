@@ -1118,7 +1118,7 @@ export default class LilbeePlugin extends Plugin {
             name: MESSAGES.COMMAND_PLACEMENT,
             checkCallback: (checking) => {
                 if (!this.isLilbeeReady()) return false;
-                if (!checking) void this.activatePlacementView();
+                if (!checking) void this.openPlacementGated(() => this.activatePlacementView());
                 return true;
             },
         });
@@ -1130,7 +1130,7 @@ export default class LilbeePlugin extends Plugin {
                 if (!this.isLilbeeReady()) return false;
                 const chatLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHAT)[0];
                 if (!chatLeaf) return false;
-                if (!checking) void this.openPlacementBesideChat(chatLeaf);
+                if (!checking) void this.openPlacementGated(() => this.openPlacementBesideChat(chatLeaf));
                 return true;
             },
         });
@@ -2240,6 +2240,20 @@ export default class LilbeePlugin extends Plugin {
         for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_MEMORIES)) {
             void (leaf.view as MemoriesView).reload();
         }
+    }
+
+    // TODO: remove this dev-builds gate once the multi-GPU server ships in a stable release.
+    /** GPU placement needs a dev-build server for now. Without the opt-in, explain
+     *  and offer to jump straight to Settings, where both the toggle and the
+     *  version picker live. */
+    private async openPlacementGated(open: () => Promise<void>): Promise<void> {
+        if (this.settings.includeDevBuilds) {
+            await open();
+            return;
+        }
+        const modal = new ConfirmModal(this.app, MESSAGES.PLACEMENT_DEV_BUILDS_PROMPT);
+        modal.open();
+        if (await modal.result) this.openPluginSettings();
     }
 
     /** Open the placement view in a main-area tab (it is wider than the sidebar views). */
