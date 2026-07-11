@@ -141,6 +141,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         filterInput.addEventListener("input", () => {
             this.filterSettings(containerEl, filterInput.value);
         });
+        this.renderBugFeedback(containerEl);
 
         this.renderConnectionSettings(containerEl);
         this.renderModelsSection(containerEl);
@@ -412,7 +413,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
     }
 
-    /** Where bug reports go. Rendered in both server modes. */
+    /** Where bug reports go. Rendered at the top of the settings view in both server modes. */
     private renderBugFeedback(containerEl: HTMLElement): void {
         const feedback = containerEl.createDiv({ cls: "lilbee-bug-feedback" });
         feedback.createSpan({ text: MESSAGES.BUG_FEEDBACK_PREFIX });
@@ -681,7 +682,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     void exportDiagnostics(this.plugin.diagnosticsContext());
                 }),
             );
-        this.renderBugFeedback(containerEl);
     }
 
     private renderExternalSettings(containerEl: HTMLElement): void {
