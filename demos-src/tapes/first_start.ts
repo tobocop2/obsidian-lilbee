@@ -1,14 +1,12 @@
 /**
  * first_start demo: a true from-scratch install.
  *
- *   1. Install BRAT from the community plugin store.
- *   2. Add tobocop2/obsidian-lilbee through BRAT.
- *   3. Enable the lilbee plugin.
- *   4. Walk the SetupWizard end-to-end: pick Managed server, pick the
+ *   1. Install and enable lilbee from the community plugin store.
+ *   2. Walk the SetupWizard end-to-end: pick Managed server, pick the
  *      smallest chat model (Qwen3 0.6B), let the embedding model
  *      download, etc.
- *   5. Add the lilbee README to the corpus via the command palette.
- *   6. Ask a simple question Qwen3 0.6B can answer, watch it stream.
+ *   3. Add the lilbee README to the corpus via the command palette.
+ *   4. Ask a simple question Qwen3 0.6B can answer in one sentence, watch it stream.
  *
  * Heavy demo: several real downloads (server binary, chat model,
  * embedding model) plus a real chat completion. Speedup keeps the
@@ -29,11 +27,12 @@ import {
   waitForSelector,
 } from "../src/lib.ts";
 
-const GITHUB_REPO = "tobocop2/obsidian-lilbee";
 const SMALL_MODEL_REPO = "Qwen/Qwen3-0.6B-GGUF";
-// One-sentence framing keeps the freshly downloaded small chat model (Qwen3
-// 0.6B) on a task it handles well: a concise, grounded summary off the README.
-const QUESTION = "What is lilbee in one sentence?";
+// "Describe ... in exactly one sentence" is the phrasing that most reliably keeps
+// the tiny Qwen3 0.6B to a single, accurate, grounded sentence off the README
+// (plain "in one sentence" lets it ramble into a bulleted list). Verified across
+// repeated runs against the live model; still confirm the on-camera answer.
+const QUESTION = "Describe lilbee in exactly one sentence.";
 
 // Advance the wizard by mouse-clicking the step's primary CTA. Every
 // wizard step renders exactly one `.lilbee-wizard-actions button.mod-cta`
@@ -80,14 +79,14 @@ export default storyboard("first_start", {
       caption: "Starting from a brand-new Obsidian vault, with lilbee not yet installed.",
     }),
 
-    // --- Stage 1: install BRAT from the community store ---
+    // --- Stage 1: install lilbee from the community plugin store ---
     // Open Settings with the standard shortcut (badge shows ⌘,); this Obsidian
     // build exposes no clickable gear target. Every following step is a real
     // cursor click.
     beat(
       "Open Settings (⌘,)",
       runJs(`window.app.commands.executeCommandById("app:open-settings");`),
-      { holdMs: 1100, keyHint: "⌘,", caption: "lilbee is a beta plugin, so it installs through BRAT. First, get BRAT from Obsidian's community plugins." },
+      { holdMs: 1100, keyHint: "⌘,", caption: "lilbee is in the Obsidian community plugin store. Install it straight from Settings." },
     ),
     beat(
       "Open the Community plugins tab",
@@ -102,11 +101,11 @@ export default storyboard("first_start", {
       clickSelector('input[placeholder^="Search community plugins"]'),
       { holdMs: 500 },
     ),
-    beat("Search for BRAT", type_("BRAT"), { holdMs: 1300, caption: "Find BRAT in the community plugin store, then install and enable it." }),
-    beat("Wait for the BRAT search result", waitForSelector('.community-item:has-text("By tfthacker")'), { holdMs: 500 }),
+    beat("Search for lilbee", type_("lilbee"), { holdMs: 1300, caption: "Search for lilbee, then install and enable it. No extra tooling needed." }),
+    beat("Wait for the lilbee search result", waitForSelector('.community-item:has-text("By tobocop2")'), { holdMs: 500 }),
     beat(
-      "Open the BRAT plugin card",
-      clickSelector('.community-item:has-text("By tfthacker")'),
+      "Open the lilbee plugin card",
+      clickSelector('.community-item:has-text("By tobocop2")'),
       { holdMs: 1600 },
     ),
     // Real first-time install: the card shows Install, then Enable. Click each
@@ -114,93 +113,25 @@ export default storyboard("first_start", {
     beat("Wait for the Install button", waitForSelector('.modal-container button:text-is("Install")'), { holdMs: 500 }),
     beat("Click Install", clickSelector('.modal-container button:text-is("Install")'), { holdMs: 1000 }),
     beat("Wait for the Enable button", waitForSelector('.modal-container button:text-is("Enable")'), { holdMs: 600 }),
-    beat("Click Enable", clickSelector('.modal-container button:text-is("Enable")'), { holdMs: 1600 }),
-    beat("Close BRAT details", key("escape"), { holdMs: 500 }),
-    beat("Close the community plugin browser", key("escape"), { holdMs: 500 }),
-    beat("Close settings", key("escape"), { holdMs: 800 }),
-
-    // --- Stage 2: BRAT add lilbee ---
     beat(
-      "Open command palette",
-      runJs(`window.app.commands.executeCommandById("command-palette:open");`),
-      { holdMs: 600, keyHint: "⌘P", caption: "With BRAT installed, add lilbee from its GitHub repo." },
-    ),
-    beat("Filter to BRAT add", type_("BRAT add beta plugin"), { holdMs: 800 }),
-    beat("Run the BRAT add command", key("enter"), { holdMs: 700 }),
-    beat(
-      "Click the URL field",
-      clickSelector('.modal-container input[type="text"], .modal-container input.beta-plugin-input'),
-      { holdMs: 300 },
-    ),
-    beat("Type the lilbee GitHub repo", type_(GITHUB_REPO), { holdMs: 900, caption: "Paste lilbee's repo — tobocop2/obsidian-lilbee — and add it. BRAT downloads it." }),
-    // Click Add Plugin — this is the real BRAT action: it downloads lilbee
-    // from GitHub and enables it. BRAT installs the latest GitHub release, so
-    // no file overlay is needed.
-    beat(
-      "Click Add Plugin — BRAT downloads and enables lilbee",
-      clickSelector('.modal-container button.mod-cta:has-text("Add")'),
-      { holdMs: 2000 },
-    ),
-    // Safety net behind the visible Add Plugin click: BRAT's modal submit can
-    // race and not fire the download, so if the install hasn't started shortly,
-    // trigger BRAT's add directly. Invisible — the viewer still saw the click.
-    beat(
-      "Wait for BRAT to finish installing lilbee",
-      runJs(`
-        const brat = window.app.plugins.plugins["obsidian42-brat"];
-        for (let i = 0; i < 16; i++) {
-          if (window.app.plugins.manifests["lilbee"]) return;
-          await new Promise(r => setTimeout(r, 500));
-        }
-        if (!window.app.plugins.manifests["lilbee"] && brat) {
-          document.querySelectorAll('.modal-container').forEach(m => m.remove());
-          try { await brat.betaPlugins.addPlugin(${JSON.stringify(GITHUB_REPO)}, false); } catch {}
-        }
-        for (let i = 0; i < 120; i++) {
-          if (window.app.plugins.manifests["lilbee"]) return;
-          await new Promise(r => setTimeout(r, 500));
-        }
-      `),
-      { holdMs: 800 },
-    ),
-    beat("Dismiss BRAT's 'added' notice", key("escape"), { holdMs: 800 }),
-
-    // BRAT installs lilbee but leaves it disabled; enable it with its toggle in
-    // Community plugins. lilbee opens its setup wizard the moment it loads.
-    beat(
-      "Open Settings (⌘,)",
-      runJs(`window.app.commands.executeCommandById("app:open-settings");`),
-      { holdMs: 1000, keyHint: "⌘," },
-    ),
-    beat(
-      "Open the Community plugins tab",
-      clickSelector('.vertical-tab-nav-item:text-is("Community plugins")'),
-      { holdMs: 1000 },
-    ),
-    // Flip lilbee's enable toggle. The cursor-resolver can't match a toggle
-    // by its row's name (it has no text of its own), so click it directly by
-    // finding the setting-item whose name is exactly "lilbee". The switch
-    // still visibly flips and the wizard opens.
-    beat(
-      "Enable lilbee with its toggle",
-      runJs(`
-        const row = [...document.querySelectorAll('.setting-item')]
-          .find(si => si.querySelector('.setting-item-name')?.textContent?.trim() === 'lilbee');
-        row?.querySelector('.checkbox-container')?.click();
-      `),
+      "Click Enable",
+      clickSelector('.modal-container button:text-is("Enable")'),
       { holdMs: 2000, caption: "Enable lilbee. On first run it opens its setup wizard automatically." },
     ),
-    // Safety net behind the visible toggle click: make sure lilbee is actually
-    // enabled, then close the settings panel (via the API, not Escape, which
-    // would dismiss the wizard if it opened on top). lilbee opens its wizard
-    // the moment it loads, so it's left in front.
+    // Safety net behind the visible Enable click, then clear the store modals
+    // and the settings panel without touching the wizard (lilbee opens it the
+    // moment it loads). Escape would dismiss the wizard if it's on top, so
+    // close via the API and remove only the modals that aren't the wizard.
     beat(
-      "Confirm lilbee enabled, close the settings panel",
+      "Confirm lilbee enabled, close the store and settings",
       runJs(`
         if (!window.app.plugins.enabledPlugins.has("lilbee")) {
           await window.app.plugins.enablePluginAndSave("lilbee");
         }
         await new Promise(r => setTimeout(r, 1000));
+        document.querySelectorAll('.modal-container').forEach(m => {
+          if (!m.querySelector('.lilbee-wizard')) m.remove();
+        });
         window.app.setting?.close?.();
       `),
       { holdMs: 1500 },
@@ -210,9 +141,9 @@ export default storyboard("first_start", {
     beat(
       "Wait for lilbee's setup wizard to appear",
       runJs(`
-        // BRAT enabled lilbee; on first load (setupCompleted === false, the
-        // default for a fresh install) the plugin opens its SetupWizard on its
-        // own. Just wait for it — no force-trigger, no toggling.
+        // The store install enabled lilbee; on first load (setupCompleted ===
+        // false, the default for a fresh install) the plugin opens its
+        // SetupWizard on its own. Just wait for it — no force-trigger.
         const p = window.app.plugins.plugins.lilbee;
         for (let i = 0; i < 60; i++) {
           if (document.querySelector('.lilbee-wizard')) return;
@@ -333,19 +264,16 @@ export default storyboard("first_start", {
     beat(
       "Finish the wizard (close it cleanly)",
       runJs(`
-        // Complete the wizard, then immediately tear down any chat it opened in
-        // the narrow right sidebar and collapse both side panels. The wide
-        // chat-and-tasks layout opens once the server is ready, so the cramped
-        // sidebar chat is never on screen.
+        // Complete the wizard. The plugin opens its cockpit on completion —
+        // chat in the main area, Task Center in the right sidebar — so leave
+        // it alone; just clear modal remnants and the file-explorer sidebar.
         const btn = document.querySelector('.lilbee-wizard button.mod-cta:last-of-type');
         if (btn) btn.click();
-        await new Promise(r => setTimeout(r, 400));
+        await new Promise(r => setTimeout(r, 800));
         document.querySelectorAll('.lilbee-wizard, .modal-container, .modal-bg').forEach(m => m.remove());
-        window.app.workspace.detachLeavesOfType('lilbee-chat');
         window.app.workspace.leftSplit?.collapse?.();
-        window.app.workspace.rightSplit?.collapse?.();
       `),
-      { holdMs: 1200, caption: "Setup done — lilbee is warming up its model." },
+      { holdMs: 1600, caption: "Setup done — lilbee opens its chat and Task Center for you." },
     ),
 
     // The wizard can exit without firing startManagedServer or flipping
@@ -393,7 +321,38 @@ export default storyboard("first_start", {
       { holdMs: 1200, speedup: 4 },
     ),
 
-    // --- Stage 5: the first usage — ask a question, get a cited answer ---
+    // The wizard's sync step already indexed the starter note; drop it from
+    // the index invisibly so the on-camera palette add is a genuine first add
+    // (re-adding an indexed file pops an "already indexed" confirm).
+    beat(
+      "Reset the index for a clean on-camera add",
+      runJs(`
+        const p = window.app.plugins.plugins.lilbee;
+        const auth = () => { const t = p?.api?.token ?? p?.settings?.manualToken; return t ? { Authorization: 'Bearer ' + t } : {}; };
+        const base = () => p?.api?.baseUrl || p?.serverManager?.serverUrl;
+        for (let i = 0; i < 60; i++) {
+          const busy = p?.taskQueue ? p.taskQueue.activeAll.length + p.taskQueue.queued.length : 0;
+          if (busy === 0 && i > 2) break;
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        const u = base();
+        if (!u) return;
+        try {
+          const docs = await fetch(u + '/api/documents', { headers: auth() }).then(r => r.json());
+          const names = (docs.documents || []).map(d => d.filename);
+          if (names.length) {
+            await fetch(u + '/api/documents/remove', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...auth() },
+              body: JSON.stringify({ names, delete_files: true }),
+            });
+          }
+        } catch {}
+      `),
+      { holdMs: 600, speedup: 6 },
+    ),
+
+    // --- Stage 3: open the chat + Task Center layout, then add the README ---
     // The whole point of the install is the first chat. Wait until the
     // managed server is genuinely READY with the just-downloaded model
     // installed (the READY event lands late) before revealing the chat
@@ -401,7 +360,7 @@ export default storyboard("first_start", {
     // installed". Then ask, send, and stream the first cited answer from
     // the freshly downloaded Qwen3 0.6B against the synced corpus.
     beat(
-      "Wait for the server to be ready, then open a clean chat panel",
+      "Wait for the server to be ready, then focus the chat",
       runJs(`
         const p = window.app.plugins.plugins.lilbee;
         if (!p) return;
@@ -469,39 +428,44 @@ export default storyboard("first_start", {
         }
         // Final settle so the on-camera send is well clear of the last restart.
         await new Promise(r => setTimeout(r, 1500));
-        // 3. Open chat + Task Center side by side — the same wide layout the
-        // other demos use — in the main editor area. Never leave the chat in
-        // the wizard's narrow sidebar (that compresses every bubble).
-        window.app.workspace.detachLeavesOfType('lilbee-chat');
-        window.app.workspace.detachLeavesOfType('lilbee-tasks');
-        window.app.workspace.leftSplit?.collapse?.();
-        window.app.workspace.rightSplit?.collapse?.();
-        await new Promise(r => setTimeout(r, 150));
-        const chatLeaf = window.app.workspace.getLeaf(true);
-        await chatLeaf.setViewState({ type: 'lilbee-chat', active: true });
-        const tasksLeaf = window.app.workspace.createLeafBySplit(chatLeaf, 'vertical', false);
-        await tasksLeaf.setViewState({ type: 'lilbee-tasks', active: false });
-        window.app.workspace.setActiveLeaf(chatLeaf);
-        await new Promise(r => setTimeout(r, 350));
-        const splits = document.querySelectorAll('.workspace-split.mod-vertical');
-        for (const split of Array.from(splits)) {
-          const tabs = split.querySelectorAll(':scope > .workspace-tabs');
-          if (tabs.length === 2) { tabs[0].style.flex = '7'; tabs[1].style.flex = '3'; break; }
+        // 3. The plugin's own cockpit (chat in the main area, Task Center in
+        // the right sidebar) opened when the wizard finished — keep it as-is,
+        // just bring the chat forward and focus its textarea.
+        const chatLeaf = window.app.workspace.getLeavesOfType('lilbee-chat')[0];
+        if (chatLeaf) {
+          window.app.workspace.revealLeaf(chatLeaf);
+          window.app.workspace.setActiveLeaf(chatLeaf, { focus: true });
+          const view = chatLeaf.view;
+          if (view && typeof view.fetchAndFillSelectors === 'function') await view.fetchAndFillSelectors();
         }
-        const view = chatLeaf.view;
-        if (view && typeof view.fetchAndFillSelectors === 'function') await view.fetchAndFillSelectors();
         await new Promise(r => setTimeout(r, 400));
         const ta = document.querySelector('textarea.lilbee-chat-textarea');
         if (ta) ta.focus();
       `),
       { holdMs: 1400, speedup: 3 },
     ),
-    // The wizard's sync step indexes the vault (the README) into the fresh data
-    // dir. Just wait for at least one document to register before the on-camera
-    // question so the streamed answer can cite it — don't re-add (that pops an
-    // "already indexed, re-add?" modal).
+
+    // Add the README from the palette, with chat + Task Center already up so
+    // the layout stays consistent for the rest of the reel.
     beat(
-      "Wait for the README to finish indexing",
+      "Open the quick switcher (⌘O)",
+      runJs(`window.app.commands.executeCommandById("switcher:open");`),
+      { holdMs: 700, keyHint: "⌘O", caption: "The vault has one note — the lilbee README. Open it." },
+    ),
+    beat("Pick the README", type_("readme"), { holdMs: 700 }),
+    beat("Open it", key("enter"), { holdMs: 1500 }),
+    beat(
+      "Open command palette",
+      runJs(`window.app.commands.executeCommandById("command-palette:open");`),
+      { holdMs: 700, keyHint: "⌘P", caption: "Add it to lilbee straight from the command palette — the job runs in the Task Center." },
+    ),
+    beat("Filter to lilbee: Add current file", type_("add current file"), { holdMs: 900 }),
+    beat("Run the add command", key("enter"), { holdMs: 1500 }),
+
+    // Wait for the palette add to land (at least one document registered)
+    // before the on-camera question so the streamed answer can cite it.
+    beat(
+      "Wait for the note to finish indexing",
       runJs(`
         const p = window.app.plugins.plugins.lilbee;
         for (let i = 0; i < 90; i++) {
@@ -510,6 +474,17 @@ export default storyboard("first_start", {
         }
       `),
       { holdMs: 800, maxMs: 120_000, speedup: 8 },
+    ),
+    // Bring the chat tab back in front of the README for the question.
+    beat(
+      "Switch back to the chat tab",
+      runJs(`
+        const leaf = window.app.workspace.getLeavesOfType('lilbee-chat')[0];
+        if (leaf) window.app.workspace.setActiveLeaf(leaf, { focus: true });
+        await new Promise(r => setTimeout(r, 300));
+        document.querySelector('textarea.lilbee-chat-textarea')?.focus();
+      `),
+      { holdMs: 1000 },
     ),
     beat("Ask the first question", fillChat(QUESTION), { holdMs: 600, caption: "That's the whole setup. Now ask a question in plain English." }),
     beat(
@@ -531,10 +506,19 @@ export default storyboard("first_start", {
       runJs(`document.querySelectorAll('.lilbee-chat-sources details').forEach(d => d.open = true);`),
       { holdMs: 800 },
     ),
-    // Close the loop: jump to the citation, open the README it cites, scroll
+    // Close the loop: jump to the citation, open the note it cites, scroll
     // down into the body, and linger so the cited passage is the last thing
-    // on screen. Park the cursor off the links while it scrolls.
-    beat("Jump to the citation", clickChip(0), { holdMs: 1200, cursorParkTo: [1245, 520], caption: "Click a citation to open the exact source it came from." }),
+    // on screen. Park the cursor off the links while it scrolls. The sources
+    // block renders a beat after the stream goes idle, so wait for the chip.
+    // Caption lands over the chat's empty lower region (the one-sentence answer
+    // leaves it clear) before the note opens, then clears so nothing overlays
+    // the full-bleed README. Verify the dead-zone placement frame-by-frame.
+    beat(
+      "Wait for the citation chip",
+      waitForSelector(".lilbee-source-chip-loc"),
+      { holdMs: 500, caption: "Click a citation to open the exact source it came from." },
+    ),
+    beat("Jump to the citation", clickChip(0), { holdMs: 1200, cursorParkTo: [1245, 520] }),
     beat(
       "Render the cited README and scroll down into the body",
       runJs(`
@@ -551,7 +535,9 @@ export default storyboard("first_start", {
           if (sc) sc.scrollTo({ top: (sc.clientHeight || 700) * 1.1, behavior: 'smooth' });
         }
       `),
-      { holdMs: 2600 },
+      // Clear the citation caption as the README fills the frame — no pill over
+      // the open note's body text.
+      { holdMs: 2600, clearCaption: true },
     ),
     beat("Linger on the cited passage", sleep(2600)),
   ],
