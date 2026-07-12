@@ -12,32 +12,11 @@ VAULT_DIR="${HOME}/Library/Application Support/obsidian-lilbee-firststart/vault"
 rm -rf "$VAULT_DIR"
 mkdir -p "$VAULT_DIR/.obsidian/plugins"
 
-# Drop a brief lilbee overview so the demo's chat question has something
-# to retrieve against. Mirrors the open-source overview from the real
-# project README in a form Qwen3 0.6B can answer from cleanly.
-cat > "$VAULT_DIR/lilbee.md" <<'EOF'
-# lilbee
-
-lilbee is a batteries-included local search engine for your files
-and code. It runs entirely on your machine, talks to whichever
-local model you point it at, and ships with a built-in catalog of
-GGUF models from Hugging Face.
-
-It is **open source**, written in Python, distributed under a
-permissive license, and available from PyPI, Homebrew, AUR, Docker,
-Nix, and as a standalone binary.
-
-## Features
-
-- Local-first chat with citations back to the exact file and line
-- Built-in model catalog with download progress in the Task Center
-- Crawl web pages into searchable markdown
-- Wiki generation: AI-written summaries of your own notes
-
-## Install
-
-The easiest install is `pip install lilbee` or `brew install lilbee`.
-EOF
+# Seed the vault with the real lilbee README so the demo adds and cites
+# the same document the what_is_lilbee reel uses.
+LILBEE_README="${LILBEE_README:-$HOME/projects/lilbee/README.md}"
+[ -f "$LILBEE_README" ] || { echo "lilbee README not found at $LILBEE_README" >&2; exit 1; }
+cp "$LILBEE_README" "$VAULT_DIR/README.md"
 
 # Enable community plugins so we don't gate on the "turn on" prompt.
 cat > "$VAULT_DIR/.obsidian/community-plugins.json" <<'EOF'
