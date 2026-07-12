@@ -271,36 +271,37 @@ h1.sr {
 .tutorialtabs {
   display: flex;
   flex-wrap: wrap;
-  border-bottom: 1px solid var(--rule-2);
-  margin-bottom: 1rem;
+  gap: 7px;
+  margin-bottom: 1.1rem;
 }
 .tutorialtabs .tutorialtab {
   font-family: var(--mono);
-  font-size: 13px;
-  letter-spacing: 0.04em;
-  background: transparent;
-  border: 1px solid transparent;
-  border-bottom: 2px solid transparent;
-  border-radius: 3px 3px 0 0;
-  color: var(--ink-3);
-  padding: 0.5rem 0.9rem;
-  margin-bottom: -1px;
+  font-size: 12.5px;
+  letter-spacing: 0.02em;
+  background: var(--bg-elev);
+  border: 1px solid var(--rule-2);
+  border-radius: 5px;
+  color: var(--ink-2);
+  padding: 0.35rem 0.75rem;
   cursor: pointer;
-  transition: color 140ms, background-color 140ms, border-color 140ms;
+  transition: color 130ms, background-color 130ms, border-color 130ms, transform 110ms, box-shadow 130ms;
 }
 .tutorialtabs .tutorialtab:hover {
   color: var(--ink);
-  background: rgba(124, 58, 237, 0.08);
+  background: var(--bg-card);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px -8px rgba(0, 0, 0, 0.7);
 }
 .tutorialtabs .tutorialtab:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  outline-offset: 1px;
 }
 .tutorialtabs .tutorialtab[aria-selected="true"] {
-  color: var(--accent);
-  background: rgba(124, 58, 237, 0.14);
-  border-color: var(--rule-2);
-  border-bottom-color: var(--accent);
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
 }
 
 .tutorialpane[hidden] { display: none; }
@@ -597,7 +598,6 @@ footer .meta { text-align: right; font-size: 12px; }
   .wordmark, .wordmark-sub { font-size: 9px; }
   .caps, .links, .shape, .gpu { grid-template-columns: 1fr; }
   .tagline { font-size: 18px; }
-  .tutorialtabs .tutorialtab { padding: 0.45rem 0.6rem; font-size: 12px; }
 }
 
 /* FAQ disclosure ----------------------------------------------------- */
