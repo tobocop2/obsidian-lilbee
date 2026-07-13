@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A private, self-hosted NotebookLM alternative | lilbee for Obsidian</title>
+<meta name="description" content="lilbee is an open source, self-hosted NotebookLM alternative that runs inside Obsidian. It downloads and runs the AI models for you, on your own computer, then answers questions about your notes, PDFs, and scans with the source one click away. No Docker, no cloud account, no API key.">
+<link rel="canonical" href="https://obsidian.lilbee.sh/notebooklm-alternative/">
+
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="lilbee for Obsidian">
+<meta property="og:title" content="A private, self-hosted NotebookLM alternative">
+<meta property="og:description" content="An open source NotebookLM alternative that runs entirely on your computer, inside Obsidian. It brings its own local AI models, cites every answer back to your own documents, and needs no Docker, no cloud account, and no API key.">
+<meta property="og:url" content="https://obsidian.lilbee.sh/notebooklm-alternative/">
+<meta property="og:image" content="https://obsidian.lilbee.sh/social-card.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="lilbee for Obsidian: local AI search and chat for your vault, with a cited answer shown inside Obsidian">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="A private, self-hosted NotebookLM alternative">
+<meta name="twitter:description" content="An open source NotebookLM alternative that runs entirely on your computer, inside Obsidian. Brings its own local models, cites every answer, and needs no Docker and no cloud account.">
+<meta name="twitter:image" content="https://obsidian.lilbee.sh/social-card.png">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is there an open source alternative to NotebookLM?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. lilbee is an MIT-licensed, self-hosted alternative that runs inside Obsidian. It indexes your notes, PDFs, ebooks, code, and scanned documents, then answers questions about them with the source one click away. Unlike most self-hosted alternatives, it also runs the AI models itself, so there is no separate model server, no vector database, and no Docker Compose file to set up."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does a self-hosted NotebookLM alternative need Docker?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Most do: they ask you to run a model server, a vector database, and a web front end as separate containers. lilbee does not. You install it from the Obsidian community plugin store, and it brings its own engine and models. There are no containers to orchestrate and no networking to configure."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need an API key or a cloud account?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. lilbee downloads and runs local AI models on your own hardware, so it works with no account and no API key, and it keeps working offline. Cloud models are optional, per role, and only if you choose one."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does my data leave my computer?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Your documents stay in your Obsidian vault on disk. Indexing, search, and generation all run on your own machine. Nothing is uploaded unless you deliberately pick a cloud model."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can it read PDFs and scanned documents?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. lilbee reads over 150 file types, including PDFs, ebooks, office documents, and code. Scanned pages with no text layer are read with a local vision model (OCR), so image-only PDFs are searchable too."
+      }
+    }
+  ]
+}
+</script>
+
+<link rel="stylesheet" href="../style.css">
+<script src="../main.js" defer></script>
+</head>
+<body>
+
+<h1 class="sr">A private, self-hosted NotebookLM alternative that runs on your own computer, inside Obsidian</h1>
+
+<div class="layout">
+  <main class="main">
+
+    <div class="topstrip">
+      <div><span class="badge">lilbee for Obsidian</span></div>
+      <div>
+        <span class="pill">Open source (MIT)</span>
+        <span class="pill">Runs offline</span>
+        <span class="pill">No Docker</span>
+        <span class="pill">No API key</span>
+      </div>
+    </div>
+
+    <section class="hero">
+<pre class="wordmark" aria-hidden="true">888 d8b 888 888
+888 Y8P 888 888
+888     888 888
+888 888 888 88888b.  .d88b.  .d88b.
+888 888 888 888 "88bd8P  Y8bd8P  Y8b
+888 888 888 888  88888888888888888888
+888 888 888 888 d88PY8b.    Y8b.
+888 888 888 88888P"  "Y8888  "Y8888</pre>
+<pre class="wordmark-sub" aria-hidden="true">  __            ___  _       _    _ _
+ / _|___ _ _   / _ \| |__ __(_)__| (_)__ _ _ _
+|  _/ _ \ '_| | (_) | '_ (_-&lt; / _` | / _` | ' \
+|_| \___/_|    \___/|_.__/__/_\__,_|_\__,_|_||_|</pre>
+      <h2 class="tagline">A private, self-hosted <strong>NotebookLM alternative</strong>, running on your own computer.</h2>
+      <p class="sub">NotebookLM is excellent, but your documents live on someone else's servers and you get whatever model Google gives you. <strong><a href="https://lilbee.sh/">lilbee</a></strong> does the same job inside <a href="https://obsidian.md/">Obsidian</a>: ask questions about your own notes, PDFs, and scans, and get answers with the source one click away. It downloads and runs the AI models for you, on your hardware. Nothing is uploaded, and it keeps working with the wifi off.</p>
+      <div class="surfaces">
+        <span class="surfaces-label">what you get</span>
+        <span class="surface">cited answers</span>
+        <span class="surface">local models</span>
+        <span class="surface">150+ file types</span>
+        <span class="surface">scanned PDFs</span>
+        <span class="surface">web crawler</span>
+        <span class="surface">auto wiki</span>
+      </div>
+      <p class="trust"><strong>Everything runs on your computer.</strong> Your notes stay in your vault; nothing leaves unless you ask it to.</p>
+    </section>
+
+    <section>
+      <div class="label">how it compares</div>
+      <p class="lede">Most self-hosted NotebookLM alternatives are a stack you assemble: a model server, a vector database, a web front end, and a Docker Compose file to hold them together. Several still send your documents to a cloud model by default. lilbee is one plugin.</p>
+
+      <div class="faq">
+        <details open><summary>Against NotebookLM (the cloud original)</summary><p>Same core idea, opposite trust model. NotebookLM uploads your sources to Google and runs their model on them. lilbee keeps every document on your disk and runs a model you chose, on your own hardware. You give up Google's polish and their audio overviews; you get privacy, offline use, no upload limits, and your pick of models.</p></details>
+        <details><summary>Against other self-hosted alternatives</summary><p>Most of them are model-agnostic: they expect you to already have Ollama or an API key, plus a vector database, usually as Docker services. lilbee brings the whole stack. It manages the models itself (browse, download, run, across every GPU you have), keeps the index itself, and installs from the Obsidian plugin store like any other plugin.</p></details>
+        <details><summary>Against a plain local chatbot</summary><p>A local chatbot answers from memory and will happily invent a citation. lilbee retrieves the passage from your own files first, then answers from it, and shows you the source it used. If it isn't in your documents, it says so.</p></details>
+      </div>
+    </section>
+
+    <section>
+      <div class="label">getting started</div>
+      <div class="steps">
+        <div class="step"><span class="n">1</span><span>Install lilbee from the <a href="https://community.obsidian.md/plugins/lilbee">Obsidian community plugin store</a>: <em>Settings → Community plugins → Browse</em>, search for <em>lilbee</em>, then <em>Install</em> and <em>Enable</em>.</span></div>
+        <div class="step"><span class="n">2</span><span>A setup wizard opens. Pick a chat model from the built-in catalog and let it sync your vault. lilbee brings its own engine; there is nothing else to install.</span></div>
+        <div class="step"><span class="n">3</span><span>Ask a question in the chat sidebar. Every answer carries its sources, and clicking one opens the exact note, page, or line it came from.</span></div>
+      </div>
+      <p class="extras">Never used a local AI model before? That's the point: you don't have to know what a GGUF file is, and you never have to open a terminal. <a href="../">see the full feature list &rarr;</a></p>
+      <p class="extras">Prefer the terminal, or want it outside Obsidian? The same engine runs as a <a href="https://lilbee.sh/">terminal app, CLI, HTTP API, and MCP server for coding agents</a>.</p>
+    </section>
+
+    <section>
+      <div class="label">common questions</div>
+      <div class="faq">
+        <details><summary>Is there an open source alternative to NotebookLM?</summary><p>Yes. lilbee is MIT licensed and self-hosted, and it runs inside Obsidian. It indexes your notes, PDFs, ebooks, code, and scanned documents, then answers questions about them with the source one click away. Unlike most alternatives, it also runs the AI models itself, so there is no separate model server, no vector database, and no Docker Compose file.</p></details>
+        <details><summary>Does it need Docker?</summary><p>No. Most self-hosted alternatives ask you to run a model server, a vector database, and a web front end as separate containers. lilbee installs from the plugin store and brings its own engine. No containers, no networking to configure.</p></details>
+        <details><summary>Do I need an API key or a cloud account?</summary><p>No. lilbee downloads and runs local models on your own hardware, so it works with no account and no key, and it keeps working offline. Cloud models are optional, per role, and only if you pick one.</p></details>
+        <details><summary>Does my data leave my computer?</summary><p>No. Your documents stay in your vault on disk. Indexing, search, and generation all run locally. Nothing is uploaded unless you deliberately choose a cloud model.</p></details>
+        <details><summary>Can it read PDFs and scanned documents?</summary><p>Yes, over 150 file types including PDFs, ebooks, office documents, and code. Scanned pages with no text layer are read with a local vision model, so image-only PDFs are searchable too.</p></details>
+        <details><summary>Do I need a powerful GPU?</summary><p>No. lilbee checks what your machine can handle and suggests models that fit, down to laptops with no discrete GPU. If you do have GPUs, it will use all of them, and it can split a large model across several cards.</p></details>
+      </div>
+    </section>
+
+    <footer>
+      <div>
+<pre aria-hidden="true">+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|t|o|b|i|a|s|@|l|i|l|b|e|e|.|s|h|
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+</pre>
+      </div>
+      <div class="meta"><a href="https://github.com/tobocop2/obsidian-lilbee">obsidian-lilbee</a> &nbsp;.&nbsp; MIT License</div>
+    </footer>
+  </main>
+
+  <aside class="bee-art" aria-hidden="true"><pre>     %           %
+         %           %
+            %           %
+               %          %
+                 %          %
+                   %          %                   :::
+                    %          %                ::::::
+                 %%%%%%  %%%%%%%%%            ::::::::
+              %%%%%ZZZZ%%%%%%   %%%ZZZZ     ::::::::::         ::::::
+             %%%ZZZZZ%%%%%%%%%%%%%%ZZZZZZ  :::::::::::    :::::::::::::::::
+             ZZZ%ZZZ%%%%%%%%%%%%%%%ZZZZZZZ::::::::::***:::::::::::::::::::::
+          ZZZ%ZZZZZZ%%%%%%%%%%%%%%ZZZZZZZZZ::::::***:::::::::::::::::::::::
+        ZZZ%ZZZZZZZZZZ%%%%%%%%%%ZZZZZZ%ZZZZ:::***:::::::::::::::::::::::
+       ZZ%ZZZZZZZZZZZZZZZZZZZZZZZ%%%%% %ZZZ:**::::::::::::::::::::::
+      ZZ%ZZZZZZZZZZZZZZZZZZZ%%%%% | | %ZZZ *:::::::::::::::::::
+      Z%ZZZZZZZZZZZZZZZ%%%%%%%%%%%%%%%ZZZ::::::::::::::::::::::::::
+       ZZZZZZZZZZZ%%%%%ZZZZZZZZZZZZZZZZZ%%%%:::ZZZZ:::::::::::::::::
+         ZZZZ%%%%%ZZZZZZZZZZZZZZZZZZ%%%%%ZZZ%%ZZZ%ZZ%%*:::::::::::
+            ZZZZZZZZZZZZZZZZZZ%%%%%%%%%ZZZZZZZZZZ%ZZ%:::*:::::::
+            *:::%%%%%%%%%%%%%%%%%%%%%%%ZZZZZZZZZZ%%%*::::*::::
+          *:::::::%%%%%%%%%%%%%%%%%%%%%%%ZZZZZ%%      *:::Z
+         **:ZZZZ:::%%%%%%%%%%%%%%%%%%%%%%%%%%%ZZ      ZZZZZ
+        *:ZZZZZZZ       %%%%%%%%%%%%%%%%%%%%%ZZZZ    ZZZZZZZ
+       *::::ZZZZZZ         %%%%%%%%%%%%%%%ZZZZZZZ      ZZZ
+        *::ZZZZZZ           Z%%%%%%%%%%%ZZZZZZZ%%
+          ZZZZ              ZZZZZZZZZZZZZZZZ%%%%%
+                           %%%ZZZZZZZZZZZ%%%%%%%%
+                          Z%%%%%%%%%%%%%%%%%%%%%
+                          ZZ%%%%%%%%%%%%%%%%%%%
+                          %ZZZZZZZZZZZZZZZZZZZ
+                          %%ZZZZZZZZZZZZZZZZZ
+                           %%%%%%%%%%%%%%%%
+                            %%%%%%%%%%%%%
+                             %%%%%%%%%
+                              ZZZZ
+                              ZZZ
+                             ZZ
+                            Z</pre></aside>
+</div>
+</body>
+</html>
