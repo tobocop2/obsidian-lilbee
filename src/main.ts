@@ -611,6 +611,7 @@ export default class LilbeePlugin extends Plugin {
             modelsDir: sharedModelsDir(sharedRoot),
             ragSystemPrompt: this.settings.ragSystemPrompt,
             generalSystemPrompt: this.settings.generalSystemPrompt,
+            installedVersion: this.getSharedLilbeeVersion(),
             onStateChange: (state) => this.handleServerStateChange(state),
             onRestartsExhausted: (output: string) => {
                 if (this.serverStartFailed) return;

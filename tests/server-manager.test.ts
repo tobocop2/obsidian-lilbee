@@ -60,6 +60,7 @@ function defaultOpts(overrides?: Partial<ServerManagerOptions>): ServerManagerOp
         modelsDir: "/tmp/models",
         ragSystemPrompt: "",
         generalSystemPrompt: "",
+        installedVersion: "",
         ...overrides,
     };
 }
@@ -480,6 +481,92 @@ describe("ServerManager", () => {
             expect(mgr.serverUrl).toBe("");
             expect(appendFileSyncSpy).not.toHaveBeenCalled(); // not a crash
             expect(fetchSpy.mock.calls.some((c) => String(c[0]).endsWith("/api/shutdown"))).toBe(true);
+        });
+
+        /** Health answers *version*; a shutdown request is accepted and kills the health probe. */
+        function healthWithVersion(version: string): void {
+            let alive = true;
+            fetchSpy.mockImplementation((url: unknown) => {
+                if (String(url).endsWith("/api/shutdown")) {
+                    alive = false;
+                    return Promise.resolve({ ok: true });
+                }
+                if (!alive) return Promise.reject(new Error("ECONNREFUSED"));
+                return Promise.resolve({ ok: true, json: async () => ({ status: "ok", version }) });
+            });
+            // A spawn brings the (new) server back up for the readiness poll.
+            spawnSpy.mockImplementation(() => {
+                alive = true;
+                const c = mockChild(1000 + children.length);
+                children.push(c);
+                return c as any;
+            });
+        }
+
+        it("replaces a running server whose version differs from the installed binary", async () => {
+            const lines: string[] = [];
+            healthWithVersion("0.6.9");
+            const mgr = new ServerManager(defaultOpts({ installedVersion: "v0.7.0", onJournal: (m) => lines.push(m) }));
+            await mgr.start();
+            expect(fetchSpy.mock.calls.some((c) => String(c[0]).endsWith("/api/shutdown"))).toBe(true);
+            expect(spawnSpy).toHaveBeenCalledTimes(1); // spawned the installed binary
+            expect(mgr.state).toBe("ready");
+            expect(lines).toContain("running server version 0.6.9 differs from installed v0.7.0; asking it to exit");
+        });
+
+        it("adopts a version-matched server without asking it to exit, ignoring the v prefix", async () => {
+            fetchSpy.mockResolvedValue({ ok: true, json: async () => ({ status: "ok", version: "0.7.0" }) } as any);
+            const mgr = new ServerManager(defaultOpts({ installedVersion: "v0.7.0" }));
+            await mgr.start();
+            expect(spawnSpy).not.toHaveBeenCalled();
+            expect(fetchSpy.mock.calls.some((c) => String(c[0]).endsWith("/api/shutdown"))).toBe(false);
+            expect(mgr.state).toBe("ready");
+        });
+
+        it("adopts a version-mismatched server anyway when it will not exit", async () => {
+            const lines: string[] = [];
+            // Shutdown request fails outright; the server keeps answering health.
+            fetchSpy.mockImplementation((url: unknown) => {
+                if (String(url).endsWith("/api/shutdown")) return Promise.reject(new Error("ECONNREFUSED"));
+                return Promise.resolve({ ok: true, json: async () => ({ status: "ok", version: "0.6.9" }) });
+            });
+            const mgr = new ServerManager(defaultOpts({ installedVersion: "v0.7.0", onJournal: (m) => lines.push(m) }));
+            await mgr.start();
+            expect(spawnSpy).not.toHaveBeenCalled();
+            expect(mgr.state).toBe("ready");
+            expect(mgr.serverUrl).toBe("http://127.0.0.1:9999");
+            expect(lines).toContain("outdated server did not stop when asked; adopting it anyway");
+        });
+
+        it("adopts anyway when the mismatched server accepts the shutdown but never goes", async () => {
+            const lines: string[] = [];
+            fetchSpy.mockImplementation((url: unknown) => {
+                if (String(url).endsWith("/api/shutdown")) return Promise.resolve({ ok: true });
+                return Promise.resolve({ ok: true, json: async () => ({ status: "ok", version: "0.6.9" }) });
+            });
+            const mgr = new ServerManager(defaultOpts({ installedVersion: "v0.7.0", onJournal: (m) => lines.push(m) }));
+            const startP = mgr.start();
+            await vi.advanceTimersByTimeAsync(13_000); // awaitServerGone deadline passes
+            await startP;
+            expect(spawnSpy).not.toHaveBeenCalled();
+            expect(mgr.state).toBe("ready");
+            expect(lines).toContain("outdated server did not stop when asked; adopting it anyway");
+        });
+
+        it("skips the version check when the installed version is unknown", async () => {
+            fetchSpy.mockResolvedValue({ ok: true, json: async () => ({ status: "ok", version: "0.6.9" }) } as any);
+            const mgr = new ServerManager(defaultOpts({ installedVersion: "" }));
+            await mgr.start();
+            expect(spawnSpy).not.toHaveBeenCalled();
+            expect(mgr.state).toBe("ready");
+        });
+
+        it("skips the version check when the running server does not report one", async () => {
+            fetchSpy.mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) } as any);
+            const mgr = new ServerManager(defaultOpts({ installedVersion: "v0.7.0" }));
+            await mgr.start();
+            expect(spawnSpy).not.toHaveBeenCalled();
+            expect(mgr.state).toBe("ready");
         });
 
         it("reports when an adopted server will not stop", async () => {

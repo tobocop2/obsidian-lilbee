@@ -5249,6 +5249,14 @@ describe("LilbeePlugin", () => {
                 }
             });
 
+            it("passes the recorded installed version to the supervisor", async () => {
+                const plugin = await createPlugin({ serverMode: "managed" });
+                vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("v0.7.0");
+                await plugin.onload();
+                await flush();
+                expect(mockServerOpts.installedVersion).toBe("v0.7.0");
+            });
+
             it("routes supervisor journal lines into the plugin journal", async () => {
                 const plugin = await createPlugin({ serverMode: "managed" });
                 await plugin.onload();

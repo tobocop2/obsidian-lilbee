@@ -135,6 +135,12 @@ export interface ServerManagerOptions {
     modelsDir: string;
     ragSystemPrompt: string;
     generalSystemPrompt: string;
+    /**
+     * Version of the installed binary, i.e. what a spawn would launch. May
+     * carry the release tag's leading "v", which the server's health report
+     * omits. Empty when unknown; adoption then skips the version check.
+     */
+    installedVersion: string;
     onStateChange?: (state: ServerState) => void;
     onRestartsExhausted?: (output: string) => void;
     onShutdownFailure?: (error: Error) => void;
@@ -325,8 +331,9 @@ export class ServerManager {
             if (child !== this.child) return;
             this.child = null;
             if (this.desired === DESIRED.STOPPED) return;
-            this.journal(`failed to launch server: ${err.message}`);
-            this.pushOutputLine(`failed to launch server: ${err.message}`);
+            const line = `failed to launch server: ${err.message}`;
+            this.journal(line);
+            this.pushOutputLine(line);
             this.snapshotCrashOutput();
             this.fatalStartError = new Error(`Failed to launch server: ${err.message}`);
             this.setState(SERVER_STATE.ERROR);
@@ -394,7 +401,9 @@ export class ServerManager {
         // Adopt-first: a healthy server already serving this data dir is the
         // singleton, not garbage. A plugin reload re-attaches instead of
         // replacing it; a server whose Obsidian died exits on its own via the
-        // parent monitor and simply fails this probe.
+        // parent monitor and simply fails this probe. One exception: a server
+        // running a different version than the installed binary is asked to
+        // exit, so a binary update takes effect on the next reload.
         if (await this.tryAdopt()) {
             this.crashCount = 0;
             this.setState(SERVER_STATE.READY);
@@ -428,7 +437,9 @@ export class ServerManager {
     private async tryAdopt(): Promise<boolean> {
         const session = readServerSession(this.opts.dataDir);
         if (session === null) return false;
-        if (!(await this.healthOk(session.port))) return false;
+        const health = await this.probeHealth(session.port);
+        if (health === null) return false;
+        if (this.versionDiffers(health.version) && (await this.replaceMismatched(health.version))) return false;
         this._actualPort = session.port;
         this.adopted = true;
         this.watchAdopted();
@@ -436,18 +447,38 @@ export class ServerManager {
         return true;
     }
 
-    private async healthOk(port: number): Promise<boolean> {
+    /** True when running and installed versions differ; "v"-prefixed and bare forms compare equal, unknown never differs. */
+    private versionDiffers(running: string): boolean {
+        const installed = this.opts.installedVersion.replace(/^v/, "");
+        const current = running.replace(/^v/, "");
+        return installed !== "" && current !== "" && installed !== current;
+    }
+
+    /** Ask a version-mismatched server to exit; false when it will not go (the caller then adopts it anyway). */
+    private async replaceMismatched(running: string): Promise<boolean> {
+        this.journal(
+            `running server version ${running} differs from installed ${this.opts.installedVersion}; asking it to exit`,
+        );
+        const accepted = await requestServerShutdown(this.opts.dataDir);
+        if (accepted && (await awaitServerGone(this.opts.dataDir, SERVER_MANAGER_CONFIG.STOP_GRACE_MS))) return true;
+        this.journal("outdated server did not stop when asked; adopting it anyway");
+        return false;
+    }
+
+    /** lilbee's health report, or null when the port is dead or answers with a foreign shape. */
+    private async probeHealth(port: number): Promise<{ version: string } | null> {
         try {
             const res = await node.fetch(`http://127.0.0.1:${port}/api/health`, {
                 signal: AbortSignal.timeout(SERVER_MANAGER_CONFIG.ADOPT_PROBE_TIMEOUT_MS),
             });
-            if (!res.ok) return false;
+            if (!res.ok) return null;
             // The port file can outlive a SIGKILLed server, and the port can be
             // reused by anything. Only lilbee's health shape earns adoption.
-            const body = (await res.json()) as { status?: unknown };
-            return body.status === "ok";
+            const body = (await res.json()) as { status?: unknown; version?: unknown };
+            if (body.status !== "ok") return null;
+            return { version: typeof body.version === "string" ? body.version : "" };
         } catch {
-            return false;
+            return null;
         }
     }
 
@@ -467,13 +498,14 @@ export class ServerManager {
 
     private async checkAdopted(): Promise<void> {
         if (!this.adopted || this._actualPort === null) return;
-        if (await this.healthOk(this._actualPort)) return;
+        if ((await this.probeHealth(this._actualPort)) !== null) return;
         if (!this.adopted || this.desired === DESIRED.STOPPED) return;
         this.stopAdoptedWatch();
         this.adopted = false;
         this._actualPort = null;
-        this.journal("adopted server became unreachable");
-        this.pushOutputLine("adopted server became unreachable");
+        const line = "adopted server became unreachable";
+        this.journal(line);
+        this.pushOutputLine(line);
         this.snapshotCrashOutput();
         this.scheduleCrashRestart();
     }
