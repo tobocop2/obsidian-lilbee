@@ -350,6 +350,9 @@ describe("negotiateTakeOver", () => {
         expect(Notice.instances.some((n) => n.message.includes("stays with"))).toBe(true);
         expect(Notice.instances.some((n) => n.message.includes("Personal"))).toBe(true);
         expect(mocks.requestServerShutdown).not.toHaveBeenCalled();
+        expect(plugin.journal.entries.map((e) => e.message)).toContain(
+            "take-over of the shared root declined (owner: Personal)",
+        );
         expect(events.find((e) => e.phase === "error")).toBeDefined();
         mocks.readScopeOwner.mockReturnValue(null);
     });
@@ -367,7 +370,25 @@ describe("negotiateTakeOver", () => {
         expect(mocks.requestServerShutdown).toHaveBeenCalledWith("/d");
         expect(Notice.instances.some((n) => n.message.includes("switched from"))).toBe(true);
         expect(startSpy).toHaveBeenCalledWith(undefined, false);
+        const journal = plugin.journal.entries.map((e) => e.message);
+        expect(journal).toContain("take-over accepted: asking the server of Personal (pid 9) to exit");
+        expect(journal).toContain("take-over complete: the server of Personal is gone; starting ours");
         mocks.readScopeOwner.mockReturnValue(null);
+    });
+
+    it("accepting with an unreadable owner sidecar skips the ask and still starts", async () => {
+        const plugin = await createPlugin();
+        const mocks = await smMocks();
+        mocks.readScopeOwner.mockReturnValue(null);
+        mocks.requestServerShutdown.mockClear();
+        vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(true);
+        const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
+        await (plugin as any).negotiateTakeOver(plugin.vaultRegistry);
+        expect(mocks.requestServerShutdown).not.toHaveBeenCalled();
+        expect(startSpy).toHaveBeenCalledWith(undefined, false);
+        expect(plugin.journal.entries.map((e) => e.message)).toContain(
+            "take-over accepted: asking the server of another vault to exit",
+        );
     });
 
     it("reports when the owner will not shut down, without retrying", async () => {
@@ -381,6 +402,9 @@ describe("negotiateTakeOver", () => {
         await (plugin as any).negotiateTakeOver(plugin.vaultRegistry);
         expect(Notice.instances.some((n) => n.message.includes("did not shut down"))).toBe(true);
         expect(startSpy).not.toHaveBeenCalled();
+        expect(plugin.journal.entries.map((e) => e.message)).toContain(
+            "take-over failed: the server of Personal did not stop when asked",
+        );
         mocks.readScopeOwner.mockReturnValue(null);
         mocks.requestServerShutdown.mockResolvedValue(true);
     });

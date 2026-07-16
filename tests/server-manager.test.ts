@@ -733,6 +733,140 @@ describe("ServerManager", () => {
         });
     });
 
+    // ── lifecycle journal ───────────────────────────────────────────
+
+    describe("journal", () => {
+        let lines: string[];
+
+        beforeEach(() => {
+            lines = [];
+        });
+
+        function journalOpts(overrides?: Partial<ServerManagerOptions>): Partial<ServerManagerOptions> {
+            return { onJournal: (m) => lines.push(m), ...overrides };
+        }
+
+        it("journals a spawn with its pid", async () => {
+            await startFresh(journalOpts());
+            expect(lines).toContain(`spawned server pid ${child().pid}`);
+        });
+
+        it("journals an adoption with its port", async () => {
+            readFileSyncSpy.mockImplementation(fileRouter("present"));
+            const mgr = new ServerManager(defaultOpts(journalOpts()));
+            await mgr.start();
+            expect(lines).toContain("adopted running server on port 9999");
+        });
+
+        it("journals the stop: shutdown request, escalation, and the observed exit time", async () => {
+            const mgr = await startFresh(journalOpts());
+            const c = child();
+            exitOnSigkill(c);
+            const stopP = mgr.stop();
+            await vi.advanceTimersByTimeAsync(12_000);
+            await vi.advanceTimersByTimeAsync(5000);
+            await stopP;
+            expect(lines).toContain(`stopping server pid ${c.pid}: shutdown request not accepted`);
+            expect(lines).toContain(`sent SIGTERM to pid ${c.pid} group`);
+            expect(lines).toContain(`sent SIGKILL to pid ${c.pid} group`);
+            expect(lines.some((l) => new RegExp(`server pid ${c.pid} exit observed after \\d+ms`).test(l))).toBe(true);
+        });
+
+        it("journals an accepted shutdown request", async () => {
+            const mgr = await startFresh(journalOpts());
+            readFileSyncSpy.mockImplementation(fileRouter("present"));
+            const c = child();
+            const stopP = mgr.stop();
+            c._emit("exit", 0, null);
+            await stopP;
+            expect(lines).toContain(`stopping server pid ${c.pid}: shutdown request accepted`);
+        });
+
+        it("journals the taskkill escalation on Windows", async () => {
+            const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
+            try {
+                const mgr = await startFresh(journalOpts());
+                const c = child();
+                const stopP = mgr.stop();
+                await vi.advanceTimersByTimeAsync(12_000);
+                c._emit("exit", 1, null);
+                await stopP;
+                expect(lines).toContain(`sent taskkill /f /t to pid ${c.pid}`);
+            } finally {
+                platformSpy.mockRestore();
+            }
+        });
+
+        it("journals each crash with its cause, the restart schedule, and the give-up", async () => {
+            await startFresh(journalOpts());
+            vi.spyOn(node, "existsSync").mockReturnValue(false); // respawns hang before ready
+            const firstPid = child().pid;
+            child()._emit("exit", null, "SIGSEGV"); // crash 1
+            expect(lines).toContain(`server pid ${firstPid} exited (signal SIGSEGV)`);
+            expect(lines).toContain("restarting in 3000ms (attempt 1/3)");
+            for (let i = 0; i < 3; i++) {
+                await vi.advanceTimersByTimeAsync(3000);
+                child()._emit("exit", 1, null); // crashes 2..4
+            }
+            expect(lines).toContain("server did not stay up after 3 restarts; giving up");
+        });
+
+        it("journals a refused spawn", async () => {
+            vi.spyOn(node, "existsSync").mockReturnValue(false);
+            const mgr = new ServerManager(defaultOpts(journalOpts()));
+            const startP = mgr.start();
+            startP.catch(() => {});
+            const c = await spawnedChild();
+            c._emit("exit", LOCK_REFUSAL_EXIT_CODE, null);
+            await vi.advanceTimersByTimeAsync(1000);
+            await expect(startP).rejects.toBeInstanceOf(ScopeHeldError);
+            expect(lines).toContain(
+                `spawned server pid ${c.pid} refused to start: another server owns the shared root`,
+            );
+        });
+
+        it("journals a launch failure", async () => {
+            vi.spyOn(node, "existsSync").mockReturnValue(false);
+            const mgr = new ServerManager(defaultOpts(journalOpts()));
+            const startP = mgr.start();
+            startP.catch(() => {});
+            (await spawnedChild())._emit("error", new Error("ENOENT: no such binary"));
+            await vi.advanceTimersByTimeAsync(1000);
+            await expect(startP).rejects.toThrow("Failed to launch server");
+            expect(lines).toContain("failed to launch server: ENOENT: no such binary");
+        });
+
+        it("journals an adopted server that became unreachable", async () => {
+            readFileSyncSpy.mockImplementation(fileRouter("present"));
+            const mgr = new ServerManager(defaultOpts(journalOpts()));
+            await mgr.start();
+            fetchSpy.mockRejectedValue(new Error("ECONNREFUSED"));
+            readFileSyncSpy.mockImplementation(fileRouter("absent"));
+            await vi.advanceTimersByTimeAsync(5000);
+            expect(lines).toContain("adopted server became unreachable");
+        });
+
+        it("journals both outcomes of asking an adopted server to exit", async () => {
+            readFileSyncSpy.mockImplementation(fileRouter("present"));
+            const mgr = new ServerManager(defaultOpts(journalOpts()));
+            await mgr.start();
+            fetchSpy.mockImplementation((url: unknown) => {
+                if (String(url).endsWith("/api/shutdown")) return Promise.resolve({ ok: true });
+                return Promise.reject(new Error("ECONNREFUSED"));
+            });
+            await mgr.stop();
+            expect(lines).toContain("adopted server stopped when asked");
+
+            lines = [];
+            const stubborn = new ServerManager(defaultOpts(journalOpts()));
+            fetchSpy.mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) } as any);
+            await stubborn.start();
+            fetchSpy.mockRejectedValue(new Error("ECONNREFUSED")); // shutdown request fails
+            await stubborn.stop();
+            expect(lines).toContain("adopted server did not stop when asked");
+        });
+    });
+
     // ── edge coverage ───────────────────────────────────────────────
 
     describe("edges", () => {

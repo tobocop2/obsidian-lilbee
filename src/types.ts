@@ -579,7 +579,7 @@ export const LOG_FILE = {
     PLUGIN: "plugin.log",
 } as const;
 
-/** One captured plugin-side error. */
+/** One captured plugin-side error or lifecycle event. */
 export interface JournalEntry {
     timestamp: string;
     label: string;

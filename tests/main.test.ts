@@ -5249,6 +5249,16 @@ describe("LilbeePlugin", () => {
                 }
             });
 
+            it("routes supervisor journal lines into the plugin journal", async () => {
+                const plugin = await createPlugin({ serverMode: "managed" });
+                await plugin.onload();
+                await flush();
+                mockServerOpts.onJournal("spawned server pid 7");
+                const entry = plugin.journal.entries.find((e) => e.label === "lifecycle");
+                expect(entry).toBeDefined();
+                expect(entry!.message).toBe("spawned server pid 7");
+            });
+
             it("points the journal at <dataDir>/logs when the managed server starts", async () => {
                 const plugin = await createPlugin({ serverMode: "managed" });
                 const spy = vi.spyOn(plugin.journal, "setLogDir");
@@ -6968,6 +6978,7 @@ describe("LilbeePlugin", () => {
             await flush();
             const setSpy = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
             const variantSpy = vi.spyOn(plugin as any, "setSharedLilbeeVariant").mockImplementation(() => {});
+            vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("v0.2.9");
 
             const progress: string[] = [];
             await plugin.updateServer(
@@ -6996,6 +7007,9 @@ describe("LilbeePlugin", () => {
             expect(progress).toContain("Downloading...");
             expect(progress).toContain("Starting server...");
             expect(progress).toContain("Update complete.");
+            const journal = plugin.journal.entries.map((e) => e.message);
+            expect(journal).toContain("updating server binary: v0.2.9 -> v0.3.0");
+            expect(journal).toContain("server binary updated to v0.3.0");
         });
 
         it("turns download bytes into a percentage and a human line", async () => {
@@ -7023,6 +7037,7 @@ describe("LilbeePlugin", () => {
         it("reports bytes only when the asset host sends no length", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
+            vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("");
             mockDownload.mockImplementationOnce(
                 async (_url: string, _size: number, _digest: string, onProgress: any) => {
                     onProgress("Downloading...", "https://e/dl", { receivedBytes: 5_000_000, totalBytes: null });
@@ -7036,6 +7051,7 @@ describe("LilbeePlugin", () => {
             );
 
             expect(seen).toContainEqual(["Downloading... 5.00 MB", undefined]);
+            expect(plugin.journal.entries.map((e) => e.message)).toContain("updating server binary: (unknown) -> v1");
         });
 
         it("falls back to a plain downloading label when the size is unknown", async () => {

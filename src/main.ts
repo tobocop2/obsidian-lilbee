@@ -462,6 +462,9 @@ export default class LilbeePlugin extends Plugin {
 
         try {
             const sharedRoot = registry.sharedRoot;
+            // Wired before the binary ensure so download failures and early
+            // lifecycle lines persist to logs/plugin.log, not just memory.
+            this.journal.setLogDir(node.join(registry.resolveDataDir(this.vaultId), LOGS_DIR));
             this.binaryManager = new BinaryManager(sharedBinDir(sharedRoot));
             const binaryPath = await this.ensureBinaryWithUi(onProgress);
             if (binaryPath === null) return;
@@ -471,7 +474,6 @@ export default class LilbeePlugin extends Plugin {
 
             try {
                 this.serverManager = this.buildServerManager(binaryPath, registry, sharedRoot);
-                this.journal.setLogDir(node.join(this.serverManager.dataDir, LOGS_DIR));
                 this.updateStatusBar(MESSAGES.STATUS_STARTING, DOT_STATE.PRIMARY);
                 this.setStatusClass("lilbee-status-starting");
                 onProgress?.({ phase: MANAGED_PHASE.STARTING, message: MESSAGES.STATUS_STARTING_SERVER });
@@ -522,6 +524,7 @@ export default class LilbeePlugin extends Plugin {
         }
         const takeOver = await this.confirmTakeOver(ownerName);
         if (!takeOver) {
+            this.journal.lifecycle(`take-over of the shared root declined (owner: ${ownerName})`);
             new Notice(MESSAGES.NOTICE_TAKE_OVER_DECLINED(ownerName));
             this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
             onProgress?.({
@@ -530,11 +533,16 @@ export default class LilbeePlugin extends Plugin {
             });
             return;
         }
+        this.journal.lifecycle(
+            `take-over accepted: asking the server of ${ownerName}${owner ? ` (pid ${owner.pid})` : ""} to exit`,
+        );
         if (owner && !(await this.askOwnerToStop(owner.dataDir))) {
+            this.journal.lifecycle(`take-over failed: the server of ${ownerName} did not stop when asked`);
             new Notice(MESSAGES.NOTICE_TAKE_OVER_TIMEOUT);
             this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
             return;
         }
+        this.journal.lifecycle(`take-over complete: the server of ${ownerName} is gone; starting ours`);
         new Notice(MESSAGES.NOTICE_TAKE_OVER_SUCCESS(ownerName));
         await this.startManagedServer(onProgress, false);
     }
@@ -615,6 +623,7 @@ export default class LilbeePlugin extends Plugin {
             onShutdownFailure: (err: Error) => {
                 new Notice(`${MESSAGES.ERROR_SERVER_SHUTDOWN_FAILED}: ${err.message}`);
             },
+            onJournal: (message: string) => this.journal.lifecycle(message),
         });
     }
 
@@ -889,6 +898,9 @@ export default class LilbeePlugin extends Plugin {
     async updateServer(release: ReleaseInfo, onProgress?: ServerDownloadProgressHandler): Promise<void> {
         const registry = this.vaultRegistry;
         if (!registry) return;
+        this.journal.lifecycle(
+            `updating server binary: ${this.getSharedLilbeeVersion() || "(unknown)"} -> ${release.tag}`,
+        );
         if (!this.binaryManager) {
             this.binaryManager = new BinaryManager(sharedBinDir(registry.sharedRoot));
         }
@@ -927,6 +939,7 @@ export default class LilbeePlugin extends Plugin {
         // Save the new version and the build variant we just installed
         this.setSharedLilbeeVersion(release.tag);
         this.setSharedLilbeeVariant(release.variant);
+        this.journal.lifecycle(`server binary updated to ${release.tag}`);
 
         // Restart if in managed mode
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
@@ -1412,6 +1425,7 @@ export default class LilbeePlugin extends Plugin {
             addedAt: existing?.addedAt ?? now,
             lastActiveAt: now,
         });
+        this.journal.lifecycle(`re-pointing this vault at data dir ${dataDir}`);
         if (this.serverManager) {
             await this.serverManager.stop();
             this.serverManager = null;
@@ -1436,7 +1450,10 @@ export default class LilbeePlugin extends Plugin {
         this.syncPillEl?.remove();
         this.syncPillEl = null;
         this.taskQueue.dispose();
-        void this.serverManager?.stop();
+        if (this.serverManager) {
+            this.journal.lifecycle("plugin unloading; stopping the managed server");
+            void this.serverManager.stop();
+        }
     }
 
     async loadSettings(): Promise<void> {
@@ -1514,10 +1531,12 @@ export default class LilbeePlugin extends Plugin {
 
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
             if (previousMode !== SERVER_MODE.MANAGED) {
+                this.journal.lifecycle("server mode switched to managed; starting the managed server");
                 void this.startManagedServer();
             }
         } else {
             if (previousMode === SERVER_MODE.MANAGED) {
+                this.journal.lifecycle("server mode switched to external; stopping the managed server");
                 void this.serverManager?.stop();
                 this.serverManager = null;
                 this.binaryManager = null;

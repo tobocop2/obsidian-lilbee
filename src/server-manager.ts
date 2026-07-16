@@ -138,6 +138,8 @@ export interface ServerManagerOptions {
     onStateChange?: (state: ServerState) => void;
     onRestartsExhausted?: (output: string) => void;
     onShutdownFailure?: (error: Error) => void;
+    /** Receives one line per lifecycle decision (spawn, adopt, stop, crash-restart). */
+    onJournal?: (message: string) => void;
 }
 
 const DESIRED = {
@@ -218,6 +220,10 @@ export class ServerManager {
     private setState(s: ServerState): void {
         this._state = s;
         this.opts.onStateChange?.(s);
+    }
+
+    private journal(message: string): void {
+        this.opts.onJournal?.(message);
     }
 
     /** True when stop() has been requested; a method so TS narrowing can't fold it away. */
@@ -305,11 +311,13 @@ export class ServerManager {
             if (code === LOCK_REFUSAL_EXIT_CODE) {
                 // Another server owns the lock; the server's refusal message is
                 // already in the output capture. Not a crash: no restart loop.
+                this.journal(`spawned server pid ${child.pid} refused to start: another server owns the shared root`);
                 this.fatalStartError = new ScopeHeldError(this.lastOutput);
                 this.setState(SERVER_STATE.ERROR);
                 return;
             }
             this.pushOutputLine(`server exited (${describeExit(code, signal)})`);
+            this.journal(`server pid ${child.pid} exited (${describeExit(code, signal)})`);
             this.snapshotCrashOutput();
             this.scheduleCrashRestart();
         });
@@ -317,6 +325,7 @@ export class ServerManager {
             if (child !== this.child) return;
             this.child = null;
             if (this.desired === DESIRED.STOPPED) return;
+            this.journal(`failed to launch server: ${err.message}`);
             this.pushOutputLine(`failed to launch server: ${err.message}`);
             this.snapshotCrashOutput();
             this.fatalStartError = new Error(`Failed to launch server: ${err.message}`);
@@ -327,6 +336,10 @@ export class ServerManager {
     private scheduleCrashRestart(): void {
         if (this.crashCount < SERVER_MANAGER_CONFIG.MAX_CRASH_RESTARTS) {
             this.crashCount++;
+            this.journal(
+                `restarting in ${SERVER_MANAGER_CONFIG.CRASH_RESTART_DELAY_MS}ms ` +
+                    `(attempt ${this.crashCount}/${SERVER_MANAGER_CONFIG.MAX_CRASH_RESTARTS})`,
+            );
             this.setState(SERVER_STATE.ERROR);
             this.restartTimer = window.setTimeout(() => {
                 this.restartTimer = null;
@@ -335,6 +348,7 @@ export class ServerManager {
             }, SERVER_MANAGER_CONFIG.CRASH_RESTART_DELAY_MS);
             return;
         }
+        this.journal(`server did not stay up after ${SERVER_MANAGER_CONFIG.MAX_CRASH_RESTARTS} restarts; giving up`);
         this.fatalStartError = new Error(
             `Server kept exiting and did not come back after ${SERVER_MANAGER_CONFIG.MAX_CRASH_RESTARTS} restarts`,
         );
@@ -393,6 +407,7 @@ export class ServerManager {
         this.cleanupPortFile();
 
         this.child = this.spawnChild();
+        this.journal(`spawned server pid ${this.child.pid}`);
 
         try {
             await this.waitForPortFile(generation);
@@ -417,6 +432,7 @@ export class ServerManager {
         this._actualPort = session.port;
         this.adopted = true;
         this.watchAdopted();
+        this.journal(`adopted running server on port ${session.port}`);
         return true;
     }
 
@@ -456,6 +472,7 @@ export class ServerManager {
         this.stopAdoptedWatch();
         this.adopted = false;
         this._actualPort = null;
+        this.journal("adopted server became unreachable");
         this.pushOutputLine("adopted server became unreachable");
         this.snapshotCrashOutput();
         this.scheduleCrashRestart();
@@ -545,25 +562,7 @@ export class ServerManager {
             return;
         }
 
-        await requestServerShutdown(this.opts.dataDir);
-        if (!(await this.exitedWithin(SERVER_MANAGER_CONFIG.STOP_GRACE_MS))) {
-            if (process.platform === PLATFORM.WIN32) {
-                // taskkill /f /t is the tree kill; Windows has no group signal.
-                try {
-                    await node.execFile("taskkill", ["/pid", String(child.pid), "/f", "/t"]);
-                } catch (err) {
-                    this.opts.onShutdownFailure?.(err instanceof Error ? err : new Error(String(err)));
-                }
-            } else {
-                this.signalGroup(child, "SIGTERM");
-                if (!(await this.exitedWithin(SERVER_MANAGER_CONFIG.KILL_GRACE_MS))) {
-                    this.signalGroup(child, "SIGKILL");
-                }
-            }
-            // SIGKILL (and taskkill /f) cannot be ignored; the exit event is
-            // guaranteed, so this await is what makes "stopped" mean stopped.
-            await this.childExit;
-        }
+        await this.terminateChild(child);
 
         this.child = null;
         this.childExit = null;
@@ -572,16 +571,47 @@ export class ServerManager {
         this.cleanupPortFile();
     }
 
+    /** Ask the child to exit, escalate on timeout, and await the observed exit. */
+    private async terminateChild(child: ChildProcess): Promise<void> {
+        const stopStartedAt = Date.now();
+        const accepted = await requestServerShutdown(this.opts.dataDir);
+        this.journal(`stopping server pid ${child.pid}: shutdown request ${accepted ? "accepted" : "not accepted"}`);
+        if (!(await this.exitedWithin(SERVER_MANAGER_CONFIG.STOP_GRACE_MS))) {
+            if (process.platform === PLATFORM.WIN32) {
+                // taskkill /f /t is the tree kill; Windows has no group signal.
+                this.journal(`sent taskkill /f /t to pid ${child.pid}`);
+                try {
+                    await node.execFile("taskkill", ["/pid", String(child.pid), "/f", "/t"]);
+                } catch (err) {
+                    this.opts.onShutdownFailure?.(err instanceof Error ? err : new Error(String(err)));
+                }
+            } else {
+                this.journal(`sent SIGTERM to pid ${child.pid} group`);
+                this.signalGroup(child, "SIGTERM");
+                if (!(await this.exitedWithin(SERVER_MANAGER_CONFIG.KILL_GRACE_MS))) {
+                    this.journal(`sent SIGKILL to pid ${child.pid} group`);
+                    this.signalGroup(child, "SIGKILL");
+                }
+            }
+            // SIGKILL (and taskkill /f) cannot be ignored; the exit event is
+            // guaranteed, so this await is what makes "stopped" mean stopped.
+            await this.childExit;
+        }
+        this.journal(`server pid ${child.pid} exit observed after ${Date.now() - stopStartedAt}ms`);
+    }
+
     /** Ask an adopted server to exit; report when it will not go. */
     private async stopAdopted(): Promise<void> {
         const accepted = await requestServerShutdown(this.opts.dataDir);
         const gone = accepted && (await awaitServerGone(this.opts.dataDir, SERVER_MANAGER_CONFIG.STOP_GRACE_MS));
         if (gone) {
+            this.journal("adopted server stopped when asked");
             this.cleanupPortFile();
             return;
         }
         // Not our child: there is no process handle to signal. Its own
         // supervisor (parent monitor, OS locks) bounds how long it lingers.
+        this.journal("adopted server did not stop when asked");
         this.opts.onShutdownFailure?.(new Error("the running server did not stop when asked"));
     }
 

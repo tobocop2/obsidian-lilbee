@@ -286,6 +286,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         if (serverState === SERVER_STATE.STOPPED || serverState === SERVER_STATE.ERROR) {
             controlSetting.addButton((btn) =>
                 btn.setButtonText(MESSAGES.BUTTON_START).onClick(async () => {
+                    this.plugin.journal.lifecycle("start requested from the settings tab");
                     await this.plugin.startManagedServer();
                     this.render();
                 }),
@@ -294,6 +295,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         if (serverState === SERVER_STATE.READY || serverState === SERVER_STATE.STARTING) {
             controlSetting.addButton((btn) =>
                 btn.setButtonText(MESSAGES.BUTTON_STOP).onClick(async () => {
+                    this.plugin.journal.lifecycle("stop requested from the settings tab");
                     await this.plugin.serverManager?.stop();
                     this.render();
                 }),
@@ -302,6 +304,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         if (serverState === SERVER_STATE.READY) {
             controlSetting.addButton((btn) =>
                 btn.setButtonText(MESSAGES.BUTTON_RESTART).onClick(async () => {
+                    this.plugin.journal.lifecycle("restart requested from the settings tab");
                     try {
                         await this.plugin.serverManager?.restart();
                     } catch (err) {

@@ -8,6 +8,7 @@ import { MESSAGES } from "../src/locales/en";
 import { ServerStartingError } from "../src/api";
 import { ok, err } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
+import { ErrorJournal } from "../src/error-journal";
 import { ConfirmPullModal } from "../src/views/confirm-pull-modal";
 
 const mockGetLatestRelease = vi.fn();
@@ -150,7 +151,9 @@ function makePlugin(overrides: Partial<LilbeeSettings> & { lilbeeVersion?: strin
     const reconcileWiki = vi.fn().mockResolvedValue(undefined);
     const configureManagedStorage = vi.fn().mockResolvedValue(undefined);
     const diagnosticsContext = vi.fn().mockReturnValue({ pluginVersion: "0.0.0-test" });
+    const journal = new ErrorJournal();
     return {
+        journal,
         settings,
         api,
         saveSettings,
@@ -2671,6 +2674,7 @@ describe("managed mode settings", () => {
 
         expect(mockStart).toHaveBeenCalled();
         expect(displaySpy).toHaveBeenCalled();
+        expect(plugin.journal.entries.map((e) => e.message)).toContain("start requested from the settings tab");
     });
 
     it("Stop button calls serverManager.stop", async () => {
@@ -2687,6 +2691,7 @@ describe("managed mode settings", () => {
 
         expect(mockStop).toHaveBeenCalled();
         expect(displaySpy).toHaveBeenCalled();
+        expect(plugin.journal.entries.map((e) => e.message)).toContain("stop requested from the settings tab");
     });
 
     it("Restart button calls serverManager.restart", async () => {
@@ -2703,6 +2708,7 @@ describe("managed mode settings", () => {
 
         expect(mockRestart).toHaveBeenCalled();
         expect(displaySpy).toHaveBeenCalled();
+        expect(plugin.journal.entries.map((e) => e.message)).toContain("restart requested from the settings tab");
     });
 
     it("Restart button surfaces a restart failure as a notice and still re-renders", async () => {
