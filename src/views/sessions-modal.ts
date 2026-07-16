@@ -57,6 +57,7 @@ export class SessionsModal extends Modal {
             this.filter = filterEl.value;
             this.renderList();
         });
+        window.setTimeout(() => filterEl.focus(), 0);
 
         this.listEl = contentEl.createDiv({ cls: "lilbee-sessions-list" });
         void this.load();
@@ -107,14 +108,13 @@ export class SessionsModal extends Modal {
         }
 
         const main = row.createDiv({ cls: "lilbee-session-main" });
-        main.setAttribute("role", "button");
-        main.setAttribute("tabindex", "0");
         const titleRow = main.createDiv({ cls: "lilbee-session-title-row" });
         titleRow.createSpan({ cls: "lilbee-session-title", text: meta.title });
-        titleRow.createSpan({
+        const dateEl = titleRow.createSpan({
             cls: "lilbee-session-date",
             text: relativeTimeFromIso(meta.updated_at),
         });
+        if (meta.updated_at) dateEl.setAttribute("title", meta.updated_at);
         main.createDiv({
             cls: "lilbee-session-meta",
             text: MESSAGES.SESSIONS_ROW_META(meta.message_count, displayLabelForRef(meta.model_ref)),
@@ -143,6 +143,11 @@ export class SessionsModal extends Modal {
             attr: { type: "text" },
         });
         input.value = meta.title;
+        // Focus after the row re-renders; select the title so typing replaces it.
+        window.setTimeout(() => {
+            input.focus();
+            input.select();
+        }, 0);
         input.addEventListener("keydown", (evt: KeyboardEvent) => {
             if (evt.key === "Enter") void this.commitRename(meta, input.value);
             else if (evt.key === "Escape") {

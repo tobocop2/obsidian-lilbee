@@ -98,6 +98,34 @@ describe("SessionsModal", () => {
         expect(rows[1].classList.contains("is-active")).toBe(true);
     });
 
+    it("shows the relative time with the absolute timestamp as a hover title", async () => {
+        const plugin = makePlugin([makeSession({ updated_at: "2026-07-16T01:00:00Z" })]);
+        const { el } = await openModal(plugin, makeHooks());
+
+        const date = el.find("lilbee-session-date") as MockElement;
+        expect(date.getAttribute("title")).toBe("2026-07-16T01:00:00Z");
+    });
+
+    it("omits the hover title when a session has no timestamp", async () => {
+        const plugin = makePlugin([makeSession({ updated_at: "" })]);
+        const { el } = await openModal(plugin, makeHooks());
+
+        const date = el.find("lilbee-session-date") as MockElement;
+        expect(date.getAttribute("title")).toBeNull();
+    });
+
+    it("focuses the filter input on open", async () => {
+        const plugin = makePlugin([makeSession()]);
+        const app = new App();
+        const modal = new SessionsModal(app as any, plugin as any, makeHooks());
+        const focus = vi.spyOn(MockElement.prototype, "focus");
+        modal.open();
+        await vi.runAllTimersAsync();
+
+        expect(focus).toHaveBeenCalled();
+        focus.mockRestore();
+    });
+
     it("filters on a case-insensitive substring of the title", async () => {
         const plugin = makePlugin([makeSession({ title: "Bees" }), makeSession({ id: "s2", title: "Wasps" })]);
         const { el } = await openModal(plugin, makeHooks());
