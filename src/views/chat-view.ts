@@ -169,6 +169,8 @@ export class ChatView extends ItemView {
     private sessionId: string | null = null;
     /** Serializes session writes: the log is append-only, so turns must land in order. */
     private persistQueue: Promise<void> = Promise.resolve();
+    /** The send in progress, so a resume can let it finish unwinding before replacing the transcript. */
+    private inFlightSend: Promise<void> | null = null;
     private messagesEl: HTMLElement | null = null;
     private sendBtn: HTMLButtonElement | null = null;
     private textareaEl: HTMLTextAreaElement | null = null;
@@ -184,6 +186,8 @@ export class ChatView extends ItemView {
     private activeEmbeddingModel = "";
     private chatModeContainer: HTMLElement | null = null;
     private chatModeCurrent: ChatMode | null = null;
+    /** Search-scope toggle buttons by scope. Empty while the wiki feature is off — they aren't rendered then. */
+    private searchModeButtons = new Map<SearchChunkType, HTMLElement>();
     // Optional model roles (Vision, Rerank) surfaced in the rail. Keyed by the
     // spec's task; data refreshed alongside the chat/embed selectors. Options
     // come from the per-task catalog (so only role-capable models show), exactly
@@ -290,22 +294,20 @@ export class ChatView extends ItemView {
         if (wikiEnabled) {
             const modeGroup = actions.createDiv({ cls: "lilbee-search-mode" });
             const modes: { value: SearchChunkType; label: string }[] = [
-                { value: "all", label: MESSAGES.LABEL_SEARCH_ALL },
-                { value: "wiki", label: MESSAGES.LABEL_SEARCH_WIKI },
-                { value: "raw", label: MESSAGES.LABEL_SEARCH_RAW },
+                { value: SEARCH_CHUNK_TYPE.ALL, label: MESSAGES.LABEL_SEARCH_ALL },
+                { value: SEARCH_CHUNK_TYPE.WIKI, label: MESSAGES.LABEL_SEARCH_WIKI },
+                { value: SEARCH_CHUNK_TYPE.RAW, label: MESSAGES.LABEL_SEARCH_RAW },
             ];
             for (const mode of modes) {
-                const btn = modeGroup.createEl("button", {
-                    text: mode.label,
-                    cls: `lilbee-search-mode-btn${this.plugin.settings.searchChunkType === mode.value ? " active" : ""}`,
-                });
+                const btn = modeGroup.createEl("button", { text: mode.label, cls: "lilbee-search-mode-btn" });
+                this.searchModeButtons.set(mode.value, btn);
                 btn.addEventListener("click", () => {
                     this.plugin.settings.searchChunkType = mode.value;
                     void this.plugin.saveSettings();
-                    modeGroup.querySelectorAll(".lilbee-search-mode-btn").forEach((b) => b.removeClass("active"));
-                    btn.addClass("active");
+                    this.syncSearchModeButtons(mode.value);
                 });
             }
+            this.syncSearchModeButtons(this.plugin.settings.searchChunkType);
         }
 
         actions.createDiv({ cls: "lilbee-toolbar-spacer" });
@@ -359,7 +361,7 @@ export class ChatView extends ItemView {
                 const text = textarea.value.trim();
                 if (!text) return;
                 textarea.value = "";
-                void this.sendMessage(text);
+                this.inFlightSend = this.sendMessage(text);
             } catch (err) {
                 const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
                 new Notice(MESSAGES.ERROR_CHAT_FAILED(reason));
@@ -895,7 +897,12 @@ export class ChatView extends ItemView {
             new Notice(MESSAGES.ERROR_SESSION_RESUME_FAILED(reason));
             return;
         }
-        this.streamController?.abort();
+        // Let an in-flight answer finish unwinding first: its abort handler appends to
+        // `history`, which would otherwise land on top of the transcript we restore below.
+        if (this.sending) {
+            this.streamController?.abort();
+            await this.inFlightSend;
+        }
         this.clearChat();
         this.sessionId = detail.meta.id;
         this.hideEmptyState();
@@ -921,11 +928,19 @@ export class ChatView extends ItemView {
         new Notice(MESSAGES.NOTICE_SESSION_MODEL_UNAVAILABLE(modelRef, this.chatActive));
     }
 
+    /** Wiki scope is unreachable with the wiki feature off, so a wiki-scoped session keeps the current one. */
     private restoreScope(scope: string): void {
         const chunkType = chunkTypeFromScope(scope);
         if (!chunkType || chunkType === this.plugin.settings.searchChunkType) return;
+        if (chunkType === SEARCH_CHUNK_TYPE.WIKI && !this.plugin.settings.wikiEnabled) return;
         this.plugin.settings.searchChunkType = chunkType;
         void this.plugin.saveSettings();
+        this.syncSearchModeButtons(chunkType);
+    }
+
+    /** Move the toggle's highlight to `active`, whether a click or a session resume changed it. */
+    private syncSearchModeButtons(active: SearchChunkType): void {
+        for (const [value, btn] of this.searchModeButtons) btn.toggleClass("active", value === active);
     }
 
     private renderRestoredMessage(message: SessionMessageItem): void {
@@ -943,13 +958,10 @@ export class ChatView extends ItemView {
 
     /** Persisted sources are bare paths, so restored chips link out without the live chunk detail. */
     private renderRestoredSources(container: HTMLElement, sources: string[]): void {
-        const sourcesEl = container.createDiv({ cls: "lilbee-chat-sources" });
-        const details = sourcesEl.createEl("details");
-        details.createEl("summary", { text: MESSAGES.LABEL_SOURCES });
-        const chipsEl = details.createDiv({ cls: "lilbee-chat-source-chips" });
+        const chipsEl = this.createSourcesBlock(container);
         for (const path of sources) {
-            const chip = chipsEl.createEl("span", { cls: "lilbee-source-chip" });
-            chip.createEl("span", { text: path, cls: "lilbee-source-chip-file" });
+            const chip = chipsEl.createSpan({ cls: "lilbee-source-chip" });
+            chip.createSpan({ text: path, cls: "lilbee-source-chip-file" });
             chip.addEventListener("click", () => void this.app.workspace.openLinkText(path, ""));
         }
     }
@@ -1351,11 +1363,16 @@ export class ChatView extends ItemView {
         }
     }
 
-    private renderSources(container: HTMLElement, sources: Source[]): void {
+    /** The collapsed "Sources" block shared by live and restored answers. Returns the chip container. */
+    private createSourcesBlock(container: HTMLElement): HTMLElement {
         const sourcesEl = container.createDiv({ cls: "lilbee-chat-sources" });
         const details = sourcesEl.createEl("details");
         details.createEl("summary", { text: MESSAGES.LABEL_SOURCES });
-        const chipsEl = details.createDiv({ cls: "lilbee-chat-source-chips" });
+        return details.createDiv({ cls: "lilbee-chat-source-chips" });
+    }
+
+    private renderSources(container: HTMLElement, sources: Source[]): void {
+        const chipsEl = this.createSourcesBlock(container);
         renderAggregatedSourceChips(chipsEl, sources, this.app, this.plugin.api);
     }
 

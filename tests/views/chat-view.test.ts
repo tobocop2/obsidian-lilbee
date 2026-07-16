@@ -4847,7 +4847,7 @@ describe("ChatView — chat sessions", () => {
         expect(plugin.api.createSession).toHaveBeenCalledTimes(1);
     });
 
-    it("does not persist a cancelled answer", async () => {
+    it("persists the question but not an answer whose stream never completed", async () => {
         const plugin = makePlugin();
         const { mockFn, done } = makeStream([{ event: SSE_EVENT.TOKEN, data: "partial" }]);
         plugin.api.chatStream = mockFn;
@@ -5278,5 +5278,95 @@ describe("ChatView — restored turns without sources", () => {
 
         expect(container.find("lilbee-chat-sources")).toBeNull();
         expect(container.find("lilbee-chat-content")!.textContent).toBe("answer");
+    });
+});
+
+describe("ChatView — resume interactions with live state", () => {
+    beforeEach(() => {
+        Notice.clear();
+    });
+
+    function detail(scope = "both") {
+        return {
+            meta: {
+                id: "s5",
+                title: "Earlier chat",
+                created_at: "t",
+                updated_at: "t",
+                model_ref: "llama3",
+                scope,
+                message_count: 1,
+            },
+            messages: [{ role: "user", content: "old question", sources: [], ts: "t" }],
+            summary: null,
+        };
+    }
+
+    it("does not let an aborted answer leak into the restored transcript", async () => {
+        const plugin = makePlugin();
+        // Yields a token then hangs until aborted, mirroring how the real stream unwinds on stop.
+        plugin.api.chatStream = vi
+            .fn()
+            .mockImplementation((_q: string, _h: unknown, _k: unknown, signal: AbortSignal) =>
+                (async function* () {
+                    yield { event: SSE_EVENT.TOKEN, data: "partial answer" };
+                    await new Promise((_resolve, reject) => {
+                        signal.addEventListener("abort", () => {
+                            const err = new Error("aborted");
+                            err.name = "AbortError";
+                            reject(err);
+                        });
+                    });
+                })(),
+            );
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail());
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        container.find("lilbee-chat-textarea")!.value = "live question";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        await (view as any).resumeSession("s5");
+        await tick();
+        await tick();
+
+        expect((view as any).history).toEqual([{ role: "user", content: "old question" }]);
+        expect((view as any).sending).toBe(false);
+    });
+
+    it("moves the search-scope highlight when a session restores a different scope", async () => {
+        const plugin = makePlugin();
+        plugin.settings.searchChunkType = "all";
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail("raw"));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        await (view as any).resumeSession("s5");
+        await tick();
+
+        const active = container.findAll("lilbee-search-mode-btn").filter((b) => b.classList.contains("active"));
+        expect(active).toHaveLength(1);
+        expect(active[0].textContent).toBe(MESSAGES.LABEL_SEARCH_RAW);
+        expect(plugin.settings.searchChunkType).toBe("raw");
+    });
+
+    it("keeps the current scope when a wiki-scoped session resumes with the wiki feature off", async () => {
+        const plugin = makePlugin();
+        plugin.settings.wikiEnabled = false;
+        plugin.settings.searchChunkType = "all";
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail("wiki"));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        await (view as any).resumeSession("s5");
+        await tick();
+
+        expect(plugin.settings.searchChunkType).toBe("all");
+        expect(plugin.saveSettings).not.toHaveBeenCalled();
     });
 });
