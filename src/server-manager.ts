@@ -12,134 +12,16 @@ function describeExit(code: number | null, signal: NodeJS.Signals | null): strin
     return "unknown cause";
 }
 
-interface ProcRow {
-    pid: number;
-    ppid: number;
-    command: string;
-}
-
-/** Parse `ps -axo pid=,ppid=,command=` rows; ignores malformed lines. */
-export function parsePsOutput(stdout: string): ProcRow[] {
-    const rows: ProcRow[] = [];
-    for (const line of stdout.split("\n")) {
-        const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
-        if (!match) continue;
-        rows.push({ pid: Number(match[1]), ppid: Number(match[2]), command: match[3] });
-    }
-    return rows;
-}
-
-/** A `lilbee serve` process is ours if it carries this vault's data dir. */
-function isServerFor(command: string, dataDir: string): boolean {
-    return command.includes("lilbee") && command.includes("serve") && command.includes(dataDir);
-}
-
-/** Collect the given roots plus every descendant (the server's worker forks). */
-export function collectProcessTree(rows: ProcRow[], roots: number[]): number[] {
-    const childrenOf = new Map<number, number[]>();
-    for (const row of rows) {
-        const kids = childrenOf.get(row.ppid) ?? [];
-        kids.push(row.pid);
-        childrenOf.set(row.ppid, kids);
-    }
-    const seen = new Set<number>();
-    const stack = [...roots];
-    while (stack.length > 0) {
-        const pid = stack.pop()!;
-        if (seen.has(pid)) continue;
-        seen.add(pid);
-        for (const child of childrenOf.get(pid) ?? []) stack.push(child);
-    }
-    return [...seen];
-}
-
-/**
- * Kill orphaned `lilbee serve` processes bound to *dataDir* — and their worker
- * forks — left behind by a session that ended without a clean stop. Returns the
- * pids it terminated. Best-effort: enumeration or kill failures are swallowed.
- */
-export async function reapOrphanServers(dataDir: string): Promise<number[]> {
-    if (process.platform === PLATFORM.WIN32) {
-        return reapOrphanServersWindows(dataDir);
-    }
-    let stdout: string;
-    try {
-        // -A all processes, -ww no command-line truncation (a long --data-dir
-        // must survive), portable across macOS and Linux.
-        ({ stdout } = await node.execFile("ps", ["-A", "-ww", "-o", "pid=,ppid=,command="]));
-    } catch {
-        return [];
-    }
-    const rows = parsePsOutput(stdout);
-    const roots = rows.filter((r) => isServerFor(r.command, dataDir)).map((r) => r.pid);
-    if (roots.length === 0) return [];
-    const tree = collectProcessTree(rows, roots);
-    for (const pid of tree) {
-        try {
-            node.processKill(pid, "SIGKILL");
-        } catch {
-            // already gone
-        }
-    }
-    return tree;
-}
-
-/** Force-kill a known server pid and its worker forks. Best-effort. */
-export async function killServerTree(pid: number): Promise<void> {
-    if (process.platform === PLATFORM.WIN32) {
-        try {
-            await node.execFile("taskkill", ["/pid", String(pid), "/f", "/t"]);
-        } catch {
-            // already gone
-        }
-        return;
-    }
-    try {
-        node.processKill(-pid, "SIGKILL");
-    } catch {
-        try {
-            node.processKill(pid, "SIGKILL");
-        } catch {
-            // already gone
-        }
-    }
-}
-
-/** Windows can't signal a group; taskkill /t tree-kills each matching root. */
-async function reapOrphanServersWindows(dataDir: string): Promise<number[]> {
-    let stdout: string;
-    try {
-        ({ stdout } = await node.execFile("powershell", [
-            "-NoProfile",
-            "-Command",
-            'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId)`t$($_.CommandLine)" }',
-        ]));
-    } catch {
-        return [];
-    }
-    const roots: number[] = [];
-    for (const line of stdout.split("\n")) {
-        const tab = line.indexOf("\t");
-        if (tab < 0) continue;
-        const pid = Number(line.slice(0, tab).trim());
-        const command = line.slice(tab + 1);
-        if (Number.isNaN(pid) || !isServerFor(command, dataDir)) continue;
-        roots.push(pid);
-    }
-    for (const pid of roots) {
-        try {
-            await node.execFile("taskkill", ["/pid", String(pid), "/f", "/t"]);
-        } catch {
-            // already gone
-        }
-    }
-    return roots;
-}
-
 const SERVER_MANAGER_CONFIG = {
     HEALTH_POLL_INTERVAL_MS: 1000,
     HEALTH_POLL_MAX_ATTEMPTS: 120,
-    STOP_GRACE_MS: 5000,
+    ADOPT_PROBE_TIMEOUT_MS: 2000,
+    ADOPTED_WATCH_INTERVAL_MS: 5000,
+    SHUTDOWN_REQUEST_TIMEOUT_MS: 3000,
+    // Must exceed the server's own worst-case fleet teardown (bounded ~10s
+    // server-side) so a graceful stop is never cut short by an escalation.
+    STOP_GRACE_MS: 12_000,
+    KILL_GRACE_MS: 5000,
     CRASH_RESTART_DELAY_MS: 3000,
     MAX_CRASH_RESTARTS: 3,
     PORT_FILE_POLL_INTERVAL_MS: 500,
@@ -147,9 +29,104 @@ const SERVER_MANAGER_CONFIG = {
     SPAWN_CRASH_LOG_MAX_BYTES: 262_144,
 } as const;
 
+/** Exit code a refused `lilbee serve` uses when another server holds its lock. */
+export const LOCK_REFUSAL_EXIT_CODE = 3;
+
+/** Sidecar the server writes next to its scope lock, naming the holder. */
+const SCOPE_OWNER_FILE = "server.scope.owner.json";
+
+/** Identity of the server holding the shared root, read from its sidecar. */
+export interface ScopeOwner {
+    dataDir: string;
+    pid: number;
+}
+
+/** The server refused to start: another vault's server owns the shared root. */
+export class ScopeHeldError extends Error {
+    constructor(serverOutput: string) {
+        super(serverOutput || "another lilbee server owns the shared root");
+        this.name = "ScopeHeldError";
+    }
+}
+
+export function readScopeOwner(sharedRoot: string): ScopeOwner | null {
+    const path = node.join(sharedRoot, SCOPE_OWNER_FILE);
+    if (!node.existsSync(path)) return null;
+    try {
+        const parsed = JSON.parse(node.readFileSync(path, "utf-8")) as {
+            data_dir?: unknown;
+            pid?: unknown;
+        };
+        if (typeof parsed.data_dir !== "string" || typeof parsed.pid !== "number") return null;
+        return { dataDir: parsed.data_dir, pid: parsed.pid };
+    } catch {
+        return null;
+    }
+}
+
+/** Port + bearer token of the server serving *dataDir*, from its session files. */
+export function readServerSession(dataDir: string): { port: number; token: string } | null {
+    try {
+        const portRaw = node.readFileSync(node.join(dataDir, "data", "server.port"), "utf-8");
+        const port = parseInt(portRaw.trim(), 10);
+        if (isNaN(port) || port <= 0 || port > 65535) return null;
+        const sessionRaw = node.readFileSync(node.join(dataDir, "data", "server.json"), "utf-8");
+        const parsed = JSON.parse(sessionRaw) as { token?: unknown };
+        if (typeof parsed.token !== "string") return null;
+        return { port, token: parsed.token };
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Ask the server serving *dataDir* to stop, via its own API. True when the
+ * request was accepted. Talks fetch directly rather than through LilbeeClient:
+ * the target is reached during lifecycle negotiation (possibly another vault's
+ * server, with its own token and port) before any client for it exists.
+ */
+export async function requestServerShutdown(dataDir: string): Promise<boolean> {
+    const session = readServerSession(dataDir);
+    if (session === null) return false;
+    try {
+        const res = await node.fetch(`http://127.0.0.1:${session.port}/api/shutdown`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session.token}` },
+            signal: AbortSignal.timeout(SERVER_MANAGER_CONFIG.SHUTDOWN_REQUEST_TIMEOUT_MS),
+        });
+        return res.ok;
+    } catch {
+        return false;
+    }
+}
+
+/** Poll until the server serving *dataDir* stops answering; false on timeout. */
+export async function awaitServerGone(dataDir: string, timeoutMs: number): Promise<boolean> {
+    const session = readServerSession(dataDir);
+    if (session === null) return true;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        try {
+            await node.fetch(`http://127.0.0.1:${session.port}/api/health`, {
+                signal: AbortSignal.timeout(SERVER_MANAGER_CONFIG.ADOPT_PROBE_TIMEOUT_MS),
+            });
+        } catch {
+            return true;
+        }
+        await new Promise((r) => window.setTimeout(r, SERVER_MANAGER_CONFIG.PORT_FILE_POLL_INTERVAL_MS));
+    }
+    return false;
+}
+
 export interface ServerManagerOptions {
     binaryPath: string;
     dataDir: string;
+    /**
+     * The shared root every vault's server competes for. Passed to the server
+     * as its exclusive scope, so the one-managed-server-ever invariant is
+     * enforced by an OS lock the server holds, not by plugin bookkeeping.
+     */
+    sharedRoot: string;
     /**
      * HuggingFace cache and GGUF storage. Set via `LILBEE_MODELS_DIR` so the
      * server uses the same path across all vaults — without it, lilbee would
@@ -163,17 +140,40 @@ export interface ServerManagerOptions {
     onShutdownFailure?: (error: Error) => void;
 }
 
+const DESIRED = {
+    RUNNING: "running",
+    STOPPED: "stopped",
+} as const;
+
+type Desired = (typeof DESIRED)[keyof typeof DESIRED];
+
+/**
+ * Supervises the one managed server for this vault's data dir.
+ *
+ * The supervisor never hunts processes: a healthy server found at start is
+ * adopted, a server it must replace is asked to exit over its API, and only
+ * its own spawned child is ever signalled — with the exit awaited, so
+ * "stopped" always means the process is gone and its exit event consumed.
+ * Mutual exclusion lives in the server's own OS locks (data dir + scope);
+ * a refused spawn surfaces as ScopeHeldError instead of a crash loop.
+ */
 export class ServerManager {
     private opts: ServerManagerOptions;
     private child: ChildProcess | null = null;
+    /** Resolves when the current child's exit event fires; created at spawn. */
+    private childExit: Promise<void> | null = null;
+    private desired: Desired = DESIRED.STOPPED;
+    private adopted = false;
+    private adoptedWatch: number | null = null;
     private _state: ServerState = SERVER_STATE.STOPPED;
     private crashCount = 0;
-    private stopping = false;
     private restartTimer: number | null = null;
     private _actualPort: number | null = null;
     private _outputLines: string[] = [];
-    /** Set when the child can no longer come up (spawn error, restarts exhausted); aborts discovery. */
+    /** Set when the child can no longer come up (spawn error, refusal, restarts exhausted); aborts discovery. */
     private fatalStartError: Error | null = null;
+    /** Bumped per start(); a superseded attempt's discovery loop steps aside. */
+    private startGeneration = 0;
     private static readonly MAX_OUTPUT_LINES = 20;
 
     constructor(opts: ServerManagerOptions) {
@@ -195,11 +195,6 @@ export class ServerManager {
 
     get dataDir(): string {
         return this.opts.dataDir;
-    }
-
-    /** PID of the running server child, for the vault lock. Null when stopped. */
-    get serverPid(): number | null {
-        return this.child?.pid ?? null;
     }
 
     private get portFilePath(): string {
@@ -225,15 +220,21 @@ export class ServerManager {
         this.opts.onStateChange?.(s);
     }
 
-    /** Throws when waiting any longer is pointless: the child is unrecoverable or the user stopped us. */
-    private assertStartupViable(): void {
-        if (this.fatalStartError) throw this.fatalStartError;
-        if (this.stopping) throw new Error("Server was stopped during startup");
+    /** True when stop() has been requested; a method so TS narrowing can't fold it away. */
+    private stopRequested(): boolean {
+        return this.desired === DESIRED.STOPPED;
     }
 
-    private async waitForPortFile(): Promise<void> {
+    /** Throws when waiting any longer is pointless: superseded, unrecoverable, or stopped. */
+    private assertStartupViable(generation: number): void {
+        if (this.startGeneration !== generation) throw new Error("Superseded by a newer start");
+        if (this.fatalStartError) throw this.fatalStartError;
+        if (this.stopRequested()) throw new Error("Server was stopped during startup");
+    }
+
+    private async waitForPortFile(generation: number): Promise<void> {
         for (let i = 0; i < SERVER_MANAGER_CONFIG.PORT_FILE_MAX_ATTEMPTS; i++) {
-            this.assertStartupViable();
+            this.assertStartupViable(generation);
             if (node.existsSync(this.portFilePath)) {
                 const content = node.readFileSync(this.portFilePath, "utf-8").trim();
                 const port = parseInt(content, 10);
@@ -259,10 +260,7 @@ export class ServerManager {
             LILBEE_CORS_ORIGINS: "app://obsidian.md",
             LILBEE_PARENT_PID: String(process.pid),
             LILBEE_MODELS_DIR: this.opts.modelsDir,
-            // The managed server has exactly one client (this plugin), so applying
-            // GPU placement over HTTP is safe; enable it so the placement view can
-            // apply. A shared `lilbee serve` keeps this off by default.
-            LILBEE_ALLOW_HTTP_PLACEMENT: "true",
+            LILBEE_EXCLUSIVE_SCOPE: this.opts.sharedRoot,
         };
         if (this.opts.ragSystemPrompt) {
             env.LILBEE_RAG_SYSTEM_PROMPT = this.opts.ragSystemPrompt;
@@ -300,34 +298,48 @@ export class ServerManager {
 
     private attachLifecycleHandlers(child: ChildProcess): void {
         child.on("exit", (code: number | null, signal: NodeJS.Signals | null) => {
+            // A process this manager no longer tracks has no say in its state.
+            if (child !== this.child) return;
             this.child = null;
-            if (this.stopping) return;
-            this.pushOutputLine(`server exited (${describeExit(code, signal)})`);
-            this.snapshotCrashOutput();
-            if (this.crashCount < SERVER_MANAGER_CONFIG.MAX_CRASH_RESTARTS) {
-                this.crashCount++;
+            if (this.desired === DESIRED.STOPPED) return;
+            if (code === LOCK_REFUSAL_EXIT_CODE) {
+                // Another server owns the lock; the server's refusal message is
+                // already in the output capture. Not a crash: no restart loop.
+                this.fatalStartError = new ScopeHeldError(this.lastOutput);
                 this.setState(SERVER_STATE.ERROR);
-                this.restartTimer = window.setTimeout(() => {
-                    this.restartTimer = null;
-                    /* v8 ignore next -- stop() clears this timer before setting stopping, so the false branch is unreachable */
-                    if (!this.stopping) void this.startForRestart();
-                }, SERVER_MANAGER_CONFIG.CRASH_RESTART_DELAY_MS);
                 return;
             }
-            this.fatalStartError = new Error(
-                `Server exited (${describeExit(code, signal)}) and did not come back after ${SERVER_MANAGER_CONFIG.MAX_CRASH_RESTARTS} restarts`,
-            );
-            this.setState(SERVER_STATE.ERROR);
-            this.opts.onRestartsExhausted?.(this.lastOutput);
+            this.pushOutputLine(`server exited (${describeExit(code, signal)})`);
+            this.snapshotCrashOutput();
+            this.scheduleCrashRestart();
         });
         child.on("error", (err: Error) => {
+            if (child !== this.child) return;
             this.child = null;
-            if (this.stopping) return;
+            if (this.desired === DESIRED.STOPPED) return;
             this.pushOutputLine(`failed to launch server: ${err.message}`);
             this.snapshotCrashOutput();
             this.fatalStartError = new Error(`Failed to launch server: ${err.message}`);
             this.setState(SERVER_STATE.ERROR);
         });
+    }
+
+    private scheduleCrashRestart(): void {
+        if (this.crashCount < SERVER_MANAGER_CONFIG.MAX_CRASH_RESTARTS) {
+            this.crashCount++;
+            this.setState(SERVER_STATE.ERROR);
+            this.restartTimer = window.setTimeout(() => {
+                this.restartTimer = null;
+                /* v8 ignore next -- stop() clears this timer before flipping desired, so the false branch is unreachable */
+                if (this.desired === DESIRED.RUNNING) void this.startForRestart();
+            }, SERVER_MANAGER_CONFIG.CRASH_RESTART_DELAY_MS);
+            return;
+        }
+        this.fatalStartError = new Error(
+            `Server kept exiting and did not come back after ${SERVER_MANAGER_CONFIG.MAX_CRASH_RESTARTS} restarts`,
+        );
+        this.setState(SERVER_STATE.ERROR);
+        this.opts.onRestartsExhausted?.(this.lastOutput);
     }
 
     /** Crash-loop restart: failures already surface via state + onRestartsExhausted, so don't rethrow. */
@@ -350,47 +362,104 @@ export class ServerManager {
             // worker forks as a unit. Windows uses taskkill /t for the tree.
             detached: process.platform !== PLATFORM.WIN32,
         });
+        this.childExit = new Promise((resolve) => child.once("exit", () => resolve()));
         this.attachOutputCapture(child);
         this.attachLifecycleHandlers(child);
         return child;
     }
 
     async start(): Promise<void> {
-        if (this.child) return;
-        this.stopping = false;
+        if (this.child || this.adopted) return;
+        const generation = ++this.startGeneration;
+        this.desired = DESIRED.RUNNING;
         this._actualPort = null;
         this.fatalStartError = null;
         this.setState(SERVER_STATE.STARTING);
         this._outputLines = [];
 
-        // A leftover server.port from a previous run would be adopted as this
-        // child's port, so it must be gone before the spawn.
-        this.cleanupPortFile();
+        // Adopt-first: a healthy server already serving this data dir is the
+        // singleton, not garbage. A plugin reload re-attaches instead of
+        // replacing it; a server whose Obsidian died exits on its own via the
+        // parent monitor and simply fails this probe.
+        if (await this.tryAdopt()) {
+            this.crashCount = 0;
+            this.setState(SERVER_STATE.READY);
+            return;
+        }
 
-        // Clear orphaned servers from a prior session before spawning; two
-        // servers on one data dir contend and SIGKILL each other.
-        await reapOrphanServers(this.opts.dataDir);
+        // A leftover server.port from a previous run would be adopted as this
+        // child's port, so it must be gone before the spawn. The probe above
+        // already established nothing live is behind it.
+        this.cleanupPortFile();
 
         this.child = this.spawnChild();
 
         try {
-            await this.waitForPortFile();
-            await this.waitForReady();
+            await this.waitForPortFile(generation);
+            await this.waitForReady(generation);
             this.crashCount = 0;
             this.setState(SERVER_STATE.READY);
         } catch (err) {
+            // A crash-restart superseded this attempt; the newer start owns the state.
+            if (this.startGeneration !== generation) return;
             // A stop() mid-startup aborted the discovery on purpose; not a failure.
-            if (this.stopping) return;
-            // Kill the child we spawned so it doesn't outlive the failure and block retries.
+            if (this.stopRequested()) return;
             if (this.child) await this.stop();
             this.setState(SERVER_STATE.ERROR);
             throw err;
         }
     }
 
-    private async waitForReady(): Promise<void> {
+    private async tryAdopt(): Promise<boolean> {
+        const session = readServerSession(this.opts.dataDir);
+        if (session === null) return false;
+        if (!(await this.healthOk(session.port))) return false;
+        this._actualPort = session.port;
+        this.adopted = true;
+        this.watchAdopted();
+        return true;
+    }
+
+    private async healthOk(port: number): Promise<boolean> {
+        try {
+            const res = await node.fetch(`http://127.0.0.1:${port}/api/health`, {
+                signal: AbortSignal.timeout(SERVER_MANAGER_CONFIG.ADOPT_PROBE_TIMEOUT_MS),
+            });
+            return res.ok;
+        } catch {
+            return false;
+        }
+    }
+
+    /** Health-poll an adopted server; there is no child process to emit exit events. */
+    private watchAdopted(): void {
+        this.adoptedWatch = window.setInterval(() => {
+            void this.checkAdopted();
+        }, SERVER_MANAGER_CONFIG.ADOPTED_WATCH_INTERVAL_MS);
+    }
+
+    private stopAdoptedWatch(): void {
+        if (this.adoptedWatch !== null) {
+            window.clearInterval(this.adoptedWatch);
+            this.adoptedWatch = null;
+        }
+    }
+
+    private async checkAdopted(): Promise<void> {
+        if (!this.adopted || this._actualPort === null) return;
+        if (await this.healthOk(this._actualPort)) return;
+        if (!this.adopted || this.desired === DESIRED.STOPPED) return;
+        this.stopAdoptedWatch();
+        this.adopted = false;
+        this._actualPort = null;
+        this.pushOutputLine("adopted server became unreachable");
+        this.snapshotCrashOutput();
+        this.scheduleCrashRestart();
+    }
+
+    private async waitForReady(generation: number): Promise<void> {
         for (let i = 0; i < SERVER_MANAGER_CONFIG.HEALTH_POLL_MAX_ATTEMPTS; i++) {
-            this.assertStartupViable();
+            this.assertStartupViable(generation);
             const url = this.serverUrl;
             /* v8 ignore next -- waitForReady runs only after waitForPortFile sets the port, so url is always non-empty */
             if (url) {
@@ -406,18 +475,6 @@ export class ServerManager {
             await new Promise((r) => window.setTimeout(r, SERVER_MANAGER_CONFIG.HEALTH_POLL_INTERVAL_MS));
         }
         throw new Error("Server did not become ready within timeout");
-    }
-
-    private async terminateChild(child: ChildProcess): Promise<void> {
-        if (process.platform === PLATFORM.WIN32) {
-            try {
-                await node.execFile("taskkill", ["/pid", String(child.pid), "/f", "/t"]);
-            } catch (err) {
-                this.opts.onShutdownFailure?.(err instanceof Error ? err : new Error(String(err)));
-            }
-            return;
-        }
-        this.signalGroup(child, "SIGTERM");
     }
 
     /**
@@ -446,38 +503,82 @@ export class ServerManager {
         }
     }
 
+    /** Resolves true when the child's exit fires within *ms*; false on timeout. */
+    private async exitedWithin(ms: number): Promise<boolean> {
+        if (this.childExit === null) return true;
+        return Promise.race([
+            this.childExit.then(() => true),
+            new Promise<boolean>((resolve) => window.setTimeout(() => resolve(false), ms)),
+        ]);
+    }
+
+    /**
+     * Stop the server and return only once its process is observably gone.
+     *
+     * Escalation: ask over the API, then SIGTERM the group, then SIGKILL it —
+     * and await the exit event at the end regardless, so no exit can land
+     * after stop() returns and be mistaken for a crash.
+     */
     async stop(): Promise<void> {
-        this.stopping = true;
+        this.desired = DESIRED.STOPPED;
         if (this.restartTimer) {
             window.clearTimeout(this.restartTimer);
             this.restartTimer = null;
         }
-        if (!this.child) {
+
+        if (this.adopted) {
+            this.stopAdoptedWatch();
+            await this.stopAdopted();
+            this.adopted = false;
+            this._actualPort = null;
             this.setState(SERVER_STATE.STOPPED);
             return;
         }
 
         const child = this.child;
-        await this.terminateChild(child);
+        if (!child) {
+            this.setState(SERVER_STATE.STOPPED);
+            return;
+        }
 
-        const exited = await Promise.race([
-            new Promise<boolean>((resolve) => child.on("exit", () => resolve(true))),
-            new Promise<boolean>((resolve) =>
-                window.setTimeout(() => resolve(false), SERVER_MANAGER_CONFIG.STOP_GRACE_MS),
-            ),
-        ]);
-
-        if (!exited && this.child) {
+        await requestServerShutdown(this.opts.dataDir);
+        if (!(await this.exitedWithin(SERVER_MANAGER_CONFIG.STOP_GRACE_MS))) {
             if (process.platform === PLATFORM.WIN32) {
-                this.child.kill("SIGKILL");
+                // taskkill /f /t is the tree kill; Windows has no group signal.
+                try {
+                    await node.execFile("taskkill", ["/pid", String(child.pid), "/f", "/t"]);
+                } catch (err) {
+                    this.opts.onShutdownFailure?.(err instanceof Error ? err : new Error(String(err)));
+                }
             } else {
-                this.signalGroup(this.child, "SIGKILL");
+                this.signalGroup(child, "SIGTERM");
+                if (!(await this.exitedWithin(SERVER_MANAGER_CONFIG.KILL_GRACE_MS))) {
+                    this.signalGroup(child, "SIGKILL");
+                }
             }
+            // SIGKILL (and taskkill /f) cannot be ignored; the exit event is
+            // guaranteed, so this await is what makes "stopped" mean stopped.
+            await this.childExit;
         }
 
         this.child = null;
+        this.childExit = null;
+        this._actualPort = null;
         this.setState(SERVER_STATE.STOPPED);
         this.cleanupPortFile();
+    }
+
+    /** Ask an adopted server to exit; report when it will not go. */
+    private async stopAdopted(): Promise<void> {
+        const accepted = await requestServerShutdown(this.opts.dataDir);
+        const gone = accepted && (await awaitServerGone(this.opts.dataDir, SERVER_MANAGER_CONFIG.STOP_GRACE_MS));
+        if (gone) {
+            this.cleanupPortFile();
+            return;
+        }
+        // Not our child: there is no process handle to signal. Its own
+        // supervisor (parent monitor, OS locks) bounds how long it lingers.
+        this.opts.onShutdownFailure?.(new Error("the running server did not stop when asked"));
     }
 
     async restart(): Promise<void> {

@@ -6,7 +6,6 @@ import {
     JSON_HEADERS,
     SERVER_MODE,
     DOWNLOAD_PANEL,
-    LOCK_STATE,
     SHARED_PATH,
     CATALOG_SOURCE,
     HOSTED_SOURCES,
@@ -26,7 +25,6 @@ import type {
     LilbeeSettings,
     SharedConfig,
     VaultRegistryEntry,
-    ActiveLock,
     ModelVariant,
     ModelFamily,
     CatalogResponse,
@@ -344,28 +342,6 @@ describe("VaultRegistryEntry interface", () => {
     });
 });
 
-describe("ActiveLock interface", () => {
-    it("records the owning vault, PID, and port", () => {
-        const l: ActiveLock = {
-            vaultId: "abc123def456",
-            pid: 4242,
-            port: 54321,
-            startedAt: 1700000000000,
-        };
-        expect(l.pid).toBe(4242);
-        expect(l.port).toBe(54321);
-    });
-});
-
-describe("LOCK_STATE constants", () => {
-    it("covers every lock-state branch", () => {
-        expect(LOCK_STATE.NONE).toBe("none");
-        expect(LOCK_STATE.OURS).toBe("ours");
-        expect(LOCK_STATE.STALE).toBe("stale");
-        expect(LOCK_STATE.LIVE_OTHER).toBe("live_other");
-    });
-});
-
 describe("SHARED_PATH constants", () => {
     it("names the shared-root files and directories", () => {
         expect(SHARED_PATH.BIN).toBe("bin");
@@ -373,7 +349,6 @@ describe("SHARED_PATH constants", () => {
         expect(SHARED_PATH.VAULTS).toBe("vaults");
         expect(SHARED_PATH.CONFIG).toBe("config.json");
         expect(SHARED_PATH.REGISTRY).toBe("registry.json");
-        expect(SHARED_PATH.LOCK).toBe("active.lock");
     });
 });
 

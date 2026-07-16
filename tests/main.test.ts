@@ -247,13 +247,13 @@ vi.mock("../src/server-manager", () => ({
             get lastOutput() {
                 return mockLastStderr;
             },
-            get serverPid() {
-                return 4321;
-            },
             opts,
         };
     }),
-    killServerTree: vi.fn().mockResolvedValue(undefined),
+    ScopeHeldError: class ScopeHeldError extends Error {},
+    readScopeOwner: vi.fn().mockReturnValue(null),
+    requestServerShutdown: vi.fn().mockResolvedValue(true),
+    awaitServerGone: vi.fn().mockResolvedValue(true),
 }));
 
 /** Flush the microtask queue so fire-and-forget promises settle. */
@@ -4862,6 +4862,21 @@ describe("LilbeePlugin", () => {
             await flush();
 
             expect(mockGatekeeperOpen).toHaveBeenCalled();
+        });
+
+        it("a refused spawn defers to take-over negotiation instead of an error", async () => {
+            const sm = await import("../src/server-manager");
+            mockServerStart.mockRejectedValueOnce(new sm.ScopeHeldError("held"));
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const negotiateSpy = vi.spyOn(plugin as any, "negotiateTakeOver").mockResolvedValue(undefined);
+            await plugin.onload();
+            await flush();
+            await flush(); // the deferred negotiation runs on its own timeout
+
+            expect(negotiateSpy).toHaveBeenCalled();
+            expect(plugin.serverManager).toBeNull();
+            expect(Notice.instances.some((n) => n.message.includes("failed to start server"))).toBe(false);
         });
 
         it("managed mode shows start error Notice when serverManager.start fails", async () => {

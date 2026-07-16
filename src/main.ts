@@ -16,7 +16,13 @@ import { exportDiagnostics } from "./diagnostics-export";
 import { ErrorJournal } from "./error-journal";
 import { DownloadCanceledError } from "./binary-manager";
 import type { DownloadProgress, ReleaseInfo } from "./binary-manager";
-import { ServerManager, killServerTree } from "./server-manager";
+import {
+    ScopeHeldError,
+    ServerManager,
+    awaitServerGone,
+    readScopeOwner,
+    requestServerShutdown,
+} from "./server-manager";
 import { executeUninstall, planUninstall } from "./server-uninstall";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
 import { LilbeeSettingTab } from "./settings";
@@ -26,7 +32,6 @@ import {
     DEFAULT_SETTINGS,
     DOT_STATE,
     ERROR_NAME,
-    LOCK_STATE,
     LOGS_DIR,
     MANAGED_CONSENT_RESULT,
     MANAGED_PHASE,
@@ -38,7 +43,6 @@ import {
     SSE_EVENT,
     TASK_STATUS,
     TASK_TYPE,
-    type ActiveLock,
     type BatchProgressPayload,
     type CrawlRenderMode,
     type DiagnosticsContext,
@@ -110,10 +114,10 @@ interface PruneData {
 const BYTES_PER_MB = 1_000_000;
 
 const PENDING_SYNC_HINT_DEBOUNCE_MS = 1000;
+/** How long a taken-over server gets to exit after agreeing to stop. */
+const TAKE_OVER_SHUTDOWN_TIMEOUT_MS = 10_000;
 
 // How long terminateOwningProcess waits for the previous owner to exit.
-const PROCESS_EXIT_POLLS = 50;
-const PROCESS_EXIT_POLL_INTERVAL_MS = 100;
 
 const SUPPORTED_SYNC_EXTENSIONS = new Set(["md", "pdf", "txt", "html"]);
 
@@ -445,7 +449,7 @@ export default class LilbeePlugin extends Plugin {
         this.app.workspace.requestSaveLayout?.();
     }
 
-    async startManagedServer(onProgress?: ManagedServerProgressHandler): Promise<void> {
+    async startManagedServer(onProgress?: ManagedServerProgressHandler, allowTakeOver = true): Promise<void> {
         if (this.startingServer) return;
         const registry = this.vaultRegistry;
         if (!registry) return;
@@ -457,8 +461,6 @@ export default class LilbeePlugin extends Plugin {
         this.serverStartFailed = false;
 
         try {
-            if (!(await this.acquireLockOrBail(registry, onProgress))) return;
-
             const sharedRoot = registry.sharedRoot;
             this.binaryManager = new BinaryManager(sharedBinDir(sharedRoot));
             const binaryPath = await this.ensureBinaryWithUi(onProgress);
@@ -480,12 +482,74 @@ export default class LilbeePlugin extends Plugin {
                 this.recordReadyState();
                 onProgress?.({ phase: MANAGED_PHASE.READY, message: "" });
             } catch (err) {
+                if (err instanceof ScopeHeldError) {
+                    this.serverManager = null;
+                    // Recurse outside this call's startingServer window.
+                    window.setTimeout(() => {
+                        void this.negotiateTakeOver(registry, onProgress, allowTakeOver);
+                    }, 0);
+                    return;
+                }
                 this.showError("failed to start server", err);
                 onProgress?.({ phase: MANAGED_PHASE.ERROR, message: errorMessage(err, String(err)) });
             }
         } finally {
             this.startingServer = false;
         }
+    }
+
+    /**
+     * The spawn was refused: another vault's server owns the shared root. Ask
+     * the user, ask that server to exit over its API, then start again — the
+     * server-side lock grace rides out the handoff. One round only: a second
+     * refusal (the owner would not stop, or a third vault won the scope) lands
+     * in the quiet "serving another vault" state instead of a loop.
+     */
+    private async negotiateTakeOver(
+        registry: VaultRegistry,
+        onProgress?: ManagedServerProgressHandler,
+        allowTakeOver = true,
+    ): Promise<void> {
+        const owner = readScopeOwner(registry.sharedRoot);
+        const ownerName = owner ? this.lookupVaultNameByDataDir(owner.dataDir) : "another vault";
+        if (!allowTakeOver) {
+            this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
+            onProgress?.({
+                phase: MANAGED_PHASE.ERROR,
+                message: MESSAGES.NOTICE_TAKE_OVER_DECLINED(ownerName),
+            });
+            return;
+        }
+        const takeOver = await this.confirmTakeOver(ownerName);
+        if (!takeOver) {
+            new Notice(MESSAGES.NOTICE_TAKE_OVER_DECLINED(ownerName));
+            this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
+            onProgress?.({
+                phase: MANAGED_PHASE.ERROR,
+                message: MESSAGES.NOTICE_TAKE_OVER_DECLINED(ownerName),
+            });
+            return;
+        }
+        if (owner && !(await this.askOwnerToStop(owner.dataDir))) {
+            new Notice(MESSAGES.NOTICE_TAKE_OVER_TIMEOUT);
+            this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
+            return;
+        }
+        new Notice(MESSAGES.NOTICE_TAKE_OVER_SUCCESS(ownerName));
+        await this.startManagedServer(onProgress, false);
+    }
+
+    /** Ask the server serving *dataDir* to exit and wait until it is gone. */
+    private async askOwnerToStop(dataDir: string): Promise<boolean> {
+        if (!(await requestServerShutdown(dataDir))) return false;
+        return awaitServerGone(dataDir, TAKE_OVER_SHUTDOWN_TIMEOUT_MS);
+    }
+
+    /** Display name of the registered vault whose server serves *dataDir*. */
+    private lookupVaultNameByDataDir(dataDir: string): string {
+        const registry = this.vaultRegistry;
+        const entry = registry?.list().find((e) => registry.resolveDataDir(e.id) === dataDir);
+        return entry?.displayName ?? "another vault";
     }
 
     /**
@@ -535,6 +599,7 @@ export default class LilbeePlugin extends Plugin {
         return new ServerManager({
             binaryPath,
             dataDir: registry.resolveDataDir(this.vaultId),
+            sharedRoot,
             modelsDir: sharedModelsDir(sharedRoot),
             ragSystemPrompt: this.settings.ragSystemPrompt,
             generalSystemPrompt: this.settings.generalSystemPrompt,
@@ -553,59 +618,10 @@ export default class LilbeePlugin extends Plugin {
         });
     }
 
-    /** Decide who owns the shared root and (if not us) ask the user. */
-    private async acquireLockOrBail(
-        registry: VaultRegistry,
-        onProgress?: ManagedServerProgressHandler,
-    ): Promise<boolean> {
-        const state = registry.lockState(this.vaultId);
-        if (state === LOCK_STATE.LIVE_OTHER) {
-            const owner = registry.readLock();
-            const ownerName = owner ? this.lookupVaultName(owner.vaultId) : "another vault";
-            const takeOver = await this.confirmTakeOver(ownerName);
-            if (!takeOver) {
-                new Notice(MESSAGES.NOTICE_TAKE_OVER_DECLINED(ownerName));
-                this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
-                onProgress?.({ phase: MANAGED_PHASE.ERROR, message: MESSAGES.NOTICE_TAKE_OVER_DECLINED(ownerName) });
-                return false;
-            }
-            if (!(await this.terminateOwningProcess(owner))) {
-                new Notice(MESSAGES.NOTICE_TAKE_OVER_TIMEOUT);
-                return false;
-            }
-            new Notice(MESSAGES.NOTICE_TAKE_OVER_SUCCESS(ownerName));
-        }
-        return true;
-    }
-
     private async confirmTakeOver(ownerName: string): Promise<boolean> {
         const modal = new ConfirmModal(this.app, MESSAGES.CONFIRM_TAKE_OVER(ownerName));
         modal.open();
         return modal.result;
-    }
-
-    private lookupVaultName(vaultId: string): string {
-        return this.vaultRegistry?.get(vaultId)?.displayName ?? "another vault";
-    }
-
-    private async terminateOwningProcess(owner: ActiveLock | null): Promise<boolean> {
-        if (!owner) return true;
-        // Stop the other vault's server too, or it orphans when its Obsidian goes.
-        if (owner.serverPid) await killServerTree(owner.serverPid);
-        try {
-            node.processKill(owner.pid);
-        } catch {
-            // already gone — fine
-        }
-        for (let i = 0; i < PROCESS_EXIT_POLLS; i++) {
-            try {
-                node.processKill(owner.pid, 0);
-            } catch {
-                return true;
-            }
-            await new Promise((r) => window.setTimeout(r, PROCESS_EXIT_POLL_INTERVAL_MS));
-        }
-        return false;
     }
 
     /** Aborts the in-flight server download, if any. Set while a download runs. */
@@ -685,20 +701,12 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    /** Persist lock + registry entry once the server is up. */
+    /** Persist the registry entry once the server is up. */
     private recordReadyState(): void {
         const sm = this.serverManager;
         const registry = this.vaultRegistry;
         if (!sm || !registry) return;
-        const port = parseInt(sm.serverUrl.split(":").pop() || "0", 10);
         const now = Date.now();
-        registry.writeLock({
-            vaultId: this.vaultId,
-            pid: process.pid,
-            serverPid: sm.serverPid ?? undefined,
-            port,
-            startedAt: now,
-        });
         const existing = registry.get(this.vaultId);
         registry.upsert({
             id: this.vaultId,
@@ -781,17 +789,20 @@ export default class LilbeePlugin extends Plugin {
 
         // The binary and the models are shared. Deleting them under another
         // vault's running server would break it mid-query.
-        const owner = registry.readLock();
-        if (owner !== null && registry.lockState(this.vaultId) === LOCK_STATE.LIVE_OTHER) {
-            throw new Error(MESSAGES.ERROR_UNINSTALL_SERVER_IN_USE(this.lookupVaultName(owner.vaultId)));
+        const owner = readScopeOwner(registry.sharedRoot);
+        const ownDataDir = registry.resolveDataDir(this.vaultId);
+        if (owner !== null && owner.dataDir !== ownDataDir) {
+            throw new Error(MESSAGES.ERROR_UNINSTALL_SERVER_IN_USE(this.lookupVaultNameByDataDir(owner.dataDir)));
         }
 
         await this.serverManager?.stop();
         this.serverManager = null;
         this.binaryManager = null;
-        // A server orphaned by a crashed Obsidian still writes to the data dir.
-        if (owner?.serverPid) await killServerTree(owner.serverPid);
-        registry.releaseLock(this.vaultId);
+        // A server orphaned by a crashed Obsidian still writes to the data dir;
+        // ask it to exit before deleting the tree out from under it.
+        if (owner !== null && (await requestServerShutdown(owner.dataDir))) {
+            await awaitServerGone(owner.dataDir, TAKE_OVER_SHUTDOWN_TIMEOUT_MS);
+        }
 
         executeUninstall(plan);
 
@@ -1426,7 +1437,6 @@ export default class LilbeePlugin extends Plugin {
         this.syncPillEl = null;
         this.taskQueue.dispose();
         void this.serverManager?.stop();
-        this.vaultRegistry?.releaseLock(this.vaultId);
     }
 
     async loadSettings(): Promise<void> {

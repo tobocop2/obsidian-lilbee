@@ -559,25 +559,6 @@ export interface VaultRegistryEntry {
     lastActiveAt: number;
 }
 
-/** Contents of `<shared-root>/active.lock` — only one vault holds it. */
-export interface ActiveLock {
-    vaultId: string;
-    pid: number;
-    /** PID of the managed server process. Absent in locks written before this field. */
-    serverPid?: number;
-    port: number;
-    startedAt: number;
-}
-
-export type LockState = "none" | "ours" | "stale" | "live_other";
-
-export const LOCK_STATE = {
-    NONE: "none",
-    OURS: "ours",
-    STALE: "stale",
-    LIVE_OTHER: "live_other",
-} as const satisfies Record<string, LockState>;
-
 /** Names of files/dirs the plugin writes inside the shared root. */
 export const SHARED_PATH = {
     BIN: "bin",
@@ -585,7 +566,6 @@ export const SHARED_PATH = {
     VAULTS: "vaults",
     CONFIG: "config.json",
     REGISTRY: "registry.json",
-    LOCK: "active.lock",
 } as const;
 
 /** Subdirectory of a vault data dir where all log files land. */
