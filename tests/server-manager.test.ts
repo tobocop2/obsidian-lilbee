@@ -219,7 +219,7 @@ describe("ServerManager", () => {
             children.push(c);
             return c as any;
         });
-        fetchSpy = vi.spyOn(node, "fetch").mockResolvedValue({ ok: true } as any);
+        fetchSpy = vi.spyOn(node, "fetch").mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) } as any);
         vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "", stderr: "" } as any);
         vi.spyOn(node, "existsSync").mockReturnValue(true);
         // Never signal a real process group from tests. Default to "no such
@@ -415,6 +415,25 @@ describe("ServerManager", () => {
             expect(spawnSpy).not.toHaveBeenCalled();
         });
 
+        it("does not adopt a port that answers non-ok", async () => {
+            fetchSpy.mockResolvedValueOnce({ ok: false } as any);
+            const mgr = new ServerManager(defaultOpts());
+            await mgr.start();
+            expect(spawnSpy).toHaveBeenCalledTimes(1);
+            expect(mgr.state).toBe("ready");
+        });
+
+        it("does not adopt a port that answers with a foreign shape", async () => {
+            fetchSpy.mockResolvedValueOnce({
+                ok: true,
+                json: async () => ({ hello: "world" }),
+            } as any); // something else squats the recycled port
+            const mgr = new ServerManager(defaultOpts());
+            await mgr.start();
+            expect(spawnSpy).toHaveBeenCalledTimes(1); // spawned, not adopted
+            expect(mgr.state).toBe("ready");
+        });
+
         it("spawns when the recorded session does not answer", async () => {
             fetchSpy.mockRejectedValueOnce(new Error("ECONNREFUSED")); // adopt probe fails
             const mgr = new ServerManager(defaultOpts());
@@ -434,7 +453,7 @@ describe("ServerManager", () => {
             expect(mgr.state).toBe("error");
             expect(mgr.lastOutput).toContain("adopted server became unreachable");
             expect(appendFileSyncSpy).toHaveBeenCalled(); // crash snapshot
-            fetchSpy.mockResolvedValue({ ok: true });
+            fetchSpy.mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) } as any);
             await vi.advanceTimersByTimeAsync(3000); // crash-restart delay
             expect(spawnSpy).toHaveBeenCalledTimes(1); // respawned
             expect(mgr.state).toBe("ready");
@@ -833,7 +852,10 @@ describe("ServerManager", () => {
             const failures: Error[] = [];
             const mgr = new ServerManager(defaultOpts({ onShutdownFailure: (e) => failures.push(e) }));
             await mgr.start();
-            fetchSpy.mockResolvedValue({ ok: true }); // shutdown accepted, health keeps answering
+            fetchSpy.mockResolvedValue({
+                ok: true,
+                json: async () => ({ status: "ok" }),
+            } as any); // shutdown accepted, health keeps answering
             const stopP = mgr.stop();
             await vi.advanceTimersByTimeAsync(30_000); // ride out awaitServerGone's deadline
             await stopP;

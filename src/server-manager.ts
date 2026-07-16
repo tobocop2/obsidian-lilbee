@@ -425,7 +425,11 @@ export class ServerManager {
             const res = await node.fetch(`http://127.0.0.1:${port}/api/health`, {
                 signal: AbortSignal.timeout(SERVER_MANAGER_CONFIG.ADOPT_PROBE_TIMEOUT_MS),
             });
-            return res.ok;
+            if (!res.ok) return false;
+            // The port file can outlive a SIGKILLed server, and the port can be
+            // reused by anything. Only lilbee's health shape earns adoption.
+            const body = (await res.json()) as { status?: unknown };
+            return body.status === "ok";
         } catch {
             return false;
         }
