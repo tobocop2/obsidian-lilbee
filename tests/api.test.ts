@@ -157,6 +157,109 @@ describe("chat()", () => {
     });
 });
 
+describe("session methods", () => {
+    const meta = {
+        id: "s1",
+        title: "What is a bee?",
+        created_at: "2026-07-16T00:00:00Z",
+        updated_at: "2026-07-16T01:00:00Z",
+        model_ref: "llama3",
+        scope: "both",
+        message_count: 2,
+    };
+
+    it("listSessions() GETs /api/sessions and unwraps the array", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ sessions: [meta] }));
+
+        const result = await client.listSessions();
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/sessions`, expect.objectContaining({}));
+        expect(result).toEqual([meta]);
+    });
+
+    it("getSession() GETs the detail route and returns meta, messages and summary", async () => {
+        const detail = { meta, messages: [{ role: "user", content: "hi", sources: [], ts: "t" }], summary: null };
+        fetchMock.mockResolvedValue(jsonResponse(detail));
+
+        const result = await client.getSession("s1");
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/sessions/s1`, expect.objectContaining({}));
+        expect(result).toEqual(detail);
+    });
+
+    it("createSession() POSTs the model ref, scope and derived title", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ id: "s9" }));
+
+        const result = await client.createSession("llama3", "both", "What is a bee?");
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/sessions`, expect.objectContaining({ method: "POST" }));
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+            model_ref: "llama3",
+            scope: "both",
+            title: "What is a bee?",
+        });
+        expect(result).toEqual({ id: "s9" });
+    });
+
+    it("appendSessionMessage() POSTs the turn to the messages sub-route", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ id: "s1", message_count: 3 }));
+
+        const result = await client.appendSessionMessage("s1", "assistant", "an answer", ["notes.md"]);
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/sessions/s1/messages`,
+            expect.objectContaining({ method: "POST" }),
+        );
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+            role: "assistant",
+            content: "an answer",
+            sources: ["notes.md"],
+        });
+        expect(result).toEqual({ id: "s1", message_count: 3 });
+    });
+
+    it("appendSessionMessage() defaults sources to an empty list", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ id: "s1", message_count: 1 }));
+
+        await client.appendSessionMessage("s1", "user", "a question");
+
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body).sources).toEqual([]);
+    });
+
+    it("renameSession() PATCHes the new title", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ id: "s1", title: "Renamed" }));
+
+        const result = await client.renameSession("s1", "Renamed");
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/sessions/s1`,
+            expect.objectContaining({ method: "PATCH" }),
+        );
+        expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ title: "Renamed" });
+        expect(result).toEqual({ id: "s1", title: "Renamed" });
+    });
+
+    it("deleteSession() DELETEs the session route", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ id: "s1", deleted: true }));
+
+        const result = await client.deleteSession("s1");
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/sessions/s1`,
+            expect.objectContaining({ method: "DELETE" }),
+        );
+        expect(result).toEqual({ id: "s1", deleted: true });
+    });
+
+    it("percent-encodes a session id so an odd id can't forge a path", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ id: "x", deleted: true }));
+
+        await client.deleteSession("a/../b");
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/sessions/a%2F..%2Fb`, expect.objectContaining({}));
+    });
+});
+
 describe("memory methods", () => {
     it("listMemories() GETs /api/memories and unwraps the array", async () => {
         const items = [{ id: "a1", kind: "fact", shared: false, text: "likes rust" }];

@@ -4783,3 +4783,163 @@ button.lilbee-model-chip-select:focus-visible {
         background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
     }
 }
+
+.lilbee-sessions-modal {
+    padding: var(--size-4-3, 12px);
+}
+
+.lilbee-sessions-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-sessions-header h2 {
+    margin: 0;
+}
+
+.lilbee-sessions-count {
+    color: var(--text-muted);
+    font-size: var(--font-smaller, 13px);
+}
+
+.lilbee-sessions-new {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    padding: var(--size-4-1, 4px);
+    background: transparent;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.lilbee-sessions-new:hover {
+    color: var(--text-normal);
+}
+
+.lilbee-sessions-filter {
+    width: 100%;
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    margin-bottom: var(--size-4-2, 8px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 6px);
+    font-size: var(--font-text-size, 15px);
+}
+
+.lilbee-sessions-filter:focus {
+    border-color: var(--interactive-accent);
+}
+
+.lilbee-sessions-list {
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.lilbee-sessions-empty {
+    padding: var(--size-4-4, 16px);
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.lilbee-session-row {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-2, 8px);
+    border-radius: var(--radius-s, 4px);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-session-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-session-row.is-active {
+    border-left: 2px solid var(--interactive-accent);
+}
+
+.lilbee-session-main {
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+}
+
+.lilbee-session-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--size-4-2, 8px);
+}
+
+.lilbee-session-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-normal);
+}
+
+.lilbee-session-row.is-active .lilbee-session-title {
+    font-weight: var(--font-semibold, 600);
+}
+
+.lilbee-session-date,
+.lilbee-session-meta {
+    color: var(--text-muted);
+    font-size: var(--font-smallest, 10px);
+}
+
+.lilbee-session-actions {
+    display: flex;
+    gap: var(--size-4-1, 4px);
+}
+
+.lilbee-session-actions button {
+    display: flex;
+    align-items: center;
+    padding: var(--size-4-1, 4px);
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.lilbee-session-actions button:hover {
+    color: var(--text-normal);
+}
+
+.lilbee-session-delete:hover {
+    color: var(--text-error);
+}
+
+.lilbee-session-rename-input {
+    width: 100%;
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    border: 1px solid var(--interactive-accent);
+    border-radius: var(--radius-s, 4px);
+}
+
+.lilbee-chat-summary {
+    margin-bottom: var(--size-4-3, 12px);
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    border-left: 2px solid var(--background-modifier-border);
+    color: var(--text-muted);
+}
+
+.lilbee-chat-summary-label {
+    font-size: var(--font-smallest, 10px);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-chat-summary-body {
+    font-size: var(--font-smaller, 13px);
+}

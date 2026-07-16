@@ -17,6 +17,7 @@ import {
     HOSTED_SOURCES,
     MODEL_TASK,
     SEARCH_CHUNK_TYPE,
+    SESSION_ROLE,
     SSE_EVENT,
     TASK_TYPE,
     ERROR_NAME,
@@ -28,6 +29,9 @@ import type {
     MemoryExtractedData,
     Message,
     SearchChunkType,
+    SessionDetail,
+    SessionMessageItem,
+    SessionRole,
     Source,
     SSEEvent,
 } from "../types";
@@ -54,6 +58,8 @@ import {
     isStreamInterruptedError,
     streamInterruptedMessage,
 } from "../utils";
+import { SessionsModal } from "./sessions-modal";
+import { chunkTypeFromScope, deriveSessionTitle, scopeFromChunkType } from "../utils/session";
 import { SetupWizard } from "./setup-wizard";
 import { revealPlacementBeside } from "./placement-view";
 import { hostedOptions, isUsableHostedRow } from "./catalog-helpers";
@@ -159,6 +165,10 @@ export function plainStream(md: string): string {
 export class ChatView extends ItemView {
     private plugin: LilbeePlugin;
     private history: Message[] = [];
+    /** Server-side conversation this view appends to. Null until the first turn opens one. */
+    private sessionId: string | null = null;
+    /** Serializes session writes: the log is append-only, so turns must land in order. */
+    private persistQueue: Promise<void> = Promise.resolve();
     private messagesEl: HTMLElement | null = null;
     private sendBtn: HTMLButtonElement | null = null;
     private textareaEl: HTMLTextAreaElement | null = null;
@@ -304,6 +314,11 @@ export class ChatView extends ItemView {
         setIcon(gpuBtn, "cpu");
         gpuBtn.setAttribute("aria-label", MESSAGES.LABEL_OPEN_GPU_ACTIVITY);
         gpuBtn.addEventListener("click", () => void revealPlacementBeside(this.app, this.leaf));
+
+        const sessionsBtn = actions.createEl("button", { cls: "lilbee-chat-sessions" });
+        setIcon(sessionsBtn, "history");
+        sessionsBtn.setAttribute("aria-label", MESSAGES.LABEL_OPEN_SESSIONS);
+        sessionsBtn.addEventListener("click", () => this.openSessions());
 
         const saveBtn = actions.createEl("button", { cls: "lilbee-chat-save" });
         setIcon(saveBtn, "save");
@@ -572,6 +587,11 @@ export class ChatView extends ItemView {
             });
             return;
         }
+        this.applyChatModel(value);
+    }
+
+    /** Point the server at an already-installed chat model. */
+    private applyChatModel(value: string): void {
         void this.plugin.api.setChatModel(value).then((result) => {
             if (result.isOk()) {
                 // Keep the menu's checkmark in sync without waiting for a refetch.
@@ -826,7 +846,119 @@ export class ChatView extends ItemView {
 
     private clearChat(): void {
         this.history = [];
+        this.sessionId = null;
         if (this.messagesEl) this.messagesEl.empty();
+    }
+
+    private openSessions(): void {
+        new SessionsModal(this.app, this.plugin, {
+            activeId: this.sessionId,
+            resume: (id) => void this.resumeSession(id),
+            startNew: () => this.startNewConversation(),
+        }).open();
+    }
+
+    /** Drop the transcript and unbind the session. The old one is already persisted. */
+    private startNewConversation(): void {
+        this.clearChat();
+        new Notice(MESSAGES.NOTICE_SESSION_NEW);
+    }
+
+    /** Open the session lazily, on the first turn, so an idle view creates nothing. */
+    private async ensureSession(firstText: string): Promise<void> {
+        if (this.sessionId) return;
+        const scope = scopeFromChunkType(this.plugin.settings.searchChunkType);
+        const created = await this.plugin.api.createSession(this.chatActive, scope, deriveSessionTitle(firstText));
+        this.sessionId = created.id;
+    }
+
+    /** Queue a session write. Never awaited by the chat path: persistence must not stall the answer. */
+    private queuePersist(write: () => Promise<void>): void {
+        this.persistQueue = this.persistQueue.then(write).catch(() => {
+            // A store that won't take writes must not break the chat the user is having;
+            // unbind so the rest of the conversation stays in-memory rather than half-saved.
+            this.sessionId = null;
+        });
+    }
+
+    private async persistTurn(role: SessionRole, content: string, sources: string[] = []): Promise<void> {
+        if (!this.sessionId) return;
+        await this.plugin.api.appendSessionMessage(this.sessionId, role, content, sources);
+    }
+
+    private async resumeSession(id: string): Promise<void> {
+        let detail: SessionDetail;
+        try {
+            detail = await this.plugin.api.getSession(id);
+        } catch (err) {
+            const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
+            new Notice(MESSAGES.ERROR_SESSION_RESUME_FAILED(reason));
+            return;
+        }
+        this.streamController?.abort();
+        this.clearChat();
+        this.sessionId = detail.meta.id;
+        this.hideEmptyState();
+
+        if (detail.summary) this.renderSummaryBoundary(detail.summary);
+        for (const message of detail.messages) {
+            this.renderRestoredMessage(message);
+            this.history.push({ role: message.role, content: message.content });
+        }
+        this.restoreScope(detail.meta.scope);
+        this.restoreModel(detail.meta.model_ref);
+        if (this.messagesEl) this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+        new Notice(MESSAGES.NOTICE_SESSION_RESUMED(detail.meta.title));
+    }
+
+    /** Never point chat at a model that isn't installed; keep the current one and say so. */
+    private restoreModel(modelRef: string): void {
+        if (!modelRef || modelRef === this.chatActive) return;
+        if (this.chatInstalled.some((m) => m.name === modelRef)) {
+            this.applyChatModel(modelRef);
+            return;
+        }
+        new Notice(MESSAGES.NOTICE_SESSION_MODEL_UNAVAILABLE(modelRef, this.chatActive));
+    }
+
+    private restoreScope(scope: string): void {
+        const chunkType = chunkTypeFromScope(scope);
+        if (!chunkType || chunkType === this.plugin.settings.searchChunkType) return;
+        this.plugin.settings.searchChunkType = chunkType;
+        void this.plugin.saveSettings();
+    }
+
+    private renderRestoredMessage(message: SessionMessageItem): void {
+        if (!this.messagesEl) return;
+        if (message.role === SESSION_ROLE.USER) {
+            const bubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message user" });
+            bubble.createEl("p", { text: message.content });
+            return;
+        }
+        const bubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message assistant" });
+        const textEl = bubble.createDiv({ cls: "lilbee-chat-content" });
+        void this.renderMarkdown(textEl, message.content);
+        if (message.sources.length > 0) this.renderRestoredSources(bubble, message.sources);
+    }
+
+    /** Persisted sources are bare paths, so restored chips link out without the live chunk detail. */
+    private renderRestoredSources(container: HTMLElement, sources: string[]): void {
+        const sourcesEl = container.createDiv({ cls: "lilbee-chat-sources" });
+        const details = sourcesEl.createEl("details");
+        details.createEl("summary", { text: MESSAGES.LABEL_SOURCES });
+        const chipsEl = details.createDiv({ cls: "lilbee-chat-source-chips" });
+        for (const path of sources) {
+            const chip = chipsEl.createEl("span", { cls: "lilbee-source-chip" });
+            chip.createEl("span", { text: path, cls: "lilbee-source-chip-file" });
+            chip.addEventListener("click", () => void this.app.workspace.openLinkText(path, ""));
+        }
+    }
+
+    private renderSummaryBoundary(summary: string): void {
+        if (!this.messagesEl) return;
+        const el = this.messagesEl.createDiv({ cls: "lilbee-chat-summary" });
+        el.createDiv({ cls: "lilbee-chat-summary-label", text: MESSAGES.LABEL_SESSION_SUMMARY });
+        el.createDiv({ cls: "lilbee-chat-summary-body", text: summary });
     }
 
     private async sendMessage(text: string): Promise<void> {
@@ -841,6 +973,11 @@ export class ChatView extends ItemView {
         const userBubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message user" });
         userBubble.createEl("p", { text });
         this.history.push({ role: "user", content: text });
+        // Queued before the stream so the question is saved even if the answer never lands.
+        this.queuePersist(async () => {
+            await this.ensureSession(text);
+            await this.persistTurn(SESSION_ROLE.USER, text);
+        });
 
         const assistantBubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message assistant" });
         const spinner = assistantBubble.createDiv({ cls: "lilbee-thinking-dots" });
@@ -986,6 +1123,11 @@ export class ChatView extends ItemView {
                     if (state.sources.length > 0) this.renderSources(assistantBubble, state.sources);
                 });
                 this.history.push({ role: "assistant", content: rendered });
+                // Only a completed answer is persisted; a cancelled one leaves the question alone.
+                if (rendered) {
+                    const paths = [...new Set(state.sources.map((s) => s.source))];
+                    this.queuePersist(() => this.persistTurn(SESSION_ROLE.ASSISTANT, rendered, paths));
+                }
                 break;
             }
             case SSE_EVENT.ERROR: {

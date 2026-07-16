@@ -32,6 +32,14 @@ import type {
     MemoryRemoveResponse,
     Message,
     ModelShowResponse,
+    SessionAppendResponse,
+    SessionCreateResponse,
+    SessionDeleteResponse,
+    SessionDetail,
+    SessionListResponse,
+    SessionMeta,
+    SessionRenameResponse,
+    SessionRole,
     RememberResponse,
     ModelsResponse,
     ModelTask,
@@ -386,6 +394,61 @@ export class LilbeeClient {
             body: JSON.stringify(body),
         });
         return (await res.json()) as AskResponse;
+    }
+
+    async listSessions(): Promise<SessionMeta[]> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions`);
+        const data = (await res.json()) as SessionListResponse;
+        return data.sessions;
+    }
+
+    async getSession(sessionId: string): Promise<SessionDetail> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}`);
+        return (await res.json()) as SessionDetail;
+    }
+
+    /** `title` is recorded as the auto-derived one; renames overwrite it as custom. */
+    async createSession(modelRef: string, scope: string, title: string): Promise<SessionCreateResponse> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions`, {
+            method: "POST",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ model_ref: modelRef, scope, title }),
+        });
+        return (await res.json()) as SessionCreateResponse;
+    }
+
+    async appendSessionMessage(
+        sessionId: string,
+        role: SessionRole,
+        content: string,
+        sources: string[] = [],
+    ): Promise<SessionAppendResponse> {
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages`,
+            {
+                method: "POST",
+                headers: { ...JSON_HEADERS, ...this.authHeaders() },
+                body: JSON.stringify({ role, content, sources }),
+            },
+        );
+        return (await res.json()) as SessionAppendResponse;
+    }
+
+    async renameSession(sessionId: string, title: string): Promise<SessionRenameResponse> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}`, {
+            method: "PATCH",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ title }),
+        });
+        return (await res.json()) as SessionRenameResponse;
+    }
+
+    async deleteSession(sessionId: string): Promise<SessionDeleteResponse> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}`, {
+            method: "DELETE",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+        });
+        return (await res.json()) as SessionDeleteResponse;
     }
 
     async listMemories(): Promise<MemoryItem[]> {

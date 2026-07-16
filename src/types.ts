@@ -303,6 +303,63 @@ export interface Message {
     content: string;
 }
 
+/** Author of a persisted chat turn. Narrower than `Message.role`: the store has no system turns. */
+export type SessionRole = "user" | "assistant";
+
+export const SESSION_ROLE = {
+    USER: "user",
+    ASSISTANT: "assistant",
+} as const satisfies Record<string, SessionRole>;
+
+/** A session's metadata, without its transcript. Body of each `GET /api/sessions` row. */
+export interface SessionMeta {
+    id: string;
+    title: string;
+    created_at: string;
+    updated_at: string;
+    model_ref: string;
+    scope: string;
+    message_count: number;
+}
+
+/** One persisted turn. `sources` are bare source paths, not the richer `Source` chat streams carry. */
+export interface SessionMessageItem {
+    role: SessionRole;
+    content: string;
+    sources: string[];
+    ts: string;
+}
+
+/** Body of `GET /api/sessions/{id}`. `summary` is null until compaction has folded turns away. */
+export interface SessionDetail {
+    meta: SessionMeta;
+    messages: SessionMessageItem[];
+    summary: string | null;
+}
+
+export interface SessionListResponse {
+    sessions: SessionMeta[];
+}
+
+export interface SessionCreateResponse {
+    id: string;
+}
+
+export interface SessionAppendResponse {
+    id: string;
+    message_count: number;
+}
+
+export interface SessionRenameResponse {
+    id: string;
+    title: string;
+}
+
+export interface SessionDeleteResponse {
+    id: string;
+    deleted: boolean;
+}
+
 export type ServerState = "stopped" | "downloading" | "starting" | "ready" | "error";
 
 export const SERVER_STATE = {
