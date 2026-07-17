@@ -228,6 +228,8 @@ vi.mock("../src/binary-manager", () => ({
 }));
 
 let mockLastStderr = "";
+let mockIsAdopted = false;
+let mockSpawnedVersion = "";
 vi.mock("../src/server-manager", () => ({
     ServerManager: vi.fn().mockImplementation(function (opts: any) {
         mockServerOpts = opts;
@@ -235,6 +237,12 @@ vi.mock("../src/server-manager", () => ({
             start: mockServerStart,
             stop: mockServerStop,
             restart: vi.fn(),
+            get isAdopted() {
+                return mockIsAdopted;
+            },
+            get spawnedVersion() {
+                return mockSpawnedVersion;
+            },
             get serverUrl() {
                 return "http://127.0.0.1:54321";
             },
@@ -5248,6 +5256,64 @@ describe("LilbeePlugin", () => {
                 } finally {
                     consoleSpy.mockRestore();
                 }
+            });
+
+            it("corrects the recorded version after a spawn that reports a different one", async () => {
+                mockSpawnedVersion = "0.9.9";
+                const plugin = await createPlugin({ serverMode: "managed" });
+                vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("v0.1.0");
+                const set = vi.spyOn(plugin, "setSharedLilbeeVersion").mockImplementation(() => {});
+                await plugin.onload();
+                await flush();
+                expect(set).toHaveBeenCalledWith("v0.9.9");
+                expect(plugin.journal.entries.map((e) => e.message)).toContain(
+                    "recorded server version corrected to v0.9.9 (was v0.1.0)",
+                );
+                mockSpawnedVersion = "";
+            });
+
+            it("a first spawn with no recorded version records what the binary reported", async () => {
+                mockSpawnedVersion = "0.9.9";
+                const plugin = await createPlugin({ serverMode: "managed" });
+                vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("");
+                const set = vi.spyOn(plugin, "setSharedLilbeeVersion").mockImplementation(() => {});
+                await plugin.onload();
+                await flush();
+                expect(set).toHaveBeenCalledWith("v0.9.9");
+                expect(plugin.journal.entries.map((e) => e.message)).toContain(
+                    "recorded server version corrected to v0.9.9",
+                );
+                mockSpawnedVersion = "";
+            });
+
+            it("leaves the record alone when it matches modulo the v prefix", async () => {
+                mockSpawnedVersion = "0.1.0";
+                const plugin = await createPlugin({ serverMode: "managed" });
+                vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("v0.1.0");
+                const set = vi.spyOn(plugin, "setSharedLilbeeVersion").mockImplementation(() => {});
+                await plugin.onload();
+                await flush();
+                expect(set).not.toHaveBeenCalled();
+                mockSpawnedVersion = "";
+            });
+
+            it("never reconciles from an adopted server", async () => {
+                mockIsAdopted = true;
+                mockSpawnedVersion = "0.9.9";
+                const plugin = await createPlugin({ serverMode: "managed" });
+                vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("v0.1.0");
+                const set = vi.spyOn(plugin, "setSharedLilbeeVersion").mockImplementation(() => {});
+                await plugin.onload();
+                await flush();
+                expect(set).not.toHaveBeenCalled();
+                mockIsAdopted = false;
+                mockSpawnedVersion = "";
+            });
+
+            it("reconcile is a no-op without a server manager", async () => {
+                const plugin = await createPlugin({ serverMode: "managed" });
+                (plugin as any).serverManager = null;
+                expect(() => (plugin as any).reconcileRecordedVersion()).not.toThrow();
             });
 
             it("passes the recorded installed version to the supervisor", async () => {

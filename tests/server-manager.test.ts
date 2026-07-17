@@ -393,7 +393,7 @@ describe("ServerManager", () => {
             fetchSpy
                 .mockRejectedValueOnce(new Error("ECONNREFUSED"))
                 .mockResolvedValueOnce({ ok: false })
-                .mockResolvedValue({ ok: true });
+                .mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) });
             const mgr = new ServerManager(defaultOpts());
             const startP = mgr.start();
             await vi.advanceTimersByTimeAsync(3000);
@@ -422,6 +422,36 @@ describe("ServerManager", () => {
             await stopP;
             await startP; // resolves without throwing: the stop was on purpose
             expect(mgr.state).toBe("stopped");
+        });
+    });
+
+    describe("spawnedVersion", () => {
+        it("captures the version the child reports on its ready probe", async () => {
+            fetchSpy.mockResolvedValue({ ok: true, json: async () => ({ status: "ok", version: "1.2.3" }) } as any);
+            const mgr = await startFresh();
+            expect(mgr.spawnedVersion).toBe("1.2.3");
+            expect(mgr.isAdopted).toBe(false);
+        });
+
+        it("is empty when the health report carries no version", async () => {
+            const mgr = await startFresh();
+            expect(mgr.spawnedVersion).toBe("");
+        });
+
+        it("a ready answer that fails to parse still counts as ready", async () => {
+            fetchSpy.mockResolvedValue({ ok: true } as any); // ok but no parseable body
+            const mgr = await startFresh();
+            expect(mgr.state).toBe("ready");
+            expect(mgr.spawnedVersion).toBe("");
+        });
+
+        it("is empty for an adopted server", async () => {
+            readFileSyncSpy.mockImplementation(fileRouter("present"));
+            fetchSpy.mockResolvedValue({ ok: true, json: async () => ({ status: "ok", version: "1.2.3" }) } as any);
+            const mgr = new ServerManager(defaultOpts());
+            await mgr.start();
+            expect(mgr.spawnedVersion).toBe("");
+            expect(mgr.isAdopted).toBe(true);
         });
     });
 

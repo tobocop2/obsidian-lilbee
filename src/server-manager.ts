@@ -100,6 +100,16 @@ export async function requestServerShutdown(dataDir: string): Promise<boolean> {
     }
 }
 
+/** Version out of a health response; empty when absent or unparseable — never blocks readiness. */
+async function reportedVersion(res: Response): Promise<string> {
+    try {
+        const body = (await res.json()) as { version?: unknown };
+        return typeof body.version === "string" ? body.version : "";
+    } catch {
+        return "";
+    }
+}
+
 /** lilbee's health report on *port*, or null when it is dead or answers with a foreign shape. */
 async function probeLilbeeHealth(port: number): Promise<{ version: string } | null> {
     try {
@@ -201,6 +211,7 @@ export class ServerManager {
     private crashCount = 0;
     private restartTimer: number | null = null;
     private _actualPort: number | null = null;
+    private _spawnedVersion = "";
     private _outputLines: string[] = [];
     /** Set when the child can no longer come up (spawn error, refusal, restarts exhausted); aborts discovery. */
     private fatalStartError: Error | null = null;
@@ -227,6 +238,15 @@ export class ServerManager {
 
     get dataDir(): string {
         return this.opts.dataDir;
+    }
+
+    /** Version the spawned child reported on its ready probe; empty when adopted or unknown. */
+    get spawnedVersion(): string {
+        return this._spawnedVersion;
+    }
+
+    get isAdopted(): boolean {
+        return this.adopted;
     }
 
     private get portFilePath(): string {
@@ -418,6 +438,7 @@ export class ServerManager {
         const generation = ++this.startGeneration;
         this.desired = DESIRED.RUNNING;
         this._actualPort = null;
+        this._spawnedVersion = "";
         this.fatalStartError = null;
         this.setState(SERVER_STATE.STARTING);
         this._outputLines = [];
@@ -527,7 +548,10 @@ export class ServerManager {
                     // Bootstrap probe via the injectable node abstraction: runs during
                     // spawn before any LilbeeClient exists, and stays test-swappable.
                     const res = await node.fetch(`${url}/api/health`);
-                    if (res.ok) return;
+                    if (res.ok) {
+                        this._spawnedVersion = await reportedVersion(res);
+                        return;
+                    }
                 } catch {
                     // not ready yet
                 }

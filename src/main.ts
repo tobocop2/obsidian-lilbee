@@ -492,6 +492,7 @@ export default class LilbeePlugin extends Plugin {
                 this.setStatusClass("lilbee-status-starting");
                 onProgress?.({ phase: MANAGED_PHASE.STARTING, message: MESSAGES.STATUS_STARTING_SERVER });
                 await this.serverManager.start();
+                this.reconcileRecordedVersion();
                 this.configureApi(this.serverManager.serverUrl);
                 void this.fetchActiveModel();
                 void this.configureManagedStorage();
@@ -563,6 +564,24 @@ export default class LilbeePlugin extends Plugin {
         this.journal.lifecycle(`take-over complete: the server of ${ownerName} is gone; starting ours`);
         new Notice(MESSAGES.NOTICE_TAKE_OVER_SUCCESS(ownerName));
         await this.startManagedServer(onProgress, false);
+    }
+
+    /**
+     * After a spawn, make the recorded version match what the binary reported.
+     * A wrong record would otherwise make adoption replace our own healthy
+     * server on every plugin reload. Never reconciled from an adopted server:
+     * its version may be the stale one a later start is meant to replace.
+     */
+    private reconcileRecordedVersion(): void {
+        const sm = this.serverManager;
+        if (!sm || sm.isAdopted || !sm.spawnedVersion) return;
+        const reported = sm.spawnedVersion.replace(/^v/, "");
+        const recorded = this.getSharedLilbeeVersion();
+        if (recorded.replace(/^v/, "") === reported) return;
+        this.setSharedLilbeeVersion(`v${reported}`);
+        this.journal.lifecycle(
+            `recorded server version corrected to v${reported}${recorded ? ` (was ${recorded})` : ""}`,
+        );
     }
 
     /** Data dir of a live server another vault started, or null. Our own live server is the adopt path, not a foreigner. */

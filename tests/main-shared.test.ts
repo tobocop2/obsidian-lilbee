@@ -107,6 +107,8 @@ vi.mock("../src/server-manager", () => {
                 start: vi.fn().mockResolvedValue(undefined),
                 stop: vi.fn().mockResolvedValue(undefined),
                 restart: vi.fn(),
+                isAdopted: false,
+                spawnedVersion: "",
                 get serverUrl() {
                     return "http://127.0.0.1:54321";
                 },
