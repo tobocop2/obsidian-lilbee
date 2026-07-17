@@ -72,9 +72,11 @@ describe("integration: server start", () => {
         const sm = new ServerManager({
             binaryPath: bm.binaryPath,
             dataDir: tempDir,
+            sharedRoot: tempDir,
             modelsDir: `${tempDir}/models`,
             ragSystemPrompt: "",
             generalSystemPrompt: "",
+            installedVersion: "",
         });
 
         try {

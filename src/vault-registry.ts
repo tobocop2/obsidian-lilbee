@@ -4,15 +4,7 @@
  */
 import { node } from "./binary-manager";
 import { getDefaultLilbeeDataRoot } from "./session-token";
-import {
-    DEFAULT_SHARED_CONFIG,
-    LOCK_STATE,
-    SHARED_PATH,
-    type ActiveLock,
-    type LockState,
-    type SharedConfig,
-    type VaultRegistryEntry,
-} from "./types";
+import { DEFAULT_SHARED_CONFIG, SHARED_PATH, type SharedConfig, type VaultRegistryEntry } from "./types";
 
 const VAULT_ID_BYTES = 6;
 const FALLBACK_SHARED_ROOT = "/tmp/lilbee";
@@ -55,10 +47,6 @@ function registryPath(sharedRoot: string): string {
     return node.join(sharedRoot, SHARED_PATH.REGISTRY);
 }
 
-function lockPath(sharedRoot: string): string {
-    return node.join(sharedRoot, SHARED_PATH.LOCK);
-}
-
 function ensureDir(path: string): void {
     if (!node.existsSync(path)) node.mkdirSync(path, { recursive: true });
 }
@@ -79,17 +67,10 @@ function readJson<T>(path: string): T | null {
     }
 }
 
-function isProcessAlive(pid: number): boolean {
-    try {
-        node.processKill(pid, 0);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
 /**
- * Manages `<shared-root>/{config.json, registry.json, active.lock}`.
+ * Manages `<shared-root>/{config.json, registry.json}`. Which server owns the
+ * shared root is the server's own business: it holds an OS scope lock and
+ * names itself in a sidecar (see server-manager's readScopeOwner).
  * All file I/O is synchronous because the call sites are plugin lifecycle
  * events that already block on disk.
  */
@@ -122,41 +103,5 @@ export class VaultRegistry {
     /** Return the registered data-dir or the default location for this id. */
     resolveDataDir(id: string): string {
         return this.get(id)?.dataDir ?? defaultDataDirFor(this.sharedRoot, id);
-    }
-
-    readLock(): ActiveLock | null {
-        return readJson<ActiveLock>(lockPath(this.sharedRoot));
-    }
-
-    /**
-     * Classify the current lock against our vault id. STALE means a lock file
-     * exists but the owning PID is gone — safe to take.
-     */
-    lockState(vaultId: string): LockState {
-        const lock = this.readLock();
-        if (lock === null) return LOCK_STATE.NONE;
-        if (!isProcessAlive(lock.pid)) return LOCK_STATE.STALE;
-        return lock.vaultId === vaultId ? LOCK_STATE.OURS : LOCK_STATE.LIVE_OTHER;
-    }
-
-    /**
-     * Atomically write a lock claiming the shared root for *vaultId*.
-     * Caller must already have decided the existing lock (if any) is takeable
-     * (STALE, OURS, or LIVE_OTHER after the user authorized take-over).
-     */
-    writeLock(lock: ActiveLock): void {
-        ensureDir(this.sharedRoot);
-        node.writeFileSync(lockPath(this.sharedRoot), JSON.stringify(lock, null, 2));
-    }
-
-    releaseLock(vaultId: string): void {
-        const lock = this.readLock();
-        if (lock === null) return;
-        if (lock.vaultId !== vaultId) return;
-        try {
-            node.unlinkSync(lockPath(this.sharedRoot));
-        } catch {
-            // already gone — fine
-        }
     }
 }

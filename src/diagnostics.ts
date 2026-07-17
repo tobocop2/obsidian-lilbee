@@ -88,7 +88,7 @@ export function renderSummary(ctx: DiagnosticsContext, files: CollectedFile[]): 
         "## Collected files",
         ...files.map((f) => `- ${f.name}: ${f.data === null ? (f.note ?? "missing") : (f.note ?? "ok")}`),
         "",
-        "## Recent plugin errors",
+        "## Plugin journal (errors and lifecycle events)",
         "```",
         redactSecrets(journalText(ctx)) || "(none)",
         "```",

@@ -10,7 +10,7 @@ export function formatJournalEntry(entry: JournalEntry): string {
     return `${entry.timestamp} [${entry.label}] ${entry.message}${entry.stack ? `\n${entry.stack}` : ""}`;
 }
 
-/** In-memory ring buffer of plugin errors, mirrored best-effort to logs/plugin.log. */
+/** In-memory ring buffer of plugin errors and lifecycle events, mirrored best-effort to logs/plugin.log. */
 export class ErrorJournal {
     private _entries: JournalEntry[] = [];
     private logPath: string | null = null;
@@ -22,6 +22,11 @@ export class ErrorJournal {
     /** Point persistence at `<dataDir>/logs`. */
     setLogDir(dir: string): void {
         this.logPath = node.join(dir, LOG_FILE.PLUGIN);
+    }
+
+    /** Record a server-lifecycle decision (start, stop, adopt, update, take-over). */
+    lifecycle(message: string): void {
+        this.record("lifecycle", message);
     }
 
     record(label: string, message: string, stack?: string): void {

@@ -101,6 +101,8 @@ function makePlugin(settings: Partial<LilbeeSettings> = {}, registry: any = null
         vaultRegistry: registry,
         getSharedLilbeeVersion: () => "",
         setSharedLilbeeVersion: vi.fn(),
+        isServerAutoUpdateEnabled: () => true,
+        setServerAutoUpdate: vi.fn(),
         isServerInstalled: () => true,
         isServerUninstalled: () => false,
         isDownloadingServer: () => false,

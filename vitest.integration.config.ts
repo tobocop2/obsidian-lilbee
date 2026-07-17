@@ -5,7 +5,7 @@ export default defineConfig({
         globals: true,
         environment: "node",
         setupFiles: ["tests/setup.ts"],
-        include: ["tests/integration.test.ts", "tests/reap.integration.test.ts"],
+        include: ["tests/integration.test.ts"],
         testTimeout: 180_000,
         alias: {
             obsidian: new URL("./tests/__mocks__/obsidian.ts", import.meta.url).pathname,

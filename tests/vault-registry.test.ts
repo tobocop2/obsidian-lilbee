@@ -9,7 +9,7 @@ import {
     sharedModelsDir,
     vaultsRootDir,
 } from "../src/vault-registry";
-import { LOCK_STATE, type ActiveLock, type VaultRegistryEntry } from "../src/types";
+import { type VaultRegistryEntry } from "../src/types";
 
 /* ------------------------------------------------------------------ */
 /*  In-memory fs                                                      */
@@ -148,6 +148,7 @@ describe("VaultRegistry.loadConfig", () => {
             lilbeeVariant: "",
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
+            serverAutoUpdate: true,
             serverUninstalled: false,
         });
     });
@@ -161,6 +162,7 @@ describe("VaultRegistry.loadConfig", () => {
             lilbeeVariant: "",
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
+            serverAutoUpdate: true,
             serverUninstalled: false,
         });
     });
@@ -174,6 +176,7 @@ describe("VaultRegistry.loadConfig", () => {
             lilbeeVariant: "",
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
+            serverAutoUpdate: true,
             serverUninstalled: false,
         });
     });
@@ -211,6 +214,7 @@ describe("VaultRegistry.saveConfig", () => {
             lilbeeVariant: "",
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
+            serverAutoUpdate: true,
             serverUninstalled: false,
         });
         expect(fs.dirs.has("/r")).toBe(true);
@@ -276,106 +280,5 @@ describe("VaultRegistry registry operations", () => {
     it("resolveDataDir falls back to <root>/vaults/<id> when unregistered", () => {
         mountFs(makeFs());
         expect(new VaultRegistry("/r").resolveDataDir("new-id")).toBe("/r/vaults/new-id");
-    });
-});
-
-/* ------------------------------------------------------------------ */
-/*  VaultRegistry: lock state machine                                  */
-/* ------------------------------------------------------------------ */
-
-function lock(overrides: Partial<ActiveLock> = {}): ActiveLock {
-    return { vaultId: "a", pid: 4242, port: 5555, startedAt: 1, ...overrides };
-}
-
-describe("VaultRegistry.lockState", () => {
-    beforeEach(() => vi.restoreAllMocks());
-
-    it("NONE when no lock file exists", () => {
-        mountFs(makeFs());
-        expect(new VaultRegistry("/r").lockState("a")).toBe(LOCK_STATE.NONE);
-    });
-
-    it("OURS when lock matches our vault id and PID is alive", () => {
-        const fs = makeFs();
-        fs.write("/r/active.lock", JSON.stringify(lock({ vaultId: "a" })));
-        mountFs(fs);
-        vi.spyOn(node, "processKill").mockImplementation(() => true);
-        expect(new VaultRegistry("/r").lockState("a")).toBe(LOCK_STATE.OURS);
-    });
-
-    it("LIVE_OTHER when lock belongs to a different vault with live PID", () => {
-        const fs = makeFs();
-        fs.write("/r/active.lock", JSON.stringify(lock({ vaultId: "other" })));
-        mountFs(fs);
-        vi.spyOn(node, "processKill").mockImplementation(() => true);
-        expect(new VaultRegistry("/r").lockState("a")).toBe(LOCK_STATE.LIVE_OTHER);
-    });
-
-    it("STALE when the owning PID is no longer alive", () => {
-        const fs = makeFs();
-        fs.write("/r/active.lock", JSON.stringify(lock({ vaultId: "other" })));
-        mountFs(fs);
-        vi.spyOn(node, "processKill").mockImplementation(() => {
-            throw new Error("ESRCH");
-        });
-        expect(new VaultRegistry("/r").lockState("a")).toBe(LOCK_STATE.STALE);
-    });
-});
-
-describe("VaultRegistry write/release lock", () => {
-    beforeEach(() => vi.restoreAllMocks());
-
-    it("writeLock creates the lock file", () => {
-        const fs = makeFs();
-        mountFs(fs);
-        new VaultRegistry("/r").writeLock(lock({ vaultId: "a", port: 7777 }));
-        expect(JSON.parse(fs.read("/r/active.lock"))).toMatchObject({ vaultId: "a", port: 7777 });
-    });
-
-    it("writeLock creates the shared root directory if missing", () => {
-        const fs = makeFs();
-        mountFs(fs);
-        new VaultRegistry("/r").writeLock(lock());
-        expect(fs.dirs.has("/r")).toBe(true);
-    });
-
-    it("releaseLock removes the file when we own it", () => {
-        const fs = makeFs();
-        fs.write("/r/active.lock", JSON.stringify(lock({ vaultId: "a" })));
-        mountFs(fs);
-        new VaultRegistry("/r").releaseLock("a");
-        expect(fs.exists("/r/active.lock")).toBe(false);
-    });
-
-    it("releaseLock leaves the file alone when another vault owns it", () => {
-        const fs = makeFs();
-        fs.write("/r/active.lock", JSON.stringify(lock({ vaultId: "other" })));
-        mountFs(fs);
-        new VaultRegistry("/r").releaseLock("a");
-        expect(fs.exists("/r/active.lock")).toBe(true);
-    });
-
-    it("releaseLock is a no-op when no lock file exists", () => {
-        mountFs(makeFs());
-        expect(() => new VaultRegistry("/r").releaseLock("a")).not.toThrow();
-    });
-
-    it("releaseLock swallows unlink errors", () => {
-        const fs = makeFs();
-        fs.write("/r/active.lock", JSON.stringify(lock({ vaultId: "a" })));
-        mountFs(fs);
-        vi.spyOn(node, "unlinkSync").mockImplementation(() => {
-            throw new Error("EACCES");
-        });
-        expect(() => new VaultRegistry("/r").releaseLock("a")).not.toThrow();
-    });
-
-    it("readLock returns null when missing and parses when present", () => {
-        const fs = makeFs();
-        mountFs(fs);
-        const reg = new VaultRegistry("/r");
-        expect(reg.readLock()).toBeNull();
-        fs.write("/r/active.lock", JSON.stringify(lock({ pid: 99 })));
-        expect(reg.readLock()?.pid).toBe(99);
     });
 });

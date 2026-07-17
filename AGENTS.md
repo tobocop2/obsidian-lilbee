@@ -24,9 +24,9 @@ src/
   api.ts             # LilbeeClient — typed HTTP client with SSE streaming
   settings.ts        # Settings tab + model management UI
   binary-manager.ts  # Downloads and verifies the lilbee server binary per platform
-  server-manager.ts  # Spawns/stops the managed server, discovers its auto-assigned port
+  server-manager.ts  # Supervises the managed server: adopt-first start, API-first stop with awaited exits
   session-token.ts   # Discovers / holds the server session token
-  vault-registry.ts  # Shared-install lock + per-vault registry (one server at a time)
+  vault-registry.ts  # Per-vault registry under the shared root; the server's own OS locks enforce one-server-at-a-time
   task-queue.ts      # Background job queue that feeds the Task Center
   wiki-sync.ts       # Mirrors wiki pages into the vault as markdown
   storage-stats.ts   # Disk-usage reporting for the shared install

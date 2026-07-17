@@ -228,6 +228,8 @@ vi.mock("../src/binary-manager", () => ({
 }));
 
 let mockLastStderr = "";
+let mockIsAdopted = false;
+let mockSpawnedVersion = "";
 vi.mock("../src/server-manager", () => ({
     ServerManager: vi.fn().mockImplementation(function (opts: any) {
         mockServerOpts = opts;
@@ -235,6 +237,12 @@ vi.mock("../src/server-manager", () => ({
             start: mockServerStart,
             stop: mockServerStop,
             restart: vi.fn(),
+            get isAdopted() {
+                return mockIsAdopted;
+            },
+            get spawnedVersion() {
+                return mockSpawnedVersion;
+            },
             get serverUrl() {
                 return "http://127.0.0.1:54321";
             },
@@ -247,13 +255,15 @@ vi.mock("../src/server-manager", () => ({
             get lastOutput() {
                 return mockLastStderr;
             },
-            get serverPid() {
-                return 4321;
-            },
             opts,
         };
     }),
-    killServerTree: vi.fn().mockResolvedValue(undefined),
+    ScopeHeldError: class ScopeHeldError extends Error {},
+    readScopeOwner: vi.fn().mockReturnValue(null),
+    requestServerShutdown: vi.fn().mockResolvedValue(true),
+    awaitServerGone: vi.fn().mockResolvedValue(true),
+    askServerToExit: vi.fn().mockResolvedValue(true),
+    serverIsLive: vi.fn().mockResolvedValue(false),
 }));
 
 /** Flush the microtask queue so fire-and-forget promises settle. */
@@ -4864,6 +4874,21 @@ describe("LilbeePlugin", () => {
             expect(mockGatekeeperOpen).toHaveBeenCalled();
         });
 
+        it("a refused spawn defers to take-over negotiation instead of an error", async () => {
+            const sm = await import("../src/server-manager");
+            mockServerStart.mockRejectedValueOnce(new sm.ScopeHeldError("held"));
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const negotiateSpy = vi.spyOn(plugin as any, "negotiateTakeOver").mockResolvedValue(undefined);
+            await plugin.onload();
+            await flush();
+            await flush(); // the deferred negotiation runs on its own timeout
+
+            expect(negotiateSpy).toHaveBeenCalled();
+            expect(plugin.serverManager).toBeNull();
+            expect(Notice.instances.some((n) => n.message.includes("failed to start server"))).toBe(false);
+        });
+
         it("managed mode shows start error Notice when serverManager.start fails", async () => {
             mockServerStart.mockRejectedValueOnce(new Error("port in use"));
 
@@ -5234,6 +5259,82 @@ describe("LilbeePlugin", () => {
                 }
             });
 
+            it("corrects the recorded version after a spawn that reports a different one", async () => {
+                mockSpawnedVersion = "0.9.9";
+                const plugin = await createPlugin({ serverMode: "managed" });
+                vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("v0.1.0");
+                const set = vi.spyOn(plugin, "setSharedLilbeeVersion").mockImplementation(() => {});
+                await plugin.onload();
+                await flush();
+                expect(set).toHaveBeenCalledWith("v0.9.9");
+                expect(plugin.journal.entries.map((e) => e.message)).toContain(
+                    "recorded server version corrected to v0.9.9 (was v0.1.0)",
+                );
+                mockSpawnedVersion = "";
+            });
+
+            it("a first spawn with no recorded version records what the binary reported", async () => {
+                mockSpawnedVersion = "0.9.9";
+                const plugin = await createPlugin({ serverMode: "managed" });
+                vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("");
+                const set = vi.spyOn(plugin, "setSharedLilbeeVersion").mockImplementation(() => {});
+                await plugin.onload();
+                await flush();
+                expect(set).toHaveBeenCalledWith("v0.9.9");
+                expect(plugin.journal.entries.map((e) => e.message)).toContain(
+                    "recorded server version corrected to v0.9.9",
+                );
+                mockSpawnedVersion = "";
+            });
+
+            it("leaves the record alone when it matches modulo the v prefix", async () => {
+                mockSpawnedVersion = "0.1.0";
+                const plugin = await createPlugin({ serverMode: "managed" });
+                vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("v0.1.0");
+                const set = vi.spyOn(plugin, "setSharedLilbeeVersion").mockImplementation(() => {});
+                await plugin.onload();
+                await flush();
+                expect(set).not.toHaveBeenCalled();
+                mockSpawnedVersion = "";
+            });
+
+            it("never reconciles from an adopted server", async () => {
+                mockIsAdopted = true;
+                mockSpawnedVersion = "0.9.9";
+                const plugin = await createPlugin({ serverMode: "managed" });
+                vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("v0.1.0");
+                const set = vi.spyOn(plugin, "setSharedLilbeeVersion").mockImplementation(() => {});
+                await plugin.onload();
+                await flush();
+                expect(set).not.toHaveBeenCalled();
+                mockIsAdopted = false;
+                mockSpawnedVersion = "";
+            });
+
+            it("reconcile is a no-op without a server manager", async () => {
+                const plugin = await createPlugin({ serverMode: "managed" });
+                (plugin as any).serverManager = null;
+                expect(() => (plugin as any).reconcileRecordedVersion()).not.toThrow();
+            });
+
+            it("passes the recorded installed version to the supervisor", async () => {
+                const plugin = await createPlugin({ serverMode: "managed" });
+                vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("v0.7.0");
+                await plugin.onload();
+                await flush();
+                expect(mockServerOpts.installedVersion).toBe("v0.7.0");
+            });
+
+            it("routes supervisor journal lines into the plugin journal", async () => {
+                const plugin = await createPlugin({ serverMode: "managed" });
+                await plugin.onload();
+                await flush();
+                mockServerOpts.onJournal("spawned server pid 7");
+                const entry = plugin.journal.entries.find((e) => e.label === "lifecycle");
+                expect(entry).toBeDefined();
+                expect(entry!.message).toBe("spawned server pid 7");
+            });
+
             it("points the journal at <dataDir>/logs when the managed server starts", async () => {
                 const plugin = await createPlugin({ serverMode: "managed" });
                 const spy = vi.spyOn(plugin.journal, "setLogDir");
@@ -5416,6 +5517,9 @@ describe("LilbeePlugin", () => {
             // Second call should no-op
             mockEnsureBinary.mockResolvedValueOnce("/fake/bin/lilbee");
             await plugin.startManagedServer();
+
+            // Let the first call get past the pre-spawn scan to the blocked ensureBinary
+            await flush();
 
             // Unblock the first call
             resolveEnsure("/fake/bin/lilbee");
@@ -6110,6 +6214,7 @@ describe("LilbeePlugin", () => {
                 lilbeeVariant: "",
                 hfToken: "",
                 lastUpdateCheckPluginVersion: lastChecked,
+                serverAutoUpdate: true,
             });
             return vi.spyOn(VaultRegistry.prototype, "saveConfig").mockImplementation(() => {});
         };
@@ -6201,6 +6306,83 @@ describe("LilbeePlugin", () => {
             await (plugin as any).autoUpdateServerBinary();
 
             expect(check).not.toHaveBeenCalled();
+        });
+
+        it("skips the check when automatic server updates are turned off", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const check = vi.spyOn(plugin, "checkForUpdate");
+            const loadConfig = vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                lilbeeVersion: "v0.1.0",
+                lilbeeVariant: "",
+                hfToken: "",
+                lastUpdateCheckPluginVersion: "",
+                serverAutoUpdate: false,
+                serverUninstalled: false,
+            });
+            await plugin.onload();
+            await flush();
+
+            expect(check).not.toHaveBeenCalled();
+            expect(plugin.journal.entries.map((e) => e.message)).toContain(
+                "automatic server update skipped: turned off in settings",
+            );
+            loadConfig.mockRestore();
+        });
+    });
+
+    describe("server auto-update setting", () => {
+        it("reads the shared config and defaults to enabled without a registry", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            expect(plugin.isServerAutoUpdateEnabled()).toBe(true);
+            (plugin as any).vaultRegistry = null;
+            expect(plugin.isServerAutoUpdateEnabled()).toBe(true);
+        });
+
+        it("persists a change and journals it once", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const save = vi.spyOn(VaultRegistry.prototype, "saveConfig").mockImplementation(() => {});
+            plugin.setServerAutoUpdate(false);
+            expect(save).toHaveBeenCalledWith(expect.objectContaining({ serverAutoUpdate: false }));
+            expect(plugin.journal.entries.map((e) => e.message)).toContain("automatic server updates turned off");
+            save.mockRestore();
+        });
+
+        it("re-enabling journals the on message", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const loadConfig = vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                lilbeeVersion: "",
+                lilbeeVariant: "",
+                hfToken: "",
+                lastUpdateCheckPluginVersion: "",
+                serverAutoUpdate: false,
+                serverUninstalled: false,
+            });
+            const save = vi.spyOn(VaultRegistry.prototype, "saveConfig").mockImplementation(() => {});
+            plugin.setServerAutoUpdate(true);
+            expect(save).toHaveBeenCalledWith(expect.objectContaining({ serverAutoUpdate: true }));
+            expect(plugin.journal.entries.map((e) => e.message)).toContain("automatic server updates turned on");
+            loadConfig.mockRestore();
+            save.mockRestore();
+        });
+
+        it("an unchanged value writes and journals nothing", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const save = vi.spyOn(VaultRegistry.prototype, "saveConfig").mockImplementation(() => {});
+            const entriesBefore = plugin.journal.entries.length;
+            plugin.setServerAutoUpdate(true);
+            expect(save).not.toHaveBeenCalled();
+            expect(plugin.journal.entries).toHaveLength(entriesBefore);
+            save.mockRestore();
+        });
+
+        it("is a no-op without a vault registry", async () => {
+            const plugin = await createPlugin();
+            (plugin as any).vaultRegistry = null;
+            expect(() => plugin.setServerAutoUpdate(false)).not.toThrow();
         });
     });
 
@@ -6953,6 +7135,7 @@ describe("LilbeePlugin", () => {
             await flush();
             const setSpy = vi.spyOn(plugin as any, "setSharedLilbeeVersion").mockImplementation(() => {});
             const variantSpy = vi.spyOn(plugin as any, "setSharedLilbeeVariant").mockImplementation(() => {});
+            vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("v0.2.9");
 
             const progress: string[] = [];
             await plugin.updateServer(
@@ -6981,6 +7164,9 @@ describe("LilbeePlugin", () => {
             expect(progress).toContain("Downloading...");
             expect(progress).toContain("Starting server...");
             expect(progress).toContain("Update complete.");
+            const journal = plugin.journal.entries.map((e) => e.message);
+            expect(journal).toContain("updating server binary: v0.2.9 -> v0.3.0");
+            expect(journal).toContain("server binary updated to v0.3.0");
         });
 
         it("turns download bytes into a percentage and a human line", async () => {
@@ -7008,6 +7194,7 @@ describe("LilbeePlugin", () => {
         it("reports bytes only when the asset host sends no length", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             await plugin.onload();
+            vi.spyOn(plugin, "getSharedLilbeeVersion").mockReturnValue("");
             mockDownload.mockImplementationOnce(
                 async (_url: string, _size: number, _digest: string, onProgress: any) => {
                     onProgress("Downloading...", "https://e/dl", { receivedBytes: 5_000_000, totalBytes: null });
@@ -7021,6 +7208,7 @@ describe("LilbeePlugin", () => {
             );
 
             expect(seen).toContainEqual(["Downloading... 5.00 MB", undefined]);
+            expect(plugin.journal.entries.map((e) => e.message)).toContain("updating server binary: (unknown) -> v1");
         });
 
         it("falls back to a plain downloading label when the size is unknown", async () => {

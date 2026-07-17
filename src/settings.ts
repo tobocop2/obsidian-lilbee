@@ -286,6 +286,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         if (serverState === SERVER_STATE.STOPPED || serverState === SERVER_STATE.ERROR) {
             controlSetting.addButton((btn) =>
                 btn.setButtonText(MESSAGES.BUTTON_START).onClick(async () => {
+                    this.plugin.journal.lifecycle("start requested from the settings tab");
                     await this.plugin.startManagedServer();
                     this.render();
                 }),
@@ -294,6 +295,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         if (serverState === SERVER_STATE.READY || serverState === SERVER_STATE.STARTING) {
             controlSetting.addButton((btn) =>
                 btn.setButtonText(MESSAGES.BUTTON_STOP).onClick(async () => {
+                    this.plugin.journal.lifecycle("stop requested from the settings tab");
                     await this.plugin.serverManager?.stop();
                     this.render();
                 }),
@@ -302,6 +304,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         if (serverState === SERVER_STATE.READY) {
             controlSetting.addButton((btn) =>
                 btn.setButtonText(MESSAGES.BUTTON_RESTART).onClick(async () => {
+                    this.plugin.journal.lifecycle("restart requested from the settings tab");
                     try {
                         await this.plugin.serverManager?.restart();
                     } catch (err) {
@@ -316,7 +319,19 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderAdoptDataDir(containerEl);
         this.renderStorageReport(containerEl);
         this.renderVersionSetting(containerEl);
+        this.renderAutoUpdateToggle(containerEl);
         this.renderDevBuildsToggle(containerEl);
+    }
+
+    private renderAutoUpdateToggle(containerEl: HTMLElement): void {
+        new Setting(containerEl)
+            .setName(MESSAGES.LABEL_SERVER_AUTO_UPDATE)
+            .setDesc(MESSAGES.DESC_SERVER_AUTO_UPDATE)
+            .addToggle((toggle) =>
+                toggle.setValue(this.plugin.isServerAutoUpdateEnabled()).onChange((value) => {
+                    this.plugin.setServerAutoUpdate(value);
+                }),
+            );
     }
 
     /**
@@ -375,7 +390,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     ),
                     selectedTag,
                 );
-                await this.runServerUpdate(release, btn, progress, label);
+                const updated = await this.runServerUpdate(release, btn, progress, label);
+                // An explicit non-latest install turns off automatic updates
+                // so the chosen version is honored across plugin updates.
+                if (updated && selectedTag !== releases[0].tag) {
+                    this.plugin.setServerAutoUpdate(false);
+                    this.render();
+                }
             });
         });
 

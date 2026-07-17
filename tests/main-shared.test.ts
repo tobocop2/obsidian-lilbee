@@ -107,6 +107,8 @@ vi.mock("../src/server-manager", () => {
                 start: vi.fn().mockResolvedValue(undefined),
                 stop: vi.fn().mockResolvedValue(undefined),
                 restart: vi.fn(),
+                isAdopted: false,
+                spawnedVersion: "",
                 get serverUrl() {
                     return "http://127.0.0.1:54321";
                 },
@@ -121,13 +123,17 @@ vi.mock("../src/server-manager", () => {
                 },
             };
         }),
-        killServerTree: vi.fn().mockResolvedValue(undefined),
+        ScopeHeldError: class ScopeHeldError extends Error {},
+        readScopeOwner: vi.fn().mockReturnValue(null),
+        requestServerShutdown: vi.fn().mockResolvedValue(true),
+        awaitServerGone: vi.fn().mockResolvedValue(true),
+        askServerToExit: vi.fn().mockResolvedValue(true),
+        serverIsLive: vi.fn().mockResolvedValue(false),
     };
 });
 
 import LilbeePlugin from "../src/main";
 import { App, Notice } from "obsidian";
-import { node } from "../src/binary-manager";
 import { SHARED_PATH } from "../src/types";
 
 async function createPlugin() {
@@ -233,7 +239,7 @@ describe("getVaultDisplayName", () => {
 });
 
 describe("recordReadyState", () => {
-    it("writes the lock and upserts the vault entry", async () => {
+    it("upserts the vault entry", async () => {
         const plugin = await createPlugin();
         (plugin as any).serverManager = {
             serverUrl: "http://127.0.0.1:54321",
@@ -241,7 +247,6 @@ describe("recordReadyState", () => {
         };
         (plugin as any).recordReadyState();
         const registry = plugin.vaultRegistry!;
-        expect(registry.readLock()?.port).toBe(54321);
         expect(registry.get(plugin.vaultId)?.dataDir).toBe("/some/data/dir");
     });
 
@@ -315,92 +320,179 @@ describe("managed server tracks the open vault's data dir", () => {
     });
 });
 
-describe("acquireLockOrBail", () => {
-    it("returns true when the lock is unowned", async () => {
-        const plugin = await createPlugin();
-        const result = await (plugin as any).acquireLockOrBail(plugin.vaultRegistry);
-        expect(result).toBe(true);
-    });
+describe("negotiateTakeOver", () => {
+    async function smMocks() {
+        const sm = await import("../src/server-manager");
+        return {
+            readScopeOwner: sm.readScopeOwner as ReturnType<typeof vi.fn>,
+            requestServerShutdown: sm.requestServerShutdown as ReturnType<typeof vi.fn>,
+            awaitServerGone: sm.awaitServerGone as ReturnType<typeof vi.fn>,
+            askServerToExit: sm.askServerToExit as ReturnType<typeof vi.fn>,
+        };
+    }
 
-    it("returns true and proceeds when lock is ours", async () => {
-        const plugin = await createPlugin();
-        plugin.vaultRegistry!.writeLock({
-            vaultId: plugin.vaultId,
-            pid: process.pid,
-            port: 1,
-            startedAt: 1,
-        });
-        (node.processKill as any).mockImplementation(() => true);
-        const result = await (plugin as any).acquireLockOrBail(plugin.vaultRegistry);
-        expect(result).toBe(true);
-    });
-
-    it("bails when LIVE_OTHER and the user declines take-over", async () => {
-        const plugin = await createPlugin();
-        plugin.vaultRegistry!.writeLock({ vaultId: "other-id", pid: 99, port: 1, startedAt: 1 });
-        (node.processKill as any).mockImplementation((pid: number, signal?: number) => {
-            if (signal === 0) return true;
-            return undefined;
-        });
-        vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(false);
-        const result = await (plugin as any).acquireLockOrBail(plugin.vaultRegistry);
-        expect(result).toBe(false);
-        expect(Notice.instances.some((n) => n.message.includes("stays with"))).toBe(true);
-    });
-
-    it("takes over when LIVE_OTHER and the user accepts", async () => {
-        const plugin = await createPlugin();
-        plugin.vaultRegistry!.writeLock({ vaultId: "other-id", pid: 99, port: 1, startedAt: 1 });
-        let pollCalls = 0;
-        (node.processKill as any).mockImplementation((pid: number, signal?: number) => {
-            if (signal === 0) {
-                pollCalls += 1;
-                if (pollCalls > 1) throw new Error("ESRCH"); // process is gone after one poll
-                return true;
-            }
-            return undefined; // SIGTERM-like
-        });
-        vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(true);
-        const result = await (plugin as any).acquireLockOrBail(plugin.vaultRegistry);
-        expect(result).toBe(true);
-        expect(Notice.instances.some((n) => n.message.includes("switched from"))).toBe(true);
-    });
-
-    it("returns false on take-over timeout when the process refuses to die", async () => {
-        vi.useFakeTimers();
-        try {
-            const plugin = await createPlugin();
-            plugin.vaultRegistry!.writeLock({ vaultId: "other-id", pid: 99, port: 1, startedAt: 1 });
-            (node.processKill as any).mockImplementation(() => true);
-            vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(true);
-            const promise = (plugin as any).acquireLockOrBail(plugin.vaultRegistry);
-            await vi.advanceTimersByTimeAsync(50 * 100);
-            const result = await promise;
-            expect(result).toBe(false);
-            expect(Notice.instances.some((n) => n.message.includes("did not shut down"))).toBe(true);
-        } finally {
-            vi.useRealTimers();
-        }
-    });
-
-    it("uses the registered display name when describing the owning vault", async () => {
-        const plugin = await createPlugin();
+    /** Register a vault named *name* whose data dir is *dataDir*. */
+    function registerOwner(plugin: LilbeePlugin, name: string, dataDir: string): void {
         plugin.vaultRegistry!.upsert({
             id: "other-id",
-            displayName: "Personal",
-            dataDir: "/x",
-            obsidianVaultPath: "/y",
+            displayName: name,
+            dataDir,
+            obsidianVaultPath: "/p",
             addedAt: 1,
             lastActiveAt: 1,
         });
-        plugin.vaultRegistry!.writeLock({ vaultId: "other-id", pid: 99, port: 1, startedAt: 1 });
-        (node.processKill as any).mockImplementation((pid: number, signal?: number) => {
-            if (signal === 0) return true;
-            return undefined;
-        });
+    }
+
+    it("declining leaves the owner alone and shows the locked state", async () => {
+        const plugin = await createPlugin();
+        const mocks = await smMocks();
+        mocks.readScopeOwner.mockReturnValue({ dataDir: "/d", pid: 9 });
+        mocks.askServerToExit.mockClear();
+        registerOwner(plugin, "Personal", "/d");
         vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(false);
-        await (plugin as any).acquireLockOrBail(plugin.vaultRegistry);
+        const events: any[] = [];
+        await (plugin as any).negotiateTakeOver(plugin.vaultRegistry, (e: any) => events.push(e));
+        expect(Notice.instances.some((n) => n.message.includes("stays with"))).toBe(true);
         expect(Notice.instances.some((n) => n.message.includes("Personal"))).toBe(true);
+        expect(mocks.askServerToExit).not.toHaveBeenCalled();
+        expect(plugin.journal.entries.map((e) => e.message)).toContain(
+            "take-over of the shared root declined (owner: Personal)",
+        );
+        expect(events.find((e) => e.phase === "error")).toBeDefined();
+        mocks.readScopeOwner.mockReturnValue(null);
+    });
+
+    it("accepting asks the owner to exit over its API and starts again", async () => {
+        const plugin = await createPlugin();
+        const mocks = await smMocks();
+        mocks.readScopeOwner.mockReturnValue({ dataDir: "/d", pid: 9 });
+        mocks.askServerToExit.mockResolvedValue(true);
+        registerOwner(plugin, "Personal", "/d");
+        vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(true);
+        const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
+        await (plugin as any).negotiateTakeOver(plugin.vaultRegistry);
+        expect(mocks.askServerToExit).toHaveBeenCalledWith("/d", expect.any(Number));
+        expect(Notice.instances.some((n) => n.message.includes("switched from"))).toBe(true);
+        expect(startSpy).toHaveBeenCalledWith(undefined, false);
+        const journal = plugin.journal.entries.map((e) => e.message);
+        expect(journal).toContain("take-over accepted: asking the server of Personal (pid 9) to exit");
+        expect(journal).toContain("take-over complete: the server of Personal is gone; starting ours");
+        mocks.readScopeOwner.mockReturnValue(null);
+    });
+
+    it("accepting with an unreadable owner sidecar skips the ask and still starts", async () => {
+        const plugin = await createPlugin();
+        const mocks = await smMocks();
+        mocks.readScopeOwner.mockReturnValue(null);
+        mocks.askServerToExit.mockClear();
+        vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(true);
+        const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
+        await (plugin as any).negotiateTakeOver(plugin.vaultRegistry);
+        expect(mocks.askServerToExit).not.toHaveBeenCalled();
+        expect(startSpy).toHaveBeenCalledWith(undefined, false);
+        expect(plugin.journal.entries.map((e) => e.message)).toContain(
+            "take-over accepted: asking the server of another vault to exit",
+        );
+    });
+
+    it("reports when the owner will not shut down, without retrying", async () => {
+        const plugin = await createPlugin();
+        const mocks = await smMocks();
+        mocks.readScopeOwner.mockReturnValue({ dataDir: "/d", pid: 9 });
+        mocks.askServerToExit.mockResolvedValue(false);
+        registerOwner(plugin, "Personal", "/d");
+        vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(true);
+        const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
+        await (plugin as any).negotiateTakeOver(plugin.vaultRegistry);
+        expect(Notice.instances.some((n) => n.message.includes("did not shut down"))).toBe(true);
+        expect(startSpy).not.toHaveBeenCalled();
+        expect(plugin.journal.entries.map((e) => e.message)).toContain(
+            "take-over failed: the server of Personal did not stop when asked",
+        );
+        mocks.readScopeOwner.mockReturnValue(null);
+        mocks.askServerToExit.mockResolvedValue(true);
+    });
+
+    it("a second refusal lands in the quiet locked state instead of a loop", async () => {
+        const plugin = await createPlugin();
+        const mocks = await smMocks();
+        mocks.readScopeOwner.mockReturnValue({ dataDir: "/d", pid: 9 });
+        registerOwner(plugin, "Personal", "/d");
+        const confirmSpy = vi.spyOn(plugin as any, "confirmTakeOver");
+        const events: any[] = [];
+        await (plugin as any).negotiateTakeOver(plugin.vaultRegistry, (e: any) => events.push(e), false);
+        expect(confirmSpy).not.toHaveBeenCalled();
+        expect(events.find((e) => e.phase === "error")).toBeDefined();
+        mocks.readScopeOwner.mockReturnValue(null);
+    });
+
+    it("the pre-spawn scan routes a live lock-less foreign server into the take-over flow", async () => {
+        const plugin = await createPlugin();
+        const sm = await import("../src/server-manager");
+        registerOwner(plugin, "Personal", "/d");
+        (sm.serverIsLive as ReturnType<typeof vi.fn>).mockImplementation(async (dataDir: string) => dataDir === "/d");
+        const negotiate = vi.spyOn(plugin as any, "negotiateTakeOver").mockResolvedValue(undefined);
+        await plugin.startManagedServer();
+        await new Promise((r) => setTimeout(r, 0)); // the scan negotiates outside startingServer
+        expect(negotiate).toHaveBeenCalledWith(plugin.vaultRegistry, undefined, true, "/d");
+        expect(plugin.serverManager).toBeNull();
+        (sm.serverIsLive as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    });
+
+    it("the scan ignores a registered vault whose server is dead and proceeds to start", async () => {
+        const plugin = await createPlugin();
+        const sm = await import("../src/server-manager");
+        registerOwner(plugin, "Personal", "/d");
+        (sm.serverIsLive as ReturnType<typeof vi.fn>).mockResolvedValue(false); // stale session files, nothing live
+        const negotiate = vi.spyOn(plugin as any, "negotiateTakeOver");
+        await plugin.startManagedServer();
+        await new Promise((r) => setTimeout(r, 0));
+        expect(negotiate).not.toHaveBeenCalled();
+        expect(plugin.serverManager).not.toBeNull();
+    });
+
+    it("the scan treats our own live server as the adopt path, not a foreigner", async () => {
+        const plugin = await createPlugin();
+        const sm = await import("../src/server-manager");
+        registerOwner(plugin, "Personal", "/d");
+        (sm.serverIsLive as ReturnType<typeof vi.fn>).mockResolvedValue(true); // ours answers first
+        const negotiate = vi.spyOn(plugin as any, "negotiateTakeOver");
+        await plugin.startManagedServer();
+        await new Promise((r) => setTimeout(r, 0));
+        expect(negotiate).not.toHaveBeenCalled();
+        expect(plugin.serverManager).not.toBeNull();
+        (sm.serverIsLive as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    });
+
+    it("a scan-found owner is asked to stop by its data dir and journals without a pid", async () => {
+        const plugin = await createPlugin();
+        const mocks = await smMocks();
+        mocks.askServerToExit.mockClear();
+        mocks.askServerToExit.mockResolvedValue(true);
+        registerOwner(plugin, "Personal", "/d");
+        vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(true);
+        const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
+        await (plugin as any).negotiateTakeOver(plugin.vaultRegistry, undefined, true, "/d");
+        expect(mocks.askServerToExit).toHaveBeenCalledWith("/d", expect.any(Number));
+        expect(startSpy).toHaveBeenCalledWith(undefined, false);
+        expect(plugin.journal.entries.map((e) => e.message)).toContain(
+            "take-over accepted: asking the server of Personal to exit",
+        );
+    });
+
+    it("names 'another vault' when no registry is available for the lookup", async () => {
+        const plugin = await createPlugin();
+        (plugin as any).vaultRegistry = null;
+        expect((plugin as any).lookupVaultNameByDataDir("/x")).toBe("another vault");
+    });
+
+    it("falls back to 'another vault' when the owner sidecar is unreadable", async () => {
+        const plugin = await createPlugin();
+        const mocks = await smMocks();
+        mocks.readScopeOwner.mockReturnValue(null);
+        vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(false);
+        await (plugin as any).negotiateTakeOver(plugin.vaultRegistry);
+        expect(Notice.instances.some((n) => n.message.includes("another vault"))).toBe(true);
     });
 });
 
@@ -414,72 +506,6 @@ describe("confirmTakeOver", () => {
         const result = await (plugin as any).confirmTakeOver("Personal");
         expect(openSpy).toHaveBeenCalled();
         expect(result).toBe(true);
-    });
-});
-
-describe("terminateOwningProcess", () => {
-    it("returns true immediately when there is no owner", async () => {
-        const plugin = await createPlugin();
-        const result = await (plugin as any).terminateOwningProcess(null);
-        expect(result).toBe(true);
-    });
-
-    it("swallows errors from the initial SIGTERM and still polls", async () => {
-        const plugin = await createPlugin();
-        (node.processKill as any).mockImplementation((pid: number, signal?: number) => {
-            if (signal === undefined) throw new Error("ESRCH on SIGTERM");
-            throw new Error("ESRCH on poll");
-        });
-        const result = await (plugin as any).terminateOwningProcess({
-            vaultId: "x",
-            pid: 1,
-            port: 1,
-            startedAt: 1,
-        });
-        expect(result).toBe(true);
-    });
-
-    it("also tears down the owner's server tree when the lock records a server pid", async () => {
-        const plugin = await createPlugin();
-        const { killServerTree } = await import("../src/server-manager");
-        (killServerTree as any).mockClear();
-        (node.processKill as any).mockImplementation((pid: number, signal?: number) => {
-            if (signal === 0) throw new Error("owner gone");
-        });
-        const result = await (plugin as any).terminateOwningProcess({
-            vaultId: "x",
-            pid: 1,
-            serverPid: 4242,
-            port: 1,
-            startedAt: 1,
-        });
-        expect(result).toBe(true);
-        expect(killServerTree).toHaveBeenCalledWith(4242);
-    });
-});
-
-describe("acquireLockOrBail edge branches", () => {
-    it("falls back to 'another vault' when readLock yields null mid-flow", async () => {
-        const plugin = await createPlugin();
-        // Force LIVE_OTHER but then null-out the lock before the owner readback.
-        const reg = plugin.vaultRegistry!;
-        vi.spyOn(reg, "lockState").mockReturnValue("live_other");
-        vi.spyOn(reg, "readLock").mockReturnValue(null);
-        vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(false);
-        const result = await (plugin as any).acquireLockOrBail(reg);
-        expect(result).toBe(false);
-        expect(Notice.instances.some((n) => n.message.includes("another vault"))).toBe(true);
-    });
-
-    it("passes onProgress payloads through to the caller when declining take-over", async () => {
-        const plugin = await createPlugin();
-        plugin.vaultRegistry!.writeLock({ vaultId: "other-id", pid: 99, port: 1, startedAt: 1 });
-        (node.processKill as any).mockImplementation(() => true);
-        vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(false);
-        const events: any[] = [];
-        const result = await (plugin as any).acquireLockOrBail(plugin.vaultRegistry, (e: any) => events.push(e));
-        expect(result).toBe(false);
-        expect(events.find((e) => e.phase === "error")).toBeDefined();
     });
 });
 
@@ -583,18 +609,6 @@ describe("ensureBinaryWithUi guards", () => {
     });
 });
 
-describe("recordReadyState port parsing fallback", () => {
-    it("defaults port to 0 when serverUrl has no port segment", async () => {
-        const plugin = await createPlugin();
-        (plugin as any).serverManager = {
-            serverUrl: "",
-            dataDir: "/x",
-        };
-        (plugin as any).recordReadyState();
-        expect(plugin.vaultRegistry!.readLock()?.port).toBe(0);
-    });
-});
-
 describe("updateServer guards", () => {
     it("returns early when vaultRegistry is null", async () => {
         const plugin = await createPlugin();
@@ -618,22 +632,15 @@ describe("startManagedServer guards", () => {
         await plugin.startManagedServer();
         expect(plugin.serverManager).toBeNull();
     });
-
-    it("returns when acquireLockOrBail bails", async () => {
-        const plugin = await createPlugin();
-        vi.spyOn(plugin as any, "acquireLockOrBail").mockResolvedValue(false);
-        await plugin.startManagedServer();
-        expect(plugin.serverManager).toBeNull();
-        expect((plugin as any).startingServer).toBe(false);
-    });
 });
 
-describe("onunload releases the lock", () => {
-    it("calls releaseLock with the current vault id", async () => {
+describe("onunload", () => {
+    it("stops the managed server", async () => {
         const plugin = await createPlugin();
-        const releaseSpy = vi.spyOn(plugin.vaultRegistry!, "releaseLock");
+        const stop = vi.fn().mockResolvedValue(undefined);
+        (plugin as any).serverManager = { stop };
         plugin.onunload();
-        expect(releaseSpy).toHaveBeenCalledWith(plugin.vaultId);
+        expect(stop).toHaveBeenCalled();
     });
 });
 
@@ -758,17 +765,15 @@ describe("managed-server uninstall", () => {
         expect(plugin.vaultRegistry!.loadConfig().serverUninstalled).toBe(true);
     });
 
-    it("stops the running server and releases the shared lock", async () => {
+    it("stops the running server before deleting", async () => {
         const plugin = await createPlugin();
         seedInstall(plugin);
         const stop = vi.fn().mockResolvedValue(undefined);
         (plugin as any).serverManager = { stop };
-        const releaseLock = vi.spyOn(plugin.vaultRegistry!, "releaseLock");
 
         await plugin.uninstallServer(plugin.planServerUninstall()!);
 
         expect(stop).toHaveBeenCalled();
-        expect(releaseLock).toHaveBeenCalledWith(plugin.vaultId);
         expect(plugin.serverManager).toBeNull();
     });
 
@@ -813,6 +818,7 @@ describe("managed-server uninstall", () => {
 
     it("refuses while another vault's server is running", async () => {
         const plugin = await createPlugin();
+        const sm = await import("../src/server-manager");
         seedInstall(plugin);
         const plan = plugin.planServerUninstall()!;
         plugin.vaultRegistry!.upsert({
@@ -823,28 +829,25 @@ describe("managed-server uninstall", () => {
             addedAt: 1,
             lastActiveAt: 1,
         });
-        plugin.vaultRegistry!.writeLock({ vaultId: "other", pid: process.pid, port: 1, startedAt: 1 });
+        (sm.readScopeOwner as any).mockReturnValue({ dataDir: "/d", pid: 9 });
 
         await expect(plugin.uninstallServer(plan)).rejects.toThrow("The lilbee server is running for Notes");
         expect(plugin.isServerUninstalled()).toBe(false);
+        (sm.readScopeOwner as any).mockReturnValue(null);
     });
 
-    it("reaps a server orphaned by a crashed Obsidian before deleting", async () => {
-        const { killServerTree } = await import("../src/server-manager");
-        (killServerTree as any).mockClear();
+    it("asks a server orphaned by a crashed Obsidian to exit before deleting", async () => {
         const plugin = await createPlugin();
+        const sm = await import("../src/server-manager");
         seedInstall(plugin);
-        plugin.vaultRegistry!.writeLock({
-            vaultId: plugin.vaultId,
-            pid: process.pid,
-            port: 1,
-            startedAt: 1,
-            serverPid: 4242,
-        });
+        const ownDataDir = plugin.vaultRegistry!.resolveDataDir(plugin.vaultId);
+        (sm.readScopeOwner as any).mockReturnValue({ dataDir: ownDataDir, pid: 4242 });
+        (sm.askServerToExit as any).mockClear();
 
         await plugin.uninstallServer(plugin.planServerUninstall()!);
 
-        expect(killServerTree).toHaveBeenCalledWith(4242);
+        expect(sm.askServerToExit).toHaveBeenCalledWith(ownDataDir, expect.any(Number));
+        (sm.readScopeOwner as any).mockReturnValue(null);
     });
 
     it("installing a release clears the uninstall and downloads it", async () => {

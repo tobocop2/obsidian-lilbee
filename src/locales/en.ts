@@ -114,6 +114,7 @@ export const MESSAGES = {
     LABEL_SERVER_CONTROLS: "Server controls",
     LABEL_SERVER_VERSION: "Server version",
     LABEL_INCLUDE_DEV_BUILDS: "Include dev builds",
+    LABEL_SERVER_AUTO_UPDATE: "Automatically update the server",
     LABEL_UNINSTALL: "Uninstall",
     LABEL_UNINSTALL_SERVER: "Uninstall server",
     LABEL_INSTALL_SERVER: "Install server",
@@ -383,11 +384,13 @@ export const MESSAGES = {
     DESC_SERVER_VERSION_PLAIN: (tag: string) => `${tag} installed.`,
     DESC_SERVER_VERSION_UPDATE: (installed: string, tag: string) => `${installed} installed. ${tag} is available.`,
     DESC_SERVER_VERSION_DOWNGRADE: (installed: string) =>
-        `${installed} installed. Downgrading replaces it with an older build.`,
+        `${installed} installed. Downgrading replaces it with an older build and turns off automatic server updates.`,
     DESC_SERVER_VERSION_LOADING: "Reading the release list from GitHub...",
     DESC_SERVER_VERSION_OFFLINE: (tag: string) => `${tag} installed. The release list could not be read from GitHub.`,
     DESC_DEV_BUILD_AVAILABLE: (tag: string) =>
         `A newer dev build (${tag}) is out. Turn on "Include dev builds" to try it.`,
+    DESC_SERVER_AUTO_UPDATE:
+        "Install the latest server release when the plugin updates. Turned off automatically when you install an older version, so an explicit downgrade sticks.",
     DESC_INCLUDE_DEV_BUILDS:
         "Offer in-development builds in the version list and track them for updates. They ship the newest features " +
         "but get less testing than a stable release.",
