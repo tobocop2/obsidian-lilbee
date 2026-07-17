@@ -73,12 +73,12 @@ function renderCardHead(card: HTMLElement, entry: CatalogEntry, options: ModelCa
 function renderCardTags(card: HTMLElement, entry: CatalogEntry): void {
     const tags = card.createDiv({ cls: "lilbee-model-card-tags" });
     const taskCls = TASK_TAG_CLS[entry.task] ?? "is-chat";
-    tags.createEl("span", { text: entry.task, cls: `lilbee-tag lilbee-tag-task ${taskCls}` });
+    tags.createSpan({ text: entry.task, cls: `lilbee-tag lilbee-tag-task ${taskCls}` });
     if (entry.featured) {
-        tags.createEl("span", { text: MESSAGES.LABEL_PICK, cls: "lilbee-tag lilbee-tag-featured" });
+        tags.createSpan({ text: MESSAGES.LABEL_PICK, cls: "lilbee-tag lilbee-tag-featured" });
     }
     if (HOSTED_SOURCES.has(entry.source)) {
-        tags.createEl("span", { text: entry.provider ?? entry.source, cls: "lilbee-tag lilbee-tag-provider" });
+        tags.createSpan({ text: entry.provider ?? entry.source, cls: "lilbee-tag lilbee-tag-provider" });
     }
     renderCompatTag(tags, entry);
 }
@@ -94,7 +94,7 @@ function renderCardTags(card: HTMLElement, entry: CatalogEntry): void {
 export function renderCompatTag(tags: HTMLElement, entry: CatalogEntry): void {
     const architecture = entry.architecture ?? "";
     if (entry.compat === MODEL_COMPAT.UNSUPPORTED) {
-        const tag = tags.createEl("span", {
+        const tag = tags.createSpan({
             text: MESSAGES.LABEL_COMPAT_UNSUPPORTED,
             cls: "lilbee-tag lilbee-tag-compat is-unsupported",
         });
@@ -111,15 +111,15 @@ function renderCardSpecs(card: HTMLElement, entry: CatalogEntry): void {
 
 function appendSpecPart(parent: HTMLElement, text: string): void {
     if (!text) return;
-    parent.createEl("span", { cls: "lilbee-model-card-specs-sep" });
-    parent.createEl("span", { text });
+    parent.createSpan({ cls: "lilbee-model-card-specs-sep" });
+    parent.createSpan({ text });
 }
 
 function renderCardStatus(card: HTMLElement, entry: CatalogEntry, options: ModelCardOptions): void {
     const status = card.createDiv({ cls: "lilbee-model-card-status" });
     const tone = statusTone(entry, options);
-    status.createEl("span", { cls: `lilbee-model-card-status-dot ${tone.dotCls}` });
-    const label = status.createEl("span", {
+    status.createSpan({ cls: `lilbee-model-card-status-dot ${tone.dotCls}` });
+    const label = status.createSpan({
         text: tone.label,
         cls: `lilbee-model-card-status-label ${tone.labelCls}`,
     });
@@ -127,7 +127,7 @@ function renderCardStatus(card: HTMLElement, entry: CatalogEntry, options: Model
         label.setAttribute("title", MESSAGES.TOOLTIP_MODEL_INSTALLED_SHARED);
     }
     if (entry.fit && FIT_LABEL[entry.fit]) {
-        status.createEl("span", {
+        status.createSpan({
             text: FIT_LABEL[entry.fit],
             cls: "lilbee-model-card-fit-text",
         });

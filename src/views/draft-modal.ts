@@ -110,10 +110,10 @@ export class DraftModal extends Modal {
         const meta = row.createDiv({ cls: "lilbee-draft-meta" });
         const kindLabelText = kindChipLabel(draft);
         if (kindLabelText !== null) {
-            meta.createEl("span", { text: kindLabelText, cls: "lilbee-draft-kind" });
+            meta.createSpan({ text: kindLabelText, cls: "lilbee-draft-kind" });
         }
         if (draft.drift_ratio !== null) {
-            meta.createEl("span", {
+            meta.createSpan({
                 text: MESSAGES.LABEL_DRAFT_DRIFT(Math.round(draft.drift_ratio * 100)),
                 cls: "lilbee-draft-drift",
             });
@@ -122,8 +122,8 @@ export class DraftModal extends Modal {
             draft.faithfulness_score === null
                 ? MESSAGES.LABEL_DRAFT_FAITH_NA
                 : MESSAGES.LABEL_DRAFT_FAITH(draft.faithfulness_score);
-        meta.createEl("span", { text: faithText, cls: "lilbee-draft-faith" });
-        meta.createEl("span", {
+        meta.createSpan({ text: faithText, cls: "lilbee-draft-faith" });
+        meta.createSpan({
             text: draft.published_exists ? MESSAGES.LABEL_DRAFT_PUBLISHED : MESSAGES.LABEL_DRAFT_NEW,
             cls: "lilbee-draft-pub",
         });
@@ -140,7 +140,7 @@ export class DraftModal extends Modal {
         this.selectedRow = row;
         row.addClass("is-selected");
         this.diffEl.empty();
-        const loading = this.diffEl.createEl("span", { text: "…", cls: "lilbee-loading" });
+        const loading = this.diffEl.createSpan({ text: "…", cls: "lilbee-loading" });
         let diffText: string;
         try {
             diffText = await this.plugin.api.wikiDraftDiff(slug);
@@ -163,7 +163,7 @@ export class DraftModal extends Modal {
             return;
         }
         for (const line of text.split("\n")) {
-            this.diffEl.createEl("span", { text: `${line}\n`, cls: diffLineClass(line) });
+            this.diffEl.createSpan({ text: `${line}\n`, cls: diffLineClass(line) });
         }
     }
 

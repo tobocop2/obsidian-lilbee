@@ -67,12 +67,12 @@ export class CitationModal extends Modal {
         const card = container.createDiv({ cls: "lilbee-citation-card" });
 
         const header = card.createDiv({ cls: "lilbee-document-card-header" });
-        header.createEl("span", {
+        header.createSpan({
             text: citation.citation_key,
             cls: "lilbee-citation-key",
         });
 
-        header.createEl("span", {
+        header.createSpan({
             text:
                 citation.claim_type === CLAIM_TYPE.FACT
                     ? MESSAGES.LABEL_CITATION_FACT
@@ -101,7 +101,7 @@ export class CitationModal extends Modal {
 
         const loc = formatLocation(citation);
         if (loc) {
-            card.createEl("span", { text: loc, cls: "lilbee-location" });
+            card.createSpan({ text: loc, cls: "lilbee-location" });
         }
 
         // Excerpt for facts
@@ -113,7 +113,7 @@ export class CitationModal extends Modal {
         }
 
         // Hash status
-        card.createEl("span", {
+        card.createSpan({
             text: citation.source_hash ? MESSAGES.LABEL_CITATION_CURRENT : MESSAGES.LABEL_CITATION_STALE,
             cls: `lilbee-citation-hash-status ${citation.source_hash ? "lilbee-hash-current" : "lilbee-hash-stale"}`,
         });

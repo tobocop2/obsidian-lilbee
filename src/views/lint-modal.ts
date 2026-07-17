@@ -69,17 +69,17 @@ export class LintModal extends Modal {
         for (const issue of issues) {
             const row = group.createDiv({ cls: "lilbee-lint-issue" });
 
-            row.createEl("span", {
+            row.createSpan({
                 text: issue.citation_key,
                 cls: "lilbee-citation-key",
             });
 
-            row.createEl("span", {
+            row.createSpan({
                 text: STATUS_LABELS[issue.status],
                 cls: `lilbee-lint-status ${STATUS_CLASSES[issue.status]}`,
             });
 
-            row.createEl("span", {
+            row.createSpan({
                 text: issue.detail,
                 cls: "lilbee-lint-detail",
             });

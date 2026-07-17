@@ -671,7 +671,7 @@ export class CatalogModal extends Modal {
     private renderViewToggleCta(): void {
         if (!this.resultsEl) return;
         const cta = this.resultsEl.createDiv({ cls: "lilbee-view-toggle-cta" });
-        cta.createEl("span", { text: MESSAGES.LABEL_VIEW_TOGGLE_CTA });
+        cta.createSpan({ text: MESSAGES.LABEL_VIEW_TOGGLE_CTA });
         const btn = cta.createEl("button", { text: MESSAGES.LABEL_SWITCH_TO_LIST });
         btn.addEventListener("click", () => this.toggleView());
     }
@@ -699,7 +699,7 @@ export class CatalogModal extends Modal {
             { key: "action", label: "", cls: "lilbee-catalog-list-col-action" },
         ];
         for (const col of cols) {
-            const el = header.createEl("span", { text: col.label, cls: col.cls });
+            const el = header.createSpan({ text: col.label, cls: col.cls });
             if (col.key !== "action" && col.key !== "info") {
                 el.addEventListener("click", () => this.handleSort(col.key));
             }
@@ -710,12 +710,12 @@ export class CatalogModal extends Modal {
         const row = listEl.createDiv({ cls: "lilbee-catalog-list-row" });
         if (entry.compat === MODEL_COMPAT.UNSUPPORTED) row.addClass("is-unsupported");
         const nameText = entry.featured ? `★ ${entry.display_name}` : entry.display_name;
-        const nameEl = row.createEl("span", { text: nameText, cls: "lilbee-catalog-list-col-name" });
+        const nameEl = row.createSpan({ text: nameText, cls: "lilbee-catalog-list-col-name" });
         nameEl.setAttribute("title", entry.display_name);
         renderCompatTag(nameEl, entry);
-        row.createEl("span", { text: entry.task, cls: "lilbee-catalog-list-col-task" });
-        row.createEl("span", { text: `${entry.size_gb} GB`, cls: "lilbee-catalog-list-col-size" });
-        row.createEl("span", {
+        row.createSpan({ text: entry.task, cls: "lilbee-catalog-list-col-task" });
+        row.createSpan({ text: `${entry.size_gb} GB`, cls: "lilbee-catalog-list-col-size" });
+        row.createSpan({
             text: formatAbbreviatedCount(entry.downloads),
             cls: "lilbee-catalog-list-col-downloads",
         });
@@ -739,7 +739,7 @@ export class CatalogModal extends Modal {
         const isActive = this.isActiveEntry(entry);
 
         if (isActive) {
-            actionEl.createEl("span", { text: MESSAGES.LABEL_ACTIVE, cls: "lilbee-catalog-active" });
+            actionEl.createSpan({ text: MESSAGES.LABEL_ACTIVE, cls: "lilbee-catalog-active" });
         } else if (entry.installed) {
             const useBtn = actionEl.createEl("button", { text: MESSAGES.BUTTON_USE, cls: "lilbee-catalog-use" });
             useBtn.addEventListener("click", () => void this.handleUse(entry, useBtn));

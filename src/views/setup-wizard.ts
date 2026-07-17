@@ -1183,7 +1183,7 @@ export class SetupWizard extends Modal {
 
         const stats = summaryBody.createDiv({ cls: "lilbee-wizard-summary-stats" });
         if (this.pulledModelName) {
-            stats.createEl("span", {
+            stats.createSpan({
                 cls: "lilbee-wizard-summary-stat",
                 text: MESSAGES.WIZARD_SUMMARY_MODEL.replace("{model}", this.pulledModelName),
             });
@@ -1191,12 +1191,12 @@ export class SetupWizard extends Modal {
         if (this.syncResult) {
             const total = this.syncResult.added.length + this.syncResult.updated.length + this.syncResult.unchanged;
             const chunks = this.syncResult.added.length + this.syncResult.updated.length;
-            stats.createEl("span", {
+            stats.createSpan({
                 cls: "lilbee-wizard-summary-stat",
                 text: MESSAGES.WIZARD_SUMMARY_FILES.replace("{count}", String(total)),
             });
             if (chunks > 0) {
-                stats.createEl("span", {
+                stats.createSpan({
                     cls: "lilbee-wizard-summary-stat",
                     text: MESSAGES.WIZARD_SUMMARY_PROCESSED.replace("{count}", String(chunks)),
                 });
@@ -1212,8 +1212,8 @@ export class SetupWizard extends Modal {
         ];
         for (const [icon, text] of tipData) {
             const tip = tips.createDiv({ cls: "lilbee-wizard-tip" });
-            tip.createEl("span", { cls: "lilbee-wizard-tip-icon", text: icon });
-            tip.createEl("span", { text });
+            tip.createSpan({ cls: "lilbee-wizard-tip-icon", text: icon });
+            tip.createSpan({ text });
         }
 
         step.createEl("p", { text: MESSAGES.WIZARD_CHANGE_SETTINGS, cls: "lilbee-wizard-hint" });

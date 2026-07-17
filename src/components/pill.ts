@@ -3,7 +3,7 @@ export const PILL_CLS = {
 } as const;
 
 export function renderPill(container: HTMLElement, text: string, cls: string): HTMLElement {
-    return container.createEl("span", {
+    return container.createSpan({
         text,
         cls: `lilbee-pill ${cls}`,
     });

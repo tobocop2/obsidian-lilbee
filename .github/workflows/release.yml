@@ -19,10 +19,13 @@ jobs:
       - run: npm run build
       - uses: actions/attest-build-provenance@v4
         with:
-          subject-path: |
-            main.js
-            manifest.json
-            styles.css
+          subject-path: main.js
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: manifest.json
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: styles.css
       - uses: softprops/action-gh-release@v3
         with:
           files: |

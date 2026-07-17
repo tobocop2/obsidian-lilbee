@@ -360,11 +360,11 @@ export class BinaryManager {
         let receivedBytes = 0;
 
         return new Promise<string>((resolve, reject) => {
-            let idleTimer: ReturnType<typeof setTimeout>;
-            const stopClock = (): void => clearTimeout(idleTimer);
+            let idleTimer: number;
+            const stopClock = (): void => window.clearTimeout(idleTimer);
             const restartClock = (): void => {
                 stopClock();
-                idleTimer = setTimeout(() => fail(new Error(DOWNLOAD_STALLED)), DOWNLOAD_IDLE_TIMEOUT_MS);
+                idleTimer = window.setTimeout(() => fail(new Error(DOWNLOAD_STALLED)), DOWNLOAD_IDLE_TIMEOUT_MS);
             };
             const fail = (err: Error): void => {
                 stopClock();

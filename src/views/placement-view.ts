@@ -29,12 +29,12 @@ export const VIEW_TYPE_PLACEMENT = "lilbee-placement";
 export async function revealPlacementBeside(app: App, sourceLeaf: WorkspaceLeaf): Promise<void> {
     const existing = app.workspace.getLeavesOfType(VIEW_TYPE_PLACEMENT);
     if (existing.length > 0) {
-        app.workspace.revealLeaf(existing[0]);
+        await app.workspace.revealLeaf(existing[0]);
         return;
     }
     const leaf = app.workspace.createLeafBySplit(sourceLeaf, "vertical");
     await leaf.setViewState({ type: VIEW_TYPE_PLACEMENT, active: false });
-    app.workspace.revealLeaf(leaf);
+    await app.workspace.revealLeaf(leaf);
 }
 
 const PREVIEW_DEBOUNCE_MS = 350;
@@ -637,7 +637,7 @@ export class PlacementView extends ItemView {
         for (let i = 0; i < 200; i++) {
             const health = await this.plugin.api.health();
             if (health.isErr() || health.value.chat_ready !== false) return;
-            await new Promise((r) => setTimeout(r, 1500));
+            await new Promise((r) => window.setTimeout(r, 1500));
         }
     }
 

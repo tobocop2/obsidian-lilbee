@@ -7,6 +7,8 @@
   </a>
 </p>
 
+# lilbee
+
 <p align="center"><strong>The whole local AI stack for your vault: it downloads and runs the models, and turns your notes into a search engine you can talk to.</strong></p>
 
 <p align="center"><a href="https://obsidian.lilbee.sh/">Project site</a> &nbsp;·&nbsp; <a href="https://obsidian.lilbee.sh/tutorial">Tutorial reel</a> &nbsp;·&nbsp; <a href="https://github.com/tobocop2/obsidian-lilbee/releases">Releases</a> &nbsp;·&nbsp; <a href="https://lilbee.sh/">lilbee engine</a></p>
@@ -67,7 +69,7 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 - **Already on Ollama or LM Studio? Keep them.** lilbee manages models for you by default, but it also works with both, so you never have to switch model managers. Their models appear in the same pickers, alongside lilbee's own.
 - **Runs on your computer.** Server, models, index, and vault all stay local; cloud models are opt-in per role, with a persistent indicator when one is active.
 - **Remembers what you tell it.** Turn on memory and lilbee holds onto durable facts about you and how you like your answers, then recalls the relevant ones in later chats no matter which conversation they came from. Off by default, managed from a Memories view, and never mixed into your citations.
-- **An auto-generated wiki** *(experimental)*: linked markdown pages written from what you've indexed, citation-checked before publish, landing in your vault's graph alongside your own notes.
+- **An auto-generated wiki** _(experimental)_: linked markdown pages written from what you've indexed, citation-checked before publish, landing in your vault's graph alongside your own notes.
 
 ## Why a local search engine for Obsidian
 
@@ -79,16 +81,16 @@ An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, f
 
 ## How it compares
 
-| | lilbee | [LM Studio](https://lmstudio.ai/) | [Ollama](https://ollama.com/) |
-|---|---|---|---|
-| **Primary focus** | local search and chat over your vault, inside Obsidian | desktop app to run and chat with models | local model runner with a growing ecosystem |
-| Runs local models | ✓ | ✓ | ✓ |
-| Search your own files, with citations | ✓ [full RAG pipeline](https://github.com/tobocop2/lilbee/blob/main/docs/architecture.md#search-pipeline), inline per-line citations | per-session doc attachment ([RAG, document-level citation](https://lmstudio.ai/docs/app/basics/rag)) | — |
-| Chat, embedding, vision, rerank as one managed fleet | ✓ [all four, coordinated](https://github.com/tobocop2/lilbee/blob/main/docs/architecture.md#local-inference-engine) | chat, embed, vision (no rerank), [loaded individually](https://lmstudio.ai/docs/developer/core/server) | chat, embed, vision (no rerank), [loaded individually](https://docs.ollama.com/faq) |
-| Multi-GPU model placement | ✓ [with a live placement view](#run-a-model-bigger-than-one-card) | ✓ GPU selection + [tensor parallelism (CUDA)](https://lmstudio.ai/changelog/lmstudio-v0.4.15) | ✓ [auto multi-GPU offload](https://docs.ollama.com/faq) |
-| Web crawler built in | ✓ [built in](#offline-copies-of-websites-inside-your-vault) | — | — |
-| Long-term memory (opt-in) | ✓ [opt-in](#highlights) | — | — |
-| Use your existing Ollama / LM Studio / cloud as a backend | ✓ [how](#already-running-ollama-or-lm-studio-keep-them) | — | — |
+|                                                           | lilbee                                                                                                                              | [LM Studio](https://lmstudio.ai/)                                                                      | [Ollama](https://ollama.com/)                                                       |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| **Primary focus**                                         | local search and chat over your vault, inside Obsidian                                                                              | desktop app to run and chat with models                                                                | local model runner with a growing ecosystem                                         |
+| Runs local models                                         | ✓                                                                                                                                   | ✓                                                                                                      | ✓                                                                                   |
+| Search your own files, with citations                     | ✓ [full RAG pipeline](https://github.com/tobocop2/lilbee/blob/main/docs/architecture.md#search-pipeline), inline per-line citations | per-session doc attachment ([RAG, document-level citation](https://lmstudio.ai/docs/app/basics/rag))   | —                                                                                   |
+| Chat, embedding, vision, rerank as one managed fleet      | ✓ [all four, coordinated](https://github.com/tobocop2/lilbee/blob/main/docs/architecture.md#local-inference-engine)                 | chat, embed, vision (no rerank), [loaded individually](https://lmstudio.ai/docs/developer/core/server) | chat, embed, vision (no rerank), [loaded individually](https://docs.ollama.com/faq) |
+| Multi-GPU model placement                                 | ✓ [with a live placement view](#run-a-model-bigger-than-one-card)                                                                   | ✓ GPU selection + [tensor parallelism (CUDA)](https://lmstudio.ai/changelog/lmstudio-v0.4.15)          | ✓ [auto multi-GPU offload](https://docs.ollama.com/faq)                             |
+| Web crawler built in                                      | ✓ [built in](#offline-copies-of-websites-inside-your-vault)                                                                         | —                                                                                                      | —                                                                                   |
+| Long-term memory (opt-in)                                 | ✓ [opt-in](#highlights)                                                                                                             | —                                                                                                      | —                                                                                   |
+| Use your existing Ollama / LM Studio / cloud as a backend | ✓ [how](#already-running-ollama-or-lm-studio-keep-them)                                                                             | —                                                                                                      | —                                                                                   |
 
 The [full comparison table](https://github.com/tobocop2/lilbee#full-comparison-table) in the lilbee README adds the many-user serving story against vLLM, sizes, and the interface list.
 
@@ -208,9 +210,9 @@ The plugin downloads and manages the [lilbee](https://lilbee.sh/) server automat
 
 Once the status bar shows **lilbee: ready**:
 
-| Platform | How to open chat |
-|----------|-----------------|
-| **macOS** | `Cmd + P` → type **lilbee: Open chat** → Enter |
+| Platform            | How to open chat                                |
+| ------------------- | ----------------------------------------------- |
+| **macOS**           | `Cmd + P` → type **lilbee: Open chat** → Enter  |
 | **Windows / Linux** | `Ctrl + P` → type **lilbee: Open chat** → Enter |
 
 The chat panel opens in the sidebar. From there you can ask questions, attach individual files, or run **Sync vault** (`Cmd/Ctrl + P` → "lilbee: Sync vault") to index everything at once. Every lilbee surface, the model catalog, the Task Center, chat, is reachable from the command palette.
@@ -219,7 +221,7 @@ The chat panel opens in the sidebar. From there you can ask questions, attach in
 
 A toggle at the top of the chat panel picks how each reply is answered:
 
-- **Search** (the default) answers *from your vault*. It retrieves the most relevant passages and replies with citations you can click straight back to the source. Use it when you want grounded answers about your own notes, PDFs, and crawled pages.
+- **Search** (the default) answers _from your vault_. It retrieves the most relevant passages and replies with citations you can click straight back to the source. Use it when you want grounded answers about your own notes, PDFs, and crawled pages.
 - **Chat** turns retrieval off and talks to the model directly, like a plain assistant. No vault lookup and no citations, just the model's own knowledge. Use it for a quick general question or to keep riffing without pulling your notes into the answer.
 
 It's the same model either way; the toggle only decides whether your library is searched first.

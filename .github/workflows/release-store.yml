@@ -25,10 +25,13 @@ jobs:
       - run: npm run build
       - uses: actions/attest-build-provenance@v4
         with:
-          subject-path: |
-            main.js
-            manifest.json
-            styles.css
+          subject-path: main.js
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: manifest.json
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: styles.css
       - name: Write release notes
         env:
           GH_TOKEN: ${{ github.token }}

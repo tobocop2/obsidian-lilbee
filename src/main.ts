@@ -2090,7 +2090,7 @@ export default class LilbeePlugin extends Plugin {
 
     /** Read every file under *file* (recursing folders) as upload payloads. */
     private async collectVaultUploads(file: TAbstractFile): Promise<{ name: string; data: ArrayBuffer }[]> {
-        const tfiles = file instanceof TFolder ? this.filesInFolder(file) : [file as TFile];
+        const tfiles = file instanceof TFolder ? this.filesInFolder(file) : file instanceof TFile ? [file] : [];
         return Promise.all(tfiles.map(async (f) => ({ name: f.name, data: await this.app.vault.readBinary(f) })));
     }
 

@@ -48,8 +48,8 @@ export class TaskCenterView extends ItemView {
         const header = contentEl.createDiv({ cls: "lilbee-tasks-header" });
         header.createEl("h2", { text: MESSAGES.LABEL_TASK_CENTER });
 
-        this.countersEl = header.createEl("span", { cls: "lilbee-tasks-counters" });
-        this.capPill = header.createEl("span", { cls: "lilbee-tasks-cap-pill" });
+        this.countersEl = header.createSpan({ cls: "lilbee-tasks-counters" });
+        this.capPill = header.createSpan({ cls: "lilbee-tasks-cap-pill" });
         this.capPill.hide();
 
         const clearBtn = header.createEl("button", { cls: "lilbee-tasks-clear" });

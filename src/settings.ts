@@ -273,7 +273,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
         const statusEl = statusSetting.settingEl.createDiv({ cls: "lilbee-server-status" });
         const dot = statusEl.createDiv({ cls: "lilbee-server-dot" });
-        const stateText = statusEl.createEl("span");
+        const stateText = statusEl.createSpan();
 
         const serverState = this.plugin.serverManager?.state ?? SERVER_STATE.STOPPED;
         stateText.setText(serverState);
@@ -733,7 +733,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     }),
             );
 
-        const serverStatusEl = serverSetting.settingEl.createEl("span", { cls: "lilbee-health-status" });
+        const serverStatusEl = serverSetting.settingEl.createSpan({ cls: "lilbee-health-status" });
 
         serverSetting.addButton((btn) =>
             btn.setButtonText(MESSAGES.BUTTON_TEST).onClick(async () => {
@@ -828,7 +828,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 slider
                     .setLimits(1, 20, 1)
                     .setValue(this.plugin.settings.topK)
-                    .setDynamicTooltip()
                     .onChange(async (value) => {
                         this.plugin.settings.topK = value;
                         await this.plugin.saveSettings();
@@ -843,7 +842,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 slider
                     .setLimits(0.1, 1.0, 0.1)
                     .setValue(this.plugin.settings.maxDistance ?? 0.9)
-                    .setDynamicTooltip()
                     .onChange(async (value) => {
                         this.plugin.settings.maxDistance = value;
                         await this.plugin.saveSettings();
@@ -2212,7 +2210,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 slider
                     .setLimits(0, 1, 0.05)
                     .setValue(this.plugin.settings.wikiFaithfulnessThreshold)
-                    .setDynamicTooltip()
                     .onChange(async (value) => {
                         this.plugin.settings.wikiFaithfulnessThreshold = value;
                         await this.plugin.saveSettings();
@@ -2705,7 +2702,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         // misaligns the row.
         const actions = actionCell.createDiv({ cls: "lilbee-model-actions" });
         if (entry.installed) {
-            actions.createEl("span", { text: MESSAGES.LABEL_INSTALLED, cls: "lilbee-installed" });
+            actions.createSpan({ text: MESSAGES.LABEL_INSTALLED, cls: "lilbee-installed" });
             const deleteBtn = actions.createEl("button", { cls: "lilbee-model-delete" });
             setIcon(deleteBtn, "trash-2");
             deleteBtn.setAttribute("aria-label", MESSAGES.LABEL_DELETE_MODEL);

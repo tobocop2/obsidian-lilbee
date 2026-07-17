@@ -487,7 +487,7 @@ describe("LilbeePlugin", () => {
 
         it("add-file command calls addToLilbee when not checking", async () => {
             const plugin = await createPlugin();
-            const file = { path: "test.md", name: "test.md" };
+            const file = Object.assign(new TFile(), { path: "test.md", name: "test.md" });
             plugin.app.workspace.getActiveFile = vi.fn().mockReturnValue(file);
             await plugin.onload();
             const addSpy = vi.spyOn(plugin as any, "addToLilbee").mockResolvedValue(undefined);
@@ -717,6 +717,15 @@ describe("LilbeePlugin", () => {
             expect((uploads as any[])[0].name).toBe("one.py");
         });
 
+        it("collectVaultUploads yields nothing for an abstract entry that is neither file nor folder", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            const readBinary = vi.fn();
+            plugin.app.vault.readBinary = readBinary;
+            const uploads = await (plugin as any).collectVaultUploads({ path: "ghost", name: "ghost" });
+            expect(uploads).toEqual([]);
+            expect(readBinary).not.toHaveBeenCalled();
+        });
+
         it("addToLilbee sends a server path in managed mode", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
@@ -737,7 +746,7 @@ describe("LilbeePlugin", () => {
             vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
             await plugin.onload();
             plugin.activeModel = "llama3";
-            const file = { path: "notes/a.md", name: "a.md" };
+            const file = Object.assign(new TFile(), { path: "notes/a.md", name: "a.md" });
             async function* withError() {
                 yield { event: SSE_EVENT.ERROR, data: { message: "boom" } };
             }
@@ -2221,7 +2230,7 @@ describe("LilbeePlugin", () => {
             await plugin.onload();
             plugin.activeModel = "";
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_NO_CHAT_MODEL)).toBe(true);
             expect(plugin.api.addFiles).not.toHaveBeenCalled();
@@ -2236,7 +2245,7 @@ describe("LilbeePlugin", () => {
             async function* noEvents() {}
             plugin.api.addFiles = vi.fn().mockReturnValue(noEvents());
 
-            await (plugin as any).addToLilbee({ path: "notes/test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "notes/test.md", name: "test.md" }));
 
             expect(plugin.api.addFiles).toHaveBeenCalledWith(
                 ["/test/vault/notes/test.md"],
@@ -2266,7 +2275,7 @@ describe("LilbeePlugin", () => {
             async function* noEvents() {}
             plugin.api.uploadFiles = vi.fn().mockReturnValue(noEvents());
 
-            await (plugin as any).addToLilbee({ path: "notes/test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "notes/test.md", name: "test.md" }));
 
             expect(plugin.api.uploadFiles).toHaveBeenCalled();
             mockConfirm.mockRestore();
@@ -2292,7 +2301,7 @@ describe("LilbeePlugin", () => {
 
             plugin.api.addFiles = vi.fn();
 
-            await (plugin as any).addToLilbee({ path: "notes/test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "notes/test.md", name: "test.md" }));
 
             expect(plugin.api.addFiles).not.toHaveBeenCalled();
             mockConfirm.mockRestore();
@@ -2316,7 +2325,7 @@ describe("LilbeePlugin", () => {
                 return inst as unknown as ConfirmModal;
             });
 
-            await (plugin as any).addToLilbee({ name: "", path: "" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { name: "", path: "" }));
 
             expect(capturedMessage).toContain("Vault root");
             mockConfirm.mockRestore();
@@ -2335,7 +2344,7 @@ describe("LilbeePlugin", () => {
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(withDone());
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(Notice.instances.some((n) => n.message.includes("1 added"))).toBe(true);
         });
@@ -2349,7 +2358,7 @@ describe("LilbeePlugin", () => {
                 throw new Error("connection refused");
             });
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(Notice.instances.some((n) => n.message.includes("add failed"))).toBe(true);
         });
@@ -2368,7 +2377,7 @@ describe("LilbeePlugin", () => {
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(alreadyIngesting());
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             const waiting = plugin.taskQueue.completed.find((t) => t.status === "waiting");
             expect(waiting).toBeDefined();
@@ -2397,7 +2406,7 @@ describe("LilbeePlugin", () => {
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(alreadyIngestingNoSource());
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(
                 Notice.instances.some((n) => n.message.includes("already ingesting") && n.message.includes("test.md")),
@@ -2415,7 +2424,7 @@ describe("LilbeePlugin", () => {
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(alreadyIngestingNullData());
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(plugin.taskQueue.completed.some((t) => t.status === "waiting")).toBe(true);
         });
@@ -2427,7 +2436,7 @@ describe("LilbeePlugin", () => {
             (plugin as any).statusBarEl = null;
 
             const addFilesSpy = vi.spyOn(plugin.api, "addFiles");
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(addFilesSpy).not.toHaveBeenCalled();
         });
@@ -2445,7 +2454,7 @@ describe("LilbeePlugin", () => {
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(emptyDone());
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(Notice.instances.some((n) => n.message.includes("adding test.md"))).toBe(true);
             expect(Notice.instances.some((n) => n.message.includes("nothing new to add"))).toBe(true);
@@ -2459,7 +2468,7 @@ describe("LilbeePlugin", () => {
             async function* noEvents() {}
             plugin.api.uploadFiles = vi.fn().mockReturnValue(noEvents());
 
-            await (plugin as any).addToLilbee({ path: "deep/test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "deep/test.md" }));
 
             expect(Notice.instances.some((n) => n.message.includes("adding deep/test.md"))).toBe(true);
         });
@@ -2473,7 +2482,7 @@ describe("LilbeePlugin", () => {
                 throw new Error("server returned 500");
             });
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(Notice.instances.some((n) => n.message.includes("server returned 500"))).toBe(true);
         });
@@ -2487,7 +2496,7 @@ describe("LilbeePlugin", () => {
                 throw "string error";
             });
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(Notice.instances.some((n) => n.message.includes("cannot connect to server"))).toBe(true);
         });
@@ -2505,7 +2514,7 @@ describe("LilbeePlugin", () => {
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(withFailed());
 
-            await (plugin as any).addToLilbee({ path: "bad.pdf", name: "bad.pdf" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "bad.pdf", name: "bad.pdf" }));
 
             expect(Notice.instances.some((n) => n.message.includes("1 failed"))).toBe(true);
         });
@@ -2520,7 +2529,7 @@ describe("LilbeePlugin", () => {
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(withError());
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(Notice.instances.some((n) => n.message.includes("add exploded"))).toBe(true);
             expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
@@ -2536,7 +2545,7 @@ describe("LilbeePlugin", () => {
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(withError());
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(Notice.instances.some((n) => n.message.includes("raw add error"))).toBe(true);
             expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
@@ -2552,7 +2561,7 @@ describe("LilbeePlugin", () => {
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(withError());
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(Notice.instances.some((n) => n.message.includes("unknown error"))).toBe(true);
             expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
@@ -3124,7 +3133,7 @@ describe("LilbeePlugin", () => {
             (plugin as any).chatWarming = true;
             const runUpload = vi.spyOn(plugin as any, "runUpload").mockResolvedValue(undefined);
             const runAdd = vi.spyOn(plugin as any, "runAdd").mockResolvedValue(undefined);
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
             expect(runUpload).not.toHaveBeenCalled();
             expect(runAdd).not.toHaveBeenCalled();
             expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_FLEET_WARMING)).toBe(true);
@@ -3733,7 +3742,7 @@ describe("LilbeePlugin", () => {
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(withExtract());
 
-            await (plugin as any).addToLilbee({ path: "paper.pdf", name: "paper.pdf" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "paper.pdf", name: "paper.pdf" }));
 
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
@@ -3748,7 +3757,7 @@ describe("LilbeePlugin", () => {
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(withEmbed());
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
@@ -3767,7 +3776,7 @@ describe("LilbeePlugin", () => {
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(withBatch());
 
-            await (plugin as any).addToLilbee({ path: "corrupt.pdf", name: "corrupt.pdf" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "corrupt.pdf", name: "corrupt.pdf" }));
 
             const batchUpdate = updateSpy.mock.calls.find((call) => String(call[2] ?? "").includes("corrupt.pdf"));
             expect(batchUpdate).toBeDefined();
@@ -3799,7 +3808,7 @@ describe("LilbeePlugin", () => {
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(withNestedDone());
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
             expect(plugin.taskQueue.completed[plugin.taskQueue.completed.length - 1].error).toBeNull();
@@ -3818,7 +3827,7 @@ describe("LilbeePlugin", () => {
                 yield { event: SSE_EVENT.DONE, data: { added: ["x.md"], updated: [] } };
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(partial());
-            await (plugin as any).addToLilbee({ path: "x.md", name: "x.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "x.md", name: "x.md" }));
 
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
         });
@@ -3895,7 +3904,7 @@ describe("LilbeePlugin", () => {
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(withBadDone());
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             // Task completes successfully (no throw) despite malformed payloads.
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
@@ -4327,7 +4336,7 @@ describe("LilbeePlugin", () => {
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(withDone());
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
             expect(plugin.taskQueue.completed[0]!.name).toBe("Uploading files");
@@ -5839,7 +5848,7 @@ describe("LilbeePlugin", () => {
                 throw abortError;
             });
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(Notice.instances.some((n) => n.message === MESSAGES.STATUS_ADD_CANCELLED)).toBe(true);
         });
@@ -5885,7 +5894,7 @@ describe("LilbeePlugin", () => {
                 throw abortError;
             });
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             const cancelled = plugin.taskQueue.completed.find((t) => t.status === "cancelled");
             expect(cancelled).toBeDefined();
@@ -5983,14 +5992,14 @@ describe("LilbeePlugin", () => {
             });
             const mockConfirm = vi.spyOn(await import("../src/views/confirm-modal"), "ConfirmModal");
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
             expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
 
             mockConfirm.mockClear();
             async function* noEvents() {}
             plugin.api.uploadFiles = vi.fn().mockReturnValue(noEvents());
 
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
 
             expect(mockConfirm).not.toHaveBeenCalled();
             expect(plugin.api.uploadFiles).toHaveBeenCalled();
@@ -7634,7 +7643,7 @@ describe("LilbeePlugin", () => {
                 yield { event: SSE_EVENT.DONE, data: { added: ["x.md"], updated: [], removed: [], failed: [] } };
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(withUnhandled());
-            await (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            await (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
             expect(plugin.taskQueue.completed.some((t) => t.status === "done")).toBe(true);
         });
 
@@ -7676,7 +7685,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
             plugin.activeModel = "llama3";
-            const file = { path: "notes/a.md", name: "a.md" };
+            const file = Object.assign(new TFile(), { path: "notes/a.md", name: "a.md" });
             async function* withError() {
                 yield { event: SSE_EVENT.ERROR, data: { message: "boom" } };
             }
@@ -7698,7 +7707,7 @@ describe("LilbeePlugin", () => {
                 await new Promise<void>(() => {});
             }
             plugin.api.uploadFiles = vi.fn().mockReturnValue(hangs());
-            const run = (plugin as any).addToLilbee({ path: "test.md", name: "test.md" });
+            const run = (plugin as any).addToLilbee(Object.assign(new TFile(), { path: "test.md", name: "test.md" }));
             await vi.advanceTimersByTimeAsync(120_000);
             await run;
             vi.useRealTimers();

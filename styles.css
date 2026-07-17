@@ -4316,8 +4316,7 @@ button.lilbee-model-chip-select:focus-visible {
     display: grid;
     grid-template-columns: 22px 1fr;
     grid-template-rows: auto auto;
-    column-gap: 9px;
-    row-gap: 4px;
+    gap: 4px 9px;
     align-items: center;
     padding: 7px 9px;
     border-radius: 8px;

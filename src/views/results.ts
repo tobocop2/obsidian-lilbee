@@ -71,7 +71,7 @@ export function renderDocumentResult(
         void executeSourceClick(app, api, sourceClickAction(source, app.vault));
     });
 
-    header.createEl("span", {
+    header.createSpan({
         text: result.content_type,
         cls: "lilbee-content-badge",
     });
@@ -89,7 +89,7 @@ export function renderDocumentResult(
         excerptEl.createEl("p", { text: truncate(excerpt.content, MAX_EXCERPT_CHARS) });
         const loc = formatLocation(excerpt);
         if (loc) {
-            excerptEl.createEl("span", { text: loc, cls: "lilbee-location" });
+            excerptEl.createSpan({ text: loc, cls: "lilbee-location" });
         }
     }
 }
@@ -110,7 +110,7 @@ export function renderSourceChip(
 ): void {
     const isWiki = source.chunk_type === SEARCH_CHUNK_TYPE.WIKI;
     const cls = isWiki ? "lilbee-source-chip lilbee-source-chip-wiki" : "lilbee-source-chip";
-    const chip = container.createEl("span", { cls });
+    const chip = container.createSpan({ cls });
 
     if (source.claim_type === CLAIM_TYPE.FACT) {
         chip.addClass("lilbee-claim-fact");
@@ -125,8 +125,8 @@ export function renderSourceChip(
     }
 
     if (isWiki) {
-        chip.createEl("span", { text: "W", cls: "lilbee-wiki-type-badge" });
-        chip.createEl("span", { text: label });
+        chip.createSpan({ text: "W", cls: "lilbee-wiki-type-badge" });
+        chip.createSpan({ text: label });
     } else {
         chip.setText(label);
     }
@@ -161,12 +161,12 @@ export function renderAggregatedSourceChips(
             for (const s of group) renderSourceChip(container, s, app, api);
             continue;
         }
-        const chip = container.createEl("span", { cls: "lilbee-source-chip lilbee-source-chip-grouped" });
-        chip.createEl("span", { text: first.source, cls: "lilbee-source-chip-file" });
+        const chip = container.createSpan({ cls: "lilbee-source-chip lilbee-source-chip-grouped" });
+        chip.createSpan({ text: first.source, cls: "lilbee-source-chip-file" });
         for (const source of group) {
             const loc = formatLocation(source);
             const label = loc ?? "open";
-            const tag = chip.createEl("span", { text: label, cls: "lilbee-source-chip-loc" });
+            const tag = chip.createSpan({ text: label, cls: "lilbee-source-chip-loc" });
             tag.addClass("lilbee-clickable");
             tag.addEventListener("click", (e: Event) => {
                 e.stopPropagation();

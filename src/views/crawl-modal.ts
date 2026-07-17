@@ -140,7 +140,7 @@ export class CrawlModal extends Modal {
 
         // Error element lives OUTSIDE the Advanced disclosure so it's visible
         // even when the user collapses Advanced after typing bad input.
-        const errorEl = contentEl.createEl("div", { cls: "lilbee-crawl-error" });
+        const errorEl = contentEl.createDiv({ cls: "lilbee-crawl-error" });
 
         const syncRecursiveState = (): void => {
             const recursive = asInput(recursiveInput).checked;

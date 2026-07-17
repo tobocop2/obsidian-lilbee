@@ -69,6 +69,6 @@ export class ModelInfoModal extends Modal {
 
 function addRow(parent: HTMLElement, label: string, value: string): void {
     const row = parent.createDiv({ cls: "lilbee-model-info-row" });
-    row.createEl("span", { cls: "lilbee-model-info-label", text: label });
-    row.createEl("span", { cls: "lilbee-model-info-value", text: value });
+    row.createSpan({ cls: "lilbee-model-info-label", text: label });
+    row.createSpan({ cls: "lilbee-model-info-value", text: value });
 }

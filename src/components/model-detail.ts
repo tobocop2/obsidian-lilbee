@@ -19,10 +19,10 @@ export function renderModelDetail(entry: CatalogEntry, container: HTMLElement): 
 function renderVariants(container: HTMLElement, variants: SizeVariant[] | null): void {
     if (!variants || variants.length === 0) return;
     const section = container.createDiv({ cls: "lilbee-detail-section" });
-    section.createEl("span", { cls: "lilbee-detail-section-label", text: MESSAGES.LABEL_DETAIL_VARIANTS });
+    section.createSpan({ cls: "lilbee-detail-section-label", text: MESSAGES.LABEL_DETAIL_VARIANTS });
     const strip = section.createDiv({ cls: "lilbee-detail-variants" });
     for (const variant of variants) {
-        strip.createEl("span", { cls: "lilbee-detail-variant", text: variant.size_label });
+        strip.createSpan({ cls: "lilbee-detail-variant", text: variant.size_label });
     }
 }
 
@@ -31,20 +31,20 @@ function renderDescription(container: HTMLElement, description: string): void {
     const trimmed =
         description.length > MAX_DESCRIPTION_CHARS ? `${description.slice(0, MAX_DESCRIPTION_CHARS)}…` : description;
     const section = container.createDiv({ cls: "lilbee-detail-section" });
-    section.createEl("span", { cls: "lilbee-detail-section-label", text: MESSAGES.LABEL_DETAIL_DESCRIPTION });
+    section.createSpan({ cls: "lilbee-detail-section-label", text: MESSAGES.LABEL_DETAIL_DESCRIPTION });
     section.createEl("p", { cls: "lilbee-detail-description", text: trimmed });
 }
 
 function renderInstallStatus(container: HTMLElement, entry: CatalogEntry): void {
     const section = container.createDiv({ cls: "lilbee-detail-section" });
-    section.createEl("span", { cls: "lilbee-detail-section-label", text: MESSAGES.LABEL_DETAIL_INSTALL_STATUS });
+    section.createSpan({ cls: "lilbee-detail-section-label", text: MESSAGES.LABEL_DETAIL_INSTALL_STATUS });
     const statusText = entry.installed ? MESSAGES.LABEL_INSTALLED : MESSAGES.LABEL_NOT_INSTALLED.trim();
-    section.createEl("span", { cls: "lilbee-detail-install-status", text: statusText });
+    section.createSpan({ cls: "lilbee-detail-install-status", text: statusText });
 }
 
 function renderDownloads(container: HTMLElement, downloads: number): void {
     if (downloads <= 0) return;
     const section = container.createDiv({ cls: "lilbee-detail-section" });
-    section.createEl("span", { cls: "lilbee-detail-section-label", text: MESSAGES.LABEL_DETAIL_DOWNLOADS });
-    section.createEl("span", { cls: "lilbee-detail-downloads-value", text: formatAbbreviatedCount(downloads) });
+    section.createSpan({ cls: "lilbee-detail-section-label", text: MESSAGES.LABEL_DETAIL_DOWNLOADS });
+    section.createSpan({ cls: "lilbee-detail-downloads-value", text: formatAbbreviatedCount(downloads) });
 }

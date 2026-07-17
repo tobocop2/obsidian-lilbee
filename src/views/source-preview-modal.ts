@@ -125,13 +125,13 @@ export class SourcePreviewModal extends Modal {
 
     private renderHeader(container: HTMLElement): void {
         const header = container.createDiv({ cls: "lilbee-preview-header" });
-        header.createEl("span", {
+        header.createSpan({
             text: this.source.vault_path ?? this.source.source,
             cls: "lilbee-preview-path",
         });
         const loc = formatLocation(this.source);
         if (loc) {
-            container.createEl("span", { text: loc, cls: "lilbee-preview-meta" });
+            container.createSpan({ text: loc, cls: "lilbee-preview-meta" });
         }
     }
 
