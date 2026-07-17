@@ -60,7 +60,7 @@ describe("versionDescription", () => {
 
     it("warns that a downgrade replaces the build", () => {
         expect(versionDescription(VERSION_ACTION.DOWNGRADE, "v0.2.0", "v0.1.0", false)).toBe(
-            "v0.2.0 installed. Downgrading replaces it with an older build.",
+            "v0.2.0 installed. Downgrading replaces it with an older build and turns off automatic server updates.",
         );
     });
 

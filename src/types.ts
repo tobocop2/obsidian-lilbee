@@ -507,6 +507,8 @@ export interface SharedConfig {
     hfToken: string;
     /** Plugin version that last ran the automatic server-update check. */
     lastUpdateCheckPluginVersion: string;
+    /** Install the latest server release when the plugin updates. Turned off automatically by an explicit non-latest install. */
+    serverAutoUpdate: boolean;
     /** The user removed the managed server; never download it again until they ask. */
     serverUninstalled: boolean;
 }
@@ -516,6 +518,7 @@ export const DEFAULT_SHARED_CONFIG: SharedConfig = {
     lilbeeVariant: "",
     hfToken: "",
     lastUpdateCheckPluginVersion: "",
+    serverAutoUpdate: true,
     serverUninstalled: false,
 };
 

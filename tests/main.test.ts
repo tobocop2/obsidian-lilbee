@@ -6143,6 +6143,7 @@ describe("LilbeePlugin", () => {
                 lilbeeVariant: "",
                 hfToken: "",
                 lastUpdateCheckPluginVersion: lastChecked,
+                serverAutoUpdate: true,
             });
             return vi.spyOn(VaultRegistry.prototype, "saveConfig").mockImplementation(() => {});
         };
@@ -6234,6 +6235,83 @@ describe("LilbeePlugin", () => {
             await (plugin as any).autoUpdateServerBinary();
 
             expect(check).not.toHaveBeenCalled();
+        });
+
+        it("skips the check when automatic server updates are turned off", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            const check = vi.spyOn(plugin, "checkForUpdate");
+            const loadConfig = vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                lilbeeVersion: "v0.1.0",
+                lilbeeVariant: "",
+                hfToken: "",
+                lastUpdateCheckPluginVersion: "",
+                serverAutoUpdate: false,
+                serverUninstalled: false,
+            });
+            await plugin.onload();
+            await flush();
+
+            expect(check).not.toHaveBeenCalled();
+            expect(plugin.journal.entries.map((e) => e.message)).toContain(
+                "automatic server update skipped: turned off in settings",
+            );
+            loadConfig.mockRestore();
+        });
+    });
+
+    describe("server auto-update setting", () => {
+        it("reads the shared config and defaults to enabled without a registry", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            expect(plugin.isServerAutoUpdateEnabled()).toBe(true);
+            (plugin as any).vaultRegistry = null;
+            expect(plugin.isServerAutoUpdateEnabled()).toBe(true);
+        });
+
+        it("persists a change and journals it once", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const save = vi.spyOn(VaultRegistry.prototype, "saveConfig").mockImplementation(() => {});
+            plugin.setServerAutoUpdate(false);
+            expect(save).toHaveBeenCalledWith(expect.objectContaining({ serverAutoUpdate: false }));
+            expect(plugin.journal.entries.map((e) => e.message)).toContain("automatic server updates turned off");
+            save.mockRestore();
+        });
+
+        it("re-enabling journals the on message", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const loadConfig = vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                lilbeeVersion: "",
+                lilbeeVariant: "",
+                hfToken: "",
+                lastUpdateCheckPluginVersion: "",
+                serverAutoUpdate: false,
+                serverUninstalled: false,
+            });
+            const save = vi.spyOn(VaultRegistry.prototype, "saveConfig").mockImplementation(() => {});
+            plugin.setServerAutoUpdate(true);
+            expect(save).toHaveBeenCalledWith(expect.objectContaining({ serverAutoUpdate: true }));
+            expect(plugin.journal.entries.map((e) => e.message)).toContain("automatic server updates turned on");
+            loadConfig.mockRestore();
+            save.mockRestore();
+        });
+
+        it("an unchanged value writes and journals nothing", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            const save = vi.spyOn(VaultRegistry.prototype, "saveConfig").mockImplementation(() => {});
+            const entriesBefore = plugin.journal.entries.length;
+            plugin.setServerAutoUpdate(true);
+            expect(save).not.toHaveBeenCalled();
+            expect(plugin.journal.entries).toHaveLength(entriesBefore);
+            save.mockRestore();
+        });
+
+        it("is a no-op without a vault registry", async () => {
+            const plugin = await createPlugin();
+            (plugin as any).vaultRegistry = null;
+            expect(() => plugin.setServerAutoUpdate(false)).not.toThrow();
         });
     });
 

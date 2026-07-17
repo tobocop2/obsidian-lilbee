@@ -820,6 +820,7 @@ export default class LilbeePlugin extends Plugin {
             ...registry.loadConfig(),
             lilbeeVersion: "",
             lilbeeVariant: "",
+            serverAutoUpdate: true,
             serverUninstalled: true,
         });
         this.serverUninstalled = true;
@@ -859,6 +860,10 @@ export default class LilbeePlugin extends Plugin {
         if (!registry) return;
         if (this.serverUninstalled) return;
         const config = registry.loadConfig();
+        if (!config.serverAutoUpdate) {
+            this.journal.lifecycle("automatic server update skipped: turned off in settings");
+            return;
+        }
         if (config.lastUpdateCheckPluginVersion === this.manifest.version) return;
         let result: { available: boolean; release?: ReleaseInfo };
         try {
@@ -1499,6 +1504,19 @@ export default class LilbeePlugin extends Plugin {
         const reg = this.vaultRegistry;
         if (!reg) return;
         reg.saveConfig({ ...reg.loadConfig(), lilbeeVariant: variant });
+    }
+
+    isServerAutoUpdateEnabled(): boolean {
+        return this.vaultRegistry?.loadConfig().serverAutoUpdate ?? true;
+    }
+
+    setServerAutoUpdate(enabled: boolean): void {
+        const reg = this.vaultRegistry;
+        if (!reg) return;
+        const config = reg.loadConfig();
+        if (config.serverAutoUpdate === enabled) return;
+        reg.saveConfig({ ...config, serverAutoUpdate: enabled });
+        this.journal.lifecycle(enabled ? "automatic server updates turned on" : "automatic server updates turned off");
     }
 
     getSharedHfToken(): string {

@@ -174,6 +174,8 @@ function makePlugin(overrides: Partial<LilbeeSettings> & { lilbeeVersion?: strin
         setSharedLilbeeVersion: (v: string) => {
             sharedVersion = v;
         },
+        isServerAutoUpdateEnabled: () => true,
+        setServerAutoUpdate: vi.fn(),
         isServerInstalled: () => true,
         isServerUninstalled: () => false,
         isDownloadingServer: () => false,
@@ -645,8 +647,8 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // [0] is includeDevBuilds (managed server section), [1] show_reasoning (Chat), [2] adaptiveThreshold.
-            await toggleOnChanges[2](true);
+            // [0] auto-update, [1] includeDevBuilds (managed server section), [2] show_reasoning (Chat), [3] adaptiveThreshold.
+            await toggleOnChanges[3](true);
             expect(plugin.settings.adaptiveThreshold).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
         });
@@ -2430,8 +2432,8 @@ describe("managed mode settings", () => {
         const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
         // Spy after the first render so the toggle's own re-render is what we assert.
         const renderSpy = vi.spyOn(tab, "render").mockImplementation(() => {});
-        // [0] is the includeDevBuilds toggle (managed server section, before Chat).
-        await toggleOnChanges[0](true);
+        // [0] auto-update, [1] includeDevBuilds (managed server section, before Chat).
+        await toggleOnChanges[1](true);
 
         expect(plugin.settings.includeDevBuilds).toBe(true);
         expect(plugin.saveSettings).toHaveBeenCalled();
@@ -2498,6 +2500,50 @@ describe("managed mode settings", () => {
         await buttonOnClicks[2]();
 
         expect(updateServer.mock.calls[0][0].tag).toBe("v0.3.0");
+    });
+
+    it("an explicit non-latest install turns off automatic server updates", async () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
+        (plugin as any).updateServer = vi.fn().mockResolvedValue(undefined);
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { dropdownOnChanges, buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+        dropdownOnChanges[1]("v0.1.0");
+        vi.spyOn(tab, "render").mockImplementation(() => {});
+        await buttonOnClicks[2]();
+
+        expect(plugin.setServerAutoUpdate).toHaveBeenCalledWith(false);
+    });
+
+    it("installing the latest release leaves the auto-update setting alone", async () => {
+        mockListReleases.mockResolvedValue(RELEASES);
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
+        (plugin as any).updateServer = vi.fn().mockResolvedValue(undefined);
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { dropdownOnChanges, buttonOnClicks } = captureSettingCallbacks(() => tab.display());
+        await settleReleases();
+        dropdownOnChanges[1]("v0.3.0");
+        vi.spyOn(tab, "render").mockImplementation(() => {});
+        await buttonOnClicks[2]();
+
+        expect(plugin.setServerAutoUpdate).not.toHaveBeenCalled();
+    });
+
+    it("the auto-update toggle reflects and writes the shared setting", async () => {
+        const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+
+        const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+        // Managed section toggles: [0] auto-update, [1] dev builds.
+        toggleOnChanges[0](false);
+
+        expect(plugin.setServerAutoUpdate).toHaveBeenCalledWith(false);
     });
 
     it("update progress panel surfaces the phase message and the total download size", async () => {
@@ -3317,10 +3363,10 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Toggle order: [0] includeDevBuilds (managed server), [1] show_reasoning (Chat),
-            // [2] adaptiveThreshold (search/retrieval), [3] worker_pool_eager_start (worker-pool),
-            // [4] crawl_retry_on_rate_limit (crawling), [5+] wiki toggles.
-            await toggleOnChanges[4](false);
+            // Toggle order: [0] auto-update, [1] includeDevBuilds (managed server), [2] show_reasoning (Chat),
+            // [3] adaptiveThreshold (search/retrieval), [4] worker_pool_eager_start (worker-pool),
+            // [5] crawl_retry_on_rate_limit (crawling), [6+] wiki toggles.
+            await toggleOnChanges[5](false);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: false });
         });
 
@@ -3331,7 +3377,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[4](false);
+            await toggleOnChanges[5](false);
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -3488,9 +3534,9 @@ describe("managed mode settings", () => {
             // load-bearing (if the flag failed to set, updateConfig WOULD be called).
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = false;
-            // toggleOnChanges[4] is crawl_retry_on_rate_limit; [0]=includeDevBuilds,
-            // [1]=show_reasoning, [2]=adaptiveThreshold, [3]=worker_pool_eager_start.
-            await toggleOnChanges[4](true);
+            // toggleOnChanges[5] is crawl_retry_on_rate_limit; [0]=auto-update, [1]=includeDevBuilds,
+            // [2]=show_reasoning, [3]=adaptiveThreshold, [4]=worker_pool_eager_start.
+            await toggleOnChanges[5](true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: true });
         });
 
@@ -3502,7 +3548,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = true;
-            await toggleOnChanges[4](true);
+            await toggleOnChanges[5](true);
             (tab as any).suppressToggleChanges = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
@@ -6682,7 +6728,7 @@ describe("managed mode settings", () => {
         // ([0]=adaptiveThreshold).
         const POOL_CALL_TIMEOUT_IDX = 19;
         const POOL_MAX_IDLE_IDX = 20;
-        const POOL_EAGER_TOGGLE_IDX = 3;
+        const POOL_EAGER_TOGGLE_IDX = 4;
 
         it("hides each worker-pool row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
@@ -6770,8 +6816,8 @@ describe("managed mode settings", () => {
     });
 
     describe("show reasoning toggle", () => {
-        // toggleOnChanges[0] is show_reasoning (Chat section, top); [1]=adaptiveThreshold.
-        const SHOW_REASONING_TOGGLE_IDX = 1;
+        // Managed section renders auto-update + dev-builds toggles first; show_reasoning follows in Chat.
+        const SHOW_REASONING_TOGGLE_IDX = 2;
 
         it("PATCHes show_reasoning when the toggle flips", async () => {
             const plugin = makePlugin();

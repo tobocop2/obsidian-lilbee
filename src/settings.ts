@@ -319,7 +319,19 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderAdoptDataDir(containerEl);
         this.renderStorageReport(containerEl);
         this.renderVersionSetting(containerEl);
+        this.renderAutoUpdateToggle(containerEl);
         this.renderDevBuildsToggle(containerEl);
+    }
+
+    private renderAutoUpdateToggle(containerEl: HTMLElement): void {
+        new Setting(containerEl)
+            .setName(MESSAGES.LABEL_SERVER_AUTO_UPDATE)
+            .setDesc(MESSAGES.DESC_SERVER_AUTO_UPDATE)
+            .addToggle((toggle) =>
+                toggle.setValue(this.plugin.isServerAutoUpdateEnabled()).onChange((value) => {
+                    this.plugin.setServerAutoUpdate(value);
+                }),
+            );
     }
 
     /**
@@ -378,7 +390,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     ),
                     selectedTag,
                 );
-                await this.runServerUpdate(release, btn, progress, label);
+                const updated = await this.runServerUpdate(release, btn, progress, label);
+                // An explicit non-latest install turns off automatic updates
+                // so the chosen version is honored across plugin updates.
+                if (updated && selectedTag !== releases[0].tag) {
+                    this.plugin.setServerAutoUpdate(false);
+                    this.render();
+                }
             });
         });
 
