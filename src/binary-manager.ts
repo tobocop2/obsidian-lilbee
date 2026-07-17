@@ -68,6 +68,12 @@ const RELEASE_LIST_API = `https://api.github.com/repos/${GITHUB_REPO}/releases`;
 /** How many recent releases the version picker offers. */
 const RELEASE_HISTORY_LIMIT = 10;
 
+/** GitHub's max releases per page; a run of dev builds can fill several pages before a stable one. */
+const RELEASE_PAGE_SIZE = 100;
+
+/** Pages to scan before giving up, so a long stretch of dev builds can't hide every stable release. */
+const RELEASE_PAGE_BUDGET = 3;
+
 /** Run `nvidia-smi` and return its stdout, or null if it is absent or fails. */
 async function runNvidiaSmi(): Promise<string | null> {
     try {
@@ -169,37 +175,45 @@ export function isDevBuild(tag: string): boolean {
 }
 
 /**
- * Recent published releases, newest first, that ship a build for this machine.
- * Drafts, prereleases, and releases without a matching asset are left out.
+ * Up to *limit* published releases, newest first, that ship a build for this machine and
+ * match the dev-build preference. Drafts, prereleases, releases without a matching asset,
+ * and (when includeDev is false) dev builds are left out. Pages through the releases API so a
+ * long run of dev builds cannot push every stable release out of view; stops once it has
+ * *limit*, reaches a short (final) page, or exhausts the page budget.
  */
-async function fetchInstallableReleases(limit: number): Promise<ReleaseInfo[]> {
-    const res = await node.requestUrl({
-        url: `${RELEASE_LIST_API}?per_page=${limit}`,
-        headers: { Accept: "application/vnd.github.v3+json" },
-    });
-    if (res.status >= 400) throw new Error(`GitHub API responded ${res.status}`);
+async function fetchInstallableReleases(limit: number, includeDev: boolean): Promise<ReleaseInfo[]> {
     const cudaTag = await detectCudaTag();
     const releases: ReleaseInfo[] = [];
-    for (const data of res.json as GitHubRelease[]) {
-        if (data.draft || data.prerelease) continue;
-        try {
-            releases.push(toReleaseInfo(data, cudaTag));
-        } catch {
-            // Release ships no build for this platform; it isn't installable here.
+    for (let page = 1; page <= RELEASE_PAGE_BUDGET; page++) {
+        const res = await node.requestUrl({
+            url: `${RELEASE_LIST_API}?per_page=${RELEASE_PAGE_SIZE}&page=${page}`,
+            headers: { Accept: "application/vnd.github.v3+json" },
+        });
+        if (res.status >= 400) throw new Error(`GitHub API responded ${res.status}`);
+        const pageData = res.json as GitHubRelease[];
+        for (const data of pageData) {
+            if (data.draft || data.prerelease) continue;
+            if (!includeDev && isDevBuild(data.tag_name)) continue;
+            try {
+                releases.push(toReleaseInfo(data, cudaTag));
+            } catch {
+                // Release ships no build for this platform; it isn't installable here.
+            }
+            if (releases.length >= limit) return releases;
         }
+        if (pageData.length < RELEASE_PAGE_SIZE) break; // last page
     }
     return releases;
 }
 
 /** Installable releases for the version picker, newest first; dev builds left out unless includeDev. */
 export async function listReleases(includeDev: boolean, limit = RELEASE_HISTORY_LIMIT): Promise<ReleaseInfo[]> {
-    const all = await fetchInstallableReleases(limit);
-    return includeDev ? all : all.filter((r) => !isDevBuild(r.tag));
+    return fetchInstallableReleases(limit, includeDev);
 }
 
 /** Newest installable release, honouring the dev-build preference. */
 export async function getLatestRelease(includeDev: boolean): Promise<ReleaseInfo> {
-    const releases = await listReleases(includeDev);
+    const releases = await fetchInstallableReleases(1, includeDev);
     if (releases.length === 0) throw new Error("No installable lilbee release was found.");
     return releases[0];
 }

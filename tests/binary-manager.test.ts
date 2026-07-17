@@ -331,6 +331,33 @@ describe("getLatestRelease", () => {
         await expect(getLatestRelease(false)).rejects.toThrow("GitHub API responded 403");
     });
 
+    it("paginates past a full first page of dev builds to reach a stable release", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        // A full page (per_page) of nothing but dev builds, then a stable one on page 2 —
+        // the real-world case that broke the installer once enough dev builds piled up.
+        const devPage = Array.from({ length: 100 }, (_, i) => linuxRelease(`v1.1.0.dev${100 - i}`));
+        const requestUrl = vi.spyOn(node, "requestUrl").mockImplementation((async (opts: { url: string }) => {
+            const page = new URL(opts.url).searchParams.get("page");
+            return releaseResponse(page === "1" ? devPage : [linuxRelease("v1.0.0")]);
+        }) as unknown as typeof node.requestUrl);
+
+        expect((await getLatestRelease(false)).tag).toBe("v1.0.0");
+        expect(requestUrl.mock.calls.length).toBeGreaterThan(1); // it kept looking
+    });
+
+    it("stops paginating on a short page and does not loop forever", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        // Every page is short (< per_page) and dev-only: no stable exists anywhere.
+        const requestUrl = vi
+            .spyOn(node, "requestUrl")
+            .mockResolvedValue(releaseResponse([linuxRelease("v1.1.0.dev5")]));
+
+        await expect(getLatestRelease(false)).rejects.toThrow("No installable lilbee release was found.");
+        expect(requestUrl.mock.calls.length).toBe(1); // short page ends the scan immediately
+    });
+
     it("throws when no release ships a build for this platform", async () => {
         restore = stubPlatform("darwin", "arm64");
         vi.spyOn(node, "requestUrl").mockResolvedValue(
@@ -1087,14 +1114,14 @@ describe("listReleases", () => {
         });
     });
 
-    it("asks GitHub for the requested number of releases", async () => {
+    it("returns at most the requested number of installable releases", async () => {
         restore = stubPlatform("linux", "x64");
         stubNoNvidia();
-        const requestUrl = vi.spyOn(node, "requestUrl").mockResolvedValue(releaseResponse([]));
+        vi.spyOn(node, "requestUrl").mockResolvedValue(
+            releaseResponse([release("v3.0.0"), release("v2.0.0"), release("v1.0.0")]),
+        );
 
-        await listReleases(false, 3);
-
-        expect(requestUrl.mock.calls[0][0].url).toContain("per_page=3");
+        expect((await listReleases(false, 2)).map((r) => r.tag)).toEqual(["v3.0.0", "v2.0.0"]);
     });
 
     it("leaves out drafts and prereleases", async () => {
