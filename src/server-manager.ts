@@ -134,6 +134,12 @@ export async function serverIsLive(dataDir: string): Promise<boolean> {
     return (await probeLilbeeHealth(session.port)) !== null;
 }
 
+/** Ask the server serving *dataDir* to exit and wait until it is gone; false when it will not go. */
+export async function askServerToExit(dataDir: string, timeoutMs: number): Promise<boolean> {
+    if (!(await requestServerShutdown(dataDir))) return false;
+    return awaitServerGone(dataDir, timeoutMs);
+}
+
 /** Poll until the server serving *dataDir* stops answering; false on timeout. */
 export async function awaitServerGone(dataDir: string, timeoutMs: number): Promise<boolean> {
     const session = readServerSession(dataDir);
@@ -394,7 +400,7 @@ export class ServerManager {
             this.setState(SERVER_STATE.ERROR);
             this.restartTimer = window.setTimeout(() => {
                 this.restartTimer = null;
-                /* v8 ignore next -- stop() clears this timer before flipping desired, so the false branch is unreachable */
+                /* v8 ignore next -- stop() flips desired and clears this timer in one synchronous block, so the false branch is unreachable */
                 if (this.desired === DESIRED.RUNNING) void this.startForRestart();
             }, SERVER_MANAGER_CONFIG.CRASH_RESTART_DELAY_MS);
             return;
@@ -504,8 +510,7 @@ export class ServerManager {
         this.journal(
             `running server version ${running} differs from installed ${this.opts.installedVersion}; asking it to exit`,
         );
-        const accepted = await requestServerShutdown(this.opts.dataDir);
-        if (accepted && (await awaitServerGone(this.opts.dataDir, SERVER_MANAGER_CONFIG.STOP_GRACE_MS))) return true;
+        if (await askServerToExit(this.opts.dataDir, SERVER_MANAGER_CONFIG.STOP_GRACE_MS)) return true;
         this.journal("outdated server did not stop when asked; adopting it anyway");
         return false;
     }
@@ -665,8 +670,7 @@ export class ServerManager {
 
     /** Ask an adopted server to exit; report when it will not go. */
     private async stopAdopted(): Promise<void> {
-        const accepted = await requestServerShutdown(this.opts.dataDir);
-        const gone = accepted && (await awaitServerGone(this.opts.dataDir, SERVER_MANAGER_CONFIG.STOP_GRACE_MS));
+        const gone = await askServerToExit(this.opts.dataDir, SERVER_MANAGER_CONFIG.STOP_GRACE_MS);
         if (gone) {
             this.journal("adopted server stopped when asked");
             this.cleanupPortFile();

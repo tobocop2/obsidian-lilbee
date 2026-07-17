@@ -16,14 +16,7 @@ import { exportDiagnostics } from "./diagnostics-export";
 import { ErrorJournal } from "./error-journal";
 import { DownloadCanceledError } from "./binary-manager";
 import type { DownloadProgress, ReleaseInfo } from "./binary-manager";
-import {
-    ScopeHeldError,
-    ServerManager,
-    awaitServerGone,
-    readScopeOwner,
-    requestServerShutdown,
-    serverIsLive,
-} from "./server-manager";
+import { ScopeHeldError, ServerManager, askServerToExit, readScopeOwner, serverIsLive } from "./server-manager";
 import { executeUninstall, planUninstall } from "./server-uninstall";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
 import { LilbeeSettingTab } from "./settings";
@@ -555,7 +548,7 @@ export default class LilbeePlugin extends Plugin {
         this.journal.lifecycle(
             `take-over accepted: asking the server of ${ownerName}${owner?.pid != null ? ` (pid ${owner.pid})` : ""} to exit`,
         );
-        if (owner && !(await this.askOwnerToStop(owner.dataDir))) {
+        if (owner && !(await askServerToExit(owner.dataDir, TAKE_OVER_SHUTDOWN_TIMEOUT_MS))) {
             this.journal.lifecycle(`take-over failed: the server of ${ownerName} did not stop when asked`);
             new Notice(MESSAGES.NOTICE_TAKE_OVER_TIMEOUT);
             this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
@@ -594,12 +587,6 @@ export default class LilbeePlugin extends Plugin {
             foreign.map(async (dataDir) => ((await serverIsLive(dataDir)) ? dataDir : null)),
         );
         return live.find((dataDir) => dataDir !== null) ?? null;
-    }
-
-    /** Ask the server serving *dataDir* to exit and wait until it is gone. */
-    private async askOwnerToStop(dataDir: string): Promise<boolean> {
-        if (!(await requestServerShutdown(dataDir))) return false;
-        return awaitServerGone(dataDir, TAKE_OVER_SHUTDOWN_TIMEOUT_MS);
     }
 
     /** Display name of the registered vault whose server serves *dataDir*. */
@@ -859,9 +846,7 @@ export default class LilbeePlugin extends Plugin {
         this.binaryManager = null;
         // A server orphaned by a crashed Obsidian still writes to the data dir;
         // ask it to exit before deleting the tree out from under it.
-        if (owner !== null && (await requestServerShutdown(owner.dataDir))) {
-            await awaitServerGone(owner.dataDir, TAKE_OVER_SHUTDOWN_TIMEOUT_MS);
-        }
+        if (owner !== null) await askServerToExit(owner.dataDir, TAKE_OVER_SHUTDOWN_TIMEOUT_MS);
 
         executeUninstall(plan);
 

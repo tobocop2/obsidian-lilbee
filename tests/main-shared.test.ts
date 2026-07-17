@@ -127,6 +127,7 @@ vi.mock("../src/server-manager", () => {
         readScopeOwner: vi.fn().mockReturnValue(null),
         requestServerShutdown: vi.fn().mockResolvedValue(true),
         awaitServerGone: vi.fn().mockResolvedValue(true),
+        askServerToExit: vi.fn().mockResolvedValue(true),
         serverIsLive: vi.fn().mockResolvedValue(false),
     };
 });
@@ -326,6 +327,7 @@ describe("negotiateTakeOver", () => {
             readScopeOwner: sm.readScopeOwner as ReturnType<typeof vi.fn>,
             requestServerShutdown: sm.requestServerShutdown as ReturnType<typeof vi.fn>,
             awaitServerGone: sm.awaitServerGone as ReturnType<typeof vi.fn>,
+            askServerToExit: sm.askServerToExit as ReturnType<typeof vi.fn>,
         };
     }
 
@@ -345,14 +347,14 @@ describe("negotiateTakeOver", () => {
         const plugin = await createPlugin();
         const mocks = await smMocks();
         mocks.readScopeOwner.mockReturnValue({ dataDir: "/d", pid: 9 });
-        mocks.requestServerShutdown.mockClear();
+        mocks.askServerToExit.mockClear();
         registerOwner(plugin, "Personal", "/d");
         vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(false);
         const events: any[] = [];
         await (plugin as any).negotiateTakeOver(plugin.vaultRegistry, (e: any) => events.push(e));
         expect(Notice.instances.some((n) => n.message.includes("stays with"))).toBe(true);
         expect(Notice.instances.some((n) => n.message.includes("Personal"))).toBe(true);
-        expect(mocks.requestServerShutdown).not.toHaveBeenCalled();
+        expect(mocks.askServerToExit).not.toHaveBeenCalled();
         expect(plugin.journal.entries.map((e) => e.message)).toContain(
             "take-over of the shared root declined (owner: Personal)",
         );
@@ -364,13 +366,12 @@ describe("negotiateTakeOver", () => {
         const plugin = await createPlugin();
         const mocks = await smMocks();
         mocks.readScopeOwner.mockReturnValue({ dataDir: "/d", pid: 9 });
-        mocks.requestServerShutdown.mockResolvedValue(true);
-        mocks.awaitServerGone.mockResolvedValue(true);
+        mocks.askServerToExit.mockResolvedValue(true);
         registerOwner(plugin, "Personal", "/d");
         vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(true);
         const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
         await (plugin as any).negotiateTakeOver(plugin.vaultRegistry);
-        expect(mocks.requestServerShutdown).toHaveBeenCalledWith("/d");
+        expect(mocks.askServerToExit).toHaveBeenCalledWith("/d", expect.any(Number));
         expect(Notice.instances.some((n) => n.message.includes("switched from"))).toBe(true);
         expect(startSpy).toHaveBeenCalledWith(undefined, false);
         const journal = plugin.journal.entries.map((e) => e.message);
@@ -383,11 +384,11 @@ describe("negotiateTakeOver", () => {
         const plugin = await createPlugin();
         const mocks = await smMocks();
         mocks.readScopeOwner.mockReturnValue(null);
-        mocks.requestServerShutdown.mockClear();
+        mocks.askServerToExit.mockClear();
         vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(true);
         const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
         await (plugin as any).negotiateTakeOver(plugin.vaultRegistry);
-        expect(mocks.requestServerShutdown).not.toHaveBeenCalled();
+        expect(mocks.askServerToExit).not.toHaveBeenCalled();
         expect(startSpy).toHaveBeenCalledWith(undefined, false);
         expect(plugin.journal.entries.map((e) => e.message)).toContain(
             "take-over accepted: asking the server of another vault to exit",
@@ -398,7 +399,7 @@ describe("negotiateTakeOver", () => {
         const plugin = await createPlugin();
         const mocks = await smMocks();
         mocks.readScopeOwner.mockReturnValue({ dataDir: "/d", pid: 9 });
-        mocks.requestServerShutdown.mockResolvedValue(false);
+        mocks.askServerToExit.mockResolvedValue(false);
         registerOwner(plugin, "Personal", "/d");
         vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(true);
         const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
@@ -409,7 +410,7 @@ describe("negotiateTakeOver", () => {
             "take-over failed: the server of Personal did not stop when asked",
         );
         mocks.readScopeOwner.mockReturnValue(null);
-        mocks.requestServerShutdown.mockResolvedValue(true);
+        mocks.askServerToExit.mockResolvedValue(true);
     });
 
     it("a second refusal lands in the quiet locked state instead of a loop", async () => {
@@ -466,14 +467,13 @@ describe("negotiateTakeOver", () => {
     it("a scan-found owner is asked to stop by its data dir and journals without a pid", async () => {
         const plugin = await createPlugin();
         const mocks = await smMocks();
-        mocks.requestServerShutdown.mockClear();
-        mocks.requestServerShutdown.mockResolvedValue(true);
-        mocks.awaitServerGone.mockResolvedValue(true);
+        mocks.askServerToExit.mockClear();
+        mocks.askServerToExit.mockResolvedValue(true);
         registerOwner(plugin, "Personal", "/d");
         vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(true);
         const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
         await (plugin as any).negotiateTakeOver(plugin.vaultRegistry, undefined, true, "/d");
-        expect(mocks.requestServerShutdown).toHaveBeenCalledWith("/d");
+        expect(mocks.askServerToExit).toHaveBeenCalledWith("/d", expect.any(Number));
         expect(startSpy).toHaveBeenCalledWith(undefined, false);
         expect(plugin.journal.entries.map((e) => e.message)).toContain(
             "take-over accepted: asking the server of Personal to exit",
@@ -842,11 +842,11 @@ describe("managed-server uninstall", () => {
         seedInstall(plugin);
         const ownDataDir = plugin.vaultRegistry!.resolveDataDir(plugin.vaultId);
         (sm.readScopeOwner as any).mockReturnValue({ dataDir: ownDataDir, pid: 4242 });
-        (sm.requestServerShutdown as any).mockClear();
+        (sm.askServerToExit as any).mockClear();
 
         await plugin.uninstallServer(plugin.planServerUninstall()!);
 
-        expect(sm.requestServerShutdown).toHaveBeenCalledWith(ownDataDir);
+        expect(sm.askServerToExit).toHaveBeenCalledWith(ownDataDir, expect.any(Number));
         (sm.readScopeOwner as any).mockReturnValue(null);
     });
 

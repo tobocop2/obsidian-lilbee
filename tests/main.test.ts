@@ -262,6 +262,7 @@ vi.mock("../src/server-manager", () => ({
     readScopeOwner: vi.fn().mockReturnValue(null),
     requestServerShutdown: vi.fn().mockResolvedValue(true),
     awaitServerGone: vi.fn().mockResolvedValue(true),
+    askServerToExit: vi.fn().mockResolvedValue(true),
     serverIsLive: vi.fn().mockResolvedValue(false),
 }));
 
