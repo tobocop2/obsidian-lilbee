@@ -8,6 +8,7 @@ import {
     readScopeOwner,
     readServerSession,
     requestServerShutdown,
+    serverIsLive,
 } from "../src/server-manager";
 import type { ServerManagerOptions } from "../src/server-manager";
 
@@ -166,6 +167,29 @@ describe("server-manager helpers", () => {
             await expect(requestServerShutdown("/tmp/data")).resolves.toBe(false);
             fetchSpy.mockResolvedValueOnce({ ok: false } as Response);
             await expect(requestServerShutdown("/tmp/data")).resolves.toBe(false);
+        });
+    });
+
+    describe("serverIsLive", () => {
+        it("is true when the session files point at an answering lilbee", async () => {
+            vi.spyOn(node, "readFileSync").mockImplementation(fileRouter("present"));
+            vi.spyOn(node, "fetch").mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) } as any);
+            await expect(serverIsLive("/tmp/data")).resolves.toBe(true);
+        });
+
+        it("is false without session files", async () => {
+            vi.spyOn(node, "readFileSync").mockImplementation(fileRouter("absent"));
+            const fetchSpy = vi.spyOn(node, "fetch");
+            await expect(serverIsLive("/tmp/data")).resolves.toBe(false);
+            expect(fetchSpy).not.toHaveBeenCalled();
+        });
+
+        it("is false when the port is dead or answers with a foreign shape", async () => {
+            vi.spyOn(node, "readFileSync").mockImplementation(fileRouter("present"));
+            const fetchSpy = vi.spyOn(node, "fetch").mockRejectedValueOnce(new Error("ECONNREFUSED"));
+            await expect(serverIsLive("/tmp/data")).resolves.toBe(false);
+            fetchSpy.mockResolvedValueOnce({ ok: true, json: async () => ({ hello: "world" }) } as any);
+            await expect(serverIsLive("/tmp/data")).resolves.toBe(false);
         });
     });
 

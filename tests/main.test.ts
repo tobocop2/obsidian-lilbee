@@ -254,6 +254,7 @@ vi.mock("../src/server-manager", () => ({
     readScopeOwner: vi.fn().mockReturnValue(null),
     requestServerShutdown: vi.fn().mockResolvedValue(true),
     awaitServerGone: vi.fn().mockResolvedValue(true),
+    serverIsLive: vi.fn().mockResolvedValue(false),
 }));
 
 /** Flush the microtask queue so fire-and-forget promises settle. */
@@ -5449,6 +5450,9 @@ describe("LilbeePlugin", () => {
             // Second call should no-op
             mockEnsureBinary.mockResolvedValueOnce("/fake/bin/lilbee");
             await plugin.startManagedServer();
+
+            // Let the first call get past the pre-spawn scan to the blocked ensureBinary
+            await flush();
 
             // Unblock the first call
             resolveEnsure("/fake/bin/lilbee");

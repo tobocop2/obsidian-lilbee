@@ -125,6 +125,7 @@ vi.mock("../src/server-manager", () => {
         readScopeOwner: vi.fn().mockReturnValue(null),
         requestServerShutdown: vi.fn().mockResolvedValue(true),
         awaitServerGone: vi.fn().mockResolvedValue(true),
+        serverIsLive: vi.fn().mockResolvedValue(false),
     };
 });
 
@@ -420,6 +421,61 @@ describe("negotiateTakeOver", () => {
         expect(confirmSpy).not.toHaveBeenCalled();
         expect(events.find((e) => e.phase === "error")).toBeDefined();
         mocks.readScopeOwner.mockReturnValue(null);
+    });
+
+    it("the pre-spawn scan routes a live lock-less foreign server into the take-over flow", async () => {
+        const plugin = await createPlugin();
+        const sm = await import("../src/server-manager");
+        registerOwner(plugin, "Personal", "/d");
+        (sm.serverIsLive as ReturnType<typeof vi.fn>).mockImplementation(async (dataDir: string) => dataDir === "/d");
+        const negotiate = vi.spyOn(plugin as any, "negotiateTakeOver").mockResolvedValue(undefined);
+        await plugin.startManagedServer();
+        await new Promise((r) => setTimeout(r, 0)); // the scan negotiates outside startingServer
+        expect(negotiate).toHaveBeenCalledWith(plugin.vaultRegistry, undefined, true, "/d");
+        expect(plugin.serverManager).toBeNull();
+        (sm.serverIsLive as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    });
+
+    it("the scan ignores a registered vault whose server is dead and proceeds to start", async () => {
+        const plugin = await createPlugin();
+        const sm = await import("../src/server-manager");
+        registerOwner(plugin, "Personal", "/d");
+        (sm.serverIsLive as ReturnType<typeof vi.fn>).mockResolvedValue(false); // stale session files, nothing live
+        const negotiate = vi.spyOn(plugin as any, "negotiateTakeOver");
+        await plugin.startManagedServer();
+        await new Promise((r) => setTimeout(r, 0));
+        expect(negotiate).not.toHaveBeenCalled();
+        expect(plugin.serverManager).not.toBeNull();
+    });
+
+    it("the scan treats our own live server as the adopt path, not a foreigner", async () => {
+        const plugin = await createPlugin();
+        const sm = await import("../src/server-manager");
+        registerOwner(plugin, "Personal", "/d");
+        (sm.serverIsLive as ReturnType<typeof vi.fn>).mockResolvedValue(true); // ours answers first
+        const negotiate = vi.spyOn(plugin as any, "negotiateTakeOver");
+        await plugin.startManagedServer();
+        await new Promise((r) => setTimeout(r, 0));
+        expect(negotiate).not.toHaveBeenCalled();
+        expect(plugin.serverManager).not.toBeNull();
+        (sm.serverIsLive as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    });
+
+    it("a scan-found owner is asked to stop by its data dir and journals without a pid", async () => {
+        const plugin = await createPlugin();
+        const mocks = await smMocks();
+        mocks.requestServerShutdown.mockClear();
+        mocks.requestServerShutdown.mockResolvedValue(true);
+        mocks.awaitServerGone.mockResolvedValue(true);
+        registerOwner(plugin, "Personal", "/d");
+        vi.spyOn(plugin as any, "confirmTakeOver").mockResolvedValue(true);
+        const startSpy = vi.spyOn(plugin, "startManagedServer").mockResolvedValue(undefined);
+        await (plugin as any).negotiateTakeOver(plugin.vaultRegistry, undefined, true, "/d");
+        expect(mocks.requestServerShutdown).toHaveBeenCalledWith("/d");
+        expect(startSpy).toHaveBeenCalledWith(undefined, false);
+        expect(plugin.journal.entries.map((e) => e.message)).toContain(
+            "take-over accepted: asking the server of Personal to exit",
+        );
     });
 
     it("names 'another vault' when no registry is available for the lookup", async () => {

@@ -22,6 +22,7 @@ import {
     awaitServerGone,
     readScopeOwner,
     requestServerShutdown,
+    serverIsLive,
 } from "./server-manager";
 import { executeUninstall, planUninstall } from "./server-uninstall";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
@@ -465,6 +466,19 @@ export default class LilbeePlugin extends Plugin {
             // Wired before the binary ensure so download failures and early
             // lifecycle lines persist to logs/plugin.log, not just memory.
             this.journal.setLogDir(node.join(registry.resolveDataDir(this.vaultId), LOGS_DIR));
+
+            // A server predating the OS locks cannot refuse our spawn, so scan
+            // for a live server another vault started and offer the same
+            // take-over the refusal path does — instead of spawning next to it.
+            const foreignDataDir = await this.findLiveForeignServer(registry);
+            if (foreignDataDir !== null) {
+                // Negotiate outside this call's startingServer window.
+                window.setTimeout(() => {
+                    void this.negotiateTakeOver(registry, onProgress, allowTakeOver, foreignDataDir);
+                }, 0);
+                return;
+            }
+
             this.binaryManager = new BinaryManager(sharedBinDir(sharedRoot));
             const binaryPath = await this.ensureBinaryWithUi(onProgress);
             if (binaryPath === null) return;
@@ -501,18 +515,22 @@ export default class LilbeePlugin extends Plugin {
     }
 
     /**
-     * The spawn was refused: another vault's server owns the shared root. Ask
-     * the user, ask that server to exit over its API, then start again — the
-     * server-side lock grace rides out the handoff. One round only: a second
-     * refusal (the owner would not stop, or a third vault won the scope) lands
-     * in the quiet "serving another vault" state instead of a loop.
+     * Another vault's server holds the shared root — found by a refused spawn
+     * (*knownOwnerDataDir* null, owner read from the scope sidecar) or by the
+     * pre-spawn scan for servers predating the locks. Ask the user, ask that
+     * server to exit over its API, then start again — the server-side lock
+     * grace rides out the handoff. One round only: a second refusal lands in
+     * the quiet "serving another vault" state instead of a loop.
      */
     private async negotiateTakeOver(
         registry: VaultRegistry,
         onProgress?: ManagedServerProgressHandler,
         allowTakeOver = true,
+        knownOwnerDataDir: string | null = null,
     ): Promise<void> {
-        const owner = readScopeOwner(registry.sharedRoot);
+        const owner: { dataDir: string; pid: number | null } | null = knownOwnerDataDir
+            ? { dataDir: knownOwnerDataDir, pid: null }
+            : readScopeOwner(registry.sharedRoot);
         const ownerName = owner ? this.lookupVaultNameByDataDir(owner.dataDir) : "another vault";
         if (!allowTakeOver) {
             this.updateStatusBar(MESSAGES.STATUS_LOCKED_BY_OTHER(ownerName), DOT_STATE.MUTED);
@@ -534,7 +552,7 @@ export default class LilbeePlugin extends Plugin {
             return;
         }
         this.journal.lifecycle(
-            `take-over accepted: asking the server of ${ownerName}${owner ? ` (pid ${owner.pid})` : ""} to exit`,
+            `take-over accepted: asking the server of ${ownerName}${owner?.pid != null ? ` (pid ${owner.pid})` : ""} to exit`,
         );
         if (owner && !(await this.askOwnerToStop(owner.dataDir))) {
             this.journal.lifecycle(`take-over failed: the server of ${ownerName} did not stop when asked`);
@@ -545,6 +563,18 @@ export default class LilbeePlugin extends Plugin {
         this.journal.lifecycle(`take-over complete: the server of ${ownerName} is gone; starting ours`);
         new Notice(MESSAGES.NOTICE_TAKE_OVER_SUCCESS(ownerName));
         await this.startManagedServer(onProgress, false);
+    }
+
+    /** Data dir of a live server another vault started, or null. Our own live server is the adopt path, not a foreigner. */
+    private async findLiveForeignServer(registry: VaultRegistry): Promise<string | null> {
+        const ourDataDir = registry.resolveDataDir(this.vaultId);
+        if (await serverIsLive(ourDataDir)) return null;
+        const others = registry.list().map((e) => registry.resolveDataDir(e.id));
+        const foreign = others.filter((dataDir) => dataDir !== ourDataDir);
+        const live = await Promise.all(
+            foreign.map(async (dataDir) => ((await serverIsLive(dataDir)) ? dataDir : null)),
+        );
+        return live.find((dataDir) => dataDir !== null) ?? null;
     }
 
     /** Ask the server serving *dataDir* to exit and wait until it is gone. */

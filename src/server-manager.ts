@@ -100,6 +100,30 @@ export async function requestServerShutdown(dataDir: string): Promise<boolean> {
     }
 }
 
+/** lilbee's health report on *port*, or null when it is dead or answers with a foreign shape. */
+async function probeLilbeeHealth(port: number): Promise<{ version: string } | null> {
+    try {
+        const res = await node.fetch(`http://127.0.0.1:${port}/api/health`, {
+            signal: AbortSignal.timeout(SERVER_MANAGER_CONFIG.ADOPT_PROBE_TIMEOUT_MS),
+        });
+        if (!res.ok) return null;
+        // The port file can outlive a SIGKILLed server, and the port can be
+        // reused by anything. Only lilbee's health shape counts as live.
+        const body = (await res.json()) as { status?: unknown; version?: unknown };
+        if (body.status !== "ok") return null;
+        return { version: typeof body.version === "string" ? body.version : "" };
+    } catch {
+        return null;
+    }
+}
+
+/** True when a lilbee server is live for *dataDir* (session files present and health answers). */
+export async function serverIsLive(dataDir: string): Promise<boolean> {
+    const session = readServerSession(dataDir);
+    if (session === null) return false;
+    return (await probeLilbeeHealth(session.port)) !== null;
+}
+
 /** Poll until the server serving *dataDir* stops answering; false on timeout. */
 export async function awaitServerGone(dataDir: string, timeoutMs: number): Promise<boolean> {
     const session = readServerSession(dataDir);
@@ -437,7 +461,7 @@ export class ServerManager {
     private async tryAdopt(): Promise<boolean> {
         const session = readServerSession(this.opts.dataDir);
         if (session === null) return false;
-        const health = await this.probeHealth(session.port);
+        const health = await probeLilbeeHealth(session.port);
         if (health === null) return false;
         if (this.versionDiffers(health.version) && (await this.replaceMismatched(health.version))) return false;
         this._actualPort = session.port;
@@ -465,23 +489,6 @@ export class ServerManager {
         return false;
     }
 
-    /** lilbee's health report, or null when the port is dead or answers with a foreign shape. */
-    private async probeHealth(port: number): Promise<{ version: string } | null> {
-        try {
-            const res = await node.fetch(`http://127.0.0.1:${port}/api/health`, {
-                signal: AbortSignal.timeout(SERVER_MANAGER_CONFIG.ADOPT_PROBE_TIMEOUT_MS),
-            });
-            if (!res.ok) return null;
-            // The port file can outlive a SIGKILLed server, and the port can be
-            // reused by anything. Only lilbee's health shape earns adoption.
-            const body = (await res.json()) as { status?: unknown; version?: unknown };
-            if (body.status !== "ok") return null;
-            return { version: typeof body.version === "string" ? body.version : "" };
-        } catch {
-            return null;
-        }
-    }
-
     /** Health-poll an adopted server; there is no child process to emit exit events. */
     private watchAdopted(): void {
         this.adoptedWatch = window.setInterval(() => {
@@ -498,7 +505,7 @@ export class ServerManager {
 
     private async checkAdopted(): Promise<void> {
         if (!this.adopted || this._actualPort === null) return;
-        if ((await this.probeHealth(this._actualPort)) !== null) return;
+        if ((await probeLilbeeHealth(this._actualPort)) !== null) return;
         if (!this.adopted || this.desired === DESIRED.STOPPED) return;
         this.stopAdoptedWatch();
         this.adopted = false;
