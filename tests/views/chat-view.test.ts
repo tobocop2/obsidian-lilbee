@@ -4912,6 +4912,94 @@ describe("ChatView — chat sessions", () => {
         expect(plugin.api.appendSessionMessage).not.toHaveBeenCalled();
     });
 
+    function deferred<T>() {
+        let resolve!: (v: T) => void;
+        let reject!: (e: unknown) => void;
+        const promise = new Promise<T>((res, rej) => {
+            resolve = res;
+            reject = rej;
+        });
+        return { promise, resolve, reject };
+    }
+
+    function createdDetail(id: string) {
+        return {
+            meta: {
+                id,
+                title: "Untitled chat",
+                created_at: "2026-07-16T00:00:00Z",
+                updated_at: "2026-07-16T00:00:00Z",
+                model_ref: "llama3",
+                scope: "both",
+                message_count: 0,
+                origin: "http",
+            },
+            messages: [],
+            summary: "",
+        };
+    }
+
+    it("a conversation cleared while its create is in flight stays unbound", async () => {
+        const plugin = makePlugin();
+        const create = deferred<ReturnType<typeof createdDetail>>();
+        plugin.api.createSession = vi.fn().mockReturnValue(create.promise);
+        const { mockFn, done } = streamOf("a1");
+        plugin.api.chatStream = mockFn;
+        const { view, container } = await openChat(plugin);
+
+        await send(container, "q1", done);
+        container.find("lilbee-chat-clear")!.trigger("click");
+        create.resolve(createdDetail("s1"));
+        await tick();
+        await tick();
+
+        expect((view as any).sessionId).toBeNull();
+        // The turn still lands in the conversation it belonged to…
+        expect(plugin.api.appendSessionMessage).toHaveBeenCalledWith("s1", "user", "q1", []);
+        // …but the answer queued behind it is dropped with the conversation.
+        const roles = (plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1]);
+        expect(roles).toEqual(["user"]);
+    });
+
+    it("a resume that races the first turn's create keeps the resumed session", async () => {
+        const plugin = makePlugin();
+        const create = deferred<ReturnType<typeof createdDetail>>();
+        plugin.api.createSession = vi.fn().mockReturnValue(create.promise);
+        plugin.api.getSession = vi.fn().mockResolvedValue({
+            ...createdDetail("s5"),
+            meta: { ...createdDetail("s5").meta, title: "Earlier chat" },
+        });
+        const { mockFn, done } = streamOf("a1");
+        plugin.api.chatStream = mockFn;
+        const { view, container } = await openChat(plugin);
+
+        await send(container, "q1", done);
+        await (view as any).resumeSession("s5");
+        create.resolve(createdDetail("s9"));
+        await tick();
+        await tick();
+
+        expect((view as any).sessionId).toBe("s5");
+    });
+
+    it("a store failure from a previous conversation doesn't unbind a resumed one", async () => {
+        const plugin = makePlugin();
+        const create = deferred<ReturnType<typeof createdDetail>>();
+        plugin.api.createSession = vi.fn().mockReturnValue(create.promise);
+        plugin.api.getSession = vi.fn().mockResolvedValue(createdDetail("s5"));
+        const { mockFn, done } = streamOf("a1");
+        plugin.api.chatStream = mockFn;
+        const { view, container } = await openChat(plugin);
+
+        await send(container, "q1", done);
+        await (view as any).resumeSession("s5");
+        create.reject(new Error("store down"));
+        await tick();
+        await tick();
+
+        expect((view as any).sessionId).toBe("s5");
+    });
+
     it("clearing the chat unbinds the session so the next turn opens a new one", async () => {
         const plugin = makePlugin();
         const first = streamOf("a1");
