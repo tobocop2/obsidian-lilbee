@@ -22,6 +22,8 @@ export class SessionsModal extends Modal {
     private filter = "";
     private renamingId: string | null = null;
     private loadFailed = false;
+    /** True when the server said sessions are switched off; renders the turn-on offer. */
+    private disabled = false;
     private listEl: HTMLElement | null = null;
     private countEl: HTMLElement | null = null;
 
@@ -67,17 +69,41 @@ export class SessionsModal extends Modal {
     private async load(): Promise<void> {
         try {
             this.sessions = await this.plugin.api.listSessions();
+            this.loadFailed = false;
+            this.disabled = false;
         } catch (err) {
             this.loadFailed = true;
             // The server 404s every session route when sessions_enabled is off.
             if (err instanceof Error && isHttpStatus(err, 404)) {
-                new Notice(MESSAGES.SESSIONS_DISABLED);
+                this.disabled = true;
             } else {
                 const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
                 new Notice(MESSAGES.ERROR_SESSIONS_LOAD_FAILED(reason));
             }
         }
         this.renderList();
+    }
+
+    /** Flip the server's writable `sessions_enabled` flag, then reload the list. */
+    private async enableSessions(): Promise<void> {
+        try {
+            await this.plugin.api.updateConfig({ sessions_enabled: true });
+        } catch (err) {
+            const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
+            new Notice(MESSAGES.ERROR_SESSIONS_ENABLE_FAILED(reason));
+            return;
+        }
+        await this.load();
+    }
+
+    private renderDisabledState(container: HTMLElement): void {
+        const box = container.createDiv({ cls: "lilbee-sessions-disabled" });
+        box.createDiv({ cls: "lilbee-sessions-disabled-text", text: MESSAGES.SESSIONS_DISABLED });
+        const enableBtn = box.createEl("button", {
+            cls: "lilbee-sessions-enable",
+            text: MESSAGES.LABEL_ENABLE_SESSIONS,
+        });
+        enableBtn.addEventListener("click", () => void this.enableSessions());
     }
 
     /** Case-insensitive substring on the title, matching the TUI's filter. */
@@ -94,6 +120,10 @@ export class SessionsModal extends Modal {
         this.countEl?.setText(MESSAGES.SESSIONS_COUNT(rows.length));
 
         if (rows.length === 0) {
+            if (this.disabled) {
+                this.renderDisabledState(this.listEl);
+                return;
+            }
             if (this.loadFailed) return;
             const empty = this.sessions.length === 0 ? MESSAGES.SESSIONS_EMPTY : MESSAGES.SESSIONS_NO_MATCH;
             this.listEl.createDiv({ cls: "lilbee-sessions-empty", text: empty });

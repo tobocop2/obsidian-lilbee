@@ -539,8 +539,8 @@ export const MESSAGES = {
     SESSIONS_NO_MATCH: "No conversations match that filter.",
     SESSIONS_ROW_META: (count: number, model: string): string => `${count} msgs · ${model}`,
     SESSIONS_UNTITLED: "Untitled chat",
-    SESSIONS_DISABLED:
-        "Saved conversations are turned off on this server. Set sessions_enabled = true in its config.toml to use them.",
+    SESSIONS_DISABLED: "Saved conversations are turned off on this server.",
+    LABEL_ENABLE_SESSIONS: "Turn on",
     NOTICE_SESSION_RESUMED: (title: string): string => `Resumed · ${title}`,
     NOTICE_SESSION_NEW: "Started a new chat",
     NOTICE_SESSION_DELETED: (title: string): string => `Deleted · ${title}`,
@@ -551,6 +551,7 @@ export const MESSAGES = {
     ERROR_SESSION_RESUME_FAILED: (reason: string): string => `Could not resume conversation: ${reason}`,
     ERROR_SESSION_RENAME_FAILED: (reason: string): string => `Could not rename conversation: ${reason}`,
     ERROR_SESSION_DELETE_FAILED: (reason: string): string => `Could not delete conversation: ${reason}`,
+    ERROR_SESSIONS_ENABLE_FAILED: (reason: string): string => `Could not turn on saved conversations: ${reason}`,
     TITLE_CRAWL_WEB_PAGE: "Crawl web page",
     TITLE_DOWNLOAD_MODEL: "Download model?",
     TITLE_WELCOME: "Welcome to lilbee",

@@ -4848,6 +4848,32 @@ button.lilbee-model-chip-select:focus-visible {
     color: var(--text-muted);
 }
 
+.lilbee-sessions-disabled {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-4, 16px);
+}
+
+.lilbee-sessions-disabled-text {
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.lilbee-sessions-enable {
+    padding: var(--size-4-1, 4px) var(--size-4-3, 12px);
+    background: var(--interactive-accent);
+    border: none;
+    border-radius: var(--radius-s, 4px);
+    color: var(--text-on-accent);
+    cursor: pointer;
+}
+
+.lilbee-sessions-enable:hover {
+    background: var(--interactive-accent-hover);
+}
+
 .lilbee-session-row {
     display: flex;
     align-items: center;

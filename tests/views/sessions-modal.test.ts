@@ -38,6 +38,7 @@ function makePlugin(sessions: SessionMeta[] = []) {
             listSessions: vi.fn().mockResolvedValue(sessions),
             renameSession: vi.fn().mockResolvedValue({ id: "s1", title: "Renamed" }),
             deleteSession: vi.fn().mockResolvedValue({ id: "s1", deleted: true }),
+            updateConfig: vi.fn().mockResolvedValue({}),
         },
         settings: { serverMode: "managed" },
     };
@@ -187,15 +188,47 @@ describe("SessionsModal", () => {
         expect(collectTexts(el)).not.toContain(MESSAGES.SESSIONS_EMPTY);
     });
 
-    it("says sessions are off when the server 404s the list route", async () => {
-        const plugin = makePlugin();
-        plugin.api.listSessions = vi
-            .fn()
-            .mockRejectedValue(new Error('Server responded 404: {"detail":"Sessions are off."}'));
-        const { el } = await openModal(plugin, makeHooks());
+    describe("sessions turned off on the server", () => {
+        const disabledError = new Error('Server responded 404: {"detail":"Sessions are off."}');
 
-        expect(Notice.instances.some((n) => n.message === MESSAGES.SESSIONS_DISABLED)).toBe(true);
-        expect(el.findAll("lilbee-session-row")).toHaveLength(0);
+        it("offers to turn sessions on instead of an error when the list route 404s", async () => {
+            const plugin = makePlugin();
+            plugin.api.listSessions = vi.fn().mockRejectedValue(disabledError);
+            const { el } = await openModal(plugin, makeHooks());
+
+            expect(collectTexts(el)).toContain(MESSAGES.SESSIONS_DISABLED);
+            expect(el.find("lilbee-sessions-enable")).not.toBeNull();
+            expect(el.findAll("lilbee-session-row")).toHaveLength(0);
+            expect(Notice.instances).toHaveLength(0);
+        });
+
+        it("turning sessions on writes the config flag and loads the list", async () => {
+            const plugin = makePlugin();
+            plugin.api.listSessions = vi.fn().mockRejectedValueOnce(disabledError).mockResolvedValue([makeSession()]);
+            const { el } = await openModal(plugin, makeHooks());
+
+            el.find("lilbee-sessions-enable")!.trigger("click");
+            await vi.runAllTimersAsync();
+
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ sessions_enabled: true });
+            expect(el.find("lilbee-sessions-enable")).toBeNull();
+            expect(el.findAll("lilbee-session-row")).toHaveLength(1);
+        });
+
+        it("keeps the turn-on offer and notices when the config write fails", async () => {
+            const plugin = makePlugin();
+            plugin.api.listSessions = vi.fn().mockRejectedValue(disabledError);
+            plugin.api.updateConfig = vi.fn().mockRejectedValue(new Error("boom"));
+            const { el } = await openModal(plugin, makeHooks());
+
+            el.find("lilbee-sessions-enable")!.trigger("click");
+            await vi.runAllTimersAsync();
+
+            expect(Notice.instances.some((n) => n.message.includes("Could not turn on saved conversations"))).toBe(
+                true,
+            );
+            expect(el.find("lilbee-sessions-enable")).not.toBeNull();
+        });
     });
 
     describe("rename", () => {
