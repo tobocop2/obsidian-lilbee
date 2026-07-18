@@ -647,8 +647,8 @@ describe("LilbeeSettingTab", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // [0] auto-update, [1] includeDevBuilds (managed server section), [2] show_reasoning (Chat), [3] adaptiveThreshold.
-            await toggleOnChanges[3](true);
+            // [0] auto-update, [1] includeDevBuilds (managed server section), [2] show_reasoning, [3] chat_compaction (Chat), [4] adaptiveThreshold.
+            await toggleOnChanges[4](true);
             expect(plugin.settings.adaptiveThreshold).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
         });
@@ -3363,10 +3363,10 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            // Toggle order: [0] auto-update, [1] includeDevBuilds (managed server), [2] show_reasoning (Chat),
-            // [3] adaptiveThreshold (search/retrieval), [4] worker_pool_eager_start (worker-pool),
-            // [5] crawl_retry_on_rate_limit (crawling), [6+] wiki toggles.
-            await toggleOnChanges[5](false);
+            // Toggle order: [0] auto-update, [1] includeDevBuilds (managed server), [2] show_reasoning,
+            // [3] chat_compaction (Chat), [4] adaptiveThreshold (search/retrieval), [5] worker_pool_eager_start
+            // (worker-pool), [6] crawl_retry_on_rate_limit (crawling), [7+] wiki toggles.
+            await toggleOnChanges[6](false);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: false });
         });
 
@@ -3377,7 +3377,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[5](false);
+            await toggleOnChanges[6](false);
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -3534,9 +3534,9 @@ describe("managed mode settings", () => {
             // load-bearing (if the flag failed to set, updateConfig WOULD be called).
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = false;
-            // toggleOnChanges[5] is crawl_retry_on_rate_limit; [0]=auto-update, [1]=includeDevBuilds,
-            // [2]=show_reasoning, [3]=adaptiveThreshold, [4]=worker_pool_eager_start.
-            await toggleOnChanges[5](true);
+            // toggleOnChanges[6] is crawl_retry_on_rate_limit; [0]=auto-update, [1]=includeDevBuilds,
+            // [2]=show_reasoning, [3]=chat_compaction, [4]=adaptiveThreshold, [5]=worker_pool_eager_start.
+            await toggleOnChanges[6](true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: true });
         });
 
@@ -3548,7 +3548,7 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = true;
-            await toggleOnChanges[5](true);
+            await toggleOnChanges[6](true);
             (tab as any).suppressToggleChanges = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
@@ -6728,7 +6728,7 @@ describe("managed mode settings", () => {
         // ([0]=adaptiveThreshold).
         const POOL_CALL_TIMEOUT_IDX = 19;
         const POOL_MAX_IDLE_IDX = 20;
-        const POOL_EAGER_TOGGLE_IDX = 4;
+        const POOL_EAGER_TOGGLE_IDX = 5;
 
         it("hides each worker-pool row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
@@ -6849,6 +6849,45 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = true;
             await toggleOnChanges[SHOW_REASONING_TOGGLE_IDX](true);
+            (tab as any).suppressToggleChanges = false;
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("chat compaction toggle", () => {
+        // Rendered directly after show_reasoning in the Chat section.
+        const CHAT_COMPACTION_TOGGLE_IDX = 3;
+
+        it("PATCHes chat_compaction when the toggle flips", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await toggleOnChanges[CHAT_COMPACTION_TOGGLE_IDX](true);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chat_compaction: true });
+        });
+
+        it("surfaces a notice when the chat_compaction PATCH fails", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            await toggleOnChanges[CHAT_COMPACTION_TOGGLE_IDX](true);
+            expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+        });
+
+        it("suppresses chat_compaction echo-patches while the suppress flag is set", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            (tab as any).suppressToggleChanges = true;
+            await toggleOnChanges[CHAT_COMPACTION_TOGGLE_IDX](true);
             (tab as any).suppressToggleChanges = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });

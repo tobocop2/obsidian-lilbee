@@ -15,6 +15,7 @@ import type {
     CatalogResponse,
     ConfigResponse,
     ConfigUpdateResponse,
+    ConversationState,
     CrawlRenderMode,
     DatasetFormat,
     DocumentResult,
@@ -488,6 +489,7 @@ export class LilbeeClient {
         signal?: AbortSignal,
         options?: GenerationOptions,
         chunkType?: SearchChunkType,
+        conversation?: ConversationState,
     ): AsyncGenerator<SSEEvent, void> {
         // Omitted top_k uses the server's configured default; an explicit 0 disables retrieval.
         const body: Record<string, unknown> = { question, history };
@@ -495,6 +497,8 @@ export class LilbeeClient {
         if (options && Object.keys(options).length > 0) body.options = options;
         // "all" is the UI-side label for no filter; the field is omitted on the wire.
         if (chunkType && chunkType !== SEARCH_CHUNK_TYPE.ALL) body.chunk_type = chunkType;
+        if (conversation?.summary) body.summary = conversation.summary;
+        if (conversation?.sessionId) body.session_id = conversation.sessionId;
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/chat/stream`,
             {

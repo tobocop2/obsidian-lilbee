@@ -410,6 +410,31 @@ describe("chatStream()", () => {
         expect(body.chunk_type).toBe("wiki");
     });
 
+    it("carries the conversation's summary and session id on the wire", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(
+            client.chatStream("q", [], 0, undefined, undefined, undefined, {
+                summary: "the notes",
+                sessionId: "s1",
+            }),
+        );
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(body.summary).toBe("the notes");
+        expect(body.session_id).toBe("s1");
+    });
+
+    it("omits empty conversation state so a fresh chat sends a lean body", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+
+        await collect(client.chatStream("q", [], 0, undefined, undefined, undefined, { summary: "", sessionId: null }));
+
+        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect("summary" in body).toBe(false);
+        expect("session_id" in body).toBe(false);
+    });
+
     it("includes chunk_type when chunkType is 'raw'", async () => {
         fetchMock.mockResolvedValue(sseResponse([]));
 

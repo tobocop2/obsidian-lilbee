@@ -125,6 +125,7 @@ export interface ConfigResponse {
     tesseract_timeout?: number;
     max_tokens?: number;
     show_reasoning?: boolean;
+    chat_compaction?: boolean;
     max_reasoning_chars?: number;
     model_keep_alive?: string;
     gpu_memory_fraction?: number;
@@ -171,6 +172,7 @@ export const CONFIG_KEY = {
     GENERAL_SYSTEM_PROMPT: "general_system_prompt",
     CHAT_MODE: "chat_mode",
     SHOW_REASONING: "show_reasoning",
+    CHAT_COMPACTION: "chat_compaction",
     CRAWL_RENDER_MODE: "crawl_render_mode",
 } as const;
 
@@ -341,6 +343,20 @@ export interface SessionDetail {
 
 export interface SessionListResponse {
     sessions: SessionMeta[];
+}
+
+/** Data of a `compaction` SSE event: what a chat turn folded away before answering. */
+export interface CompactionEventData {
+    summary: string;
+    condensed: number;
+    /** Turns dropped with no notes; shown plainly rather than hidden. */
+    stranded: number;
+}
+
+/** Conversation state a chat stream carries so the server can window and compact it. */
+export interface ConversationState {
+    summary: string;
+    sessionId: string | null;
 }
 
 export interface SessionRenameResponse {
@@ -676,6 +692,8 @@ export const SSE_EVENT = {
     SOURCES: "sources",
     DONE: "done",
     ERROR: "error",
+    COMPACTING: "compacting",
+    COMPACTION: "compaction",
     PROGRESS: "progress",
     MESSAGE: "message",
     FILE_START: "file_start",

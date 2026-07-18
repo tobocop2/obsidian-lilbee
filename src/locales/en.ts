@@ -173,6 +173,7 @@ export const MESSAGES = {
     LABEL_GEN_SEED: "Seed",
     LABEL_GEN_MAX_TOKENS: "Max tokens",
     LABEL_SHOW_REASONING: "Show thinking",
+    LABEL_CHAT_COMPACTION: "Condense long conversations",
     LABEL_GEN_MAX_REASONING_CHARS: "Max reasoning characters",
     LABEL_GEN_MODEL_KEEP_ALIVE: "Model keep-alive (s)",
     LABEL_GEN_GPU_MEMORY_FRACTION: "GPU memory fraction",
@@ -460,6 +461,8 @@ export const MESSAGES = {
     DESC_GEN_MAX_TOKENS: "Hard cap on generated tokens per response (blank = no cap)",
     DESC_SHOW_REASONING:
         "Show a reasoning model's thinking in the chat, in a collapsible block above each answer. Off strips it.",
+    DESC_CHAT_COMPACTION:
+        "When a conversation outgrows the model's context, fold the oldest messages into a summary instead of dropping them.",
     DESC_GEN_MAX_REASONING_CHARS:
         "Maximum reasoning characters before lilbee forces the model to answer (per-model overrides apply on top)",
     DESC_GEN_MODEL_KEEP_ALIVE: "Seconds the loaded model stays warm between calls (0 = unload immediately)",
@@ -539,6 +542,11 @@ export const MESSAGES = {
     SESSIONS_NO_MATCH: "No conversations match that filter.",
     SESSIONS_ROW_META: (count: number, model: string): string => `${count} msgs · ${model}`,
     SESSIONS_UNTITLED: "Untitled chat",
+    CHAT_COMPACTING: "Condensing earlier messages…",
+    CHAT_COMPACTED: (count: number): string => `Condensed ${count} earlier messages into a summary`,
+    CHAT_COMPACTED_PARTIAL: (condensed: number, stranded: number): string =>
+        `Condensed ${condensed} earlier messages into a summary · ${stranded} dropped`,
+    CHAT_STRANDED: (count: number): string => `${count} earlier messages no longer fit and were dropped`,
     SESSIONS_DISABLED: "Saved conversations are turned off on this server.",
     LABEL_ENABLE_SESSIONS: "Turn on",
     NOTICE_SESSION_RESUMED: (title: string): string => `Resumed · ${title}`,

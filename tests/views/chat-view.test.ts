@@ -22,7 +22,7 @@ if (typeof (globalThis as any).activeDocument === "undefined") {
 
 import { App, Menu, MockMenuItem, MockMenuSeparator, Notice, Platform, WorkspaceLeaf } from "../__mocks__/obsidian";
 import { MockElement } from "../__mocks__/obsidian";
-import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal } from "../../src/views/chat-view";
+import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal, compactionMarkerText } from "../../src/views/chat-view";
 import { electronDialog } from "../../src/utils/file-dialog";
 import { ok, err } from "../../src/result";
 import type LilbeePlugin from "../../src/main";
@@ -483,7 +483,10 @@ describe("ChatView.onOpen — send button triggers send", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
 
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("hello", [], 5, expect.any(AbortSignal), undefined, "all");
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("hello", [], 5, expect.any(AbortSignal), undefined, "all", {
+            summary: "",
+            sessionId: null,
+        });
     });
 
     it("clears textarea value after send", async () => {
@@ -3097,7 +3100,10 @@ describe("ChatView.sendMessage — does not send generation overrides", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
 
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("hi", [], 5, expect.any(AbortSignal), undefined, "all");
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("hi", [], 5, expect.any(AbortSignal), undefined, "all", {
+            summary: "",
+            sessionId: null,
+        });
     });
 });
 
@@ -3115,7 +3121,10 @@ describe("ChatView.sendMessage — forwards searchChunkType", () => {
         textarea.value = "q";
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "wiki");
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "wiki", {
+            summary: "",
+            sessionId: null,
+        });
     });
 
     it("passes 'raw' when the setting is 'raw'", async () => {
@@ -3131,7 +3140,10 @@ describe("ChatView.sendMessage — forwards searchChunkType", () => {
         textarea.value = "q";
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "raw");
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "raw", {
+            summary: "",
+            sessionId: null,
+        });
     });
 });
 
@@ -4803,6 +4815,22 @@ describe("ChatView.sendMessage — memory_extracted", () => {
     });
 });
 
+describe("compactionMarkerText", () => {
+    it("names what was condensed", () => {
+        expect(compactionMarkerText({ summary: "n", condensed: 3, stranded: 0 })).toBe(MESSAGES.CHAT_COMPACTED(3));
+    });
+
+    it("says plainly when some turns were dropped alongside the notes", () => {
+        expect(compactionMarkerText({ summary: "n", condensed: 3, stranded: 2 })).toBe(
+            MESSAGES.CHAT_COMPACTED_PARTIAL(3, 2),
+        );
+    });
+
+    it("says plainly when turns were dropped with no notes at all", () => {
+        expect(compactionMarkerText({ summary: "", condensed: 0, stranded: 4 })).toBe(MESSAGES.CHAT_STRANDED(4));
+    });
+});
+
 describe("ChatView — chat sessions", () => {
     beforeEach(() => {
         Notice.clear();
@@ -5014,6 +5042,123 @@ describe("ChatView — chat sessions", () => {
         await send(container, "q2", second.done);
 
         expect(plugin.api.createSession).toHaveBeenCalledTimes(2);
+    });
+
+    describe("compaction over the wire", () => {
+        function compactionStream(data: { summary: string; condensed: number; stranded: number }) {
+            return makeStream([
+                { event: SSE_EVENT.COMPACTING, data: {} },
+                { event: SSE_EVENT.COMPACTION, data },
+                { event: SSE_EVENT.TOKEN, data: { token: "a2" } },
+                { event: SSE_EVENT.DONE, data: {} },
+            ]);
+        }
+
+        it("marks the fold in the transcript and adopts the new summary", async () => {
+            const plugin = makePlugin();
+            const first = streamOf("a1");
+            plugin.api.chatStream = first.mockFn;
+            const { view, container, messagesEl } = await openChat(plugin);
+            await send(container, "q1", first.done);
+
+            const second = compactionStream({ summary: "the notes", condensed: 2, stranded: 0 });
+            plugin.api.chatStream = second.mockFn;
+            await send(container, "q2", second.done);
+
+            const marker = messagesEl.find("lilbee-chat-compaction");
+            expect(marker).not.toBeNull();
+            expect(marker!.textContent).toBe(MESSAGES.CHAT_COMPACTED(2));
+            expect((view as any).summary).toBe("the notes");
+        });
+
+        it("sends the trimmed history and the summary on the following turn", async () => {
+            const plugin = makePlugin();
+            const first = streamOf("a1");
+            plugin.api.chatStream = first.mockFn;
+            const { container } = await openChat(plugin);
+            await send(container, "q1", first.done);
+
+            const second = compactionStream({ summary: "the notes", condensed: 2, stranded: 0 });
+            plugin.api.chatStream = second.mockFn;
+            await send(container, "q2", second.done);
+
+            const third = streamOf("a3");
+            plugin.api.chatStream = third.mockFn;
+            await send(container, "q3", third.done);
+
+            // q1/a1 were folded away; the model's view resumes at q2.
+            expect(third.mockFn.mock.calls[0][1]).toEqual([
+                { role: "user", content: "q2" },
+                { role: "assistant", content: "a2" },
+            ]);
+            expect(third.mockFn.mock.calls[0][6]).toEqual({ summary: "the notes", sessionId: "s1" });
+        });
+
+        it("keeps one marker when the server announces condensing twice", async () => {
+            const plugin = makePlugin();
+            const { mockFn, done } = makeStream([
+                { event: SSE_EVENT.COMPACTING, data: {} },
+                { event: SSE_EVENT.COMPACTING, data: {} },
+                { event: SSE_EVENT.TOKEN, data: { token: "a1" } },
+                { event: SSE_EVENT.DONE, data: {} },
+            ]);
+            plugin.api.chatStream = mockFn;
+            const { container, messagesEl } = await openChat(plugin);
+            await send(container, "q1", done);
+
+            expect(messagesEl.findAll("lilbee-chat-compaction")).toHaveLength(1);
+            expect(messagesEl.find("lilbee-chat-compaction")!.textContent).toBe(MESSAGES.CHAT_COMPACTING);
+        });
+
+        it("adopts a compaction that arrived without its announcement", async () => {
+            const plugin = makePlugin();
+            const { mockFn, done } = makeStream([
+                { event: SSE_EVENT.COMPACTION, data: { summary: "notes", condensed: 1, stranded: 0 } },
+                { event: SSE_EVENT.TOKEN, data: { token: "a1" } },
+                { event: SSE_EVENT.DONE, data: {} },
+            ]);
+            plugin.api.chatStream = mockFn;
+            const { view, container, messagesEl } = await openChat(plugin);
+            await send(container, "q1", done);
+
+            expect((view as any).summary).toBe("notes");
+            expect(messagesEl.find("lilbee-chat-compaction")).toBeNull();
+        });
+
+        it("ignores a condensing announcement after the messages pane is gone", async () => {
+            const plugin = makePlugin();
+            const { view } = await openChat(plugin);
+            const el = new MockElement() as unknown as HTMLElement;
+            const state = { compactionEl: null, anchorEl: el };
+
+            (view as any).messagesEl = null;
+            (view as any).handleStreamEvent(
+                { event: SSE_EVENT.COMPACTING, data: {} },
+                el,
+                el,
+                state,
+                () => {},
+                () => {},
+            );
+
+            expect(state.compactionEl).toBeNull();
+        });
+
+        it("a resumed conversation carries its stored summary into the next turn", async () => {
+            const plugin = makePlugin();
+            plugin.api.getSession = vi.fn().mockResolvedValue({
+                ...createdDetail("s5"),
+                summary: "stored notes",
+            });
+            const { view, container } = await openChat(plugin);
+            await (view as any).resumeSession("s5");
+
+            const { mockFn, done } = streamOf("a1");
+            plugin.api.chatStream = mockFn;
+            await send(container, "q", done);
+
+            expect(mockFn.mock.calls[0][6]).toEqual({ summary: "stored notes", sessionId: "s5" });
+        });
     });
 });
 

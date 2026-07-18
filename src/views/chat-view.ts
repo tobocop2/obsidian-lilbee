@@ -25,6 +25,7 @@ import {
 import type {
     CatalogEntry,
     ChatMode,
+    CompactionEventData,
     InstalledModel,
     MemoryExtractedData,
     Message,
@@ -115,6 +116,10 @@ interface StreamState {
     /** Set at DONE/stop/error so a queued animation-frame plain-text repaint
      *  can't overwrite the final markdown render. */
     streamEnded: boolean;
+    /** The turn's user bubble; compaction markers are inserted above it. */
+    anchorEl: HTMLElement;
+    /** Marker shown while the server condenses, then updated with the outcome. */
+    compactionEl: HTMLElement | null;
 }
 
 const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
@@ -162,11 +167,20 @@ export function plainStream(md: string): string {
     return md.replace(/\*\*/g, "").replace(/`/g, "");
 }
 
+/** Boundary wording for a compaction: what was condensed, and what was dropped outright. */
+export function compactionMarkerText(data: CompactionEventData): string {
+    if (data.condensed > 0 && data.stranded > 0) return MESSAGES.CHAT_COMPACTED_PARTIAL(data.condensed, data.stranded);
+    if (data.stranded > 0) return MESSAGES.CHAT_STRANDED(data.stranded);
+    return MESSAGES.CHAT_COMPACTED(data.condensed);
+}
+
 export class ChatView extends ItemView {
     private plugin: LilbeePlugin;
     private history: Message[] = [];
     /** Server-side conversation this view appends to. Null until the first turn opens one. */
     private sessionId: string | null = null;
+    /** Carry-forward compaction notes; sent with each turn and replaced by `compaction` events. */
+    private summary = "";
     /** Bumped when the transcript is replaced or cleared; stale queued writes check it and no-op. */
     private conversationEpoch = 0;
     /** Serializes session writes: the log is append-only, so turns must land in order. */
@@ -851,6 +865,7 @@ export class ChatView extends ItemView {
     private clearChat(): void {
         this.history = [];
         this.sessionId = null;
+        this.summary = "";
         this.conversationEpoch++;
         if (this.messagesEl) this.messagesEl.empty();
     }
@@ -926,6 +941,7 @@ export class ChatView extends ItemView {
         }
         this.clearChat();
         this.sessionId = detail.meta.id;
+        this.summary = detail.summary;
         this.hideEmptyState();
 
         if (detail.summary) this.renderSummaryBoundary(detail.summary);
@@ -1031,6 +1047,8 @@ export class ChatView extends ItemView {
             reasoningDetailsEl: null,
             answerStarted: false,
             streamEnded: false,
+            anchorEl: userBubble,
+            compactionEl: null,
         };
 
         const spinnerCreatedAt = Date.now();
@@ -1070,6 +1088,7 @@ export class ChatView extends ItemView {
                 this.streamController.signal,
                 undefined,
                 this.plugin.settings.searchChunkType,
+                { summary: this.summary, sessionId: this.sessionId },
             )) {
                 this.handleStreamEvent(event, textEl, assistantBubble, state, revealContent, scheduleRender);
             }
@@ -1117,6 +1136,23 @@ export class ChatView extends ItemView {
         scheduleRender: () => void,
     ): void {
         switch (event.event) {
+            case SSE_EVENT.COMPACTING: {
+                if (this.messagesEl && !state.compactionEl) {
+                    state.compactionEl = this.messagesEl.createDiv({
+                        cls: "lilbee-chat-compaction",
+                        text: MESSAGES.CHAT_COMPACTING,
+                    });
+                    this.messagesEl.insertBefore(state.compactionEl, state.anchorEl);
+                }
+                break;
+            }
+            case SSE_EVENT.COMPACTION: {
+                const data = event.data as unknown as CompactionEventData;
+                this.summary = data.summary;
+                this.history.splice(0, data.condensed + data.stranded);
+                if (state.compactionEl) state.compactionEl.setText(compactionMarkerText(data));
+                break;
+            }
             case SSE_EVENT.TOKEN: {
                 revealContent();
                 // First answer token: collapse the reasoning block.
