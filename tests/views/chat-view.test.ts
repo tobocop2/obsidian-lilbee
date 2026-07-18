@@ -207,8 +207,34 @@ function makePlugin(): LilbeePlugin {
             config: vi.fn().mockResolvedValue({ chat_model: "llama3", embedding_model: "nomic-embed-text" }),
             listSessions: vi.fn().mockResolvedValue([]),
             getSession: vi.fn(),
-            createSession: vi.fn().mockResolvedValue({ id: "s1" }),
-            appendSessionMessage: vi.fn().mockResolvedValue({ id: "s1", message_count: 1 }),
+            createSession: vi.fn().mockResolvedValue({
+                meta: {
+                    id: "s1",
+                    title: "Untitled chat",
+                    created_at: "2026-07-16T00:00:00Z",
+                    updated_at: "2026-07-16T00:00:00Z",
+                    model_ref: "llama3",
+                    scope: "both",
+                    message_count: 0,
+                    origin: "http",
+                },
+                messages: [],
+                summary: "",
+            }),
+            appendSessionMessage: vi.fn().mockResolvedValue({
+                meta: {
+                    id: "s1",
+                    title: "Untitled chat",
+                    created_at: "2026-07-16T00:00:00Z",
+                    updated_at: "2026-07-16T00:00:00Z",
+                    model_ref: "llama3",
+                    scope: "both",
+                    message_count: 1,
+                    origin: "http",
+                },
+                messages: [],
+                summary: "",
+            }),
             renameSession: vi.fn().mockResolvedValue({ id: "s1", title: "t" }),
             deleteSession: vi.fn().mockResolvedValue({ id: "s1", deleted: true }),
         },
@@ -4813,7 +4839,21 @@ describe("ChatView — chat sessions", () => {
 
         await send(container, "What is a bee?\nsecond line", done);
 
-        expect(plugin.api.createSession).toHaveBeenCalledWith("llama3", "both", "What is a bee?");
+        expect(plugin.api.createSession).toHaveBeenCalledWith("llama3", "both");
+        expect(plugin.api.renameSession).toHaveBeenCalledWith("s1", "What is a bee?");
+    });
+
+    it("keeps persisting turns when the title write fails", async () => {
+        const plugin = makePlugin();
+        plugin.api.renameSession = vi.fn().mockRejectedValue(new Error("store hiccup"));
+        const { mockFn, done } = streamOf("an answer");
+        plugin.api.chatStream = mockFn;
+        const { container } = await openChat(plugin);
+
+        await send(container, "q", done);
+
+        const calls = (plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>).mock.calls;
+        expect(calls[0]).toEqual(["s1", "user", "q", []]);
     });
 
     it("persists the user turn and then the assistant turn with its source paths", async () => {
@@ -4904,12 +4944,13 @@ describe("ChatView — resuming a session", () => {
                 model_ref: "llama3",
                 scope: "both",
                 message_count: 2,
+                origin: "http",
             },
             messages: [
                 { role: "user", content: "old question", sources: [], ts: "t1" },
                 { role: "assistant", content: "old answer", sources: ["notes.md"], ts: "t2" },
             ],
-            summary: null,
+            summary: "",
             ...overrides,
         };
     }
@@ -5149,7 +5190,7 @@ describe("ChatView — sessions toolbar button", () => {
                 message_count: 1,
             },
             messages: [{ role: "user", content: "old question", sources: [], ts: "t" }],
-            summary: null,
+            summary: "",
         });
         const { container, messagesEl } = await openChat(plugin);
         container.find("lilbee-chat-sessions")!.trigger("click");
@@ -5200,7 +5241,7 @@ describe("ChatView — restored session guards", () => {
                 message_count: 1,
             },
             messages: [{ role: "assistant", content: "answer", sources: ["notes.md"], ts: "t" }],
-            summary: null,
+            summary: "",
         });
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -5240,7 +5281,7 @@ describe("ChatView — restored session guards", () => {
                     message_count: 0,
                 },
                 messages: [],
-                summary: null,
+                summary: "",
             });
         });
         const view = new ChatView(makeLeaf(), plugin);
@@ -5267,7 +5308,7 @@ describe("ChatView — restored turns without sources", () => {
                 message_count: 1,
             },
             messages: [{ role: "assistant", content: "answer", sources: [], ts: "t" }],
-            summary: null,
+            summary: "",
         });
         const view = new ChatView(makeLeaf(), plugin);
         await view.onOpen();
@@ -5298,7 +5339,7 @@ describe("ChatView — resume interactions with live state", () => {
                 message_count: 1,
             },
             messages: [{ role: "user", content: "old question", sources: [], ts: "t" }],
-            summary: null,
+            summary: "",
         };
     }
 

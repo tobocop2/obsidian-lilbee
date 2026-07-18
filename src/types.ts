@@ -320,6 +320,8 @@ export interface SessionMeta {
     model_ref: string;
     scope: string;
     message_count: number;
+    /** Owning surface (`tui`/`http`/`cli`); the list route only returns these human origins. */
+    origin: string;
 }
 
 /** One persisted turn. `sources` are bare source paths, not the richer `Source` chat streams carry. */
@@ -330,24 +332,15 @@ export interface SessionMessageItem {
     ts: string;
 }
 
-/** Body of `GET /api/sessions/{id}`. `summary` is null until compaction has folded turns away. */
+/** Body of `GET /api/sessions/{id}`, and of create/append. `summary` is `""` until compaction has folded turns away. */
 export interface SessionDetail {
     meta: SessionMeta;
     messages: SessionMessageItem[];
-    summary: string | null;
+    summary: string;
 }
 
 export interface SessionListResponse {
     sessions: SessionMeta[];
-}
-
-export interface SessionCreateResponse {
-    id: string;
-}
-
-export interface SessionAppendResponse {
-    id: string;
-    message_count: number;
 }
 
 export interface SessionRenameResponse {

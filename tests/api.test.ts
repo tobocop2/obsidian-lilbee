@@ -166,6 +166,7 @@ describe("session methods", () => {
         model_ref: "llama3",
         scope: "both",
         message_count: 2,
+        origin: "http",
     };
 
     it("listSessions() GETs /api/sessions and unwraps the array", async () => {
@@ -178,7 +179,7 @@ describe("session methods", () => {
     });
 
     it("getSession() GETs the detail route and returns meta, messages and summary", async () => {
-        const detail = { meta, messages: [{ role: "user", content: "hi", sources: [], ts: "t" }], summary: null };
+        const detail = { meta, messages: [{ role: "user", content: "hi", sources: [], ts: "t" }], summary: "" };
         fetchMock.mockResolvedValue(jsonResponse(detail));
 
         const result = await client.getSession("s1");
@@ -187,22 +188,27 @@ describe("session methods", () => {
         expect(result).toEqual(detail);
     });
 
-    it("createSession() POSTs the model ref, scope and derived title", async () => {
-        fetchMock.mockResolvedValue(jsonResponse({ id: "s9" }));
+    it("createSession() POSTs only the model ref and scope, and returns the created detail", async () => {
+        const created = { meta: { ...meta, id: "s9", message_count: 0 }, messages: [], summary: "" };
+        fetchMock.mockResolvedValue(jsonResponse(created));
 
-        const result = await client.createSession("llama3", "both", "What is a bee?");
+        const result = await client.createSession("llama3", "both");
 
         expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/sessions`, expect.objectContaining({ method: "POST" }));
         expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
             model_ref: "llama3",
             scope: "both",
-            title: "What is a bee?",
         });
-        expect(result).toEqual({ id: "s9" });
+        expect(result).toEqual(created);
     });
 
-    it("appendSessionMessage() POSTs the turn to the messages sub-route", async () => {
-        fetchMock.mockResolvedValue(jsonResponse({ id: "s1", message_count: 3 }));
+    it("appendSessionMessage() POSTs the turn and returns the updated detail", async () => {
+        const updated = {
+            meta: { ...meta, message_count: 3 },
+            messages: [{ role: "assistant", content: "an answer", sources: ["notes.md"], ts: "t" }],
+            summary: "",
+        };
+        fetchMock.mockResolvedValue(jsonResponse(updated));
 
         const result = await client.appendSessionMessage("s1", "assistant", "an answer", ["notes.md"]);
 
@@ -215,11 +221,11 @@ describe("session methods", () => {
             content: "an answer",
             sources: ["notes.md"],
         });
-        expect(result).toEqual({ id: "s1", message_count: 3 });
+        expect(result).toEqual(updated);
     });
 
     it("appendSessionMessage() defaults sources to an empty list", async () => {
-        fetchMock.mockResolvedValue(jsonResponse({ id: "s1", message_count: 1 }));
+        fetchMock.mockResolvedValue(jsonResponse({ meta, messages: [], summary: "" }));
 
         await client.appendSessionMessage("s1", "user", "a question");
 

@@ -870,8 +870,14 @@ export class ChatView extends ItemView {
     private async ensureSession(firstText: string): Promise<void> {
         if (this.sessionId) return;
         const scope = scopeFromChunkType(this.plugin.settings.searchChunkType);
-        const created = await this.plugin.api.createSession(this.chatActive, scope, deriveSessionTitle(firstText));
-        this.sessionId = created.id;
+        const created = await this.plugin.api.createSession(this.chatActive, scope);
+        this.sessionId = created.meta.id;
+        // The server auto-titles only TUI sessions; HTTP surfaces title their own via rename.
+        try {
+            await this.plugin.api.renameSession(created.meta.id, deriveSessionTitle(firstText));
+        } catch {
+            // A failed title write leaves the server's default; the transcript still persists.
+        }
     }
 
     /** Queue a session write. Never awaited by the chat path: persistence must not stall the answer. */

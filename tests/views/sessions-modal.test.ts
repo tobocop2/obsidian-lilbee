@@ -27,6 +27,7 @@ function makeSession(overrides: Partial<SessionMeta> = {}): SessionMeta {
         model_ref: "llama3",
         scope: "both",
         message_count: 4,
+        origin: "http",
         ...overrides,
     };
 }
@@ -184,6 +185,17 @@ describe("SessionsModal", () => {
         expect(Notice.instances.some((n) => n.message.includes("Could not load conversations"))).toBe(true);
         expect(el.findAll("lilbee-session-row")).toHaveLength(0);
         expect(collectTexts(el)).not.toContain(MESSAGES.SESSIONS_EMPTY);
+    });
+
+    it("says sessions are off when the server 404s the list route", async () => {
+        const plugin = makePlugin();
+        plugin.api.listSessions = vi
+            .fn()
+            .mockRejectedValue(new Error('Server responded 404: {"detail":"Sessions are off."}'));
+        const { el } = await openModal(plugin, makeHooks());
+
+        expect(Notice.instances.some((n) => n.message === MESSAGES.SESSIONS_DISABLED)).toBe(true);
+        expect(el.findAll("lilbee-session-row")).toHaveLength(0);
     });
 
     describe("rename", () => {

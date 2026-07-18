@@ -38,7 +38,7 @@ export function chunkTypeFromScope(scope: string): SearchChunkType | null {
 export function deriveSessionTitle(text: string): string {
     const stripped = text.trim();
     if (!stripped) return MESSAGES.SESSIONS_UNTITLED;
-    const first = stripped.split("\n")[0];
+    const first = stripped.split(/\r\n|[\r\n]/)[0];
     if (first.length > SESSION_TITLE_MAX_LEN) return first.slice(0, SESSION_TITLE_MAX_LEN) + TITLE_ELLIPSIS;
     return first;
 }

@@ -32,8 +32,6 @@ import type {
     MemoryRemoveResponse,
     Message,
     ModelShowResponse,
-    SessionAppendResponse,
-    SessionCreateResponse,
     SessionDeleteResponse,
     SessionDetail,
     SessionListResponse,
@@ -407,14 +405,14 @@ export class LilbeeClient {
         return (await res.json()) as SessionDetail;
     }
 
-    /** `title` is recorded as the auto-derived one; renames overwrite it as custom. */
-    async createSession(modelRef: string, scope: string, title: string): Promise<SessionCreateResponse> {
+    /** The server takes no title here; `renameSession` is the only HTTP title write. */
+    async createSession(modelRef: string, scope: string): Promise<SessionDetail> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions`, {
             method: "POST",
             headers: { ...JSON_HEADERS, ...this.authHeaders() },
-            body: JSON.stringify({ model_ref: modelRef, scope, title }),
+            body: JSON.stringify({ model_ref: modelRef, scope }),
         });
-        return (await res.json()) as SessionCreateResponse;
+        return (await res.json()) as SessionDetail;
     }
 
     async appendSessionMessage(
@@ -422,7 +420,7 @@ export class LilbeeClient {
         role: SessionRole,
         content: string,
         sources: string[] = [],
-    ): Promise<SessionAppendResponse> {
+    ): Promise<SessionDetail> {
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages`,
             {
@@ -431,7 +429,7 @@ export class LilbeeClient {
                 body: JSON.stringify({ role, content, sources }),
             },
         );
-        return (await res.json()) as SessionAppendResponse;
+        return (await res.json()) as SessionDetail;
     }
 
     async renameSession(sessionId: string, title: string): Promise<SessionRenameResponse> {

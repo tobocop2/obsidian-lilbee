@@ -1,5 +1,6 @@
 import { App, Modal, Notice, setIcon } from "obsidian";
 import type LilbeePlugin from "../main";
+import { isHttpStatus } from "../api";
 import type { SessionMeta } from "../types";
 import { ConfirmModal } from "./confirm-modal";
 import { MESSAGES } from "../locales/en";
@@ -68,8 +69,13 @@ export class SessionsModal extends Modal {
             this.sessions = await this.plugin.api.listSessions();
         } catch (err) {
             this.loadFailed = true;
-            const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
-            new Notice(MESSAGES.ERROR_SESSIONS_LOAD_FAILED(reason));
+            // The server 404s every session route when sessions_enabled is off.
+            if (err instanceof Error && isHttpStatus(err, 404)) {
+                new Notice(MESSAGES.SESSIONS_DISABLED);
+            } else {
+                const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
+                new Notice(MESSAGES.ERROR_SESSIONS_LOAD_FAILED(reason));
+            }
         }
         this.renderList();
     }

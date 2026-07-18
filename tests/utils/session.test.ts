@@ -38,6 +38,11 @@ describe("deriveSessionTitle", () => {
         expect(deriveSessionTitle("What is a bee?\nMore detail here")).toBe("What is a bee?");
     });
 
+    it("splits CRLF and bare-CR line endings like the server's splitlines", () => {
+        expect(deriveSessionTitle("What is a bee?\r\nMore detail")).toBe("What is a bee?");
+        expect(deriveSessionTitle("What is a bee?\rMore detail")).toBe("What is a bee?");
+    });
+
     it("trims surrounding whitespace", () => {
         expect(deriveSessionTitle("  spaced out  ")).toBe("spaced out");
     });
