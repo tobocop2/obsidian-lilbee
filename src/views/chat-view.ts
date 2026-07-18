@@ -1147,7 +1147,7 @@ export class ChatView extends ItemView {
                 break;
             }
             case SSE_EVENT.COMPACTION: {
-                const data = event.data as unknown as CompactionEventData;
+                const data = event.data as CompactionEventData;
                 this.summary = data.summary;
                 this.history.splice(0, data.condensed + data.stranded);
                 if (state.compactionEl) state.compactionEl.setText(compactionMarkerText(data));

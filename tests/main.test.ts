@@ -6181,6 +6181,12 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.some((n) => n.message.includes("behind the latest release"))).toBe(false);
         });
 
+        it("stays quiet when the server runs a build newer than the latest release", async () => {
+            const plugin = await setupExternal("0.6.90b420.dev722");
+            await (plugin as any).warnExternalServerOutdated();
+            expect(Notice.instances.some((n) => n.message.includes("behind the latest release"))).toBe(false);
+        });
+
         it("stays quiet when the server is unreachable", async () => {
             const { err } = await import("../src/result");
             const plugin = await setupExternal("0.6.60");
