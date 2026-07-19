@@ -545,11 +545,11 @@ export const MESSAGES = {
     CHAT_WARMING: "Loading the chat model…",
     CHAT_COMPACTING: "Condensing earlier messages…",
     CHAT_COMPACTING_PROGRESS: (batch: number, total: number): string =>
-        `Condensing earlier messages… (${batch}/${total})`,
-    CHAT_COMPACTED: (count: number): string => `Condensed ${count} earlier messages into a summary`,
+        `Condensing earlier messages… (${batch} of ${total})`,
+    CHAT_COMPACTED: (count: number): string => `${count} messages condensed into a summary`,
     CHAT_COMPACTED_PARTIAL: (condensed: number, stranded: number): string =>
-        `Condensed ${condensed} earlier messages into a summary · ${stranded} dropped`,
-    CHAT_STRANDED: (count: number): string => `${count} earlier messages no longer fit and were dropped`,
+        `${condensed} condensed, ${stranded} dropped without notes`,
+    CHAT_STRANDED: (count: number): string => `${count} earlier messages dropped without notes`,
     SESSIONS_DISABLED: "Saved conversations are turned off on this server.",
     LABEL_ENABLE_SESSIONS: "Turn on",
     NOTICE_SESSION_RESUMED: (title: string): string => `Resumed · ${title}`,

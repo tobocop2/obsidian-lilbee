@@ -58,6 +58,7 @@ import {
     getRelevantSystemMemoryGB,
     configString,
     isStreamInterruptedError,
+    setDeterminateProgress,
     streamInterruptedMessage,
 } from "../utils";
 import { SessionsModal } from "./sessions-modal";
@@ -71,6 +72,10 @@ export const VIEW_TYPE_CHAT = "lilbee-chat";
 
 /** Within this distance of the bottom the view counts as pinned and follows the stream. */
 const SCROLL_FOLLOW_THRESHOLD_PX = 80;
+
+/** Fold glyph on the compaction boundary; the warning glyph when turns were dropped outright. */
+const COMPACTION_ICON = "chevrons-down-up";
+const COMPACTION_LOSSY_ICON = "alert-triangle";
 
 /** Sentinel option value: selecting it opens the catalog instead of switching models. */
 const RAIL_BROWSE_KEY = "__lilbee_browse__";
@@ -119,8 +124,8 @@ interface StreamState {
     streamEnded: boolean;
     /** The turn's user bubble; compaction markers are inserted above it. */
     anchorEl: HTMLElement;
-    /** Marker shown while the server condenses, then updated with the outcome. */
-    compactionEl: HTMLElement | null;
+    /** The condensing card, held so progress can advance it and the outcome can settle it. */
+    compaction: CompactionMarker | null;
     /** The thinking-dots container; a warming label lands here and leaves with it. */
     spinnerEl: HTMLElement;
     /** Set once the server's `warming` event has been surfaced, so it renders once. */
@@ -170,6 +175,13 @@ export function extractBanner(data: unknown): string | null {
  *  code blocks, the lot — is rendered once when the message completes. */
 export function plainStream(md: string): string {
     return md.replace(/\*\*/g, "").replace(/`/g, "");
+}
+
+/** The condensing card's live parts: a title that counts batches and a progress fill. */
+interface CompactionMarker {
+    root: HTMLElement;
+    title: HTMLElement;
+    fill: HTMLElement;
 }
 
 /** Boundary wording for a compaction: what was condensed, and what was dropped outright. */
@@ -989,6 +1001,43 @@ export class ChatView extends ItemView {
         for (const [value, btn] of this.searchModeButtons) btn.toggleClass("active", value === active);
     }
 
+    /** The card shown while the server condenses: what is happening, and how far along. */
+    private openCompactionMarker(state: StreamState): void {
+        if (!this.messagesEl || state.compaction) return;
+        const root = this.messagesEl.createDiv({ cls: "lilbee-chat-compaction is-condensing" });
+        const head = root.createDiv({ cls: "lilbee-chat-compaction-head" });
+        setIcon(head.createSpan({ cls: "lilbee-chat-compaction-icon" }), COMPACTION_ICON);
+        const title = head.createSpan({ cls: "lilbee-chat-compaction-title", text: MESSAGES.CHAT_COMPACTING });
+        const bar = root.createDiv({ cls: "lilbee-progress-bar-container" });
+        const fill = bar.createDiv({ cls: "lilbee-progress-bar lilbee-wizard-progress-indeterminate" });
+        this.messagesEl.insertBefore(root, state.anchorEl);
+        state.compaction = { root, title, fill };
+    }
+
+    /** Hand the card's bar a real width once the server reports which batch it is on. */
+    private advanceCompactionMarker(state: StreamState, progress: CompactingEventData): void {
+        const marker = state.compaction;
+        if (!marker || progress.batch === undefined || progress.batches === undefined) return;
+        marker.title.setText(MESSAGES.CHAT_COMPACTING_PROGRESS(progress.batch, progress.batches));
+        setDeterminateProgress(marker.fill, (progress.batch / progress.batches) * 100);
+    }
+
+    /** Collapse the working card into the quiet boundary the transcript keeps. */
+    private settleCompactionMarker(state: StreamState, data: CompactionEventData): void {
+        const marker = state.compaction;
+        if (!marker) return;
+        marker.root.empty();
+        marker.root.removeClass("is-condensing");
+        marker.root.addClass("is-done");
+        if (data.stranded > 0) marker.root.addClass("is-lossy");
+        const pill = marker.root.createSpan({ cls: "lilbee-chat-compaction-pill" });
+        setIcon(
+            pill.createSpan({ cls: "lilbee-chat-compaction-icon" }),
+            data.stranded > 0 ? COMPACTION_LOSSY_ICON : COMPACTION_ICON,
+        );
+        pill.createSpan({ text: compactionMarkerText(data) });
+    }
+
     private renderRestoredMessage(message: SessionMessageItem): void {
         if (!this.messagesEl) return;
         if (message.role === SESSION_ROLE.USER) {
@@ -1059,7 +1108,7 @@ export class ChatView extends ItemView {
             answerStarted: false,
             streamEnded: false,
             anchorEl: userBubble,
-            compactionEl: null,
+            compaction: null,
             spinnerEl: spinner,
             warmingShown: false,
         };
@@ -1163,16 +1212,8 @@ export class ChatView extends ItemView {
                 const progress = event.data as CompactingEventData;
                 // Inserting above the anchor grows the transcript; renderFollowing keeps the pin.
                 void this.renderFollowing(() => {
-                    if (this.messagesEl && !state.compactionEl) {
-                        state.compactionEl = this.messagesEl.createDiv({
-                            cls: "lilbee-chat-compaction",
-                            text: MESSAGES.CHAT_COMPACTING,
-                        });
-                        this.messagesEl.insertBefore(state.compactionEl, state.anchorEl);
-                    }
-                    if (state.compactionEl && progress.batch !== undefined && progress.batches !== undefined) {
-                        state.compactionEl.setText(MESSAGES.CHAT_COMPACTING_PROGRESS(progress.batch, progress.batches));
-                    }
+                    this.openCompactionMarker(state);
+                    this.advanceCompactionMarker(state, progress);
                 });
                 break;
             }
@@ -1180,10 +1221,7 @@ export class ChatView extends ItemView {
                 const data = event.data as CompactionEventData;
                 this.summary = data.summary;
                 this.history.splice(0, data.condensed + data.stranded);
-                if (state.compactionEl) {
-                    const marker = state.compactionEl;
-                    void this.renderFollowing(() => marker.setText(compactionMarkerText(data)));
-                }
+                void this.renderFollowing(() => this.settleCompactionMarker(state, data));
                 break;
             }
             case SSE_EVENT.TOKEN: {

@@ -4961,12 +4961,70 @@ button.lilbee-model-chip-select:focus-visible {
 }
 
 .lilbee-chat-compaction {
-    margin: var(--size-4-2, 8px) 0;
-    text-align: center;
-    font-size: var(--font-smallest, 10px);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-faint);
+    margin: var(--size-4-3, 12px) 0;
+}
+
+/* While the server condenses: a card that says what is happening and how far along. */
+.lilbee-chat-compaction.is-condensing {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    border: 1px solid var(--background-modifier-border);
+    border-left: 3px solid var(--interactive-accent);
+    border-radius: var(--radius-s, 4px);
+    background-color: var(--background-secondary);
+}
+
+.lilbee-chat-compaction-head {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    font-size: var(--font-smaller, 13px);
+    color: var(--text-normal);
+}
+
+/* Once folded: a boundary rule the transcript keeps, quiet enough to repeat. */
+.lilbee-chat-compaction.is-done {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-3, 12px);
+}
+
+.lilbee-chat-compaction.is-done::before,
+.lilbee-chat-compaction.is-done::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background-color: var(--background-modifier-border);
+}
+
+.lilbee-chat-compaction-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-1, 4px) var(--size-4-3, 12px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-l, 16px);
+    background-color: var(--background-secondary);
+    font-size: var(--font-smaller, 13px);
+    color: var(--text-normal);
+    white-space: nowrap;
+}
+
+.lilbee-chat-compaction-icon {
+    display: flex;
+    color: var(--interactive-accent);
+}
+
+.lilbee-chat-compaction-icon .svg-icon {
+    width: 14px;
+    height: 14px;
+}
+
+/* Turns dropped with nothing standing in for them read as a warning, not a fold. */
+.lilbee-chat-compaction.is-lossy .lilbee-chat-compaction-icon {
+    color: var(--text-warning);
 }
 
 .lilbee-chat-summary {

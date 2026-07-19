@@ -5126,7 +5126,8 @@ describe("ChatView — chat sessions", () => {
 
             const marker = messagesEl.find("lilbee-chat-compaction");
             expect(marker).not.toBeNull();
-            expect(marker!.textContent).toBe(MESSAGES.CHAT_COMPACTED(2));
+            // setIcon writes the glyph name into the mock DOM, so match the wording, not the whole node.
+            expect(marker!.textContent).toContain(MESSAGES.CHAT_COMPACTED(2));
             expect((view as any).summary).toBe("the notes");
         });
 
@@ -5177,7 +5178,7 @@ describe("ChatView — chat sessions", () => {
             const { view } = await openChat(plugin);
             const bubble = new MockElement() as unknown as HTMLElement;
             const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
-            const state = { compactionEl: null, anchorEl: bubble, spinnerEl: spinner, warmingShown: false };
+            const state: any = { compaction: null, anchorEl: bubble, spinnerEl: spinner, warmingShown: false };
 
             const fire = () =>
                 (view as any).handleStreamEvent(
@@ -5203,8 +5204,8 @@ describe("ChatView — chat sessions", () => {
 
             const bubble = (messagesEl as unknown as MockElement).createDiv({ cls: "probe" });
             const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
-            const state = {
-                compactionEl: null,
+            const state: any = {
+                compaction: null,
                 anchorEl: bubble,
                 spinnerEl: spinner,
                 warmingShown: false,
@@ -5219,9 +5220,89 @@ describe("ChatView — chat sessions", () => {
             );
             await Promise.resolve();
 
-            expect((state.compactionEl as unknown as MockElement | null)?.textContent).toBe(
-                MESSAGES.CHAT_COMPACTING_PROGRESS(1, 3),
+            expect(state.compaction.title.textContent).toBe(MESSAGES.CHAT_COMPACTING_PROGRESS(1, 3));
+            // The shared wizard bar hands off from its indeterminate animation to a real width.
+            expect(state.compaction.fill.style.width).toBe("33.33333333333333%");
+            expect(state.compaction.root.classList.contains("is-condensing")).toBe(true);
+        });
+
+        it("settles the card into the boundary pill when the fold lands", async () => {
+            const plugin = makePlugin();
+            const { view, container, messagesEl } = await openChat(plugin);
+            const first = streamOf("a1");
+            plugin.api.chatStream = first.mockFn;
+            await send(container, "q1", first.done);
+
+            const bubble = (messagesEl as unknown as MockElement).createDiv({ cls: "probe" });
+            const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
+            const state: any = { compaction: null, anchorEl: bubble, spinnerEl: spinner, warmingShown: false };
+            const fire = (event: any) =>
+                (view as any).handleStreamEvent(
+                    event,
+                    bubble,
+                    bubble,
+                    state,
+                    () => {},
+                    () => {},
+                );
+
+            fire({ event: SSE_EVENT.COMPACTING, data: {} });
+            await Promise.resolve();
+            fire({ event: SSE_EVENT.COMPACTION, data: { summary: "n", condensed: 6, stranded: 0 } });
+            await Promise.resolve();
+
+            const root = state.compaction.root as MockElement;
+            expect(root.classList.contains("is-done")).toBe(true);
+            expect(root.classList.contains("is-condensing")).toBe(false);
+            expect(root.classList.contains("is-lossy")).toBe(false);
+            expect(root.find("lilbee-chat-compaction-pill")!.textContent).toContain(MESSAGES.CHAT_COMPACTED(6));
+        });
+
+        it("marks a fold that stranded turns as lossy", async () => {
+            const plugin = makePlugin();
+            const { view, container, messagesEl } = await openChat(plugin);
+            const first = streamOf("a1");
+            plugin.api.chatStream = first.mockFn;
+            await send(container, "q1", first.done);
+
+            const bubble = (messagesEl as unknown as MockElement).createDiv({ cls: "probe" });
+            const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
+            const state: any = { compaction: null, anchorEl: bubble, spinnerEl: spinner, warmingShown: false };
+            const fire = (event: any) =>
+                (view as any).handleStreamEvent(
+                    event,
+                    bubble,
+                    bubble,
+                    state,
+                    () => {},
+                    () => {},
+                );
+
+            fire({ event: SSE_EVENT.COMPACTING, data: {} });
+            await Promise.resolve();
+            fire({ event: SSE_EVENT.COMPACTION, data: { summary: "n", condensed: 6, stranded: 2 } });
+            await Promise.resolve();
+
+            expect((state.compaction.root as MockElement).classList.contains("is-lossy")).toBe(true);
+        });
+
+        it("ignores a fold that arrives with no card to settle", async () => {
+            const plugin = makePlugin();
+            const { view } = await openChat(plugin);
+            const el = new MockElement() as unknown as HTMLElement;
+            const state: any = { compaction: null, anchorEl: el, spinnerEl: el, warmingShown: false };
+
+            (view as any).handleStreamEvent(
+                { event: SSE_EVENT.COMPACTION, data: { summary: "n", condensed: 1, stranded: 0 } },
+                el,
+                el,
+                state,
+                () => {},
+                () => {},
             );
+            await Promise.resolve();
+
+            expect(state.compaction).toBeNull();
         });
 
         it("keeps one marker when the server announces condensing twice", async () => {
@@ -5237,7 +5318,7 @@ describe("ChatView — chat sessions", () => {
             await send(container, "q1", done);
 
             expect(messagesEl.findAll("lilbee-chat-compaction")).toHaveLength(1);
-            expect(messagesEl.find("lilbee-chat-compaction")!.textContent).toBe(MESSAGES.CHAT_COMPACTING);
+            expect(messagesEl.find("lilbee-chat-compaction")!.textContent).toContain(MESSAGES.CHAT_COMPACTING);
         });
 
         it("adopts a compaction that arrived without its announcement", async () => {
@@ -5259,7 +5340,7 @@ describe("ChatView — chat sessions", () => {
             const plugin = makePlugin();
             const { view } = await openChat(plugin);
             const el = new MockElement() as unknown as HTMLElement;
-            const state = { compactionEl: null, anchorEl: el };
+            const state: any = { compaction: null, anchorEl: el };
 
             (view as any).messagesEl = null;
             (view as any).handleStreamEvent(
@@ -5271,7 +5352,7 @@ describe("ChatView — chat sessions", () => {
                 () => {},
             );
 
-            expect(state.compactionEl).toBeNull();
+            expect(state.compaction).toBeNull();
         });
 
         it("a resumed conversation carries its stored summary into the next turn", async () => {
