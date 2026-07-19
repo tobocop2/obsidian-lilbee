@@ -60,17 +60,17 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 
 ## Highlights
 
-- **Ask your vault in plain English.** Type a question; get an answer with citations that click straight back to the source line.
-- **Verify in one click.** Every citation opens a Source Preview scrolled to the exact spot: surrounding paragraphs visible, cited lines highlighted.
-- **Save websites into your vault.** Crawl a single page or a whole docs site; the pages land in your vault as markdown notes you can search, chat with, and cite offline, even after the site changes or goes down.
-- **Reads more than markdown.** PDFs, Office files, ebooks, CSV / TSV / JSON / YAML, 150+ programming languages, plus OCR for scans and photographed pages.
-- **Your models, your machine.** Browse a built-in model catalog straight from Hugging Face Hub, pull one with a click, run it locally. No account needed.
-- **Spreads models across your GPUs.** Chat, embedding, reranking, and vision run as a fleet; lilbee places them automatically, splits a model too big for one card across several, and a GPU placement view lets you assign roles to cards by hand on a multi-GPU box.
-- **Already on Ollama or LM Studio? Keep them.** lilbee manages models for you by default, but it also works with both, so you never have to switch model managers. Their models appear in the same pickers, alongside lilbee's own.
+- **Ask your vault in plain English.** [Type a question](#a-library-of-your-vault); get an answer with citations that click straight back to the source line.
+- **Verify in one click.** Every citation opens a [Source Preview](#verify-every-answer-at-the-source) scrolled to the exact spot: surrounding paragraphs visible, cited lines highlighted.
+- **Save websites into your vault.** [Crawl a single page or a whole docs site](#offline-copies-of-websites-inside-your-vault); the pages land in your vault as markdown notes you can search, chat with, and cite offline, even after the site changes or goes down.
+- **Reads more than markdown.** [PDFs, Office files, ebooks, CSV / TSV / JSON / YAML, 150+ programming languages, plus OCR](#documents-code-and-scanned-images) for scans and photographed pages.
+- **Your models, your machine.** [Browse a built-in model catalog](#pick-and-tune-your-models) straight from Hugging Face Hub, pull one with a click, run it locally. No account needed.
+- **Spreads models across your GPUs.** [Chat, embedding, reranking, and vision run as a fleet](#place-models-across-your-gpus); lilbee places them automatically, splits a model too big for one card across several, and a GPU placement view lets you assign roles to cards by hand on a multi-GPU box.
+- **Already on Ollama or LM Studio? Keep them.** lilbee manages models for you by default, but it [also works with both](#already-running-ollama-or-lm-studio-keep-them), so you never have to switch model managers. Their models appear in the same pickers, alongside lilbee's own.
 - **Saved chat history.** Every chat is [saved to disk as you go](#saved-chat-history) and titled from your first question. Reopen any of them from the history button, rename them, or delete them. When a chat gets longer than the model's context window, lilbee can [replace the oldest messages with a summary](#replacing-old-messages-with-a-summary-optional) rather than dropping them, so the model still knows what was said. Off by default.
-- **Runs on your computer.** Server, models, index, and vault all stay local; cloud models are opt-in per role, with a persistent indicator when one is active.
+- **Runs on your computer.** Server, models, index, and vault all stay local; [cloud models are opt-in per role](#cloud-models-when-you-want-them), with a persistent indicator when one is active.
 - **Remembers what you tell it.** Turn on memory and lilbee holds onto durable facts about you and how you like your answers, then recalls the relevant ones in later chats no matter which conversation they came from. Off by default, managed from a Memories view, and never mixed into your citations.
-- **An auto-generated wiki** _(experimental)_: linked markdown pages written from what you've indexed, citation-checked before publish, landing in your vault's graph alongside your own notes.
+- **An auto-generated wiki** _([experimental](#experimental))_: linked markdown pages written from what you've indexed, citation-checked before publish, landing in your vault's graph alongside your own notes.
 
 ## Why a local search engine for Obsidian
 
