@@ -1007,9 +1007,9 @@ export class ChatView extends ItemView {
         const root = this.messagesEl.createDiv({ cls: "lilbee-chat-compaction is-condensing" });
         const head = root.createDiv({ cls: "lilbee-chat-compaction-head" });
         setIcon(head.createSpan({ cls: "lilbee-chat-compaction-icon" }), COMPACTION_ICON);
-        const title = head.createSpan({ cls: "lilbee-chat-compaction-title", text: MESSAGES.CHAT_COMPACTING });
+        const title = head.createSpan({ text: MESSAGES.CHAT_COMPACTING });
         const bar = root.createDiv({ cls: "lilbee-progress-bar-container" });
-        const fill = bar.createDiv({ cls: "lilbee-progress-bar lilbee-wizard-progress-indeterminate" });
+        const fill = bar.createDiv({ cls: "lilbee-progress-bar lilbee-progress-indeterminate" });
         this.messagesEl.insertBefore(root, state.anchorEl);
         state.compaction = { root, title, fill };
     }

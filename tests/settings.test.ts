@@ -2592,7 +2592,7 @@ describe("managed mode settings", () => {
 
         const fill = tab.containerEl.find("lilbee-progress-bar")!;
         expect(fill.style.width).toBe("50%");
-        expect(fill.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(false);
+        expect(fill.classList.contains("lilbee-progress-indeterminate")).toBe(false);
         expect(tab.containerEl.find("lilbee-update-progress-phase")!.textContent).toContain("50%");
     });
 

@@ -560,11 +560,11 @@ describe("percentOfBytes", () => {
 describe("setDeterminateProgress", () => {
     it("drops the indeterminate animation and sets the width", () => {
         const fill = new MockElement() as unknown as HTMLElement;
-        fill.classList.add("lilbee-wizard-progress-indeterminate");
+        fill.classList.add("lilbee-progress-indeterminate");
 
         setDeterminateProgress(fill, 42);
 
-        expect(fill.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(false);
+        expect(fill.classList.contains("lilbee-progress-indeterminate")).toBe(false);
         expect(fill.style.width).toBe("42%");
     });
 });

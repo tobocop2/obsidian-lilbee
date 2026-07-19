@@ -1915,7 +1915,11 @@
     transition: width 200ms ease-out;
 }
 
-.lilbee-wizard-progress-indeterminate {
+/* Shared by the setup wizard, settings, and the chat compaction card.
+ * --wizard-step-color is set per wizard step and falls back to the accent
+ * everywhere else, so this stays unscoped on purpose: scoping it under
+ * .lilbee-wizard-progress would silently kill the animation in chat. */
+.lilbee-progress-indeterminate {
     /* The base .lilbee-progress-bar starts at width:0 so the determinate
      * `style.width` JS path can grow it. Indeterminate mode has no width
      * to grow — it animates a moving gradient — so the bar must already

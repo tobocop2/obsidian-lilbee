@@ -316,7 +316,7 @@ export function isModelUnavailableError(code: string | null, message: string): b
  */
 /** Hand a progress bar from its indeterminate animation to a real width. */
 export function setDeterminateProgress(fill: HTMLElement, percent: number): void {
-    fill.classList.remove("lilbee-wizard-progress-indeterminate");
+    fill.classList.remove("lilbee-progress-indeterminate");
     fill.style.width = `${percent}%`;
 }
 

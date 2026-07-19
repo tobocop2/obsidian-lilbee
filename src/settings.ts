@@ -609,7 +609,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         panel.hide();
         const bar = panel.createDiv({ cls: "lilbee-progress-bar-container" });
         const fill = bar.createDiv({
-            cls: "lilbee-progress-bar lilbee-wizard-progress-fill lilbee-wizard-progress-indeterminate",
+            cls: "lilbee-progress-bar lilbee-wizard-progress-fill lilbee-progress-indeterminate",
         });
         const phase = panel.createDiv({ cls: "lilbee-update-progress-phase" });
         const size = panel.createDiv({ cls: "lilbee-update-progress-size" });
