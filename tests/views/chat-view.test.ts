@@ -620,6 +620,25 @@ describe("ChatView.sendMessage — bubble structure", () => {
 
         expect(plugin.api.chatStream).not.toHaveBeenCalled();
         expect(messagesEl.children.length).toBe(0);
+        // The refused question stays in the box so the user doesn't have to retype it.
+        expect(textarea.value).toBe("question");
+    });
+
+    it("keeps the typed question when another turn is still streaming", async () => {
+        const plugin = makePlugin();
+        plugin.api.chatStream = vi.fn();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        // A turn already in flight: the second question must survive the refusal.
+        (view as any).sending = true;
+        textarea.value = "second";
+
+        await (view as any).sendMessage("second");
+
+        expect(plugin.api.chatStream).not.toHaveBeenCalled();
+        expect(textarea.value).toBe("second");
     });
 });
 

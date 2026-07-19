@@ -381,7 +381,9 @@ export class ChatView extends ItemView {
                 if (this.sending) return;
                 const text = textarea.value.trim();
                 if (!text) return;
-                textarea.value = "";
+                // sendMessage clears the box once its guards pass: a refused send
+                // (engine still warming, another turn in flight) must not eat the
+                // question the user typed.
                 this.inFlightSend = this.sendMessage(text);
             } catch (err) {
                 const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
@@ -1020,6 +1022,8 @@ export class ChatView extends ItemView {
     private async sendMessage(text: string): Promise<void> {
         if (!this.messagesEl || this.sending) return;
         if (!this.plugin.assertFleetReady()) return;
+        // Past the guards: the turn is happening, so the box can be emptied.
+        if (this.textareaEl) this.textareaEl.value = "";
         this.sending = true;
         this.streamController = new AbortController();
         this.plugin.notifyChatStart();
