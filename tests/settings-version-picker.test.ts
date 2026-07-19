@@ -86,6 +86,7 @@ describe("server version picker with the real release list", () => {
     });
 
     afterEach(() => {
+        vi.restoreAllMocks();
         Setting.prototype.addDropdown = originalAddDropdown;
         if (originalArch) Object.defineProperty(process, "arch", originalArch);
     });
@@ -105,6 +106,7 @@ describe("server version picker with the real release list", () => {
         const dd = await renderPicker(false);
 
         expect(dd.options).toEqual(STABLE_RUN.slice(0, 10));
+        expect(dd.value).toBe(STABLE_RUN[0]);
         expect(dd.disabledStates).toContain(false);
         expect(descs[descs.length - 1]).not.toBe(MESSAGES.DESC_SERVER_VERSION_LOADING);
     });
@@ -113,6 +115,7 @@ describe("server version picker with the real release list", () => {
         const dd = await renderPicker(true);
 
         expect(dd.options).toEqual([...DEV_RUN.slice(0, 10), ...STABLE_RUN.slice(0, 10)]);
+        expect(dd.value).toBe(STABLE_RUN[0]);
         expect(dd.disabledStates).toContain(false);
     });
 });
