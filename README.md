@@ -67,6 +67,7 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 - **Your models, your machine.** Browse a built-in model catalog straight from Hugging Face Hub, pull one with a click, run it locally. No account needed.
 - **Spreads models across your GPUs.** Chat, embedding, reranking, and vision run as a fleet; lilbee places them automatically, splits a model too big for one card across several, and a GPU placement view lets you assign roles to cards by hand on a multi-GPU box.
 - **Already on Ollama or LM Studio? Keep them.** lilbee manages models for you by default, but it also works with both, so you never have to switch model managers. Their models appear in the same pickers, alongside lilbee's own.
+- **Saved chat history.** Every chat is [saved to disk as you go](#saved-chat-history) and titled from your first question. Reopen any of them from the history button, rename them, or delete them. When a chat gets longer than the model's context window, lilbee can [replace the oldest messages with a summary](#replacing-old-messages-with-a-summary-optional) rather than dropping them, so the model still knows what was said. Off by default.
 - **Runs on your computer.** Server, models, index, and vault all stay local; cloud models are opt-in per role, with a persistent indicator when one is active.
 - **Remembers what you tell it.** Turn on memory and lilbee holds onto durable facts about you and how you like your answers, then recalls the relevant ones in later chats no matter which conversation they came from. Off by default, managed from a Memories view, and never mixed into your citations.
 - **An auto-generated wiki** _(experimental)_: linked markdown pages written from what you've indexed, citation-checked before publish, landing in your vault's graph alongside your own notes.
@@ -122,17 +123,17 @@ Put more than one question in a single prompt and lilbee answers each from where
 
 <p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#multipart"><img alt="one multi-part question, a bulb part number and the engine firing order, answered in a single reply with a citation for each fact" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/multipart.gif" width="640"></a></p>
 
-### Conversations you can come back to
+### Saved chat history
 
-Every chat saves itself as you go, titled from your first question. The history button in the chat toolbar lists them: pick one up where you left off, rename it, or start a fresh one. Nothing leaves your machine.
+Every chat is written to disk as you go, titled from your first question. The history button in the chat toolbar lists them all: reopen one and the full transcript comes back, or rename and delete them from the same list. The chats are stored by the lilbee server on your machine, not in the cloud.
 
-<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#sessions"><img alt="ask a cited question, open the citation onto the manual, browse saved conversations from the history button, start a new chat, then resume the first one where it left off" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/sessions.gif" width="640"></a></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#sessions"><img alt="asking a cited question, opening the citation to the manual, listing saved chats from the history button, starting a new chat, then reopening the first one" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/sessions.gif" width="640"></a></p>
 
-### Long conversations, condensed instead of dropped (optional)
+### Replacing old messages with a summary (optional)
 
-Every model has a context limit. Past it, the oldest messages fall out of what the model can see, so it stops following what you already told it. Turn on **Condense long conversations** in Settings and lilbee folds those older messages into a short summary it carries forward instead, so the thread survives. Your transcript keeps every message either way.
+Every model has a fixed context window. Once a chat is longer than that window, the oldest messages get dropped from what the model is sent, so it no longer knows what you told it earlier. Turn on **Condense long conversations** in Settings and lilbee replaces those old messages with a summary of them instead, which it keeps sending with each question. The transcript on screen still shows every message; only what is sent to the model changes.
 
-It's off by default because it isn't free: condensing spends extra model calls before the answer, which costs seconds on a GPU and longer on CPU, and a summary is a gist rather than the original words. Worth it for long working sessions, unnecessary for quick questions.
+It is off by default because it costs something. Writing the summary takes extra model calls before your answer arrives, a few seconds on a GPU and longer on CPU, and a summary holds less detail than the original messages. Turn it on for long chats where the earlier context matters; leave it off for short ones.
 
 <p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#compaction"><img alt="resume a long conversation, ask one more question, watch lilbee condense the older messages into a summary, and get an answer that still cites the manual" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/compaction.gif" width="640"></a></p>
 
