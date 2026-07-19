@@ -345,6 +345,12 @@ export interface SessionListResponse {
     sessions: SessionMeta[];
 }
 
+/** Data of a `compacting` SSE event: batch progress while the server condenses. */
+export interface CompactingEventData {
+    batch?: number;
+    batches?: number;
+}
+
 /** Data of a `compaction` SSE event: what a chat turn folded away before answering. */
 export interface CompactionEventData {
     summary: string;

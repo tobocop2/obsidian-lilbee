@@ -25,6 +25,7 @@ import {
 import type {
     CatalogEntry,
     ChatMode,
+    CompactingEventData,
     CompactionEventData,
     InstalledModel,
     MemoryExtractedData,
@@ -1148,25 +1149,37 @@ export class ChatView extends ItemView {
                 // The chat engine is cold-loading; say so instead of showing silent dots.
                 if (!state.warmingShown) {
                     state.warmingShown = true;
-                    state.spinnerEl.createDiv({ cls: "lilbee-chat-warming-label", text: MESSAGES.CHAT_WARMING });
+                    void this.renderFollowing(() => {
+                        state.spinnerEl.createDiv({ cls: "lilbee-chat-warming-label", text: MESSAGES.CHAT_WARMING });
+                    });
                 }
                 break;
             }
             case SSE_EVENT.COMPACTING: {
-                if (this.messagesEl && !state.compactionEl) {
-                    state.compactionEl = this.messagesEl.createDiv({
-                        cls: "lilbee-chat-compaction",
-                        text: MESSAGES.CHAT_COMPACTING,
-                    });
-                    this.messagesEl.insertBefore(state.compactionEl, state.anchorEl);
-                }
+                const progress = event.data as CompactingEventData;
+                // Inserting above the anchor grows the transcript; renderFollowing keeps the pin.
+                void this.renderFollowing(() => {
+                    if (this.messagesEl && !state.compactionEl) {
+                        state.compactionEl = this.messagesEl.createDiv({
+                            cls: "lilbee-chat-compaction",
+                            text: MESSAGES.CHAT_COMPACTING,
+                        });
+                        this.messagesEl.insertBefore(state.compactionEl, state.anchorEl);
+                    }
+                    if (state.compactionEl && progress.batch !== undefined && progress.batches !== undefined) {
+                        state.compactionEl.setText(MESSAGES.CHAT_COMPACTING_PROGRESS(progress.batch, progress.batches));
+                    }
+                });
                 break;
             }
             case SSE_EVENT.COMPACTION: {
                 const data = event.data as CompactionEventData;
                 this.summary = data.summary;
                 this.history.splice(0, data.condensed + data.stranded);
-                if (state.compactionEl) state.compactionEl.setText(compactionMarkerText(data));
+                if (state.compactionEl) {
+                    const marker = state.compactionEl;
+                    void this.renderFollowing(() => marker.setText(compactionMarkerText(data)));
+                }
                 break;
             }
             case SSE_EVENT.TOKEN: {

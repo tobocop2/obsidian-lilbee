@@ -5086,6 +5086,8 @@ describe("ChatView — chat sessions", () => {
         function compactionStream(data: { summary: string; condensed: number; stranded: number }) {
             return makeStream([
                 { event: SSE_EVENT.COMPACTING, data: {} },
+                { event: SSE_EVENT.COMPACTING, data: { batch: 1, batches: 2 } },
+                { event: SSE_EVENT.COMPACTING, data: { batch: 2, batches: 2 } },
                 { event: SSE_EVENT.COMPACTION, data },
                 { event: SSE_EVENT.TOKEN, data: { token: "a2" } },
                 { event: SSE_EVENT.DONE, data: {} },
@@ -5171,6 +5173,36 @@ describe("ChatView — chat sessions", () => {
             fire();
 
             expect((spinner as unknown as MockElement).findAll("lilbee-chat-warming-label")).toHaveLength(1);
+        });
+
+        it("ticks the marker with the server's batch progress", async () => {
+            const plugin = makePlugin();
+            const { view, container, messagesEl } = await openChat(plugin);
+            const first = streamOf("a1");
+            plugin.api.chatStream = first.mockFn;
+            await send(container, "q1", first.done);
+
+            const bubble = (messagesEl as unknown as MockElement).createDiv({ cls: "probe" });
+            const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
+            const state = {
+                compactionEl: null,
+                anchorEl: bubble,
+                spinnerEl: spinner,
+                warmingShown: false,
+            };
+            (view as any).handleStreamEvent(
+                { event: SSE_EVENT.COMPACTING, data: { batch: 1, batches: 3 } },
+                bubble,
+                bubble,
+                state,
+                () => {},
+                () => {},
+            );
+            await Promise.resolve();
+
+            expect((state.compactionEl as unknown as MockElement | null)?.textContent).toBe(
+                MESSAGES.CHAT_COMPACTING_PROGRESS(1, 3),
+            );
         });
 
         it("keeps one marker when the server announces condensing twice", async () => {
