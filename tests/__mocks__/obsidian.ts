@@ -273,6 +273,9 @@ export class MockElement {
     blur(): void {
         /* noop */
     }
+    select(): void {
+        /* noop */
+    }
 
     // Support select element behavior
     get selectedIndex(): number {

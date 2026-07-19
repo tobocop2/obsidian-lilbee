@@ -502,12 +502,12 @@ describe("SetupWizard", () => {
 
             const { setPhase } = (wizard as any).renderServerSetupPanel(step);
             const fill = (step as unknown as MockElement).findAll("lilbee-wizard-progress-fill")[0];
-            expect(fill.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(true);
+            expect(fill.classList.contains("lilbee-progress-indeterminate")).toBe(true);
 
             setPhase("downloading", "Downloading... 40%", 40);
 
             expect(fill.style.width).toBe("40%");
-            expect(fill.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(false);
+            expect(fill.classList.contains("lilbee-progress-indeterminate")).toBe(false);
         });
 
         it("leaves the bar indeterminate when no percentage is reported", () => {
@@ -519,7 +519,7 @@ describe("SetupWizard", () => {
             setPhase("downloading", "Downloading...");
 
             const fill = (step as unknown as MockElement).findAll("lilbee-wizard-progress-fill")[0];
-            expect(fill.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(true);
+            expect(fill.classList.contains("lilbee-progress-indeterminate")).toBe(true);
         });
 
         it("shows the live download detail in the active row's hint", () => {
@@ -3141,7 +3141,7 @@ describe("SetupWizard", () => {
             const el = wizard.contentEl as unknown as MockElement;
             const fill = el.find("lilbee-wizard-progress-fill");
             expect(fill).not.toBeNull();
-            expect(fill!.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(true);
+            expect(fill!.classList.contains("lilbee-progress-indeterminate")).toBe(true);
         });
 
         it("410: managed-server start keeps the progress fill indeterminate until completion", async () => {
@@ -3162,7 +3162,7 @@ describe("SetupWizard", () => {
 
             const fill = el.find("lilbee-wizard-progress-fill");
             expect(fill).not.toBeNull();
-            expect(fill!.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(true);
+            expect(fill!.classList.contains("lilbee-progress-indeterminate")).toBe(true);
         });
     });
 

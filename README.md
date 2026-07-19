@@ -28,7 +28,7 @@ This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives y
 
 Ask a question in plain English and lilbee answers from your vault, with citations that click straight back to the source line.
 
-<p align="center"><img alt="ask what lilbee is against its own just-indexed source code on an Apple M1 Pro, with the GPU placement view live beside the chat, and get a cited answer" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.gif" width="640"></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#what-is-lilbee"><img alt="ask what lilbee is against its own just-indexed source code on an Apple M1 Pro, with the GPU placement view live beside the chat, and get a cited answer" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/what_is_lilbee.gif" width="640"></a></p>
 
 > **Tutorial reel:** every recording on this page (and a few extras) as videos with longer notes at [**obsidian.lilbee.sh/tutorial**](https://obsidian.lilbee.sh/tutorial).
 
@@ -36,7 +36,7 @@ Ask a question in plain English and lilbee answers from your vault, with citatio
 >
 > lilbee is an official [community plugin](https://community.obsidian.md/plugins/lilbee): install it from **Settings → Community plugins** inside Obsidian, nothing else needed. Feedback, bug reports, and issues are very welcome.
 
-<p align="center"><img alt="first run on a fresh vault: install lilbee from the community plugin store, walk the setup wizard, and ask a question that gets a cited answer from your notes" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first_start.gif" width="640"></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#first-start"><img alt="first run on a fresh vault: install lilbee from the community plugin store, walk the setup wizard, and ask a question that gets a cited answer from your notes" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/first_start.gif" width="640"></a></p>
 
 > **Heads up: this downloads to your computer.** lilbee is a local search engine with its own models, so the plugin fetches the lilbee server (a few hundred MB) on first launch and the models you pick from the catalog (a few hundred MB up to several GB each) when you choose them. It's all stored locally and runs on your machine.
 
@@ -77,7 +77,7 @@ A vault is already a curated set of documents: notes you've taken, PDFs you've c
 
 An [Encarta 99](https://en.wikipedia.org/wiki/Encarta) you build for yourself, from your own vault, shaped to your needs.
 
-<p align="center"><img alt="a sweep through the lilbee surfaces inside Obsidian: model catalog, settings, command palette" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/tour.gif" width="640"></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#tour"><img alt="a sweep through the lilbee surfaces inside Obsidian: model catalog, settings, command palette" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/tour.gif" width="640"></a></p>
 
 ## How it compares
 
@@ -102,7 +102,7 @@ Point lilbee at your vault and it builds a searchable library from every note, P
 
 Add a single file from the right-click menu or the command palette, or run **Sync vault** to index everything at once. Background jobs (sync, crawl, wiki build, model downloads) run in a **Task Center**, so you can keep asking questions while they work.
 
-<p align="center"><img alt="add a PDF and a README from the palette, watch the Task Center index them, then ask a cited question" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/add.gif" width="640"></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#ask"><img alt="add a PDF and a README from the palette, watch the Task Center index them, then ask a cited question" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/add.gif" width="640"></a></p>
 
 ### Offline copies of websites, inside your vault
 
@@ -110,7 +110,7 @@ Add a single file from the right-click menu or the command palette, or run **Syn
 
 Crawl a docs site, a wiki, or a vendor's API reference and the pages land in your vault as ordinary markdown notes. Grab a single page or a whole site; whole-site crawls follow internal links, with depth and page caps when you want them. From then on you search or chat with that copy offline, with citations that click back to the saved page, even after the site changes or goes down.
 
-<p align="center"><img alt="crawl a Wikipedia page into the vault, ask a cited question, and jump to the cited section" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl.gif" width="640"></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#crawl"><img alt="crawl a Wikipedia page into the vault, ask a cited question, and jump to the cited section" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl.gif" width="640"></a></p>
 
 ### Verify every answer at the source
 
@@ -120,17 +120,31 @@ Every citation in a chat reply or wiki page is a live link. Click it and a Sourc
 
 Put more than one question in a single prompt and lilbee answers each from wherever it lives in your library, with a separate citation per fact.
 
-<p align="center"><img alt="one multi-part question, a bulb part number and the engine firing order, answered in a single reply with a citation for each fact" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/multipart.gif" width="640"></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#multipart"><img alt="one multi-part question, a bulb part number and the engine firing order, answered in a single reply with a citation for each fact" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/multipart.gif" width="640"></a></p>
+
+### Conversations you can come back to
+
+Every chat saves itself as you go, titled from your first question. The history button in the chat toolbar lists them: pick one up where you left off, rename it, or start a fresh one. Nothing leaves your machine.
+
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#sessions"><img alt="ask a cited question, open the citation onto the manual, browse saved conversations from the history button, start a new chat, then resume the first one where it left off" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/sessions.gif" width="640"></a></p>
+
+### Long conversations, condensed instead of dropped (optional)
+
+Every model has a context limit. Past it, the oldest messages fall out of what the model can see, so it stops following what you already told it. Turn on **Condense long conversations** in Settings and lilbee folds those older messages into a short summary it carries forward instead, so the thread survives. Your transcript keeps every message either way.
+
+It's off by default because it isn't free: condensing spends extra model calls before the answer, which costs seconds on a GPU and longer on CPU, and a summary is a gist rather than the original words. Worth it for long working sessions, unnecessary for quick questions.
+
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#compaction"><img alt="resume a long conversation, ask one more question, watch lilbee condense the older messages into a summary, and get an answer that still cites the manual" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/compaction.gif" width="640"></a></p>
 
 ### Pick and tune your models
 
 Chat, embedding, vision, and reranking are separate roles, each with its own model. The Model Catalog (command palette or chat toolbar) browses featured picks or searches Hugging Face Hub, shows each model's size and memory before you pull, and flags ones that won't run on your hardware. Defaults are sensible out of the gate; Settings exposes the retrieval and generation knobs when you want to go deeper, each with a reset.
 
-<p align="center"><img alt="browse the model catalog inside Obsidian: Chat, Embed, Vision, Rerank tabs, search Hugging Face Hub" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/catalog.gif" width="640"></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#catalog"><img alt="browse the model catalog inside Obsidian: Chat, Embed, Vision, Rerank tabs, search Hugging Face Hub" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/catalog.gif" width="640"></a></p>
 
 Each role sits on the chat rail, so you can see what's active and switch it mid-conversation. Hover a pill to see what that role does.
 
-<p align="center"><img alt="the model rail's four roles, chat, embedding, vision, and reranking, each with a tooltip, plus the Search and Chat mode toggle" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/models.gif" width="640"></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#models"><img alt="the model rail's four roles, chat, embedding, vision, and reranking, each with a tooltip, plus the Search and Chat mode toggle" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/models.gif" width="640"></a></p>
 
 ### Reranking
 
@@ -142,11 +156,11 @@ Reranking is an optional role that re-reads the retrieved passages against your 
 
 When a chat model won't fit on one GPU, lilbee spreads it across the cards you have and places the embedding, vision, and reranking models alongside it. The plugin's GPU placement view shows it all live: every card's utilization and memory, and which role runs where. The same view works on a single card too; the demo at the top of this page is an Apple Silicon Mac with its one GPU doing everything. Here it is on a three-A100 box, a 235B model answering from an indexed codebase while every file embeds across all three cards (how placement decides what goes where is covered in the [lilbee architecture notes](https://github.com/tobocop2/lilbee/blob/main/docs/architecture.md)):
 
-<p align="center"><img alt="right-click a source folder into lilbee on a three-A100 box: every file embeds across all three GPUs with the placement view live, then a 235B model answers grounded and cited" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/gpu-placement.gif" width="640"></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#gpu-placement"><img alt="right-click a source folder into lilbee on a three-A100 box: every file embeds across all three GPUs with the placement view live, then a 235B model answers grounded and cited" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/gpu-placement.gif" width="640"></a></p>
 
 Prefer to place things yourself? Edit manually: pin each role to the cards you choose, preview the fit before anything loads, and apply it live. Ask for a layout that can't fit and the view names the shortfall instead of failing at load time.
 
-<p align="center"><img alt="the placement editor in manual mode: roles pinned to chosen cards, the fit previewed, then applied live with the fleet rebuilding" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/gpu-placement-manual.gif" width="640"></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#gpu-placement-manual"><img alt="the placement editor in manual mode: roles pinned to chosen cards, the fit previewed, then applied live with the fleet rebuilding" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/gpu-placement-manual.gif" width="640"></a></p>
 
 ### Place models across your GPUs
 
@@ -164,11 +178,11 @@ If your models already live in Ollama or LM Studio, point lilbee at the running 
 
 Pick one of your Ollama models for embedding and another for chat from the catalog's Hosted tab, and the whole pipeline runs on Ollama:
 
-<p align="center"><img alt="point lilbee at a running Ollama server and pick its models for both embedding and chat from the Hosted tab, then add a PDF and get a cited answer served by Ollama" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/ollama.gif" width="640"></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#ollama"><img alt="point lilbee at a running Ollama server and pick its models for both embedding and chat from the Hosted tab, then add a PDF and get a cited answer served by Ollama" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/ollama.gif" width="640"></a></p>
 
 The same flow works with LM Studio's local server:
 
-<p align="center"><img alt="the same flow with LM Studio's local server: its embedder and chat model picked from the Hosted tab, indexing a PDF and answering with citations" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/lmstudio.gif" width="640"></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#lmstudio"><img alt="the same flow with LM Studio's local server: its embedder and chat model picked from the Hosted tab, indexing a PDF and answering with citations" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/lmstudio.gif" width="640"></a></p>
 
 ### Documents, code, and scanned images
 
@@ -178,7 +192,7 @@ Your vault is full of more than markdown. lilbee handles the rest:
 - **Code** (150+ languages) is split along real functions and classes, not arbitrary line ranges.
 - **Scanned PDFs and photographed pages** are read with OCR, including a local vision model that keeps tables and layout intact. (A per-vault toggle in Settings.)
 
-<p align="center"><img alt="a scanned, image-only PDF read by a local vision model: the Task Center streams OCR page by page, then a cited answer reads the support number and publisher straight off the scanned cover" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/vision.gif" width="640"></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#scanned-pdf"><img alt="a scanned, image-only PDF read by a local vision model: the Task Center streams OCR page by page, then a cited answer reads the support number and publisher straight off the scanned cover" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/vision.gif" width="640"></a></p>
 
 ### Cloud models, when you want them
 
@@ -186,7 +200,7 @@ By default everything stays on your machine: server, models, index, vault. For a
 
 With your own key, hosted frontier models appear under the catalog's Hosted tab too. Pick a free-tier Gemini model for chat, keep embedding local, and the answer comes from Gemini while still citing your own documents:
 
-<p align="center"><img alt="pick a free-tier Gemini model for chat from the Hosted tab while embedding stays local, then get an answer from Gemini that still cites your manual" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/gemini.gif" width="640"></p>
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#gemini"><img alt="pick a free-tier Gemini model for chat from the Hosted tab while embedding stays local, then get an answer from Gemini that still cites your manual" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/gemini.gif" width="640"></a></p>
 
 ## Experimental
 

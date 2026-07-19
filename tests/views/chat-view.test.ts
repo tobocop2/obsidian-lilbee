@@ -22,7 +22,7 @@ if (typeof (globalThis as any).activeDocument === "undefined") {
 
 import { App, Menu, MockMenuItem, MockMenuSeparator, Notice, Platform, WorkspaceLeaf } from "../__mocks__/obsidian";
 import { MockElement } from "../__mocks__/obsidian";
-import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal } from "../../src/views/chat-view";
+import { ChatView, VIEW_TYPE_CHAT, VaultFilePickerModal, compactionMarkerText } from "../../src/views/chat-view";
 import { electronDialog } from "../../src/utils/file-dialog";
 import { ok, err } from "../../src/result";
 import type LilbeePlugin from "../../src/main";
@@ -73,6 +73,14 @@ vi.mock("../../src/views/confirm-modal", () => ({
     }),
 }));
 const { setupWizardOpen } = vi.hoisted(() => ({ setupWizardOpen: vi.fn() }));
+const { sessionsHooks } = vi.hoisted(() => ({ sessionsHooks: [] as any[] }));
+vi.mock("../../src/views/sessions-modal", () => ({
+    SessionsModal: vi.fn().mockImplementation(function (_app: any, _plugin: any, hooks: any) {
+        sessionsHooks.push(hooks);
+        return { open: vi.fn() };
+    }),
+}));
+
 vi.mock("../../src/views/setup-wizard", () => ({
     SetupWizard: vi.fn().mockImplementation(function () {
         return { open: setupWizardOpen };
@@ -197,6 +205,38 @@ function makePlugin(): LilbeePlugin {
                 );
             }),
             config: vi.fn().mockResolvedValue({ chat_model: "llama3", embedding_model: "nomic-embed-text" }),
+            listSessions: vi.fn().mockResolvedValue([]),
+            getSession: vi.fn(),
+            createSession: vi.fn().mockResolvedValue({
+                meta: {
+                    id: "s1",
+                    title: "Untitled chat",
+                    created_at: "2026-07-16T00:00:00Z",
+                    updated_at: "2026-07-16T00:00:00Z",
+                    model_ref: "llama3",
+                    scope: "both",
+                    message_count: 0,
+                    origin: "http",
+                },
+                messages: [],
+                summary: "",
+            }),
+            appendSessionMessage: vi.fn().mockResolvedValue({
+                meta: {
+                    id: "s1",
+                    title: "Untitled chat",
+                    created_at: "2026-07-16T00:00:00Z",
+                    updated_at: "2026-07-16T00:00:00Z",
+                    model_ref: "llama3",
+                    scope: "both",
+                    message_count: 1,
+                    origin: "http",
+                },
+                messages: [],
+                summary: "",
+            }),
+            renameSession: vi.fn().mockResolvedValue({ id: "s1", title: "t" }),
+            deleteSession: vi.fn().mockResolvedValue({ id: "s1", deleted: true }),
         },
         settings: { topK: 5, enableOcr: null as boolean | null, wikiEnabled: true, searchChunkType: "all" as const },
         activeModel: "llama3",
@@ -443,7 +483,10 @@ describe("ChatView.onOpen — send button triggers send", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
 
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("hello", [], 5, expect.any(AbortSignal), undefined, "all");
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("hello", [], 5, expect.any(AbortSignal), undefined, "all", {
+            summary: "",
+            sessionId: null,
+        });
     });
 
     it("clears textarea value after send", async () => {
@@ -577,6 +620,25 @@ describe("ChatView.sendMessage — bubble structure", () => {
 
         expect(plugin.api.chatStream).not.toHaveBeenCalled();
         expect(messagesEl.children.length).toBe(0);
+        // The refused question stays in the box so the user doesn't have to retype it.
+        expect(textarea.value).toBe("question");
+    });
+
+    it("keeps the typed question when another turn is still streaming", async () => {
+        const plugin = makePlugin();
+        plugin.api.chatStream = vi.fn();
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const textarea = container.find("lilbee-chat-textarea")!;
+        // A turn already in flight: the second question must survive the refusal.
+        (view as any).sending = true;
+        textarea.value = "second";
+
+        await (view as any).sendMessage("second");
+
+        expect(plugin.api.chatStream).not.toHaveBeenCalled();
+        expect(textarea.value).toBe("second");
     });
 });
 
@@ -3057,7 +3119,10 @@ describe("ChatView.sendMessage — does not send generation overrides", () => {
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
 
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("hi", [], 5, expect.any(AbortSignal), undefined, "all");
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("hi", [], 5, expect.any(AbortSignal), undefined, "all", {
+            summary: "",
+            sessionId: null,
+        });
     });
 });
 
@@ -3075,7 +3140,10 @@ describe("ChatView.sendMessage — forwards searchChunkType", () => {
         textarea.value = "q";
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "wiki");
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "wiki", {
+            summary: "",
+            sessionId: null,
+        });
     });
 
     it("passes 'raw' when the setting is 'raw'", async () => {
@@ -3091,7 +3159,10 @@ describe("ChatView.sendMessage — forwards searchChunkType", () => {
         textarea.value = "q";
         container.find("lilbee-chat-send")!.trigger("click");
         await done;
-        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "raw");
+        expect(plugin.api.chatStream).toHaveBeenCalledWith("q", [], 5, expect.any(AbortSignal), undefined, "raw", {
+            summary: "",
+            sessionId: null,
+        });
     });
 });
 
@@ -4760,5 +4831,1088 @@ describe("ChatView.sendMessage — memory_extracted", () => {
         expect(
             (plugin as unknown as { refreshMemoryViews: ReturnType<typeof vi.fn> }).refreshMemoryViews,
         ).not.toHaveBeenCalled();
+    });
+});
+
+describe("compactionMarkerText", () => {
+    it("names what was condensed", () => {
+        expect(compactionMarkerText({ summary: "n", condensed: 3, stranded: 0 })).toBe(MESSAGES.CHAT_COMPACTED(3));
+    });
+
+    it("says plainly when some turns were dropped alongside the notes", () => {
+        expect(compactionMarkerText({ summary: "n", condensed: 3, stranded: 2 })).toBe(
+            MESSAGES.CHAT_COMPACTED_PARTIAL(3, 2),
+        );
+    });
+
+    it("says plainly when turns were dropped with no notes at all", () => {
+        expect(compactionMarkerText({ summary: "", condensed: 0, stranded: 4 })).toBe(MESSAGES.CHAT_STRANDED(4));
+    });
+});
+
+describe("ChatView — chat sessions", () => {
+    beforeEach(() => {
+        Notice.clear();
+    });
+
+    async function openChat(plugin: LilbeePlugin) {
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        return { view, container, messagesEl: container.find("lilbee-chat-messages")! };
+    }
+
+    async function send(container: MockElement, text: string, done: Promise<void>) {
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = text;
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+        await tick();
+    }
+
+    function streamOf(answer: string, sources: unknown[] = []) {
+        const events: SSEEvent[] = [{ event: SSE_EVENT.TOKEN, data: answer }];
+        if (sources.length > 0) events.push({ event: SSE_EVENT.SOURCES, data: sources });
+        events.push({ event: SSE_EVENT.DONE, data: {} });
+        return makeStream(events);
+    }
+
+    it("opens a session on the first turn, titled from the question", async () => {
+        const plugin = makePlugin();
+        const { mockFn, done } = streamOf("hi");
+        plugin.api.chatStream = mockFn;
+        const { container } = await openChat(plugin);
+
+        await send(container, "What is a bee?\nsecond line", done);
+
+        expect(plugin.api.createSession).toHaveBeenCalledWith("llama3", "both");
+        expect(plugin.api.renameSession).toHaveBeenCalledWith("s1", "What is a bee?");
+    });
+
+    it("keeps persisting turns when the title write fails", async () => {
+        const plugin = makePlugin();
+        plugin.api.renameSession = vi.fn().mockRejectedValue(new Error("store hiccup"));
+        const { mockFn, done } = streamOf("an answer");
+        plugin.api.chatStream = mockFn;
+        const { container } = await openChat(plugin);
+
+        await send(container, "q", done);
+
+        const calls = (plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>).mock.calls;
+        expect(calls[0]).toEqual(["s1", "user", "q", []]);
+    });
+
+    it("persists the user turn and then the assistant turn with its source paths", async () => {
+        const plugin = makePlugin();
+        const { mockFn, done } = streamOf("an answer", [
+            { source: "notes.md", chunk: "x" },
+            { source: "notes.md", chunk: "y" },
+            { source: "other.md", chunk: "z" },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const { container } = await openChat(plugin);
+
+        await send(container, "q", done);
+
+        const calls = (plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>).mock.calls;
+        expect(calls[0]).toEqual(["s1", "user", "q", []]);
+        expect(calls[1]).toEqual(["s1", "assistant", "an answer", ["notes.md", "other.md"]]);
+    });
+
+    it("reuses the open session on later turns", async () => {
+        const plugin = makePlugin();
+        const first = streamOf("a1");
+        plugin.api.chatStream = first.mockFn;
+        const { container } = await openChat(plugin);
+        await send(container, "q1", first.done);
+
+        const second = streamOf("a2");
+        plugin.api.chatStream = second.mockFn;
+        await send(container, "q2", second.done);
+
+        expect(plugin.api.createSession).toHaveBeenCalledTimes(1);
+    });
+
+    it("persists the question but not an answer whose stream never completed", async () => {
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([{ event: SSE_EVENT.TOKEN, data: "partial" }]);
+        plugin.api.chatStream = mockFn;
+        const { container } = await openChat(plugin);
+
+        await send(container, "q", done);
+
+        const roles = (plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1]);
+        expect(roles).toEqual(["user"]);
+    });
+
+    it("keeps answering when the store refuses the write", async () => {
+        const plugin = makePlugin();
+        plugin.api.createSession = vi.fn().mockRejectedValue(new Error("store down"));
+        const { mockFn, done } = streamOf("still answers");
+        plugin.api.chatStream = mockFn;
+        const { container, messagesEl } = await openChat(plugin);
+
+        await send(container, "q", done);
+
+        expect(messagesEl.children[1].find("lilbee-chat-content")!.textContent).toBe("still answers");
+        expect(plugin.api.appendSessionMessage).not.toHaveBeenCalled();
+    });
+
+    function deferred<T>() {
+        let resolve!: (v: T) => void;
+        let reject!: (e: unknown) => void;
+        const promise = new Promise<T>((res, rej) => {
+            resolve = res;
+            reject = rej;
+        });
+        return { promise, resolve, reject };
+    }
+
+    function createdDetail(id: string) {
+        return {
+            meta: {
+                id,
+                title: "Untitled chat",
+                created_at: "2026-07-16T00:00:00Z",
+                updated_at: "2026-07-16T00:00:00Z",
+                model_ref: "llama3",
+                scope: "both",
+                message_count: 0,
+                origin: "http",
+            },
+            messages: [],
+            summary: "",
+        };
+    }
+
+    it("a conversation cleared while its create is in flight stays unbound", async () => {
+        const plugin = makePlugin();
+        const create = deferred<ReturnType<typeof createdDetail>>();
+        plugin.api.createSession = vi.fn().mockReturnValue(create.promise);
+        const { mockFn, done } = streamOf("a1");
+        plugin.api.chatStream = mockFn;
+        const { view, container } = await openChat(plugin);
+
+        await send(container, "q1", done);
+        container.find("lilbee-chat-clear")!.trigger("click");
+        create.resolve(createdDetail("s1"));
+        await tick();
+        await tick();
+
+        expect((view as any).sessionId).toBeNull();
+        // The turn still lands in the conversation it belonged to…
+        expect(plugin.api.appendSessionMessage).toHaveBeenCalledWith("s1", "user", "q1", []);
+        // …but the answer queued behind it is dropped with the conversation.
+        const roles = (plugin.api.appendSessionMessage as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1]);
+        expect(roles).toEqual(["user"]);
+    });
+
+    it("a resume that races the first turn's create keeps the resumed session", async () => {
+        const plugin = makePlugin();
+        const create = deferred<ReturnType<typeof createdDetail>>();
+        plugin.api.createSession = vi.fn().mockReturnValue(create.promise);
+        plugin.api.getSession = vi.fn().mockResolvedValue({
+            ...createdDetail("s5"),
+            meta: { ...createdDetail("s5").meta, title: "Earlier chat" },
+        });
+        const { mockFn, done } = streamOf("a1");
+        plugin.api.chatStream = mockFn;
+        const { view, container } = await openChat(plugin);
+
+        await send(container, "q1", done);
+        await (view as any).resumeSession("s5");
+        create.resolve(createdDetail("s9"));
+        await tick();
+        await tick();
+
+        expect((view as any).sessionId).toBe("s5");
+    });
+
+    it("a store failure from a previous conversation doesn't unbind a resumed one", async () => {
+        const plugin = makePlugin();
+        const create = deferred<ReturnType<typeof createdDetail>>();
+        plugin.api.createSession = vi.fn().mockReturnValue(create.promise);
+        plugin.api.getSession = vi.fn().mockResolvedValue(createdDetail("s5"));
+        const { mockFn, done } = streamOf("a1");
+        plugin.api.chatStream = mockFn;
+        const { view, container } = await openChat(plugin);
+
+        await send(container, "q1", done);
+        await (view as any).resumeSession("s5");
+        create.reject(new Error("store down"));
+        await tick();
+        await tick();
+
+        expect((view as any).sessionId).toBe("s5");
+    });
+
+    it("a transient store failure drops the write but keeps the conversation bound", async () => {
+        const plugin = makePlugin();
+        const first = streamOf("a1");
+        plugin.api.chatStream = first.mockFn;
+        const { container } = await openChat(plugin);
+        await send(container, "q1", first.done);
+
+        plugin.api.appendSessionMessage = vi.fn().mockRejectedValue(new Error("timeout"));
+        const second = streamOf("a2");
+        plugin.api.chatStream = second.mockFn;
+        await send(container, "q2", second.done);
+
+        plugin.api.appendSessionMessage = vi.fn().mockResolvedValue({ meta: { id: "s1" }, messages: [], summary: "" });
+        const third = streamOf("a3");
+        plugin.api.chatStream = third.mockFn;
+        await send(container, "q3", third.done);
+
+        expect(plugin.api.createSession).toHaveBeenCalledTimes(1);
+        expect(plugin.api.appendSessionMessage).toHaveBeenCalledWith("s1", "user", "q3", []);
+    });
+
+    it("sessions turned off mid-chat unbinds so the conversation continues in memory", async () => {
+        const plugin = makePlugin();
+        const first = streamOf("a1");
+        plugin.api.chatStream = first.mockFn;
+        const { view, container } = await openChat(plugin);
+        await send(container, "q1", first.done);
+
+        plugin.api.appendSessionMessage = vi
+            .fn()
+            .mockRejectedValue(new Error('Server responded 404: {"detail":"Sessions are off."}'));
+        const second = streamOf("a2");
+        plugin.api.chatStream = second.mockFn;
+        await send(container, "q2", second.done);
+
+        expect((view as any).sessionId).toBeNull();
+    });
+
+    it("clearing the chat unbinds the session so the next turn opens a new one", async () => {
+        const plugin = makePlugin();
+        const first = streamOf("a1");
+        plugin.api.chatStream = first.mockFn;
+        const { container } = await openChat(plugin);
+        await send(container, "q1", first.done);
+
+        container.find("lilbee-chat-clear")!.trigger("click");
+
+        const second = streamOf("a2");
+        plugin.api.chatStream = second.mockFn;
+        await send(container, "q2", second.done);
+
+        expect(plugin.api.createSession).toHaveBeenCalledTimes(2);
+    });
+
+    describe("compaction over the wire", () => {
+        function compactionStream(data: { summary: string; condensed: number; stranded: number }) {
+            return makeStream([
+                { event: SSE_EVENT.COMPACTING, data: {} },
+                { event: SSE_EVENT.COMPACTING, data: { batch: 1, batches: 2 } },
+                { event: SSE_EVENT.COMPACTING, data: { batch: 2, batches: 2 } },
+                { event: SSE_EVENT.COMPACTION, data },
+                { event: SSE_EVENT.TOKEN, data: { token: "a2" } },
+                { event: SSE_EVENT.DONE, data: {} },
+            ]);
+        }
+
+        it("marks the fold in the transcript and adopts the new summary", async () => {
+            const plugin = makePlugin();
+            const first = streamOf("a1");
+            plugin.api.chatStream = first.mockFn;
+            const { view, container, messagesEl } = await openChat(plugin);
+            await send(container, "q1", first.done);
+
+            const second = compactionStream({ summary: "the notes", condensed: 2, stranded: 0 });
+            plugin.api.chatStream = second.mockFn;
+            await send(container, "q2", second.done);
+
+            const marker = messagesEl.find("lilbee-chat-compaction");
+            expect(marker).not.toBeNull();
+            // setIcon writes the glyph name into the mock DOM, so match the wording, not the whole node.
+            expect(marker!.textContent).toContain(MESSAGES.CHAT_COMPACTED(2));
+            expect((view as any).summary).toBe("the notes");
+        });
+
+        it("sends the trimmed history and the summary on the following turn", async () => {
+            const plugin = makePlugin();
+            const first = streamOf("a1");
+            plugin.api.chatStream = first.mockFn;
+            const { container } = await openChat(plugin);
+            await send(container, "q1", first.done);
+
+            const second = compactionStream({ summary: "the notes", condensed: 2, stranded: 0 });
+            plugin.api.chatStream = second.mockFn;
+            await send(container, "q2", second.done);
+
+            const third = streamOf("a3");
+            plugin.api.chatStream = third.mockFn;
+            await send(container, "q3", third.done);
+
+            // q1/a1 were folded away; the model's view resumes at q2.
+            expect(third.mockFn.mock.calls[0][1]).toEqual([
+                { role: "user", content: "q2" },
+                { role: "assistant", content: "a2" },
+            ]);
+            expect(third.mockFn.mock.calls[0][6]).toEqual({ summary: "the notes", sessionId: "s1" });
+        });
+
+        it("labels the spinner while the chat engine warms, once", async () => {
+            const plugin = makePlugin();
+            const { mockFn, done } = makeStream([
+                { event: SSE_EVENT.WARMING, data: { role: "chat" } },
+                { event: SSE_EVENT.WARMING, data: { role: "chat" } },
+                { event: SSE_EVENT.TOKEN, data: { token: "a1" } },
+                { event: SSE_EVENT.DONE, data: {} },
+            ]);
+            plugin.api.chatStream = mockFn;
+            const { container, messagesEl } = await openChat(plugin);
+            await send(container, "q1", done);
+
+            // The label rides inside the spinner, so it leaves with it when content reveals.
+            const labels = messagesEl.findAll("lilbee-chat-warming-label");
+            expect(labels).toHaveLength(1);
+            expect(labels[0].textContent).toBe(MESSAGES.CHAT_WARMING);
+            expect(messagesEl.children[1].find("lilbee-chat-content")!.textContent).toBe("a1");
+        });
+
+        it("renders the warming label exactly once for repeated warming events", async () => {
+            const plugin = makePlugin();
+            const { view } = await openChat(plugin);
+            const bubble = new MockElement() as unknown as HTMLElement;
+            const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
+            const state: any = { compaction: null, anchorEl: bubble, spinnerEl: spinner, warmingShown: false };
+
+            const fire = () =>
+                (view as any).handleStreamEvent(
+                    { event: SSE_EVENT.WARMING, data: {} },
+                    bubble,
+                    bubble,
+                    state,
+                    () => {},
+                    () => {},
+                );
+            fire();
+            fire();
+
+            expect((spinner as unknown as MockElement).findAll("lilbee-chat-warming-label")).toHaveLength(1);
+        });
+
+        it("ticks the marker with the server's batch progress", async () => {
+            const plugin = makePlugin();
+            const { view, container, messagesEl } = await openChat(plugin);
+            const first = streamOf("a1");
+            plugin.api.chatStream = first.mockFn;
+            await send(container, "q1", first.done);
+
+            const bubble = (messagesEl as unknown as MockElement).createDiv({ cls: "probe" });
+            const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
+            const state: any = {
+                compaction: null,
+                anchorEl: bubble,
+                spinnerEl: spinner,
+                warmingShown: false,
+            };
+            (view as any).handleStreamEvent(
+                { event: SSE_EVENT.COMPACTING, data: { batch: 1, batches: 3 } },
+                bubble,
+                bubble,
+                state,
+                () => {},
+                () => {},
+            );
+            await Promise.resolve();
+
+            expect(state.compaction.title.textContent).toBe(MESSAGES.CHAT_COMPACTING_PROGRESS(1, 3));
+            // The bar keeps animating: a batch is a model call of unknowable length,
+            // so a fill claiming progress would be dead-looking and wrong.
+            expect(state.compaction.fill.classList.contains("lilbee-progress-indeterminate")).toBe(true);
+            expect(state.compaction.root.classList.contains("is-condensing")).toBe(true);
+        });
+
+        it("explains itself and how to turn it off, in both states", async () => {
+            const plugin = makePlugin();
+            const { view, container, messagesEl } = await openChat(plugin);
+            const first = streamOf("a1");
+            plugin.api.chatStream = first.mockFn;
+            await send(container, "q1", first.done);
+
+            const bubble = (messagesEl as unknown as MockElement).createDiv({ cls: "probe" });
+            const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
+            const state: any = { compaction: null, anchorEl: bubble, spinnerEl: spinner, warmingShown: false };
+            const fire = (event: any) =>
+                (view as any).handleStreamEvent(
+                    event,
+                    bubble,
+                    bubble,
+                    state,
+                    () => {},
+                    () => {},
+                );
+
+            fire({ event: SSE_EVENT.COMPACTING, data: {} });
+            await Promise.resolve();
+            expect((state.compaction.root as MockElement).getAttribute("title")).toBe(MESSAGES.TOOLTIP_COMPACTION);
+
+            fire({ event: SSE_EVENT.COMPACTION, data: { summary: "n", condensed: 6, stranded: 0 } });
+            await Promise.resolve();
+            // Settling empties the children; the explanation stays on the boundary.
+            expect((state.compaction.root as MockElement).getAttribute("title")).toBe(MESSAGES.TOOLTIP_COMPACTION);
+        });
+
+        it("keeps the plain label when the whole fold is a single batch", async () => {
+            const plugin = makePlugin();
+            const { view, container, messagesEl } = await openChat(plugin);
+            const first = streamOf("a1");
+            plugin.api.chatStream = first.mockFn;
+            await send(container, "q1", first.done);
+
+            const bubble = (messagesEl as unknown as MockElement).createDiv({ cls: "probe" });
+            const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
+            const state: any = { compaction: null, anchorEl: bubble, spinnerEl: spinner, warmingShown: false };
+            const fire = (data: any) =>
+                (view as any).handleStreamEvent(
+                    { event: SSE_EVENT.COMPACTING, data },
+                    bubble,
+                    bubble,
+                    state,
+                    () => {},
+                    () => {},
+                );
+
+            fire({});
+            await Promise.resolve();
+            fire({ batch: 1, batches: 1 });
+            await Promise.resolve();
+
+            // "(1 of 1)" is noise, and the bar must not read as finished mid-work.
+            expect(state.compaction.title.textContent).toBe(MESSAGES.CHAT_COMPACTING);
+            expect(state.compaction.fill.classList.contains("lilbee-progress-indeterminate")).toBe(true);
+        });
+
+        it("settles the card into the boundary pill when the fold lands", async () => {
+            const plugin = makePlugin();
+            const { view, container, messagesEl } = await openChat(plugin);
+            const first = streamOf("a1");
+            plugin.api.chatStream = first.mockFn;
+            await send(container, "q1", first.done);
+
+            const bubble = (messagesEl as unknown as MockElement).createDiv({ cls: "probe" });
+            const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
+            const state: any = { compaction: null, anchorEl: bubble, spinnerEl: spinner, warmingShown: false };
+            const fire = (event: any) =>
+                (view as any).handleStreamEvent(
+                    event,
+                    bubble,
+                    bubble,
+                    state,
+                    () => {},
+                    () => {},
+                );
+
+            fire({ event: SSE_EVENT.COMPACTING, data: {} });
+            await Promise.resolve();
+            fire({ event: SSE_EVENT.COMPACTION, data: { summary: "n", condensed: 6, stranded: 0 } });
+            await Promise.resolve();
+
+            const root = state.compaction.root as MockElement;
+            expect(root.classList.contains("is-done")).toBe(true);
+            expect(root.classList.contains("is-condensing")).toBe(false);
+            expect(root.classList.contains("is-lossy")).toBe(false);
+            expect(root.find("lilbee-chat-compaction-pill")!.textContent).toContain(MESSAGES.CHAT_COMPACTED(6));
+        });
+
+        it("marks a fold that stranded turns as lossy", async () => {
+            const plugin = makePlugin();
+            const { view, container, messagesEl } = await openChat(plugin);
+            const first = streamOf("a1");
+            plugin.api.chatStream = first.mockFn;
+            await send(container, "q1", first.done);
+
+            const bubble = (messagesEl as unknown as MockElement).createDiv({ cls: "probe" });
+            const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
+            const state: any = { compaction: null, anchorEl: bubble, spinnerEl: spinner, warmingShown: false };
+            const fire = (event: any) =>
+                (view as any).handleStreamEvent(
+                    event,
+                    bubble,
+                    bubble,
+                    state,
+                    () => {},
+                    () => {},
+                );
+
+            fire({ event: SSE_EVENT.COMPACTING, data: {} });
+            await Promise.resolve();
+            fire({ event: SSE_EVENT.COMPACTION, data: { summary: "n", condensed: 6, stranded: 2 } });
+            await Promise.resolve();
+
+            expect((state.compaction.root as MockElement).classList.contains("is-lossy")).toBe(true);
+        });
+
+        it("ignores a fold that arrives with no card to settle", async () => {
+            const plugin = makePlugin();
+            const { view } = await openChat(plugin);
+            const el = new MockElement() as unknown as HTMLElement;
+            const state: any = { compaction: null, anchorEl: el, spinnerEl: el, warmingShown: false };
+
+            (view as any).handleStreamEvent(
+                { event: SSE_EVENT.COMPACTION, data: { summary: "n", condensed: 1, stranded: 0 } },
+                el,
+                el,
+                state,
+                () => {},
+                () => {},
+            );
+            await Promise.resolve();
+
+            expect(state.compaction).toBeNull();
+        });
+
+        it("keeps one marker when the server announces condensing twice", async () => {
+            const plugin = makePlugin();
+            const { mockFn, done } = makeStream([
+                { event: SSE_EVENT.COMPACTING, data: {} },
+                { event: SSE_EVENT.COMPACTING, data: {} },
+                { event: SSE_EVENT.TOKEN, data: { token: "a1" } },
+                { event: SSE_EVENT.DONE, data: {} },
+            ]);
+            plugin.api.chatStream = mockFn;
+            const { container, messagesEl } = await openChat(plugin);
+            await send(container, "q1", done);
+
+            expect(messagesEl.findAll("lilbee-chat-compaction")).toHaveLength(1);
+            expect(messagesEl.find("lilbee-chat-compaction")!.textContent).toContain(MESSAGES.CHAT_COMPACTING);
+        });
+
+        it("adopts a compaction that arrived without its announcement", async () => {
+            const plugin = makePlugin();
+            const { mockFn, done } = makeStream([
+                { event: SSE_EVENT.COMPACTION, data: { summary: "notes", condensed: 1, stranded: 0 } },
+                { event: SSE_EVENT.TOKEN, data: { token: "a1" } },
+                { event: SSE_EVENT.DONE, data: {} },
+            ]);
+            plugin.api.chatStream = mockFn;
+            const { view, container, messagesEl } = await openChat(plugin);
+            await send(container, "q1", done);
+
+            expect((view as any).summary).toBe("notes");
+            expect(messagesEl.find("lilbee-chat-compaction")).toBeNull();
+        });
+
+        it("ignores a condensing announcement after the messages pane is gone", async () => {
+            const plugin = makePlugin();
+            const { view } = await openChat(plugin);
+            const el = new MockElement() as unknown as HTMLElement;
+            const state: any = { compaction: null, anchorEl: el };
+
+            (view as any).messagesEl = null;
+            (view as any).handleStreamEvent(
+                { event: SSE_EVENT.COMPACTING, data: {} },
+                el,
+                el,
+                state,
+                () => {},
+                () => {},
+            );
+
+            expect(state.compaction).toBeNull();
+        });
+
+        it("a resumed conversation carries its stored summary into the next turn", async () => {
+            const plugin = makePlugin();
+            plugin.api.getSession = vi.fn().mockResolvedValue({
+                ...createdDetail("s5"),
+                summary: "stored notes",
+            });
+            const { view, container } = await openChat(plugin);
+            await (view as any).resumeSession("s5");
+
+            const { mockFn, done } = streamOf("a1");
+            plugin.api.chatStream = mockFn;
+            await send(container, "q", done);
+
+            expect(mockFn.mock.calls[0][6]).toEqual({ summary: "stored notes", sessionId: "s5" });
+        });
+    });
+});
+
+describe("ChatView — resuming a session", () => {
+    beforeEach(() => {
+        Notice.clear();
+    });
+
+    function detail(overrides: Record<string, unknown> = {}) {
+        return {
+            meta: {
+                id: "s5",
+                title: "Earlier chat",
+                created_at: "2026-07-16T00:00:00Z",
+                updated_at: "2026-07-16T01:00:00Z",
+                model_ref: "llama3",
+                scope: "both",
+                message_count: 2,
+                origin: "http",
+            },
+            messages: [
+                { role: "user", content: "old question", sources: [], ts: "t1" },
+                { role: "assistant", content: "old answer", sources: ["notes.md"], ts: "t2" },
+            ],
+            summary: "",
+            ...overrides,
+        };
+    }
+
+    async function resume(plugin: LilbeePlugin, id = "s5") {
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        // Let onOpen's model/config fetches land before resume reads chatActive/chatInstalled.
+        await tick();
+        await (view as any).resumeSession(id);
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        return { view, container, messagesEl: container.find("lilbee-chat-messages")! };
+    }
+
+    it("renders the saved transcript and notices the title", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail());
+
+        const { messagesEl } = await resume(plugin);
+
+        expect(messagesEl.children[0].textContent).toContain("old question");
+        expect(messagesEl.children[1].find("lilbee-chat-content")!.textContent).toBe("old answer");
+        expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SESSION_RESUMED("Earlier chat"))).toBe(true);
+    });
+
+    it("restores saved source paths as chips", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail());
+
+        const { messagesEl } = await resume(plugin);
+
+        const chip = messagesEl.children[1].find("lilbee-source-chip-file");
+        expect(chip!.textContent).toBe("notes.md");
+    });
+
+    it("continues a resumed conversation in the same session", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail());
+        const { container } = await resume(plugin);
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: "new" },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "follow up";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+        await tick();
+
+        expect(plugin.api.createSession).not.toHaveBeenCalled();
+        expect(plugin.api.appendSessionMessage).toHaveBeenCalledWith("s5", "user", "follow up", []);
+    });
+
+    it("sends the restored history back with the next question", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail());
+        const { container } = await resume(plugin);
+        const { mockFn, done } = makeStream([{ event: SSE_EVENT.DONE, data: {} }]);
+        plugin.api.chatStream = mockFn;
+
+        const textarea = container.find("lilbee-chat-textarea")!;
+        textarea.value = "follow up";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+
+        expect(mockFn.mock.calls[0][1]).toEqual([
+            { role: "user", content: "old question" },
+            { role: "assistant", content: "old answer" },
+        ]);
+    });
+
+    it("switches to the session's model when it is installed", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail({ meta: { ...detail().meta, model_ref: "phi3" } }));
+
+        await resume(plugin);
+
+        expect(plugin.api.setChatModel).toHaveBeenCalledWith("phi3");
+    });
+
+    it("never points chat at a model that is not installed, and says so", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail({ meta: { ...detail().meta, model_ref: "gone-7b" } }));
+
+        const { messagesEl } = await resume(plugin);
+
+        expect(plugin.api.setChatModel).not.toHaveBeenCalled();
+        expect(
+            Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SESSION_MODEL_UNAVAILABLE("gone-7b", "llama3")),
+        ).toBe(true);
+        expect(messagesEl.children[0].textContent).toContain("old question");
+    });
+
+    it("leaves the model alone when the session already used it", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail());
+
+        await resume(plugin);
+
+        expect(plugin.api.setChatModel).not.toHaveBeenCalled();
+    });
+
+    it("restores the session's scope, translating 'both' back to 'all'", async () => {
+        const plugin = makePlugin();
+        plugin.settings.searchChunkType = "wiki";
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail());
+
+        await resume(plugin);
+
+        expect(plugin.settings.searchChunkType).toBe("all");
+        expect(plugin.saveSettings).toHaveBeenCalled();
+    });
+
+    it("ignores a scope this build does not know", async () => {
+        const plugin = makePlugin();
+        plugin.settings.searchChunkType = "all";
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail({ meta: { ...detail().meta, scope: "future" } }));
+
+        await resume(plugin);
+
+        expect(plugin.settings.searchChunkType).toBe("all");
+        expect(plugin.saveSettings).not.toHaveBeenCalled();
+    });
+
+    it("renders a compaction summary above the transcript when the server sends one", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail({ summary: "They discussed bees." }));
+
+        const { messagesEl } = await resume(plugin);
+
+        const summary = messagesEl.find("lilbee-chat-summary");
+        expect(summary).not.toBeNull();
+        expect(summary!.find("lilbee-chat-summary-body")!.textContent).toBe("They discussed bees.");
+    });
+
+    it("renders no summary block when there is nothing folded away", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail());
+
+        const { messagesEl } = await resume(plugin);
+
+        expect(messagesEl.find("lilbee-chat-summary")).toBeNull();
+    });
+
+    it("replaces the current transcript rather than appending to it", async () => {
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: "first" },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        container.find("lilbee-chat-textarea")!.value = "live question";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail());
+        await (view as any).resumeSession("s5");
+        await tick();
+
+        expect(messagesEl.children).toHaveLength(2);
+        expect(messagesEl.children[0].textContent).toContain("old question");
+    });
+
+    it("warns and keeps the view intact when the session cannot be loaded", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockRejectedValue(new Error("gone"));
+
+        const { messagesEl } = await resume(plugin);
+
+        expect(Notice.instances.some((n) => n.message.includes("Could not resume conversation"))).toBe(true);
+        expect(messagesEl.children).toHaveLength(0);
+    });
+});
+
+describe("ChatView — sessions toolbar button", () => {
+    beforeEach(() => {
+        Notice.clear();
+        sessionsHooks.length = 0;
+    });
+
+    async function openChat(plugin: LilbeePlugin) {
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        return { view, container, messagesEl: container.find("lilbee-chat-messages")! };
+    }
+
+    it("opens the sessions modal with no active conversation on a fresh view", async () => {
+        const { container } = await openChat(makePlugin());
+
+        container.find("lilbee-chat-sessions")!.trigger("click");
+
+        expect(sessionsHooks).toHaveLength(1);
+        expect(sessionsHooks[0].activeId).toBeNull();
+    });
+
+    it("hands the modal the id of the conversation in progress", async () => {
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: "a" },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const { container } = await openChat(plugin);
+        container.find("lilbee-chat-textarea")!.value = "q";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+        await tick();
+
+        container.find("lilbee-chat-sessions")!.trigger("click");
+
+        expect(sessionsHooks[0].activeId).toBe("s1");
+    });
+
+    it("the modal's resume hook loads the chosen conversation", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue({
+            meta: {
+                id: "s5",
+                title: "Earlier chat",
+                created_at: "t",
+                updated_at: "t",
+                model_ref: "llama3",
+                scope: "both",
+                message_count: 1,
+            },
+            messages: [{ role: "user", content: "old question", sources: [], ts: "t" }],
+            summary: "",
+        });
+        const { container, messagesEl } = await openChat(plugin);
+        container.find("lilbee-chat-sessions")!.trigger("click");
+
+        sessionsHooks[0].resume("s5");
+        await tick();
+
+        expect(plugin.api.getSession).toHaveBeenCalledWith("s5");
+        expect(messagesEl.children[0].textContent).toContain("old question");
+    });
+
+    it("the modal's new-chat hook clears the transcript and says so", async () => {
+        const plugin = makePlugin();
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: "a" },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const { container, messagesEl } = await openChat(plugin);
+        container.find("lilbee-chat-textarea")!.value = "q";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+        container.find("lilbee-chat-sessions")!.trigger("click");
+
+        sessionsHooks[0].startNew();
+
+        expect(messagesEl.children).toHaveLength(0);
+        expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SESSION_NEW)).toBe(true);
+    });
+});
+
+describe("ChatView — restored session guards", () => {
+    beforeEach(() => {
+        Notice.clear();
+    });
+
+    it("clicking a restored source chip opens the file in the vault", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue({
+            meta: {
+                id: "s5",
+                title: "Earlier chat",
+                created_at: "t",
+                updated_at: "t",
+                model_ref: "llama3",
+                scope: "both",
+                message_count: 1,
+            },
+            messages: [{ role: "assistant", content: "answer", sources: ["notes.md"], ts: "t" }],
+            summary: "",
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await (view as any).resumeSession("s5");
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        container.find("lilbee-source-chip")!.trigger("click");
+
+        expect(view.app.workspace.openLinkText).toHaveBeenCalledWith("notes.md", "");
+    });
+
+    it("restoring a transcript no-ops once the view has been torn down", async () => {
+        const view = new ChatView(makeLeaf(), makePlugin());
+        await view.onOpen();
+        (view as any).messagesEl = null;
+
+        expect(() =>
+            (view as any).renderRestoredMessage({ role: "user", content: "x", sources: [], ts: "t" }),
+        ).not.toThrow();
+        expect(() => (view as any).renderSummaryBoundary("summary")).not.toThrow();
+    });
+
+    it("resume tolerates the view being torn down mid-load", async () => {
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockImplementation(() => {
+            (view as any).messagesEl = null;
+            return Promise.resolve({
+                meta: {
+                    id: "s5",
+                    title: "Earlier chat",
+                    created_at: "t",
+                    updated_at: "t",
+                    model_ref: "llama3",
+                    scope: "both",
+                    message_count: 0,
+                },
+                messages: [],
+                summary: "",
+            });
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        await expect((view as any).resumeSession("s5")).resolves.toBeUndefined();
+        expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SESSION_RESUMED("Earlier chat"))).toBe(true);
+    });
+});
+
+describe("ChatView — restored turns without sources", () => {
+    it("renders no source block for an answer that cited nothing", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.api.getSession = vi.fn().mockResolvedValue({
+            meta: {
+                id: "s5",
+                title: "Earlier chat",
+                created_at: "t",
+                updated_at: "t",
+                model_ref: "llama3",
+                scope: "both",
+                message_count: 1,
+            },
+            messages: [{ role: "assistant", content: "answer", sources: [], ts: "t" }],
+            summary: "",
+        });
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await (view as any).resumeSession("s5");
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        expect(container.find("lilbee-chat-sources")).toBeNull();
+        expect(container.find("lilbee-chat-content")!.textContent).toBe("answer");
+    });
+});
+
+describe("ChatView — resume interactions with live state", () => {
+    beforeEach(() => {
+        Notice.clear();
+    });
+
+    function detail(scope = "both") {
+        return {
+            meta: {
+                id: "s5",
+                title: "Earlier chat",
+                created_at: "t",
+                updated_at: "t",
+                model_ref: "llama3",
+                scope,
+                message_count: 1,
+            },
+            messages: [{ role: "user", content: "old question", sources: [], ts: "t" }],
+            summary: "",
+        };
+    }
+
+    it("does not let an aborted answer leak into the restored transcript", async () => {
+        const plugin = makePlugin();
+        // Yields a token then hangs until aborted, mirroring how the real stream unwinds on stop.
+        plugin.api.chatStream = vi
+            .fn()
+            .mockImplementation((_q: string, _h: unknown, _k: unknown, signal: AbortSignal) =>
+                (async function* () {
+                    yield { event: SSE_EVENT.TOKEN, data: "partial answer" };
+                    await new Promise((_resolve, reject) => {
+                        signal.addEventListener("abort", () => {
+                            const err = new Error("aborted");
+                            err.name = "AbortError";
+                            reject(err);
+                        });
+                    });
+                })(),
+            );
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail());
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        container.find("lilbee-chat-textarea")!.value = "live question";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+
+        await (view as any).resumeSession("s5");
+        await tick();
+        await tick();
+
+        expect((view as any).history).toEqual([{ role: "user", content: "old question" }]);
+        expect((view as any).sending).toBe(false);
+    });
+
+    it("moves the search-scope highlight when a session restores a different scope", async () => {
+        const plugin = makePlugin();
+        plugin.settings.searchChunkType = "all";
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail("raw"));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+
+        await (view as any).resumeSession("s5");
+        await tick();
+
+        const active = container.findAll("lilbee-search-mode-btn").filter((b) => b.classList.contains("active"));
+        expect(active).toHaveLength(1);
+        expect(active[0].textContent).toBe(MESSAGES.LABEL_SEARCH_RAW);
+        expect(plugin.settings.searchChunkType).toBe("raw");
+    });
+
+    it("keeps the current scope when a wiki-scoped session resumes with the wiki feature off", async () => {
+        const plugin = makePlugin();
+        plugin.settings.wikiEnabled = false;
+        plugin.settings.searchChunkType = "all";
+        plugin.api.getSession = vi.fn().mockResolvedValue(detail("wiki"));
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        await (view as any).resumeSession("s5");
+        await tick();
+
+        expect(plugin.settings.searchChunkType).toBe("all");
+        expect(plugin.saveSettings).not.toHaveBeenCalled();
     });
 });

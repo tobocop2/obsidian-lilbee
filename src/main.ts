@@ -65,6 +65,7 @@ import {
     errorMessage,
     extractSseErrorMessage,
     formatDiskSize,
+    isVersionOlder,
     HEALTH_FAILURE_STREAK_THRESHOLD,
     HEALTH_PROBE_INTERVAL_MS,
     NOTICE_DURATION_MS,
@@ -927,7 +928,7 @@ export default class LilbeePlugin extends Plugin {
             const health = await this.api.health();
             if (health.isErr()) return;
             const latest = (await getLatestRelease(this.settings.includeDevBuilds)).tag.replace(/^v/, "");
-            if (!latest || health.value.version === latest) return;
+            if (!latest || !isVersionOlder(health.value.version, latest)) return;
             // NOTICE_PERMANENT keeps it up until the user clicks it away.
             new Notice(MESSAGES.NOTICE_EXTERNAL_SERVER_OUTDATED(health.value.version, latest), NOTICE_PERMANENT);
         } catch {

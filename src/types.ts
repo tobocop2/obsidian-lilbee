@@ -125,6 +125,7 @@ export interface ConfigResponse {
     tesseract_timeout?: number;
     max_tokens?: number;
     show_reasoning?: boolean;
+    chat_compaction?: boolean;
     max_reasoning_chars?: number;
     model_keep_alive?: string;
     gpu_memory_fraction?: number;
@@ -171,6 +172,7 @@ export const CONFIG_KEY = {
     GENERAL_SYSTEM_PROMPT: "general_system_prompt",
     CHAT_MODE: "chat_mode",
     SHOW_REASONING: "show_reasoning",
+    CHAT_COMPACTION: "chat_compaction",
     CRAWL_RENDER_MODE: "crawl_render_mode",
 } as const;
 
@@ -301,6 +303,76 @@ export interface SSEEvent {
 export interface Message {
     role: "user" | "assistant" | "system";
     content: string;
+}
+
+/** Author of a persisted chat turn. Narrower than `Message.role`: the store has no system turns. */
+export type SessionRole = "user" | "assistant";
+
+export const SESSION_ROLE = {
+    USER: "user",
+    ASSISTANT: "assistant",
+} as const satisfies Record<string, SessionRole>;
+
+/** A session's metadata, without its transcript. Body of each `GET /api/sessions` row. */
+export interface SessionMeta {
+    id: string;
+    title: string;
+    created_at: string;
+    updated_at: string;
+    model_ref: string;
+    scope: string;
+    message_count: number;
+    /** Owning surface (`tui`/`http`/`cli`); the list route only returns these human origins. */
+    origin: string;
+}
+
+/** One persisted turn. `sources` are bare source paths, not the richer `Source` chat streams carry. */
+export interface SessionMessageItem {
+    role: SessionRole;
+    content: string;
+    sources: string[];
+    ts: string;
+}
+
+/** Body of `GET /api/sessions/{id}`, and of create/append. `summary` is `""` until compaction has folded turns away. */
+export interface SessionDetail {
+    meta: SessionMeta;
+    messages: SessionMessageItem[];
+    summary: string;
+}
+
+export interface SessionListResponse {
+    sessions: SessionMeta[];
+}
+
+/** Data of a `compacting` SSE event: batch progress while the server condenses. */
+export interface CompactingEventData {
+    batch?: number;
+    batches?: number;
+}
+
+/** Data of a `compaction` SSE event: what a chat turn folded away before answering. */
+export interface CompactionEventData {
+    summary: string;
+    condensed: number;
+    /** Turns dropped with no notes; shown plainly rather than hidden. */
+    stranded: number;
+}
+
+/** Conversation state a chat stream carries so the server can window and compact it. */
+export interface ConversationState {
+    summary: string;
+    sessionId: string | null;
+}
+
+export interface SessionRenameResponse {
+    id: string;
+    title: string;
+}
+
+export interface SessionDeleteResponse {
+    id: string;
+    deleted: boolean;
 }
 
 export type ServerState = "stopped" | "downloading" | "starting" | "ready" | "error";
@@ -626,6 +698,9 @@ export const SSE_EVENT = {
     SOURCES: "sources",
     DONE: "done",
     ERROR: "error",
+    COMPACTING: "compacting",
+    COMPACTION: "compaction",
+    WARMING: "warming",
     PROGRESS: "progress",
     MESSAGE: "message",
     FILE_START: "file_start",

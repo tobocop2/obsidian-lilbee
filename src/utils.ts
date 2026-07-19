@@ -123,6 +123,23 @@ export function relativeTime(timestamp: number): string {
 }
 
 /**
+ * True when `current` orders strictly before `latest` under the release scheme
+ * ("0.6.66b507", "0.6.90b420.dev722"): every numeric run compares in sequence,
+ * missing runs count as zero. A dev build ahead of the newest release is not older.
+ */
+export function isVersionOlder(current: string, latest: string): boolean {
+    const runs = (v: string): number[] => (v.match(/\d+/g) ?? []).map(Number);
+    const a = runs(current);
+    const b = runs(latest);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        const x = a[i] ?? 0;
+        const y = b[i] ?? 0;
+        if (x !== y) return x < y;
+    }
+    return false;
+}
+
+/**
  * Render the server's ISO-8601 timestamp ("2026-05-09T05:49:38.800771+00:00")
  * as a human "5m ago" / "3d ago" string. Returns the raw value when parsing
  * fails so callers never lose the data.
@@ -299,7 +316,7 @@ export function isModelUnavailableError(code: string | null, message: string): b
  */
 /** Hand a progress bar from its indeterminate animation to a real width. */
 export function setDeterminateProgress(fill: HTMLElement, percent: number): void {
-    fill.classList.remove("lilbee-wizard-progress-indeterminate");
+    fill.classList.remove("lilbee-progress-indeterminate");
     fill.style.width = `${percent}%`;
 }
 

@@ -538,6 +538,7 @@
 
 .lilbee-chat-save,
 .lilbee-chat-clear,
+.lilbee-chat-sessions,
 .lilbee-chat-gpu {
     display: flex;
     align-items: center;
@@ -554,6 +555,7 @@
 
 .lilbee-chat-save:hover,
 .lilbee-chat-clear:hover,
+.lilbee-chat-sessions:hover,
 .lilbee-chat-gpu:hover {
     background-color: var(--background-modifier-hover);
     color: var(--text-normal);
@@ -1913,7 +1915,11 @@
     transition: width 200ms ease-out;
 }
 
-.lilbee-wizard-progress-indeterminate {
+/* Shared by the setup wizard, settings, and the chat compaction card.
+ * --wizard-step-color is set per wizard step and falls back to the accent
+ * everywhere else, so this stays unscoped on purpose: scoping it under
+ * .lilbee-wizard-progress would silently kill the animation in chat. */
+.lilbee-progress-indeterminate {
     /* The base .lilbee-progress-bar starts at width:0 so the determinate
      * `style.width` JS path can grow it. Indeterminate mode has no width
      * to grow — it animates a moving gradient — so the bar must already
@@ -4782,4 +4788,263 @@ button.lilbee-model-chip-select:focus-visible {
         animation: none;
         background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
     }
+}
+
+.lilbee-sessions-modal {
+    padding: var(--size-4-3, 12px);
+}
+
+.lilbee-sessions-header {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    margin-bottom: var(--size-4-2, 8px);
+}
+
+.lilbee-sessions-header h2 {
+    margin: 0;
+}
+
+.lilbee-sessions-count {
+    color: var(--text-muted);
+    font-size: var(--font-smaller, 13px);
+}
+
+.lilbee-sessions-new {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    padding: var(--size-4-1, 4px);
+    background: transparent;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s, 4px);
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.lilbee-sessions-new:hover {
+    color: var(--text-normal);
+}
+
+.lilbee-sessions-filter {
+    width: 100%;
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    margin-bottom: var(--size-4-2, 8px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m, 6px);
+    font-size: var(--font-text-size, 15px);
+}
+
+.lilbee-sessions-filter:focus {
+    border-color: var(--interactive-accent);
+}
+
+.lilbee-sessions-list {
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.lilbee-sessions-empty {
+    padding: var(--size-4-4, 16px);
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.lilbee-sessions-disabled {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-4, 16px);
+}
+
+.lilbee-sessions-disabled-text {
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.lilbee-sessions-enable {
+    padding: var(--size-4-1, 4px) var(--size-4-3, 12px);
+    background: var(--interactive-accent);
+    border: none;
+    border-radius: var(--radius-s, 4px);
+    color: var(--text-on-accent);
+    cursor: pointer;
+}
+
+.lilbee-sessions-enable:hover {
+    background: var(--interactive-accent-hover);
+}
+
+.lilbee-session-row {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-2, 8px);
+    border-radius: var(--radius-s, 4px);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.lilbee-session-row:hover {
+    background-color: var(--background-modifier-hover);
+}
+
+.lilbee-session-row.is-active {
+    border-left: 2px solid var(--interactive-accent);
+}
+
+.lilbee-session-main {
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+}
+
+.lilbee-session-title-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--size-4-2, 8px);
+}
+
+.lilbee-session-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-normal);
+}
+
+.lilbee-session-row.is-active .lilbee-session-title {
+    font-weight: var(--font-semibold, 600);
+}
+
+.lilbee-session-date,
+.lilbee-session-meta {
+    color: var(--text-muted);
+    font-size: var(--font-smallest, 10px);
+}
+
+.lilbee-session-actions {
+    display: flex;
+    gap: var(--size-4-1, 4px);
+}
+
+.lilbee-session-actions button {
+    display: flex;
+    align-items: center;
+    padding: var(--size-4-1, 4px);
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.lilbee-session-actions button:hover {
+    color: var(--text-normal);
+}
+
+.lilbee-session-delete:hover {
+    color: var(--text-error);
+}
+
+.lilbee-session-rename-input {
+    width: 100%;
+    padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+    border: 1px solid var(--interactive-accent);
+    border-radius: var(--radius-s, 4px);
+}
+
+.lilbee-chat-warming-label {
+    margin-left: var(--size-4-2, 8px);
+    font-size: var(--font-smaller, 13px);
+    color: var(--text-muted);
+}
+
+.lilbee-chat-compaction {
+    margin: var(--size-4-3, 12px) 0;
+}
+
+/* While the server condenses: a card that says what is happening and how far along. */
+.lilbee-chat-compaction.is-condensing {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    border: 1px solid var(--background-modifier-border);
+    border-left: 3px solid var(--interactive-accent);
+    border-radius: var(--radius-s, 4px);
+    background-color: var(--background-secondary);
+}
+
+.lilbee-chat-compaction-head {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    font-size: var(--font-smaller, 13px);
+    color: var(--text-normal);
+}
+
+/* Once folded: a boundary rule the transcript keeps, quiet enough to repeat. */
+.lilbee-chat-compaction.is-done {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-3, 12px);
+}
+
+.lilbee-chat-compaction.is-done::before,
+.lilbee-chat-compaction.is-done::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background-color: var(--background-modifier-border);
+}
+
+.lilbee-chat-compaction-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
+    padding: var(--size-4-1, 4px) var(--size-4-3, 12px);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-l, 16px);
+    background-color: var(--background-secondary);
+    font-size: var(--font-smaller, 13px);
+    color: var(--text-normal);
+    white-space: nowrap;
+}
+
+.lilbee-chat-compaction-icon {
+    display: flex;
+    color: var(--interactive-accent);
+}
+
+.lilbee-chat-compaction-icon .svg-icon {
+    width: 14px;
+    height: 14px;
+}
+
+/* Turns dropped with nothing standing in for them read as a warning, not a fold. */
+.lilbee-chat-compaction.is-lossy .lilbee-chat-compaction-icon {
+    color: var(--text-warning);
+}
+
+.lilbee-chat-summary {
+    margin-bottom: var(--size-4-3, 12px);
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    border-left: 2px solid var(--background-modifier-border);
+    color: var(--text-muted);
+}
+
+.lilbee-chat-summary-label {
+    font-size: var(--font-smallest, 10px);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: var(--size-4-1, 4px);
+}
+
+.lilbee-chat-summary-body {
+    font-size: var(--font-smaller, 13px);
 }

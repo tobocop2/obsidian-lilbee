@@ -609,7 +609,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         panel.hide();
         const bar = panel.createDiv({ cls: "lilbee-progress-bar-container" });
         const fill = bar.createDiv({
-            cls: "lilbee-progress-bar lilbee-wizard-progress-fill lilbee-wizard-progress-indeterminate",
+            cls: "lilbee-progress-bar lilbee-wizard-progress-fill lilbee-progress-indeterminate",
         });
         const phase = panel.createDiv({ cls: "lilbee-update-progress-phase" });
         const size = panel.createDiv({ cls: "lilbee-update-progress-size" });
@@ -816,6 +816,24 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
         showReasoningSetting.settingEl.hide();
         this.serverConfigHideableEls.set(CONFIG_KEY.SHOW_REASONING, showReasoningSetting.settingEl);
+
+        const compactionSetting = new Setting(containerEl)
+            .setName(MESSAGES.LABEL_CHAT_COMPACTION)
+            .setDesc(MESSAGES.DESC_CHAT_COMPACTION)
+            .addToggle((toggle) => {
+                toggle.onChange(async (value) => {
+                    if (this.suppressToggleChanges) return;
+                    try {
+                        await this.plugin.api.updateConfig({ [CONFIG_KEY.CHAT_COMPACTION]: value });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_CHAT_COMPACTION));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_CHAT_COMPACTION));
+                    }
+                });
+                this.serverConfigToggles.set(CONFIG_KEY.CHAT_COMPACTION, toggle);
+            });
+        compactionSetting.settingEl.hide();
+        this.serverConfigHideableEls.set(CONFIG_KEY.CHAT_COMPACTION, compactionSetting.settingEl);
     }
 
     private renderSearchRetrievalSettings(containerEl: HTMLElement): void {

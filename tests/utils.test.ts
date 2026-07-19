@@ -17,6 +17,7 @@ import {
     isModelUnavailableError,
     isRoleMismatchDetail,
     isStreamInterruptedError,
+    isVersionOlder,
     noticeForResultError,
     noticeServerUnreachableIfApplicable,
     percentFromSse,
@@ -146,6 +147,32 @@ describe("formatElapsed", () => {
     it("formats h:mm:ss over an hour", () => {
         expect(formatElapsed(3600_000)).toBe("1:00:00");
         expect(formatElapsed(3725_000)).toBe("1:02:05");
+    });
+});
+
+describe("isVersionOlder", () => {
+    it("orders plain releases numerically, not lexically", () => {
+        expect(isVersionOlder("0.6.9", "0.6.74")).toBe(true);
+        expect(isVersionOlder("0.6.74", "0.6.9")).toBe(false);
+    });
+
+    it("treats a dev build past the newest release as not older", () => {
+        expect(isVersionOlder("0.6.90b420.dev722", "0.6.66b507")).toBe(false);
+    });
+
+    it("orders beta builds of the same release by their beta number", () => {
+        expect(isVersionOlder("0.6.66b420.dev722", "0.6.66b507")).toBe(true);
+        expect(isVersionOlder("0.6.66b507", "0.6.66b507")).toBe(false);
+    });
+
+    it("counts a missing run as zero", () => {
+        expect(isVersionOlder("0.6.66", "0.6.66b1")).toBe(true);
+        expect(isVersionOlder("0.6.66b1", "0.6.66")).toBe(false);
+    });
+
+    it("treats a digitless version as zero, so anything real is newer", () => {
+        expect(isVersionOlder("", "0.6.74")).toBe(true);
+        expect(isVersionOlder("dev", "dev")).toBe(false);
     });
 });
 
@@ -533,11 +560,11 @@ describe("percentOfBytes", () => {
 describe("setDeterminateProgress", () => {
     it("drops the indeterminate animation and sets the width", () => {
         const fill = new MockElement() as unknown as HTMLElement;
-        fill.classList.add("lilbee-wizard-progress-indeterminate");
+        fill.classList.add("lilbee-progress-indeterminate");
 
         setDeterminateProgress(fill, 42);
 
-        expect(fill.classList.contains("lilbee-wizard-progress-indeterminate")).toBe(false);
+        expect(fill.classList.contains("lilbee-progress-indeterminate")).toBe(false);
         expect(fill.style.width).toBe("42%");
     });
 });

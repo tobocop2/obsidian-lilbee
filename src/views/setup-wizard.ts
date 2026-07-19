@@ -534,7 +534,7 @@ export class SetupWizard extends Modal {
             const detail = row.createDiv({ cls: "lilbee-wizard-phase-detail" });
             detail.hide();
             const bar = detail.createDiv({ cls: "lilbee-progress-bar-container" });
-            const fill = bar.createDiv({ cls: "lilbee-wizard-progress-fill lilbee-wizard-progress-indeterminate" });
+            const fill = bar.createDiv({ cls: "lilbee-wizard-progress-fill lilbee-progress-indeterminate" });
             const hint = detail.createDiv({ cls: "lilbee-wizard-phase-hint", text: meta.hint });
             return { meta, row, label, detail, fill, hint };
         });
@@ -633,7 +633,7 @@ export class SetupWizard extends Modal {
 
         const progressBar = progressEl.createDiv({ cls: "lilbee-progress-bar-container" });
         const progressFill = progressBar.createDiv({
-            cls: "lilbee-progress-bar lilbee-wizard-progress-fill lilbee-wizard-progress-indeterminate",
+            cls: "lilbee-progress-bar lilbee-wizard-progress-fill lilbee-progress-indeterminate",
         });
         const progressLabel = progressEl.createDiv({ cls: "lilbee-wizard-progress-label" });
 
@@ -664,7 +664,7 @@ export class SetupWizard extends Modal {
         const rail = step.querySelector<HTMLElement>(".lilbee-wizard-rail");
         rail?.classList.add("is-active");
         if (pct === undefined) return;
-        progressFill.classList.remove("lilbee-wizard-progress-indeterminate");
+        progressFill.classList.remove("lilbee-progress-indeterminate");
         progressFill.style.width = `${pct}%`;
     }
 

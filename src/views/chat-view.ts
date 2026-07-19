@@ -17,6 +17,7 @@ import {
     HOSTED_SOURCES,
     MODEL_TASK,
     SEARCH_CHUNK_TYPE,
+    SESSION_ROLE,
     SSE_EVENT,
     TASK_TYPE,
     ERROR_NAME,
@@ -24,14 +25,19 @@ import {
 import type {
     CatalogEntry,
     ChatMode,
+    CompactingEventData,
+    CompactionEventData,
     InstalledModel,
     MemoryExtractedData,
     Message,
     SearchChunkType,
+    SessionDetail,
+    SessionMessageItem,
+    SessionRole,
     Source,
     SSEEvent,
 } from "../types";
-import { RateLimitedError } from "../api";
+import { RateLimitedError, isHttpStatus } from "../api";
 
 import { renderAggregatedSourceChips } from "./results";
 import { displayLabelForRef, extractHfRepo } from "../utils/model-ref";
@@ -54,6 +60,8 @@ import {
     isStreamInterruptedError,
     streamInterruptedMessage,
 } from "../utils";
+import { SessionsModal } from "./sessions-modal";
+import { chunkTypeFromScope, deriveSessionTitle, scopeFromChunkType } from "../utils/session";
 import { SetupWizard } from "./setup-wizard";
 import { revealPlacementBeside } from "./placement-view";
 import { hostedOptions, isUsableHostedRow } from "./catalog-helpers";
@@ -63,6 +71,10 @@ export const VIEW_TYPE_CHAT = "lilbee-chat";
 
 /** Within this distance of the bottom the view counts as pinned and follows the stream. */
 const SCROLL_FOLLOW_THRESHOLD_PX = 80;
+
+/** Fold glyph on the compaction boundary; the warning glyph when turns were dropped outright. */
+const COMPACTION_ICON = "chevrons-down-up";
+const COMPACTION_LOSSY_ICON = "alert-triangle";
 
 /** Sentinel option value: selecting it opens the catalog instead of switching models. */
 const RAIL_BROWSE_KEY = "__lilbee_browse__";
@@ -109,6 +121,14 @@ interface StreamState {
     /** Set at DONE/stop/error so a queued animation-frame plain-text repaint
      *  can't overwrite the final markdown render. */
     streamEnded: boolean;
+    /** The turn's user bubble; compaction markers are inserted above it. */
+    anchorEl: HTMLElement;
+    /** The condensing card, held so progress can advance it and the outcome can settle it. */
+    compaction: CompactionMarker | null;
+    /** The thinking-dots container; a warming label lands here and leaves with it. */
+    spinnerEl: HTMLElement;
+    /** Set once the server's `warming` event has been surfaced, so it renders once. */
+    warmingShown: boolean;
 }
 
 const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
@@ -156,9 +176,33 @@ export function plainStream(md: string): string {
     return md.replace(/\*\*/g, "").replace(/`/g, "");
 }
 
+/** The condensing card's live parts: a title that counts batches and a progress fill. */
+interface CompactionMarker {
+    root: HTMLElement;
+    title: HTMLElement;
+    fill: HTMLElement;
+}
+
+/** Boundary wording for a compaction: what was condensed, and what was dropped outright. */
+export function compactionMarkerText(data: CompactionEventData): string {
+    if (data.condensed > 0 && data.stranded > 0) return MESSAGES.CHAT_COMPACTED_PARTIAL(data.condensed, data.stranded);
+    if (data.stranded > 0) return MESSAGES.CHAT_STRANDED(data.stranded);
+    return MESSAGES.CHAT_COMPACTED(data.condensed);
+}
+
 export class ChatView extends ItemView {
     private plugin: LilbeePlugin;
     private history: Message[] = [];
+    /** Server-side conversation this view appends to. Null until the first turn opens one. */
+    private sessionId: string | null = null;
+    /** Carry-forward compaction notes; sent with each turn and replaced by `compaction` events. */
+    private summary = "";
+    /** Bumped when the transcript is replaced or cleared; stale queued writes check it and no-op. */
+    private conversationEpoch = 0;
+    /** Serializes session writes: the log is append-only, so turns must land in order. */
+    private persistQueue: Promise<void> = Promise.resolve();
+    /** The send in progress, so a resume can let it finish unwinding before replacing the transcript. */
+    private inFlightSend: Promise<void> | null = null;
     private messagesEl: HTMLElement | null = null;
     private sendBtn: HTMLButtonElement | null = null;
     private textareaEl: HTMLTextAreaElement | null = null;
@@ -174,6 +218,8 @@ export class ChatView extends ItemView {
     private activeEmbeddingModel = "";
     private chatModeContainer: HTMLElement | null = null;
     private chatModeCurrent: ChatMode | null = null;
+    /** Search-scope toggle buttons by scope. Empty while the wiki feature is off — they aren't rendered then. */
+    private searchModeButtons = new Map<SearchChunkType, HTMLElement>();
     // Optional model roles (Vision, Rerank) surfaced in the rail. Keyed by the
     // spec's task; data refreshed alongside the chat/embed selectors. Options
     // come from the per-task catalog (so only role-capable models show), exactly
@@ -280,22 +326,20 @@ export class ChatView extends ItemView {
         if (wikiEnabled) {
             const modeGroup = actions.createDiv({ cls: "lilbee-search-mode" });
             const modes: { value: SearchChunkType; label: string }[] = [
-                { value: "all", label: MESSAGES.LABEL_SEARCH_ALL },
-                { value: "wiki", label: MESSAGES.LABEL_SEARCH_WIKI },
-                { value: "raw", label: MESSAGES.LABEL_SEARCH_RAW },
+                { value: SEARCH_CHUNK_TYPE.ALL, label: MESSAGES.LABEL_SEARCH_ALL },
+                { value: SEARCH_CHUNK_TYPE.WIKI, label: MESSAGES.LABEL_SEARCH_WIKI },
+                { value: SEARCH_CHUNK_TYPE.RAW, label: MESSAGES.LABEL_SEARCH_RAW },
             ];
             for (const mode of modes) {
-                const btn = modeGroup.createEl("button", {
-                    text: mode.label,
-                    cls: `lilbee-search-mode-btn${this.plugin.settings.searchChunkType === mode.value ? " active" : ""}`,
-                });
+                const btn = modeGroup.createEl("button", { text: mode.label, cls: "lilbee-search-mode-btn" });
+                this.searchModeButtons.set(mode.value, btn);
                 btn.addEventListener("click", () => {
                     this.plugin.settings.searchChunkType = mode.value;
                     void this.plugin.saveSettings();
-                    modeGroup.querySelectorAll(".lilbee-search-mode-btn").forEach((b) => b.removeClass("active"));
-                    btn.addClass("active");
+                    this.syncSearchModeButtons(mode.value);
                 });
             }
+            this.syncSearchModeButtons(this.plugin.settings.searchChunkType);
         }
 
         actions.createDiv({ cls: "lilbee-toolbar-spacer" });
@@ -304,6 +348,11 @@ export class ChatView extends ItemView {
         setIcon(gpuBtn, "cpu");
         gpuBtn.setAttribute("aria-label", MESSAGES.LABEL_OPEN_GPU_ACTIVITY);
         gpuBtn.addEventListener("click", () => void revealPlacementBeside(this.app, this.leaf));
+
+        const sessionsBtn = actions.createEl("button", { cls: "lilbee-chat-sessions" });
+        setIcon(sessionsBtn, "history");
+        sessionsBtn.setAttribute("aria-label", MESSAGES.LABEL_OPEN_SESSIONS);
+        sessionsBtn.addEventListener("click", () => this.openSessions());
 
         const saveBtn = actions.createEl("button", { cls: "lilbee-chat-save" });
         setIcon(saveBtn, "save");
@@ -343,8 +392,10 @@ export class ChatView extends ItemView {
                 if (this.sending) return;
                 const text = textarea.value.trim();
                 if (!text) return;
-                textarea.value = "";
-                void this.sendMessage(text);
+                // sendMessage clears the box once its guards pass: a refused send
+                // (engine still warming, another turn in flight) must not eat the
+                // question the user typed.
+                this.inFlightSend = this.sendMessage(text);
             } catch (err) {
                 const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
                 new Notice(MESSAGES.ERROR_CHAT_FAILED(reason));
@@ -572,6 +623,11 @@ export class ChatView extends ItemView {
             });
             return;
         }
+        this.applyChatModel(value);
+    }
+
+    /** Point the server at an already-installed chat model. */
+    private applyChatModel(value: string): void {
         void this.plugin.api.setChatModel(value).then((result) => {
             if (result.isOk()) {
                 // Keep the menu's checkmark in sync without waiting for a refetch.
@@ -826,12 +882,199 @@ export class ChatView extends ItemView {
 
     private clearChat(): void {
         this.history = [];
+        this.sessionId = null;
+        this.summary = "";
+        this.conversationEpoch++;
         if (this.messagesEl) this.messagesEl.empty();
+    }
+
+    private openSessions(): void {
+        new SessionsModal(this.app, this.plugin, {
+            activeId: this.sessionId,
+            resume: (id) => void this.resumeSession(id),
+            startNew: () => this.startNewConversation(),
+        }).open();
+    }
+
+    /** Drop the transcript and unbind the session. The old one is already persisted. */
+    private startNewConversation(): void {
+        this.clearChat();
+        new Notice(MESSAGES.NOTICE_SESSION_NEW);
+    }
+
+    /** Open the session lazily, on the first turn, so an idle view creates nothing. Returns its id. */
+    private async ensureSession(firstText: string): Promise<string> {
+        if (this.sessionId) return this.sessionId;
+        const epoch = this.conversationEpoch;
+        const scope = scopeFromChunkType(this.plugin.settings.searchChunkType);
+        const created = await this.plugin.api.createSession(this.chatActive, scope);
+        // A resume or clear that raced the create wins; this conversation stays unbound from the view.
+        if (epoch === this.conversationEpoch) this.sessionId = created.meta.id;
+        // The server auto-titles only TUI sessions; HTTP surfaces title their own via rename.
+        try {
+            await this.plugin.api.renameSession(created.meta.id, deriveSessionTitle(firstText));
+        } catch {
+            // A failed title write leaves the server's default; the transcript still persists.
+        }
+        return created.meta.id;
+    }
+
+    /** Queue a session write. Never awaited by the chat path: persistence must not stall the answer. */
+    private queuePersist(write: () => Promise<void>): void {
+        // Writes queued for one conversation must not touch the one open when they run.
+        const epoch = this.conversationEpoch;
+        this.persistQueue = this.persistQueue
+            .then(() => (epoch === this.conversationEpoch ? write() : undefined))
+            .catch((err) => {
+                // Sessions switched off server-side (404) is permanent: unbind so the chat
+                // goes on in memory. A transient failure (busy server, timeout) drops only
+                // this write; a gap in the transcript beats splitting the conversation.
+                if (epoch !== this.conversationEpoch) return;
+                if (err instanceof Error && isHttpStatus(err, 404)) this.sessionId = null;
+            });
+    }
+
+    private async persistTurn(
+        sessionId: string | null,
+        role: SessionRole,
+        content: string,
+        sources: string[] = [],
+    ): Promise<void> {
+        if (!sessionId) return;
+        await this.plugin.api.appendSessionMessage(sessionId, role, content, sources);
+    }
+
+    private async resumeSession(id: string): Promise<void> {
+        let detail: SessionDetail;
+        try {
+            detail = await this.plugin.api.getSession(id);
+        } catch (err) {
+            const reason = errorMessage(err, MESSAGES.ERROR_UNKNOWN, this.plugin.settings.serverMode);
+            new Notice(MESSAGES.ERROR_SESSION_RESUME_FAILED(reason));
+            return;
+        }
+        // Let an in-flight answer finish unwinding first: its abort handler appends to
+        // `history`, which would otherwise land on top of the transcript we restore below.
+        if (this.sending) {
+            this.streamController?.abort();
+            await this.inFlightSend;
+        }
+        this.clearChat();
+        this.sessionId = detail.meta.id;
+        this.summary = detail.summary;
+        this.hideEmptyState();
+
+        if (detail.summary) this.renderSummaryBoundary(detail.summary);
+        for (const message of detail.messages) {
+            this.renderRestoredMessage(message);
+            this.history.push({ role: message.role, content: message.content });
+        }
+        this.restoreScope(detail.meta.scope);
+        this.restoreModel(detail.meta.model_ref);
+        if (this.messagesEl) this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+        new Notice(MESSAGES.NOTICE_SESSION_RESUMED(detail.meta.title));
+    }
+
+    /** Never point chat at a model that isn't installed; keep the current one and say so. */
+    private restoreModel(modelRef: string): void {
+        if (!modelRef || modelRef === this.chatActive) return;
+        if (this.chatInstalled.some((m) => m.name === modelRef)) {
+            this.applyChatModel(modelRef);
+            return;
+        }
+        new Notice(MESSAGES.NOTICE_SESSION_MODEL_UNAVAILABLE(modelRef, this.chatActive));
+    }
+
+    /** Wiki scope is unreachable with the wiki feature off, so a wiki-scoped session keeps the current one. */
+    private restoreScope(scope: string): void {
+        const chunkType = chunkTypeFromScope(scope);
+        if (!chunkType || chunkType === this.plugin.settings.searchChunkType) return;
+        if (chunkType === SEARCH_CHUNK_TYPE.WIKI && !this.plugin.settings.wikiEnabled) return;
+        this.plugin.settings.searchChunkType = chunkType;
+        void this.plugin.saveSettings();
+        this.syncSearchModeButtons(chunkType);
+    }
+
+    /** Move the toggle's highlight to `active`, whether a click or a session resume changed it. */
+    private syncSearchModeButtons(active: SearchChunkType): void {
+        for (const [value, btn] of this.searchModeButtons) btn.toggleClass("active", value === active);
+    }
+
+    /** The card shown while the server condenses: what is happening, and how far along. */
+    private openCompactionMarker(state: StreamState): void {
+        if (!this.messagesEl || state.compaction) return;
+        const root = this.messagesEl.createDiv({ cls: "lilbee-chat-compaction is-condensing" });
+        root.setAttribute("title", MESSAGES.TOOLTIP_COMPACTION);
+        const head = root.createDiv({ cls: "lilbee-chat-compaction-head" });
+        setIcon(head.createSpan({ cls: "lilbee-chat-compaction-icon" }), COMPACTION_ICON);
+        const title = head.createSpan({ text: MESSAGES.CHAT_COMPACTING });
+        const bar = root.createDiv({ cls: "lilbee-progress-bar-container" });
+        const fill = bar.createDiv({ cls: "lilbee-progress-bar lilbee-progress-indeterminate" });
+        this.messagesEl.insertBefore(root, state.anchorEl);
+        state.compaction = { root, title, fill };
+    }
+
+    /** Count batches in the label. The bar stays indeterminate: each batch is a
+     *  model call with no knowable duration, and a fill that reads full while the
+     *  work continues is both wrong and dead-looking. */
+    private advanceCompactionMarker(state: StreamState, progress: CompactingEventData): void {
+        const marker = state.compaction;
+        if (!marker || progress.batch === undefined || progress.batches === undefined) return;
+        if (progress.batches <= 1) return;
+        marker.title.setText(MESSAGES.CHAT_COMPACTING_PROGRESS(progress.batch, progress.batches));
+    }
+
+    /** Collapse the working card into the quiet boundary the transcript keeps. */
+    private settleCompactionMarker(state: StreamState, data: CompactionEventData): void {
+        const marker = state.compaction;
+        if (!marker) return;
+        marker.root.empty();
+        marker.root.removeClass("is-condensing");
+        marker.root.addClass("is-done");
+        if (data.stranded > 0) marker.root.addClass("is-lossy");
+        const pill = marker.root.createSpan({ cls: "lilbee-chat-compaction-pill" });
+        setIcon(
+            pill.createSpan({ cls: "lilbee-chat-compaction-icon" }),
+            data.stranded > 0 ? COMPACTION_LOSSY_ICON : COMPACTION_ICON,
+        );
+        pill.createSpan({ text: compactionMarkerText(data) });
+    }
+
+    private renderRestoredMessage(message: SessionMessageItem): void {
+        if (!this.messagesEl) return;
+        if (message.role === SESSION_ROLE.USER) {
+            const bubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message user" });
+            bubble.createEl("p", { text: message.content });
+            return;
+        }
+        const bubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message assistant" });
+        const textEl = bubble.createDiv({ cls: "lilbee-chat-content" });
+        void this.renderMarkdown(textEl, message.content);
+        if (message.sources.length > 0) this.renderRestoredSources(bubble, message.sources);
+    }
+
+    /** Persisted sources are bare paths, so restored chips link out without the live chunk detail. */
+    private renderRestoredSources(container: HTMLElement, sources: string[]): void {
+        const chipsEl = this.createSourcesBlock(container);
+        for (const path of sources) {
+            const chip = chipsEl.createSpan({ cls: "lilbee-source-chip" });
+            chip.createSpan({ text: path, cls: "lilbee-source-chip-file" });
+            chip.addEventListener("click", () => void this.app.workspace.openLinkText(path, ""));
+        }
+    }
+
+    private renderSummaryBoundary(summary: string): void {
+        if (!this.messagesEl) return;
+        const el = this.messagesEl.createDiv({ cls: "lilbee-chat-summary" });
+        el.createDiv({ cls: "lilbee-chat-summary-label", text: MESSAGES.LABEL_SESSION_SUMMARY });
+        el.createDiv({ cls: "lilbee-chat-summary-body", text: summary });
     }
 
     private async sendMessage(text: string): Promise<void> {
         if (!this.messagesEl || this.sending) return;
         if (!this.plugin.assertFleetReady()) return;
+        // Past the guards: the turn is happening, so the box can be emptied.
+        if (this.textareaEl) this.textareaEl.value = "";
         this.sending = true;
         this.streamController = new AbortController();
         this.plugin.notifyChatStart();
@@ -841,6 +1084,11 @@ export class ChatView extends ItemView {
         const userBubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message user" });
         userBubble.createEl("p", { text });
         this.history.push({ role: "user", content: text });
+        // Queued before the stream so the question is saved even if the answer never lands.
+        this.queuePersist(async () => {
+            const sessionId = await this.ensureSession(text);
+            await this.persistTurn(sessionId, SESSION_ROLE.USER, text);
+        });
 
         const assistantBubble = this.messagesEl.createDiv({ cls: "lilbee-chat-message assistant" });
         const spinner = assistantBubble.createDiv({ cls: "lilbee-thinking-dots" });
@@ -861,6 +1109,10 @@ export class ChatView extends ItemView {
             reasoningDetailsEl: null,
             answerStarted: false,
             streamEnded: false,
+            anchorEl: userBubble,
+            compaction: null,
+            spinnerEl: spinner,
+            warmingShown: false,
         };
 
         const spinnerCreatedAt = Date.now();
@@ -900,6 +1152,7 @@ export class ChatView extends ItemView {
                 this.streamController.signal,
                 undefined,
                 this.plugin.settings.searchChunkType,
+                { summary: this.summary, sessionId: this.sessionId },
             )) {
                 this.handleStreamEvent(event, textEl, assistantBubble, state, revealContent, scheduleRender);
             }
@@ -947,6 +1200,32 @@ export class ChatView extends ItemView {
         scheduleRender: () => void,
     ): void {
         switch (event.event) {
+            case SSE_EVENT.WARMING: {
+                // The chat engine is cold-loading; say so instead of showing silent dots.
+                if (!state.warmingShown) {
+                    state.warmingShown = true;
+                    void this.renderFollowing(() => {
+                        state.spinnerEl.createDiv({ cls: "lilbee-chat-warming-label", text: MESSAGES.CHAT_WARMING });
+                    });
+                }
+                break;
+            }
+            case SSE_EVENT.COMPACTING: {
+                const progress = event.data as CompactingEventData;
+                // Inserting above the anchor grows the transcript; renderFollowing keeps the pin.
+                void this.renderFollowing(() => {
+                    this.openCompactionMarker(state);
+                    this.advanceCompactionMarker(state, progress);
+                });
+                break;
+            }
+            case SSE_EVENT.COMPACTION: {
+                const data = event.data as CompactionEventData;
+                this.summary = data.summary;
+                this.history.splice(0, data.condensed + data.stranded);
+                void this.renderFollowing(() => this.settleCompactionMarker(state, data));
+                break;
+            }
             case SSE_EVENT.TOKEN: {
                 revealContent();
                 // First answer token: collapse the reasoning block.
@@ -986,6 +1265,11 @@ export class ChatView extends ItemView {
                     if (state.sources.length > 0) this.renderSources(assistantBubble, state.sources);
                 });
                 this.history.push({ role: "assistant", content: rendered });
+                // Only a completed answer is persisted; a cancelled one leaves the question alone.
+                if (rendered) {
+                    const paths = [...new Set(state.sources.map((s) => s.source))];
+                    this.queuePersist(() => this.persistTurn(this.sessionId, SESSION_ROLE.ASSISTANT, rendered, paths));
+                }
                 break;
             }
             case SSE_EVENT.ERROR: {
@@ -1209,11 +1493,16 @@ export class ChatView extends ItemView {
         }
     }
 
-    private renderSources(container: HTMLElement, sources: Source[]): void {
+    /** The collapsed "Sources" block shared by live and restored answers. Returns the chip container. */
+    private createSourcesBlock(container: HTMLElement): HTMLElement {
         const sourcesEl = container.createDiv({ cls: "lilbee-chat-sources" });
         const details = sourcesEl.createEl("details");
         details.createEl("summary", { text: MESSAGES.LABEL_SOURCES });
-        const chipsEl = details.createDiv({ cls: "lilbee-chat-source-chips" });
+        return details.createDiv({ cls: "lilbee-chat-source-chips" });
+    }
+
+    private renderSources(container: HTMLElement, sources: Source[]): void {
+        const chipsEl = this.createSourcesBlock(container);
         renderAggregatedSourceChips(chipsEl, sources, this.app, this.plugin.api);
     }
 

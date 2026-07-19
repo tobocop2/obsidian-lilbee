@@ -15,6 +15,7 @@ import type {
     CatalogResponse,
     ConfigResponse,
     ConfigUpdateResponse,
+    ConversationState,
     CrawlRenderMode,
     DatasetFormat,
     DocumentResult,
@@ -32,6 +33,12 @@ import type {
     MemoryRemoveResponse,
     Message,
     ModelShowResponse,
+    SessionDeleteResponse,
+    SessionDetail,
+    SessionListResponse,
+    SessionMeta,
+    SessionRenameResponse,
+    SessionRole,
     RememberResponse,
     ModelsResponse,
     ModelTask,
@@ -388,6 +395,61 @@ export class LilbeeClient {
         return (await res.json()) as AskResponse;
     }
 
+    async listSessions(): Promise<SessionMeta[]> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions`);
+        const data = (await res.json()) as SessionListResponse;
+        return data.sessions;
+    }
+
+    async getSession(sessionId: string): Promise<SessionDetail> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}`);
+        return (await res.json()) as SessionDetail;
+    }
+
+    /** The server takes no title here; `renameSession` is the only HTTP title write. */
+    async createSession(modelRef: string, scope: string): Promise<SessionDetail> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions`, {
+            method: "POST",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ model_ref: modelRef, scope }),
+        });
+        return (await res.json()) as SessionDetail;
+    }
+
+    async appendSessionMessage(
+        sessionId: string,
+        role: SessionRole,
+        content: string,
+        sources: string[] = [],
+    ): Promise<SessionDetail> {
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/messages`,
+            {
+                method: "POST",
+                headers: { ...JSON_HEADERS, ...this.authHeaders() },
+                body: JSON.stringify({ role, content, sources }),
+            },
+        );
+        return (await res.json()) as SessionDetail;
+    }
+
+    async renameSession(sessionId: string, title: string): Promise<SessionRenameResponse> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}`, {
+            method: "PATCH",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+            body: JSON.stringify({ title }),
+        });
+        return (await res.json()) as SessionRenameResponse;
+    }
+
+    async deleteSession(sessionId: string): Promise<SessionDeleteResponse> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/sessions/${encodeURIComponent(sessionId)}`, {
+            method: "DELETE",
+            headers: { ...JSON_HEADERS, ...this.authHeaders() },
+        });
+        return (await res.json()) as SessionDeleteResponse;
+    }
+
     async listMemories(): Promise<MemoryItem[]> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/memories`);
         const data = (await res.json()) as MemoryListResponse;
@@ -427,6 +489,7 @@ export class LilbeeClient {
         signal?: AbortSignal,
         options?: GenerationOptions,
         chunkType?: SearchChunkType,
+        conversation?: ConversationState,
     ): AsyncGenerator<SSEEvent, void> {
         // Omitted top_k uses the server's configured default; an explicit 0 disables retrieval.
         const body: Record<string, unknown> = { question, history };
@@ -434,6 +497,8 @@ export class LilbeeClient {
         if (options && Object.keys(options).length > 0) body.options = options;
         // "all" is the UI-side label for no filter; the field is omitted on the wire.
         if (chunkType && chunkType !== SEARCH_CHUNK_TYPE.ALL) body.chunk_type = chunkType;
+        if (conversation?.summary) body.summary = conversation.summary;
+        if (conversation?.sessionId) body.session_id = conversation.sessionId;
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/chat/stream`,
             {
