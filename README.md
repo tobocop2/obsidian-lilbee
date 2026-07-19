@@ -122,6 +122,20 @@ Put more than one question in a single prompt and lilbee answers each from where
 
 <p align="center"><img alt="one multi-part question, a bulb part number and the engine firing order, answered in a single reply with a citation for each fact" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/multipart.gif" width="640"></p>
 
+### Conversations you can come back to
+
+Every chat saves itself as you go, titled from your first question. The history button in the chat toolbar lists them: pick one up where you left off, rename it, or start a fresh one. Nothing leaves your machine.
+
+<p align="center"><img alt="ask a cited question, open the citation onto the manual, browse saved conversations from the history button, start a new chat, then resume the first one where it left off" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/sessions.gif" width="640"></p>
+
+### Long conversations, condensed instead of dropped (optional)
+
+Every model has a context limit. Past it, the oldest messages fall out of what the model can see, so it stops following what you already told it. Turn on **Condense long conversations** in Settings and lilbee folds those older messages into a short summary it carries forward instead, so the thread survives. Your transcript keeps every message either way.
+
+It's off by default because it isn't free: condensing spends extra model calls before the answer, which costs seconds on a GPU and longer on CPU, and a summary is a gist rather than the original words. Worth it for long working sessions, unnecessary for quick questions.
+
+<p align="center"><img alt="resume a long conversation, ask one more question, watch lilbee condense the older messages into a summary, and get an answer that still cites the manual" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/compaction.gif" width="640"></p>
+
 ### Pick and tune your models
 
 Chat, embedding, vision, and reranking are separate roles, each with its own model. The Model Catalog (command palette or chat toolbar) browses featured picks or searches Hugging Face Hub, shows each model's size and memory before you pull, and flags ones that won't run on your hardware. Defaults are sensible out of the gate; Settings exposes the retrieval and generation knobs when you want to go deeper, each with a reset.
