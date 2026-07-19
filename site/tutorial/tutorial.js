@@ -53,6 +53,14 @@ const groups = [
     ],
   },
   {
+    id: "conversations",
+    heading: "Conversations that keep up",
+    reels: [
+      { id: "sessions", name: "sessions", title: "Saved conversations", desc: "Chats save themselves as you go, titled from your first question. Ask something cited, open the citation onto the exact page, then browse saved conversations from the history button, start a fresh one, and pick the first back up where you left off." },
+      { id: "compaction", name: "compaction", title: "Long conversations, condensed", desc: "Past a model's context limit the oldest messages normally fall out of what it can see. With condensing on, lilbee folds them into a short summary it carries forward instead. Resume a long conversation, ask one more question, and watch the fold happen: the transcript keeps everything, and the answer still cites the manual. Optional, because condensing costs extra model calls before each answer." },
+    ],
+  },
+  {
     id: "set-up-and-tune",
     heading: "Set up &amp; tune",
     reels: [
