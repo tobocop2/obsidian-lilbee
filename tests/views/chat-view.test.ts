@@ -5221,9 +5221,70 @@ describe("ChatView — chat sessions", () => {
             await Promise.resolve();
 
             expect(state.compaction.title.textContent).toBe(MESSAGES.CHAT_COMPACTING_PROGRESS(1, 3));
-            // The shared wizard bar hands off from its indeterminate animation to a real width.
-            expect(state.compaction.fill.style.width).toBe("33.33333333333333%");
+            // The bar keeps animating: a batch is a model call of unknowable length,
+            // so a fill claiming progress would be dead-looking and wrong.
+            expect(state.compaction.fill.classList.contains("lilbee-progress-indeterminate")).toBe(true);
             expect(state.compaction.root.classList.contains("is-condensing")).toBe(true);
+        });
+
+        it("explains itself and how to turn it off, in both states", async () => {
+            const plugin = makePlugin();
+            const { view, container, messagesEl } = await openChat(plugin);
+            const first = streamOf("a1");
+            plugin.api.chatStream = first.mockFn;
+            await send(container, "q1", first.done);
+
+            const bubble = (messagesEl as unknown as MockElement).createDiv({ cls: "probe" });
+            const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
+            const state: any = { compaction: null, anchorEl: bubble, spinnerEl: spinner, warmingShown: false };
+            const fire = (event: any) =>
+                (view as any).handleStreamEvent(
+                    event,
+                    bubble,
+                    bubble,
+                    state,
+                    () => {},
+                    () => {},
+                );
+
+            fire({ event: SSE_EVENT.COMPACTING, data: {} });
+            await Promise.resolve();
+            expect((state.compaction.root as MockElement).getAttribute("title")).toBe(MESSAGES.TOOLTIP_COMPACTION);
+
+            fire({ event: SSE_EVENT.COMPACTION, data: { summary: "n", condensed: 6, stranded: 0 } });
+            await Promise.resolve();
+            // Settling empties the children; the explanation stays on the boundary.
+            expect((state.compaction.root as MockElement).getAttribute("title")).toBe(MESSAGES.TOOLTIP_COMPACTION);
+        });
+
+        it("keeps the plain label when the whole fold is a single batch", async () => {
+            const plugin = makePlugin();
+            const { view, container, messagesEl } = await openChat(plugin);
+            const first = streamOf("a1");
+            plugin.api.chatStream = first.mockFn;
+            await send(container, "q1", first.done);
+
+            const bubble = (messagesEl as unknown as MockElement).createDiv({ cls: "probe" });
+            const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
+            const state: any = { compaction: null, anchorEl: bubble, spinnerEl: spinner, warmingShown: false };
+            const fire = (data: any) =>
+                (view as any).handleStreamEvent(
+                    { event: SSE_EVENT.COMPACTING, data },
+                    bubble,
+                    bubble,
+                    state,
+                    () => {},
+                    () => {},
+                );
+
+            fire({});
+            await Promise.resolve();
+            fire({ batch: 1, batches: 1 });
+            await Promise.resolve();
+
+            // "(1 of 1)" is noise, and the bar must not read as finished mid-work.
+            expect(state.compaction.title.textContent).toBe(MESSAGES.CHAT_COMPACTING);
+            expect(state.compaction.fill.classList.contains("lilbee-progress-indeterminate")).toBe(true);
         });
 
         it("settles the card into the boundary pill when the fold lands", async () => {

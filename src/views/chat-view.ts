@@ -58,7 +58,6 @@ import {
     getRelevantSystemMemoryGB,
     configString,
     isStreamInterruptedError,
-    setDeterminateProgress,
     streamInterruptedMessage,
 } from "../utils";
 import { SessionsModal } from "./sessions-modal";
@@ -1005,6 +1004,7 @@ export class ChatView extends ItemView {
     private openCompactionMarker(state: StreamState): void {
         if (!this.messagesEl || state.compaction) return;
         const root = this.messagesEl.createDiv({ cls: "lilbee-chat-compaction is-condensing" });
+        root.setAttribute("title", MESSAGES.TOOLTIP_COMPACTION);
         const head = root.createDiv({ cls: "lilbee-chat-compaction-head" });
         setIcon(head.createSpan({ cls: "lilbee-chat-compaction-icon" }), COMPACTION_ICON);
         const title = head.createSpan({ text: MESSAGES.CHAT_COMPACTING });
@@ -1014,12 +1014,14 @@ export class ChatView extends ItemView {
         state.compaction = { root, title, fill };
     }
 
-    /** Hand the card's bar a real width once the server reports which batch it is on. */
+    /** Count batches in the label. The bar stays indeterminate: each batch is a
+     *  model call with no knowable duration, and a fill that reads full while the
+     *  work continues is both wrong and dead-looking. */
     private advanceCompactionMarker(state: StreamState, progress: CompactingEventData): void {
         const marker = state.compaction;
         if (!marker || progress.batch === undefined || progress.batches === undefined) return;
+        if (progress.batches <= 1) return;
         marker.title.setText(MESSAGES.CHAT_COMPACTING_PROGRESS(progress.batch, progress.batches));
-        setDeterminateProgress(marker.fill, (progress.batch / progress.batches) * 100);
     }
 
     /** Collapse the working card into the quiet boundary the transcript keeps. */

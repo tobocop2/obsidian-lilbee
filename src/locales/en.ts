@@ -543,6 +543,8 @@ export const MESSAGES = {
     SESSIONS_ROW_META: (count: number, model: string): string => `${count} msgs · ${model}`,
     SESSIONS_UNTITLED: "Untitled chat",
     CHAT_WARMING: "Loading the chat model…",
+    TOOLTIP_COMPACTION:
+        "Condensing keeps the model aware of everything you have discussed, instead of letting the oldest messages fall out of what it can see. Your transcript keeps them either way. Turn it off with \u201cCondense long conversations\u201d in Settings.",
     CHAT_COMPACTING: "Condensing earlier messages…",
     CHAT_COMPACTING_PROGRESS: (batch: number, total: number): string =>
         `Condensing earlier messages… (${batch} of ${total})`,
