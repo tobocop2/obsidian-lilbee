@@ -175,15 +175,17 @@ export function isDevBuild(tag: string): boolean {
 }
 
 /**
- * Up to *limit* published releases, newest first, that ship a build for this machine and
- * match the dev-build preference. Drafts, prereleases, releases without a matching asset,
- * and (when includeDev is false) dev builds are left out. Pages through the releases API so a
- * long run of dev builds cannot push every stable release out of view; stops once it has
- * *limit*, reaches a short (final) page, or exhausts the page budget.
+ * Published releases that ship a build for this machine, newest first: up to *limit* stable
+ * releases, plus up to *limit* dev builds when includeDev is set. The quotas are per kind so a
+ * long run of dev builds cannot push every stable release out of view. Drafts, prereleases,
+ * and releases without a matching asset are left out. Pages through the releases API until
+ * both quotas are filled, a short (final) page arrives, or the page budget is exhausted.
  */
 async function fetchInstallableReleases(limit: number, includeDev: boolean): Promise<ReleaseInfo[]> {
     const cudaTag = await detectCudaTag();
     const releases: ReleaseInfo[] = [];
+    let stableCount = 0;
+    let devCount = 0;
     for (let page = 1; page <= RELEASE_PAGE_BUDGET; page++) {
         const res = await node.requestUrl({
             url: `${RELEASE_LIST_API}?per_page=${RELEASE_PAGE_SIZE}&page=${page}`,
@@ -193,20 +195,28 @@ async function fetchInstallableReleases(limit: number, includeDev: boolean): Pro
         const pageData = res.json as GitHubRelease[];
         for (const data of pageData) {
             if (data.draft || data.prerelease) continue;
-            if (!includeDev && isDevBuild(data.tag_name)) continue;
+            const dev = isDevBuild(data.tag_name);
+            if (dev && !includeDev) continue;
+            if (dev ? devCount >= limit : stableCount >= limit) continue;
             try {
                 releases.push(toReleaseInfo(data, cudaTag));
             } catch {
                 // Release ships no build for this platform; it isn't installable here.
+                continue;
             }
-            if (releases.length >= limit) return releases;
+            if (dev) devCount++;
+            else stableCount++;
+            if (stableCount >= limit && (!includeDev || devCount >= limit)) return releases;
         }
         if (pageData.length < RELEASE_PAGE_SIZE) break; // last page
     }
     return releases;
 }
 
-/** Installable releases for the version picker, newest first; dev builds left out unless includeDev. */
+/**
+ * Installable releases for the version picker, newest first: up to *limit* stable releases,
+ * plus up to *limit* dev builds when includeDev is set.
+ */
 export async function listReleases(includeDev: boolean, limit = RELEASE_HISTORY_LIMIT): Promise<ReleaseInfo[]> {
     return fetchInstallableReleases(limit, includeDev);
 }
