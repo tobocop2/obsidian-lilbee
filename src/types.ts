@@ -694,6 +694,7 @@ export const SSE_EVENT = {
     ERROR: "error",
     COMPACTING: "compacting",
     COMPACTION: "compaction",
+    WARMING: "warming",
     PROGRESS: "progress",
     MESSAGE: "message",
     FILE_START: "file_start",

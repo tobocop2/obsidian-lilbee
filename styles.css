@@ -4954,6 +4954,12 @@ button.lilbee-model-chip-select:focus-visible {
     border-radius: var(--radius-s, 4px);
 }
 
+.lilbee-chat-warming-label {
+    margin-left: var(--size-4-2, 8px);
+    font-size: var(--font-smaller, 13px);
+    color: var(--text-muted);
+}
+
 .lilbee-chat-compaction {
     margin: var(--size-4-2, 8px) 0;
     text-align: center;

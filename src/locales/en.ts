@@ -542,6 +542,7 @@ export const MESSAGES = {
     SESSIONS_NO_MATCH: "No conversations match that filter.",
     SESSIONS_ROW_META: (count: number, model: string): string => `${count} msgs · ${model}`,
     SESSIONS_UNTITLED: "Untitled chat",
+    CHAT_WARMING: "Loading the chat model…",
     CHAT_COMPACTING: "Condensing earlier messages…",
     CHAT_COMPACTED: (count: number): string => `Condensed ${count} earlier messages into a summary`,
     CHAT_COMPACTED_PARTIAL: (condensed: number, stranded: number): string =>

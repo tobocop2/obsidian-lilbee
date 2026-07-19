@@ -5132,6 +5132,47 @@ describe("ChatView — chat sessions", () => {
             expect(third.mockFn.mock.calls[0][6]).toEqual({ summary: "the notes", sessionId: "s1" });
         });
 
+        it("labels the spinner while the chat engine warms, once", async () => {
+            const plugin = makePlugin();
+            const { mockFn, done } = makeStream([
+                { event: SSE_EVENT.WARMING, data: { role: "chat" } },
+                { event: SSE_EVENT.WARMING, data: { role: "chat" } },
+                { event: SSE_EVENT.TOKEN, data: { token: "a1" } },
+                { event: SSE_EVENT.DONE, data: {} },
+            ]);
+            plugin.api.chatStream = mockFn;
+            const { container, messagesEl } = await openChat(plugin);
+            await send(container, "q1", done);
+
+            // The label rides inside the spinner, so it leaves with it when content reveals.
+            const labels = messagesEl.findAll("lilbee-chat-warming-label");
+            expect(labels).toHaveLength(1);
+            expect(labels[0].textContent).toBe(MESSAGES.CHAT_WARMING);
+            expect(messagesEl.children[1].find("lilbee-chat-content")!.textContent).toBe("a1");
+        });
+
+        it("renders the warming label exactly once for repeated warming events", async () => {
+            const plugin = makePlugin();
+            const { view } = await openChat(plugin);
+            const bubble = new MockElement() as unknown as HTMLElement;
+            const spinner = (bubble as unknown as MockElement).createDiv({ cls: "lilbee-thinking-dots" });
+            const state = { compactionEl: null, anchorEl: bubble, spinnerEl: spinner, warmingShown: false };
+
+            const fire = () =>
+                (view as any).handleStreamEvent(
+                    { event: SSE_EVENT.WARMING, data: {} },
+                    bubble,
+                    bubble,
+                    state,
+                    () => {},
+                    () => {},
+                );
+            fire();
+            fire();
+
+            expect((spinner as unknown as MockElement).findAll("lilbee-chat-warming-label")).toHaveLength(1);
+        });
+
         it("keeps one marker when the server announces condensing twice", async () => {
             const plugin = makePlugin();
             const { mockFn, done } = makeStream([

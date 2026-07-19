@@ -120,6 +120,10 @@ interface StreamState {
     anchorEl: HTMLElement;
     /** Marker shown while the server condenses, then updated with the outcome. */
     compactionEl: HTMLElement | null;
+    /** The thinking-dots container; a warming label lands here and leaves with it. */
+    spinnerEl: HTMLElement;
+    /** Set once the server's `warming` event has been surfaced, so it renders once. */
+    warmingShown: boolean;
 }
 
 const OPTIONAL_ROLE_SPECS: OptionalRoleSpec[] = [
@@ -1051,6 +1055,8 @@ export class ChatView extends ItemView {
             streamEnded: false,
             anchorEl: userBubble,
             compactionEl: null,
+            spinnerEl: spinner,
+            warmingShown: false,
         };
 
         const spinnerCreatedAt = Date.now();
@@ -1138,6 +1144,14 @@ export class ChatView extends ItemView {
         scheduleRender: () => void,
     ): void {
         switch (event.event) {
+            case SSE_EVENT.WARMING: {
+                // The chat engine is cold-loading; say so instead of showing silent dots.
+                if (!state.warmingShown) {
+                    state.warmingShown = true;
+                    state.spinnerEl.createDiv({ cls: "lilbee-chat-warming-label", text: MESSAGES.CHAT_WARMING });
+                }
+                break;
+            }
             case SSE_EVENT.COMPACTING: {
                 if (this.messagesEl && !state.compactionEl) {
                     state.compactionEl = this.messagesEl.createDiv({
