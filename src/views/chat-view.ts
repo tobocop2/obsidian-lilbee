@@ -36,7 +36,7 @@ import type {
     Source,
     SSEEvent,
 } from "../types";
-import { RateLimitedError } from "../api";
+import { RateLimitedError, isHttpStatus } from "../api";
 
 import { renderAggregatedSourceChips } from "./results";
 import { displayLabelForRef, extractHfRepo } from "../utils/model-ref";
@@ -907,10 +907,12 @@ export class ChatView extends ItemView {
         const epoch = this.conversationEpoch;
         this.persistQueue = this.persistQueue
             .then(() => (epoch === this.conversationEpoch ? write() : undefined))
-            .catch(() => {
-                // A store that won't take writes must not break the chat the user is having;
-                // unbind so the rest of the conversation stays in-memory rather than half-saved.
-                if (epoch === this.conversationEpoch) this.sessionId = null;
+            .catch((err) => {
+                // Sessions switched off server-side (404) is permanent: unbind so the chat
+                // goes on in memory. A transient failure (busy server, timeout) drops only
+                // this write; a gap in the transcript beats splitting the conversation.
+                if (epoch !== this.conversationEpoch) return;
+                if (err instanceof Error && isHttpStatus(err, 404)) this.sessionId = null;
             });
     }
 

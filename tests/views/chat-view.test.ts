@@ -5028,6 +5028,44 @@ describe("ChatView — chat sessions", () => {
         expect((view as any).sessionId).toBe("s5");
     });
 
+    it("a transient store failure drops the write but keeps the conversation bound", async () => {
+        const plugin = makePlugin();
+        const first = streamOf("a1");
+        plugin.api.chatStream = first.mockFn;
+        const { container } = await openChat(plugin);
+        await send(container, "q1", first.done);
+
+        plugin.api.appendSessionMessage = vi.fn().mockRejectedValue(new Error("timeout"));
+        const second = streamOf("a2");
+        plugin.api.chatStream = second.mockFn;
+        await send(container, "q2", second.done);
+
+        plugin.api.appendSessionMessage = vi.fn().mockResolvedValue({ meta: { id: "s1" }, messages: [], summary: "" });
+        const third = streamOf("a3");
+        plugin.api.chatStream = third.mockFn;
+        await send(container, "q3", third.done);
+
+        expect(plugin.api.createSession).toHaveBeenCalledTimes(1);
+        expect(plugin.api.appendSessionMessage).toHaveBeenCalledWith("s1", "user", "q3", []);
+    });
+
+    it("sessions turned off mid-chat unbinds so the conversation continues in memory", async () => {
+        const plugin = makePlugin();
+        const first = streamOf("a1");
+        plugin.api.chatStream = first.mockFn;
+        const { view, container } = await openChat(plugin);
+        await send(container, "q1", first.done);
+
+        plugin.api.appendSessionMessage = vi
+            .fn()
+            .mockRejectedValue(new Error('Server responded 404: {"detail":"Sessions are off."}'));
+        const second = streamOf("a2");
+        plugin.api.chatStream = second.mockFn;
+        await send(container, "q2", second.done);
+
+        expect((view as any).sessionId).toBeNull();
+    });
+
     it("clearing the chat unbinds the session so the next turn opens a new one", async () => {
         const plugin = makePlugin();
         const first = streamOf("a1");
