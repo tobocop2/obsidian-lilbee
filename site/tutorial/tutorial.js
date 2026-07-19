@@ -54,10 +54,10 @@ const groups = [
   },
   {
     id: "conversations",
-    heading: "Conversations that keep up",
+    heading: "Chat history",
     reels: [
-      { id: "sessions", name: "sessions", title: "Saved conversations", desc: "Chats save themselves as you go, titled from your first question. Ask something cited, open the citation onto the exact page, then browse saved conversations from the history button, start a fresh one, and pick the first back up where you left off." },
-      { id: "compaction", name: "compaction", title: "Long conversations, condensed", desc: "Past a model's context limit the oldest messages normally fall out of what it can see. With condensing on, lilbee folds them into a short summary it carries forward instead. Resume a long conversation, ask one more question, and watch the fold happen: the transcript keeps everything, and the answer still cites the manual. Optional, because condensing costs extra model calls before each answer." },
+      { id: "sessions", name: "sessions", title: "Saved chat history", desc: "Every chat is written to disk as you go, titled from its first question. Ask a question, open the citation to the exact page it came from, then list the saved chats from the history button, start a new one, and reopen the first with its full transcript intact." },
+      { id: "compaction", name: "compaction", title: "Replacing old messages with a summary", desc: "Once a chat is longer than the model's context window, the oldest messages stop being sent to it. With condensing turned on, lilbee replaces them with a summary and keeps sending that instead. Reopen a long chat, ask one more question, and watch it happen: the transcript on screen still shows every message, and the answer still cites the manual. Optional, because writing the summary costs extra model calls before each answer." },
     ],
   },
   {
