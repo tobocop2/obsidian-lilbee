@@ -1147,6 +1147,43 @@ describe("listReleases", () => {
         expect((await listReleases(true)).map((r) => r.tag)).toEqual(["v1.1.0.dev5", "v1.0.0"]);
     });
 
+    it("offers up to the limit of dev and stable builds each", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        const dev = Array.from({ length: 12 }, (_, i) => release(`v1.1.0.dev${12 - i}`));
+        const stable = Array.from({ length: 12 }, (_, i) => release(`v1.0.${12 - i}`));
+        vi.spyOn(node, "requestUrl").mockResolvedValue(releaseResponse([...dev, ...stable]));
+
+        expect((await listReleases(true)).map((r) => r.tag)).toEqual([
+            ...dev.slice(0, 10).map((r) => r.tag_name),
+            ...stable.slice(0, 10).map((r) => r.tag_name),
+        ]);
+    });
+
+    it("keeps the merged list newest-first when dev and stable builds interleave", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        vi.spyOn(node, "requestUrl").mockResolvedValue(
+            releaseResponse([release("v1.2.0.dev9"), release("v1.1.0"), release("v1.2.0.dev8"), release("v1.0.0")]),
+        );
+
+        expect((await listReleases(true)).map((r) => r.tag)).toEqual([
+            "v1.2.0.dev9",
+            "v1.1.0",
+            "v1.2.0.dev8",
+            "v1.0.0",
+        ]);
+    });
+
+    it("still surfaces every stable release when a run of dev builds exceeds the limit", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        const dev = Array.from({ length: 14 }, (_, i) => release(`v1.1.0.dev${14 - i}`));
+        vi.spyOn(node, "requestUrl").mockResolvedValue(releaseResponse([...dev, release("v1.0.0"), release("v0.9.0")]));
+
+        expect((await listReleases(false)).map((r) => r.tag)).toEqual(["v1.0.0", "v0.9.0"]);
+    });
+
     it("leaves out releases that ship no build for this platform", async () => {
         restore = stubPlatform("linux", "x64");
         stubNoNvidia();

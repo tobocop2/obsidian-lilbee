@@ -425,7 +425,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         });
     }
 
-    /** Every installable release (dev builds included); null when GitHub could not be reached. */
+    /** Recent installable releases, dev builds included; null when GitHub could not be reached. */
     private async loadReleases(): Promise<ReleaseInfo[] | null> {
         try {
             return await listReleases(true);
