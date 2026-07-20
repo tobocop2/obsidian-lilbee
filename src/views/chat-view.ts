@@ -349,10 +349,13 @@ export class ChatView extends ItemView {
         gpuBtn.setAttribute("aria-label", MESSAGES.LABEL_OPEN_GPU_ACTIVITY);
         gpuBtn.addEventListener("click", () => void revealPlacementBeside(this.app, this.leaf));
 
-        const sessionsBtn = actions.createEl("button", { cls: "lilbee-chat-sessions" });
-        setIcon(sessionsBtn, "history");
-        sessionsBtn.setAttribute("aria-label", MESSAGES.LABEL_OPEN_SESSIONS);
-        sessionsBtn.addEventListener("click", () => this.openSessions());
+        // Saved conversations are hidden outright on servers without the routes.
+        if (this.plugin.serverSupportsSessions()) {
+            const sessionsBtn = actions.createEl("button", { cls: "lilbee-chat-sessions" });
+            setIcon(sessionsBtn, "history");
+            sessionsBtn.setAttribute("aria-label", MESSAGES.LABEL_OPEN_SESSIONS);
+            sessionsBtn.addEventListener("click", () => this.openSessions());
+        }
 
         const saveBtn = actions.createEl("button", { cls: "lilbee-chat-save" });
         setIcon(saveBtn, "save");
@@ -921,6 +924,8 @@ export class ChatView extends ItemView {
 
     /** Queue a session write. Never awaited by the chat path: persistence must not stall the answer. */
     private queuePersist(write: () => Promise<void>): void {
+        // Servers without the session routes keep the conversation in memory only.
+        if (!this.plugin.serverSupportsSessions()) return;
         // Writes queued for one conversation must not touch the one open when they run.
         const epoch = this.conversationEpoch;
         this.persistQueue = this.persistQueue

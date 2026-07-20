@@ -248,6 +248,7 @@ function makePlugin(): LilbeePlugin {
         notifyChatStart: vi.fn(),
         notifyChatEnd: vi.fn(),
         assertFleetReady: vi.fn().mockReturnValue(true),
+        serverSupportsSessions: vi.fn().mockReturnValue(true),
         refreshMemoryViews: vi.fn(),
         taskQueue: new TaskQueue(),
         app: {
@@ -5725,6 +5726,34 @@ describe("ChatView — sessions toolbar button", () => {
 
         expect(messagesEl.children).toHaveLength(0);
         expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_SESSION_NEW)).toBe(true);
+    });
+
+    it("hides the button when the server predates the session routes", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessions as ReturnType<typeof vi.fn>).mockReturnValue(false);
+        const { container } = await openChat(plugin);
+
+        expect(container.find("lilbee-chat-sessions")).toBeNull();
+    });
+
+    it("keeps the conversation in memory only when the server predates the session routes", async () => {
+        const plugin = makePlugin();
+        (plugin.serverSupportsSessions as ReturnType<typeof vi.fn>).mockReturnValue(false);
+        const { mockFn, done } = makeStream([
+            { event: SSE_EVENT.TOKEN, data: "a" },
+            { event: SSE_EVENT.DONE, data: {} },
+        ]);
+        plugin.api.chatStream = mockFn;
+        const { container } = await openChat(plugin);
+        container.find("lilbee-chat-textarea")!.value = "q";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await done;
+        await tick();
+        await tick();
+
+        expect(plugin.api.createSession).not.toHaveBeenCalled();
+        expect(plugin.api.appendSessionMessage).not.toHaveBeenCalled();
+        expect(mockFn.mock.calls[0][6]).toEqual({ summary: "", sessionId: null });
     });
 });
 

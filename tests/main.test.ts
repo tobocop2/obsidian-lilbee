@@ -3151,6 +3151,60 @@ describe("LilbeePlugin", () => {
         });
     });
 
+    describe("serverSupportsSessions", () => {
+        it("managed mode gates on the recorded install version", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            const loadConfig = vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                ...DEFAULT_SHARED_CONFIG,
+                lilbeeVersion: "v0.6.66b507",
+            });
+            expect(plugin.serverSupportsSessions()).toBe(false);
+            loadConfig.mockReturnValue({ ...DEFAULT_SHARED_CONFIG, lilbeeVersion: "v0.6.90b420.dev724" });
+            expect(plugin.serverSupportsSessions()).toBe(true);
+            loadConfig.mockRestore();
+        });
+
+        it("managed mode fails open while no version is recorded", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            const loadConfig = vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                ...DEFAULT_SHARED_CONFIG,
+            });
+            expect(plugin.serverSupportsSessions()).toBe(true);
+            loadConfig.mockRestore();
+        });
+
+        it("external mode fails open until a probe caches the server version", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.onload();
+            expect(plugin.serverSupportsSessions()).toBe(true);
+
+            plugin.api.health = vi
+                .fn()
+                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { version: "0.6.66b507" } });
+            await (plugin as any).probeServerHealth();
+            expect(plugin.serverSupportsSessions()).toBe(false);
+
+            plugin.api.health = vi
+                .fn()
+                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { version: "0.6.90b420" } });
+            await (plugin as any).probeServerHealth();
+            expect(plugin.serverSupportsSessions()).toBe(true);
+        });
+
+        it("managed probes leave the external version cache alone", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            vi.spyOn(plugin, "ensureManagedConsentThenStart").mockResolvedValue({ kind: "canceled" } as any);
+            await plugin.onload();
+            plugin.api.health = vi
+                .fn()
+                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { version: "0.6.66b507" } });
+            await (plugin as any).probeServerHealth();
+            expect((plugin as any).externalServerVersion).toBe("");
+        });
+    });
+
     describe("triggerSync event handling", () => {
         it("handles EXTRACT events by updating taskQueue", async () => {
             const plugin = await createPlugin();

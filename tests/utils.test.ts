@@ -26,6 +26,7 @@ import {
     sessionTokenInvalidMessage,
     setDeterminateProgress,
     streamInterruptedMessage,
+    supportsSessions,
     withIdleTimeout,
 } from "../src/utils";
 import { ServerStartingError, SessionTokenError } from "../src/api";
@@ -173,6 +174,25 @@ describe("isVersionOlder", () => {
     it("treats a digitless version as zero, so anything real is newer", () => {
         expect(isVersionOlder("", "0.6.74")).toBe(true);
         expect(isVersionOlder("dev", "dev")).toBe(false);
+    });
+});
+
+describe("supportsSessions", () => {
+    it("rejects the 0.6.66 stable line and everything older", () => {
+        expect(supportsSessions("v0.6.66b507")).toBe(false);
+        expect(supportsSessions("0.6.66b507")).toBe(false);
+        expect(supportsSessions("0.6.9")).toBe(false);
+        expect(supportsSessions("0.6.90b419")).toBe(false);
+    });
+
+    it("accepts the first sessions build, its dev builds, and anything newer", () => {
+        expect(supportsSessions("0.6.90b420")).toBe(true);
+        expect(supportsSessions("v0.6.90b420.dev724")).toBe(true);
+        expect(supportsSessions("0.6.91b1")).toBe(true);
+    });
+
+    it("fails open when the version is unknown", () => {
+        expect(supportsSessions("")).toBe(true);
     });
 });
 
