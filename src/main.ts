@@ -73,6 +73,7 @@ import {
     NOTICE_PERMANENT,
     percentOfBytes,
     sessionTokenInvalidMessage,
+    supportsSessions,
     STREAM_IDLE_TIMEOUT_MS,
     StreamIdleError,
     withIdleTimeout,
@@ -310,6 +311,9 @@ export default class LilbeePlugin extends Plugin {
     private chatInFlight = 0;
     // Counts consecutive failed probes against HEALTH_FAILURE_STREAK_THRESHOLD.
     private healthFailureStreak = 0;
+    // External-mode server version, cached from the health probe; managed mode
+    // reads the recorded install version instead.
+    private externalServerVersion = "";
     // The managed server has reached READY at least once this session. Until
     // it has, a failing health probe means "still coming up", not "error" —
     // so a fresh install / first-run wizard doesn't flash a red error pill
@@ -1671,6 +1675,7 @@ export default class LilbeePlugin extends Plugin {
         const health = await this.api.health().catch(() => null);
         if (health?.isOk()) {
             this.healthFailureStreak = 0;
+            if (this.settings.serverMode === SERVER_MODE.EXTERNAL) this.externalServerVersion = health.value.version;
             if (this.serverUnreachable) {
                 this.serverUnreachable = false;
                 void this.fetchActiveModel();
@@ -1912,6 +1917,17 @@ export default class LilbeePlugin extends Plugin {
         if (!this.chatWarming) return true;
         new Notice(MESSAGES.NOTICE_FLEET_WARMING);
         return false;
+    }
+
+    /** Saved conversations need the /api/sessions routes, which pre-0.6.90 servers
+     *  don't have. Managed mode knows the install version up front; external mode
+     *  fails open until the first health probe reports one. */
+    serverSupportsSessions(): boolean {
+        const version =
+            this.settings.serverMode === SERVER_MODE.MANAGED
+                ? this.getSharedLilbeeVersion()
+                : this.externalServerVersion;
+        return supportsSessions(version);
     }
 
     private async confirmReindexIfNeeded(name: string): Promise<boolean> {

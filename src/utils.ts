@@ -139,6 +139,15 @@ export function isVersionOlder(current: string, latest: string): boolean {
     return false;
 }
 
+/** Oldest server with the /api/sessions routes; the 0.6.66 stable line predates them. */
+export const SESSIONS_MIN_SERVER_VERSION = "0.6.90b420";
+
+/** Unknown versions fail open: the chat path already degrades gracefully on a 404. */
+export function supportsSessions(version: string): boolean {
+    if (!version) return true;
+    return !isVersionOlder(version, SESSIONS_MIN_SERVER_VERSION);
+}
+
 /**
  * Render the server's ISO-8601 timestamp ("2026-05-09T05:49:38.800771+00:00")
  * as a human "5m ago" / "3d ago" string. Returns the raw value when parsing
