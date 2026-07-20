@@ -233,11 +233,13 @@ export class PlacementView extends ItemView {
     /** Server-issued host fix hint, rendered verbatim under a localized label. */
     private renderNotice(container: HTMLElement, notice: string | null): void {
         this.gpuNotice = notice;
-        this.gpuNoticeEl = null;
-        if (!notice) return;
+        this.gpuNoticeEl = notice ? this.createNoticeEl(container, notice) : null;
+    }
+
+    private createNoticeEl(container: HTMLElement, notice: string): HTMLElement {
         const el = container.createDiv({ cls: "lilbee-placement-notice", text: MESSAGES.PLACEMENT_GPU_NOTICE(notice) });
         this.tip(el, MESSAGES.PLACEMENT_GPU_NOTICE_TOOLTIP);
-        this.gpuNoticeEl = el;
+        return el;
     }
 
     private renderSectionTitle(container: HTMLElement, text: string): void {
@@ -483,12 +485,8 @@ export class PlacementView extends ItemView {
             return;
         }
         if (!notice || !this.bodyEl) return;
-        const el = this.bodyEl.createDiv({
-            cls: "lilbee-placement-notice",
-            text: MESSAGES.PLACEMENT_GPU_NOTICE(notice),
-        });
-        this.tip(el, MESSAGES.PLACEMENT_GPU_NOTICE_TOOLTIP);
-        // Insert right after the header; append if the header somehow isn't first.
+        const el = this.createNoticeEl(this.bodyEl, notice);
+        // Insert right after the header; append when nothing follows it yet.
         this.bodyEl.insertBefore(el, (this.bodyEl.children[1] as HTMLElement | undefined) ?? null);
         this.gpuNoticeEl = el;
     }
