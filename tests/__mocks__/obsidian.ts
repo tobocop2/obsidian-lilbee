@@ -264,6 +264,10 @@ export class MockElement {
         }
     }
 
+    detach(): void {
+        this.remove();
+    }
+
     scrollIntoView(_opts?: unknown): void {
         /* noop */
     }

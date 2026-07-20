@@ -4280,6 +4280,16 @@ button.lilbee-model-chip-select:focus-visible {
     padding: 28px 0;
     text-align: center;
 }
+.lilbee-placement-notice {
+    margin: 0 0 var(--size-4-2, 8px);
+    padding: var(--size-4-2, 8px) var(--size-4-3, 12px);
+    border-left: 3px solid var(--text-warning);
+    border-radius: 0 var(--radius-s, 4px) var(--radius-s, 4px) 0;
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    font-size: var(--font-small, 13px);
+    line-height: var(--line-height-normal, 1.5);
+}
 .lilbee-placement-waiting {
     display: flex;
     flex-direction: column;

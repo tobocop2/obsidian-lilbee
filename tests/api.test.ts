@@ -2530,11 +2530,43 @@ const PLACEMENT: PlacementResponse = {
 };
 
 describe("gpus()", () => {
-    it("GETs /api/gpus and returns the detected GPUs", async () => {
-        fetchMock.mockResolvedValue(jsonResponse(PLACEMENT.gpus));
+    it("GETs /api/gpus and returns the envelope with detected GPUs", async () => {
+        const envelope = { gpus: PLACEMENT.gpus, notice: null };
+        fetchMock.mockResolvedValue(jsonResponse(envelope));
         const result = await client.gpus();
         expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/gpus`, expect.objectContaining({}));
-        expect(result._unsafeUnwrap()).toEqual(PLACEMENT.gpus);
+        expect(result._unsafeUnwrap()).toEqual(envelope);
+    });
+
+    it("wraps a pre-PR-564 bare list in the envelope for backward compat", async () => {
+        fetchMock.mockResolvedValue(jsonResponse(PLACEMENT.gpus));
+        const result = await client.gpus();
+        expect(result._unsafeUnwrap()).toEqual({ gpus: PLACEMENT.gpus, notice: null });
+    });
+
+    it("returns the server-issued Intel util notice when present", async () => {
+        const notice = "install igt-gpu-tools and grant CAP_PERFMON to lilbee";
+        fetchMock.mockResolvedValue(jsonResponse({ gpus: PLACEMENT.gpus, notice }));
+        const result = await client.gpus();
+        expect(result._unsafeUnwrap().notice).toBe(notice);
+    });
+
+    it("returns an empty gpus array and null notice for an unexpected shape", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ unexpected: true }));
+        const result = await client.gpus();
+        expect(result._unsafeUnwrap()).toEqual({ gpus: [], notice: null });
+    });
+
+    it("returns err when the server responds non-ok", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 500,
+            text: () => Promise.resolve("boom"),
+            headers: { get: () => null },
+        } as unknown as Response);
+        const result = await client.gpus();
+        expect(result.isErr()).toBe(true);
+        expect(result._unsafeUnwrapErr().message).toContain("500");
     });
 });
 
@@ -2553,6 +2585,18 @@ describe("gpuStatsStream()", () => {
             data: { gpus: [{ index: 0, utilization_pct: 55, free_bytes: 1, total_bytes: 2 }] },
         });
     });
+
+    it("carries the per-event notice on the gpu_stats payload", async () => {
+        const notice = "grant CAP_PERFMON to lilbee";
+        fetchMock.mockResolvedValue(
+            sseResponse([
+                `event: gpu_stats\ndata: {"gpus": [{"index": 0, "utilization_pct": null, "free_bytes": 1, "total_bytes": 2}], "notice": ${JSON.stringify(notice)}}\n\n`,
+            ]),
+        );
+        const events = await collect(client.gpuStatsStream());
+        const payload = events[0].data as { gpus: unknown[]; notice?: string };
+        expect(payload.notice).toBe(notice);
+    });
 });
 
 describe("placement()", () => {
@@ -2561,6 +2605,13 @@ describe("placement()", () => {
         const result = await client.placement();
         expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/placement`, expect.objectContaining({}));
         expect(result._unsafeUnwrap()).toEqual(PLACEMENT);
+    });
+
+    it("exposes the host-level notice when the server includes one", async () => {
+        const notice = "install igt-gpu-tools and grant CAP_PERFMON to lilbee";
+        fetchMock.mockResolvedValue(jsonResponse({ ...PLACEMENT, notice }));
+        const result = await client.placement();
+        expect(result._unsafeUnwrap().notice).toBe(notice);
     });
 });
 

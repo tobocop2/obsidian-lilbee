@@ -1066,9 +1066,19 @@ export interface GpuStat {
     total_bytes: number;
 }
 
-/** Payload of a `gpu_stats` SSE event: a snapshot for every detected GPU. */
+/** Server-issued hint when GPU monitoring is degraded (e.g. Intel hosts without intel_gpu_top). */
+export type GpuNotice = string | null;
+
+/** Payload of a `gpu_stats` SSE event. `notice` is omitted on healthy hosts. */
 export interface GpuStatsPayload {
     gpus: GpuStat[];
+    notice?: GpuNotice;
+}
+
+/** Envelope of `GET /api/gpus` since lilbee PR #564; client normalizes old bare-list responses into it. */
+export interface GpuListResponse {
+    gpus: GpuInfo[];
+    notice: GpuNotice;
 }
 
 /** Where one role's model is placed in the resolved plan. Mirrors RolePlacementResponse. */
@@ -1090,6 +1100,8 @@ export interface PlacementResponse {
     unplaceable: string[];
     manual: boolean;
     spec_json: string | null;
+    /** Host-level fix instruction, present only when GPU monitoring is degraded. */
+    notice?: GpuNotice;
 }
 
 /** One role entry in a manual placement spec. */

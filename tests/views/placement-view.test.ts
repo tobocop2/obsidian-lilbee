@@ -950,6 +950,105 @@ describe("PlacementView live usage bars", () => {
         await view.onClose();
     });
 
+    it("renders a notice banner when the placement response carries one", async () => {
+        const notice = "install igt-gpu-tools and grant CAP_PERFMON to lilbee";
+        const api = makeApi({ placement: vi.fn().mockResolvedValue(ok({ ...multi(), notice })) });
+        const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
+        await view.onOpen();
+        await flush();
+        const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
+        const banner = contentEl.find("lilbee-placement-notice");
+        expect(banner).toBeTruthy();
+        expect(banner.textContent).toContain(notice);
+        await view.onClose();
+    });
+
+    it("renders a notice banner when an SSE event carries one", async () => {
+        const notice = "grant CAP_PERFMON to lilbee";
+        const api = makeApi({
+            gpuStatsStream: vi.fn(() => statsStream({ event: "gpu_stats", data: { gpus: [], notice } })),
+        });
+        const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
+        await view.onOpen();
+        await flush();
+        const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
+        expect(contentEl.find("lilbee-placement-notice")?.textContent).toContain(notice);
+        await view.onClose();
+    });
+
+    it("clears the notice banner when a later SSE event has no notice", async () => {
+        const notice = "install igt-gpu-tools";
+        const api = makeApi({
+            gpuStatsStream: vi.fn(() =>
+                statsStream(
+                    { event: "gpu_stats", data: { gpus: [], notice } },
+                    { event: "gpu_stats", data: { gpus: [] } },
+                ),
+            ),
+        });
+        const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
+        await view.onOpen();
+        await flush();
+        const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
+        expect(contentEl.find("lilbee-placement-notice")).toBeFalsy();
+        await view.onClose();
+    });
+
+    it("updates the banner text in place when the notice changes between events", async () => {
+        const api = makeApi({
+            gpuStatsStream: vi.fn(() =>
+                statsStream(
+                    { event: "gpu_stats", data: { gpus: [], notice: "install igt-gpu-tools" } },
+                    { event: "gpu_stats", data: { gpus: [], notice: "grant CAP_PERFMON to lilbee" } },
+                ),
+            ),
+        });
+        const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
+        await view.onOpen();
+        await flush();
+        const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
+        const banner = contentEl.find("lilbee-placement-notice");
+        expect(banner?.textContent).toContain("grant CAP_PERFMON to lilbee");
+        expect(contentEl.findAll("lilbee-placement-notice")).toHaveLength(1);
+        await view.onClose();
+    });
+
+    it("omits the notice banner when no notice is present", async () => {
+        const api = makeApi();
+        const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
+        await view.onOpen();
+        await flush();
+        const contentEl = (view as unknown as { contentEl: MockElement }).contentEl;
+        expect(contentEl.find("lilbee-placement-notice")).toBeFalsy();
+        await view.onClose();
+    });
+
+    it("drops streamed notices that arrive when the view body is gone", async () => {
+        const { view, contentEl } = await openView(makePlugin(makeApi()));
+        const internal = view as unknown as {
+            bodyEl: HTMLElement | null;
+            gpuNotice: string | null;
+            applyNotice(notice: string | null): void;
+        };
+        internal.bodyEl = null;
+        internal.applyNotice("install igt-gpu-tools");
+        expect(internal.gpuNotice).toBe("install igt-gpu-tools");
+        internal.applyNotice(null);
+        expect(internal.gpuNotice).toBeNull();
+        expect(contentEl.find("lilbee-placement-notice")).toBeFalsy();
+    });
+
+    it("appends the notice banner when there is no header to anchor after", async () => {
+        const { view, contentEl } = await openView(makePlugin(makeApi()));
+        const internal = view as unknown as {
+            bodyEl: MockElement | null;
+            applyNotice(notice: string | null): void;
+        };
+        internal.bodyEl?.empty();
+        internal.applyNotice("install igt-gpu-tools");
+        expect(contentEl.find("lilbee-placement-notice")?.textContent).toContain("install igt-gpu-tools");
+    });
+
     it("opens a stats stream on open and aborts it on close", async () => {
         const api = makeApi();
         const view = new PlacementView(new WorkspaceLeaf(), makePlugin(api));
