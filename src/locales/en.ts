@@ -1034,6 +1034,9 @@ export const MESSAGES = {
     PLACEMENT_NEEDS_NEWER_SERVER:
         "GPU placement and monitoring aren't available on this lilbee server yet. For now they ship in the dev builds: turn on Include dev builds under Settings, install the newest dev build from the Server version picker, and reopen this view.",
     PLACEMENT_WAITING_SERVER: "Waiting for the lilbee server to start. This view loads automatically once it's up.",
+    PLACEMENT_GPU_NOTICE: (notice: string): string => `GPU monitoring: ${notice}`,
+    PLACEMENT_GPU_NOTICE_TOOLTIP:
+        "The lilbee server can't read GPU utilization on this host. The hint below tells you which tool to install or permission to grant.",
 
     // Hardware / fleet settings
     LABEL_FLEET: "Hardware / fleet",

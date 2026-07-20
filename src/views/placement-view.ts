@@ -76,6 +76,8 @@ export class PlacementView extends ItemView {
     private startupRetryTimer: number | null = null;
     private waitingForServer = false;
     private statsController: AbortController | null = null;
+    private gpuNotice: string | null = null;
+    private gpuNoticeEl: HTMLElement | null = null;
     /** Live util + vram bars and their text per device index, updated in place by the stats stream. */
     // vramFill/memText are absent on unified-memory rows, which render a static capacity label.
     private gpuBars: Map<
@@ -200,8 +202,10 @@ export class PlacementView extends ItemView {
         if (!this.bodyEl || !data) return;
         this.multiDevice = data.gpus.length >= 2;
         this.gpuBars.clear();
+        this.gpuNoticeEl = null;
         this.bodyEl.empty();
         this.renderHeader(this.bodyEl, data);
+        this.renderNotice(this.bodyEl, data.notice ?? null);
         if (data.gpus.length < 2) {
             this.renderSingleDevice(this.bodyEl, data);
         } else {
@@ -224,6 +228,16 @@ export class PlacementView extends ItemView {
         header.createEl("h2", { text: MESSAGES.PLACEMENT_TITLE });
         const state = this.applying ? "applying" : this.mode;
         header.createSpan({ cls: `lilbee-placement-state is-${state}`, text: this.stateLabel(data) });
+    }
+
+    /** Server-issued host fix hint, rendered verbatim under a localized label. */
+    private renderNotice(container: HTMLElement, notice: string | null): void {
+        this.gpuNotice = notice;
+        this.gpuNoticeEl = null;
+        if (!notice) return;
+        const el = container.createDiv({ cls: "lilbee-placement-notice", text: MESSAGES.PLACEMENT_GPU_NOTICE(notice) });
+        this.tip(el, MESSAGES.PLACEMENT_GPU_NOTICE_TOOLTIP);
+        this.gpuNoticeEl = el;
     }
 
     private renderSectionTitle(container: HTMLElement, text: string): void {
@@ -444,12 +458,39 @@ export class PlacementView extends ItemView {
         try {
             for await (const event of this.plugin.api.gpuStatsStream(this.statsController.signal)) {
                 if (event.event === SSE_EVENT.GPU_STATS) {
-                    this.applyStats((event.data as GpuStatsPayload).gpus);
+                    const payload = event.data as GpuStatsPayload;
+                    this.applyStats(payload.gpus);
+                    this.applyNotice(payload.notice ?? null);
                 }
             }
         } catch {
             // Stream aborted (view closed) or failed (server gone): leave the bars as they are.
         }
+    }
+
+    /** Move the notice banner in place without rebuilding the rest of the view. */
+    private applyNotice(notice: string | null): void {
+        if (notice === this.gpuNotice) return;
+        this.gpuNotice = notice;
+        if (this.gpuNoticeEl) {
+            if (notice) {
+                this.gpuNoticeEl.setText(MESSAGES.PLACEMENT_GPU_NOTICE(notice));
+                this.tip(this.gpuNoticeEl, MESSAGES.PLACEMENT_GPU_NOTICE_TOOLTIP);
+                return;
+            }
+            this.gpuNoticeEl.detach();
+            this.gpuNoticeEl = null;
+            return;
+        }
+        if (!notice || !this.bodyEl) return;
+        const el = this.bodyEl.createDiv({
+            cls: "lilbee-placement-notice",
+            text: MESSAGES.PLACEMENT_GPU_NOTICE(notice),
+        });
+        this.tip(el, MESSAGES.PLACEMENT_GPU_NOTICE_TOOLTIP);
+        // Insert right after the header; append if the header somehow isn't first.
+        this.bodyEl.insertBefore(el, (this.bodyEl.children[1] as HTMLElement | undefined) ?? null);
+        this.gpuNoticeEl = el;
     }
 
     /** Move each card's utilization bar and util/memory text from a live snapshot.

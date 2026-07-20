@@ -21,7 +21,7 @@ import type {
     DocumentResult,
     DocumentsResponse,
     GenerationOptions,
-    GpuInfo,
+    GpuListResponse,
     HealthResponse,
     InstalledResponse,
     PlacementResponse,
@@ -121,6 +121,18 @@ export class RateLimitedError extends Error {
  */
 export function isHttpStatus(error: Error, status: number): boolean {
     return error.message.startsWith(`Server responded ${status}`);
+}
+
+/** Wraps a pre-PR-564 bare-list `GET /api/gpus` response in the new envelope. */
+function normalizeGpuList(parsed: unknown): GpuListResponse {
+    if (Array.isArray(parsed)) {
+        return { gpus: parsed as GpuListResponse["gpus"], notice: null };
+    }
+    const obj = parsed as Partial<GpuListResponse>;
+    return {
+        gpus: Array.isArray(obj?.gpus) ? (obj.gpus as GpuListResponse["gpus"]) : [],
+        notice: typeof obj?.notice === "string" ? obj.notice : null,
+    };
 }
 
 export class LilbeeClient {
@@ -766,9 +778,12 @@ export class LilbeeClient {
     }
 
     /** Detected GPUs with current free/total VRAM. Cheaper than placement() for
-     * polling live memory usage (no plan re-resolve of roles). */
-    async gpus(): Promise<Result<GpuInfo[], Error>> {
-        return this.fetchResult<GpuInfo[]>(`${this.baseUrl}/api/gpus`, { headers: this.authHeaders() });
+     * polling live memory usage (no plan re-resolve of roles). Normalizes the
+     * pre-PR-564 bare-list response to the new envelope shape. */
+    async gpus(): Promise<Result<GpuListResponse, Error>> {
+        const result = await this.fetchResult<unknown>(`${this.baseUrl}/api/gpus`, { headers: this.authHeaders() });
+        if (result.isErr()) return err(result.error);
+        return ok(normalizeGpuList(result.value));
     }
 
     /** Live per-GPU utilization + free memory, streamed as SSE until aborted. */
