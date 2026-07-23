@@ -37,10 +37,18 @@ interface CapturedDropdown {
     value: string | null;
 }
 
+interface CapturedButton {
+    labels: string[];
+    disabledStates: boolean[];
+    handler: (() => unknown) | null;
+}
+
 describe("server version picker with the real release list", () => {
     let dropdown: CapturedDropdown;
+    let buttons: CapturedButton[];
     let descs: string[];
     let originalAddDropdown: typeof Setting.prototype.addDropdown;
+    let originalAddButton: typeof Setting.prototype.addButton;
     let originalArch: PropertyDescriptor | undefined;
 
     beforeEach(() => {
@@ -48,6 +56,7 @@ describe("server version picker with the real release list", () => {
         originalArch = Object.getOwnPropertyDescriptor(process, "arch");
         Object.defineProperty(process, "arch", { value: "x64", configurable: true });
         dropdown = { options: [], disabledStates: [], value: null };
+        buttons = [];
         descs = [];
 
         originalAddDropdown = Setting.prototype.addDropdown;
@@ -71,6 +80,28 @@ describe("server version picker with the real release list", () => {
             cb(dd);
             return this;
         };
+        originalAddButton = Setting.prototype.addButton;
+        Setting.prototype.addButton = function (cb: (btn: any) => void) {
+            const captured: CapturedButton = { labels: [], disabledStates: [], handler: null };
+            const btn = {
+                setButtonText: (t: string) => {
+                    captured.labels.push(t);
+                    return btn;
+                },
+                setDisabled: (d: boolean) => {
+                    captured.disabledStates.push(d);
+                    return btn;
+                },
+                onClick: (h: () => unknown) => {
+                    captured.handler = h;
+                    return btn;
+                },
+                buttonEl: { toggleClass: () => {}, addClass: () => {} },
+            };
+            buttons.push(captured);
+            cb(btn);
+            return this;
+        };
         vi.spyOn(Setting.prototype, "setDesc").mockImplementation(function (desc) {
             descs.push(String(desc));
             return this;
@@ -88,15 +119,20 @@ describe("server version picker with the real release list", () => {
     afterEach(() => {
         vi.restoreAllMocks();
         Setting.prototype.addDropdown = originalAddDropdown;
+        Setting.prototype.addButton = originalAddButton;
         if (originalArch) Object.defineProperty(process, "arch", originalArch);
     });
 
-    async function renderPicker(includeDevBuilds: boolean): Promise<CapturedDropdown> {
+    function makeTab(includeDevBuilds: boolean): LilbeeSettingTab {
         const plugin = {
             settings: { ...DEFAULT_SETTINGS, serverMode: SERVER_MODE.MANAGED, includeDevBuilds },
             getSharedLilbeeVersion: () => STABLE_RUN[0],
         } as unknown as LilbeePlugin;
-        const tab = new LilbeeSettingTab(new App(), plugin);
+        return new LilbeeSettingTab(new App(), plugin);
+    }
+
+    async function renderPicker(includeDevBuilds: boolean): Promise<CapturedDropdown> {
+        const tab = makeTab(includeDevBuilds);
         (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
         await new Promise((resolve) => setTimeout(resolve, 0));
         return dropdown;
@@ -117,5 +153,49 @@ describe("server version picker with the real release list", () => {
         expect(dd.options).toEqual([...DEV_RUN.slice(0, 10), ...STABLE_RUN.slice(0, 10)]);
         expect(dd.value).toBe(STABLE_RUN[0]);
         expect(dd.disabledStates).toContain(false);
+    });
+
+    it("fetches the release list only once across repeated renders", async () => {
+        const tab = makeTab(false);
+        (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(node.requestUrl).toHaveBeenCalledTimes(1);
+    });
+
+    it("says why and offers a retry when the release list cannot be read", async () => {
+        vi.spyOn(node, "requestUrl").mockRejectedValue(new Error("network down"));
+        await renderPicker(false);
+
+        const labels = buttons.flatMap((b) => b.labels);
+        expect(labels).toContain("Retry");
+        expect(descs[descs.length - 1]).toContain("network down");
+    });
+
+    it("clicking retry re-renders the settings tab", async () => {
+        vi.spyOn(node, "requestUrl").mockRejectedValue(new Error("network down"));
+        const tab = makeTab(false);
+        const renderSpy = vi.spyOn(tab, "render").mockImplementation(() => {});
+        (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        const retry = buttons.find((b) => b.labels.includes("Retry"));
+        expect(retry?.handler).toBeDefined();
+        retry!.handler!();
+        expect(renderSpy).toHaveBeenCalled();
+    });
+
+    it("names the GitHub rate limit when GitHub answers 403", async () => {
+        vi.spyOn(node, "requestUrl").mockResolvedValue({
+            status: 403,
+            json: { message: "API rate limit exceeded for 1.2.3.4." },
+            arrayBuffer: new ArrayBuffer(0),
+            headers: {},
+        });
+        await renderPicker(false);
+
+        expect(descs[descs.length - 1].toLowerCase()).toContain("rate limit");
     });
 });

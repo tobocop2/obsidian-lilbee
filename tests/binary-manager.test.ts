@@ -322,13 +322,26 @@ describe("getLatestRelease", () => {
 
     it("throws when GitHub API returns error status", async () => {
         vi.spyOn(node, "requestUrl").mockResolvedValue({
-            status: 403,
+            status: 500,
             json: [],
             arrayBuffer: new ArrayBuffer(0),
             headers: {},
         });
 
-        await expect(getLatestRelease(false)).rejects.toThrow("GitHub API responded 403");
+        await expect(getLatestRelease(false)).rejects.toThrow("GitHub API responded 500");
+    });
+
+    it("names the rate limit when GitHub answers 403 or 429", async () => {
+        for (const status of [403, 429]) {
+            vi.spyOn(node, "requestUrl").mockResolvedValue({
+                status,
+                json: [],
+                arrayBuffer: new ArrayBuffer(0),
+                headers: {},
+            });
+
+            await expect(getLatestRelease(false)).rejects.toThrow("rate limit");
+        }
     });
 
     it("paginates past a full first page of dev builds to reach a stable release", async () => {
@@ -1207,11 +1220,11 @@ describe("listReleases", () => {
         warn.mockRestore();
     });
 
-    it("throws when GitHub rejects the request", async () => {
+    it("names the rate limit when GitHub rejects the request", async () => {
         restore = stubPlatform("linux", "x64");
         stubNoNvidia();
         vi.spyOn(node, "requestUrl").mockResolvedValue({ status: 403, json: [], arrayBuffer: new ArrayBuffer(0) });
 
-        await expect(listReleases(false)).rejects.toThrow("GitHub API responded 403");
+        await expect(listReleases(false)).rejects.toThrow("rate limit");
     });
 });

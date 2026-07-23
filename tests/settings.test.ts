@@ -2310,6 +2310,7 @@ describe("managed mode settings", () => {
         const titles = setAttribute.mock.calls.filter(([name]) => name === "title").map(([, value]) => value);
         expect(titles).not.toContain(MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
         expect(MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT).toContain("not supported");
+        expect(MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT).toContain("own risk");
         setAttribute.mockRestore();
     });
 
@@ -7454,6 +7455,19 @@ describe("managed mode with no server installed", () => {
         expect(Object.keys(captured.dropdownOptions[1])).toEqual(["v0.3.0", "v0.2.0"]);
     });
 
+    it("warns on the install picker that only the latest server release is supported", async () => {
+        const plugin = makeUninstalledPlugin();
+        const tab = makeTab(plugin);
+        const setAttribute = vi.spyOn(MockElement.prototype, "setAttribute");
+
+        tab.display();
+        await settle();
+
+        const tooltips = setAttribute.mock.calls.filter(([name]) => name === "aria-label").map(([, value]) => value);
+        expect(tooltips).toContain(MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
+        setAttribute.mockRestore();
+    });
+
     it("hides the uninstall section while nothing is installed", async () => {
         const plugin = makeUninstalledPlugin();
         const tab = makeTab(plugin);
@@ -7538,9 +7552,35 @@ describe("managed mode with no server installed", () => {
         const captured = captureSettingCallbacks(() => tab.display());
         await settle();
 
-        expect(setDesc.mock.calls.some(([d]) => String(d) === MESSAGES.ERROR_RELEASE_LIST)).toBe(true);
+        expect(setDesc.mock.calls.some(([d]) => String(d) === MESSAGES.ERROR_RELEASE_LIST("offline"))).toBe(true);
         expect(captured.buttons.find((b) => b.name === MESSAGES.LABEL_INSTALL_SERVER)!.disabled).toBe(true);
         setDesc.mockRestore();
+    });
+
+    it("offers a retry that re-renders when the release list cannot be read", async () => {
+        mockListReleases.mockRejectedValue(new Error("offline"));
+        const plugin = makeUninstalledPlugin();
+        const tab = makeTab(plugin);
+        let retryBtn: { text: string; triggerClick: () => void } | null = null;
+        const origAddButton = Setting.prototype.addButton;
+        vi.spyOn(Setting.prototype, "addButton").mockImplementation(function (cb: (btn: any) => void) {
+            return origAddButton.call(this, (btn: any) => {
+                const setButtonText = btn.setButtonText.bind(btn);
+                btn.setButtonText = (t: string) => {
+                    if (t === MESSAGES.BUTTON_RETRY) retryBtn = btn;
+                    return setButtonText(t);
+                };
+                cb(btn);
+            });
+        });
+
+        captureSettingCallbacks(() => tab.display());
+        await settle();
+
+        expect(retryBtn).not.toBeNull();
+        const renderSpy = vi.spyOn(tab, "render").mockImplementation(() => {});
+        retryBtn!.triggerClick();
+        expect(renderSpy).toHaveBeenCalled();
     });
 });
 

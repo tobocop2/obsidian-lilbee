@@ -74,6 +74,11 @@ const RELEASE_PAGE_SIZE = 100;
 /** Pages to scan before giving up, so a long stretch of dev builds can't hide every stable release. */
 const RELEASE_PAGE_BUDGET = 3;
 
+/** GitHub answers unauthenticated API calls past its per-IP hourly budget with 403 or 429. */
+const RATE_LIMIT_STATUSES = new Set([403, 429]);
+
+const GITHUB_RATE_LIMITED = "GitHub's rate limit was reached; release checks reset within the hour.";
+
 /** Run `nvidia-smi` and return its stdout, or null if it is absent or fails. */
 async function runNvidiaSmi(): Promise<string | null> {
     try {
@@ -191,6 +196,7 @@ async function fetchInstallableReleases(limit: number, includeDev: boolean): Pro
             url: `${RELEASE_LIST_API}?per_page=${RELEASE_PAGE_SIZE}&page=${page}`,
             headers: { Accept: "application/vnd.github.v3+json" },
         });
+        if (RATE_LIMIT_STATUSES.has(res.status)) throw new Error(GITHUB_RATE_LIMITED);
         if (res.status >= 400) throw new Error(`GitHub API responded ${res.status}`);
         const pageData = res.json as GitHubRelease[];
         for (const data of pageData) {

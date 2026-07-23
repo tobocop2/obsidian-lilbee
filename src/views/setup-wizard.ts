@@ -619,9 +619,7 @@ export class SetupWizard extends Modal {
     /**
      * Build the shared download-progress panel used by steps 3–5. The panel
      * starts hidden; `activateProgressPanel` below flips it on once work
-     * begins. The Task Center CTA is always present but only *visible* while
-     * progress is active — users need the affordance the moment downloads
-     * start, never before.
+     * begins.
      */
     private renderProgressPanel(step: HTMLElement): {
         progressEl: HTMLElement;
@@ -641,15 +639,6 @@ export class SetupWizard extends Modal {
         footer.createDiv({
             cls: "lilbee-wizard-progress-hint",
             text: MESSAGES.WIZARD_PROGRESS_BACKGROUND,
-        });
-
-        const taskCenterBtn = footer.createEl("button", {
-            cls: "lilbee-wizard-task-center-cta",
-            text: MESSAGES.BUTTON_OPEN_TASK_CENTER,
-        });
-        taskCenterBtn.addEventListener("click", (e) => {
-            e.preventDefault();
-            void this.plugin.activateTaskView();
         });
 
         return { progressEl, progressFill, progressLabel };
