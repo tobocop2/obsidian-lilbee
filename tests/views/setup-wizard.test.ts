@@ -3079,6 +3079,17 @@ describe("SetupWizard", () => {
             expect(plugin.activateTaskView).toHaveBeenCalled();
         });
 
+        it("does not offer a Task Center link inside the wizard", async () => {
+            const plugin = setupModelPickerActive();
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            wizard.next();
+            await tick();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            expect(el.find("lilbee-wizard-task-center-cta")).toBeNull();
+        });
+
         it("clicking the Task Center CTA does not close the wizard", async () => {
             const plugin = setupModelPickerActive();
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
