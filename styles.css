@@ -1984,34 +1984,6 @@
     margin-top: 2px;
 }
 
-/* Task Center CTA: styled like a task-type chip, colored by step. Visible
- * the moment a download starts so the user knows their next move if they
- * want to step out of the wizard. */
-.lilbee-wizard-task-center-cta {
-    display: inline-flex;
-    align-items: center;
-    padding: 5px 10px;
-    background-color: transparent;
-    color: var(--wizard-step-color, var(--interactive-accent));
-    border: 1px solid color-mix(in srgb, var(--wizard-step-color, var(--interactive-accent)) 40%, transparent);
-    border-radius: 8px;
-    font-size: 10px;
-    font-weight: var(--font-semibold, 600);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition:
-        background-color 150ms ease,
-        border-color 150ms ease,
-        color 150ms ease;
-    flex-shrink: 0;
-}
-
-.lilbee-wizard-task-center-cta:hover {
-    background-color: color-mix(in srgb, var(--wizard-step-color, var(--interactive-accent)) 12%, transparent);
-    border-color: var(--wizard-step-color, var(--interactive-accent));
-}
-
 /* Managed-server setup panel: a header + three phase rows whose dots light up
  * as the server moves Downloading → Starting → Ready. Mirrors the Task Center's
  * visual language so first-run setup feels like the rest of the plugin. */

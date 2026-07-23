@@ -81,7 +81,6 @@ function makePlugin(overrides: Record<string, unknown> = {}) {
         startManagedServer: vi.fn().mockResolvedValue(undefined),
         saveSettings: vi.fn().mockResolvedValue(undefined),
         activateChatView: vi.fn().mockResolvedValue(undefined),
-        activateTaskView: vi.fn().mockResolvedValue(undefined),
         ...overrides,
     };
     // Default consent gate: delegate to startManagedServer (so per-test
@@ -3025,7 +3024,7 @@ describe("SetupWizard", () => {
         });
     });
 
-    describe("Task Center CTA during progress", () => {
+    describe("progress panel", () => {
         function setupModelPickerActive() {
             const entries = [makeEntry({ name: "qwen/qwen3-0.6B" })];
             const plugin = makePlugin({ settings: { serverMode: "external" } });
@@ -3038,19 +3037,6 @@ describe("SetupWizard", () => {
             });
             return plugin;
         }
-
-        it("renders the Task Center CTA button inside the model picker progress panel", async () => {
-            const plugin = setupModelPickerActive();
-            const wizard = new SetupWizard(plugin.app as any, plugin as any);
-            wizard.open();
-            wizard.next();
-            await tick();
-
-            const el = wizard.contentEl as unknown as MockElement;
-            const cta = el.find("lilbee-wizard-task-center-cta");
-            expect(cta).not.toBeNull();
-            expect(cta!.textContent).toBe(MESSAGES.BUTTON_OPEN_TASK_CENTER);
-        });
 
         it("renders the background-processing helper line", async () => {
             const plugin = setupModelPickerActive();
@@ -3065,20 +3051,6 @@ describe("SetupWizard", () => {
             expect(hint!.textContent).toBe(MESSAGES.WIZARD_PROGRESS_BACKGROUND);
         });
 
-        it("clicking the Task Center CTA invokes plugin.activateTaskView", async () => {
-            const plugin = setupModelPickerActive();
-            const wizard = new SetupWizard(plugin.app as any, plugin as any);
-            wizard.open();
-            wizard.next();
-            await tick();
-
-            const el = wizard.contentEl as unknown as MockElement;
-            const cta = el.find("lilbee-wizard-task-center-cta");
-            expect(cta).not.toBeNull();
-            cta!.trigger("click", { preventDefault: () => {} });
-            expect(plugin.activateTaskView).toHaveBeenCalled();
-        });
-
         it("does not offer a Task Center link inside the wizard", async () => {
             const plugin = setupModelPickerActive();
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
@@ -3088,20 +3060,6 @@ describe("SetupWizard", () => {
 
             const el = wizard.contentEl as unknown as MockElement;
             expect(el.find("lilbee-wizard-task-center-cta")).toBeNull();
-        });
-
-        it("clicking the Task Center CTA does not close the wizard", async () => {
-            const plugin = setupModelPickerActive();
-            const wizard = new SetupWizard(plugin.app as any, plugin as any);
-            wizard.open();
-            wizard.next();
-            await tick();
-
-            const closeSpy = vi.spyOn(wizard, "close");
-            const el = wizard.contentEl as unknown as MockElement;
-            const cta = el.find("lilbee-wizard-task-center-cta");
-            cta!.trigger("click", { preventDefault: () => {} });
-            expect(closeSpy).not.toHaveBeenCalled();
         });
 
         it("activates the hero rail when a pull begins", async () => {

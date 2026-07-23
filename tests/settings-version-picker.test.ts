@@ -171,6 +171,20 @@ describe("server version picker with the real release list", () => {
 
         const labels = buttons.flatMap((b) => b.labels);
         expect(labels).toContain("Retry");
+        expect(descs[descs.length - 1]).toContain("network down");
+    });
+
+    it("clicking retry re-renders the settings tab", async () => {
+        vi.spyOn(node, "requestUrl").mockRejectedValue(new Error("network down"));
+        const tab = makeTab(false);
+        const renderSpy = vi.spyOn(tab, "render").mockImplementation(() => {});
+        (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        const retry = buttons.find((b) => b.labels.includes("Retry"));
+        expect(retry?.handler).toBeDefined();
+        retry!.handler!();
+        expect(renderSpy).toHaveBeenCalled();
     });
 
     it("names the GitHub rate limit when GitHub answers 403", async () => {

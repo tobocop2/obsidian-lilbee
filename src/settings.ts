@@ -58,6 +58,8 @@ import {
 
 const CHECK_TIMEOUT_MS = 5000;
 const DEV_BUILDS_FLASH_MS = 2400;
+/** GitHub's unauthenticated releases API allows 60 requests/hour per IP, so renders share one fetch. */
+const RELEASES_CACHE_TTL_MS = 10 * 60 * 1000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
 const RERANKER_DISABLED_KEY = "";
 const VISION_DISABLED_KEY = "";
@@ -115,6 +117,8 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private apiKeysContainerEl: HTMLElement | null = null;
     private crawlingContainerEl: HTMLElement | null = null;
     private wikiContainerEl: HTMLElement | null = null;
+    /** Last successful release-list fetch; failures are not cached, so a retry always refetches. */
+    private releasesCache: { at: number; releases: ReleaseInfo[] } | null = null;
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app, plugin);
@@ -401,20 +405,24 @@ export class LilbeeSettingTab extends PluginSettingTab {
         });
 
         void this.loadReleases().then((loaded) => {
-            if (loaded === null) {
+            if (loaded.releases === null) {
                 setting.setDesc(
-                    installed ? MESSAGES.DESC_SERVER_VERSION_OFFLINE(installed) : MESSAGES.DESC_SERVER_VERSION_UNKNOWN,
+                    installed
+                        ? MESSAGES.DESC_SERVER_VERSION_OFFLINE(installed, loaded.error)
+                        : MESSAGES.DESC_SERVER_VERSION_UNKNOWN,
                 );
+                setting.addButton((btn) => btn.setButtonText(MESSAGES.BUTTON_RETRY).onClick(() => this.render()));
                 return;
             }
+            const all = loaded.releases;
             const includeDev = this.plugin.settings.includeDevBuilds;
-            // loaded holds every installable release (dev builds included); when dev builds are
+            // all holds every installable release (dev builds included); when dev builds are
             // off, hide them and nudge toward the newest one if it leads the stable line and the
             // user isn't already running it.
-            const newest = loaded[0];
+            const newest = all[0];
             newerDevTag =
                 !includeDev && newest && isDevBuild(newest.tag) && newest.tag !== installed ? newest.tag : null;
-            releases = includeDev ? loaded : loaded.filter((r) => !isDevBuild(r.tag));
+            releases = includeDev ? all : all.filter((r) => !isDevBuild(r.tag));
             if (releases.length === 0) return;
             if (!releases.some((r) => r.tag === selectedTag)) selectedTag = releases[0].tag;
             for (const release of releases) dropdown.addOption(release.tag, release.tag);
@@ -425,12 +433,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
         });
     }
 
-    /** Recent installable releases, dev builds included; null when GitHub could not be reached. */
-    private async loadReleases(): Promise<ReleaseInfo[] | null> {
+    /** Recent installable releases, dev builds included, or why GitHub could not be read. */
+    private async loadReleases(): Promise<{ releases: ReleaseInfo[] } | { releases: null; error: string }> {
+        if (this.releasesCache && Date.now() - this.releasesCache.at < RELEASES_CACHE_TTL_MS) {
+            return { releases: this.releasesCache.releases };
+        }
         try {
-            return await listReleases(true);
-        } catch {
-            return null;
+            const releases = await listReleases(true);
+            this.releasesCache = { at: Date.now(), releases };
+            return { releases };
+        } catch (err) {
+            return { releases: null, error: errorMessage(err, String(err)) };
         }
     }
 
@@ -526,6 +539,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
         const setting = new Setting(containerEl)
             .setName(MESSAGES.LABEL_INSTALL_SERVER)
             .setDesc(MESSAGES.DESC_SERVER_VERSION_LOADING);
+        // aria-label only: Obsidian renders its styled tooltip from it, and a
+        // title attribute would stack the native browser tooltip on top.
+        setting.settingEl.setAttribute("aria-label", MESSAGES.TOOLTIP_SERVER_VERSION_SUPPORT);
         const progress = this.renderUpdateProgress(containerEl);
 
         let releases: ReleaseInfo[] = [];
@@ -562,11 +578,12 @@ export class LilbeeSettingTab extends PluginSettingTab {
         });
 
         void this.loadReleases().then((loaded) => {
-            if (loaded === null) {
-                setting.setDesc(MESSAGES.ERROR_RELEASE_LIST);
+            if (loaded.releases === null) {
+                setting.setDesc(MESSAGES.ERROR_RELEASE_LIST(loaded.error));
+                setting.addButton((btn) => btn.setButtonText(MESSAGES.BUTTON_RETRY).onClick(() => this.render()));
                 return;
             }
-            releases = loaded;
+            releases = loaded.releases;
             if (releases.length === 0) return;
             selectedTag = releases[0].tag;
             for (const release of releases) dropdown.addOption(release.tag, release.tag);

@@ -56,6 +56,7 @@ export const MESSAGES = {
     BUTTON_RUN_SETUP_WIZARD: "Run setup wizard",
     BUTTON_INSTALL_SERVER: "Install server",
     BUTTON_REINSTALL: "Reinstall",
+    BUTTON_RETRY: "Retry",
     BUTTON_UNINSTALL_SERVER: "Uninstall server",
     BUTTON_UNINSTALL: "Uninstall",
     BUTTON_DOWNLOADING: "Downloading...",
@@ -67,7 +68,6 @@ export const MESSAGES = {
     BUTTON_CLEAR_TASKS: "Clear",
     BUTTON_SEND: "Send",
     BUTTON_OPEN_CHAT: "Open chat",
-    BUTTON_OPEN_TASK_CENTER: "→ Open Task Center",
 
     LABEL_NOT_SET: "Not set",
     LABEL_NO_MODEL_SELECTED: "no model selected",
@@ -387,7 +387,8 @@ export const MESSAGES = {
     DESC_SERVER_VERSION_DOWNGRADE: (installed: string) =>
         `${installed} installed. Downgrading replaces it with an older build and turns off automatic server updates.`,
     DESC_SERVER_VERSION_LOADING: "Reading the release list from GitHub...",
-    DESC_SERVER_VERSION_OFFLINE: (tag: string) => `${tag} installed. The release list could not be read from GitHub.`,
+    DESC_SERVER_VERSION_OFFLINE: (tag: string, reason: string) =>
+        `${tag} installed. The release list could not be read from GitHub: ${reason}`,
     DESC_DEV_BUILD_AVAILABLE: (tag: string) =>
         `A newer dev build (${tag}) is out. Turn on "Include dev builds" to try it.`,
     DESC_SERVER_AUTO_UPDATE:
@@ -402,7 +403,7 @@ export const MESSAGES = {
 
     TOOLTIP_SERVER_VERSION_SUPPORT:
         "This plugin is built and tested against the latest server release. Older releases still install and run, " +
-        "but they are not supported, and features the plugin expects may be missing.",
+        "but they are not supported, and features the plugin expects may be missing. Use a non-default release at your own risk.",
     TOOLTIP_UNINSTALL_SECTION:
         "Obsidian does not manage the lilbee server executable or its models, this plugin does. " +
         "Removing the plugin from Obsidian's Community plugins pane leaves both on disk. Uninstall here first.",
@@ -437,7 +438,7 @@ export const MESSAGES = {
     ERROR_UNINSTALL_SERVER_IN_USE: (vaultName: string) =>
         `The lilbee server is running for ${vaultName}. Close that vault, then uninstall.`,
     ERROR_INSTALL_FAILED: "Could not install the lilbee server",
-    ERROR_RELEASE_LIST: "Could not read the lilbee release list from GitHub",
+    ERROR_RELEASE_LIST: (reason: string) => `Could not read the lilbee release list from GitHub: ${reason}`,
     DESC_SERVER_URL_HELP: "Address of the lilbee HTTP server",
     LABEL_MANUAL_TOKEN: "Session token",
     DESC_MANUAL_TOKEN:
@@ -904,7 +905,7 @@ export const MESSAGES = {
     WIZARD_SYNC_HELP:
         "lilbee needs to read your notes once to make them searchable. This happens locally on your machine.",
     WIZARD_STEP_BADGE: "Step {num} · {label}",
-    WIZARD_PROGRESS_BACKGROUND: "Downloads continue in the background — track any time in the Task Center.",
+    WIZARD_PROGRESS_BACKGROUND: "Downloads continue in the background.",
     WIZARD_WIKI_TRADEOFFS_LABEL: "See the tradeoffs",
     WIZARD_SUMMARY_HEADING: "Setup complete",
     WIZARD_SUMMARY_MODEL: "Chat model: {model}",
