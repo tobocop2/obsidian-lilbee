@@ -1662,12 +1662,13 @@ describe("fetchWithRetry() — token provider + 401/403 retry", () => {
         expect(headers.Authorization).toBe("Bearer fresh");
     });
 
-    it("retry without prior Authorization header leaves headers untouched", async () => {
+    it("retry carries the refreshed token even on a call that sets no headers", async () => {
         const c = new LilbeeClient(BASE_URL);
         c.setToken("old");
         c.setTokenProvider(() => "new");
-        // search() does not set Authorization, so the retry path exercises the
-        // branch where existing.Authorization is undefined.
+        // search() passes no headers of its own. Auth is attached centrally, so
+        // the refreshed token still reaches the retry; before that it did not,
+        // and every read-only route 401'd once the server began authenticating.
         fetchMock
             .mockResolvedValueOnce({
                 ok: false,
@@ -1684,7 +1685,7 @@ describe("fetchWithRetry() — token provider + 401/403 retry", () => {
         expect(fetchMock).toHaveBeenCalledTimes(2);
         const retryInit = fetchMock.mock.calls[1][1] as RequestInit;
         const headers = (retryInit.headers ?? {}) as Record<string, string>;
-        expect(headers.Authorization).toBeUndefined();
+        expect(headers.Authorization).toBe("Bearer new");
     });
 
     it("setTokenProvider(null) clears the provider", async () => {
@@ -2697,4 +2698,69 @@ describe("crawl() include_subdomains", () => {
         const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
         expect(body).toMatchObject({ url: "https://x.com", max_pages: 0, include_subdomains: true });
     });
+});
+
+describe("LilbeeClient.probe()", () => {
+    let origFetch: typeof globalThis.fetch;
+
+    beforeEach(() => {
+        origFetch = globalThis.fetch;
+    });
+
+    afterEach(() => {
+        globalThis.fetch = origFetch;
+    });
+
+    it("sends the session token so an authenticated server answers", async () => {
+        // The server authenticates /api/health, so a probe without the token
+        // reads as unreachable and the settings dot lies about a live server.
+        const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+        globalThis.fetch = fetchSpy;
+        await expect(LilbeeClient.probe(`${BASE_URL}/api/health`, 1000, "tok-9")).resolves.toBe(true);
+        expect(fetchSpy.mock.calls[0][1]).toMatchObject({ headers: { Authorization: "Bearer tok-9" } });
+    });
+
+    it("probes bare when there is no token to send", async () => {
+        const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+        globalThis.fetch = fetchSpy;
+        await expect(LilbeeClient.probe(`${BASE_URL}/api/health`, 1000, null)).resolves.toBe(true);
+        expect(fetchSpy.mock.calls[0][1].headers).toBeUndefined();
+    });
+});
+
+describe("every client request carries the session token", () => {
+    // Server PR #570 made all routes authenticated. Endpoints that used to be
+    // read-only were called without a token and now 401, which the UI shows as
+    // "auth error" on a healthy server. Auth is injected centrally so no call
+    // site can omit it; these pin the ones that were missing it.
+    let c: LilbeeClient;
+
+    beforeEach(() => {
+        c = new LilbeeClient(BASE_URL, "tok-x");
+    });
+
+    function sentAuth(): string | undefined {
+        const init = fetchMock.mock.calls[0][1] as RequestInit | undefined;
+        return (init?.headers as Record<string, string> | undefined)?.Authorization;
+    }
+
+    const cases: Array<[string, () => Promise<unknown>]> = [
+        ["health", () => c.health()],
+        ["status", () => c.status()],
+        ["config", () => c.config()],
+        ["configDefaults", () => c.configDefaults()],
+        ["catalog", () => c.catalog()],
+        ["installedModels", () => c.installedModels()],
+        ["listModels", () => c.listModels()],
+        ["listSessions", () => c.listSessions()],
+        ["listMemories", () => c.listMemories()],
+    ];
+
+    for (const [name, call] of cases) {
+        it(`${name}() sends the bearer token`, async () => {
+            fetchMock.mockResolvedValue(jsonResponse({}));
+            await call().catch(() => undefined);
+            expect(sentAuth()).toBe("Bearer tok-x");
+        });
+    }
 });

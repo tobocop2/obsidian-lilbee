@@ -4604,6 +4604,23 @@ describe("LilbeePlugin", () => {
             expect(text).toContain("Sync vault");
         });
 
+        it("a successful request does not repaint over a running task", async () => {
+            // handleRequestOutcome(OK) fires on every response. During a sync
+            // that repainted "ready" over the progress text, and the queue's
+            // next tick restored it, so the pill flickered between the two.
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            plugin.taskQueue.enqueue("Sync vault", "sync");
+            const during = (plugin as any).statusBarEl?.textContent;
+            expect(during).toContain("Sync vault");
+
+            (plugin as any).handleRequestOutcome("ok");
+
+            expect((plugin as any).statusBarEl?.textContent).toBe(during);
+        });
+
         it("status bar shows queued-only count when no active tasks remain", async () => {
             const plugin = await createPlugin();
             await plugin.onload();

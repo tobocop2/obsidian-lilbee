@@ -119,11 +119,14 @@ vi.mock("../src/views/confirm-modal", () => ({
     }),
 }));
 
-function makePlugin(overrides: Partial<LilbeeSettings> & { lilbeeVersion?: string; hfToken?: string } = {}) {
-    const { lilbeeVersion: ver, hfToken: hf, ...settingsOverrides } = overrides;
+function makePlugin(
+    overrides: Partial<LilbeeSettings> & { lilbeeVersion?: string; hfToken?: string; sessionToken?: string } = {},
+) {
+    const { lilbeeVersion: ver, hfToken: hf, sessionToken: tok, ...settingsOverrides } = overrides;
     const settings: LilbeeSettings = { ...DEFAULT_SETTINGS, wikiEnabled: true, ...settingsOverrides };
     let sharedVersion = ver ?? "";
     let sharedHfToken = hf ?? "";
+    const sessionToken = tok ?? null;
     const api = {
         listModels: vi.fn(),
         setChatModel: vi.fn(),
@@ -156,6 +159,7 @@ function makePlugin(overrides: Partial<LilbeeSettings> & { lilbeeVersion?: strin
         journal,
         settings,
         api,
+        readCurrentToken: () => sessionToken,
         saveSettings,
         statusBarEl,
         fetchActiveModel,
@@ -1904,6 +1908,19 @@ describe("LilbeeSettingTab", () => {
             expect(dot!.classList.contains("is-ok")).toBe(true);
             expect((statusEl as unknown as MockElement).classList.contains("lilbee-health-ok")).toBe(true);
             expect((statusEl as unknown as MockElement).classList.contains("lilbee-health-error")).toBe(false);
+        });
+
+        it("probes with the plugin's session token", async () => {
+            // Without it the dot reports a healthy authenticated server as down.
+            const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+            globalThis.fetch = fetchSpy;
+            const plugin = makePlugin({ sessionToken: "tok-7" });
+            const tab = makeTab(plugin);
+            const statusEl = new MockElement("span") as unknown as HTMLSpanElement;
+
+            await tab.checkEndpoint("http://localhost:7433/api/health", statusEl);
+
+            expect(fetchSpy.mock.calls[0][1]).toMatchObject({ headers: { Authorization: "Bearer tok-7" } });
         });
 
         it("shows red dot when fetch returns non-ok response", async () => {

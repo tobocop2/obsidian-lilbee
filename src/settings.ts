@@ -2528,7 +2528,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         statusEl.empty();
         statusEl.classList.remove("lilbee-health-ok", "lilbee-health-error");
         const dot = statusEl.createDiv({ cls: "lilbee-health-dot" });
-        const ok = await LilbeeClient.probe(url, CHECK_TIMEOUT_MS);
+        const ok = await LilbeeClient.probe(url, CHECK_TIMEOUT_MS, this.plugin.readCurrentToken());
         dot.classList.add(ok ? "is-ok" : "is-error");
         statusEl.classList.add(ok ? "lilbee-health-ok" : "lilbee-health-error");
     }

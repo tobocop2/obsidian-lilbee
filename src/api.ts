@@ -1,5 +1,6 @@
 import {
     CAPABILITY,
+    bearerHeaders,
     JSON_HEADERS,
     OCTET_STREAM_HEADERS,
     REQUEST_OUTCOME,
@@ -172,12 +173,21 @@ export class LilbeeClient {
     }
 
     /** Reachability probe for an arbitrary URL. True on an ok response, false on
-     * any error or timeout. Keeps browser fetch inside this module. */
-    static async probe(url: string, timeoutMs: number): Promise<boolean> {
+     * any error or timeout. Keeps browser fetch inside this module.
+     *
+     * *token* is explicit rather than optional: the server authenticates every
+     * route, so a bare probe of a healthy server comes back 401 and reads as
+     * unreachable. Pass null only when there is genuinely no token to send —
+     * making it a required argument keeps a future caller from defaulting its
+     * way back into that bug. */
+    static async probe(url: string, timeoutMs: number, token: string | null): Promise<boolean> {
         const controller = new AbortController();
         const timer = window.setTimeout(() => controller.abort(), timeoutMs);
         try {
-            const res = await window.fetch(url, { signal: controller.signal });
+            const res = await window.fetch(url, {
+                signal: controller.signal,
+                ...(token ? { headers: bearerHeaders(token) } : {}),
+            });
             return res.ok;
         } catch {
             return false;
@@ -188,7 +198,7 @@ export class LilbeeClient {
 
     private authHeaders(): Record<string, string> {
         if (!this.token) return {};
-        return { Authorization: `Bearer ${this.token}` };
+        return bearerHeaders(this.token);
     }
 
     private refreshTokenFromProvider(): boolean {
@@ -197,15 +207,6 @@ export class LilbeeClient {
         if (next === null || next === this.token) return false;
         this.token = next;
         return true;
-    }
-
-    private applyRefreshedToken(init: RequestInit | undefined): RequestInit {
-        const base = { ...init };
-        const existing = (base.headers ?? {}) as Record<string, string>;
-        if (existing.Authorization) {
-            base.headers = { ...existing, Authorization: `Bearer ${this.token}` };
-        }
-        return base;
     }
 
     private async assertOk(res: Response): Promise<Response> {
@@ -273,7 +274,18 @@ export class LilbeeClient {
                 await new Promise((r) => window.setTimeout(r, RETRY_BACKOFF_MS * attempt));
             }
             try {
-                const fetchInit = { ...init };
+                // Auth is attached here rather than at each call site: the
+                // server authenticates every route, and a caller that forgot
+                // the header would see a 401 that reads as an unreachable or
+                // broken server. Re-read per attempt so the retry below picks
+                // up a token refreshed after a 401 with no extra bookkeeping.
+                const fetchInit: RequestInit = {
+                    ...init,
+                    headers: {
+                        ...((init?.headers as Record<string, string> | undefined) ?? {}),
+                        ...this.authHeaders(),
+                    },
+                };
                 let timer: number | undefined;
                 if (opts?.signal) {
                     fetchInit.signal = opts.signal;
@@ -286,7 +298,6 @@ export class LilbeeClient {
                     const res = await window.fetch(url, fetchInit);
                     if ((res.status === 401 || res.status === 403) && !authRetried && this.refreshTokenFromProvider()) {
                         authRetried = true;
-                        init = this.applyRefreshedToken(init);
                         continue;
                     }
                     if (res.status === 401 || res.status === 403) {

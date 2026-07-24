@@ -191,6 +191,18 @@ describe("server-manager helpers", () => {
             fetchSpy.mockResolvedValueOnce({ ok: true, json: async () => ({ hello: "world" }) } as any);
             await expect(serverIsLive("/tmp/data")).resolves.toBe(false);
         });
+
+        it("probes health with the server's own bearer token", async () => {
+            vi.spyOn(node, "readFileSync").mockImplementation(fileRouter("present"));
+            const fetchSpy = vi
+                .spyOn(node, "fetch")
+                .mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) } as any);
+            await expect(serverIsLive("/tmp/data")).resolves.toBe(true);
+            expect(fetchSpy).toHaveBeenCalledWith(
+                "http://127.0.0.1:9999/api/health",
+                expect.objectContaining({ headers: { Authorization: "Bearer tok-1" } }),
+            );
+        });
     });
 
     describe("awaitServerGone", () => {
@@ -203,6 +215,16 @@ describe("server-manager helpers", () => {
             vi.spyOn(node, "readFileSync").mockImplementation(fileRouter("present"));
             vi.spyOn(node, "fetch").mockRejectedValue(new Error("ECONNREFUSED"));
             await expect(awaitServerGone("/tmp/data", 1000)).resolves.toBe(true);
+        });
+
+        it("polls health with the server's own bearer token", async () => {
+            vi.spyOn(node, "readFileSync").mockImplementation(fileRouter("present"));
+            const fetchSpy = vi.spyOn(node, "fetch").mockRejectedValue(new Error("ECONNREFUSED"));
+            await expect(awaitServerGone("/tmp/data", 1000)).resolves.toBe(true);
+            expect(fetchSpy).toHaveBeenCalledWith(
+                "http://127.0.0.1:9999/api/health",
+                expect.objectContaining({ headers: { Authorization: "Bearer tok-1" } }),
+            );
         });
 
         it("is false while the server keeps answering past the deadline", async () => {
@@ -329,6 +351,46 @@ describe("ServerManager", () => {
             const env = (spawnSpy.mock.calls[0][2] as { env: Record<string, string> }).env;
             expect(env).not.toHaveProperty("LILBEE_RAG_SYSTEM_PROMPT");
             expect(env).not.toHaveProperty("LILBEE_GENERAL_SYSTEM_PROMPT");
+        });
+
+        it("sends the session token on the readiness probe", async () => {
+            readFileSyncSpy.mockImplementation(fileRouter("present"));
+            fetchSpy.mockRejectedValueOnce(new Error("ECONNREFUSED")); // adopt probe fails → spawn
+            await startFresh();
+            const health = fetchSpy.mock.calls.filter((c) => String(c[0]).endsWith("/api/health"));
+            expect(health.length).toBeGreaterThan(0);
+            expect(health.at(-1)?.[1]).toMatchObject({ headers: { Authorization: "Bearer tok-1" } });
+        });
+
+        it("probes unauthenticated while the server has yet to write its session file", async () => {
+            // server.json lands during boot, so the first polls have no token
+            // to send. They must still go out rather than stall the loop.
+            await startFresh();
+            const health = fetchSpy.mock.calls.filter((c) => String(c[0]).endsWith("/api/health"));
+            expect(health.length).toBeGreaterThan(0);
+            expect(health.at(-1)?.[1]?.headers).toBeUndefined();
+        });
+
+        it("becomes ready against a server that rejects unauthenticated probes", async () => {
+            // lilbee dev726 onward requires the session token on /api/health.
+            // Without it the readiness poll only ever sees 401, so start()
+            // times out and tears down a perfectly healthy server.
+            readFileSyncSpy.mockImplementation(fileRouter("present"));
+            let adoptProbe = true;
+            fetchSpy.mockImplementation((_url: unknown, init?: RequestInit) => {
+                if (adoptProbe) {
+                    adoptProbe = false;
+                    return Promise.reject(new Error("ECONNREFUSED")); // nothing running yet
+                }
+                const headers = init?.headers as Record<string, string> | undefined;
+                if (headers?.Authorization !== "Bearer tok-1") {
+                    return Promise.resolve({ ok: false, status: 401 } as any);
+                }
+                return Promise.resolve({ ok: true, json: async () => ({ status: "ok" }) } as any);
+            });
+            const mgr = new ServerManager(defaultOpts());
+            await mgr.start();
+            expect(mgr.state).toBe("ready");
         });
 
         it("removes a leftover port file before spawning", async () => {
@@ -517,6 +579,23 @@ describe("ServerManager", () => {
         it("a healthy adopted server keeps its watch quiet", async () => {
             const mgr = new ServerManager(defaultOpts());
             await mgr.start();
+            await vi.advanceTimersByTimeAsync(30_000);
+            expect(mgr.state).toBe("ready");
+            expect(appendFileSyncSpy).not.toHaveBeenCalled();
+        });
+
+        it("the watch keeps an adopted server that requires the token", async () => {
+            // An unauthenticated watch probe reads 401 as death, so a healthy
+            // adopted server would be torn down and restarted every tick.
+            const mgr = new ServerManager(defaultOpts());
+            await mgr.start();
+            fetchSpy.mockImplementation((_url: unknown, init?: RequestInit) => {
+                const headers = init?.headers as Record<string, string> | undefined;
+                if (headers?.Authorization !== "Bearer tok-1") {
+                    return Promise.resolve({ ok: false, status: 401 } as any);
+                }
+                return Promise.resolve({ ok: true, json: async () => ({ status: "ok" }) } as any);
+            });
             await vi.advanceTimersByTimeAsync(30_000);
             expect(mgr.state).toBe("ready");
             expect(appendFileSyncSpy).not.toHaveBeenCalled();

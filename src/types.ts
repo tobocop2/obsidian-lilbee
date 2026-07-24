@@ -753,6 +753,15 @@ export interface BatchProgressPayload {
 export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 export const OCTET_STREAM_HEADERS = { "Content-Type": "application/octet-stream" } as const;
 
+/**
+ * Authorization header carrying a lilbee session token. The server
+ * authenticates every route, `/api/health` included, so a request sent without
+ * this comes back 401 — which a probe reads as "dead" rather than "unauthorized".
+ */
+export function bearerHeaders(token: string): Record<string, string> {
+    return { Authorization: `Bearer ${token}` };
+}
+
 /** MIME content types referenced across click dispatch + preview rendering. */
 export const CONTENT_TYPE = {
     PDF: "application/pdf",
