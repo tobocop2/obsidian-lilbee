@@ -1849,6 +1849,26 @@ describe("SetupWizard", () => {
             expect(plugin.activateChatView).toHaveBeenCalled();
         });
 
+        // Dismissing settings is best-effort on an undocumented API; opening chat is the promise the
+        // button makes, so it must survive an Obsidian that no longer exposes the settings surface.
+        it("Open chat still opens the chat view when the settings surface is gone", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            (plugin.app as unknown as App).setting = undefined;
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 6;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Open chat")!
+                .trigger("click");
+            await tick();
+
+            expect(plugin.activateChatView).toHaveBeenCalled();
+            expect(plugin.settings.setupCompleted).toBe(true);
+        });
+
         it("shows tips about what to try", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);

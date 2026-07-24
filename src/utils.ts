@@ -26,9 +26,22 @@ export function bindEscapeToClose(modal: Modal): void {
     tagModalChrome(modal);
 }
 
-/** Dismiss Obsidian's settings surface. `app.setting` is undocumented on the public App type. */
+/**
+ * Dismiss Obsidian's settings surface — the only way to put a workspace view in front of it.
+ *
+ * Obsidian 1.13 renders settings in its own window. The public API cannot reach past it: `App` does
+ * not declare `setting`, `SettingTab.hide()` only reports that settings closed, `revealLeaf` stops
+ * at the leaf and its sidebar, and focusing the workspace window (`getContainer().win.focus()`)
+ * leaves settings in front. `app.setting.close()` is undocumented but is what the ecosystem uses
+ * (obsidian-extra ships it as its `unsafe` closeSettings), and it takes `this.app`, not the global
+ * `app` the plugin guidelines rule out.
+ *
+ * The shape is checked rather than assumed, so an Obsidian that drops or renames it leaves settings
+ * open instead of throwing at the caller.
+ */
 export function closeSettings(app: App): void {
-    (app as unknown as { setting?: { close: () => void } }).setting?.close();
+    const setting = (app as unknown as { setting?: { close?: () => void } }).setting;
+    if (typeof setting?.close === "function") setting.close();
 }
 
 export function debounce<T extends (...args: unknown[]) => unknown>(
