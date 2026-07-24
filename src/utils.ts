@@ -1,4 +1,4 @@
-import { Notice, type Modal } from "obsidian";
+import { Notice, type App, type Modal } from "obsidian";
 import { ServerStartingError, SessionTokenError } from "./api";
 import { MESSAGES } from "./locales/en";
 import { SERVER_MODE } from "./types";
@@ -24,6 +24,11 @@ export function bindEscapeToClose(modal: Modal): void {
         return false;
     });
     tagModalChrome(modal);
+}
+
+/** Dismiss Obsidian's settings surface. `app.setting` is undocumented on the public App type. */
+export function closeSettings(app: App): void {
+    (app as unknown as { setting?: { close: () => void } }).setting?.close();
 }
 
 export function debounce<T extends (...args: unknown[]) => unknown>(
