@@ -1457,7 +1457,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             })
             .catch((err) => {
                 if (noticeServerUnreachableIfApplicable(err)) return;
-                new Notice(MESSAGES.NOTICE_MEMORY_CONFIG_FAILED);
+                this.plugin.journal.record(MESSAGES.NOTICE_MEMORY_CONFIG_FAILED, errorMessage(err, ""));
             });
     }
 
@@ -1659,7 +1659,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
             })
             .catch((err) => {
                 if (noticeServerUnreachableIfApplicable(err)) return;
-                new Notice(MESSAGES.NOTICE_RERANKER_LOAD_FAILED);
+                // Journal, not a notice: this fires while a section renders
+                // (often mid-startup) and an optional dropdown failing to
+                // populate is not something the user can act on.
+                this.plugin.journal.record(MESSAGES.NOTICE_RERANKER_LOAD_FAILED, errorMessage(err, ""));
             });
     }
 
@@ -1811,7 +1814,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             })
             .catch((err) => {
                 if (noticeServerUnreachableIfApplicable(err)) return;
-                new Notice(MESSAGES.NOTICE_VISION_LOAD_FAILED);
+                this.plugin.journal.record(MESSAGES.NOTICE_VISION_LOAD_FAILED, errorMessage(err, ""));
             });
     }
 

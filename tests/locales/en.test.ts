@@ -312,8 +312,8 @@ describe("MESSAGES", () => {
             expect(MESSAGES.NOTICE_WIKI_LINT_DONE(0)).toBe("lilbee: lint complete — 0 issues found");
         });
 
-        it("NOTICE_WIKI_GENERATE_DONE produces correct output", () => {
-            expect(MESSAGES.NOTICE_WIKI_GENERATE_DONE("notes/foo.md")).toBe("lilbee: wiki generated for notes/foo.md");
+        it("NOTICE_WIKI_UPDATE_DONE produces correct output", () => {
+            expect(MESSAGES.NOTICE_WIKI_UPDATE_DONE(2)).toBe("lilbee: wiki updated, 2 pages");
         });
 
         it("NOTICE_WIKI_PRUNE_DONE produces correct output", () => {

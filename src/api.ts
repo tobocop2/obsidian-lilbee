@@ -858,28 +858,12 @@ export class LilbeeClient {
         return (await res.json()) as WikiCitationChain;
     }
 
-    async wikiCitationsForSource(filename: string): Promise<WikiCitationChain[]> {
-        const params = new URLSearchParams({ source: filename });
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/citations?${params}`, {
-            headers: this.authHeaders(),
-        });
-        return (await res.json()) as WikiCitationChain[];
-    }
-
     async wikiLint(): Promise<LintResult> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/lint`, {
             method: "POST",
             headers: this.authHeaders(),
         });
         return (await res.json()) as LintResult;
-    }
-
-    async wikiBuild(): Promise<WikiBuildResult> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/build`, {
-            method: "POST",
-            headers: this.authHeaders(),
-        });
-        return (await res.json()) as WikiBuildResult;
     }
 
     async wikiUpdate(): Promise<WikiBuildResult> {
@@ -929,33 +913,20 @@ export class LilbeeClient {
         });
     }
 
-    async *wikiGenerate(source: string, signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
-        const res = await this.fetchWithRetry(
-            `${this.baseUrl}/api/wiki/generate`,
-            {
-                method: "POST",
-                headers: { ...JSON_HEADERS, ...this.authHeaders() },
-                body: JSON.stringify({ source }),
-            },
-            { stream: true, signal },
-        );
-        yield* this.parseSSE(res);
-    }
-
     async wikiDrafts(): Promise<DraftInfoResponse[]> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/drafts`, { headers: this.authHeaders() });
         return (await res.json()) as DraftInfoResponse[];
     }
 
     async wikiDraftDiff(slug: string): Promise<string> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/drafts/${encodeURIComponent(slug)}/diff`, {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/drafts/diff/${encodeURIComponent(slug)}`, {
             headers: this.authHeaders(),
         });
         return res.text();
     }
 
     async wikiDraftAccept(slug: string): Promise<DraftAcceptResponse> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/drafts/${encodeURIComponent(slug)}/accept`, {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/drafts/accept/${encodeURIComponent(slug)}`, {
             method: "POST",
             headers: this.authHeaders(),
         });

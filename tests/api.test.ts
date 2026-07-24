@@ -1822,20 +1822,6 @@ describe("wikiCitations()", () => {
     });
 });
 
-describe("wikiCitationsForSource()", () => {
-    it("calls GET /api/wiki/citations?source=filename", async () => {
-        const data = [{ citations: [] }];
-        fetchMock.mockResolvedValue(jsonResponse(data));
-
-        const result = await client.wikiCitationsForSource("notes/foo.md");
-
-        const url = new URL(fetchMock.mock.calls[0][0]);
-        expect(url.pathname).toBe("/api/wiki/citations");
-        expect(url.searchParams.get("source")).toBe("notes/foo.md");
-        expect(result).toEqual(data);
-    });
-});
-
 describe("wikiLint()", () => {
     it("POSTs to /api/wiki/lint and returns JSON result", async () => {
         const data = { task_id: "t1", status: "done", issues: [], checked_at: null };
@@ -1848,26 +1834,6 @@ describe("wikiLint()", () => {
             expect.objectContaining({ method: "POST" }),
         );
         expect(result).toEqual(data);
-    });
-});
-
-describe("wikiBuild()", () => {
-    it("POSTs to /api/wiki/build and returns the build summary", async () => {
-        const data = { paths: ["wiki/concepts/brake-systems.md"], entities: 7, count: 1 };
-        fetchMock.mockResolvedValue(jsonResponse(data));
-
-        const result = await client.wikiBuild();
-
-        expect(fetchMock).toHaveBeenCalledWith(
-            `${BASE_URL}/api/wiki/build`,
-            expect.objectContaining({ method: "POST" }),
-        );
-        expect(result).toEqual(data);
-    });
-
-    it("propagates server errors via fetchWithRetry", async () => {
-        fetchMock.mockResolvedValue(new Response("boom", { status: 500 }));
-        await expect(client.wikiBuild()).rejects.toThrow();
     });
 });
 
@@ -1945,24 +1911,6 @@ describe("wikiSynthesize()", () => {
     });
 });
 
-describe("wikiGenerate()", () => {
-    it("POSTs to /api/wiki/generate with source and yields SSE events", async () => {
-        fetchMock.mockResolvedValue(sseResponse(['event: wiki_generate_done\ndata: {"slug":"test"}\n\n']));
-
-        const events = await collect(client.wikiGenerate("notes/foo.md"));
-
-        expect(fetchMock).toHaveBeenCalledWith(
-            `${BASE_URL}/api/wiki/generate`,
-            expect.objectContaining({
-                method: "POST",
-                body: JSON.stringify({ source: "notes/foo.md" }),
-            }),
-        );
-        expect(events).toHaveLength(1);
-        expect(events[0].event).toBe("wiki_generate_done");
-    });
-});
-
 describe("wikiDrafts()", () => {
     it("calls GET /api/wiki/drafts and returns parsed DraftInfoResponse list", async () => {
         const data = [
@@ -2007,7 +1955,7 @@ describe("wikiDrafts()", () => {
 });
 
 describe("wikiDraftDiff()", () => {
-    it("GETs /api/wiki/drafts/<encoded>/diff and returns the raw body text", async () => {
+    it("GETs /api/wiki/drafts/diff/<encoded> and returns the raw body text", async () => {
         const diff = "--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n";
         fetchMock.mockResolvedValue({
             ok: true,
@@ -2020,7 +1968,7 @@ describe("wikiDraftDiff()", () => {
         const result = await client.wikiDraftDiff("summaries/caprice 1951");
 
         expect(fetchMock).toHaveBeenCalledWith(
-            `${BASE_URL}/api/wiki/drafts/summaries%2Fcaprice%201951/diff`,
+            `${BASE_URL}/api/wiki/drafts/diff/summaries%2Fcaprice%201951`,
             expect.objectContaining({
                 headers: expect.objectContaining({ Authorization: "Bearer tok" }),
             }),
@@ -2030,7 +1978,7 @@ describe("wikiDraftDiff()", () => {
 });
 
 describe("wikiDraftAccept()", () => {
-    it("POSTs to /api/wiki/drafts/<encoded>/accept and returns parsed body", async () => {
+    it("POSTs to /api/wiki/drafts/accept/<encoded> and returns parsed body", async () => {
         const data = {
             slug: "summaries/caprice-1951",
             moved_to: "/data/wiki/summaries/caprice-1951.md",
@@ -2042,7 +1990,7 @@ describe("wikiDraftAccept()", () => {
         const result = await client.wikiDraftAccept("summaries/caprice 1951");
 
         expect(fetchMock).toHaveBeenCalledWith(
-            `${BASE_URL}/api/wiki/drafts/summaries%2Fcaprice%201951/accept`,
+            `${BASE_URL}/api/wiki/drafts/accept/summaries%2Fcaprice%201951`,
             expect.objectContaining({
                 method: "POST",
                 headers: expect.objectContaining({ Authorization: "Bearer tok" }),

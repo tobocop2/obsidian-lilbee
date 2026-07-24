@@ -5229,7 +5229,7 @@ describe("managed mode settings", () => {
             ).toBe(false);
         });
 
-        it("falls back to notice when initial load fails", async () => {
+        it("journals, without a notice, when the initial load fails", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("unreachable"));
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
@@ -5243,7 +5243,8 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_LOAD_FAILED)).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_RERANKER_LOAD_FAILED)).toBe(false);
+            expect(plugin.journal.entries.some((e) => e.label === MESSAGES.NOTICE_RERANKER_LOAD_FAILED)).toBe(true);
         });
 
         it("skips the load-failed notice when the error is ECONNREFUSED (server unreachable)", async () => {
@@ -6089,7 +6090,7 @@ describe("managed mode settings", () => {
             ).toBe(false);
         });
 
-        it("falls back to notice when initial load fails", async () => {
+        it("journals, without a notice, when the initial load fails", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("unreachable"));
             (plugin.api.catalog as ReturnType<typeof vi.fn>).mockResolvedValue(
@@ -6103,7 +6104,8 @@ describe("managed mode settings", () => {
             await new Promise((r) => setTimeout(r, 0));
             await new Promise((r) => setTimeout(r, 0));
 
-            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_LOAD_FAILED)).toBe(true);
+            expect(Notice.instances.some((n) => n.message === MESSAGES.NOTICE_VISION_LOAD_FAILED)).toBe(false);
+            expect(plugin.journal.entries.some((e) => e.label === MESSAGES.NOTICE_VISION_LOAD_FAILED)).toBe(true);
         });
 
         it("skips the load-failed notice when the error is ECONNREFUSED (server unreachable)", async () => {
@@ -7265,13 +7267,14 @@ describe("LilbeeSettingTab.renderMemorySection", () => {
         );
     });
 
-    it("shows a config-failed notice when the config fetch errors", async () => {
+    it("journals a config failure instead of noticing it", async () => {
         const plugin = makePlugin();
         plugin.api.config = vi.fn().mockRejectedValue(new Error("boom"));
         const tab = makeTab(plugin);
         (tab as any).renderMemorySection(new MockElement() as unknown as HTMLElement);
         await flush();
-        expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_MEMORY_CONFIG_FAILED);
+        expect(Notice.instances.map((n) => n.message)).not.toContain(MESSAGES.NOTICE_MEMORY_CONFIG_FAILED);
+        expect(plugin.journal.entries.some((e) => e.label === MESSAGES.NOTICE_MEMORY_CONFIG_FAILED)).toBe(true);
     });
 
     it("stays silent when the server is still starting", async () => {

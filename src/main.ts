@@ -100,9 +100,6 @@ import { GatekeeperModal } from "./views/gatekeeper-modal";
 import { TaskQueue, FLASH_WINDOW_MS as TASK_FLASH_WINDOW_MS } from "./task-queue";
 import { WikiSync } from "./wiki-sync";
 
-interface GenerateErrorData {
-    message?: string;
-}
 interface PruneData {
     archived?: number;
 }
@@ -1416,13 +1413,11 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
-            id: "wiki-generate",
-            name: MESSAGES.COMMAND_WIKI_GENERATE,
+            id: "wiki-update",
+            name: MESSAGES.COMMAND_WIKI_UPDATE,
             checkCallback: (checking) => {
                 if (!this.wikiEnabled) return false;
-                const file = this.app.workspace.getActiveFile();
-                if (!file) return false;
-                if (!checking) void this.runWikiGenerate(file.path);
+                if (!checking) void this.runWikiUpdate();
                 return true;
             },
         });
@@ -2605,36 +2600,26 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    async runWikiGenerate(source: string): Promise<void> {
-        const taskId = this.taskQueue.enqueue(`Generate wiki: ${source}`, TASK_TYPE.WIKI);
+    /**
+     * Refresh the wiki. The server rebuilds across every ingested source; there
+     * is no per-source generate route, so this cannot be scoped to one note.
+     */
+    async runWikiUpdate(): Promise<void> {
+        const taskId = this.taskQueue.enqueue(MESSAGES.TASK_WIKI_UPDATE, TASK_TYPE.WIKI);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
         }
-        const controller = new AbortController();
-        this.taskQueue.registerAbort(taskId, controller);
         try {
-            for await (const event of this.api.wikiGenerate(source, controller.signal)) {
-                if (event.event === SSE_EVENT.WIKI_GENERATE_DONE) {
-                    break;
-                } else if (event.event === SSE_EVENT.WIKI_GENERATE_ERROR) {
-                    const d = event.data as GenerateErrorData;
-                    throw new Error(d.message ?? "generation failed");
-                } else if (event.event === SSE_EVENT.ERROR) {
-                    const d = event.data as { message?: string } | string;
-                    throw new Error(extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN));
-                }
-            }
+            const result = await this.api.wikiUpdate();
             this.taskQueue.complete(taskId);
-            new Notice(MESSAGES.NOTICE_WIKI_GENERATE_DONE(source), NOTICE_DURATION_MS);
+            new Notice(MESSAGES.NOTICE_WIKI_UPDATE_DONE(result.count), NOTICE_DURATION_MS);
             this.refreshOpenWikiViews();
-            // Sync generated page to vault
             if (this.wikiSync) {
                 void this.reconcileWiki();
             }
         } catch (err) {
-            const msg = errorMessage(err, MESSAGES.ERROR_UNKNOWN);
-            this.taskQueue.fail(taskId, msg);
+            this.taskQueue.fail(taskId, errorMessage(err, MESSAGES.ERROR_UNKNOWN));
         }
     }
 
