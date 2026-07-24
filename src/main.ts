@@ -1635,6 +1635,11 @@ export default class LilbeePlugin extends Plugin {
     }
 
     private setStatusReady(): void {
+        // Running work owns the pill. Every successful response lands here, so
+        // without this a sync's progress text is repainted as "ready" between
+        // queue ticks and the status bar visibly flickers between the two.
+        // The queue republishes on every change, so there is nothing to restore.
+        if (this.taskQueue.activeAll.length > 0 || this.taskQueue.queued.length > 0) return;
         if (this.settings.serverMode === SERVER_MODE.MANAGED && this.serverUninstalled) {
             this.showNotInstalledStatus();
             return;
