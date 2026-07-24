@@ -1093,7 +1093,7 @@ export default class LilbeePlugin extends Plugin {
      * External mode: auto-discovers the user's data root the same way lilbee
      * itself does (LILBEE_DATA env > .lilbee walk-up > platform default).
      */
-    private readCurrentToken(): string | null {
+    readCurrentToken(): string | null {
         if (this.settings.serverMode === SERVER_MODE.MANAGED) {
             return this.serverManager ? readSessionToken(this.serverManager.dataDir) : null;
         }

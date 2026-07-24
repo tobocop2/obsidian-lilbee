@@ -172,12 +172,20 @@ export class LilbeeClient {
     }
 
     /** Reachability probe for an arbitrary URL. True on an ok response, false on
-     * any error or timeout. Keeps browser fetch inside this module. */
-    static async probe(url: string, timeoutMs: number): Promise<boolean> {
+     * any error or timeout. Keeps browser fetch inside this module.
+     *
+     * *token* is required for a real verdict: the server authenticates every
+     * route, so a bare probe of a healthy server comes back 401 and reads as
+     * unreachable. Null is still allowed — a probe with no token in hand is
+     * better than none, and a foreign URL may not want one. */
+    static async probe(url: string, timeoutMs: number, token: string | null = null): Promise<boolean> {
         const controller = new AbortController();
         const timer = window.setTimeout(() => controller.abort(), timeoutMs);
         try {
-            const res = await window.fetch(url, { signal: controller.signal });
+            const res = await window.fetch(url, {
+                signal: controller.signal,
+                ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+            });
             return res.ok;
         } catch {
             return false;

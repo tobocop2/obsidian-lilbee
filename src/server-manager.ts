@@ -64,8 +64,23 @@ export function readScopeOwner(sharedRoot: string): ScopeOwner | null {
     }
 }
 
+/** A running server's port and the bearer token it mints at boot. */
+export interface ServerSession {
+    port: number;
+    token: string;
+}
+
+/**
+ * Header carrying a server's session token. Every local request needs it: the
+ * server authenticates all of its routes, `/api/health` included, so a probe
+ * sent without this reads as dead rather than unauthenticated.
+ */
+function bearer(token: string): Record<string, string> {
+    return { Authorization: `Bearer ${token}` };
+}
+
 /** Port + bearer token of the server serving *dataDir*, from its session files. */
-export function readServerSession(dataDir: string): { port: number; token: string } | null {
+export function readServerSession(dataDir: string): ServerSession | null {
     try {
         const portRaw = node.readFileSync(node.join(dataDir, "data", "server.port"), "utf-8");
         const port = parseInt(portRaw.trim(), 10);
@@ -91,7 +106,7 @@ export async function requestServerShutdown(dataDir: string): Promise<boolean> {
     try {
         const res = await node.fetch(`http://127.0.0.1:${session.port}/api/shutdown`, {
             method: "POST",
-            headers: { Authorization: `Bearer ${session.token}` },
+            headers: bearer(session.token),
             signal: AbortSignal.timeout(SERVER_MANAGER_CONFIG.SHUTDOWN_REQUEST_TIMEOUT_MS),
         });
         return res.ok;
@@ -110,10 +125,11 @@ async function reportedVersion(res: Response): Promise<string> {
     }
 }
 
-/** lilbee's health report on *port*, or null when it is dead or answers with a foreign shape. */
-async function probeLilbeeHealth(port: number): Promise<{ version: string } | null> {
+/** lilbee's health report for *session*, or null when it is dead or answers with a foreign shape. */
+async function probeLilbeeHealth(session: ServerSession): Promise<{ version: string } | null> {
     try {
-        const res = await node.fetch(`http://127.0.0.1:${port}/api/health`, {
+        const res = await node.fetch(`http://127.0.0.1:${session.port}/api/health`, {
+            headers: bearer(session.token),
             signal: AbortSignal.timeout(SERVER_MANAGER_CONFIG.ADOPT_PROBE_TIMEOUT_MS),
         });
         if (!res.ok) return null;
@@ -131,7 +147,7 @@ async function probeLilbeeHealth(port: number): Promise<{ version: string } | nu
 export async function serverIsLive(dataDir: string): Promise<boolean> {
     const session = readServerSession(dataDir);
     if (session === null) return false;
-    return (await probeLilbeeHealth(session.port)) !== null;
+    return (await probeLilbeeHealth(session)) !== null;
 }
 
 /** Ask the server serving *dataDir* to exit and wait until it is gone; false when it will not go. */
@@ -148,6 +164,7 @@ export async function awaitServerGone(dataDir: string, timeoutMs: number): Promi
     while (Date.now() < deadline) {
         try {
             await node.fetch(`http://127.0.0.1:${session.port}/api/health`, {
+                headers: bearer(session.token),
                 signal: AbortSignal.timeout(SERVER_MANAGER_CONFIG.ADOPT_PROBE_TIMEOUT_MS),
             });
         } catch {
@@ -488,7 +505,7 @@ export class ServerManager {
     private async tryAdopt(): Promise<boolean> {
         const session = readServerSession(this.opts.dataDir);
         if (session === null) return false;
-        const health = await probeLilbeeHealth(session.port);
+        const health = await probeLilbeeHealth(session);
         if (health === null) return false;
         if (this.versionDiffers(health.version) && (await this.replaceMismatched(health.version))) return false;
         this._actualPort = session.port;
@@ -531,7 +548,14 @@ export class ServerManager {
 
     private async checkAdopted(): Promise<void> {
         if (!this.adopted || this._actualPort === null) return;
-        if ((await probeLilbeeHealth(this._actualPort)) !== null) return;
+        // Re-read the token every tick rather than caching the one adoption saw:
+        // a server that restarted under us mints a fresh one. The port stays the
+        // adopted server's own, so a rewritten port file cannot silently
+        // re-point the watch at somebody else.
+        const session = readServerSession(this.opts.dataDir);
+        const live =
+            session !== null && (await probeLilbeeHealth({ port: this._actualPort, token: session.token })) !== null;
+        if (live) return;
         if (!this.adopted || this.desired === DESIRED.STOPPED) return;
         this.stopAdoptedWatch();
         this.adopted = false;
@@ -552,7 +576,14 @@ export class ServerManager {
                 try {
                     // Bootstrap probe via the injectable node abstraction: runs during
                     // spawn before any LilbeeClient exists, and stays test-swappable.
-                    const res = await node.fetch(`${url}/api/health`);
+                    // The token is read per attempt, not once up front: the server
+                    // writes server.json while booting, so the early polls precede it
+                    // and go out bare. They 401 and the loop simply tries again.
+                    const session = readServerSession(this.opts.dataDir);
+                    const res = await node.fetch(
+                        `${url}/api/health`,
+                        session === null ? undefined : { headers: bearer(session.token) },
+                    );
                     if (res.ok) {
                         this._spawnedVersion = await reportedVersion(res);
                         return;

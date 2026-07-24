@@ -2698,3 +2698,31 @@ describe("crawl() include_subdomains", () => {
         expect(body).toMatchObject({ url: "https://x.com", max_pages: 0, include_subdomains: true });
     });
 });
+
+describe("LilbeeClient.probe()", () => {
+    let origFetch: typeof globalThis.fetch;
+
+    beforeEach(() => {
+        origFetch = globalThis.fetch;
+    });
+
+    afterEach(() => {
+        globalThis.fetch = origFetch;
+    });
+
+    it("sends the session token so an authenticated server answers", async () => {
+        // The server authenticates /api/health, so a probe without the token
+        // reads as unreachable and the settings dot lies about a live server.
+        const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+        globalThis.fetch = fetchSpy;
+        await expect(LilbeeClient.probe(`${BASE_URL}/api/health`, 1000, "tok-9")).resolves.toBe(true);
+        expect(fetchSpy.mock.calls[0][1]).toMatchObject({ headers: { Authorization: "Bearer tok-9" } });
+    });
+
+    it("probes bare when there is no token to send", async () => {
+        const fetchSpy = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+        globalThis.fetch = fetchSpy;
+        await expect(LilbeeClient.probe(`${BASE_URL}/api/health`, 1000, null)).resolves.toBe(true);
+        expect(fetchSpy.mock.calls[0][1].headers).toBeUndefined();
+    });
+});
