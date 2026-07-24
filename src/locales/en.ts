@@ -882,14 +882,15 @@ export const MESSAGES = {
 
     // Wiki tasks/notices
     NOTICE_WIKI_LINT_DONE: (issues: number) => `lilbee: lint complete — ${issues} issues found`,
-    NOTICE_WIKI_GENERATE_DONE: (source: string) => `lilbee: wiki generated for ${source}`,
+    NOTICE_WIKI_UPDATE_DONE: (count: number) => `lilbee: wiki updated, ${count} pages`,
     NOTICE_WIKI_PRUNE_DONE: (archived: number) => `lilbee: pruned ${archived} pages`,
     NOTICE_WIKI_PRUNE_CONFIRM: "This will archive wiki pages with broken citations. Continue?",
 
     // Wiki commands
     COMMAND_WIKI: "Browse wiki",
     COMMAND_WIKI_LINT: "Run wiki lint",
-    COMMAND_WIKI_GENERATE: "Generate wiki for current file",
+    COMMAND_WIKI_UPDATE: "Update wiki",
+    TASK_WIKI_UPDATE: "Update wiki",
 
     WIZARD_INTRO_DESC: "lilbee turns your Obsidian vault into a searchable knowledge base powered by AI.",
     WIZARD_INTRO_STEPS: "This wizard will help you:",

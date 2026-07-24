@@ -461,7 +461,7 @@ describe("LilbeePlugin", () => {
             expect(ids).toContain("wiki");
             expect(ids).toContain("wiki-lint");
             expect(ids).toContain("wiki-drafts");
-            expect(ids).toContain("wiki-generate");
+            expect(ids).toContain("wiki-update");
             expect(ids).toContain("open-placement");
             expect(ids).toContain("open-placement-beside-chat");
         });
@@ -6515,108 +6515,92 @@ describe("LilbeePlugin", () => {
         });
     });
 
-    describe("runWikiGenerate", () => {
+    describe("wiki-update command", () => {
+        function wikiUpdateCmd(plugin: any) {
+            return (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
+                (c: any[]) => c[0].id === "wiki-update",
+            )![0];
+        }
+
+        it("is unavailable while the wiki is off", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).wikiEnabled = false;
+            expect(wikiUpdateCmd(plugin).checkCallback(true)).toBe(false);
+        });
+
+        it("is available with the wiki on, and runs the update when invoked", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            (plugin as any).wikiEnabled = true;
+            const spy = vi.spyOn(plugin, "runWikiUpdate").mockResolvedValue(undefined);
+
+            expect(wikiUpdateCmd(plugin).checkCallback(true)).toBe(true);
+            expect(spy).not.toHaveBeenCalled();
+
+            expect(wikiUpdateCmd(plugin).checkCallback(false)).toBe(true);
+            expect(spy).toHaveBeenCalled();
+        });
+    });
+
+    describe("runWikiUpdate", () => {
         it("success path: completes task, shows notice, and refreshes wiki views", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
             const mockRefresh = vi.fn();
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([{ view: { refresh: mockRefresh } }]);
+            plugin.api.wikiUpdate = vi.fn().mockResolvedValue({ paths: ["a.md", "b.md"], entities: 3, count: 2 });
 
-            async function* genStream() {
-                yield { event: SSE_EVENT.WIKI_GENERATE_DONE, data: { slug: "test" } };
-            }
-            plugin.api.wikiGenerate = vi.fn().mockReturnValue(genStream());
+            await plugin.runWikiUpdate();
 
-            await plugin.runWikiGenerate("notes/foo.md");
-
+            expect(plugin.api.wikiUpdate).toHaveBeenCalled();
             expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
-            expect(Notice.instances.some((n) => n.message.includes("wiki generated for notes/foo.md"))).toBe(true);
+            expect(Notice.instances.some((n) => n.message.includes("wiki updated, 2 pages"))).toBe(true);
             expect(mockRefresh).toHaveBeenCalled();
         });
 
-        it("error path: fails task on WIKI_GENERATE_ERROR event", async () => {
+        it("fails the task when the update request throws", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.api.wikiUpdate = vi.fn().mockRejectedValue(new Error("build broke"));
 
-            async function* errStream() {
-                yield { event: SSE_EVENT.WIKI_GENERATE_ERROR, data: { message: "bad source" } };
-            }
-            plugin.api.wikiGenerate = vi.fn().mockReturnValue(errStream());
+            await plugin.runWikiUpdate();
 
-            await plugin.runWikiGenerate("notes/bad.md");
-
-            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+            expect(plugin.taskQueue.completed.some((t: any) => t.error === "build broke")).toBe(true);
         });
 
-        it("error path: uses fallback message when WIKI_GENERATE_ERROR has no message", async () => {
+        it("uses the fallback message for a non-Error throw", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.api.wikiUpdate = vi.fn().mockRejectedValue("nope");
 
-            async function* errStream() {
-                yield { event: SSE_EVENT.WIKI_GENERATE_ERROR, data: {} };
-            }
-            plugin.api.wikiGenerate = vi.fn().mockReturnValue(errStream());
+            await plugin.runWikiUpdate();
 
-            await plugin.runWikiGenerate("notes/bad.md");
-
-            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+            expect(plugin.taskQueue.completed.some((t: any) => typeof t.error === "string")).toBe(true);
         });
 
-        it("error path: handles non-Error thrown value", async () => {
+        it("reconciles the vault when wiki sync is on", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            plugin.api.wikiUpdate = vi.fn().mockResolvedValue({ paths: [], entities: 0, count: 1 });
+            plugin.wikiSync = {} as any;
+            const spy = vi.spyOn(plugin, "reconcileWiki").mockResolvedValue(undefined);
 
-            async function* throwStream() {
-                throw "string error";
-            }
-            plugin.api.wikiGenerate = vi.fn().mockReturnValue(throwStream());
+            await plugin.runWikiUpdate();
 
-            await plugin.runWikiGenerate("notes/bad.md");
-
-            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+            expect(spy).toHaveBeenCalled();
         });
 
-        it("SSE_EVENT.ERROR with object data fails the task", async () => {
+        it("notices and returns when the queue is full", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
+            vi.spyOn(plugin.taskQueue, "enqueue").mockReturnValue(null);
+            plugin.api.wikiUpdate = vi.fn();
 
-            async function* errStream() {
-                yield { event: SSE_EVENT.ERROR, data: { message: "server exploded" } };
-            }
-            plugin.api.wikiGenerate = vi.fn().mockReturnValue(errStream());
+            await plugin.runWikiUpdate();
 
-            await plugin.runWikiGenerate("notes/bad.md");
-
-            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
-        });
-
-        it("SSE_EVENT.ERROR with string data fails the task", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-
-            async function* errStream() {
-                yield { event: SSE_EVENT.ERROR, data: "raw string error" };
-            }
-            plugin.api.wikiGenerate = vi.fn().mockReturnValue(errStream());
-
-            await plugin.runWikiGenerate("notes/bad.md");
-
-            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
-        });
-
-        it("SSE_EVENT.ERROR with empty object uses fallback message", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-
-            async function* errStream() {
-                yield { event: SSE_EVENT.ERROR, data: {} };
-            }
-            plugin.api.wikiGenerate = vi.fn().mockReturnValue(errStream());
-
-            await plugin.runWikiGenerate("notes/bad.md");
-
-            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
+            expect(plugin.api.wikiUpdate).not.toHaveBeenCalled();
         });
     });
 
@@ -6818,41 +6802,6 @@ describe("LilbeePlugin", () => {
             expect(cmd.checkCallback(true)).toBe(true);
         });
 
-        it("wiki-generate command returns false when wikiEnabled is false", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            (plugin as any).wikiEnabled = false;
-
-            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "wiki-generate",
-            )![0];
-            expect(cmd.checkCallback(true)).toBe(false);
-        });
-
-        it("wiki-generate command returns false when no active file", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            (plugin as any).wikiEnabled = true;
-            plugin.app.workspace.getActiveFile = vi.fn().mockReturnValue(null);
-
-            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "wiki-generate",
-            )![0];
-            expect(cmd.checkCallback(true)).toBe(false);
-        });
-
-        it("wiki-generate command returns true when wikiEnabled and active file exists", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            (plugin as any).wikiEnabled = true;
-            plugin.app.workspace.getActiveFile = vi.fn().mockReturnValue({ path: "test.md" });
-
-            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "wiki-generate",
-            )![0];
-            expect(cmd.checkCallback(true)).toBe(true);
-        });
-
         it("wiki command calls activateWikiView when not checking", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -6912,20 +6861,6 @@ describe("LilbeePlugin", () => {
             )![0];
             cmd.checkCallback(false);
             expect(mockDraftModalOpen).toHaveBeenCalled();
-        });
-
-        it("wiki-generate command calls runWikiGenerate when not checking", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            (plugin as any).wikiEnabled = true;
-            plugin.app.workspace.getActiveFile = vi.fn().mockReturnValue({ path: "test.md" });
-            const spy = vi.spyOn(plugin, "runWikiGenerate").mockResolvedValue(undefined);
-
-            const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-                (c: any[]) => c[0].id === "wiki-generate",
-            )![0];
-            cmd.checkCallback(false);
-            expect(spy).toHaveBeenCalledWith("test.md");
         });
     });
 
@@ -7109,45 +7044,6 @@ describe("LilbeePlugin", () => {
             plugin.wikiSync = null;
 
             await expect(plugin.reconcileWiki()).resolves.not.toThrow();
-        });
-
-        it("runWikiGenerate calls reconcileWiki when wikiSync is set", async () => {
-            const plugin = await createPlugin({
-                serverMode: "external",
-                wikiSyncToVault: true,
-                wikiVaultFolder: "lilbee-wiki",
-            });
-            await plugin.onload();
-
-            plugin.initWikiSync();
-            const reconcileSpy = vi.spyOn(plugin, "reconcileWiki").mockResolvedValue();
-
-            plugin.api.wikiGenerate = vi.fn().mockImplementation(async function* () {
-                yield { event: "wiki_generate_done", data: {} };
-            });
-
-            await plugin.runWikiGenerate("test.md");
-            expect(reconcileSpy).toHaveBeenCalled();
-        });
-
-        it("runWikiGenerate reconcile is fire-and-forget", async () => {
-            const plugin = await createPlugin({
-                serverMode: "external",
-                wikiSyncToVault: true,
-                wikiVaultFolder: "lilbee-wiki",
-            });
-            await plugin.onload();
-
-            plugin.wikiSync = { reconcile: vi.fn(), isWikiPath: vi.fn() } as any;
-            const reconcileSpy = vi.spyOn(plugin, "reconcileWiki").mockResolvedValue();
-
-            plugin.api.wikiGenerate = vi.fn().mockImplementation(async function* () {
-                yield { event: SSE_EVENT.WIKI_GENERATE_DONE, data: {} };
-            });
-
-            await plugin.runWikiGenerate("test.md");
-            await new Promise((r) => setTimeout(r, 0));
-            expect(reconcileSpy).toHaveBeenCalled();
         });
 
         it("initWikiSync creates a WikiSync instance", async () => {
@@ -7411,13 +7307,6 @@ describe("LilbeePlugin", () => {
             await plugin.runWikiLint();
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
             expect(plugin.api.wikiLint).not.toHaveBeenCalled();
-        });
-
-        it("runWikiGenerate surfaces NOTICE_QUEUE_FULL and skips API call", async () => {
-            const plugin = await setupQueueFull();
-            await plugin.runWikiGenerate("foo");
-            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_QUEUE_FULL);
-            expect(plugin.api.wikiGenerate).not.toHaveBeenCalled();
         });
 
         it("runWikiPrune surfaces NOTICE_QUEUE_FULL and skips API call", async () => {
@@ -7883,18 +7772,6 @@ describe("LilbeePlugin", () => {
             const crawl = plugin.taskQueue.completed.find((t) => t.type === "crawl");
             expect(crawl?.status).toBe("failed");
             expect(syncSpy).not.toHaveBeenCalled();
-        });
-
-        it("runWikiGenerate ignores unrelated stream events before completing", async () => {
-            const plugin = await createPlugin();
-            await plugin.onload();
-            async function* genStream() {
-                yield { event: SSE_EVENT.PROGRESS, data: {} };
-                yield { event: SSE_EVENT.WIKI_GENERATE_DONE, data: { slug: "test" } };
-            }
-            plugin.api.wikiGenerate = vi.fn().mockReturnValue(genStream());
-            await plugin.runWikiGenerate("notes/foo.md");
-            expect(plugin.taskQueue.completed.some((t) => t.status === "done")).toBe(true);
         });
 
         it("runWikiPrune ignores unrelated stream events before completing", async () => {
