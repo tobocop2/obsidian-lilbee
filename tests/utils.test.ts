@@ -73,6 +73,13 @@ describe("closeSettings", () => {
     it("does nothing when the settings surface is unavailable", () => {
         expect(() => closeSettings({} as unknown as App)).not.toThrow();
     });
+
+    // An Obsidian that renames or drops close() degrades to leaving settings open, never to a throw
+    // in the caller — the wizard's completion path runs through here.
+    it("does nothing when the settings surface has no close method", () => {
+        expect(() => closeSettings({ setting: {} } as unknown as App)).not.toThrow();
+        expect(() => closeSettings({ setting: { close: "gone" } } as unknown as App)).not.toThrow();
+    });
 });
 
 describe("formatBytes", () => {
