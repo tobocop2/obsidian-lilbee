@@ -7,6 +7,7 @@ import { App, MockElement, Setting, Notice } from "./__mocks__/obsidian";
 import { LilbeeSettingTab } from "../src/settings";
 import { DEFAULT_SETTINGS, type LilbeeSettings } from "../src/types";
 import { TaskQueue } from "../src/task-queue";
+import { ErrorJournal } from "../src/error-journal";
 
 const mockEnsureBinary = vi.fn();
 const mockBinaryExists = vi.fn();
@@ -79,6 +80,7 @@ function makePlugin(settings: Partial<LilbeeSettings> = {}, registry: any = null
     const merged: LilbeeSettings = { ...DEFAULT_SETTINGS, ...settings };
     return {
         settings: merged,
+        journal: new ErrorJournal(),
         api: {
             listModels: vi.fn(),
             config: vi.fn().mockRejectedValue(new Error("offline")),
