@@ -1,7 +1,7 @@
 {
 	"id": "lilbee",
 	"name": "lilbee",
-	"version": "0.6.85",
+	"version": "0.6.86",
 	"minAppVersion": "1.8.7",
 	"description": "A private, self-hosted NotebookLM alternative for your vault: a local AI search engine and native model manager. One-click local models, cited answers (local RAG), and a web crawler. Works with Ollama, LM Studio, and frontier models too.",
 	"author": "tobocop2",
