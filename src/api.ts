@@ -209,15 +209,6 @@ export class LilbeeClient {
         return true;
     }
 
-    private applyRefreshedToken(init: RequestInit | undefined): RequestInit {
-        const base = { ...init };
-        const existing = (base.headers ?? {}) as Record<string, string>;
-        if (existing.Authorization) {
-            base.headers = { ...existing, ...this.authHeaders() };
-        }
-        return base;
-    }
-
     private async assertOk(res: Response): Promise<Response> {
         if (res.status === 429) {
             const header = res.headers.get("Retry-After");
@@ -283,7 +274,18 @@ export class LilbeeClient {
                 await new Promise((r) => window.setTimeout(r, RETRY_BACKOFF_MS * attempt));
             }
             try {
-                const fetchInit = { ...init };
+                // Auth is attached here rather than at each call site: the
+                // server authenticates every route, and a caller that forgot
+                // the header would see a 401 that reads as an unreachable or
+                // broken server. Re-read per attempt so the retry below picks
+                // up a token refreshed after a 401 with no extra bookkeeping.
+                const fetchInit: RequestInit = {
+                    ...init,
+                    headers: {
+                        ...((init?.headers as Record<string, string> | undefined) ?? {}),
+                        ...this.authHeaders(),
+                    },
+                };
                 let timer: number | undefined;
                 if (opts?.signal) {
                     fetchInit.signal = opts.signal;
@@ -296,7 +298,6 @@ export class LilbeeClient {
                     const res = await window.fetch(url, fetchInit);
                     if ((res.status === 401 || res.status === 403) && !authRetried && this.refreshTokenFromProvider()) {
                         authRetried = true;
-                        init = this.applyRefreshedToken(init);
                         continue;
                     }
                     if (res.status === 401 || res.status === 403) {

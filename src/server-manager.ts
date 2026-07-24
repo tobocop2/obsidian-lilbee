@@ -539,12 +539,12 @@ export class ServerManager {
 
     private async checkAdopted(): Promise<void> {
         if (!this.adopted || this._actualPort === null) return;
-        // Read the session per tick rather than caching what adoption saw. The
-        // server persists its token across restarts, so this is not about
-        // rotation: a data dir that was reset leaves no session behind, and a
-        // watch holding a stale token would read that as a live server. The
-        // port stays the adopted server's own, so a rewritten port file cannot
-        // silently re-point the watch at somebody else.
+        // Read the session per tick rather than caching what adoption saw: the
+        // server deletes server.json on shutdown and mints a fresh token on
+        // every boot, so a cached one goes stale the moment it restarts and
+        // would report a live server as dead. The port stays the adopted
+        // server's own, so a rewritten port file cannot silently re-point the
+        // watch at somebody else.
         const session = readServerSession(this.opts.dataDir);
         const live =
             session !== null && (await probeLilbeeHealth({ port: this._actualPort, token: session.token })) !== null;
