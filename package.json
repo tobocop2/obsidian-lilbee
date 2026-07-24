@@ -1,6 +1,6 @@
 {
   "name": "obsidian-lilbee",
-  "version": "0.6.86",
+  "version": "0.6.87",
   "private": true,
   "description": "A local AI search engine and model manager for your Obsidian vault: ask your notes, PDFs, code, and crawled web pages in plain English and get answers with citations. Local-first, with a built-in model catalog. Works with Ollama and LM Studio.",
   "keywords": [
