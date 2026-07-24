@@ -1,9 +1,10 @@
 import { MockElement } from "./__mocks__/obsidian";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Notice } from "obsidian";
+import { Notice, type App } from "obsidian";
 import {
     StreamIdleError,
     _resetServerUnreachableDebounce,
+    closeSettings,
     ensureUrlScheme,
     errorMessage,
     extractServerErrorDetail,
@@ -59,6 +60,18 @@ describe("ensureUrlScheme", () => {
 
     it("prepends https:// for URLs with subdomains but no scheme", () => {
         expect(ensureUrlScheme("www.example.com")).toBe("https://www.example.com");
+    });
+});
+
+describe("closeSettings", () => {
+    it("closes the settings surface when Obsidian exposes it", () => {
+        const close = vi.fn();
+        closeSettings({ setting: { close } } as unknown as App);
+        expect(close).toHaveBeenCalled();
+    });
+
+    it("does nothing when the settings surface is unavailable", () => {
+        expect(() => closeSettings({} as unknown as App)).not.toThrow();
     });
 });
 

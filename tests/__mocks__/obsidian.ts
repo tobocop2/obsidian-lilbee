@@ -309,9 +309,16 @@ export class App {
     // Undocumented-but-stable Obsidian API used by plugins to open their
     // own Settings tab. Tests may replace this with `undefined` to exercise
     // the defensive guard.
-    setting: { open: ReturnType<typeof vi.fn>; openTabById: ReturnType<typeof vi.fn> } | undefined = {
+    setting:
+        | {
+              open: ReturnType<typeof vi.fn>;
+              openTabById: ReturnType<typeof vi.fn>;
+              close: ReturnType<typeof vi.fn>;
+          }
+        | undefined = {
         open: vi.fn(),
         openTabById: vi.fn(),
+        close: vi.fn(),
     };
     vault = {
         on: vi.fn().mockReturnValue({ id: "mock-vault-event" }),

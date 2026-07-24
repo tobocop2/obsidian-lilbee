@@ -26,6 +26,7 @@ import { MESSAGES, FILTERS } from "../locales/en";
 import { renderModelCard } from "../components/model-card";
 import {
     bindEscapeToClose,
+    closeSettings,
     extractSseErrorMessage,
     getSystemMemoryGB,
     percentFromSse,
@@ -1246,6 +1247,8 @@ export class SetupWizard extends Modal {
         this.plugin.settings.setupCompleted = true;
         await this.plugin.saveSettings();
         this.close();
+        // Launched from the settings tab, the wizard renders over settings, which would cover the chat view.
+        closeSettings(this.app);
         // The done step's action is an explicit "Open chat", so land the user
         // in the chat panel once. Nothing else is force-opened.
         void this.plugin.activateChatView();

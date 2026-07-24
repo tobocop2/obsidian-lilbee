@@ -1828,6 +1828,27 @@ describe("SetupWizard", () => {
             expect(closeSpy).toHaveBeenCalled();
         });
 
+        // The wizard can be launched from the settings tab, where Obsidian
+        // stacks it on the settings surface. Leaving settings open hides the
+        // chat view the button just opened.
+        it("Open chat closes the settings surface", async () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const app = plugin.app as unknown as App;
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 6;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Open chat")!
+                .trigger("click");
+            await tick();
+
+            expect(app.setting?.close).toHaveBeenCalled();
+            expect(plugin.activateChatView).toHaveBeenCalled();
+        });
+
         it("shows tips about what to try", () => {
             const plugin = makePlugin({ settings: { serverMode: "external" } });
             const wizard = new SetupWizard(plugin.app as any, plugin as any);
