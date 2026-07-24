@@ -1,7 +1,7 @@
 import type { ChildProcess } from "child_process";
 import type { Readable } from "stream";
 import type { ServerState } from "./types";
-import { LOG_FILE, LOGS_DIR, PLATFORM, SERVER_STATE } from "./types";
+import { LOG_FILE, LOGS_DIR, PLATFORM, SERVER_STATE, bearerHeaders } from "./types";
 import { node } from "./binary-manager";
 import { appendCapped } from "./utils/capped-log";
 
@@ -70,15 +70,6 @@ export interface ServerSession {
     token: string;
 }
 
-/**
- * Header carrying a server's session token. Every local request needs it: the
- * server authenticates all of its routes, `/api/health` included, so a probe
- * sent without this reads as dead rather than unauthenticated.
- */
-function bearer(token: string): Record<string, string> {
-    return { Authorization: `Bearer ${token}` };
-}
-
 /** Port + bearer token of the server serving *dataDir*, from its session files. */
 export function readServerSession(dataDir: string): ServerSession | null {
     try {
@@ -106,7 +97,7 @@ export async function requestServerShutdown(dataDir: string): Promise<boolean> {
     try {
         const res = await node.fetch(`http://127.0.0.1:${session.port}/api/shutdown`, {
             method: "POST",
-            headers: bearer(session.token),
+            headers: bearerHeaders(session.token),
             signal: AbortSignal.timeout(SERVER_MANAGER_CONFIG.SHUTDOWN_REQUEST_TIMEOUT_MS),
         });
         return res.ok;
@@ -129,7 +120,7 @@ async function reportedVersion(res: Response): Promise<string> {
 async function probeLilbeeHealth(session: ServerSession): Promise<{ version: string } | null> {
     try {
         const res = await node.fetch(`http://127.0.0.1:${session.port}/api/health`, {
-            headers: bearer(session.token),
+            headers: bearerHeaders(session.token),
             signal: AbortSignal.timeout(SERVER_MANAGER_CONFIG.ADOPT_PROBE_TIMEOUT_MS),
         });
         if (!res.ok) return null;
@@ -164,7 +155,7 @@ export async function awaitServerGone(dataDir: string, timeoutMs: number): Promi
     while (Date.now() < deadline) {
         try {
             await node.fetch(`http://127.0.0.1:${session.port}/api/health`, {
-                headers: bearer(session.token),
+                headers: bearerHeaders(session.token),
                 signal: AbortSignal.timeout(SERVER_MANAGER_CONFIG.ADOPT_PROBE_TIMEOUT_MS),
             });
         } catch {
@@ -548,10 +539,12 @@ export class ServerManager {
 
     private async checkAdopted(): Promise<void> {
         if (!this.adopted || this._actualPort === null) return;
-        // Re-read the token every tick rather than caching the one adoption saw:
-        // a server that restarted under us mints a fresh one. The port stays the
-        // adopted server's own, so a rewritten port file cannot silently
-        // re-point the watch at somebody else.
+        // Read the session per tick rather than caching what adoption saw. The
+        // server persists its token across restarts, so this is not about
+        // rotation: a data dir that was reset leaves no session behind, and a
+        // watch holding a stale token would read that as a live server. The
+        // port stays the adopted server's own, so a rewritten port file cannot
+        // silently re-point the watch at somebody else.
         const session = readServerSession(this.opts.dataDir);
         const live =
             session !== null && (await probeLilbeeHealth({ port: this._actualPort, token: session.token })) !== null;
@@ -576,13 +569,15 @@ export class ServerManager {
                 try {
                     // Bootstrap probe via the injectable node abstraction: runs during
                     // spawn before any LilbeeClient exists, and stays test-swappable.
-                    // The token is read per attempt, not once up front: the server
-                    // writes server.json while booting, so the early polls precede it
-                    // and go out bare. They 401 and the loop simply tries again.
+                    // The server writes server.json during lifespan startup and the
+                    // port file only once it is listening, so by the time this loop
+                    // runs the token is there. Read per attempt rather than hoisted,
+                    // and probe bare if it is somehow missing: a 401 just retries,
+                    // whereas skipping the request would stall the loop outright.
                     const session = readServerSession(this.opts.dataDir);
                     const res = await node.fetch(
                         `${url}/api/health`,
-                        session === null ? undefined : { headers: bearer(session.token) },
+                        session === null ? undefined : { headers: bearerHeaders(session.token) },
                     );
                     if (res.ok) {
                         this._spawnedVersion = await reportedVersion(res);

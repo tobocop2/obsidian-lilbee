@@ -1,5 +1,6 @@
 import {
     CAPABILITY,
+    bearerHeaders,
     JSON_HEADERS,
     OCTET_STREAM_HEADERS,
     REQUEST_OUTCOME,
@@ -174,17 +175,18 @@ export class LilbeeClient {
     /** Reachability probe for an arbitrary URL. True on an ok response, false on
      * any error or timeout. Keeps browser fetch inside this module.
      *
-     * *token* is required for a real verdict: the server authenticates every
+     * *token* is explicit rather than optional: the server authenticates every
      * route, so a bare probe of a healthy server comes back 401 and reads as
-     * unreachable. Null is still allowed — a probe with no token in hand is
-     * better than none, and a foreign URL may not want one. */
-    static async probe(url: string, timeoutMs: number, token: string | null = null): Promise<boolean> {
+     * unreachable. Pass null only when there is genuinely no token to send —
+     * making it a required argument keeps a future caller from defaulting its
+     * way back into that bug. */
+    static async probe(url: string, timeoutMs: number, token: string | null): Promise<boolean> {
         const controller = new AbortController();
         const timer = window.setTimeout(() => controller.abort(), timeoutMs);
         try {
             const res = await window.fetch(url, {
                 signal: controller.signal,
-                ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+                ...(token ? { headers: bearerHeaders(token) } : {}),
             });
             return res.ok;
         } catch {
@@ -196,7 +198,7 @@ export class LilbeeClient {
 
     private authHeaders(): Record<string, string> {
         if (!this.token) return {};
-        return { Authorization: `Bearer ${this.token}` };
+        return bearerHeaders(this.token);
     }
 
     private refreshTokenFromProvider(): boolean {
@@ -211,7 +213,7 @@ export class LilbeeClient {
         const base = { ...init };
         const existing = (base.headers ?? {}) as Record<string, string>;
         if (existing.Authorization) {
-            base.headers = { ...existing, Authorization: `Bearer ${this.token}` };
+            base.headers = { ...existing, ...this.authHeaders() };
         }
         return base;
     }
