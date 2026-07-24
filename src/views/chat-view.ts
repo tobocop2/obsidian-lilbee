@@ -1162,7 +1162,14 @@ export class ChatView extends ItemView {
                 this.handleStreamEvent(event, textEl, assistantBubble, state, revealContent, scheduleRender);
             }
         } catch (err) {
-            if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
+            // Trust the signal over the error shape: an aborted fetch reaches
+            // here as AbortError from some paths and TypeError("Failed to
+            // fetch") from others, and the latter would otherwise render a
+            // server-failure message for a deliberate Stop.
+            if (
+                this.streamController?.signal.aborted ||
+                (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR)
+            ) {
                 revealContent();
                 state.streamEnded = true;
                 state.reasoningDetailsEl?.removeAttribute("open");

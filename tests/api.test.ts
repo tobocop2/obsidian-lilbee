@@ -2712,3 +2712,37 @@ describe("every client request carries the session token", () => {
         });
     }
 });
+
+describe("aborting a request is not a server failure", () => {
+    // Pressing Stop mid-stream surfaced "server unreachable" and left the
+    // plugin degraded until a health probe recovered it. Chromium reports an
+    // aborted fetch as AbortError from some paths and TypeError("Failed to
+    // fetch") from others, so the signal is the only reliable witness.
+    it("does not retry or report unreachable when the caller's signal aborted", async () => {
+        const outcomes: string[] = [];
+        const c = new LilbeeClient(BASE_URL, "tok");
+        c.setOutcomeCallback((o) => outcomes.push(o));
+
+        const controller = new AbortController();
+        controller.abort();
+        fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+
+        await expect(
+            (c as any).fetchWithRetry(`${BASE_URL}/api/chat/stream`, {}, { stream: true, signal: controller.signal }),
+        ).rejects.toThrow();
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(outcomes).not.toContain("unreachable");
+    });
+
+    it("still reports unreachable for a genuine network failure", async () => {
+        const outcomes: string[] = [];
+        const c = new LilbeeClient(BASE_URL, "tok");
+        c.setOutcomeCallback((o) => outcomes.push(o));
+        fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+
+        await expect((c as any).fetchWithRetry(`${BASE_URL}/api/status`)).rejects.toThrow();
+
+        expect(outcomes).toContain("unreachable");
+    });
+});

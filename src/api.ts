@@ -331,6 +331,17 @@ export class LilbeeClient {
                     this.recordOutcome(status >= 500 ? REQUEST_OUTCOME.SERVER_ERROR : REQUEST_OUTCOME.OK);
                     throw err;
                 }
+                // An abort is the caller's decision, never a server fault. The
+                // signal is the witness, not the error: Chromium reports an
+                // aborted fetch as AbortError from some paths and as
+                // TypeError("Failed to fetch") from others, and the latter is
+                // indistinguishable from a refused connection by message. Left
+                // to the name check alone, pressing Stop mid-stream retried the
+                // request and then recorded "unreachable", which degraded the
+                // whole plugin until a health probe cleared it.
+                if (opts?.signal?.aborted) {
+                    throw err;
+                }
                 if (err instanceof Error && err.name === ERROR_NAME.ABORT_ERROR) {
                     throw err;
                 }

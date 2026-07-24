@@ -882,6 +882,34 @@ describe("ChatView.sendMessage — reasoning tokens", () => {
         expect(details!.getAttribute("open")).toBeNull();
     });
 
+    it("treats a Failed-to-fetch abort as a stop, not a server failure", async () => {
+        // Chromium surfaces an aborted stream this way from some paths. Matching
+        // on the error name alone rendered a server-failure message for a
+        // deliberate Stop, and upstream it was retried and flagged unreachable.
+        Notice.clear();
+        const plugin = makePlugin();
+        const view = new ChatView(makeLeaf(), plugin);
+        plugin.api.chatStream = vi.fn().mockImplementation(() =>
+            (async function* () {
+                yield { event: SSE_EVENT.TOKEN, data: { token: "partial" } };
+                // The user presses Stop, then the fetch rejects this way.
+                (view as any).streamController?.abort();
+                throw new TypeError("Failed to fetch");
+            })(),
+        );
+        await view.onOpen();
+        const container = view.containerEl.children[1] as unknown as MockElement;
+        const messagesEl = container.find("lilbee-chat-messages")!;
+        container.find("lilbee-chat-textarea")!.value = "stop me";
+        container.find("lilbee-chat-send")!.trigger("click");
+        await tick();
+        await tick();
+
+        const assistantBubble = messagesEl.children[1];
+        expect(assistantBubble.classList.contains("lilbee-chat-message-error")).toBe(false);
+        expect(assistantBubble.find("lilbee-chat-error-text")).toBeFalsy();
+    });
+
     it("renders a late reasoning block collapsed when the answer already started", async () => {
         Notice.clear();
         const plugin = makePlugin();
