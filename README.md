@@ -18,12 +18,12 @@ This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives y
 <p align="center">
   <a href="https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://obsidian.lilbee.sh/coverage/"><img alt="Coverage" src="https://obsidian.lilbee.sh/coverage/badge.svg"></a>
-  <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.6-blue?logo=typescript&logoColor=white"></a>
-  <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
-  <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg">
-  <a href="https://community.obsidian.md/plugins/lilbee"><img alt="Obsidian community plugin" src="https://img.shields.io/badge/Obsidian-Community%20plugin-7c3aed?logo=obsidian&logoColor=white"></a>
-  <a href="https://github.com/tobocop2/obsidian-lilbee/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/tobocop2/obsidian-lilbee/total"></a>
-  <a href="https://web.libera.chat/#lilbee"><img alt="#lilbee on Libera.Chat" src="https://img.shields.io/badge/IRC-%23lilbee%20on%20Libera.Chat-5865F2?logo=liberadotchat&logoColor=white"></a>
+  <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.6-9ccfd8?logo=typescript&logoColor=9ccfd8&style=flat-square&labelColor=191724"></a>
+  <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-6e6a86?style=flat-square&labelColor=191724"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-908caa?style=flat-square&labelColor=191724">
+  <a href="https://community.obsidian.md/plugins/lilbee"><img alt="Obsidian community plugin" src="https://img.shields.io/badge/Obsidian-Community%20plugin-c4a7e7?logo=obsidian&logoColor=c4a7e7&style=flat-square&labelColor=191724"></a>
+  <a href="https://github.com/tobocop2/obsidian-lilbee/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/tobocop2/obsidian-lilbee/total?logo=github&logoColor=9ccfd8&style=flat-square&labelColor=191724&color=9ccfd8"></a>
+  <a href="https://web.libera.chat/#lilbee"><img alt="#lilbee on Libera.Chat" src="https://img.shields.io/badge/IRC-%23lilbee%20on%20Libera.Chat-f6c177?logo=liberadotchat&logoColor=f6c177&style=flat-square&labelColor=191724"></a>
 </p>
 
 Ask a question in plain English and lilbee answers from your vault, with citations that click straight back to the source line.
