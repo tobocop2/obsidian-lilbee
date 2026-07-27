@@ -16,8 +16,8 @@
 This plugin runs **[lilbee](https://lilbee.sh/)** against your vault and gives you chat, a web crawler that saves sites into your vault, an auto-generated wiki, click-to-source citations, and a model catalog, all inside Obsidian. It downloads and manages the lilbee server and the AI models for you, with nothing to install separately and no Ollama required, or works with your own Ollama, LM Studio, or cloud models. Everything runs on your computer; cloud models are opt-in, per role. In practice, it makes your vault a private, self-hosted NotebookLM alternative, without a terminal or a Docker file in sight.
 
 <p align="center">
-  <a href="https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://obsidian.lilbee.sh/coverage/"><img alt="Coverage" src="https://obsidian.lilbee.sh/coverage/badge.svg"></a>
+  <a href="https://github.com/tobocop2/obsidian-lilbee/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/tobocop2/obsidian-lilbee/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=9ccfd8&style=flat-square&labelColor=191724&color=9ccfd8"></a>
+  <a href="https://obsidian.lilbee.sh/coverage/"><img alt="Coverage" src="https://img.shields.io/badge/coverage-100%25-31748f?style=flat-square&labelColor=191724"></a>
   <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.6-9ccfd8?logo=typescript&logoColor=9ccfd8&style=flat-square&labelColor=191724"></a>
   <a href="https://opensource.org/licenses/MIT"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-6e6a86?style=flat-square&labelColor=191724"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-908caa?style=flat-square&labelColor=191724">
