@@ -5,6 +5,14 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 10
+    ignore:
+      # TypeScript 7 ships without the programmatic compiler API, which
+      # typescript-eslint needs (its peer range tops out below 6.1.0). The
+      # typescript devDependency is aliased to @typescript/typescript6 for that
+      # reason; drop this ignore once typescript-eslint supports TS 7.
+      - dependency-name: "typescript"
+        versions:
+          - ">=7"
 
   - package-ecosystem: github-actions
     directory: /
