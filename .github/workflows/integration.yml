@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           cache: npm
@@ -32,7 +32,7 @@ jobs:
       # Cache the downloaded server binary keyed on its version, so runs only
       # re-download when a newer lilbee release ships.
       - name: Cache lilbee server binary
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ steps.meta.outputs.dir }}
           key: lilbee-server-${{ runner.os }}-${{ steps.meta.outputs.tag }}
