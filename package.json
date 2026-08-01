@@ -54,7 +54,7 @@
     "obsidian": "^1.13.1",
     "prettier": "^3.9.6",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.62.1",
+    "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.9"
   },
   "nano-staged": {
