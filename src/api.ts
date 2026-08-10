@@ -59,6 +59,11 @@ import type {
     WikiPruneResult,
 } from "./types";
 const DEFAULT_TIMEOUT_MS = 15_000;
+// Writing one wiki page is a whole model call on a possibly-busy GPU. Measured
+// at 64s for a 70B at Q6; a slower card or a longer page can be several times
+// that, and failing a request the server is still working on is worse than
+// waiting.
+const WIKI_GENERATE_TIMEOUT_MS = 15 * 60_000;
 const RETRY_COUNT = 2;
 const RETRY_BACKOFF_MS = 500;
 // In managed mode, the plugin's onload doesn't configure the API until
@@ -211,7 +216,7 @@ export class LilbeeClient {
     private async fetchResult<T>(
         url: string,
         init?: RequestInit,
-        opts?: { stream?: boolean; signal?: AbortSignal },
+        opts?: { stream?: boolean; signal?: AbortSignal; timeoutMs?: number },
     ): Promise<Result<T, Error>> {
         try {
             const res = await this.fetchWithRetry(url, init, opts);
@@ -231,7 +236,7 @@ export class LilbeeClient {
     async fetchWithRetry(
         url: string,
         init?: RequestInit,
-        opts?: { stream?: boolean; signal?: AbortSignal },
+        opts?: { stream?: boolean; signal?: AbortSignal; timeoutMs?: number },
     ): Promise<Response> {
         // Detect a URL that was pre-interpolated with an empty baseUrl
         // (callers do `${this.baseUrl}/api/...` — when baseUrl is "" the
@@ -278,7 +283,7 @@ export class LilbeeClient {
                 } else if (!opts?.stream) {
                     const controller = new AbortController();
                     fetchInit.signal = controller.signal;
-                    timer = window.setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+                    timer = window.setTimeout(() => controller.abort(), opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
                 }
                 try {
                     const res = await window.fetch(url, fetchInit);
@@ -839,12 +844,20 @@ export class LilbeeClient {
         }
     }
 
-    /** Write one indexed page. Costs a single LLM call and is GPU-heavy. */
+    /**
+     * Write one indexed page. Costs a single LLM call and is GPU-heavy.
+     *
+     * Not a stream, but nothing like a normal request either: the server holds
+     * the connection for the whole generation, which is minutes on a large
+     * model. The default 15s timeout aborted every call before the page could
+     * land, so this one names its own.
+     */
     async wikiGenerate(slug: string): Promise<WikiGenerateResult> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/generate/${encodeURIComponent(slug)}`, {
-            method: "POST",
-            headers: this.authHeaders(),
-        });
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/wiki/generate/${encodeURIComponent(slug)}`,
+            { method: "POST", headers: this.authHeaders() },
+            { timeoutMs: WIKI_GENERATE_TIMEOUT_MS },
+        );
         return (await res.json()) as WikiGenerateResult;
     }
 

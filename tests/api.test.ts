@@ -1896,6 +1896,28 @@ describe("wikiGenerate()", () => {
         expect(result).toEqual(data);
     });
 
+    it("does not abort a generation at the default timeout", async () => {
+        // Writing a page took 64s against a 70B. fetchWithRetry aborts any
+        // non-stream request at 15s, so every generate died with "signal
+        // aborted without reason" while the server kept working.
+        vi.useFakeTimers();
+        try {
+            let settle: (r: Response) => void = () => {};
+            fetchMock.mockReturnValue(new Promise<Response>((r) => (settle = r)));
+            const pending = client.wikiGenerate("cassini");
+            const captured = fetchMock.mock.calls[0][1] as RequestInit;
+
+            // Well past the default timeout, the request must still be alive.
+            await vi.advanceTimersByTimeAsync(60_000);
+            expect((captured.signal as AbortSignal).aborted).toBe(false);
+
+            settle(jsonResponse({ slug: "entities/cassini", path: "/w/c.md" }));
+            await expect(pending).resolves.toEqual({ slug: "entities/cassini", path: "/w/c.md" });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it("encodes a slug with a slash in it", async () => {
         fetchMock.mockResolvedValue(jsonResponse({ slug: "a/b", path: "" }));
         await client.wikiGenerate("concepts/gas giant");
