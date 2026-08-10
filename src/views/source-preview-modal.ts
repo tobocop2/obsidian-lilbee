@@ -21,12 +21,13 @@ const TEXT_INLINE_RENDER_DENY = new Set([
 /**
  * Read-only preview for sources that aren't in the local vault (external
  * server mode, or a vault-bound source whose file was removed). Fetches
- * content via `/api/source` and renders markdown inline. For PDFs the modal
- * embeds an `<object type="application/pdf">` pointing at the `raw=1`
- * endpoint with a `#page=N` fragment — Chromium's built-in PDFium viewer
- * honours that fragment, which lets the preview jump directly to the
- * chunk's page. The type-locked `<object>` tag narrows the rendering
- * surface for any non-PDF bytes the server might return.
+ * content via `/api/source` and renders markdown inline. PDFs render as a blob
+ * URL in a type-locked `<object type="application/pdf">` with a `#page=N`
+ * fragment, which Chromium's PDFium viewer opens at that page. The type lock
+ * narrows the rendering surface for any non-PDF bytes.
+ *
+ * The blob is required: every server route needs the session token, and an
+ * `<object data>` load cannot send an `Authorization` header.
  *
  * A future "Save to vault" button will push the content into `<vault>/lilbee/`
  * once the server exposes the write path — disabled for now with a tooltip.
@@ -35,6 +36,9 @@ export class SourcePreviewModal extends Modal {
     private api: LilbeeClient;
     private source: Source;
     private renderComponent: Component;
+    /** Live blob URL backing the embedded PDF; revoked when the modal closes. */
+    private pdfObjectUrl: string | null = null;
+    private closed = false;
 
     constructor(app: App, api: LilbeeClient, source: Source) {
         super(app);
@@ -75,6 +79,8 @@ export class SourcePreviewModal extends Modal {
     }
 
     onClose(): void {
+        this.closed = true;
+        this.releasePdfObjectUrl();
         this.renderComponent.unload();
         this.contentEl.empty();
         if (this.dragMoveHandler) {
@@ -185,18 +191,22 @@ export class SourcePreviewModal extends Modal {
             host.empty();
             this.renderBody(host, content);
         } catch (err) {
-            const reason = errorMessage(err, String(err));
-            host.empty();
-            host.createEl("p", { text: MESSAGES.ERROR_PREVIEW_LOAD(reason), cls: "lilbee-preview-error" });
-            new Notice(MESSAGES.ERROR_PREVIEW_LOAD(reason));
+            this.showLoadError(host, err);
         }
+    }
+
+    private showLoadError(host: HTMLElement, err: unknown): void {
+        const message = MESSAGES.ERROR_PREVIEW_LOAD(errorMessage(err, String(err)));
+        host.empty();
+        host.createEl("p", { text: message, cls: "lilbee-preview-error" });
+        new Notice(message);
     }
 
     private renderBody(host: HTMLElement, content: SourceContent): void {
         const ct = content.content_type;
         const isPdf = isPdfContentType(this.source.content_type) || isPdfContentType(ct);
         if (isPdf) {
-            this.renderPdf(host);
+            void this.renderPdf(host);
             return;
         }
         // Mirror the server's raw-content allowlist: any text/* may render through
@@ -227,19 +237,33 @@ export class SourcePreviewModal extends Modal {
         host.scrollTop = citedLineScrollTop(body.scrollHeight, code.split("\n").length, this.source.line_start);
     }
 
-    private renderPdf(host: HTMLElement): void {
+    /** Fetch the PDF bytes through the authenticated client into a blob URL. */
+    private async renderPdf(host: HTMLElement): Promise<void> {
+        let url: string;
+        try {
+            const res = await this.api.getSourceRaw(this.source.source);
+            url = URL.createObjectURL(await res.blob());
+        } catch (err) {
+            this.showLoadError(host, err);
+            return;
+        }
+        if (this.closed) {
+            // Dismissed mid-fetch: onClose already ran and never saw this URL.
+            URL.revokeObjectURL(url);
+            return;
+        }
+        this.pdfObjectUrl = url;
         const body = host.createDiv({ cls: "lilbee-preview-body" });
         const frame = body.createEl("object", { cls: "lilbee-preview-pdf-frame" });
         frame.setAttribute("type", CONTENT_TYPE.PDF);
-        frame.setAttribute("data", this.rawSourceUrl(this.source.page_start));
+        // `#page=N` makes Chromium's PDFium viewer open at the chunk's page.
+        const page = this.source.page_start;
+        frame.setAttribute("data", page && page > 0 ? `${url}#page=${page}` : url);
     }
 
-    private rawSourceUrl(page: number | null): string {
-        // Direct URL to the raw PDF bytes for the embedded viewer to fetch.
-        // Appending `#page=N` makes Chromium's PDFium viewer open at that page.
-        const params = new URLSearchParams({ source: this.source.source, raw: "1" });
-        const base = (this.api as unknown as { baseUrl?: string }).baseUrl ?? "";
-        const fragment = page && page > 0 ? `#page=${page}` : "";
-        return `${base}/api/source?${params.toString()}${fragment}`;
+    private releasePdfObjectUrl(): void {
+        if (this.pdfObjectUrl === null) return;
+        URL.revokeObjectURL(this.pdfObjectUrl);
+        this.pdfObjectUrl = null;
     }
 }

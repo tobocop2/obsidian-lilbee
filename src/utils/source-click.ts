@@ -16,9 +16,9 @@ export const SOURCE_ACTION = {
  * - `vault-markdown`: open the markdown file and scroll to a specific line.
  * - `vault-note`: open the vault file without deep-linking.
  * - `preview`: file is not in the vault, OR is a PDF — fetch via `/api/source`
- *   and show the source-preview modal so we can deep-link to a page via
- *   `<object data="...?page=N">` (Obsidian's PDF viewer doesn't honour the
- *   `#page=N` fragment in `openLinkText`).
+ *   and show the source-preview modal, whose embedded viewer can deep-link to
+ *   a page (Obsidian's PDF viewer doesn't honour the `#page=N` fragment in
+ *   `openLinkText`).
  */
 export type SourceClickAction =
     | { kind: typeof SOURCE_ACTION.VAULT_MARKDOWN; path: string; line: number }
@@ -45,9 +45,8 @@ function vaultAction(source: Source, path: string): SourceClickAction {
  *
  * PDFs always route to the preview modal — Obsidian's built-in PDF viewer
  * does not honour `#page=N` fragments passed through `openLinkText`, so we
- * use the modal's `<object data="…?page=N">` path that does. The modal
- * exposes an "Open in vault" button for users who want the file opened in
- * the main pane.
+ * use the modal's embedded viewer, which does. The modal exposes an "Open in
+ * vault" button for users who want the file opened in the main pane.
  *
  * For non-PDFs, prefer the server-supplied `vault_path`. If absent (older
  * server builds, or external-server mode), fall back to `source.source` —
