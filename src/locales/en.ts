@@ -933,15 +933,17 @@ export const MESSAGES = {
     WIZARD_SELECT_MODEL: "Please select a model first.",
 
     // Wiki wizard step
-    WIZARD_WIKI_TITLE: "Wiki (optional, experimental)",
+    WIZARD_WIKI_TITLE: "Wiki (optional)",
     WIZARD_WIKI_DESC:
-        "Wiki pages are AI-written summaries of your documents — think Wikipedia articles derived from what you already have. Generation runs on-demand from the command palette or Settings; enabling it here just unlocks those controls.",
-    WIZARD_WIKI_EXPERIMENTAL_HEADING: "Read this first",
-    WIZARD_WIKI_EXPERIMENTAL_INTRO: "Two caveats before you flip this on:",
-    WIZARD_WIKI_EXPERIMENTAL_QUALITY:
-        "Everything lands as a draft first. Every page is gated by a title/body coherence check and a cosine-similarity score against the source chunks, and ships as a reviewable draft — accept, edit, or reject from the drafts panel before anything becomes a published wiki page.",
-    WIZARD_WIKI_EXPERIMENTAL_SLOW:
-        "Generation takes time and ties up the chat LLM. Pages that share a primary source are batched into one model call, so a 200-page vault over ~30 sources is closer to ~30 batched calls than 200 sequential ones — but it's still blocking. Plan to run it during a break, not in the middle of research.",
+        "Wiki pages are AI-written summaries of your documents, like Wikipedia articles derived from what you already have. Generation runs on demand from the command palette or Settings; enabling it here just unlocks those controls.",
+    WIZARD_WIKI_CAVEATS_HEADING: "Before you turn this on",
+    WIZARD_WIKI_CAVEATS_INTRO: "Two things worth knowing:",
+    WIZARD_WIKI_CAVEAT_QUALITY:
+        "Everything lands as a draft first. Every page is gated by a title/body coherence check and a cosine-similarity score against the source chunks, then ships as a reviewable draft. Accept, edit, or reject it from the drafts panel before it becomes a published page.",
+    WIZARD_WIKI_CAVEAT_COST:
+        "Building the wiki is the heaviest thing lilbee does. It runs your chat model over the whole corpus and holds the GPU for the duration, so chat is unavailable while it works. Pages sharing a primary source are batched into one call, so a 200-page vault over roughly 30 sources costs about 30 calls rather than 200. Run it during a break, not in the middle of research.",
+    TOOLTIP_WIZARD_WIKI_ENABLE:
+        "Turning this on only unlocks the commands. Nothing is generated until you run a build, and a build is GPU heavy: it runs your chat model across every source and blocks chat while it does. Pages arrive as drafts for you to review.",
     WIZARD_WIKI_PROS_HEADING: "What it adds",
     WIZARD_WIKI_PRO_SUMMARIES: "Summarized, structured overviews of your documents",
     WIZARD_WIKI_PRO_CROSSREFS: "Related concepts become discoverable through cross-references",
@@ -953,8 +955,7 @@ export const MESSAGES = {
     WIZARD_WIKI_CON_COMPLEXITY: "Adds a second index shape to maintain alongside raw embeddings",
     WIZARD_WIKI_ENABLE: "Enable wiki (on-demand generation)",
     WIZARD_WIKI_DISABLE: "Skip for now (recommended)",
-    WIZARD_WIKI_ENABLE_DESC:
-        "Unlocks wiki commands + Settings. Nothing generates automatically. Proceed with caution — this is experimental.",
+    WIZARD_WIKI_ENABLE_DESC: "Unlocks the wiki commands and settings. Nothing generates until you ask for it.",
     WIZARD_WIKI_DISABLE_DESC:
         "Use raw document search only. You can enable the wiki later from Settings → Wiki, or re-open this wizard from Settings → Setup wizard.",
     TITLE_PICK_EMBEDDING: "Pick an embedding model",
