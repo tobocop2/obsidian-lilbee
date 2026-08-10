@@ -1022,3 +1022,54 @@ describe("WikiView filtering with unwritten subjects", () => {
         expect(el.findAll("lilbee-empty-state").length).toBe(1);
     });
 });
+
+describe("WikiView cross-links", () => {
+    function linkPages(): WikiPage[] {
+        return [
+            makePage({ slug: "entities/jupiter", title: "Jupiter", page_type: "entity" }),
+            makePage({ slug: "concepts/orbit", title: "Orbit", page_type: "concept" }),
+        ];
+    }
+
+    async function openWith(plugin: LilbeePlugin) {
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        return view;
+    }
+
+    it("resolves a bare-subject link to the page whose slug ends with it", async () => {
+        // Generated pages link each other as [[jupiter]] while the slug is
+        // entities/jupiter. Matching only the full slug sent every cross-link to
+        // openLinkText and navigated out of the wiki.
+        const plugin = makePlugin();
+        (plugin.api.wikiList as ReturnType<typeof vi.fn>).mockResolvedValue(linkPages());
+        const view = await openWith(plugin);
+
+        expect((view as any).resolveWikiLink("jupiter")?.slug).toBe("entities/jupiter");
+        expect(plugin.app.workspace.openLinkText).not.toHaveBeenCalled();
+    });
+
+    it("matches the title regardless of case", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiList as ReturnType<typeof vi.fn>).mockResolvedValue(linkPages());
+        const view = await openWith(plugin);
+        expect((view as any).resolveWikiLink("JUPITER")?.slug).toBe("entities/jupiter");
+        expect((view as any).resolveWikiLink("Orbit")?.slug).toBe("concepts/orbit");
+    });
+
+    it("still resolves a full slug", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiList as ReturnType<typeof vi.fn>).mockResolvedValue(linkPages());
+        const view = await openWith(plugin);
+        expect((view as any).resolveWikiLink("entities/jupiter")?.slug).toBe("entities/jupiter");
+    });
+
+    it("returns nothing for a link that names no page, so the vault fallback still runs", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiList as ReturnType<typeof vi.fn>).mockResolvedValue(linkPages());
+        const view = await openWith(plugin);
+        expect((view as any).resolveWikiLink("pluto")).toBeUndefined();
+        expect((view as any).resolveWikiLink("   ")).toBeUndefined();
+    });
+});

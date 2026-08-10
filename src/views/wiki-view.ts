@@ -178,6 +178,28 @@ export class WikiView extends ItemView {
     }
 
     /**
+     * Resolve a `[[wikilink]]` to a page in this wiki.
+     *
+     * Generated pages link each other by bare subject, `[[jupiter]]`, while a
+     * page's slug carries its section, `entities/jupiter`, and its title is
+     * capitalised. Comparing the href against slug and title alone therefore
+     * matched nothing, and every cross-link fell through to `openLinkText`,
+     * which navigated the workspace away from the wiki to a vault note that
+     * does not exist. So the advertised cross-linking never worked at all.
+     *
+     * Matched case-insensitively against the full slug, the slug's last
+     * segment, and the title.
+     */
+    private resolveWikiLink(href: string): WikiPage | undefined {
+        const wanted = href.trim().toLowerCase();
+        if (!wanted) return undefined;
+        return this.pages.find((p) => {
+            const slug = p.slug.toLowerCase();
+            return slug === wanted || slug.split("/").pop() === wanted || p.title.toLowerCase() === wanted;
+        });
+    }
+
+    /**
      * A subject the corpus names but nothing has written. Rendered dim and
      * marked, because it is an offer rather than a page: opening it asks
      * whether to spend a model call writing it.
@@ -279,8 +301,7 @@ export class WikiView extends ItemView {
             if (link) {
                 e.preventDefault();
                 const href = link.getAttribute("data-href") ?? link.textContent ?? "";
-                // Check if it's a wiki page slug
-                const matchingPage = this.pages.find((p) => p.slug === href || p.title === href);
+                const matchingPage = this.resolveWikiLink(href);
                 if (matchingPage) {
                     this.selectedSlug = matchingPage.slug;
                     this.renderList();
