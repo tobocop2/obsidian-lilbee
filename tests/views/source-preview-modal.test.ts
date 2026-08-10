@@ -260,14 +260,21 @@ describe("SourcePreviewModal — loading + success (markdown)", () => {
     });
 });
 
+/** A `getSourceRaw` stand-in returning PDF bytes, like the real Response would. */
+function pdfResponse(bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46])): unknown {
+    return { blob: async () => new Blob([bytes], { type: CONTENT_TYPE.PDF }) };
+}
+
 describe("SourcePreviewModal — success (PDF)", () => {
-    it('renders an <object type="application/pdf"> pointing to the raw URL', async () => {
+    it('renders an <object type="application/pdf"> fed by an authenticated blob fetch', async () => {
         const app = new App();
+        const getSourceRaw = vi.fn().mockResolvedValue(pdfResponse());
         const api = makeApi({
             getSource: vi.fn().mockResolvedValue({
                 markdown: "",
                 content_type: CONTENT_TYPE.PDF,
             }),
+            getSourceRaw,
         });
         const modal = new SourcePreviewModal(
             app as never,
@@ -283,7 +290,11 @@ describe("SourcePreviewModal — success (PDF)", () => {
         // a malicious .html source as text/html inside the plugin origin.
         expect(frame!.tagName).toBe("OBJECT");
         expect(frame!.attributes["type"]).toBe("application/pdf");
-        expect(frame!.attributes["data"]).toContain("book.pdf");
+        // An <object> cannot send an Authorization header, so a direct
+        // /api/source URL is a guaranteed 401; the bytes must come via the client.
+        expect(getSourceRaw).toHaveBeenCalledWith("crawled/example.com/book.pdf");
+        expect(frame!.attributes["data"]).toMatch(/^blob:/);
+        expect(frame!.attributes["data"]).not.toContain("/api/source");
         expect(el.find("lilbee-preview-iframe")).toBeNull();
     });
 
@@ -294,6 +305,7 @@ describe("SourcePreviewModal — success (PDF)", () => {
                 markdown: "",
                 content_type: "text/plain",
             }),
+            getSourceRaw: vi.fn().mockResolvedValue(pdfResponse()),
         });
         const modal = new SourcePreviewModal(app as never, api, makeSource({ content_type: CONTENT_TYPE.PDF }));
         modal.open();
@@ -303,13 +315,14 @@ describe("SourcePreviewModal — success (PDF)", () => {
         expect(frame.tagName).toBe("OBJECT");
     });
 
-    it("appends #page=N to the object data URL when page_start is set", async () => {
+    it("appends #page=N to the blob URL when page_start is set", async () => {
         const app = new App();
         const api = makeApi({
             getSource: vi.fn().mockResolvedValue({
                 markdown: "",
                 content_type: CONTENT_TYPE.PDF,
             }),
+            getSourceRaw: vi.fn().mockResolvedValue(pdfResponse()),
         });
         const modal = new SourcePreviewModal(
             app as never,
@@ -324,7 +337,7 @@ describe("SourcePreviewModal — success (PDF)", () => {
         await tick();
         const el = modal.contentEl as unknown as MockElement;
         const frame = el.find("lilbee-preview-pdf-frame")!;
-        expect(frame.attributes["data"]).toContain("#page=42");
+        expect(frame.attributes["data"]).toMatch(/^blob:.*#page=42$/);
     });
 
     it("omits the #page= fragment when page_start is null", async () => {
@@ -334,6 +347,7 @@ describe("SourcePreviewModal — success (PDF)", () => {
                 markdown: "",
                 content_type: CONTENT_TYPE.PDF,
             }),
+            getSourceRaw: vi.fn().mockResolvedValue(pdfResponse()),
         });
         const modal = new SourcePreviewModal(
             app as never,
@@ -345,6 +359,71 @@ describe("SourcePreviewModal — success (PDF)", () => {
         const el = modal.contentEl as unknown as MockElement;
         const frame = el.find("lilbee-preview-pdf-frame")!;
         expect(frame.attributes["data"]).not.toContain("#page=");
+    });
+
+    it("revokes the blob URL when the modal closes so the bytes are not retained", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({
+                markdown: "",
+                content_type: CONTENT_TYPE.PDF,
+            }),
+            getSourceRaw: vi.fn().mockResolvedValue(pdfResponse()),
+        });
+        const revoke = vi.spyOn(URL, "revokeObjectURL");
+        const modal = new SourcePreviewModal(app as never, api, makeSource({ content_type: CONTENT_TYPE.PDF }));
+        modal.open();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        const url = el.find("lilbee-preview-pdf-frame")!.attributes["data"];
+        modal.close();
+        expect(revoke).toHaveBeenCalledWith(url);
+        revoke.mockRestore();
+    });
+
+    it("releases the bytes when the modal is dismissed mid-fetch", async () => {
+        const app = new App();
+        let release!: (r: unknown) => void;
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({
+                markdown: "",
+                content_type: CONTENT_TYPE.PDF,
+            }),
+            getSourceRaw: vi.fn(() => new Promise((r) => (release = r))),
+        });
+        const revoke = vi.spyOn(URL, "revokeObjectURL");
+        const modal = new SourcePreviewModal(app as never, api, makeSource({ content_type: CONTENT_TYPE.PDF }));
+        modal.open();
+        await tick();
+        modal.close();
+        release(pdfResponse());
+        await tick();
+        // The frame is never built, and the blob URL created after close is
+        // revoked rather than left holding the file in memory.
+        const el = modal.contentEl as unknown as MockElement;
+        expect(el.find("lilbee-preview-pdf-frame")).toBeNull();
+        expect(revoke).toHaveBeenCalledWith(expect.stringMatching(/^blob:/));
+        revoke.mockRestore();
+    });
+
+    it("surfaces an error instead of a blank viewer when the raw fetch fails", async () => {
+        const app = new App();
+        const api = makeApi({
+            getSource: vi.fn().mockResolvedValue({
+                markdown: "",
+                content_type: CONTENT_TYPE.PDF,
+            }),
+            getSourceRaw: vi.fn().mockRejectedValue(new Error("Server responded 401: Missing or invalid bearer token")),
+        });
+        const modal = new SourcePreviewModal(app as never, api, makeSource({ content_type: CONTENT_TYPE.PDF }));
+        modal.open();
+        await tick();
+        await tick();
+        const el = modal.contentEl as unknown as MockElement;
+        expect(el.find("lilbee-preview-pdf-frame")).toBeNull();
+        const error = el.find("lilbee-preview-error");
+        expect(error).not.toBeNull();
+        expect(error!.textContent).toContain("401");
     });
 });
 
