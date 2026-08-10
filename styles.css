@@ -5030,3 +5030,19 @@ button.lilbee-model-chip-select:focus-visible {
 .lilbee-chat-summary-body {
     font-size: var(--font-smaller, 13px);
 }
+
+/* A wiki subject the corpus names but nothing has written. Dimmed because it is
+   an offer, not a page; the hint says so in words for anyone who reads weight
+   as a rendering glitch. */
+.lilbee-wiki-stub .lilbee-task-name {
+    opacity: 0.62;
+}
+.lilbee-wiki-stub-hint {
+    font-style: italic;
+    opacity: 0.62;
+}
+.lilbee-wiki-stub.generating .lilbee-wiki-stub-hint {
+    font-style: normal;
+    opacity: 1;
+    color: var(--text-accent);
+}

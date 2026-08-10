@@ -2,7 +2,14 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { WorkspaceLeaf, MockElement } from "../__mocks__/obsidian";
 import { WikiView, VIEW_TYPE_WIKI } from "../../src/views/wiki-view";
 import type LilbeePlugin from "../../src/main";
-import type { WikiPage, WikiPageDetail } from "../../src/types";
+import type { WikiPage, WikiPageDetail, WikiStub } from "../../src/types";
+
+let mockConfirmResult = true;
+vi.mock("../../src/views/confirm-modal", () => ({
+    ConfirmModal: vi.fn().mockImplementation(function () {
+        return { open: vi.fn(), result: Promise.resolve(mockConfirmResult) };
+    }),
+}));
 
 vi.mock("../../src/views/citation-modal", () => ({
     CitationModal: vi.fn().mockImplementation(function () {
@@ -22,6 +29,8 @@ function makePlugin(): LilbeePlugin {
     return {
         api: {
             wikiList: vi.fn().mockResolvedValue([]),
+            wikiStubs: vi.fn().mockResolvedValue([]),
+            wikiGenerate: vi.fn(),
             wikiPage: vi.fn().mockResolvedValue({} as WikiPageDetail),
         },
         runWikiLint: vi.fn(),
@@ -812,5 +821,204 @@ describe("relativeTime via renderPageItem timestamps", () => {
         (view as any).renderList();
         const times = findByClass(listEl, "lilbee-task-time");
         expect(times[0]!.textContent).toBe("2d ago");
+    });
+});
+
+function makeStub(overrides: Partial<WikiStub> = {}): WikiStub {
+    return {
+        slug: "titan",
+        label: "Titan",
+        kind: "entity",
+        type_hint: "LOC",
+        mentions: 4,
+        sources: ["corpus/Saturn.txt"],
+        ...overrides,
+    };
+}
+
+describe("WikiView unwritten subjects", () => {
+    beforeEach(() => {
+        mockConfirmResult = true;
+    });
+
+    it("lists entities under Entities, not under Concepts", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiList as ReturnType<typeof vi.fn>).mockResolvedValue([
+            makePage({ slug: "concepts/orbit", title: "Orbit", page_type: "concept" }),
+            makePage({ slug: "entities/saturn", title: "Saturn", page_type: "entity" }),
+        ]);
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const headers = (view.contentEl as unknown as MockElement)
+            .findAll("lilbee-tasks-section-header")
+            .map((h) => h.textContent);
+        expect(headers).toContain("Concepts");
+        expect(headers).toContain("Entities");
+    });
+
+    it("shows an unwritten subject, marked as not written", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([makeStub()]);
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const el = view.contentEl as unknown as MockElement;
+        expect(el.findAll("lilbee-wiki-stub").length).toBe(1);
+        const texts = el.findAll("lilbee-wiki-stub-hint").map((h) => h.textContent);
+        expect(texts).toContain("not written yet");
+        expect(el.findAll("lilbee-tasks-section-header").map((h) => h.textContent)).toContain("Not written yet (1)");
+    });
+
+    it("writes the page when the offer is accepted, then opens it", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([makeStub()]);
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockResolvedValue({
+            slug: "entities/titan",
+            path: "/w/entities/titan.md",
+        });
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        (view.contentEl as unknown as MockElement).findAll("lilbee-wiki-stub")[0].trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.api.wikiGenerate).toHaveBeenCalledWith("titan");
+        expect(plugin.api.wikiPage).toHaveBeenCalledWith("entities/titan");
+    });
+
+    it("writes nothing when the offer is declined", async () => {
+        mockConfirmResult = false;
+        const plugin = makePlugin();
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([makeStub()]);
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        (view.contentEl as unknown as MockElement).findAll("lilbee-wiki-stub")[0].trigger("click");
+        await tick();
+
+        expect(plugin.api.wikiGenerate).not.toHaveBeenCalled();
+    });
+
+    it("keeps the written pages when the stubs route is unavailable", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiList as ReturnType<typeof vi.fn>).mockResolvedValue([makePage()]);
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("nope"));
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const el = view.contentEl as unknown as MockElement;
+        expect(el.findAll("lilbee-wiki-page-item").length).toBe(1);
+        expect(el.findAll("lilbee-wiki-stub").length).toBe(0);
+    });
+
+    it("refuses a second write while one is already running", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([makeStub()]);
+        let release: (v: unknown) => void = () => {};
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockReturnValue(
+            new Promise((r) => {
+                release = r;
+            }),
+        );
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const el = view.contentEl as unknown as MockElement;
+        el.findAll("lilbee-wiki-stub")[0].trigger("click");
+        await tick();
+        // The row now reads as busy, and a second click is ignored.
+        expect(el.findAll("lilbee-wiki-stub-hint").map((h) => h.textContent)).toContain("writing...");
+        el.findAll("lilbee-wiki-stub")[0].trigger("click");
+        await tick();
+        expect(plugin.api.wikiGenerate).toHaveBeenCalledTimes(1);
+        release({ slug: "entities/titan", path: "/w/t.md" });
+    });
+
+    it("surfaces a failed write and clears the busy state", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([makeStub()]);
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("gpu busy"));
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const el = view.contentEl as unknown as MockElement;
+        el.findAll("lilbee-wiki-stub")[0].trigger("click");
+        await tick();
+        await tick();
+
+        expect(el.findAll("lilbee-wiki-stub-hint").map((h) => h.textContent)).toContain("not written yet");
+    });
+});
+
+describe("WikiView filtering with unwritten subjects", () => {
+    beforeEach(() => {
+        mockConfirmResult = true;
+    });
+
+    it("filters unwritten subjects too, since that is how you find one", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiList as ReturnType<typeof vi.fn>).mockResolvedValue([
+            makePage({ slug: "entities/saturn", title: "Saturn", page_type: "entity" }),
+        ]);
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([
+            makeStub({ slug: "titan", label: "Titan" }),
+            makeStub({ slug: "rhea", label: "Rhea" }),
+        ]);
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const el = view.contentEl as unknown as MockElement;
+        const input = el.find("lilbee-wiki-search")!;
+        input.value = "titan";
+        input.trigger("input");
+
+        const stubs = el.findAll("lilbee-wiki-stub");
+        expect(stubs.length).toBe(1);
+        expect(stubs[0].textContent).toContain("Titan");
+        // The written page does not match "titan", so only the offer remains.
+        expect(el.findAll("lilbee-wiki-page-item").length).toBe(1);
+    });
+
+    it("falls back to the slug when a subject carries no label", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([
+            makeStub({ slug: "gas-giant", label: "" }),
+        ]);
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const el = view.contentEl as unknown as MockElement;
+        expect(el.findAll("lilbee-wiki-stub")[0].textContent).toContain("gas-giant");
+
+        const input = el.find("lilbee-wiki-search")!;
+        input.value = "gas";
+        input.trigger("input");
+        expect(el.findAll("lilbee-wiki-stub").length).toBe(1);
+    });
+
+    it("says there is nothing when neither pages nor offers match", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([makeStub()]);
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const el = view.contentEl as unknown as MockElement;
+        const input = el.find("lilbee-wiki-search")!;
+        input.value = "zzzz";
+        input.trigger("input");
+
+        expect(el.findAll("lilbee-empty-state").length).toBe(1);
     });
 });

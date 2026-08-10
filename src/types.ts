@@ -886,11 +886,49 @@ export const PUBLISHED_WIKI_PAGE_TYPES: ReadonlySet<WikiPageType> = new Set([
 ]);
 
 /** Subset of published types grouped under "Concepts" in the sidebar. */
+/** Concept-flavoured pages only. Entities are listed separately: fifty proper
+ * nouns under a heading reading "Concepts" is not what the server means. */
+export const CONCEPT_ONLY_WIKI_PAGE_TYPES: ReadonlySet<WikiPageType> = new Set([
+    WIKI_PAGE_TYPE.SYNTHESIS,
+    WIKI_PAGE_TYPE.CONCEPT,
+]);
+
 export const CONCEPT_WIKI_PAGE_TYPES: ReadonlySet<WikiPageType> = new Set([
     WIKI_PAGE_TYPE.SYNTHESIS,
     WIKI_PAGE_TYPE.CONCEPT,
     WIKI_PAGE_TYPE.ENTITY,
 ]);
+
+/** Whether an indexed subject is an LLM-curated concept or a proper-noun entity. */
+export type WikiStubKind = "concept" | "entity";
+
+export const WIKI_STUB_KIND = {
+    CONCEPT: "concept",
+    ENTITY: "entity",
+} as const satisfies Record<string, WikiStubKind>;
+
+/**
+ * A subject the corpus names that has no page yet, from `GET /api/wiki/stubs`.
+ *
+ * Naming every entity costs no LLM call, so the browse list can show every page
+ * the wiki *could* have as soon as a sync finishes; a body is written only when
+ * someone asks for that page. `slug` is what `POST /api/wiki/generate/{slug}`
+ * takes.
+ */
+export interface WikiStub {
+    slug: string;
+    label: string;
+    kind: WikiStubKind;
+    type_hint: string;
+    mentions: number;
+    sources: string[];
+}
+
+/** Result of generating one indexed page. */
+export interface WikiGenerateResult {
+    slug: string;
+    path: string;
+}
 
 export interface WikiPage {
     slug: string;

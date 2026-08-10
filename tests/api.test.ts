@@ -1841,6 +1841,71 @@ describe("wikiUpdate()", () => {
     });
 });
 
+describe("wikiStubs()", () => {
+    it("GETs /api/wiki/stubs and returns the unwritten subjects", async () => {
+        const data = [
+            { slug: "titan", label: "Titan", kind: "entity", type_hint: "LOC", mentions: 4, sources: ["a.txt"] },
+        ];
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.wikiStubs();
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/stubs`,
+            expect.not.objectContaining({ method: "POST" }),
+        );
+        expect(result).toEqual(data);
+    });
+
+    it("returns an empty list against a server too old to serve the route", async () => {
+        // The route shipped after the plugin did. A 404 means "no stubs to
+        // offer", not "the wiki is broken", so the browse list still renders.
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 404,
+            headers: { get: () => null },
+            text: () => Promise.resolve("not found"),
+        } as unknown as Response);
+
+        await expect(client.wikiStubs()).resolves.toEqual([]);
+    });
+
+    it("still throws on a real failure", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 500,
+            headers: { get: () => null },
+            text: () => Promise.resolve("boom"),
+        } as unknown as Response);
+
+        await expect(client.wikiStubs()).rejects.toThrow(/500/);
+    });
+});
+
+describe("wikiGenerate()", () => {
+    it("POSTs the slug and returns where the page landed", async () => {
+        const data = { slug: "entities/titan", path: "/w/entities/titan.md" };
+        fetchMock.mockResolvedValue(jsonResponse(data));
+
+        const result = await client.wikiGenerate("titan");
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/generate/titan`,
+            expect.objectContaining({ method: "POST" }),
+        );
+        expect(result).toEqual(data);
+    });
+
+    it("encodes a slug with a slash in it", async () => {
+        fetchMock.mockResolvedValue(jsonResponse({ slug: "a/b", path: "" }));
+        await client.wikiGenerate("concepts/gas giant");
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/generate/concepts%2Fgas%20giant`,
+            expect.objectContaining({ method: "POST" }),
+        );
+    });
+});
+
 describe("wikiDrafts()", () => {
     it("calls GET /api/wiki/drafts and returns parsed DraftInfoResponse list", async () => {
         const data = [

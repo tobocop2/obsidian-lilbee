@@ -297,6 +297,11 @@
         "streams": false
       }
     },
+    "/api/wiki/stubs": {
+      "GET": {
+        "streams": false
+      }
+    },
     "/api/wiki/synthesize": {
       "POST": {
         "streams": true

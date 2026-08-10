@@ -54,6 +54,8 @@ import type {
     WikiCitationChain,
     WikiPage,
     WikiPageDetail,
+    WikiGenerateResult,
+    WikiStub,
     WikiPruneResult,
 } from "./types";
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -816,6 +818,34 @@ export class LilbeeClient {
     async wikiList(): Promise<WikiPage[]> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki`, { headers: this.authHeaders() });
         return (await res.json()) as WikiPage[];
+    }
+
+    /**
+     * The subjects the corpus names that have no page yet.
+     *
+     * Returns `[]` on 404 rather than throwing: the route arrived after the
+     * plugin shipped, so an older server simply has no stubs to offer and the
+     * browse list should render its written pages as before instead of failing.
+     */
+    async wikiStubs(): Promise<WikiStub[]> {
+        try {
+            const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/stubs`, {
+                headers: this.authHeaders(),
+            });
+            return (await res.json()) as WikiStub[];
+        } catch (e) {
+            if (e instanceof Error && isHttpStatus(e, 404)) return [];
+            throw e;
+        }
+    }
+
+    /** Write one indexed page. Costs a single LLM call and is GPU-heavy. */
+    async wikiGenerate(slug: string): Promise<WikiGenerateResult> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/generate/${encodeURIComponent(slug)}`, {
+            method: "POST",
+            headers: this.authHeaders(),
+        });
+        return (await res.json()) as WikiGenerateResult;
     }
 
     async wikiPage(slug: string): Promise<WikiPageDetail> {
