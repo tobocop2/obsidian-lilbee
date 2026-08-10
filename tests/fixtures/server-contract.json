@@ -312,56 +312,6 @@
         "streams": false
       }
     },
-    "/schema": {
-      "GET": {
-        "streams": false
-      }
-    },
-    "/schema/elements": {
-      "GET": {
-        "streams": false
-      }
-    },
-    "/schema/oauth2-redirect.html": {
-      "GET": {
-        "streams": false
-      }
-    },
-    "/schema/openapi.json": {
-      "GET": {
-        "streams": false
-      }
-    },
-    "/schema/openapi.yaml": {
-      "GET": {
-        "streams": false
-      }
-    },
-    "/schema/openapi.yml": {
-      "GET": {
-        "streams": false
-      }
-    },
-    "/schema/rapidoc": {
-      "GET": {
-        "streams": false
-      }
-    },
-    "/schema/redoc": {
-      "GET": {
-        "streams": false
-      }
-    },
-    "/schema/swagger": {
-      "GET": {
-        "streams": false
-      }
-    },
-    "/schema/{path:str}": {
-      "GET": {
-        "streams": false
-      }
-    },
     "/setup/crawler": {
       "POST": {
         "streams": true

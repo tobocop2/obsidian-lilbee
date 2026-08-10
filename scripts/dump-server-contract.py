@@ -51,6 +51,12 @@ def _streams(handler) -> bool:
 app = create_app()
 ops = {}
 for route in app.routes:
+    # Litestar mounts its own OpenAPI documentation UI under /schema. Those are
+    # real routes but not part of the API any client calls, and they are absent
+    # from the OpenAPI document itself, so they would show up as fixture-only
+    # paths on every comparison.
+    if route.path == "/schema" or route.path.startswith("/schema/"):
+        continue
     for method, entry in getattr(route, "route_handler_map", {}).items():
         if method in ("OPTIONS", "HEAD"):
             continue
