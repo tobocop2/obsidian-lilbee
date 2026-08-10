@@ -186,7 +186,11 @@ export async function preflight(opts: PreflightOptions): Promise<void> {
       const url = p.api?.baseUrl;
       if (url) {
         try {
-          const r = await fetch(url + "/api/health");
+          // The token is required. Every route is authenticated, /api/health
+          // included, so an unauthenticated probe comes back 401 and reads as
+          // "server never became ready" against a server that is perfectly fine.
+          const auth = { Authorization: "Bearer " + (p.api?.token ?? p.settings.manualToken ?? "") };
+          const r = await fetch(url + "/api/health", { headers: auth });
           if (r.ok) {
             const j = await r.json();
             return { ok: true, status: j, url };
