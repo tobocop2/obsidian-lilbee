@@ -13,7 +13,7 @@
  * tall strip.
  */
 import { spawn } from "node:child_process";
-import { mkdirSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 async function ffprobeDuration(webmPath: string): Promise<number> {
@@ -62,10 +62,23 @@ export async function buildReview(webmPath: string, outDir: string, name: string
   }
 
   const contactPath = join(outDir, `${name}.contact.png`);
+  let montaged = false;
   if (await which("montage")) {
     const frames = readdirSync(contactDir).filter((f) => f.endsWith(".png")).sort().map((f) => join(contactDir, f));
-    await runCmd("montage", [...frames, "-tile", "4x2", "-geometry", "+8+8", "-background", "#1a1a1a", contactPath]);
-  } else {
+    try {
+      await runCmd("montage", [...frames, "-tile", "4x2", "-geometry", "+8+8", "-background", "#1a1a1a", contactPath]);
+      montaged = true;
+    } catch {
+      // ImageMagick 7 with no configured default font exits 1 on
+      // "unable to read font ''" after writing a perfectly good sheet. Losing
+      // both review artifacts to a cosmetic font warning defeats the point of
+      // having them, so a written file counts as success and anything else
+      // falls through to the ffmpeg path below.
+      montaged = existsSync(contactPath) && statSync(contactPath).size > 0;
+      if (!montaged) console.warn("review: montage failed, falling back to ffmpeg stack");
+    }
+  }
+  if (!montaged) {
     // Fallback: ffmpeg hstack to a tall vertical strip
     const frames = readdirSync(contactDir).filter((f) => f.endsWith(".png")).sort();
     if (frames.length) {

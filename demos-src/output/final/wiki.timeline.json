@@ -1,0 +1,113 @@
+{
+  "name": "wiki",
+  "layout": "wiki-and-tasks",
+  "window": {
+    "x": 0,
+    "y": 38,
+    "w": 1728,
+    "h": 1079
+  },
+  "leadInMs": 500,
+  "tailMs": 1500,
+  "ffmpegStartupGapMs": 0,
+  "totalRecordedMs": 180956,
+  "beats": [
+    {
+      "index": 0,
+      "label": "Open the wiki",
+      "kind": "executeCommand",
+      "startedAt": 502,
+      "endedAt": 1857,
+      "cursor": null,
+      "caption": "Every subject the corpus names, written up and cross-linked."
+    },
+    {
+      "index": 1,
+      "label": "Let the page list settle",
+      "kind": "waitForSelector",
+      "startedAt": 1857,
+      "endedAt": 3282,
+      "cursor": null
+    },
+    {
+      "index": 2,
+      "label": "Search for a subject",
+      "kind": "clickSelector",
+      "startedAt": 3283,
+      "endedAt": 8324,
+      "cursor": {
+        "x": 549.19921875,
+        "y": 198.4921875,
+        "cursor": "text"
+      }
+    },
+    {
+      "index": 3,
+      "label": "Type the subject",
+      "kind": "type",
+      "startedAt": 8324,
+      "endedAt": 10645,
+      "cursor": null
+    },
+    {
+      "index": 4,
+      "label": "Open the page",
+      "kind": "clickSelector",
+      "startedAt": 10645,
+      "endedAt": 14595,
+      "cursor": {
+        "x": 549.19921875,
+        "y": 291.2734375,
+        "cursor": "pointer"
+      }
+    },
+    {
+      "index": 5,
+      "label": "Read the article",
+      "kind": "waitForSelector",
+      "startedAt": 14595,
+      "endedAt": 18406,
+      "cursor": null,
+      "caption": "Every claim carries a citation back to the sentence it came from."
+    },
+    {
+      "index": 6,
+      "label": "Refresh the wiki",
+      "kind": "executeCommand",
+      "startedAt": 18407,
+      "endedAt": 20075,
+      "cursor": null,
+      "caption": "Refreshing runs the chat model over every source."
+    },
+    {
+      "index": 7,
+      "label": "Follow the run",
+      "kind": "sleep",
+      "startedAt": 20075,
+      "endedAt": 171278,
+      "cursor": null,
+      "speedup": 24,
+      "caption": "It names the source it is on, and stops the moment you ask."
+    },
+    {
+      "index": 8,
+      "label": "Stop it",
+      "kind": "clickSelector",
+      "startedAt": 171278,
+      "endedAt": 177882,
+      "cursor": {
+        "x": 1695,
+        "y": 223.9765625,
+        "cursor": "pointer"
+      }
+    },
+    {
+      "index": 9,
+      "label": "Settle",
+      "kind": "key",
+      "startedAt": 177883,
+      "endedAt": 179329,
+      "cursor": null
+    }
+  ]
+}
