@@ -905,23 +905,6 @@ export class LilbeeClient {
     }
 
     /**
-     * Generate synthesis pages for cross-source concept clusters, streaming
-     * progress. Same event shape as `wikiUpdate`; the `done` event carries a
-     * WikiSynthesizeResult summary.
-     */
-    async *wikiSynthesize(signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
-        const res = await this.fetchWithRetry(
-            `${this.baseUrl}/api/wiki/synthesize`,
-            {
-                method: "POST",
-                headers: this.authHeaders(),
-            },
-            { stream: true, signal },
-        );
-        yield* this.parseSSE(res);
-    }
-
-    /**
      * Fetch the rendered text of a source file (markdown / html / plaintext)
      * as JSON. Used by the preview modal when the file is not in the vault.
      */

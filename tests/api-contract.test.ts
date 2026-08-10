@@ -148,7 +148,6 @@ const INVOCATIONS: Record<string, unknown[]> = {
     wikiLint: [],
     wikiUpdate: [],
     wikiStatus: [],
-    wikiSynthesize: [],
     wikiPrune: [],
     wikiDrafts: [],
     wikiDraftDiff: ["page"],

@@ -1014,15 +1014,6 @@ export interface WikiStatusResult {
     lint_warnings: number;
 }
 
-/**
- * Summary of a synthesis run, delivered as the `done` event of the
- * `POST /api/wiki/synthesize` stream.
- */
-export interface WikiSynthesizeResult {
-    paths: string[];
-    count: number;
-}
-
 /** Obsidian's DataAdapter has these methods but the type declarations are incomplete. */
 export interface VaultAdapter {
     getBasePath(): string;

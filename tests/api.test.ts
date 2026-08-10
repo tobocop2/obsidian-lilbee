@@ -1907,35 +1907,6 @@ describe("wikiStatus()", () => {
     });
 });
 
-describe("wikiSynthesize()", () => {
-    it("POSTs to /api/wiki/synthesize and yields the run's progress events", async () => {
-        fetchMock.mockResolvedValue(
-            sseResponse([
-                'event: wiki_page\ndata: {"label":"typing","pages":1,"current":1,"total":1}\n\n',
-                'event: done\ndata: {"paths":["wiki/synthesis/typing.md"],"count":1}\n\n',
-            ]),
-        );
-
-        const events = await collect(client.wikiSynthesize());
-
-        expect(fetchMock).toHaveBeenCalledWith(
-            `${BASE_URL}/api/wiki/synthesize`,
-            expect.objectContaining({ method: "POST" }),
-        );
-        expect(events.map((e) => e.event)).toEqual(["wiki_page", "done"]);
-        expect(events[1].data).toEqual({ paths: ["wiki/synthesis/typing.md"], count: 1 });
-    });
-
-    it("yields only the done event when no clusters meet the threshold", async () => {
-        fetchMock.mockResolvedValue(sseResponse(['event: done\ndata: {"paths":[],"count":0}\n\n']));
-
-        const events = await collect(client.wikiSynthesize());
-
-        expect(events).toHaveLength(1);
-        expect(events[0].data).toEqual({ paths: [], count: 0 });
-    });
-});
-
 describe("wikiDrafts()", () => {
     it("calls GET /api/wiki/drafts and returns parsed DraftInfoResponse list", async () => {
         const data = [

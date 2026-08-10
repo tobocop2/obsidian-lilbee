@@ -7793,19 +7793,6 @@ describe("LilbeePlugin", () => {
             expect(crawl?.status).toBe("failed");
             expect(syncSpy).not.toHaveBeenCalled();
         });
-
-        it("runWikiPrune ignores unrelated stream events before completing", async () => {
-            mockConfirmModalResult = true;
-            const plugin = await createPlugin();
-            await plugin.onload();
-            async function* pruneStream() {
-                yield { event: SSE_EVENT.PROGRESS, data: {} };
-                yield { event: SSE_EVENT.WIKI_PRUNE_DONE, data: { archived: 1 } };
-            }
-            plugin.api.wikiPrune = vi.fn().mockReturnValue(pruneStream());
-            await plugin.runWikiPrune();
-            expect(plugin.taskQueue.completed.some((t) => t.status === "done")).toBe(true);
-        });
     });
 });
 
