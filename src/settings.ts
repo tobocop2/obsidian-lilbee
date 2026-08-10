@@ -2252,7 +2252,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         this.plugin.settings.wikiFaithfulnessThreshold = value;
                         await this.plugin.saveSettings();
                         try {
-                            await this.plugin.api.updateConfig({ wiki_faithfulness_threshold: value });
+                            await this.plugin.api.updateConfig({ wiki_embedding_faithfulness_threshold: value });
                             new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WIKI_FAITHFULNESS));
                         } catch {
                             new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_WIKI_FAITHFULNESS));
@@ -2261,7 +2261,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
         this.appendDualResetAffordance(
             faithSetting,
-            "wiki_faithfulness_threshold",
+            "wiki_embedding_faithfulness_threshold",
             "wikiFaithfulnessThreshold",
             MESSAGES.LABEL_WIKI_FAITHFULNESS,
         );

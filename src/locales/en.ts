@@ -891,6 +891,16 @@ export const MESSAGES = {
     COMMAND_WIKI_LINT: "Run wiki lint",
     COMMAND_WIKI_UPDATE: "Update wiki",
     TASK_WIKI_UPDATE: "Update wiki",
+    TASK_WIKI_PAGE: (label: string, current: number, total: number) =>
+        total > 0 ? `${label} (${current} of ${total})` : label,
+    TASK_WIKI_PHASE: (phase: string) => {
+        const phases: Record<string, string> = {
+            extract: "Finding entities",
+            generate: "Writing pages",
+            index: "Building the index",
+        };
+        return phases[phase] ?? phase;
+    },
 
     WIZARD_INTRO_DESC: "lilbee turns your Obsidian vault into a searchable knowledge base powered by AI.",
     WIZARD_INTRO_STEPS: "This wizard will help you:",

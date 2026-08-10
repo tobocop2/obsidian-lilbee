@@ -712,7 +712,8 @@ export const SSE_EVENT = {
     CRAWL_PAGE: "crawl_page",
     CRAWL_DONE: "crawl_done",
     CRAWL_ERROR: "crawl_error",
-    WIKI_PRUNE_DONE: "wiki_prune_done",
+    WIKI_PHASE: "wiki_phase",
+    WIKI_PAGE: "wiki_page",
     SETUP_START: "setup_start",
     SETUP_PROGRESS: "setup_progress",
     SETUP_DONE: "setup_done",
@@ -721,6 +722,27 @@ export const SSE_EVENT = {
     MEMORY_EXTRACTED: "memory_extracted",
     GPU_STATS: "gpu_stats",
 } as const;
+
+/** Stage of a wiki build or synthesis run. */
+export type WikiPhase = "extract" | "generate" | "index";
+
+/**
+ * `wiki_phase` event: the run entered a new stage. `total` is the number of
+ * units the phase will process (sources for a build, clusters for synthesis),
+ * and 0 where the phase has no unit count.
+ */
+export interface WikiPhasePayload {
+    phase: WikiPhase;
+    total: number;
+}
+
+/** `wiki_page` event: one source (build) or cluster (synthesis) was written. */
+export interface WikiPagePayload {
+    label: string;
+    pages: number;
+    current: number;
+    total: number;
+}
 
 export interface SetupStartPayload {
     component: string;
@@ -949,18 +971,37 @@ export interface LintIssue {
     detail: string;
 }
 
+/** Result of a wiki lint run, whole-wiki or single-page. */
 export interface LintResult {
-    task_id: string;
-    status: "running" | "done" | "failed";
     issues: LintIssue[];
-    checked_at: string | null;
+    total: number;
+    errors: number;
+    warnings: number;
 }
 
-/** Result of a full wiki build/update. Mirrors `WikiBuildResult` on the server. */
+/**
+ * Summary of a wiki build/update, delivered as the `done` event of the
+ * `PATCH /api/wiki/update` stream.
+ */
 export interface WikiBuildResult {
     paths: string[];
     entities: number;
     count: number;
+}
+
+/** A single action taken by a prune run. */
+export interface WikiPruneRecord {
+    wiki_source: string;
+    action: string;
+    reason: string;
+}
+
+/** Result of pruning stale and orphaned wiki pages. */
+export interface WikiPruneResult {
+    records: WikiPruneRecord[];
+    archived: number;
+    flagged: number;
+    reconciled: number;
 }
 
 /** Wiki layer status: page counts and recent lint counters. */
@@ -973,7 +1014,10 @@ export interface WikiStatusResult {
     lint_warnings: number;
 }
 
-/** Result of generating synthesis pages for cross-source clusters. */
+/**
+ * Summary of a synthesis run, delivered as the `done` event of the
+ * `POST /api/wiki/synthesize` stream.
+ */
 export interface WikiSynthesizeResult {
     paths: string[];
     count: number;

@@ -53,12 +53,11 @@ import type {
     DraftAcceptResponse,
     DraftInfoResponse,
     DraftRejectResponse,
-    WikiBuildResult,
     WikiCitationChain,
     WikiPage,
     WikiPageDetail,
+    WikiPruneResult,
     WikiStatusResult,
-    WikiSynthesizeResult,
 } from "./types";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const RETRY_COUNT = 2;
@@ -877,12 +876,25 @@ export class LilbeeClient {
         return (await res.json()) as LintResult;
     }
 
-    async wikiUpdate(): Promise<WikiBuildResult> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/update`, {
-            method: "PATCH",
-            headers: this.authHeaders(),
-        });
-        return (await res.json()) as WikiBuildResult;
+    /**
+     * Refresh the wiki across every ingested source, streaming progress.
+     *
+     * A build issues per-source LLM calls and embeddings and can run for a long
+     * time, so the server streams `wiki_phase` / `wiki_page` events and closes
+     * with a `done` event carrying a {@link WikiBuildResult}. Aborting the
+     * signal stops the run at the next source boundary and releases the
+     * server's build mutex.
+     */
+    async *wikiUpdate(signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/wiki/update`,
+            {
+                method: "PATCH",
+                headers: this.authHeaders(),
+            },
+            { stream: true, signal },
+        );
+        yield* this.parseSSE(res);
     }
 
     async wikiStatus(): Promise<WikiStatusResult> {
@@ -892,12 +904,21 @@ export class LilbeeClient {
         return (await res.json()) as WikiStatusResult;
     }
 
-    async wikiSynthesize(): Promise<WikiSynthesizeResult> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/synthesize`, {
-            method: "POST",
-            headers: this.authHeaders(),
-        });
-        return (await res.json()) as WikiSynthesizeResult;
+    /**
+     * Generate synthesis pages for cross-source concept clusters, streaming
+     * progress. Same event shape as `wikiUpdate`; the `done` event carries a
+     * WikiSynthesizeResult summary.
+     */
+    async *wikiSynthesize(signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/wiki/synthesize`,
+            {
+                method: "POST",
+                headers: this.authHeaders(),
+            },
+            { stream: true, signal },
+        );
+        yield* this.parseSSE(res);
     }
 
     /**
@@ -952,16 +973,17 @@ export class LilbeeClient {
         return (await res.json()) as DraftRejectResponse;
     }
 
-    async *wikiPrune(signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
-        const res = await this.fetchWithRetry(
-            `${this.baseUrl}/api/wiki/prune`,
-            {
-                method: "POST",
-                headers: this.authHeaders(),
-            },
-            { stream: true, signal },
-        );
-        yield* this.parseSSE(res);
+    /**
+     * Prune stale and orphaned wiki pages. The server walks the tree and the
+     * store off its event loop and answers once with the whole report, so this
+     * is a single request rather than a progress stream.
+     */
+    async wikiPrune(): Promise<WikiPruneResult> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/prune`, {
+            method: "POST",
+            headers: this.authHeaders(),
+        });
+        return (await res.json()) as WikiPruneResult;
     }
 
     private async *parseSSE(response: Response): AsyncGenerator<SSEEvent, void> {

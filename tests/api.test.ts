@@ -1838,17 +1838,35 @@ describe("wikiLint()", () => {
 });
 
 describe("wikiUpdate()", () => {
-    it("PATCHes /api/wiki/update and returns the build summary", async () => {
-        const data = { paths: [], entities: 0, count: 0 };
-        fetchMock.mockResolvedValue(jsonResponse(data));
+    it("PATCHes /api/wiki/update and yields the run's progress events", async () => {
+        fetchMock.mockResolvedValue(
+            sseResponse([
+                'event: wiki_phase\ndata: {"phase":"extract","total":0}\n\n',
+                'event: wiki_page\ndata: {"label":"notes.md","pages":2,"current":1,"total":3}\n\n',
+                'event: done\ndata: {"paths":["a.md"],"entities":4,"count":1}\n\n',
+            ]),
+        );
 
-        const result = await client.wikiUpdate();
+        const events = await collect(client.wikiUpdate());
 
         expect(fetchMock).toHaveBeenCalledWith(
             `${BASE_URL}/api/wiki/update`,
             expect.objectContaining({ method: "PATCH" }),
         );
-        expect(result).toEqual(data);
+        expect(events.map((e) => e.event)).toEqual(["wiki_phase", "wiki_page", "done"]);
+        expect(events[2].data).toEqual({ paths: ["a.md"], entities: 4, count: 1 });
+    });
+
+    it("passes the abort signal so a cancelled run releases the server's build mutex", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+        const controller = new AbortController();
+
+        await collect(client.wikiUpdate(controller.signal));
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/update`,
+            expect.objectContaining({ method: "PATCH" }),
+        );
     });
 });
 
@@ -1890,24 +1908,31 @@ describe("wikiStatus()", () => {
 });
 
 describe("wikiSynthesize()", () => {
-    it("POSTs to /api/wiki/synthesize and returns the synthesis summary", async () => {
-        const data = { paths: ["wiki/synthesis/typing.md"], count: 1 };
-        fetchMock.mockResolvedValue(jsonResponse(data));
+    it("POSTs to /api/wiki/synthesize and yields the run's progress events", async () => {
+        fetchMock.mockResolvedValue(
+            sseResponse([
+                'event: wiki_page\ndata: {"label":"typing","pages":1,"current":1,"total":1}\n\n',
+                'event: done\ndata: {"paths":["wiki/synthesis/typing.md"],"count":1}\n\n',
+            ]),
+        );
 
-        const result = await client.wikiSynthesize();
+        const events = await collect(client.wikiSynthesize());
 
         expect(fetchMock).toHaveBeenCalledWith(
             `${BASE_URL}/api/wiki/synthesize`,
             expect.objectContaining({ method: "POST" }),
         );
-        expect(result).toEqual(data);
+        expect(events.map((e) => e.event)).toEqual(["wiki_page", "done"]);
+        expect(events[1].data).toEqual({ paths: ["wiki/synthesis/typing.md"], count: 1 });
     });
 
-    it("returns the empty-cluster shape when no clusters meet the threshold", async () => {
-        fetchMock.mockResolvedValue(jsonResponse({ paths: [], count: 0 }));
-        const result = await client.wikiSynthesize();
-        expect(result.count).toBe(0);
-        expect(result.paths).toEqual([]);
+    it("yields only the done event when no clusters meet the threshold", async () => {
+        fetchMock.mockResolvedValue(sseResponse(['event: done\ndata: {"paths":[],"count":0}\n\n']));
+
+        const events = await collect(client.wikiSynthesize());
+
+        expect(events).toHaveLength(1);
+        expect(events[0].data).toEqual({ paths: [], count: 0 });
     });
 });
 
@@ -2022,17 +2047,22 @@ describe("wikiDraftReject()", () => {
 });
 
 describe("wikiPrune()", () => {
-    it("POSTs to /api/wiki/prune and yields SSE events", async () => {
-        fetchMock.mockResolvedValue(sseResponse(['event: wiki_prune_done\ndata: {"archived":3}\n\n']));
+    it("POSTs to /api/wiki/prune and returns the whole report", async () => {
+        const data = {
+            records: [{ wiki_source: "wiki/a.md", action: "archived", reason: "orphaned" }],
+            archived: 3,
+            flagged: 1,
+            reconciled: 2,
+        };
+        fetchMock.mockResolvedValue(jsonResponse(data));
 
-        const events = await collect(client.wikiPrune());
+        const result = await client.wikiPrune();
 
         expect(fetchMock).toHaveBeenCalledWith(
             `${BASE_URL}/api/wiki/prune`,
             expect.objectContaining({ method: "POST" }),
         );
-        expect(events).toHaveLength(1);
-        expect(events[0].event).toBe("wiki_prune_done");
+        expect(result).toEqual(data);
     });
 });
 

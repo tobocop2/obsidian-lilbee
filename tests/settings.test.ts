@@ -3805,7 +3805,8 @@ describe("managed mode settings", () => {
                 await extraButtonOnClicks[i]();
             }
             const wikiCalls = (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mock.calls.filter(
-                (c) => "wiki_prune_raw" in (c[0] as object) || "wiki_faithfulness_threshold" in (c[0] as object),
+                (c) =>
+                    "wiki_prune_raw" in (c[0] as object) || "wiki_embedding_faithfulness_threshold" in (c[0] as object),
             );
             expect(wikiCalls).toEqual([]);
         });
@@ -4458,7 +4459,9 @@ describe("managed mode settings", () => {
             await sliderOnChanges[faithfulnessIdx](0.85);
             expect(plugin.settings.wikiFaithfulnessThreshold).toBe(0.85);
             expect(plugin.saveSettings).toHaveBeenCalled();
-            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ wiki_faithfulness_threshold: 0.85 });
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({
+                wiki_embedding_faithfulness_threshold: 0.85,
+            });
         });
 
         it("search mode dropdown updates settings", async () => {
