@@ -128,35 +128,6 @@ describe("search()", () => {
     });
 });
 
-describe("chat()", () => {
-    it("POSTs to /api/chat with question, history, and top_k", async () => {
-        const history: Message[] = [{ role: "user", content: "hi" }];
-        const data = { answer: "hello", sources: [] };
-        fetchMock.mockResolvedValue(jsonResponse(data));
-
-        const result = await client.chat("follow-up", history, 5);
-
-        expect(fetchMock).toHaveBeenCalledWith(
-            `${BASE_URL}/api/chat`,
-            expect.objectContaining({
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ question: "follow-up", history, top_k: 5 }),
-            }),
-        );
-        expect(result).toEqual(data);
-    });
-
-    it("omits top_k when not provided so the server uses its configured default", async () => {
-        fetchMock.mockResolvedValue(jsonResponse({ answer: "", sources: [] }));
-
-        await client.chat("q", []);
-
-        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-        expect("top_k" in body).toBe(false);
-    });
-});
-
 describe("session methods", () => {
     const meta = {
         id: "s1",
@@ -1657,7 +1628,7 @@ describe("fetchWithRetry() — token provider + 401/403 retry", () => {
             } as unknown as Response)
             .mockResolvedValueOnce(jsonResponse({ ok: true }));
         // Use chat() since it sends Authorization header
-        await c.chat("hi", []);
+        await c.listModels();
         const headers = (fetchMock.mock.calls[1][1] as RequestInit).headers as Record<string, string>;
         expect(headers.Authorization).toBe("Bearer fresh");
     });
@@ -1867,43 +1838,6 @@ describe("wikiUpdate()", () => {
             `${BASE_URL}/api/wiki/update`,
             expect.objectContaining({ method: "PATCH" }),
         );
-    });
-});
-
-describe("wikiStatus()", () => {
-    it("GETs /api/wiki/status and returns the status snapshot", async () => {
-        const data = {
-            wiki_enabled: true,
-            summaries: 4,
-            drafts: 2,
-            pages: 6,
-            lint_errors: 0,
-            lint_warnings: 1,
-        };
-        fetchMock.mockResolvedValue(jsonResponse(data));
-
-        const result = await client.wikiStatus();
-
-        expect(fetchMock).toHaveBeenCalledWith(
-            `${BASE_URL}/api/wiki/status`,
-            expect.not.objectContaining({ method: "POST" }),
-        );
-        expect(result).toEqual(data);
-    });
-
-    it("returns the disabled-wiki shape when wiki is off on the server", async () => {
-        const data = {
-            wiki_enabled: false,
-            summaries: 0,
-            drafts: 0,
-            pages: 0,
-            lint_errors: 0,
-            lint_warnings: 0,
-        };
-        fetchMock.mockResolvedValue(jsonResponse(data));
-        const result = await client.wikiStatus();
-        expect(result.wiki_enabled).toBe(false);
-        expect(result.pages).toBe(0);
     });
 });
 
@@ -2437,7 +2371,7 @@ describe("RateLimitedError", () => {
 
     it("is thrown when the server responds 429 with a numeric Retry-After header", async () => {
         fetchMock.mockResolvedValue(rateLimitedResponse("7"));
-        await expect(client.chat("hi", [] as Message[])).rejects.toMatchObject({
+        await expect(client.listModels()).rejects.toMatchObject({
             name: "RateLimitedError",
             retryAfterSeconds: 7,
         });
@@ -2445,7 +2379,7 @@ describe("RateLimitedError", () => {
 
     it("leaves retryAfterSeconds null when the Retry-After header is absent", async () => {
         fetchMock.mockResolvedValue(rateLimitedResponse(null));
-        await expect(client.chat("hi", [] as Message[])).rejects.toMatchObject({
+        await expect(client.listModels()).rejects.toMatchObject({
             name: "RateLimitedError",
             retryAfterSeconds: null,
         });
@@ -2453,7 +2387,7 @@ describe("RateLimitedError", () => {
 
     it("leaves retryAfterSeconds null when the Retry-After header is non-numeric", async () => {
         fetchMock.mockResolvedValue(rateLimitedResponse("not-a-number"));
-        await expect(client.chat("hi", [] as Message[])).rejects.toMatchObject({
+        await expect(client.listModels()).rejects.toMatchObject({
             name: "RateLimitedError",
             retryAfterSeconds: null,
         });
@@ -2461,7 +2395,7 @@ describe("RateLimitedError", () => {
 
     it("does not retry on 429 — single fetch attempt before propagating", async () => {
         fetchMock.mockResolvedValue(rateLimitedResponse("3"));
-        await expect(client.chat("hi", [] as Message[])).rejects.toBeInstanceOf(RateLimitedError);
+        await expect(client.listModels()).rejects.toBeInstanceOf(RateLimitedError);
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
@@ -2478,47 +2412,6 @@ const PLACEMENT: PlacementResponse = {
     manual: false,
     spec_json: null,
 };
-
-describe("gpus()", () => {
-    it("GETs /api/gpus and returns the envelope with detected GPUs", async () => {
-        const envelope = { gpus: PLACEMENT.gpus, notice: null };
-        fetchMock.mockResolvedValue(jsonResponse(envelope));
-        const result = await client.gpus();
-        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/gpus`, expect.objectContaining({}));
-        expect(result._unsafeUnwrap()).toEqual(envelope);
-    });
-
-    it("wraps a pre-PR-564 bare list in the envelope for backward compat", async () => {
-        fetchMock.mockResolvedValue(jsonResponse(PLACEMENT.gpus));
-        const result = await client.gpus();
-        expect(result._unsafeUnwrap()).toEqual({ gpus: PLACEMENT.gpus, notice: null });
-    });
-
-    it("returns the server-issued Intel util notice when present", async () => {
-        const notice = "install igt-gpu-tools and grant CAP_PERFMON to lilbee";
-        fetchMock.mockResolvedValue(jsonResponse({ gpus: PLACEMENT.gpus, notice }));
-        const result = await client.gpus();
-        expect(result._unsafeUnwrap().notice).toBe(notice);
-    });
-
-    it("returns an empty gpus array and null notice for an unexpected shape", async () => {
-        fetchMock.mockResolvedValue(jsonResponse({ unexpected: true }));
-        const result = await client.gpus();
-        expect(result._unsafeUnwrap()).toEqual({ gpus: [], notice: null });
-    });
-
-    it("returns err when the server responds non-ok", async () => {
-        fetchMock.mockResolvedValue({
-            ok: false,
-            status: 500,
-            text: () => Promise.resolve("boom"),
-            headers: { get: () => null },
-        } as unknown as Response);
-        const result = await client.gpus();
-        expect(result.isErr()).toBe(true);
-        expect(result._unsafeUnwrapErr().message).toContain("500");
-    });
-});
 
 describe("gpuStatsStream()", () => {
     it("GETs /api/gpus/stream and yields parsed gpu_stats events", async () => {

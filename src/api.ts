@@ -11,7 +11,6 @@ import {
 import { ok, err, Result } from "./result";
 
 import type {
-    AskResponse,
     Capability,
     CatalogResponse,
     ConfigResponse,
@@ -22,7 +21,6 @@ import type {
     DocumentResult,
     DocumentsResponse,
     GenerationOptions,
-    GpuListResponse,
     HealthResponse,
     InstalledResponse,
     PlacementResponse,
@@ -57,7 +55,6 @@ import type {
     WikiPage,
     WikiPageDetail,
     WikiPruneResult,
-    WikiStatusResult,
 } from "./types";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const RETRY_COUNT = 2;
@@ -121,18 +118,6 @@ export class RateLimitedError extends Error {
  */
 export function isHttpStatus(error: Error, status: number): boolean {
     return error.message.startsWith(`Server responded ${status}`);
-}
-
-/** Wraps a pre-PR-564 bare-list `GET /api/gpus` response in the new envelope. */
-function normalizeGpuList(parsed: unknown): GpuListResponse {
-    if (Array.isArray(parsed)) {
-        return { gpus: parsed as GpuListResponse["gpus"], notice: null };
-    }
-    const obj = parsed as Partial<GpuListResponse>;
-    return {
-        gpus: Array.isArray(obj?.gpus) ? (obj.gpus as GpuListResponse["gpus"]) : [],
-        notice: typeof obj?.notice === "string" ? obj.notice : null,
-    };
 }
 
 export class LilbeeClient {
@@ -414,18 +399,6 @@ export class LilbeeClient {
         if (chunkType && chunkType !== SEARCH_CHUNK_TYPE.ALL) params.set("chunk_type", chunkType);
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/search?${params}`);
         return (await res.json()) as DocumentResult[];
-    }
-
-    async chat(question: string, history: Message[], topK?: number): Promise<AskResponse> {
-        // Omitted top_k uses the server's configured default; an explicit 0 disables retrieval.
-        const body: Record<string, unknown> = { question, history };
-        if (topK !== undefined) body.top_k = topK;
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/chat`, {
-            method: "POST",
-            headers: { ...JSON_HEADERS, ...this.authHeaders() },
-            body: JSON.stringify(body),
-        });
-        return (await res.json()) as AskResponse;
     }
 
     async listSessions(): Promise<SessionMeta[]> {
@@ -798,15 +771,6 @@ export class LilbeeClient {
         });
     }
 
-    /** Detected GPUs with current free/total VRAM. Cheaper than placement() for
-     * polling live memory usage (no plan re-resolve of roles). Normalizes the
-     * pre-PR-564 bare-list response to the new envelope shape. */
-    async gpus(): Promise<Result<GpuListResponse, Error>> {
-        const result = await this.fetchResult<unknown>(`${this.baseUrl}/api/gpus`, { headers: this.authHeaders() });
-        if (result.isErr()) return err(result.error);
-        return ok(normalizeGpuList(result.value));
-    }
-
     /** Live per-GPU utilization + free memory, streamed as SSE until aborted. */
     async *gpuStatsStream(signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
         const res = await this.fetchWithRetry(
@@ -895,13 +859,6 @@ export class LilbeeClient {
             { stream: true, signal },
         );
         yield* this.parseSSE(res);
-    }
-
-    async wikiStatus(): Promise<WikiStatusResult> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/status`, {
-            headers: this.authHeaders(),
-        });
-        return (await res.json()) as WikiStatusResult;
     }
 
     /**

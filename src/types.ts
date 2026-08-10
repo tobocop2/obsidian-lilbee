@@ -14,17 +14,6 @@ export interface DocumentResult {
     best_relevance: number;
 }
 
-export interface AskResponse {
-    answer: string;
-    sources: Source[];
-    /**
-     * Subset of `sources` the answer actually cited. Present on lilbee servers
-     * that distinguish grounded answers from off-corpus ones; absent on older
-     * servers, so always optional.
-     */
-    cited_sources?: Source[];
-}
-
 /** `GET /api/health`. `chat_ready`/`chat_ctx` are absent on older servers. */
 export interface HealthResponse {
     status: string;
@@ -1004,16 +993,6 @@ export interface WikiPruneResult {
     reconciled: number;
 }
 
-/** Wiki layer status: page counts and recent lint counters. */
-export interface WikiStatusResult {
-    wiki_enabled: boolean;
-    summaries: number;
-    drafts: number;
-    pages: number;
-    lint_errors: number;
-    lint_warnings: number;
-}
-
 /** Obsidian's DataAdapter has these methods but the type declarations are incomplete. */
 export interface VaultAdapter {
     getBasePath(): string;
@@ -1114,12 +1093,6 @@ export type GpuNotice = string | null;
 export interface GpuStatsPayload {
     gpus: GpuStat[];
     notice?: GpuNotice;
-}
-
-/** Envelope of `GET /api/gpus` since lilbee PR #564; client normalizes old bare-list responses into it. */
-export interface GpuListResponse {
-    gpus: GpuInfo[];
-    notice: GpuNotice;
 }
 
 /** Where one role's model is placed in the resolved plan. Mirrors RolePlacementResponse. */
