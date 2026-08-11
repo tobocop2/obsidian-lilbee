@@ -11,6 +11,9 @@ import {
 import { ok, err, Result } from "./result";
 
 import type {
+    AgentClient,
+    AgentConfigIndexResponse,
+    AgentConfigResponse,
     AskResponse,
     Capability,
     CatalogResponse,
@@ -846,6 +849,20 @@ export class LilbeeClient {
     async clearPlacement(): Promise<Result<PlacementResponse, Error>> {
         return this.fetchResult<PlacementResponse>(`${this.baseUrl}/api/placement`, {
             method: "DELETE",
+            headers: this.authHeaders(),
+        });
+    }
+
+    /** Which agent CLIs the server can see on the machine it runs on. */
+    async getAgentConfigIndex(): Promise<Result<AgentConfigIndexResponse, Error>> {
+        return this.fetchResult<AgentConfigIndexResponse>(`${this.baseUrl}/api/agent-config`, {
+            headers: this.authHeaders(),
+        });
+    }
+
+    /** One client's config document, built against this server's live URL and token. */
+    async getAgentConfig(client: AgentClient): Promise<Result<AgentConfigResponse, Error>> {
+        return this.fetchResult<AgentConfigResponse>(`${this.baseUrl}/api/agent-config/${encodeURIComponent(client)}`, {
             headers: this.authHeaders(),
         });
     }

@@ -7,6 +7,10 @@ import type { ReleaseInfo } from "./binary-manager";
 /** Community IRC channel for dev-build feedback. */
 const LIBERA_LILBEE_URL = "https://web.libera.chat/#lilbee";
 import {
+    AGENT_CLIENT,
+    AGENT_CLIENTS,
+    AGENT_MIN_CONTEXT_TOKENS,
+    AGENT_SELECTION,
     CAPABILITY,
     CHAT_MODE,
     CONFIG_KEY,
@@ -25,6 +29,9 @@ import {
     VERSION_ACTION,
 } from "./types";
 import type {
+    AgentClient,
+    AgentClientDetection,
+    AgentSelection,
     CatalogEntry,
     ConfigResponse,
     InstalledModel,
@@ -34,11 +41,14 @@ import type {
 } from "./types";
 import { exportDiagnostics } from "./diagnostics-export";
 import { reportForVault } from "./storage-stats";
-import { MESSAGES } from "./locales/en";
+import { AGENT_LABELS, AGENT_LINKS, MESSAGES } from "./locales/en";
+import { CLAUDIAN_OUTCOME, CLAUDIAN_PLUGIN_ID, isClaudianInstalled } from "./agent-integration";
+import { PILL_CLS, renderPill } from "./components/pill";
 import { displayLabelForRef, extractHfRepo, matchModelOption } from "./utils/model-ref";
 import { versionActionFor, versionButtonLabel, versionDescription } from "./utils/server-version";
 import { CatalogModal } from "./views/catalog-modal";
-import { hostedOptions } from "./views/catalog-helpers";
+import { hostedOptions, KEY_STATUS_PILL_CLASS } from "./views/catalog-helpers";
+import { ModelPickerModal } from "./views/model-picker-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { ConfirmPullModal } from "./views/confirm-pull-modal";
 import { SetupWizard } from "./views/setup-wizard";
@@ -53,6 +63,9 @@ import {
     noticeForResultError,
     getRelevantSystemMemoryGB,
     noticeServerUnreachableIfApplicable,
+    openPluginSettingsById,
+    relativeTime,
+    renderExternalLink,
     setDeterminateProgress,
 } from "./utils";
 
@@ -119,6 +132,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private wikiContainerEl: HTMLElement | null = null;
     /** Last successful release-list fetch; failures are not cached, so a retry always refetches. */
     private releasesCache: { at: number; releases: ReleaseInfo[] } | null = null;
+    /** Detected agent CLIs; null until the first probe lands or after it fails. */
+    private agentDetections: AgentClientDetection[] | null = null;
+    private agentBodyEl: HTMLElement | null = null;
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app, plugin);
@@ -161,6 +177,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderCrawlingSettings(this.crawlingContainerEl);
         this.wikiContainerEl = containerEl.createDiv();
         this.renderWikiSettings(this.wikiContainerEl);
+        this.renderAgentIntegration(containerEl);
         this.renderDiagnostics(containerEl);
         this.renderAdvancedSettings(containerEl);
         this.renderFleetSettings(containerEl);
@@ -260,6 +277,202 @@ export class LilbeeSettingTab extends PluginSettingTab {
      * server never starts, even if a binary was put back by hand, until an
      * explicit install clears the flag.
      */
+    private renderAgentIntegration(containerEl: HTMLElement): void {
+        const details = containerEl.createEl("details", { cls: "lilbee-agent-details lilbee-settings-section" });
+        details.createEl("summary", { text: MESSAGES.LABEL_AGENT_SECTION });
+        details.createEl("p", { cls: "setting-item-description", text: MESSAGES.DESC_AGENT_SECTION });
+        this.agentBodyEl = details.createDiv({ cls: "lilbee-agent-body" });
+        void this.loadAgentDetections();
+    }
+
+    /** Probe for agent CLIs, reusing the last result unless the user asked to rescan. */
+    private async loadAgentDetections(force = false): Promise<void> {
+        if (this.agentDetections === null || force) {
+            const index = await this.plugin.api.getAgentConfigIndex();
+            this.agentDetections = index.isOk() ? index.value.clients : null;
+        }
+        this.renderAgentBody();
+    }
+
+    private renderAgentBody(): void {
+        const body = this.agentBodyEl;
+        if (!body) return;
+        body.empty();
+        const detections = this.agentDetections;
+        if (detections === null) {
+            body.createEl("p", { cls: "setting-item-description", text: MESSAGES.AGENT_DETECT_UNAVAILABLE });
+            this.addRescanButton(body);
+            return;
+        }
+        if (!detections.some((d) => d.cli_detected)) {
+            this.renderAgentEmptyState(body);
+            return;
+        }
+        this.renderAgentBadges(body, detections);
+        this.renderAgentChoice(body);
+        this.renderAgentKeepFresh(body);
+        const selected = this.plugin.settings.agentIntegration.agent;
+        if (selected === AGENT_SELECTION.NONE) return;
+        this.renderAgentModelRow(body);
+        if (selected === AGENT_CLIENT.OPENCODE) this.renderClaudianRow(body);
+        this.renderAgentStatus(body, selected);
+    }
+
+    private addRescanButton(parent: HTMLElement, setting?: Setting): void {
+        const target = setting ?? new Setting(parent).setName(MESSAGES.BUTTON_AGENT_RESCAN);
+        target.addButton((btn) =>
+            btn.setButtonText(MESSAGES.BUTTON_AGENT_RESCAN).onClick(() => {
+                void this.loadAgentDetections(true);
+            }),
+        );
+    }
+
+    private renderAgentEmptyState(body: HTMLElement): void {
+        const empty = body.createDiv({ cls: "lilbee-agent-empty" });
+        empty.createEl("strong", { text: MESSAGES.AGENT_EMPTY_TITLE });
+        empty.createEl("p", { text: MESSAGES.AGENT_EMPTY_BODY });
+        empty.createEl("code", { text: MESSAGES.AGENT_EMPTY_BREW });
+        const links = empty.createDiv({ cls: "lilbee-agent-links" });
+        for (const link of AGENT_LINKS) {
+            renderExternalLink(links, link.label, link.url);
+        }
+        this.addRescanButton(body);
+    }
+
+    private renderAgentBadges(body: HTMLElement, detections: AgentClientDetection[]): void {
+        const setting = new Setting(body).setName(MESSAGES.LABEL_AGENT_DETECTED).setDesc(MESSAGES.DESC_AGENT_DETECTED);
+        const badges = setting.settingEl.createDiv({ cls: "lilbee-agent-badges" });
+        for (const detection of detections) {
+            const row = badges.createDiv({ cls: "lilbee-agent-badge-row" });
+            row.createSpan({ cls: "lilbee-agent-badge-name", text: AGENT_LABELS[detection.client] });
+            row.createSpan({
+                cls: `lilbee-key-status-pill ${detection.cli_detected ? KEY_STATUS_PILL_CLASS.READY : KEY_STATUS_PILL_CLASS.NEEDS_KEY}`,
+                text: detection.cli_detected ? MESSAGES.PILL_AGENT_DETECTED : MESSAGES.PILL_AGENT_MISSING,
+            });
+        }
+        this.addRescanButton(body, setting);
+    }
+
+    private renderAgentChoice(body: HTMLElement): void {
+        new Setting(body)
+            .setName(MESSAGES.LABEL_AGENT_CHOICE)
+            .setDesc(MESSAGES.DESC_AGENT_CHOICE)
+            .addDropdown((dropdown) => {
+                dropdown.addOption(AGENT_SELECTION.NONE, MESSAGES.AGENT_OPTION_NONE);
+                for (const client of AGENT_CLIENTS) {
+                    dropdown.addOption(client, AGENT_LABELS[client]);
+                }
+                dropdown.setValue(this.plugin.settings.agentIntegration.agent);
+                dropdown.onChange(async (value) => {
+                    const agent = value as AgentSelection;
+                    this.plugin.settings.agentIntegration.agent = agent;
+                    this.plugin.settings.agentIntegration.pickerShown = true;
+                    await this.plugin.persistAgentIntegration();
+                    if (agent !== AGENT_SELECTION.NONE) await this.plugin.applyAgentWiring(agent);
+                    this.renderAgentBody();
+                });
+            });
+    }
+
+    private renderAgentKeepFresh(body: HTMLElement): void {
+        new Setting(body)
+            .setName(MESSAGES.LABEL_AGENT_KEEP_FRESH)
+            .setDesc(MESSAGES.DESC_AGENT_KEEP_FRESH)
+            .addToggle((toggle) => {
+                toggle.setValue(this.plugin.settings.agentIntegration.keepConfigFresh);
+                toggle.onChange(async (value) => {
+                    this.plugin.settings.agentIntegration.keepConfigFresh = value;
+                    await this.plugin.persistAgentIntegration();
+                });
+            });
+    }
+
+    /** The agent runs on lilbee's chat model, so this row drives the same selection. */
+    private renderAgentModelRow(body: HTMLElement): void {
+        const setting = new Setting(body)
+            .setName(MESSAGES.LABEL_AGENT_MODEL)
+            .setDesc(displayLabelForRef(this.plugin.activeModel) || MESSAGES.LABEL_NOT_SET)
+            .addButton((btn) =>
+                btn.setButtonText(MESSAGES.BUTTON_AGENT_CHANGE_MODEL).onClick(() => {
+                    new ModelPickerModal(this.app, this.plugin, MODEL_TASK.CHAT).open();
+                }),
+            );
+        const context = setting.settingEl.createDiv({ cls: "lilbee-agent-context" });
+        void this.renderAgentContext(context);
+    }
+
+    private async renderAgentContext(container: HTMLElement): Promise<void> {
+        const health = await this.plugin.api.health();
+        const ctx = health.isOk() ? health.value.chat_ctx : null;
+        if (typeof ctx !== "number") {
+            container.createSpan({ cls: "lilbee-agent-context-note", text: MESSAGES.AGENT_CONTEXT_UNKNOWN });
+            return;
+        }
+        renderPill(container, MESSAGES.AGENT_CONTEXT_BADGE(ctx), PILL_CLS.CONTEXT);
+        if (ctx < AGENT_MIN_CONTEXT_TOKENS) {
+            container.createDiv({ cls: "lilbee-agent-context-warning", text: MESSAGES.AGENT_CONTEXT_WARNING });
+        }
+    }
+
+    private renderClaudianRow(body: HTMLElement): void {
+        const setting = new Setting(body).setName(MESSAGES.LABEL_AGENT_CLAUDIAN);
+        if (!isClaudianInstalled(this.app)) {
+            setting.setDesc(MESSAGES.DESC_AGENT_CLAUDIAN_MISSING);
+            return;
+        }
+        const skipped = this.plugin.lastAgentWrite?.claudian === CLAUDIAN_OUTCOME.SKIPPED;
+        setting.setDesc(skipped ? MESSAGES.DESC_AGENT_CLAUDIAN_SKIPPED : MESSAGES.DESC_AGENT_CLAUDIAN_CONFIGURED);
+        if (!skipped) {
+            setting.settingEl.createSpan({
+                cls: `lilbee-key-status-pill ${KEY_STATUS_PILL_CLASS.READY}`,
+                text: MESSAGES.PILL_AGENT_CLAUDIAN_CONFIGURED,
+            });
+        }
+        setting.addButton((btn) =>
+            btn.setButtonText(MESSAGES.BUTTON_OPEN_CLAUDIAN).onClick(() => {
+                openPluginSettingsById(this.app, CLAUDIAN_PLUGIN_ID);
+            }),
+        );
+    }
+
+    private renderAgentStatus(body: HTMLElement, agent: AgentClient): void {
+        body.createDiv({ cls: "lilbee-agent-status setting-item-description", text: this.agentStatusText(agent) });
+        if (agent === AGENT_CLIENT.HERMES) this.renderHermesConfigBlock(body);
+    }
+
+    private agentStatusText(agent: AgentClient): string {
+        if (agent === AGENT_CLIENT.HERMES) return MESSAGES.AGENT_STATUS_GLOBAL;
+        const written = this.plugin.lastAgentWrite;
+        if (written === null) return MESSAGES.AGENT_STATUS_PENDING;
+        return MESSAGES.AGENT_STATUS_WRITTEN(relativeTime(written.writtenAt), this.agentServerPort());
+    }
+
+    /** hermes keeps one global config, so lilbee offers the block rather than writing it. */
+    private renderHermesConfigBlock(body: HTMLElement): void {
+        const setting = new Setting(body).setName(MESSAGES.LABEL_AGENT_COPY_CONFIG);
+        const block = body.createEl("pre", { cls: "lilbee-agent-config-block" });
+        void this.plugin.api.getAgentConfig(AGENT_CLIENT.HERMES).then((result) => {
+            const content = result.isOk() ? (result.value.content ?? "") : "";
+            block.setText(content);
+            setting.addButton((btn) =>
+                btn.setButtonText(MESSAGES.BUTTON_AGENT_COPY).onClick(() => {
+                    void navigator.clipboard.writeText(content);
+                    new Notice(MESSAGES.NOTICE_AGENT_COPIED);
+                }),
+            );
+        });
+    }
+
+    /** The port the agent config points at; managed mode picks a random one each boot. */
+    private agentServerPort(): string {
+        const url = this.plugin.serverManager?.serverUrl ?? this.plugin.settings.serverUrl;
+        try {
+            return new URL(url).port;
+        } catch {
+            return "";
+        }
+    }
+
     private hasManagedServer(): boolean {
         return this.plugin.isServerInstalled() && !this.plugin.isServerUninstalled();
     }

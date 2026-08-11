@@ -45,6 +45,12 @@ vi.mock("../src/api", () => ({
             // configureManagedStorage() in startManagedServer() hits the early
             // no-op exit instead of throwing on a missing method.
             config: vi.fn().mockResolvedValue({ documents_dir: "/test/vault/lilbee", vault_base: "/test/vault" }),
+            // Default to "no agent CLIs installed" so the fire-and-forget
+            // runAgentBoot() in startManagedServer() stops before the picker.
+            getAgentConfigIndex: vi
+                .fn()
+                .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { clients: [] } }),
+            getAgentConfig: vi.fn(),
             addFiles: vi.fn(),
             crawl: vi.fn(),
             wikiLint: vi.fn(),
@@ -132,6 +138,25 @@ vi.mock("../src/views/managed-consent-modal", () => ({
         };
     }),
 }));
+
+// Controllable agent-picker result. The modal has its own tests; here it only
+// needs to answer, so the plugin's gating and follow-through are observable.
+let mockAgentPickerResult: unknown = { kind: "dismiss" };
+const mockAgentPickerOpen = vi.fn();
+vi.mock("../src/views/agent-picker-modal", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("../src/views/agent-picker-modal")>();
+    return {
+        ...actual,
+        AgentPickerModal: vi.fn().mockImplementation(function () {
+            return {
+                openPicker: () => {
+                    mockAgentPickerOpen();
+                    return Promise.resolve(mockAgentPickerResult);
+                },
+            };
+        }),
+    };
+});
 
 vi.mock("../src/views/wiki-view", () => ({
     VIEW_TYPE_WIKI: "lilbee-wiki",
@@ -7843,5 +7868,314 @@ describe("FileProgressTracker", () => {
         t.setExtractFraction(1, 0);
         t.setEmbedFraction(1, 0);
         expect(t.percent()).toBe(0);
+    });
+});
+
+describe("agent integration", () => {
+    const okResult = (value: unknown) => ({ isErr: () => false, isOk: () => true, value });
+    const errResult = (error: Error) => ({ isErr: () => true, isOk: () => false, error });
+
+    const opencodeConfig = {
+        provider: { lilbee: { options: { apiKey: "tok", baseURL: "http://127.0.0.1:7433/v1" } } },
+        mcp: { lilbee: { url: "http://127.0.0.1:7433/mcp" } },
+        model: "lilbee/Qwen3-8B",
+    };
+
+    /** A loaded plugin with an in-memory vault, ready to run the boot hook. */
+    async function agentPlugin(agentIntegration?: Record<string, unknown>) {
+        const plugin = await createPlugin({
+            serverMode: "external",
+            ...(agentIntegration ? { agentIntegration } : {}),
+        });
+        await plugin.loadSettings();
+        const files: Record<string, string> = {};
+        plugin.app.vault.adapter.exists = vi.fn((p: string) => Promise.resolve(p in files));
+        plugin.app.vault.adapter.read = vi.fn((p: string) => Promise.resolve(files[p]));
+        plugin.app.vault.adapter.write = vi.fn((p: string, d: string) => {
+            files[p] = d;
+            return Promise.resolve();
+        });
+        plugin.persistAll = vi.fn().mockResolvedValue(undefined);
+        return { plugin, files };
+    }
+
+    beforeEach(() => {
+        mockAgentPickerResult = { kind: "dismiss" };
+        mockAgentPickerOpen.mockClear();
+        Notice.clear();
+    });
+
+    describe("settings migration", () => {
+        it("defaults the whole block when nothing was stored", async () => {
+            const plugin = await createPlugin({ serverMode: "external" });
+            await plugin.loadSettings();
+
+            expect(plugin.settings.agentIntegration).toEqual({
+                agent: "none",
+                keepConfigFresh: true,
+                pickerShown: false,
+            });
+        });
+
+        it("fills in keys added after the user's block was written", async () => {
+            const plugin = await createPlugin({
+                serverMode: "external",
+                agentIntegration: { agent: "opencode" },
+            });
+            await plugin.loadSettings();
+
+            expect(plugin.settings.agentIntegration.agent).toBe("opencode");
+            expect(plugin.settings.agentIntegration.keepConfigFresh).toBe(true);
+            expect(plugin.settings.agentIntegration.pickerShown).toBe(false);
+        });
+
+        it("keeps a stored value that differs from the default", async () => {
+            const plugin = await createPlugin({
+                serverMode: "external",
+                agentIntegration: { agent: "claude", keepConfigFresh: false, pickerShown: true },
+            });
+            await plugin.loadSettings();
+
+            expect(plugin.settings.agentIntegration).toEqual({
+                agent: "claude",
+                keepConfigFresh: false,
+                pickerShown: true,
+            });
+        });
+    });
+
+    describe("boot refresh", () => {
+        it("rewrites the paired agent's config without a notice", async () => {
+            const { plugin, files } = await agentPlugin({ agent: "opencode", pickerShown: true });
+            plugin.api.getAgentConfig = vi
+                .fn()
+                .mockResolvedValue(
+                    okResult({ client: "opencode", format: "json", surfaces: [], config: opencodeConfig }),
+                );
+
+            await (plugin as any).runAgentBoot();
+
+            expect(JSON.parse(files["opencode.json"]).model).toBe("lilbee/Qwen3-8B");
+            expect(Notice.instances).toHaveLength(0);
+            expect(plugin.lastAgentWrite?.path).toBe("opencode.json");
+        });
+
+        it("does not touch the config when the user turned off keeping it fresh", async () => {
+            const { plugin } = await agentPlugin({
+                agent: "opencode",
+                keepConfigFresh: false,
+                pickerShown: true,
+            });
+            plugin.api.getAgentConfig = vi.fn();
+
+            await (plugin as any).runAgentBoot();
+
+            expect(plugin.api.getAgentConfig).not.toHaveBeenCalled();
+        });
+
+        it("does not offer the picker once an agent is paired", async () => {
+            const { plugin } = await agentPlugin({ agent: "claude", keepConfigFresh: false, pickerShown: true });
+            await (plugin as any).runAgentBoot();
+
+            expect(mockAgentPickerOpen).not.toHaveBeenCalled();
+        });
+
+        it("reports a failed write once, as a notice", async () => {
+            const { plugin } = await agentPlugin({ agent: "opencode", pickerShown: true });
+            plugin.api.getAgentConfig = vi.fn().mockResolvedValue(errResult(new Error("connection refused")));
+
+            await (plugin as any).runAgentBoot();
+
+            expect(Notice.instances).toHaveLength(1);
+            expect(Notice.instances[0].message).toContain("connection refused");
+            expect(plugin.lastAgentWrite).toBeNull();
+        });
+
+        it("absorbs an unexpected failure instead of rejecting", async () => {
+            const { plugin } = await agentPlugin({ agent: "opencode", pickerShown: true });
+            plugin.api.getAgentConfig = vi.fn().mockRejectedValue(new Error("boom"));
+
+            await expect((plugin as any).runAgentBoot()).resolves.toBeUndefined();
+            expect(plugin.journal.entries.some((e: any) => e.message.includes("boom"))).toBe(true);
+        });
+    });
+
+    describe("first-use picker gating", () => {
+        it("offers the picker when an agent CLI is found and nothing is paired", async () => {
+            const { plugin } = await agentPlugin();
+            plugin.api.getAgentConfigIndex = vi
+                .fn()
+                .mockResolvedValue(okResult({ clients: [{ client: "opencode", cli_detected: true, cli_path: "/x" }] }));
+
+            await (plugin as any).runAgentBoot();
+
+            expect(mockAgentPickerOpen).toHaveBeenCalledTimes(1);
+        });
+
+        it("stays quiet when no agent CLI is installed", async () => {
+            const { plugin } = await agentPlugin();
+            plugin.api.getAgentConfigIndex = vi
+                .fn()
+                .mockResolvedValue(
+                    okResult({ clients: [{ client: "opencode", cli_detected: false, cli_path: null }] }),
+                );
+
+            await (plugin as any).runAgentBoot();
+
+            expect(mockAgentPickerOpen).not.toHaveBeenCalled();
+        });
+
+        it("does not ask again once the picker has been answered", async () => {
+            const { plugin } = await agentPlugin({ pickerShown: true });
+            plugin.api.getAgentConfigIndex = vi.fn();
+
+            await (plugin as any).runAgentBoot();
+
+            expect(plugin.api.getAgentConfigIndex).not.toHaveBeenCalled();
+            expect(mockAgentPickerOpen).not.toHaveBeenCalled();
+        });
+
+        it("stays quiet when the server cannot be asked", async () => {
+            const { plugin } = await agentPlugin();
+            plugin.api.getAgentConfigIndex = vi.fn().mockResolvedValue(errResult(new Error("offline")));
+
+            await (plugin as any).runAgentBoot();
+
+            expect(mockAgentPickerOpen).not.toHaveBeenCalled();
+        });
+
+        it("does not open the picker after the plugin unloads", async () => {
+            const { plugin } = await agentPlugin();
+            plugin.api.getAgentConfigIndex = vi.fn().mockImplementation(() => {
+                plugin.onunload();
+                return Promise.resolve(
+                    okResult({ clients: [{ client: "opencode", cli_detected: true, cli_path: "/x" }] }),
+                );
+            });
+
+            await (plugin as any).runAgentBoot();
+
+            expect(mockAgentPickerOpen).not.toHaveBeenCalled();
+        });
+
+        it("remembers the choice and wires the agent", async () => {
+            const { plugin, files } = await agentPlugin();
+            plugin.api.getAgentConfigIndex = vi
+                .fn()
+                .mockResolvedValue(okResult({ clients: [{ client: "opencode", cli_detected: true, cli_path: "/x" }] }));
+            plugin.api.getAgentConfig = vi
+                .fn()
+                .mockResolvedValue(
+                    okResult({ client: "opencode", format: "json", surfaces: [], config: opencodeConfig }),
+                );
+            mockAgentPickerResult = { kind: "connect", client: "opencode", remember: true };
+
+            await (plugin as any).runAgentBoot();
+
+            expect(plugin.settings.agentIntegration.agent).toBe("opencode");
+            expect(plugin.settings.agentIntegration.pickerShown).toBe(true);
+            expect(files["opencode.json"]).toBeDefined();
+        });
+
+        it("wires this session only when the choice is not remembered", async () => {
+            const { plugin, files } = await agentPlugin();
+            plugin.api.getAgentConfigIndex = vi
+                .fn()
+                .mockResolvedValue(okResult({ clients: [{ client: "opencode", cli_detected: true, cli_path: "/x" }] }));
+            plugin.api.getAgentConfig = vi
+                .fn()
+                .mockResolvedValue(
+                    okResult({ client: "opencode", format: "json", surfaces: [], config: opencodeConfig }),
+                );
+            mockAgentPickerResult = { kind: "connect", client: "opencode", remember: false };
+
+            await (plugin as any).runAgentBoot();
+
+            expect(plugin.settings.agentIntegration.agent).toBe("none");
+            expect(plugin.settings.agentIntegration.pickerShown).toBe(false);
+            expect(files["opencode.json"]).toBeDefined();
+        });
+
+        it("stops asking when the user says not now", async () => {
+            const { plugin } = await agentPlugin();
+            plugin.api.getAgentConfigIndex = vi
+                .fn()
+                .mockResolvedValue(okResult({ clients: [{ client: "opencode", cli_detected: true, cli_path: "/x" }] }));
+            mockAgentPickerResult = { kind: "dismiss" };
+
+            await (plugin as any).runAgentBoot();
+
+            expect(plugin.settings.agentIntegration.pickerShown).toBe(true);
+            expect(plugin.settings.agentIntegration.agent).toBe("none");
+        });
+    });
+
+    describe("connect notices", () => {
+        it("names the file it wrote", async () => {
+            const { plugin } = await agentPlugin();
+            plugin.api.getAgentConfig = vi
+                .fn()
+                .mockResolvedValue(
+                    okResult({ client: "opencode", format: "json", surfaces: [], config: opencodeConfig }),
+                );
+
+            await plugin.applyAgentWiring("opencode");
+
+            expect(Notice.instances[0].message).toContain("opencode.json");
+        });
+
+        it("points at the settings block for an agent with no vault file", async () => {
+            const { plugin } = await agentPlugin();
+            plugin.api.getAgentConfig = vi
+                .fn()
+                .mockResolvedValue(okResult({ client: "hermes", format: "yaml", surfaces: [], content: "models:\n" }));
+
+            await plugin.applyAgentWiring("hermes");
+
+            expect(Notice.instances[0].message).toContain("ready to copy");
+        });
+
+        it("offers a reload when it changed a loaded Claudian", async () => {
+            const { plugin, files } = await agentPlugin();
+            plugin.app.plugins = {
+                manifests: { realclaudian: { id: "realclaudian" } },
+                enabledPlugins: new Set(["realclaudian"]),
+                disablePlugin: vi.fn().mockResolvedValue(undefined),
+                enablePlugin: vi.fn().mockResolvedValue(undefined),
+            };
+            files[".obsidian/plugins/realclaudian/data.json"] = JSON.stringify({ providerConfigs: {} });
+            plugin.api.getAgentConfig = vi
+                .fn()
+                .mockResolvedValue(
+                    okResult({ client: "opencode", format: "json", surfaces: [], config: opencodeConfig }),
+                );
+
+            await plugin.applyAgentWiring("opencode");
+
+            const reload = Notice.instances.find((n) => n.message.includes("Reload it"));
+            expect(reload).toBeDefined();
+            reload!.messageEl.children[0].trigger("click");
+            await flush();
+            expect(plugin.app.plugins.disablePlugin).toHaveBeenCalledWith("realclaudian");
+            expect(plugin.app.plugins.enablePlugin).toHaveBeenCalledWith("realclaudian");
+        });
+
+        it("stays quiet about Claudian when it is not loaded", async () => {
+            const { plugin, files } = await agentPlugin();
+            plugin.app.plugins = {
+                manifests: { realclaudian: { id: "realclaudian" } },
+                enabledPlugins: new Set<string>(),
+            };
+            files[".obsidian/plugins/realclaudian/data.json"] = JSON.stringify({ providerConfigs: {} });
+            plugin.api.getAgentConfig = vi
+                .fn()
+                .mockResolvedValue(
+                    okResult({ client: "opencode", format: "json", surfaces: [], config: opencodeConfig }),
+                );
+
+            await plugin.applyAgentWiring("opencode");
+
+            expect(Notice.instances.some((n) => n.message.includes("Reload it"))).toBe(false);
+        });
     });
 });

@@ -44,6 +44,33 @@ export function closeSettings(app: App): void {
     if (typeof setting?.close === "function") setting.close();
 }
 
+/**
+ * Open a plugin's own settings tab. Same undocumented `app.setting` surface as
+ * `closeSettings`, shape-checked so a rename leaves settings alone.
+ */
+export function openPluginSettingsById(app: App, pluginId: string): void {
+    const setting = (app as unknown as { setting?: { open?: () => void; openTabById?: (id: string) => void } }).setting;
+    if (typeof setting?.open !== "function" || typeof setting.openTabById !== "function") return;
+    setting.open();
+    setting.openTabById(pluginId);
+}
+
+/**
+ * An external link that opens in the user's browser. Obsidian's Electron shell
+ * does not always follow a bare anchor, so the click is handled explicitly.
+ */
+export function renderExternalLink(parent: HTMLElement, label: string, url: string): HTMLElement {
+    const link = parent.createEl("a", { cls: "lilbee-external-link", text: label });
+    link.setAttribute("href", url);
+    link.setAttribute("target", "_blank");
+    link.setAttribute("rel", "noopener noreferrer");
+    link.addEventListener("click", (e: Event) => {
+        e.preventDefault();
+        window.open(url, "_blank");
+    });
+    return link;
+}
+
 export function debounce<T extends (...args: unknown[]) => unknown>(
     fn: T,
     ms: number,

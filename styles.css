@@ -1144,6 +1144,12 @@
     color: var(--text-on-accent);
 }
 
+.lilbee-pill-context {
+    background: color-mix(in srgb, var(--interactive-accent) 18%, transparent);
+    color: var(--text-normal);
+    font-variant-numeric: tabular-nums;
+}
+
 /* Section Headings */
 
 .lilbee-catalog-section-heading {
@@ -1612,7 +1618,8 @@
 
 /* Advanced details */
 
-.lilbee-advanced-details summary {
+.lilbee-advanced-details summary,
+.lilbee-agent-details summary {
     cursor: pointer;
     font-weight: var(--font-semibold, 600);
     padding: var(--size-4-2, 8px) 0;
@@ -5029,4 +5036,188 @@ button.lilbee-model-chip-select:focus-visible {
 
 .lilbee-chat-summary-body {
     font-size: var(--font-smaller, 13px);
+}
+
+/* Agent integration
+ *
+ * Settings section that pairs a coding agent with the vault, plus the
+ * first-use picker. Detection badges reuse the key-status pill palette so
+ * "installed / not found" reads the same as "key ready / needs key".
+ */
+
+.lilbee-agent-body {
+    display: flex;
+    flex-direction: column;
+}
+
+.lilbee-agent-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-4-2, 8px);
+    margin: var(--size-4-1, 4px) 0 var(--size-4-2, 8px);
+}
+
+.lilbee-agent-badge-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.lilbee-agent-badge-name {
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+}
+
+.lilbee-agent-context {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--size-4-1, 4px);
+    margin-top: var(--size-4-1, 4px);
+}
+
+.lilbee-agent-context-note {
+    font-size: var(--font-smaller, 12px);
+    color: var(--text-muted);
+}
+
+.lilbee-agent-context-warning {
+    font-size: var(--font-smaller, 12px);
+    color: var(--color-yellow, #d4a841);
+}
+
+.lilbee-agent-status {
+    margin-top: var(--size-4-2, 8px);
+}
+
+.lilbee-agent-config-block {
+    max-height: 220px;
+    overflow: auto;
+    padding: var(--size-4-2, 8px);
+    border-radius: 8px;
+    background: var(--background-secondary);
+    font-size: var(--font-smaller, 12px);
+    white-space: pre;
+}
+
+.lilbee-agent-empty {
+    padding: 14px;
+    border-radius: 10px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+}
+
+.lilbee-agent-empty p {
+    margin: var(--size-4-1, 4px) 0;
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+}
+
+.lilbee-agent-empty code {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--background-primary);
+    font-size: var(--font-smaller, 12px);
+}
+
+.lilbee-agent-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--size-4-3, 12px);
+    margin-top: var(--size-4-2, 8px);
+    font-size: var(--font-small, 13px);
+}
+
+/* First-use picker */
+
+.lilbee-agent-picker {
+    max-width: 560px;
+}
+
+.lilbee-agent-picker-subtitle {
+    margin: 0 0 var(--size-4-3, 12px);
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+}
+
+.lilbee-agent-picker-cards {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-4-2, 8px);
+}
+
+.lilbee-agent-picker-card {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    cursor: pointer;
+    background: var(--background-secondary);
+    transition:
+        border-color 150ms ease,
+        background-color 150ms ease;
+}
+
+.lilbee-agent-picker-card:hover {
+    border-color: var(--interactive-accent);
+}
+
+.lilbee-agent-picker-card.selected {
+    border-color: var(--interactive-accent);
+    background-color: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+    box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+.lilbee-agent-picker-card.is-unavailable {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.lilbee-agent-picker-card.is-unavailable:hover {
+    border-color: var(--background-modifier-border);
+}
+
+.lilbee-agent-picker-card p {
+    margin: var(--size-4-1, 4px) 0 0;
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+    line-height: 1.45;
+}
+
+.lilbee-agent-picker-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.lilbee-agent-picker-badge {
+    font-size: 10px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+    color: var(--text-normal);
+    font-weight: 600;
+}
+
+.lilbee-agent-picker-missing {
+    font-size: var(--font-smaller, 12px);
+    color: var(--text-muted);
+}
+
+.lilbee-agent-picker-remember {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: var(--size-4-3, 12px);
+    font-size: var(--font-small, 13px);
+    color: var(--text-muted);
+}
+
+.lilbee-agent-picker-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--size-4-2, 8px);
+    margin-top: var(--size-4-3, 12px);
 }

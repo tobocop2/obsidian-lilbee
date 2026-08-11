@@ -320,9 +320,26 @@ export class App {
         openTabById: vi.fn(),
         close: vi.fn(),
     };
+    // Undocumented-but-stable plugin registry. Tests may replace this with
+    // `undefined` to exercise the defensive guards around it.
+    plugins:
+        | {
+              manifests?: Record<string, unknown>;
+              enabledPlugins?: Set<string>;
+              disablePlugin?: ReturnType<typeof vi.fn>;
+              enablePlugin?: ReturnType<typeof vi.fn>;
+          }
+        | undefined = {
+        manifests: {},
+        enabledPlugins: new Set<string>(),
+        disablePlugin: vi.fn().mockResolvedValue(undefined),
+        enablePlugin: vi.fn().mockResolvedValue(undefined),
+    };
     vault = {
         on: vi.fn().mockReturnValue({ id: "mock-vault-event" }),
         offref: vi.fn(),
+        // Where Obsidian keeps plugin data; users can rename it per vault.
+        configDir: ".obsidian",
         // Undocumented-but-stable Obsidian API for appearance settings; null means unset.
         getConfig: vi.fn().mockReturnValue(null),
         adapter: {
@@ -332,6 +349,8 @@ export class App {
             exists: vi.fn().mockResolvedValue(false),
             mkdir: vi.fn().mockResolvedValue(undefined),
             writeBinary: vi.fn().mockResolvedValue(undefined),
+            read: vi.fn().mockResolvedValue(""),
+            write: vi.fn().mockResolvedValue(undefined),
         },
         getFiles: vi.fn().mockReturnValue([]),
         getAbstractFileByPath: vi.fn().mockReturnValue(null),
