@@ -10,22 +10,22 @@
   "leadInMs": 500,
   "tailMs": 1500,
   "ffmpegStartupGapMs": 0,
-  "totalRecordedMs": 119261,
+  "totalRecordedMs": 150098,
   "beats": [
     {
       "index": 0,
       "label": "Open the wiki",
       "kind": "executeCommand",
-      "startedAt": 501,
-      "endedAt": 1661,
+      "startedAt": 502,
+      "endedAt": 1656,
       "cursor": null
     },
     {
       "index": 1,
       "label": "Let the list settle",
       "kind": "waitForSelector",
-      "startedAt": 1661,
-      "endedAt": 3289,
+      "startedAt": 1656,
+      "endedAt": 3283,
       "cursor": null,
       "caption": "Concepts and entities, grouped. Every subject your documents name."
     },
@@ -33,8 +33,8 @@
       "index": 2,
       "label": "Scroll the library",
       "kind": "wheelScroll",
-      "startedAt": 3290,
-      "endedAt": 9247,
+      "startedAt": 3284,
+      "endedAt": 8964,
       "cursor": {
         "x": 566.0390625,
         "y": 412.79296875,
@@ -47,8 +47,8 @@
       "index": 3,
       "label": "Back to the top",
       "kind": "wheelScroll",
-      "startedAt": 9248,
-      "endedAt": 12382,
+      "startedAt": 8964,
+      "endedAt": 12118,
       "cursor": {
         "x": 566.0390625,
         "y": 412.79296875,
@@ -58,28 +58,40 @@
     },
     {
       "index": 4,
-      "label": "Open the vault copy",
+      "label": "Find it in the vault",
       "kind": "runJs",
-      "startedAt": 12382,
-      "endedAt": 13630,
+      "startedAt": 12118,
+      "endedAt": 13230,
       "cursor": null,
       "caption": "Not locked in the plugin. Every page is a note in your vault."
     },
     {
       "index": 5,
+      "label": "Open the note",
+      "kind": "clickSelector",
+      "startedAt": 13230,
+      "endedAt": 17838,
+      "cursor": {
+        "x": 194,
+        "y": 1055.45703125,
+        "cursor": "default"
+      }
+    },
+    {
+      "index": 6,
       "label": "Read it as a note",
       "kind": "waitForSelector",
-      "startedAt": 13630,
-      "endedAt": 17046,
+      "startedAt": 17838,
+      "endedAt": 21249,
       "cursor": null,
       "caption": "It records the model that wrote it and the documents behind it."
     },
     {
-      "index": 6,
+      "index": 7,
       "label": "Follow a link",
       "kind": "clickSelector",
-      "startedAt": 17047,
-      "endedAt": 22711,
+      "startedAt": 21249,
+      "endedAt": 27429,
       "cursor": {
         "x": 685.0625,
         "y": 579.40625,
@@ -88,11 +100,11 @@
       "caption": "Click through it like any wiki."
     },
     {
-      "index": 7,
+      "index": 8,
       "label": "And another",
       "kind": "clickSelector",
-      "startedAt": 22711,
-      "endedAt": 28076,
+      "startedAt": 27429,
+      "endedAt": 32818,
       "cursor": {
         "x": 797.84375,
         "y": 579.40625,
@@ -100,69 +112,96 @@
       }
     },
     {
-      "index": 8,
+      "index": 9,
       "label": "See how it connects",
       "kind": "executeCommand",
-      "startedAt": 28076,
-      "endedAt": 32201,
-      "cursor": null,
-      "caption": "Backlinks and graph come free, because they really are just notes."
-    },
-    {
-      "index": 9,
-      "label": "Close the graph",
-      "kind": "runJs",
-      "startedAt": 32201,
-      "endedAt": 32714,
+      "startedAt": 32818,
+      "endedAt": 34117,
       "cursor": null
     },
     {
       "index": 10,
-      "label": "Back to the wiki",
+      "label": "Give the graph the room",
       "kind": "runJs",
-      "startedAt": 32714,
-      "endedAt": 33741,
-      "cursor": null
+      "startedAt": 34117,
+      "endedAt": 35610,
+      "cursor": null,
+      "caption": "Because they are notes, the graph is just there."
     },
     {
       "index": 11,
-      "label": "Search for a subject",
-      "kind": "runJs",
-      "startedAt": 33742,
-      "endedAt": 34270,
-      "cursor": null
+      "label": "Zoom into it",
+      "kind": "wheelScroll",
+      "startedAt": 35610,
+      "endedAt": 39389,
+      "cursor": {
+        "x": 690,
+        "y": 616.77734375,
+        "cursor": "auto"
+      },
+      "speedup": 1
     },
     {
       "index": 12,
-      "label": "Type it",
-      "kind": "type",
-      "startedAt": 34271,
-      "endedAt": 37220,
-      "cursor": null
+      "label": "Let it settle",
+      "kind": "sleep",
+      "startedAt": 39389,
+      "endedAt": 44391,
+      "cursor": null,
+      "caption": "Every page you have written, and how it connects."
     },
     {
       "index": 13,
+      "label": "Close the graph",
+      "kind": "key",
+      "startedAt": 44391,
+      "endedAt": 45897,
+      "cursor": null,
+      "keyHint": "⌘W"
+    },
+    {
+      "index": 14,
+      "label": "Back to the wiki",
+      "kind": "clickSelector",
+      "startedAt": 45897,
+      "endedAt": 50034,
+      "cursor": {
+        "x": 460.66796875,
+        "y": 61.5,
+        "cursor": "auto"
+      }
+    },
+    {
+      "index": 15,
+      "label": "Search for a subject",
+      "kind": "runJs",
+      "startedAt": 50034,
+      "endedAt": 50540,
+      "cursor": null
+    },
+    {
+      "index": 16,
+      "label": "Type it",
+      "kind": "type",
+      "startedAt": 50540,
+      "endedAt": 53633,
+      "cursor": null
+    },
+    {
+      "index": 17,
       "label": "It knows the subject, dimmed",
       "kind": "waitForSelector",
-      "startedAt": 37221,
-      "endedAt": 39836,
+      "startedAt": 53633,
+      "endedAt": 56242,
       "cursor": null,
       "caption": "It knows every subject, including the ones it has not written."
     },
     {
-      "index": 14,
-      "label": "Bring up the Task Centre",
-      "kind": "runJs",
-      "startedAt": 39837,
-      "endedAt": 40558,
-      "cursor": null
-    },
-    {
-      "index": 15,
+      "index": 18,
       "label": "Ask for the page",
       "kind": "clickSelector",
-      "startedAt": 40558,
-      "endedAt": 44284,
+      "startedAt": 56242,
+      "endedAt": 60006,
       "cursor": {
         "x": 690,
         "y": 291.2734375,
@@ -170,11 +209,11 @@
       }
     },
     {
-      "index": 16,
+      "index": 19,
       "label": "Confirm",
       "kind": "clickSelector",
-      "startedAt": 44286,
-      "endedAt": 48042,
+      "startedAt": 60006,
+      "endedAt": 63749,
       "cursor": {
         "x": 640.25,
         "y": 617.625,
@@ -183,46 +222,88 @@
       "caption": "Ask, and it writes one."
     },
     {
-      "index": 17,
+      "index": 20,
+      "label": "Open the command palette",
+      "kind": "runJs",
+      "startedAt": 63750,
+      "endedAt": 64465,
+      "cursor": null,
+      "keyHint": "⌘P"
+    },
+    {
+      "index": 21,
+      "label": "Look for the Task Centre",
+      "kind": "type",
+      "startedAt": 64465,
+      "endedAt": 67281,
+      "cursor": null
+    },
+    {
+      "index": 22,
+      "label": "Open it",
+      "kind": "key",
+      "startedAt": 67281,
+      "endedAt": 69040,
+      "cursor": null,
+      "caption": "The write is a job like any other, so it shows up where jobs do."
+    },
+    {
+      "index": 23,
       "label": "Watch it write on the GPU",
       "kind": "sleep",
-      "startedAt": 48042,
-      "endedAt": 109047,
+      "startedAt": 69040,
+      "endedAt": 130042,
       "cursor": null,
       "speedup": 6,
       "caption": "One page, one model call, on your own GPU."
     },
     {
-      "index": 18,
+      "index": 24,
       "label": "Put the Task Centre away",
-      "kind": "runJs",
-      "startedAt": 109047,
-      "endedAt": 109656,
-      "cursor": null
+      "kind": "clickSelector",
+      "startedAt": 130042,
+      "endedAt": 135242,
+      "cursor": {
+        "x": 1709,
+        "y": 57.5,
+        "cursor": "default"
+      }
     },
     {
-      "index": 19,
+      "index": 25,
       "label": "Read the new page",
       "kind": "waitForSelector",
-      "startedAt": 109657,
-      "endedAt": 112667,
+      "startedAt": 135242,
+      "endedAt": 138251,
       "cursor": null,
       "caption": "Written and cited."
     },
     {
-      "index": 20,
-      "label": "And it is already a note",
+      "index": 26,
+      "label": "Find the new page in the vault",
       "kind": "runJs",
-      "startedAt": 112668,
-      "endedAt": 113719,
+      "startedAt": 138251,
+      "endedAt": 139255,
       "cursor": null
     },
     {
-      "index": 21,
+      "index": 27,
+      "label": "Open it as a note",
+      "kind": "clickSelector",
+      "startedAt": 139256,
+      "endedAt": 144521,
+      "cursor": {
+        "x": 194,
+        "y": 221.60546875,
+        "cursor": "default"
+      }
+    },
+    {
+      "index": 28,
       "label": "Read the new note",
       "kind": "waitForSelector",
-      "startedAt": 113719,
-      "endedAt": 117735,
+      "startedAt": 144521,
+      "endedAt": 148531,
       "cursor": null,
       "caption": "And it is part of your vault, linked like the rest."
     }

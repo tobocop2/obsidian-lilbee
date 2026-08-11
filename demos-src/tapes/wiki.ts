@@ -41,6 +41,8 @@ import {
   beat,
   clickSelector,
   command,
+  hoverSelector,
+  key,
   runJs,
   sleep,
   storyboard,
@@ -73,25 +75,32 @@ const GEN_WAIT_MS = 60_000;
 // job and register that real work is happening, short enough not to stall.
 const GEN_SPEEDUP = 6;
 
-/** Open a wiki note the way a reader would: reading view, as a tab beside the
- * wiki pane, revealed in the file explorer so its folder is visible too.
+/** Reveal a wiki note in the file explorer so it can be clicked.
  *
- * Deliberately does NOT tear down the layout. An earlier cut detached the
- * plugin panes and rebuilt them afterwards, and the rebuilt wiki pane resolved
- * to a position off the bottom of the window, so the click that opens the write
- * dialog landed nowhere. Opening a sibling tab leaves the layout untouched, and
- * closing the tab is all it takes to get back. */
-const openNote = (path: string) => runJs(`
+ * Only reveals — the click is a separate beat. An earlier cut opened the note
+ * from script, so a tab appeared with nothing on screen causing it, which reads
+ * as the app doing things by itself rather than someone using it. */
+const revealNote = (path: string) => runJs(`
+  // Reading view, not Live Preview. A note opened by clicking inherits the
+  // vault's default mode, and in source mode [[links]] are plain text: the
+  // cross-link beat has nothing to click and no .markdown-preview-view exists.
+  app.vault.setConfig("defaultViewMode", "preview");
+  app.vault.setConfig("livePreview", false);
   const file = app.vault.getAbstractFileByPath(${JSON.stringify(path)});
   if (!file) throw new Error("missing vault note: " + ${JSON.stringify(path)});
-  const wiki = app.workspace.getLeavesOfType("lilbee-wiki")[0];
-  if (wiki) app.workspace.setActiveLeaf(wiki, { focus: true });
-  const leaf = app.workspace.getLeaf("tab");
-  await leaf.openFile(file, { state: { mode: "preview" } });
-  app.workspace.setActiveLeaf(leaf, { focus: true });
   const explorer = app.workspace.getLeavesOfType("file-explorer")[0];
-  if (explorer) { app.workspace.revealLeaf(explorer); await explorer.view.revealInFolder?.(file); }
+  if (!explorer) throw new Error("no file explorer");
+  app.workspace.revealLeaf(explorer);
+  await explorer.view.revealInFolder?.(file);
 `);
+
+/** The explorer row for a note, which is what the cursor actually clicks. */
+const noteRow = (path: string) => `.nav-file-title[data-path="${path}"]`;
+
+/** The preview in the tab that is actually on screen. Act 2 leaves earlier
+ * notes open, so an unscoped .markdown-preview-view can match a background
+ * tab that never becomes visible. */
+const ACTIVE_PREVIEW = ".workspace-leaf.mod-active .markdown-preview-view";
 
 export default storyboard("wiki", {
   window: [1400, 900],
@@ -105,7 +114,7 @@ export default storyboard("wiki", {
   caption: "Ten documents in. An encyclopedia out.",
   // The written page arriving in the vault, not the browse. The browse sets it
   // up; this is the payload.
-  moneyShotBeatIndex: 21,
+  moneyShotBeatIndex: 25,
   beats: [
     // Act 1 - the index. What the plugin knows, before touching the vault.
     beat("Open the wiki", command(WIKI_CMD), { holdMs: 700 }),
@@ -122,11 +131,12 @@ export default storyboard("wiki", {
 
     // Act 2 - the same wiki, as plain notes. This is the half the earlier cut
     // was missing, and the reason it did not read as a wiki.
-    beat("Open the vault copy", openNote(PAGE), {
-      holdMs: 1200,
+    beat("Find it in the vault", revealNote(PAGE), {
+      holdMs: 1100,
       caption: "Not locked in the plugin. Every page is a note in your vault.",
     }),
-    beat("Read it as a note", waitForSelector(".markdown-preview-view"), {
+    beat("Open the note", clickSelector(noteRow(PAGE)), { holdMs: 1200 }),
+    beat("Read it as a note", waitForSelector(ACTIVE_PREVIEW), {
       holdMs: 3400,
       caption: "It records the model that wrote it and the documents behind it.",
     }),
@@ -137,26 +147,43 @@ export default storyboard("wiki", {
     beat("And another", clickSelector(".markdown-preview-view a.internal-link"), {
       holdMs: 2600,
     }),
-    beat("See how it connects", command("graph:open-local"), {
-      holdMs: 3600,
-      caption: "Backlinks and graph come free, because they really are just notes.",
-    }),
+    beat("See how it connects", command("graph:open-local"), { holdMs: 800 }),
+    // The graph is the thing Obsidian users actually love, and it opened as a
+    // 361px sliver with the filters box covering 240px of it. Give it the pane,
+    // fold the controls away, and let it breathe.
     beat(
-      "Close the graph",
-      runJs(`app.workspace.getLeavesOfType("localgraph").forEach((l) => l.detach());`),
-      { holdMs: 500 },
-    ),
-
-    // Act 3 - the gap, and filling it.
-    beat(
-      "Back to the wiki",
+      "Give the graph the room",
       runJs(`
-        app.workspace.detachLeavesOfType("markdown");
+        const side = app.workspace.getLeavesOfType("localgraph")[0];
+        if (!side) throw new Error("no local graph leaf");
+        const state = side.view?.getState?.() ?? {};
+        // graph:open-local drops the graph into a side dock, where the canvas
+        // is a ~360px sliver with the filters box covering most of it. Re-open
+        // it as a sibling tab of the wiki so it gets the full main pane.
         const wiki = app.workspace.getLeavesOfType("lilbee-wiki")[0];
         if (wiki) app.workspace.setActiveLeaf(wiki, { focus: true });
+        const big = app.workspace.getLeaf("tab");
+        await big.setViewState({ type: "localgraph", state, active: true });
+        side.detach();
+        document.querySelector(".graph-controls")?.classList.add("is-close");
+        app.workspace.setActiveLeaf(big, { focus: true });
       `),
-      { holdMs: 1000 },
+      { holdMs: 1400, caption: "Because they are notes, the graph is just there." },
     ),
+    beat("Zoom into it", wheelScroll(".workspace-leaf-content[data-type='localgraph'] canvas", 6), {
+      holdMs: 1600,
+      speedup: 1,
+    }),
+    beat("Let it settle", sleep(3800), {
+      holdMs: 1200,
+      caption: "Every page you have written, and how it connects.",
+    }),
+    beat("Close the graph", key("Mod+w"), { holdMs: 900, keyHint: "\u2318W" }),
+
+    // Act 3 - the gap, and filling it.
+    beat("Back to the wiki", clickSelector('.workspace-tab-header[aria-label*="lilbee Wiki"]'), {
+      holdMs: 1000,
+    }),
     // Clear and focus rather than click. A second clickSelector on the filter
     // does not re-focus it (the harness resolves it to a zero-origin box), so
     // the next keystrokes land nowhere and the box keeps the previous query.
@@ -175,41 +202,44 @@ export default storyboard("wiki", {
       holdMs: 2600,
       caption: "It knows every subject, including the ones it has not written.",
     }),
-    // The Task Centre appears for the job and goes away after. Parking it on
-    // screen for the whole reel would show an empty box through every beat that
-    // has no running work.
-    beat(
-      "Bring up the Task Centre",
-      runJs(`
-        const leaf = app.workspace.createLeafBySplit(
-          app.workspace.getLeavesOfType("lilbee-placement")[0], "horizontal", false);
-        await leaf.setViewState({ type: "lilbee-tasks", active: false });
-      `),
-      { holdMs: 700 },
-    ),
     beat("Ask for the page", clickSelector(".lilbee-wiki-stub"), { holdMs: 900 }),
     beat("Confirm", clickSelector(".mod-cta"), {
       holdMs: 900,
       caption: "Ask, and it writes one.",
+    }),
+    // Opened after the job starts, the way someone actually checks on running
+    // work, and closed once it is done. An earlier cut split it into the layout
+    // from script, so it appeared with nothing causing it.
+    beat("Open the command palette", runJs(`window.app.commands.executeCommandById("command-palette:open");`), {
+      holdMs: 700,
+      keyHint: "\u2318P",
+    }),
+    beat("Look for the Task Centre", type_("Task Center"), { holdMs: 1200 }),
+    beat("Open it", key("enter"), {
+      holdMs: 1100,
+      caption: "The write is a job like any other, so it shows up where jobs do.",
     }),
     beat("Watch it write on the GPU", sleep(GEN_WAIT_MS), {
       holdMs: 1000,
       speedup: GEN_SPEEDUP,
       caption: "One page, one model call, on your own GPU.",
     }),
-    beat(
-      "Put the Task Centre away",
-      runJs(`app.workspace.getLeavesOfType("lilbee-tasks").forEach((l) => l.detach());`),
-      { holdMs: 600 },
-    ),
+    // Collapse the sidebar rather than closing the tab. A sidebar tab is
+    // icon-only and renders no close button at all — it measures 0x0, so the
+    // click landed in the corner and the Task Centre stayed open. The toggle
+    // in the tab bar is a real target and reads as putting the panel away.
+    beat("Put the Task Centre away", clickSelector(".sidebar-toggle-button.mod-right"), {
+      holdMs: 900,
+    }),
     beat("Read the new page", waitForSelector(".lilbee-wiki-content"), {
       holdMs: 3000,
       caption: "Written and cited.",
     }),
     // The close: it is not just in the plugin, it is in the vault with the rest
     // of the wiki, linked like everything around it.
-    beat("And it is already a note", openNote(STUB_NOTE), { holdMs: 1000 }),
-    beat("Read the new note", waitForSelector(".markdown-preview-view"), {
+    beat("Find the new page in the vault", revealNote(STUB_NOTE), { holdMs: 1000 }),
+    beat("Open it as a note", clickSelector(noteRow(STUB_NOTE)), { holdMs: 1000 }),
+    beat("Read the new note", waitForSelector(ACTIVE_PREVIEW), {
       holdMs: 4000,
       caption: "And it is part of your vault, linked like the rest.",
     }),
