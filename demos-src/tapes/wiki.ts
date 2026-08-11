@@ -24,14 +24,14 @@
  *             index. Synced to the vault as 4 concept and 50 entity notes,
  *             where 112 links resolve inside the wiki and none leak out of it.
  *   Server    unsloth Llama-3.3-70B-Instruct UD-Q6_K_XL, the quant that wrote
- *             those pages, split across three RTX 3090s (72GB) rather than a
+ *             those pages, split across three RTX 4090s (72GB) rather than a
  *             datacentre card. That is the point of the GPU pane: a 70B on
  *             hardware someone actually owns. Two cards would have fit only a
  *             Q4, and mixing quants would have shown one page written to a
  *             different standard than the 54 around it.
- *   Write     one page is one model call, measured at 34s on this rig. Three
- *             3090s split the weights roughly 21.6/21.5/20.8 GB, which is what
- *             the GPU pane shows while it works.
+ *   Write     one page is one model call, measured at 34s on 3090s and about
+ *             the same here. Three cards split the weights roughly evenly,
+ *             which is what the GPU pane shows while it works.
  *
  * PAGE and STUB are both real. Nothing here is seeded for the camera: if the
  * chosen stub has been written since, the tape fails rather than silently
@@ -86,12 +86,24 @@ const revealNote = (path: string) => runJs(`
   // cross-link beat has nothing to click and no .markdown-preview-view exists.
   app.vault.setConfig("defaultViewMode", "preview");
   app.vault.setConfig("livePreview", false);
+  // Close any note already open. Clicking a file that is open in another tab
+  // just activates that tab and keeps its mode, so a note left in source view
+  // by earlier work reopens in source view and the preview never appears.
+  app.workspace.detachLeavesOfType("markdown");
   const file = app.vault.getAbstractFileByPath(${JSON.stringify(path)});
   if (!file) throw new Error("missing vault note: " + ${JSON.stringify(path)});
   const explorer = app.workspace.getLeavesOfType("file-explorer")[0];
   if (!explorer) throw new Error("no file explorer");
   app.workspace.revealLeaf(explorer);
   await explorer.view.revealInFolder?.(file);
+  // Centre the row. revealInFolder happily leaves it flush against the bottom
+  // of a long tree, and at the viewport edge the harness's measured point and
+  // the live row stop agreeing: the click lands just past it and nothing opens.
+  await new Promise((r) => setTimeout(r, 400));
+  const row = document.querySelector('.nav-file-title[data-path="' + ${JSON.stringify(path)} + '"]');
+  if (!row) throw new Error("no explorer row for " + ${JSON.stringify(path)});
+  row.scrollIntoView({ block: "center" });
+  await new Promise((r) => setTimeout(r, 500));
 `);
 
 /** The explorer row for a note, which is what the cursor actually clicks. */
@@ -114,7 +126,7 @@ export default storyboard("wiki", {
   caption: "Ten documents in. An encyclopedia out.",
   // The written page arriving in the vault, not the browse. The browse sets it
   // up; this is the payload.
-  moneyShotBeatIndex: 25,
+  moneyShotBeatIndex: 23,
   beats: [
     // Act 1 - the index. What the plugin knows, before touching the vault.
     beat("Open the wiki", command(WIKI_CMD), { holdMs: 700 }),
@@ -147,40 +159,6 @@ export default storyboard("wiki", {
     beat("And another", clickSelector(".markdown-preview-view a.internal-link"), {
       holdMs: 2600,
     }),
-    beat("See how it connects", command("graph:open-local"), { holdMs: 800 }),
-    // The graph is the thing Obsidian users actually love, and it opened as a
-    // 361px sliver with the filters box covering 240px of it. Give it the pane,
-    // fold the controls away, and let it breathe.
-    beat(
-      "Give the graph the room",
-      runJs(`
-        const side = app.workspace.getLeavesOfType("localgraph")[0];
-        if (!side) throw new Error("no local graph leaf");
-        const state = side.view?.getState?.() ?? {};
-        // graph:open-local drops the graph into a side dock, where the canvas
-        // is a ~360px sliver with the filters box covering most of it. Re-open
-        // it as a sibling tab of the wiki so it gets the full main pane.
-        const wiki = app.workspace.getLeavesOfType("lilbee-wiki")[0];
-        if (wiki) app.workspace.setActiveLeaf(wiki, { focus: true });
-        const big = app.workspace.getLeaf("tab");
-        await big.setViewState({ type: "localgraph", state, active: true });
-        side.detach();
-        document.querySelector(".graph-controls")?.classList.add("is-close");
-        app.workspace.setActiveLeaf(big, { focus: true });
-      `),
-      { holdMs: 1400, caption: "Because they are notes, the graph is just there." },
-    ),
-    beat("Zoom into it", wheelScroll(".workspace-leaf-content[data-type='localgraph'] canvas", 6), {
-      holdMs: 1600,
-      speedup: 1,
-    }),
-    beat("Let it settle", sleep(3800), {
-      holdMs: 1200,
-      caption: "Every page you have written, and how it connects.",
-    }),
-    beat("Close the graph", key("Mod+w"), { holdMs: 900, keyHint: "\u2318W" }),
-
-    // Act 3 - the gap, and filling it.
     beat("Back to the wiki", clickSelector('.workspace-tab-header[aria-label*="lilbee Wiki"]'), {
       holdMs: 1000,
     }),
@@ -243,5 +221,41 @@ export default storyboard("wiki", {
       holdMs: 4000,
       caption: "And it is part of your vault, linked like the rest.",
     }),
+
+    // The graph last, on purpose. It is the part people enjoy, but it is a
+    // reward for what came before rather than the reason to install anything.
+    beat("Open the graph", command("graph:open"), { holdMs: 900 }),
+    // The graph is the thing Obsidian users actually love, and it opened as a
+    // 361px sliver with the filters box covering 240px of it. Give it the pane,
+    // fold the controls away, and let it breathe.
+    beat(
+      "Give the graph the room",
+      runJs(`
+        const side = app.workspace.getLeavesOfType("graph")[0] ?? app.workspace.getLeavesOfType("localgraph")[0];
+        if (!side) throw new Error("no local graph leaf");
+        const state = side.view?.getState?.() ?? {};
+        // graph:open-local drops the graph into a side dock, where the canvas
+        // is a ~360px sliver with the filters box covering most of it. Re-open
+        // it as a sibling tab of the wiki so it gets the full main pane.
+        const wiki = app.workspace.getLeavesOfType("lilbee-wiki")[0];
+        if (wiki) app.workspace.setActiveLeaf(wiki, { focus: true });
+        const big = app.workspace.getLeaf("tab");
+        await big.setViewState({ type: side.view.getViewType(), state, active: true });
+        side.detach();
+        document.querySelector(".graph-controls")?.classList.add("is-close");
+        app.workspace.setActiveLeaf(big, { focus: true });
+      `),
+      { holdMs: 1400, caption: "Fifty-five pages, written from ten documents." },
+    ),
+    beat("Zoom into it", wheelScroll(".workspace-leaf-content[data-type='graph'] canvas", 4), {
+      holdMs: 1600,
+      speedup: 1,
+    }),
+    beat("Let it settle", sleep(3800), {
+      holdMs: 1200,
+      caption: "Everything your documents know, in one picture.",
+    }),
+
+    // Act 3 - the gap, and filling it.
   ],
 });
