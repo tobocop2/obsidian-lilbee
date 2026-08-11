@@ -108,6 +108,10 @@ export default storyboard("claudian", {
   window: [1400, 900],
   layout: "explorer-note-claudian",
   vaultMatch: "obsidian-lilbee-demo",
+  // Title-substring for the window-scoped capture (PR #217): the CDP page is
+  // picked by basePath, but the capture filter matches window titles, and this
+  // vault's folder is literally named "vault".
+  windowMatch: " - vault - ",
   pinChatModel: "Qwen/Qwen3-14B-GGUF/Qwen3-14B-Q4_K_M.gguf",
   preloadChatModel: true,
   clearTaskCenter: true,

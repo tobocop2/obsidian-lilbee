@@ -89,6 +89,10 @@ export type Storyboard = {
   preloadChatModel?: boolean;
   /** Chat model ref pre-flight pins on the server. Defaults to the rig's DEFAULT_MODEL. */
   pinChatModel?: string;
+  /** Title substring for the window-scoped capture. vaultMatch is matched
+   * against the vault's basePath when picking the CDP page; a window title
+   * may look nothing like it. Falls back to vaultMatch, then "Obsidian". */
+  windowMatch?: string;
   /** Skip the chat-model pin entirely. For demos that don't exercise chat. */
   skipModelPin?: boolean;
   /** Skip the server-ready health gate. For demos where this vault has no
@@ -124,6 +128,7 @@ export type StoryboardOptions = {
   clearChat?: boolean;
   preloadChatModel?: boolean;
   pinChatModel?: string;
+  windowMatch?: string;
   skipModelPin?: boolean;
   skipServerCheck?: boolean;
   noLilbee?: boolean;
@@ -148,6 +153,7 @@ export function storyboard(name: string, opts: StoryboardOptions): Storyboard {
     clearChat: opts.clearChat,
     preloadChatModel: opts.preloadChatModel,
     pinChatModel: opts.pinChatModel,
+    windowMatch: opts.windowMatch,
     skipModelPin: opts.skipModelPin,
     skipServerCheck: opts.skipServerCheck,
     noLilbee: opts.noLilbee,
