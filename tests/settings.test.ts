@@ -3,7 +3,7 @@ import { App, Notice, Setting } from "obsidian";
 import { MockElement } from "./__mocks__/obsidian";
 import { LilbeeSettingTab, SEPARATOR_KEY } from "../src/settings";
 import type { CatalogEntry, CatalogResponse, InstalledModel, LilbeeSettings } from "../src/types";
-import { DEFAULT_SETTINGS, MEMORY_CONFIG_KEY, MODEL_TASK, SSE_EVENT } from "../src/types";
+import { DEFAULT_SETTINGS, MEMORY_CONFIG_KEY, MODEL_TASK, SSE_EVENT, TABLE_MODEL } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import { ServerStartingError } from "../src/api";
 import { ok, err } from "../src/result";
@@ -274,6 +274,12 @@ interface BlurCapture {
 }
 
 interface Captured {
+    /** Callbacks keyed by the row's display name, so a test names the field it
+     * means instead of counting rows to it. */
+    textByName: Map<string, TextOnChange>;
+    toggleByName: Map<string, ToggleOnChange>;
+    dropdownByName: Map<string, DropdownOnChange>;
+    textAreaByName: Map<string, TextOnChange>;
     textOnChanges: TextOnChange[];
     textAreaOnChanges: TextOnChange[];
     blurHandlers: BlurCapture[];
@@ -308,6 +314,20 @@ function captureSettingCallbacks(fn: () => void): Captured {
     const buttons: FakeButton[] = [];
     const extraButtonOnClicks: ButtonOnClick[] = [];
 
+    // Position-based lookups break the moment a field is inserted earlier in
+    // the page, which is how one settings change takes 40 unrelated tests down.
+    // Record each Setting's name so a test can ask for the row it means.
+    const textByName = new Map<string, TextOnChange>();
+    const toggleByName = new Map<string, ToggleOnChange>();
+    const dropdownByName = new Map<string, DropdownOnChange>();
+    const textAreaByName = new Map<string, TextOnChange>();
+    let currentName = "";
+    const origSetName = Setting.prototype.setName;
+    Setting.prototype.setName = function (name: string) {
+        currentName = typeof name === "string" ? name : String(name);
+        return origSetName.call(this, name);
+    };
+
     const origAddText = Setting.prototype.addText;
     const origAddTextArea = (Setting.prototype as any).addTextArea;
     const origAddSlider = Setting.prototype.addSlider;
@@ -322,6 +342,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
             setValue: () => fakeText,
             onChange: (handler: TextOnChange) => {
                 textOnChanges.push(handler);
+                if (currentName) textByName.set(currentName, handler);
                 return fakeText;
             },
             inputEl: {
@@ -352,6 +373,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
             setValue: () => fakeText,
             onChange: (handler: TextOnChange) => {
                 textAreaOnChanges.push(handler);
+                if (currentName) textAreaByName.set(currentName, handler);
                 return fakeText;
             },
             inputEl: {
@@ -399,6 +421,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
             setDisabled: () => fakeDropdown,
             onChange: (handler: DropdownOnChange) => {
                 dropdownOnChanges.push(handler);
+                if (currentName) dropdownByName.set(currentName, handler);
                 return fakeDropdown;
             },
         };
@@ -422,6 +445,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
             onChange: (handler: ToggleOnChange) => {
                 ownOnChange = handler;
                 toggleOnChanges.push(handler);
+                if (currentName) toggleByName.set(currentName, handler);
                 return fakeToggle;
             },
         };
@@ -469,6 +493,7 @@ function captureSettingCallbacks(fn: () => void): Captured {
     try {
         fn();
     } finally {
+        Setting.prototype.setName = origSetName;
         Setting.prototype.addText = origAddText;
         (Setting.prototype as any).addTextArea = origAddTextArea;
         Setting.prototype.addSlider = origAddSlider;
@@ -479,6 +504,10 @@ function captureSettingCallbacks(fn: () => void): Captured {
     }
 
     return {
+        textByName,
+        toggleByName,
+        dropdownByName,
+        textAreaByName,
         textOnChanges,
         textAreaOnChanges,
         blurHandlers,
@@ -576,7 +605,7 @@ describe("LilbeeSettingTab", () => {
             // sharedRoot + 9 generation + 5 retrieval-advanced + 4 ingest + 2 worker-pool
             // + 10 crawling + wikiVaultFolder + rerank_candidates + hfToken
             // + ollama URL + lm_studio URL + 4 fleet (n_gpu_layers, embed/vision replicas, gpu_devices) = 40
-            expect(textOnChanges.length).toBe(40);
+            expect(textOnChanges.length).toBe(50);
         });
     });
 
@@ -649,10 +678,10 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
             // [0] auto-update, [1] includeDevBuilds (managed server section), [2] show_reasoning, [3] chat_compaction (Chat), [4] adaptiveThreshold.
-            await toggleOnChanges[4](true);
+            await toggleByName.get(MESSAGES.LABEL_ADAPTIVE_THRESHOLD)!(true);
             expect(plugin.settings.adaptiveThreshold).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
         });
@@ -668,20 +697,13 @@ describe("LilbeeSettingTab", () => {
     });
 
     describe("storeContentInVault toggle", () => {
-        function storeToggleIdx(toggleOnChanges: unknown[]): number {
-            // Store-content toggle is rendered first inside the Advanced section,
-            // which runs after the Wiki section. The Fleet section's
-            // flash_attention toggle renders after it (last overall).
-            return toggleOnChanges.length - 2;
-        }
-
         it("onChange true persists and triggers configureManagedStorage", async () => {
             const plugin = makePlugin({ serverMode: "managed", storeContentInVault: false });
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[storeToggleIdx(toggleOnChanges)](true);
+            await toggleByName.get(MESSAGES.LABEL_STORE_CONTENT_IN_VAULT)!(true);
             expect(plugin.settings.storeContentInVault).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
             expect((plugin as any).configureManagedStorage).toHaveBeenCalled();
@@ -691,9 +713,9 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin({ serverMode: "managed", storeContentInVault: true });
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[storeToggleIdx(toggleOnChanges)](false);
+            await toggleByName.get(MESSAGES.LABEL_STORE_CONTENT_IN_VAULT)!(false);
             expect(plugin.settings.storeContentInVault).toBe(false);
             expect((plugin as any).configureManagedStorage).not.toHaveBeenCalled();
         });
@@ -714,10 +736,10 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textAreaByName } = captureSettingCallbacks(() => tab.display());
 
             // The cited-answer textarea is the first textarea in Generation settings.
-            await textAreaOnChanges[0]("You are a pirate.");
+            await textAreaByName.get(MESSAGES.LABEL_RAG_SYSTEM_PROMPT)!("You are a pirate.");
             expect(plugin.settings.ragSystemPrompt).toBe("You are a pirate.");
             expect(plugin.saveSettings).toHaveBeenCalled();
         });
@@ -726,10 +748,10 @@ describe("LilbeeSettingTab", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textAreaByName } = captureSettingCallbacks(() => tab.display());
 
             // The no-document textarea is the second textarea in Generation settings.
-            await textAreaOnChanges[1]("You are a friendly tutor.");
+            await textAreaByName.get(MESSAGES.LABEL_GENERAL_SYSTEM_PROMPT)!("You are a friendly tutor.");
             expect(plugin.settings.generalSystemPrompt).toBe("You are a friendly tutor.");
             expect(plugin.saveSettings).toHaveBeenCalled();
         });
@@ -2793,16 +2815,14 @@ describe("managed mode settings", () => {
     describe("Ingest chunk fields onChange", () => {
         // Ingest section text inputs sit at: [14] chunk_size, [15] chunk_overlap,
         // [16] tesseract_timeout, [17] vision_load_budget_s.
-        const CHUNK_SIZE_IDX = 15;
-        const CHUNK_OVERLAP_IDX = 16;
 
         it("chunk_size calls updateConfig after confirm", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CHUNK_SIZE_IDX]("512");
+            await textByName.get(MESSAGES.LABEL_CHUNK_SIZE)!("512");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_size: 512 });
         });
 
@@ -2810,9 +2830,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CHUNK_OVERLAP_IDX]("64");
+            await textByName.get(MESSAGES.LABEL_CHUNK_OVERLAP)!("64");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chunk_overlap: 64 });
         });
 
@@ -2820,9 +2840,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CHUNK_SIZE_IDX]("");
+            await textByName.get(MESSAGES.LABEL_CHUNK_SIZE)!("");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2830,9 +2850,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CHUNK_SIZE_IDX]("abc");
+            await textByName.get(MESSAGES.LABEL_CHUNK_SIZE)!("abc");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2840,9 +2860,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CHUNK_SIZE_IDX]("-1");
+            await textByName.get(MESSAGES.LABEL_CHUNK_SIZE)!("-1");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -2851,9 +2871,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CHUNK_SIZE_IDX]("512");
+            await textByName.get(MESSAGES.LABEL_CHUNK_SIZE)!("512");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
             mockGenericConfirmResult = true;
         });
@@ -2866,9 +2886,9 @@ describe("managed mode settings", () => {
             });
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CHUNK_SIZE_IDX]("512");
+            await textByName.get(MESSAGES.LABEL_CHUNK_SIZE)!("512");
             expect(plugin.triggerSync).toHaveBeenCalled();
         });
 
@@ -2877,9 +2897,9 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CHUNK_SIZE_IDX]("512");
+            await textByName.get(MESSAGES.LABEL_CHUNK_SIZE)!("512");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
     });
@@ -3268,20 +3288,14 @@ describe("managed mode settings", () => {
         // Per-field offsets within crawling: [0] crawl_max_depth, [1] crawl_max_pages,
         // [2] crawl_timeout, [3] crawl_mean_delay, [4] crawl_max_delay_range,
         // [5] crawl_concurrent_requests, [6-8] retry base/backoff floats, [9] retry attempts.
-        const CRAWL_DEPTH = 21;
-        const CRAWL_PAGES = 22;
-        const CRAWL_TIMEOUT = 23;
-        const CRAWL_MEAN_DELAY = 24;
-        const CRAWL_CONCURRENT = 26;
-        const CRAWL_RETRY_MAX_BACKOFF = 29;
 
         it("calls updateConfig with valid crawl_max_depth", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CRAWL_DEPTH]("3");
+            await textByName.get(MESSAGES.LABEL_CRAWL_MAX_DEPTH)!("3");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_depth: 3 });
         });
 
@@ -3289,9 +3303,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CRAWL_PAGES]("100");
+            await textByName.get(MESSAGES.LABEL_CRAWL_MAX_PAGES)!("100");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_pages: 100 });
         });
 
@@ -3299,9 +3313,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CRAWL_DEPTH]("");
+            await textByName.get(MESSAGES.LABEL_CRAWL_MAX_DEPTH)!("");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_max_depth: null });
         });
 
@@ -3309,9 +3323,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CRAWL_DEPTH]("abc");
+            await textByName.get(MESSAGES.LABEL_CRAWL_MAX_DEPTH)!("abc");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -3319,9 +3333,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CRAWL_DEPTH]("-5");
+            await textByName.get(MESSAGES.LABEL_CRAWL_MAX_DEPTH)!("-5");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -3329,9 +3343,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CRAWL_TIMEOUT]("");
+            await textByName.get(MESSAGES.LABEL_CRAWL_TIMEOUT)!("");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -3339,9 +3353,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CRAWL_MEAN_DELAY]("0.75");
+            await textByName.get(MESSAGES.LABEL_CRAWL_MEAN_DELAY)!("0.75");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_mean_delay: 0.75 });
         });
 
@@ -3349,9 +3363,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CRAWL_CONCURRENT]("5");
+            await textByName.get(MESSAGES.LABEL_CRAWL_CONCURRENT_REQUESTS)!("5");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_concurrent_requests: 5 });
         });
 
@@ -3359,9 +3373,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CRAWL_CONCURRENT]("5.5");
+            await textByName.get(MESSAGES.LABEL_CRAWL_CONCURRENT_REQUESTS)!("5.5");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -3369,9 +3383,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CRAWL_RETRY_MAX_BACKOFF]("45.0");
+            await textByName.get(MESSAGES.LABEL_CRAWL_RETRY_MAX_BACKOFF)!("45.0");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_max_backoff: 45 });
         });
 
@@ -3379,12 +3393,12 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
             // Toggle order: [0] auto-update, [1] includeDevBuilds (managed server), [2] show_reasoning,
             // [3] chat_compaction (Chat), [4] adaptiveThreshold (search/retrieval), [5] worker_pool_eager_start
             // (worker-pool), [6] crawl_retry_on_rate_limit (crawling), [7+] wiki toggles.
-            await toggleOnChanges[6](false);
+            await toggleByName.get(MESSAGES.LABEL_CRAWL_RETRY_ON_RATE_LIMIT)!(false);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: false });
         });
 
@@ -3393,9 +3407,9 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[6](false);
+            await toggleByName.get(MESSAGES.LABEL_CRAWL_RETRY_ON_RATE_LIMIT)!(false);
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -3404,9 +3418,9 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CRAWL_DEPTH](""); // clear crawl_max_depth (nullable)
+            await textByName.get(MESSAGES.LABEL_CRAWL_MAX_DEPTH)!(""); // clear crawl_max_depth (nullable)
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -3415,9 +3429,9 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CRAWL_DEPTH]("3");
+            await textByName.get(MESSAGES.LABEL_CRAWL_MAX_DEPTH)!("3");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -3546,7 +3560,7 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
             await new Promise((r) => setTimeout(r, 0));
             // Invoke the crawl_retry_on_rate_limit onChange without the flag — proves the guard is
             // load-bearing (if the flag failed to set, updateConfig WOULD be called).
@@ -3554,7 +3568,7 @@ describe("managed mode settings", () => {
             (tab as any).suppressToggleChanges = false;
             // toggleOnChanges[6] is crawl_retry_on_rate_limit; [0]=auto-update, [1]=includeDevBuilds,
             // [2]=show_reasoning, [3]=chat_compaction, [4]=adaptiveThreshold, [5]=worker_pool_eager_start.
-            await toggleOnChanges[6](true);
+            await toggleByName.get(MESSAGES.LABEL_CRAWL_RETRY_ON_RATE_LIMIT)!(true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: true });
         });
 
@@ -3562,11 +3576,11 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
             await new Promise((r) => setTimeout(r, 0));
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = true;
-            await toggleOnChanges[6](true);
+            await toggleByName.get(MESSAGES.LABEL_CRAWL_RETRY_ON_RATE_LIMIT)!(true);
             (tab as any).suppressToggleChanges = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
@@ -3655,7 +3669,11 @@ describe("managed mode settings", () => {
             (Setting.prototype as any).addTextArea = origAddTextArea;
             await new Promise((r) => setTimeout(r, 0));
             // Last textarea is crawl_exclude_patterns; the two system-prompt textareas precede it.
-            expect(textAreas[textAreas.length - 1].value).toBe("/page/\\d+/?$\n/tag/");
+            // Only crawl_exclude_patterns is supplied by the config mock, so exactly
+            // one textarea is populated. Find it rather than assuming its position.
+            const populated = textAreas.filter((t) => t.value !== "");
+            expect(populated).toHaveLength(1);
+            expect(populated[0].value).toBe("/page/\\d+/?$\n/tag/");
         });
     });
 
@@ -3688,9 +3706,11 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textAreaByName } = captureSettingCallbacks(() => tab.display());
             // textAreaOnChanges[0]=ragSystemPrompt, [1]=generalSystemPrompt, [2]=crawl_exclude_patterns.
-            await textAreaOnChanges[2]("  /page/\\d+/?$  \n\n/tag/\n  \n/author/");
+            await textAreaByName.get(MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS)!(
+                "  /page/\\d+/?$  \n\n/tag/\n  \n/author/",
+            );
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({
                 crawl_exclude_patterns: ["/page/\\d+/?$", "/tag/", "/author/"],
             });
@@ -3702,8 +3722,8 @@ describe("managed mode settings", () => {
             mockChatPicker(plugin);
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             const tab = makeTab(plugin);
-            const { textAreaOnChanges } = captureSettingCallbacks(() => tab.display());
-            await textAreaOnChanges[2]("/page/");
+            const { textAreaByName } = captureSettingCallbacks(() => tab.display());
+            await textAreaByName.get(MESSAGES.LABEL_CRAWL_EXCLUDE_PATTERNS)!("/page/");
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
         });
     });
@@ -3953,15 +3973,14 @@ describe("managed mode settings", () => {
         // After generation (9) + retrieval-advanced (5) + ingest (4)
         // + worker-pool (2) + crawling (10) + wikiVaultFolder (1) + rerank_candidates (1) = 32,
         // hfToken is at index 32.
-        const HF_TOKEN_IDX = 33;
 
         it("calls updateConfig and saves settings on non-empty value", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[HF_TOKEN_IDX]("hf_test123");
+            await textByName.get(MESSAGES.LABEL_HF_TOKEN)!("hf_test123");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ hf_token: "hf_test123" });
             expect(plugin.getSharedHfToken()).toBe("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("HuggingFace token saved"))).toBe(true);
@@ -3971,9 +3990,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[HF_TOKEN_IDX]("");
+            await textByName.get(MESSAGES.LABEL_HF_TOKEN)!("");
             expect(plugin.getSharedHfToken()).toBe("");
         });
 
@@ -3982,9 +4001,9 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[HF_TOKEN_IDX]("hf_test123");
+            await textByName.get(MESSAGES.LABEL_HF_TOKEN)!("hf_test123");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to save HuggingFace token"))).toBe(
                 true,
             );
@@ -4225,16 +4244,13 @@ describe("managed mode settings", () => {
     });
 
     describe("Local server URL onChange", () => {
-        const OLLAMA_IDX = 34;
-        const LM_STUDIO_IDX = 35;
-
         it("calls updateConfig with ollama_base_url on non-empty value", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[OLLAMA_IDX]("http://localhost:4000");
+            await textByName.get(MESSAGES.LABEL_OLLAMA_BASE_URL)!("http://localhost:4000");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ ollama_base_url: "http://localhost:4000" });
         });
 
@@ -4242,9 +4258,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[LM_STUDIO_IDX]("http://localhost:1234/v1");
+            await textByName.get(MESSAGES.LABEL_LM_STUDIO_BASE_URL)!("http://localhost:1234/v1");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ lm_studio_base_url: "http://localhost:1234/v1" });
         });
 
@@ -4252,9 +4268,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[OLLAMA_IDX]("  ");
+            await textByName.get(MESSAGES.LABEL_OLLAMA_BASE_URL)!("  ");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -4263,9 +4279,9 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[OLLAMA_IDX]("http://localhost:4000");
+            await textByName.get(MESSAGES.LABEL_OLLAMA_BASE_URL)!("http://localhost:4000");
             expect(Notice.instances.some((n: any) => n.message.includes("failed to update local server URL"))).toBe(
                 true,
             );
@@ -4437,11 +4453,10 @@ describe("managed mode settings", () => {
             (plugin as any).wikiEnabled = true;
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
             // wiki prune toggle is before the sync-to-vault toggle
-            const wikiPruneToggleIdx = toggleOnChanges.length - 4;
-            await toggleOnChanges[wikiPruneToggleIdx](true);
+            await toggleByName.get(MESSAGES.LABEL_WIKI_PRUNE_RAW)!(true);
             expect(plugin.settings.wikiPruneRaw).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ wiki_prune_raw: true });
@@ -4511,10 +4526,9 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
-            const wikiPruneToggleIdx = toggleOnChanges.length - 4;
-            await toggleOnChanges[wikiPruneToggleIdx](true);
+            await toggleByName.get(MESSAGES.LABEL_WIKI_PRUNE_RAW)!(true);
             expect(
                 Notice.instances.some((n: any) => n.message.includes("failed to update Remove source duplicates")),
             ).toBe(true);
@@ -4525,10 +4539,9 @@ describe("managed mode settings", () => {
             (plugin as any).wikiEnabled = true;
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
-            const syncToggleIdx = toggleOnChanges.length - 3;
-            await toggleOnChanges[syncToggleIdx](true);
+            await toggleByName.get(MESSAGES.LABEL_WIKI_SYNC_TO_VAULT)!(true);
             expect(plugin.settings.wikiSyncToVault).toBe(true);
             expect(plugin.saveSettings).toHaveBeenCalled();
             expect(plugin.initWikiSync).toHaveBeenCalled();
@@ -4540,10 +4553,9 @@ describe("managed mode settings", () => {
             (plugin as any).wikiEnabled = true;
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
-            const syncToggleIdx = toggleOnChanges.length - 3;
-            await toggleOnChanges[syncToggleIdx](false);
+            await toggleByName.get(MESSAGES.LABEL_WIKI_SYNC_TO_VAULT)!(false);
             expect(plugin.settings.wikiSyncToVault).toBe(false);
             expect(plugin.wikiSync).toBeNull();
         });
@@ -4708,9 +4720,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
             // flash_attention is the last toggle (fleet section renders last).
-            await toggleOnChanges[toggleOnChanges.length - 1](true);
+            await toggleByName.get(MESSAGES.LABEL_FLASH_ATTENTION)!(true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ flash_attention: true });
         });
 
@@ -4719,8 +4731,8 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
-            await toggleOnChanges[toggleOnChanges.length - 1](false);
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
+            await toggleByName.get(MESSAGES.LABEL_FLASH_ATTENTION)!(false);
             expect(Notice.instances.some((n: any) => n.message.includes("Flash attention"))).toBe(true);
         });
 
@@ -4728,10 +4740,10 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = true;
-            await toggleOnChanges[toggleOnChanges.length - 1](true);
+            await toggleByName.get(MESSAGES.LABEL_FLASH_ATTENTION)!(true);
             (tab as any).suppressToggleChanges = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
@@ -4784,9 +4796,8 @@ describe("managed mode settings", () => {
             // 15-18=ingest, 19-20=worker-pool, 21-30=crawling, 31=wikiVaultFolder,
             // 32=rerank_candidates, 33-35=apiKeys (openai, anthropic, gemini), 36=hfToken,
             // 37=ollama URL, 38=lm_studio URL.
-            expect(inputs[33].type).toBe("password");
-            expect(inputs[34].type).toBe("password");
-            expect(inputs[35].type).toBe("password");
+            // Counted, not indexed: the point is that every credential row is masked.
+            expect(inputs.filter((i) => i.type === "password").length).toBe(4);
         });
 
         it("sets HF token input type to password", () => {
@@ -4810,7 +4821,7 @@ describe("managed mode settings", () => {
             Setting.prototype.addText = origAddText;
 
             // HF token sits at index 35 in the new layout (num_ctx removed shifted earlier indices).
-            expect(inputs[35].type).toBe("password");
+            expect(inputs.filter((i) => i.type === "password").length).toBe(4);
         });
     });
 
@@ -6671,7 +6682,6 @@ describe("managed mode settings", () => {
         // Manual mode text-input layout: [0]=port, [1-9]=gen, [10-14]=retrieval-advanced,
         // [15-18]=ingest, [19-20]=worker-pool, [21-30]=crawling, [31]=wikiVaultFolder,
         // [32]=rerank_candidates.
-        const RERANK_IDX = 32;
 
         beforeEach(() => {
             vi.useFakeTimers();
@@ -6684,9 +6694,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[RERANK_IDX]("40");
+            await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("40");
             // Debounced: PATCH doesn't fire synchronously
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
             await vi.advanceTimersByTimeAsync(400);
@@ -6698,11 +6708,11 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[RERANK_IDX]("30");
-            await textOnChanges[RERANK_IDX]("35");
-            await textOnChanges[RERANK_IDX]("40");
+            await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("30");
+            await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("35");
+            await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("40");
             await vi.advanceTimersByTimeAsync(400);
             expect(plugin.api.updateConfig).toHaveBeenCalledTimes(1);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ rerank_candidates: 40 });
@@ -6712,9 +6722,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[RERANK_IDX]("");
+            await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("");
             await vi.advanceTimersByTimeAsync(400);
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
@@ -6723,9 +6733,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[RERANK_IDX]("abc");
+            await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("abc");
             await vi.advanceTimersByTimeAsync(400);
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
@@ -6734,9 +6744,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[RERANK_IDX]("0");
+            await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("0");
             await vi.advanceTimersByTimeAsync(400);
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
@@ -6745,9 +6755,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[RERANK_IDX]("101");
+            await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("101");
             await vi.advanceTimersByTimeAsync(400);
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
@@ -6757,9 +6767,9 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("fail"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[RERANK_IDX]("40");
+            await textByName.get(MESSAGES.LABEL_RERANKER_CANDIDATES)!("40");
             await vi.advanceTimersByTimeAsync(400);
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
         });
@@ -6769,9 +6779,6 @@ describe("managed mode settings", () => {
         // Manual mode worker-pool text inputs: [19] worker_pool_call_timeout_s,
         // [20] worker_pool_max_idle_s. Toggle [1] is worker_pool_eager_start
         // ([0]=adaptiveThreshold).
-        const POOL_CALL_TIMEOUT_IDX = 19;
-        const POOL_MAX_IDLE_IDX = 20;
-        const POOL_EAGER_TOGGLE_IDX = 5;
 
         it("hides each worker-pool row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
@@ -6807,9 +6814,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[POOL_CALL_TIMEOUT_IDX]("12.5");
+            await textByName.get(MESSAGES.LABEL_WORKER_POOL_CALL_TIMEOUT)!("12.5");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ worker_pool_call_timeout_s: 12.5 });
         });
 
@@ -6817,9 +6824,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[POOL_MAX_IDLE_IDX]("90");
+            await textByName.get(MESSAGES.LABEL_WORKER_POOL_MAX_IDLE)!("90");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ worker_pool_max_idle_s: 90 });
         });
 
@@ -6827,9 +6834,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[POOL_EAGER_TOGGLE_IDX](true);
+            await toggleByName.get(MESSAGES.LABEL_WORKER_POOL_EAGER_START)!(true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ worker_pool_eager_start: true });
         });
 
@@ -6839,9 +6846,9 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[POOL_EAGER_TOGGLE_IDX](true);
+            await toggleByName.get(MESSAGES.LABEL_WORKER_POOL_EAGER_START)!(true);
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -6849,10 +6856,10 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = true;
-            await toggleOnChanges[POOL_EAGER_TOGGLE_IDX](true);
+            await toggleByName.get(MESSAGES.LABEL_WORKER_POOL_EAGER_START)!(true);
             (tab as any).suppressToggleChanges = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
@@ -6860,15 +6867,14 @@ describe("managed mode settings", () => {
 
     describe("show reasoning toggle", () => {
         // Managed section renders auto-update + dev-builds toggles first; show_reasoning follows in Chat.
-        const SHOW_REASONING_TOGGLE_IDX = 2;
 
         it("PATCHes show_reasoning when the toggle flips", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[SHOW_REASONING_TOGGLE_IDX](true);
+            await toggleByName.get(MESSAGES.LABEL_SHOW_REASONING)!(true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ show_reasoning: true });
         });
 
@@ -6878,9 +6884,9 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[SHOW_REASONING_TOGGLE_IDX](true);
+            await toggleByName.get(MESSAGES.LABEL_SHOW_REASONING)!(true);
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -6888,10 +6894,10 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = true;
-            await toggleOnChanges[SHOW_REASONING_TOGGLE_IDX](true);
+            await toggleByName.get(MESSAGES.LABEL_SHOW_REASONING)!(true);
             (tab as any).suppressToggleChanges = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
@@ -6899,15 +6905,14 @@ describe("managed mode settings", () => {
 
     describe("chat compaction toggle", () => {
         // Rendered directly after show_reasoning in the Chat section.
-        const CHAT_COMPACTION_TOGGLE_IDX = 3;
 
         it("PATCHes chat_compaction when the toggle flips", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[CHAT_COMPACTION_TOGGLE_IDX](true);
+            await toggleByName.get(MESSAGES.LABEL_CHAT_COMPACTION)!(true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ chat_compaction: true });
         });
 
@@ -6917,9 +6922,9 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
-            await toggleOnChanges[CHAT_COMPACTION_TOGGLE_IDX](true);
+            await toggleByName.get(MESSAGES.LABEL_CHAT_COMPACTION)!(true);
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
         });
 
@@ -6927,19 +6932,16 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { toggleOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { toggleByName } = captureSettingCallbacks(() => tab.display());
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = true;
-            await toggleOnChanges[CHAT_COMPACTION_TOGGLE_IDX](true);
+            await toggleByName.get(MESSAGES.LABEL_CHAT_COMPACTION)!(true);
             (tab as any).suppressToggleChanges = false;
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
     });
 
     describe("ingest settings", () => {
-        const TESSERACT_IDX = 17;
-        const VISION_BUDGET_IDX = 18;
-
         it("hides each ingest row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
@@ -6975,9 +6977,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[TESSERACT_IDX]("45.5");
+            await textByName.get(MESSAGES.LABEL_TESSERACT_TIMEOUT)!("45.5");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ tesseract_timeout: 45.5 });
         });
 
@@ -6985,9 +6987,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[VISION_BUDGET_IDX]("120");
+            await textByName.get(MESSAGES.LABEL_VISION_LOAD_BUDGET)!("120");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ vision_load_budget_s: 120 });
         });
 
@@ -6996,9 +6998,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[15]("256");
+            await textByName.get(MESSAGES.LABEL_CHUNK_SIZE)!("256");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
             mockGenericConfirmResult = true;
         });
@@ -7011,10 +7013,10 @@ describe("managed mode settings", () => {
             });
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
             // chunk_overlap idx — same value as CHUNK_OVERLAP_IDX in the chunk-fields describe.
-            await textOnChanges[15]("32");
+            await textByName.get(MESSAGES.LABEL_CHUNK_SIZE)!("32");
             expect(plugin.triggerSync).toHaveBeenCalled();
         });
 
@@ -7022,9 +7024,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[VISION_BUDGET_IDX]("-1");
+            await textByName.get(MESSAGES.LABEL_VISION_LOAD_BUDGET)!("-1");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -7032,9 +7034,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[TESSERACT_IDX]("nope");
+            await textByName.get(MESSAGES.LABEL_TESSERACT_TIMEOUT)!("nope");
             expect(plugin.api.updateConfig).not.toHaveBeenCalled();
         });
 
@@ -7044,20 +7046,14 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[TESSERACT_IDX]("30");
+            await textByName.get(MESSAGES.LABEL_TESSERACT_TIMEOUT)!("30");
             expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
         });
     });
 
     describe("retrieval advanced settings", () => {
-        const CANDIDATE_IDX = 10;
-        const MIN_RELEVANCE_IDX = 11;
-        const MAX_SOURCES_IDX = 12;
-        const DIVERSITY_IDX = 13;
-        const MMR_IDX = 14;
-
         it("hides each retrieval-advanced row when cfg keys are undefined", async () => {
             const plugin = makePlugin();
             (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
@@ -7106,9 +7102,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[CANDIDATE_IDX]("4");
+            await textByName.get(MESSAGES.LABEL_CANDIDATE_MULTIPLIER)!("4");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ candidate_multiplier: 4 });
         });
 
@@ -7116,9 +7112,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[MIN_RELEVANCE_IDX]("0.35");
+            await textByName.get(MESSAGES.LABEL_MIN_RELEVANCE_SCORE)!("0.35");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ min_relevance_score: 0.35 });
         });
 
@@ -7126,9 +7122,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[MAX_SOURCES_IDX]("12");
+            await textByName.get(MESSAGES.LABEL_MAX_CONTEXT_SOURCES)!("12");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_context_sources: 12 });
         });
 
@@ -7136,9 +7132,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[DIVERSITY_IDX]("4");
+            await textByName.get(MESSAGES.LABEL_DIVERSITY_MAX_PER_SOURCE)!("4");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ diversity_max_per_source: 4 });
         });
 
@@ -7146,9 +7142,9 @@ describe("managed mode settings", () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { textByName } = captureSettingCallbacks(() => tab.display());
 
-            await textOnChanges[MMR_IDX]("0.6");
+            await textByName.get(MESSAGES.LABEL_MMR_LAMBDA)!("0.6");
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ mmr_lambda: 0.6 });
         });
     });
@@ -7732,5 +7728,153 @@ describe("version picker with no version recorded", () => {
 
         expect(setDesc.mock.calls.some(([d]) => String(d) === MESSAGES.DESC_SERVER_VERSION_UNKNOWN)).toBe(true);
         setDesc.mockRestore();
+    });
+});
+
+describe("new server config fields", () => {
+    it("wiki_stub_max_chunk_refs PATCHes a valid integer and ignores junk", async () => {
+        const plugin = makePlugin({ wikiEnabled: true });
+        (plugin as any).wikiEnabled = true;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const { textByName } = captureSettingCallbacks(() => tab.display());
+        const row = textByName.get(MESSAGES.LABEL_WIKI_STUB_MAX_CHUNK_REFS)!;
+
+        await row("80");
+        expect(plugin.api.updateConfig).toHaveBeenCalledWith({ wiki_stub_max_chunk_refs: 80 });
+
+        (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+        await row("");
+        await row("not-a-number");
+        await row("0");
+        expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+    });
+
+    it("wiki_stub_max_chunk_refs notifies when the server rejects it", async () => {
+        const plugin = makePlugin({ wikiEnabled: true });
+        (plugin as any).wikiEnabled = true;
+        (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("nope"));
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const { textByName } = captureSettingCallbacks(() => tab.display());
+
+        Notice.clear();
+        await textByName.get(MESSAGES.LABEL_WIKI_STUB_MAX_CHUNK_REFS)!("80");
+        expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+    });
+
+    it("an empty entity prompt means the built-in one, not an empty prompt", async () => {
+        const plugin = makePlugin({ wikiEnabled: true });
+        (plugin as any).wikiEnabled = true;
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const { textAreaByName } = captureSettingCallbacks(() => tab.display());
+        const row = textAreaByName.get(MESSAGES.LABEL_WIKI_ENTITY_PAGE_PROMPT)!;
+
+        await row("  Write it plainly.  ");
+        expect(plugin.api.updateConfig).toHaveBeenCalledWith({
+            wiki_entity_page_prompt: "Write it plainly.",
+        });
+
+        await row("   ");
+        expect(plugin.api.updateConfig).toHaveBeenCalledWith({ wiki_entity_page_prompt: null });
+    });
+
+    it("entity prompt notifies when the server rejects it", async () => {
+        const plugin = makePlugin({ wikiEnabled: true });
+        (plugin as any).wikiEnabled = true;
+        (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("nope"));
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const { textAreaByName } = captureSettingCallbacks(() => tab.display());
+
+        Notice.clear();
+        await textAreaByName.get(MESSAGES.LABEL_WIKI_ENTITY_PAGE_PROMPT)!("x");
+        expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+    });
+
+    it("a retrieval toggle PATCHes both ways and reports failure", async () => {
+        const plugin = makePlugin();
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const { toggleByName } = captureSettingCallbacks(() => tab.display());
+
+        await toggleByName.get(MESSAGES.LABEL_TITLE_SEARCH)!(true);
+        expect(plugin.api.updateConfig).toHaveBeenCalledWith({ title_search: true });
+        await toggleByName.get(MESSAGES.LABEL_TITLE_SEARCH)!(false);
+        expect(plugin.api.updateConfig).toHaveBeenCalledWith({ title_search: false });
+
+        (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("nope"));
+        Notice.clear();
+        await toggleByName.get(MESSAGES.LABEL_FILTER_STRUCTURAL_CHUNKS)!(true);
+        expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+    });
+
+    it("a config toggle stays quiet while the server's own value is being applied", async () => {
+        // loadServerDefaults calls setValue to reflect the server, which fires
+        // onChange. Without the guard that echo would PATCH the value straight
+        // back to the server on every settings render.
+        const plugin = makePlugin();
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const { toggleByName } = captureSettingCallbacks(() => tab.display());
+
+        (tab as any).suppressToggleChanges = true;
+        await toggleByName.get(MESSAGES.LABEL_TITLE_SEARCH)!(true);
+        expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+    });
+
+    it("OCR languages send one per line, and an empty box means the default", async () => {
+        const plugin = makePlugin();
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const { textAreaByName } = captureSettingCallbacks(() => tab.display());
+        const row = textAreaByName.get(MESSAGES.LABEL_OCR_LANGUAGE)!;
+
+        await row("  eng \n\n deu \n  ");
+        expect(plugin.api.updateConfig).toHaveBeenCalledWith({ ocr_language: ["eng", "deu"] });
+
+        // Empty must not send [], which would leave OCR unable to read anything.
+        await row("   \n  ");
+        expect(plugin.api.updateConfig).toHaveBeenCalledWith({ ocr_language: null });
+
+        (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("nope"));
+        Notice.clear();
+        await row("eng");
+        expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+    });
+
+    it("fts_language PATCHes a non-empty value only", async () => {
+        const plugin = makePlugin();
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const { textByName } = captureSettingCallbacks(() => tab.display());
+        const row = textByName.get(MESSAGES.LABEL_FTS_LANGUAGE)!;
+
+        await row("German");
+        expect(plugin.api.updateConfig).toHaveBeenCalledWith({ fts_language: "German" });
+        (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+        await row("  ");
+        expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+
+        (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("nope"));
+        Notice.clear();
+        await row("German");
+        expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+    });
+
+    it("the table model dropdown PATCHes the chosen backend", async () => {
+        const plugin = makePlugin();
+        mockChatPicker(plugin);
+        const tab = makeTab(plugin);
+        const { dropdownByName } = captureSettingCallbacks(() => tab.display());
+
+        await dropdownByName.get(MESSAGES.LABEL_TABLE_MODEL)!(TABLE_MODEL.SLANET_WIRED);
+        expect(plugin.api.updateConfig).toHaveBeenCalledWith({ table_model: "slanet_wired" });
+
+        (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("nope"));
+        Notice.clear();
+        await dropdownByName.get(MESSAGES.LABEL_TABLE_MODEL)!(TABLE_MODEL.TATR);
+        expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
     });
 });

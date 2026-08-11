@@ -870,6 +870,18 @@ export interface EmbeddingModelResponse {
     model: string;
 }
 
+/** Table extraction backends the server accepts for `table_model`. */
+export const TABLE_MODEL = {
+    DISABLED: "disabled",
+    TATR: "tatr",
+    SLANET_AUTO: "slanet_auto",
+    SLANET_PLUS: "slanet_plus",
+    SLANET_WIRED: "slanet_wired",
+    SLANET_WIRELESS: "slanet_wireless",
+} as const;
+
+export type TableModel = (typeof TABLE_MODEL)[keyof typeof TABLE_MODEL];
+
 export const WIKI_PAGE_TYPE = {
     SUMMARY: "summary",
     SYNTHESIS: "synthesis",

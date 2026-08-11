@@ -865,6 +865,70 @@ export const MESSAGES = {
     LABEL_LINT_STATUS_MODEL: "model changed",
 
     // Wiki settings
+    // Retrieval quality (server PR #557)
+    LABEL_TITLE_SEARCH: "Match on titles",
+    DESC_TITLE_SEARCH:
+        "Also search document titles, not just their text. Helps when you remember what a file is called but not what it says.",
+    LABEL_TITLE_SEARCH_WEIGHT: "Title weight",
+    DESC_TITLE_SEARCH_WEIGHT: "How much a title match counts next to a body match. Higher favours the title.",
+    LABEL_ADAPTIVE_FUSION: "Adaptive fusion",
+    DESC_ADAPTIVE_FUSION:
+        "Let the server decide per query how much to trust keyword matching against meaning matching.",
+    LABEL_ADAPTIVE_FUSION_MARGIN: "Fusion margin",
+    DESC_ADAPTIVE_FUSION_MARGIN: "How clear a lead one method needs before the server leans on it.",
+    LABEL_LEXICAL_FUSION_WEIGHT: "Keyword weight",
+    DESC_LEXICAL_FUSION_WEIGHT: "How much keyword matching counts when results are combined.",
+    LABEL_NEIGHBOR_EXPANSION: "Include neighbouring text",
+    DESC_NEIGHBOR_EXPANSION:
+        "Pull in this many passages either side of a match, so an answer is not cut off mid-thought. 0 keeps just the match.",
+    LABEL_FILTER_STRUCTURAL_CHUNKS: "Skip boilerplate",
+    DESC_FILTER_STRUCTURAL_CHUNKS: "Drop tables of contents, headers and footers from results.",
+    LABEL_RERANK_MIN_SCORE: "Reranker cutoff",
+    DESC_RERANK_MIN_SCORE:
+        "Discard reranked results below this score. Leave empty to keep everything the reranker returns.",
+    LABEL_FTS_LANGUAGE: "Keyword search language",
+    DESC_FTS_LANGUAGE: "Language used for stemming in keyword search, so 'running' matches 'run'.",
+    LABEL_CONTEXTUAL_ENRICHMENT: "Add context when indexing",
+    DESC_CONTEXTUAL_ENRICHMENT:
+        "Give each passage a short note about where it sits in the document. Makes retrieval better and indexing slower.",
+    LABEL_EMBED_TITLES: "Index titles with text",
+    DESC_EMBED_TITLES: "Fold the document title into each passage as it is indexed.",
+    LABEL_TOKEN_SIZING: "Size passages by tokens",
+    DESC_TOKEN_SIZING:
+        "Split documents on token counts rather than characters, so passages fit the model more predictably.",
+    // Extraction quality (xberg 1.0)
+    LABEL_LAYOUT_DETECTION: "Detect page layout",
+    DESC_LAYOUT_DETECTION:
+        "Work out columns, headings and reading order before extracting. Much better on PDFs with complex layouts, and noticeably slower to ingest, which is why it is off by default.",
+    LABEL_TABLE_EXTRACTION: "Extract tables",
+    DESC_TABLE_EXTRACTION: "Pull tables out as tables instead of flattening them into a run of text.",
+    LABEL_TABLE_MODEL: "Table model",
+    DESC_TABLE_MODEL:
+        "Which model reads tables. Auto suits most documents; the wired and wireless variants suit tables with and without ruling lines.",
+    LABEL_OCR_LANGUAGE: "OCR languages",
+    DESC_OCR_LANGUAGE:
+        "Languages to expect when reading scanned pages, one per line. Three-letter codes, for example eng or deu.",
+    // Wiki
+    LABEL_WIKI_AUTO_UPDATE: "Update the wiki after ingesting",
+    DESC_WIKI_AUTO_UPDATE:
+        "Refresh wiki pages whenever documents are added. This is GPU work, so leave it off if you would rather run it yourself.",
+    LABEL_WIKI_STUB_MAX_CHUNK_REFS: "Passages per page",
+    DESC_WIKI_STUB_MAX_CHUNK_REFS: "How many source passages a generated page may draw on.",
+    LABEL_WIKI_ENTITY_PAGE_PROMPT: "Entity page prompt",
+    DESC_WIKI_ENTITY_PAGE_PROMPT:
+        "The instructions used to write a page about a person, place or thing. Leave empty for the built-in prompt.",
+    // Engine, placement and ingest
+    LABEL_INGEST_PROCESSES: "Ingest workers",
+    DESC_INGEST_PROCESSES: "How many documents are processed at once. 0 lets the server pick based on your machine.",
+    LABEL_SYSTEM_MEMORY_RESERVE_GB: "Memory to leave free",
+    DESC_SYSTEM_MEMORY_RESERVE_GB:
+        "Gigabytes of system memory to keep for everything else, so loading a model does not starve your machine.",
+    LABEL_USABLE_VRAM_FRACTION: "Usable VRAM",
+    DESC_USABLE_VRAM_FRACTION:
+        "Fraction of each card's memory the planner may fill. Lower it if other software shares the GPU.",
+    LABEL_FAST_MODEL_DOWNLOADS: "Fast model downloads",
+    DESC_FAST_MODEL_DOWNLOADS:
+        "Download models over several connections at once. Much faster on a good link, heavier on a weak one.",
     LABEL_WIKI_SECTION: "Wiki (beta)",
     LABEL_WIKI_ENABLE_TOGGLE: "Enable wiki",
     DESC_WIKI_ENABLE_TOGGLE: "Generate AI-written summaries of your documents. This feature is in beta.",
