@@ -87,6 +87,8 @@ export type Storyboard = {
   clearChat?: boolean;
   /** Fire a throwaway chat in pre-flight so the model is warm. Defaults to true. */
   preloadChatModel?: boolean;
+  /** Chat model ref pre-flight pins on the server. Defaults to the rig's DEFAULT_MODEL. */
+  pinChatModel?: string;
   /** Skip the chat-model pin entirely. For demos that don't exercise chat. */
   skipModelPin?: boolean;
   /** Skip the server-ready health gate. For demos where this vault has no
@@ -121,6 +123,7 @@ export type StoryboardOptions = {
   clearTaskCenter?: boolean;
   clearChat?: boolean;
   preloadChatModel?: boolean;
+  pinChatModel?: string;
   skipModelPin?: boolean;
   skipServerCheck?: boolean;
   noLilbee?: boolean;
@@ -144,6 +147,7 @@ export function storyboard(name: string, opts: StoryboardOptions): Storyboard {
     clearTaskCenter: opts.clearTaskCenter,
     clearChat: opts.clearChat,
     preloadChatModel: opts.preloadChatModel,
+    pinChatModel: opts.pinChatModel,
     skipModelPin: opts.skipModelPin,
     skipServerCheck: opts.skipServerCheck,
     noLilbee: opts.noLilbee,

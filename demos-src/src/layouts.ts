@@ -24,7 +24,8 @@ export type LayoutName =
   | "explorer-placement-chat"
   | "explorer-placement"
   | "placement-full"
-  | "wiki-and-tasks";
+  | "wiki-and-tasks"
+  | "explorer-note-claudian";
 
 const SHARED_PRELUDE = `
   const app = window.app;
@@ -227,6 +228,36 @@ const LAYOUT_BODY: Record<LayoutName, string> = {
       if (document.querySelector('.lilbee-gpu-row')) break;
       await new Promise(r => setTimeout(r, 100));
     }
+  `,
+  "explorer-note-claudian": `
+    // File explorer left, a vault note in the main pane, the Claudian agent
+    // panel to its right. Used by the claudian tape: the agent needs room, so
+    // it lives in a main-pane split instead of the narrow right sidebar.
+    setLeftCollapsed(false);
+    setRightCollapsed(true);
+    app.workspace.detachLeavesOfType('claudian-view');
+    const explorer = app.workspace.getLeavesOfType('file-explorer')[0];
+    if (explorer) app.workspace.revealLeaf(explorer);
+    const file = app.vault.getAbstractFileByPath('Notes/Crown Vic upgrade log.md');
+    const note = app.workspace.getLeaf(true);
+    if (file) await note.openFile(file, { active: true });
+    const claudian = app.workspace.createLeafBySplit(note, 'vertical', false);
+    await claudian.setViewState({ type: 'claudian-view', active: false });
+    app.workspace.setActiveLeaf(claudian);
+    await new Promise(r => setTimeout(r, 800));
+    // The recreated view restores the last conversation; replace it so the
+    // take starts from an empty greeting instead of stale chat history.
+    app.commands.executeCommandById('realclaudian:new-session');
+    await new Promise(r => setTimeout(r, 2000));
+    sizeSplitChildren([45, 55]);
+    // CDP drives this window without raising it. When another window of the
+    // same Obsidian process was focused last (a second vault), the capture
+    // films that one instead. Raise this window at the OS level.
+    try {
+      const w = window.require('@electron/remote').getCurrentWindow();
+      w.show(); w.focus(); w.moveTop();
+    } catch (e) { /* non-Electron test contexts */ }
+    await new Promise(r => setTimeout(r, 500));
   `,
 };
 
