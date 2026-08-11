@@ -6,8 +6,17 @@
 // ScreenCaptureKit's showsCursor=false gives a truly cursor-free capture;
 // the demo recorder then overlays its own always-present synthetic cursor.
 //
-// Usage:  sckrecord OUT.mp4 [fps]
-// Records the main display until SIGINT/SIGTERM, then finalizes the mp4.
+// Usage:  sckrecord OUT.mp4 [fps] [window-title-substring]
+// Records until SIGINT/SIGTERM, then finalizes the mp4.
+//
+// With a window-title substring it captures THAT WINDOW's own content, not the
+// slice of display the window happens to sit on. Display capture plus a crop
+// records whatever is frontmost inside that rectangle: a take once ended with a
+// chat window composited under the demo captions, because the app came forward
+// mid-recording and owned those pixels. Window capture cannot pick up another
+// app's content no matter what is in front, so nothing outside the demo can
+// leak into a reel.
+import AppKit
 import ScreenCaptureKit
 import AVFoundation
 import CoreMedia
@@ -16,8 +25,17 @@ import Foundation
 
 func err(_ s: String) { FileHandle.standardError.write((s + "\n").data(using: .utf8)!) }
 
+// Window capture talks to the window server, which a plain command-line tool
+// has not connected to: SCContentFilter(desktopIndependentWindow:) aborts with
+// "CGS_REQUIRE_INIT" without this. Display capture happens to initialise it
+// lazily, which is why only the window path needed it. .accessory keeps the
+// recorder out of the Dock so it cannot appear in its own capture.
+_ = NSApplication.shared
+NSApplication.shared.setActivationPolicy(.accessory)
+
 let outPath = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "/tmp/sck.mp4"
 let fps = CommandLine.arguments.count > 2 ? (Int(CommandLine.arguments[2]) ?? 30) : 30
+let windowMatch = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : ""
 
 final class Rec: NSObject, SCStreamOutput, SCStreamDelegate {
     var writer: AVAssetWriter!
@@ -32,10 +50,27 @@ final class Rec: NSObject, SCStreamOutput, SCStreamDelegate {
 
     func start() async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-        guard let display = content.displays.first else { throw NSError(domain: "sck", code: 1) }
-        w = display.width * 2
-        h = display.height * 2
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let filter: SCContentFilter
+        if !windowMatch.isEmpty {
+            // Largest match wins: Obsidian also owns small helper windows (and a
+            // settings window since 1.13) whose titles share the vault name, and
+            // picking one of those would record a sliver instead of the demo.
+            let matches = content.windows.filter { ($0.title ?? "").contains(windowMatch) }
+            guard let win = matches.max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height })
+            else { throw NSError(domain: "sck", code: 2,
+                                 userInfo: [NSLocalizedDescriptionKey: "no window titled *\(windowMatch)*"]) }
+            w = Int(win.frame.width) * 2
+            h = Int(win.frame.height) * 2
+            filter = SCContentFilter(desktopIndependentWindow: win)
+            // The harness maps its cursor trace from screen points into video
+            // pixels, so it needs the origin this capture is relative to.
+            err("sck: window origin \(Int(win.frame.origin.x)) \(Int(win.frame.origin.y)) size \(Int(win.frame.width)) \(Int(win.frame.height))")
+        } else {
+            guard let display = content.displays.first else { throw NSError(domain: "sck", code: 1) }
+            w = display.width * 2
+            h = display.height * 2
+            filter = SCContentFilter(display: display, excludingWindows: [])
+        }
         let cfg = SCStreamConfiguration()
         cfg.width = w
         cfg.height = h

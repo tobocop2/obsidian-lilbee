@@ -3,3 +3,4 @@ demos-src/node_modules/
 demos-src/output/*
 !demos-src/output/final
 !demos-src/output/final/**
+demos-src/src/.sckrecord

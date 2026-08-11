@@ -24,7 +24,8 @@ export type LayoutName =
   | "explorer-placement-chat"
   | "explorer-placement"
   | "placement-full"
-  | "wiki-and-tasks";
+  | "wiki-and-tasks"
+  | "wiki-and-placement";
 
 const SHARED_PRELUDE = `
   const app = window.app;
@@ -71,6 +72,22 @@ const SHARED_PRELUDE = `
 `;
 
 const LAYOUT_BODY: Record<LayoutName, string> = {
+  "wiki-and-placement": `
+    setLeftCollapsed(true);
+    setRightCollapsed(true);
+    const wiki = app.workspace.getLeaf(true);
+    await wiki.setViewState({ type: 'lilbee-wiki', active: true });
+    const gpu = app.workspace.createLeafBySplit(wiki, 'vertical', false);
+    await gpu.setViewState({ type: 'lilbee-placement', active: false });
+    app.workspace.setActiveLeaf(wiki);
+    await new Promise(r => setTimeout(r, 250));
+    sizeSplitChildren([62, 38]);
+    // The Task Centre later opens into the right sidebar, which defaults to
+    // 492px of a 1728px window: wider than the GPU pane and louder than the
+    // job it reports. Size it down first so the wiki and the GPU stay the two
+    // things the eye goes to.
+    app.workspace.rightSplit?.setSize?.(300);
+  `,
   "wiki-and-tasks": `
     setLeftCollapsed(true);
     setRightCollapsed(true);
