@@ -34,6 +34,11 @@ function makePlugin(): LilbeePlugin {
             wikiPage: vi.fn().mockResolvedValue({} as WikiPageDetail),
         },
         runWikiLint: vi.fn(),
+        taskQueue: {
+            enqueue: vi.fn().mockReturnValue("task-1"),
+            complete: vi.fn(),
+            fail: vi.fn(),
+        },
         app: {
             workspace: { openLinkText: vi.fn() },
         },
@@ -1071,5 +1076,61 @@ describe("WikiView cross-links", () => {
         const view = await openWith(plugin);
         expect((view as any).resolveWikiLink("pluto")).toBeUndefined();
         expect((view as any).resolveWikiLink("   ")).toBeUndefined();
+    });
+});
+
+describe("WikiView reports generation in the Task Centre", () => {
+    beforeEach(() => {
+        mockConfirmResult = true;
+    });
+
+    it("enqueues a wiki task and completes it", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([makeStub()]);
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockResolvedValue({
+            slug: "entities/titan",
+            path: "/w/t.md",
+        });
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        (view.contentEl as unknown as MockElement).findAll("lilbee-wiki-stub")[0].trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.taskQueue.enqueue).toHaveBeenCalledWith("Write Titan", "wiki");
+        expect(plugin.taskQueue.complete).toHaveBeenCalledWith("task-1");
+        expect(plugin.taskQueue.fail).not.toHaveBeenCalled();
+    });
+
+    it("fails the task when the write fails", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([makeStub()]);
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("gpu busy"));
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        (view.contentEl as unknown as MockElement).findAll("lilbee-wiki-stub")[0].trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.taskQueue.fail).toHaveBeenCalledWith("task-1", "gpu busy");
+        expect(plugin.taskQueue.complete).not.toHaveBeenCalled();
+    });
+
+    it("does not write when the queue is full", async () => {
+        const plugin = makePlugin();
+        (plugin.taskQueue.enqueue as ReturnType<typeof vi.fn>).mockReturnValue(null);
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([makeStub()]);
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        (view.contentEl as unknown as MockElement).findAll("lilbee-wiki-stub")[0].trigger("click");
+        await tick();
+
+        expect(plugin.api.wikiGenerate).not.toHaveBeenCalled();
     });
 });

@@ -797,6 +797,7 @@ export const MESSAGES = {
     LABEL_WIKI_WRITING: "writing...",
     CONFIRM_WIKI_GENERATE: (name: string) =>
         `Write a wiki page for "${name}"? This runs the chat model once and can take a few minutes on a large model.`,
+    TASK_WIKI_GENERATE: (name: string) => `Write ${name}`,
     NOTICE_WIKI_GENERATED: (name: string) => `lilbee: wrote "${name}"`,
     LABEL_WIKI_NO_PAGES: "No wiki pages yet",
     LABEL_WIKI_SOURCES_COUNT: (n: number) => `${n} sources`,

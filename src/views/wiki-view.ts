@@ -1,7 +1,7 @@
 import { ItemView, MarkdownRenderer, Notice, setIcon, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { WikiPage, WikiPageDetail, WikiStub } from "../types";
-import { CONCEPT_ONLY_WIKI_PAGE_TYPES, WIKI_PAGE_TYPE } from "../types";
+import { CONCEPT_ONLY_WIKI_PAGE_TYPES, TASK_TYPE, WIKI_PAGE_TYPE } from "../types";
 import { MESSAGES } from "../locales/en";
 import { errorMessage, relativeTime } from "../utils";
 import { CitationModal } from "./citation-modal";
@@ -160,16 +160,27 @@ export class WikiView extends ItemView {
         modal.open();
         if (!(await modal.result)) return;
 
+        // Writing a page is a minutes-long GPU job, so it belongs in the Task
+        // Centre alongside sync, crawl and the wiki build. Running it only
+        // inside this view left the one place a user looks for running work
+        // showing nothing at all while the GPU was saturated.
+        const taskId = this.plugin.taskQueue.enqueue(MESSAGES.TASK_WIKI_GENERATE(stubName(stub)), TASK_TYPE.WIKI);
+        if (taskId === null) {
+            new Notice(MESSAGES.NOTICE_QUEUE_FULL);
+            return;
+        }
+
         this.generating = stub.slug;
         this.renderList();
         try {
             const result = await this.plugin.api.wikiGenerate(stub.slug);
+            this.plugin.taskQueue.complete(taskId);
             new Notice(MESSAGES.NOTICE_WIKI_GENERATED(stubName(stub)), NOTICE_DURATION_MS);
             this.selectedSlug = result.slug;
             await this.refresh();
             void this.showPage(result.slug);
         } catch (err) {
-            new Notice(errorMessage(err, MESSAGES.ERROR_UNKNOWN));
+            this.plugin.taskQueue.fail(taskId, errorMessage(err, MESSAGES.ERROR_UNKNOWN));
             this.generating = null;
             this.renderList();
             return;
