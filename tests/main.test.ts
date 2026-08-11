@@ -2,7 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { windowStub } from "./window-stub";
 import { Notice, TFile, TFolder } from "obsidian";
 import { App, MockElement, WorkspaceLeaf } from "./__mocks__/obsidian";
-import { DEFAULT_SHARED_CONFIG, SETUP_OUTCOME, SSE_EVENT } from "../src/types";
+import { DEFAULT_SHARED_CONFIG, INDETERMINATE_PROGRESS, SETUP_OUTCOME, SSE_EVENT } from "../src/types";
 import { VaultRegistry } from "../src/vault-registry";
 import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
@@ -4654,6 +4654,23 @@ describe("LilbeePlugin", () => {
 
             const text = (plugin as any).statusBarEl?.textContent;
             expect(text).toContain("2 queued");
+        });
+
+        it("status bar omits the percentage for an indeterminate task", async () => {
+            // Writing a wiki page reports no phases, so it runs indeterminate.
+            // Rendering that as "0%" was the one number certain to be wrong for
+            // a job that is actively running.
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            const id = plugin.taskQueue.enqueue("Write Amazonis Planitia", "wiki");
+            plugin.taskQueue.update(id!, INDETERMINATE_PROGRESS, "writing...");
+            (plugin as any).updateStatusBarFromQueue();
+
+            const text = (plugin as any).statusBarEl?.textContent as string;
+            expect(text).toContain("Write Amazonis Planitia");
+            expect(text).not.toContain("%");
         });
 
         it("status bar shows failure flash after a pull fails", async () => {

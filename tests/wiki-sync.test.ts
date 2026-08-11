@@ -125,7 +125,7 @@ describe("isWikiPath", () => {
 describe("reconcile", () => {
     beforeEach(() => {
         vi.mocked(mockVault.exists).mockResolvedValue(true);
-        vi.mocked(mockVault.list).mockResolvedValue({ files: [] });
+        vi.mocked(mockVault.list).mockResolvedValue({ files: [], folders: [] });
     });
 
     it("writes new pages that don't exist on disk", async () => {
@@ -203,16 +203,43 @@ describe("reconcile", () => {
         expect(result.written).toBe(1);
     });
 
-    it("creates folders when they don't exist", async () => {
-        vi.mocked(mockApi.wikiList).mockResolvedValue([]);
+    it("creates a folder for every section the pages actually use", async () => {
+        // Entities are most of a real wiki. The folder list used to be
+        // hardcoded to summaries and concepts, so writing an entity page hit a
+        // missing parent, which aborted the reconcile and lost the rest.
+        vi.mocked(mockApi.wikiList).mockResolvedValue([
+            makePage({ slug: "summaries/a", page_type: "summary" }),
+            makePage({ slug: "concepts/b", page_type: "concept" }),
+            makePage({ slug: "entities/c", page_type: "entity" }),
+        ]);
         vi.mocked(mockVault.exists).mockResolvedValue(false);
         vi.mocked(mockVault.list).mockRejectedValue(new Error("not found"));
+        vi.mocked(mockApi.wikiPage).mockResolvedValue(makeDetail());
 
         await sync.reconcile();
 
         expect(mockVault.mkdir).toHaveBeenCalledWith("wiki");
         expect(mockVault.mkdir).toHaveBeenCalledWith("wiki/summaries");
         expect(mockVault.mkdir).toHaveBeenCalledWith("wiki/concepts");
+        expect(mockVault.mkdir).toHaveBeenCalledWith("wiki/entities");
+    });
+
+    it("writes every published page, entities included", async () => {
+        const pages = [
+            makePage({ slug: "summaries/a", page_type: "summary" }),
+            makePage({ slug: "concepts/b", page_type: "concept" }),
+            makePage({ slug: "entities/c", page_type: "entity" }),
+            makePage({ slug: "entities/d", page_type: "entity" }),
+        ];
+        vi.mocked(mockApi.wikiList).mockResolvedValue(pages);
+        vi.mocked(mockVault.exists).mockImplementation(async (path: string) => !path.endsWith(".md"));
+        vi.mocked(mockApi.wikiPage).mockResolvedValue(makeDetail());
+
+        const result = await sync.reconcile();
+
+        expect(result.written).toBe(4);
+        expect(mockVault.write).toHaveBeenCalledWith("wiki/entities/c.md", expect.any(String));
+        expect(mockVault.write).toHaveBeenCalledWith("wiki/entities/d.md", expect.any(String));
     });
 
     it("skips folder creation when folders exist", async () => {
@@ -233,10 +260,11 @@ describe("reconcile", () => {
         });
         vi.mocked(mockApi.wikiPage).mockResolvedValue(makeDetail({ slug: "summaries/kept" }));
         vi.mocked(mockVault.list).mockImplementation(async (path: string) => {
+            if (path === "wiki") return { files: [], folders: ["wiki/summaries"] };
             if (path === "wiki/summaries") {
-                return { files: ["wiki/summaries/old.md"] };
+                return { files: ["wiki/summaries/old.md"], folders: [] };
             }
-            return { files: [] };
+            return { files: [], folders: [] };
         });
         vi.mocked(mockVault.read).mockResolvedValue(`<!-- ${MANAGED_MARKER} -->\nold content`);
 
@@ -296,16 +324,16 @@ describe("writePage", () => {
         expect(mockVault.write).toHaveBeenCalledWith("wiki/concepts/concept-x.md", expect.stringContaining("# Hello"));
     });
 
-    it("creates folders if they don't exist", async () => {
-        const detail = makeDetail({ slug: "summaries/new" });
+    it("creates the folder the page itself needs", async () => {
+        const detail = makeDetail({ slug: "entities/cassini", page_type: "entity" });
         vi.mocked(mockApi.wikiPage).mockResolvedValue(detail);
         vi.mocked(mockVault.exists).mockResolvedValue(false);
 
-        await sync.writePage("summaries/new");
+        await sync.writePage("entities/cassini");
 
         expect(mockVault.mkdir).toHaveBeenCalledWith("wiki");
-        expect(mockVault.mkdir).toHaveBeenCalledWith("wiki/summaries");
-        expect(mockVault.mkdir).toHaveBeenCalledWith("wiki/concepts");
+        expect(mockVault.mkdir).toHaveBeenCalledWith("wiki/entities");
+        expect(mockVault.write).toHaveBeenCalledWith("wiki/entities/cassini.md", expect.any(String));
     });
 });
 
@@ -318,10 +346,11 @@ describe("removeStalePages", () => {
         const currentPages = [makePage({ slug: "summaries/keep", page_type: "summary" })];
         vi.mocked(mockVault.exists).mockResolvedValue(true);
         vi.mocked(mockVault.list).mockImplementation(async (path: string) => {
+            if (path === "wiki") return { files: [], folders: ["wiki/summaries"] };
             if (path === "wiki/summaries") {
-                return { files: ["wiki/summaries/keep.md", "wiki/summaries/stale.md"] };
+                return { files: ["wiki/summaries/keep.md", "wiki/summaries/stale.md"], folders: [] };
             }
-            return { files: [] };
+            return { files: [], folders: [] };
         });
         vi.mocked(mockVault.read).mockResolvedValue(`<!-- ${MANAGED_MARKER} -->\ncontent`);
 
@@ -335,10 +364,11 @@ describe("removeStalePages", () => {
     it("skips non-.md files", async () => {
         vi.mocked(mockVault.exists).mockResolvedValue(true);
         vi.mocked(mockVault.list).mockImplementation(async (path: string) => {
+            if (path === "wiki") return { files: [], folders: ["wiki/summaries"] };
             if (path === "wiki/summaries") {
-                return { files: ["wiki/summaries/notes.txt", "wiki/summaries/.DS_Store"] };
+                return { files: ["wiki/summaries/notes.txt", "wiki/summaries/.DS_Store"], folders: [] };
             }
-            return { files: [] };
+            return { files: [], folders: [] };
         });
 
         const removed = await sync.removeStalePages([]);
@@ -351,10 +381,11 @@ describe("removeStalePages", () => {
     it("skips non-managed .md files", async () => {
         vi.mocked(mockVault.exists).mockResolvedValue(true);
         vi.mocked(mockVault.list).mockImplementation(async (path: string) => {
+            if (path === "wiki") return { files: [], folders: ["wiki/summaries"] };
             if (path === "wiki/summaries") {
-                return { files: ["wiki/summaries/manual.md"] };
+                return { files: ["wiki/summaries/manual.md"], folders: [] };
             }
-            return { files: [] };
+            return { files: [], folders: [] };
         });
         vi.mocked(mockVault.read).mockResolvedValue("---\ntitle: Manual\n---\nuser notes");
 
@@ -373,24 +404,27 @@ describe("removeStalePages", () => {
         expect(mockVault.list).not.toHaveBeenCalled();
     });
 
-    it("checks both summaries and concepts dirs", async () => {
+    it("prunes every section on disk, entities included", async () => {
+        // The walk used to visit summaries and concepts only, so a page deleted
+        // on the server stayed in the vault forever if it was an entity.
         const currentPages: WikiPage[] = [];
         vi.mocked(mockVault.exists).mockResolvedValue(true);
         vi.mocked(mockVault.list).mockImplementation(async (path: string) => {
-            if (path === "wiki/summaries") {
-                return { files: ["wiki/summaries/a.md"] };
+            if (path === "wiki") {
+                return { files: [], folders: ["wiki/summaries", "wiki/concepts", "wiki/entities"] };
             }
-            if (path === "wiki/concepts") {
-                return { files: ["wiki/concepts/b.md"] };
-            }
-            return { files: [] };
+            if (path === "wiki/summaries") return { files: ["wiki/summaries/a.md"], folders: [] };
+            if (path === "wiki/concepts") return { files: ["wiki/concepts/b.md"], folders: [] };
+            if (path === "wiki/entities") return { files: ["wiki/entities/c.md"], folders: [] };
+            return { files: [], folders: [] };
         });
         vi.mocked(mockVault.read).mockResolvedValue(`<!-- ${MANAGED_MARKER} -->\ncontent`);
 
         const removed = await sync.removeStalePages(currentPages);
 
-        expect(removed).toBe(2);
+        expect(removed).toBe(3);
         expect(mockVault.remove).toHaveBeenCalledWith("wiki/summaries/a.md");
         expect(mockVault.remove).toHaveBeenCalledWith("wiki/concepts/b.md");
+        expect(mockVault.remove).toHaveBeenCalledWith("wiki/entities/c.md");
     });
 });

@@ -312,6 +312,10 @@ export const MESSAGES = {
     STATUS_WAITING_ON_SERVER: "Already ingesting on the server — waiting for it to finish",
     STATUS_TASKS_RUNNING_PLURAL: "{count} tasks running · {name} {pct}%",
     STATUS_TASK_RUNNING_SINGLE: "{name} {pct}%",
+    // A job whose length cannot be known reads as stuck when it is labelled 0%,
+    // so those drop the number rather than reporting a false one.
+    STATUS_TASK_RUNNING_SINGLE_INDETERMINATE: "{name}",
+    STATUS_TASKS_RUNNING_PLURAL_INDETERMINATE: "{count} tasks running · {name}",
     STATUS_TASKS_QUEUED_ONLY: "{count} queued",
     STATUS_TASK_DONE_FLASH: "Done · {name}",
     STATUS_TASKS_DONE_FLASH: "{count} tasks done · {name}",

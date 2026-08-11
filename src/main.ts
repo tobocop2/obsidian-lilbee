@@ -52,6 +52,7 @@ import {
     type SetupDonePayload,
     type SetupProgressPayload,
     type SetupStartPayload,
+    INDETERMINATE_PROGRESS,
     type SyncDone,
     type SSEEvent,
     type SyncOptions,
@@ -1764,17 +1765,25 @@ export default class LilbeePlugin extends Plugin {
         const first = allActive[0];
         const pct = first.progress > 0 ? first.progress : 0;
         const suffix = queued.length > 0 ? ` +${queued.length}` : "";
+        // Writing a wiki page reports no phases, so it runs indeterminate. It
+        // was still being rendered here as "0%", which is the one number that
+        // is certainly wrong for a job that is actively running.
+        const indeterminate = first.progress <= INDETERMINATE_PROGRESS;
 
         if (allActive.length === 1) {
-            const text = MESSAGES.STATUS_TASK_RUNNING_SINGLE.replace("{name}", first.name).replace(
-                "{pct}",
-                String(pct),
-            );
+            const text = indeterminate
+                ? MESSAGES.STATUS_TASK_RUNNING_SINGLE_INDETERMINATE.replace("{name}", first.name)
+                : MESSAGES.STATUS_TASK_RUNNING_SINGLE.replace("{name}", first.name).replace("{pct}", String(pct));
             this.updateStatusBar(`lilbee: ${text}${suffix}`, DOT_STATE.PRIMARY);
         } else {
-            const text = MESSAGES.STATUS_TASKS_RUNNING_PLURAL.replace("{count}", String(allActive.length))
-                .replace("{name}", first.name)
-                .replace("{pct}", String(pct));
+            const text = indeterminate
+                ? MESSAGES.STATUS_TASKS_RUNNING_PLURAL_INDETERMINATE.replace(
+                      "{count}",
+                      String(allActive.length),
+                  ).replace("{name}", first.name)
+                : MESSAGES.STATUS_TASKS_RUNNING_PLURAL.replace("{count}", String(allActive.length))
+                      .replace("{name}", first.name)
+                      .replace("{pct}", String(pct));
             this.updateStatusBar(`lilbee: ${text}${suffix}`, DOT_STATE.PRIMARY);
         }
         this.setStatusClass("lilbee-status-adding");

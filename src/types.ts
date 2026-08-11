@@ -546,7 +546,11 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     wikiPruneRaw: false,
     wikiFaithfulnessThreshold: 0.7,
     searchChunkType: "raw",
-    wikiSyncToVault: false,
+    // On, but only reached once the wiki itself is enabled (which is opt-in).
+    // A wiki you cannot open in the vault is most of the point missing: these
+    // pages carry [[wikilinks]], so as vault notes they get Obsidian's graph,
+    // backlinks and click-through for free.
+    wikiSyncToVault: true,
     wikiVaultFolder: "lilbee-wiki",
     manualToken: "",
     storeContentInVault: true,
@@ -1228,6 +1232,11 @@ export const SERVER_VARIANT = {
 
 /** Source of the lilbee server binary; surfaced wherever the unsigned download is explained. */
 export const LILBEE_REPO_URL = "https://github.com/tobocop2/lilbee";
+
+/** Progress value for a job whose length cannot be known: the Task Centre draws
+ * an indeterminate bar instead of a percentage. Use it when the work reports no
+ * phases at all, rather than leaving a percentage bar sitting at zero. */
+export const INDETERMINATE_PROGRESS = -1;
 
 export interface TaskEntry {
     id: string;

@@ -3,6 +3,7 @@ import { WorkspaceLeaf, MockElement } from "../__mocks__/obsidian";
 import { WikiView, VIEW_TYPE_WIKI } from "../../src/views/wiki-view";
 import type LilbeePlugin from "../../src/main";
 import type { WikiPage, WikiPageDetail, WikiStub } from "../../src/types";
+import { INDETERMINATE_PROGRESS } from "../../src/types";
 
 let mockConfirmResult = true;
 vi.mock("../../src/views/confirm-modal", () => ({
@@ -36,6 +37,7 @@ function makePlugin(): LilbeePlugin {
         runWikiLint: vi.fn(),
         taskQueue: {
             enqueue: vi.fn().mockReturnValue("task-1"),
+            update: vi.fn(),
             complete: vi.fn(),
             fail: vi.fn(),
         },
@@ -1132,5 +1134,196 @@ describe("WikiView reports generation in the Task Centre", () => {
         await tick();
 
         expect(plugin.api.wikiGenerate).not.toHaveBeenCalled();
+    });
+});
+
+describe("WikiView opens the page it just wrote", () => {
+    beforeEach(() => {
+        mockConfirmResult = true;
+    });
+
+    it("resolves the bare slug the generate route returns to the sectioned page", async () => {
+        // POST /api/wiki/generate/<slug> answers with the bare slug, but pages
+        // are addressed by section, so opening the returned value directly gave
+        // "failed to load page" for the page that had just been written.
+        const plugin = makePlugin();
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([
+            makeStub({ slug: "cassini", label: "Cassini" }),
+        ]);
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockResolvedValue({
+            slug: "cassini",
+            path: "/w/entities/cassini.md",
+        });
+        (plugin.api.wikiList as ReturnType<typeof vi.fn>)
+            .mockResolvedValueOnce([])
+            .mockResolvedValue([makePage({ slug: "entities/cassini", title: "Cassini", page_type: "entity" })]);
+
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        (view.contentEl as unknown as MockElement).findAll("lilbee-wiki-stub")[0].trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.api.wikiPage).toHaveBeenCalledWith("entities/cassini");
+    });
+});
+
+describe("WikiView reports the write as indeterminate", () => {
+    beforeEach(() => {
+        mockConfirmResult = true;
+    });
+
+    it("marks the task indeterminate rather than leaving it at zero percent", async () => {
+        // The generate route answers once, at the end, so there is no phase to
+        // report. A percentage bar would sit at 0 for the whole model call and
+        // read as hung; the Task Centre draws an indeterminate bar below zero.
+        const plugin = makePlugin();
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([
+            makeStub({ slug: "cassini", label: "Cassini" }),
+        ]);
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockResolvedValue({
+            slug: "cassini",
+            path: "/w/entities/cassini.md",
+        });
+
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        (view.contentEl as unknown as MockElement).findAll("lilbee-wiki-stub")[0].trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.taskQueue.update).toHaveBeenCalledWith("task-1", INDETERMINATE_PROGRESS, expect.any(String));
+        // and it is set before the call is awaited, not after it returns
+        const updateOrder = (plugin.taskQueue.update as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
+        const completeOrder = (plugin.taskQueue.complete as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
+        expect(updateOrder).toBeLessThan(completeOrder);
+    });
+});
+
+describe("WikiView detail pane under overlapping renders", () => {
+    it("renders only the newest page when two loads overlap", async () => {
+        // refresh() starts a load for the selected page without awaiting it, so
+        // selecting another page in the same tick leaves two loads in flight.
+        // Both empty the pane before their await and render after it, which
+        // stacked both articles in the pane.
+        const plugin = makePlugin();
+        const resolvers: Array<(p: WikiPageDetail) => void> = [];
+        (plugin.api.wikiPage as ReturnType<typeof vi.fn>).mockImplementation(
+            () => new Promise<WikiPageDetail>((res) => resolvers.push(res)),
+        );
+
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const showPage = (view as unknown as { showPage: (s: string) => Promise<void> }).showPage.bind(view);
+        const first = showPage("entities/sun");
+        const second = showPage("entities/amazonis-planitia");
+
+        // The stale load lands last, which is the ordering that produced the bug.
+        resolvers[1](makePageDetail({ slug: "entities/amazonis-planitia", title: "Amazonis Planitia" }));
+        resolvers[0](makePageDetail({ slug: "entities/sun", title: "Sun" }));
+        await Promise.all([first, second]);
+        await tick();
+
+        const titles = (view.contentEl as unknown as MockElement)
+            .findAll("lilbee-wiki-meta")
+            .map((el) => el.textContent);
+        expect(titles.filter((t) => t?.includes("Sun"))).toHaveLength(0);
+        expect(titles.filter((t) => t?.includes("Amazonis Planitia"))).toHaveLength(1);
+    });
+});
+
+describe("WikiView detail pane when a stale load fails", () => {
+    it("keeps the newest page when an older overlapping load rejects", async () => {
+        // The losing load can fail rather than resolve — a refresh for a page
+        // that has since been pruned, say. Its error must not replace the page
+        // the user is actually looking at.
+        const plugin = makePlugin();
+        let rejectFirst: (e: Error) => void = () => {};
+        let resolveSecond: (p: WikiPageDetail) => void = () => {};
+        (plugin.api.wikiPage as ReturnType<typeof vi.fn>)
+            .mockImplementationOnce(() => new Promise<WikiPageDetail>((_, rej) => (rejectFirst = rej)))
+            .mockImplementationOnce(() => new Promise<WikiPageDetail>((res) => (resolveSecond = res)));
+
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+
+        const showPage = (view as unknown as { showPage: (s: string) => Promise<void> }).showPage.bind(view);
+        const first = showPage("entities/pruned");
+        const second = showPage("entities/amazonis-planitia");
+
+        resolveSecond(makePageDetail({ slug: "entities/amazonis-planitia", title: "Amazonis Planitia" }));
+        rejectFirst(new Error("gone"));
+        await Promise.all([first, second]);
+        await tick();
+
+        const detail = (view.contentEl as unknown as MockElement).find("lilbee-wiki-detail")!;
+        expect(collectTexts(detail).some((t) => t.includes("Amazonis Planitia"))).toBe(true);
+        expect(detail.findAll("lilbee-empty-state")).toHaveLength(0);
+    });
+});
+
+describe("WikiView writes the generated page into the vault", () => {
+    beforeEach(() => {
+        mockConfirmResult = true;
+    });
+
+    it("syncs the new page to the vault when wiki sync is on", async () => {
+        // Only a full reconcile used to write pages out, so a page written here
+        // was missing from the vault until the next one.
+        const plugin = makePlugin();
+        (plugin as unknown as { wikiSync: { writePage: ReturnType<typeof vi.fn> } }).wikiSync = {
+            writePage: vi.fn().mockResolvedValue(undefined),
+        };
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([
+            makeStub({ slug: "cassini", label: "Cassini" }),
+        ]);
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockResolvedValue({
+            slug: "cassini",
+            path: "/w/entities/cassini.md",
+        });
+        (plugin.api.wikiList as ReturnType<typeof vi.fn>)
+            .mockResolvedValueOnce([])
+            .mockResolvedValue([makePage({ slug: "entities/cassini", title: "Cassini", page_type: "entity" })]);
+
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        (view.contentEl as unknown as MockElement).findAll("lilbee-wiki-stub")[0].trigger("click");
+        await tick();
+        await tick();
+
+        const sync = (plugin as unknown as { wikiSync: { writePage: ReturnType<typeof vi.fn> } }).wikiSync;
+        expect(sync.writePage).toHaveBeenCalledWith("entities/cassini");
+    });
+
+    it("still opens the page when the vault write fails", async () => {
+        const plugin = makePlugin();
+        (plugin as unknown as { wikiSync: { writePage: ReturnType<typeof vi.fn> } }).wikiSync = {
+            writePage: vi.fn().mockRejectedValue(new Error("read-only vault")),
+        };
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([
+            makeStub({ slug: "cassini", label: "Cassini" }),
+        ]);
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockResolvedValue({
+            slug: "cassini",
+            path: "/w/entities/cassini.md",
+        });
+        (plugin.api.wikiList as ReturnType<typeof vi.fn>)
+            .mockResolvedValueOnce([])
+            .mockResolvedValue([makePage({ slug: "entities/cassini", title: "Cassini", page_type: "entity" })]);
+
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        (view.contentEl as unknown as MockElement).findAll("lilbee-wiki-stub")[0].trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.api.wikiPage).toHaveBeenCalledWith("entities/cassini");
     });
 });

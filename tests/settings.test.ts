@@ -4585,6 +4585,26 @@ describe("managed mode settings", () => {
             throw new Error("wiki vault folder text field not found");
         });
 
+        it("vault folder change leaves WikiSync alone when sync is off", async () => {
+            // wikiSyncToVault now defaults on, so the off case needs stating:
+            // renaming the folder must not spin up a sync the user turned off.
+            const plugin = makePlugin({ wikiEnabled: true, wikiSyncToVault: false });
+            (plugin as any).wikiEnabled = true;
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { textOnChanges } = captureSettingCallbacks(() => tab.display());
+
+            for (let i = 0; i < textOnChanges.length; i++) {
+                plugin.settings.wikiVaultFolder = "lilbee-wiki";
+                await textOnChanges[i]("renamed-wiki");
+                if (plugin.settings.wikiVaultFolder === "renamed-wiki") {
+                    expect(plugin.initWikiSync).not.toHaveBeenCalled();
+                    return;
+                }
+            }
+            throw new Error("wiki vault folder text field not found");
+        });
+
         it("vault folder change re-initializes WikiSync when sync enabled", async () => {
             const plugin = makePlugin({ wikiEnabled: true, wikiSyncToVault: true });
             (plugin as any).wikiEnabled = true;

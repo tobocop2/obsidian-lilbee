@@ -1,7 +1,7 @@
 import { ItemView, MarkdownRenderer, Notice, setIcon, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { WikiPage, WikiPageDetail, WikiStub } from "../types";
-import { CONCEPT_ONLY_WIKI_PAGE_TYPES, TASK_TYPE, WIKI_PAGE_TYPE } from "../types";
+import { CONCEPT_ONLY_WIKI_PAGE_TYPES, INDETERMINATE_PROGRESS, TASK_TYPE, WIKI_PAGE_TYPE } from "../types";
 import { MESSAGES } from "../locales/en";
 import { errorMessage, relativeTime } from "../utils";
 import { CitationModal } from "./citation-modal";
@@ -26,6 +26,8 @@ export class WikiView extends ItemView {
     private listEl: HTMLElement | null = null;
     private detailEl: HTMLElement | null = null;
     private filterInput: HTMLInputElement | null = null;
+    /** Which detail render is current; older overlapping renders drop out. */
+    private renderSeq = 0;
 
     constructor(leaf: WorkspaceLeaf, plugin: LilbeePlugin) {
         super(leaf);
@@ -170,15 +172,39 @@ export class WikiView extends ItemView {
             return;
         }
 
+        // Indeterminate, not 0%. POST /api/wiki/generate answers once, when the
+        // page is finished, so there is no phase or token signal to report
+        // against: a percentage bar would sit at 0 for the whole model call and
+        // then jump to 100, which reads as a hung job rather than a running one.
+        // A real percentage needs the server to stream this the way the wiki
+        // build route already does.
+        this.plugin.taskQueue.update(taskId, INDETERMINATE_PROGRESS, MESSAGES.LABEL_WIKI_WRITING);
+
         this.generating = stub.slug;
         this.renderList();
         try {
             const result = await this.plugin.api.wikiGenerate(stub.slug);
             this.plugin.taskQueue.complete(taskId);
             new Notice(MESSAGES.NOTICE_WIKI_GENERATED(stubName(stub)), NOTICE_DURATION_MS);
-            this.selectedSlug = result.slug;
             await this.refresh();
-            void this.showPage(result.slug);
+            // The generate route answers with the bare slug it was given, while
+            // pages are addressed by section: GET /api/wiki/cassini is a 404 and
+            // /api/wiki/entities/cassini is the page. Opening the returned slug
+            // directly therefore failed to load the page that had just been
+            // written, so resolve it against the refreshed list first.
+            const page = this.resolveWikiLink(result.slug);
+            this.selectedSlug = page?.slug ?? result.slug;
+            this.renderList();
+            // Land it in the vault too, when the wiki is synced there. Only a
+            // full reconcile wrote pages out, so a page written here did not
+            // become a note until the next one of those — the vault copy of the
+            // wiki was stale exactly when the user had just added to it.
+            try {
+                await this.plugin.wikiSync?.writePage(this.selectedSlug);
+            } catch {
+                // the page exists on the server; the next reconcile picks it up
+            }
+            void this.showPage(this.selectedSlug);
         } catch (err) {
             this.plugin.taskQueue.fail(taskId, errorMessage(err, MESSAGES.ERROR_UNKNOWN));
             this.generating = null;
@@ -274,15 +300,25 @@ export class WikiView extends ItemView {
 
     private async showPage(slug: string): Promise<void> {
         if (!this.detailEl) return;
+        // Two of these run at once whenever a refresh overlaps a selection:
+        // refresh() starts one for the page already selected without awaiting
+        // it, and writing a page selects a different one in the same tick. Each
+        // empties the pane before its await and renders after it, so the pane
+        // ended up holding both articles stacked. Claiming a sequence number
+        // makes the newest call the only one that may render, which the two
+        // callers cannot get wrong by ordering themselves differently.
+        const seq = ++this.renderSeq;
         this.detailEl.empty();
 
         const loading = this.detailEl.createDiv({ cls: "lilbee-loading" });
 
         try {
             const page = await this.plugin.api.wikiPage(slug);
+            if (seq !== this.renderSeq) return;
             loading.remove();
             this.renderDetail(page);
         } catch {
+            if (seq !== this.renderSeq) return;
             loading.remove();
             this.detailEl.createEl("p", {
                 text: MESSAGES.ERROR_LOAD_PAGE,
