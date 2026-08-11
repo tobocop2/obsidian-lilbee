@@ -54,16 +54,10 @@ import type {
     WikiCitationChain,
     WikiPage,
     WikiPageDetail,
-    WikiGenerateResult,
     WikiStub,
     WikiPruneResult,
 } from "./types";
 const DEFAULT_TIMEOUT_MS = 15_000;
-// Writing one wiki page is a whole model call on a possibly-busy GPU. Measured
-// at 64s for a 70B at Q6; a slower card or a longer page can be several times
-// that, and failing a request the server is still working on is worse than
-// waiting.
-const WIKI_GENERATE_TIMEOUT_MS = 15 * 60_000;
 const RETRY_COUNT = 2;
 const RETRY_BACKOFF_MS = 500;
 // In managed mode, the plugin's onload doesn't configure the API until
@@ -852,13 +846,21 @@ export class LilbeeClient {
      * model. The default 15s timeout aborted every call before the page could
      * land, so this one names its own.
      */
-    async wikiGenerate(slug: string): Promise<WikiGenerateResult> {
+    /**
+     * Write one indexed page, streaming progress.
+     *
+     * The server holds this open for a whole model call, so it streams like the
+     * wiki build rather than answering with a body: wiki_phase, heartbeats
+     * while the GPU works, wiki_page, then done. The done event carries the
+     * slug the read route accepts — the bare slug the caller sends is 404 there.
+     */
+    async *wikiGenerate(slug: string, signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
         const res = await this.fetchWithRetry(
             `${this.baseUrl}/api/wiki/generate/${encodeURIComponent(slug)}`,
             { method: "POST", headers: this.authHeaders() },
-            { timeoutMs: WIKI_GENERATE_TIMEOUT_MS },
+            { stream: true, signal },
         );
-        return (await res.json()) as WikiGenerateResult;
+        yield* this.parseSSE(res);
     }
 
     async wikiPage(slug: string): Promise<WikiPageDetail> {

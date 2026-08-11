@@ -1883,48 +1883,54 @@ describe("wikiStubs()", () => {
 });
 
 describe("wikiGenerate()", () => {
-    it("POSTs the slug and returns where the page landed", async () => {
-        const data = { slug: "entities/titan", path: "/w/entities/titan.md" };
-        fetchMock.mockResolvedValue(jsonResponse(data));
+    it("POSTs the slug and yields the run's progress, ending with where the page landed", async () => {
+        fetchMock.mockResolvedValue(
+            sseResponse([
+                'event: wiki_phase\ndata: {"phase":"generate","total":1}\n\n',
+                'event: heartbeat\ndata: {"ts":1786419825.03}\n\n',
+                'event: wiki_page\ndata: {"label":"Titan","pages":1,"current":1,"total":1}\n\n',
+                'event: done\ndata: {"slug":"entities/titan","path":"/w/entities/titan.md"}\n\n',
+            ]),
+        );
 
-        const result = await client.wikiGenerate("titan");
+        const events = await collect(client.wikiGenerate("titan"));
 
         expect(fetchMock).toHaveBeenCalledWith(
             `${BASE_URL}/api/wiki/generate/titan`,
             expect.objectContaining({ method: "POST" }),
         );
-        expect(result).toEqual(data);
+        expect(events.map((e) => e.event)).toEqual(["wiki_phase", "heartbeat", "wiki_page", "done"]);
+        // The done slug is the one the read route accepts; the caller asked by
+        // bare slug, which /api/wiki 404s.
+        expect(events[3].data).toEqual({ slug: "entities/titan", path: "/w/entities/titan.md" });
     });
 
-    it("does not abort a generation at the default timeout", async () => {
-        // Writing a page took 64s against a 70B. fetchWithRetry aborts any
-        // non-stream request at 15s, so every generate died with "signal
-        // aborted without reason" while the server kept working.
-        vi.useFakeTimers();
-        try {
-            let settle: (r: Response) => void = () => {};
-            fetchMock.mockReturnValue(new Promise<Response>((r) => (settle = r)));
-            const pending = client.wikiGenerate("cassini");
-            const captured = fetchMock.mock.calls[0][1] as RequestInit;
-
-            // Well past the default timeout, the request must still be alive.
-            await vi.advanceTimersByTimeAsync(60_000);
-            expect((captured.signal as AbortSignal).aborted).toBe(false);
-
-            settle(jsonResponse({ slug: "entities/cassini", path: "/w/c.md" }));
-            await expect(pending).resolves.toEqual({ slug: "entities/cassini", path: "/w/c.md" });
-        } finally {
-            vi.useRealTimers();
-        }
+    it("reads as a stream, so the 15s timeout never fires on a model call", async () => {
+        // Writing a page took 64s against a 70B. As a plain request this aborted
+        // at 15s and every generate died with "signal aborted without reason"
+        // while the server kept working. Streaming skips the timeout, so no
+        // abort timer is installed at all when the caller passes no signal.
+        fetchMock.mockResolvedValue(sseResponse([]));
+        await collect(client.wikiGenerate("cassini"));
+        const captured = fetchMock.mock.calls[0][1] as RequestInit;
+        expect(captured.signal).toBeUndefined();
     });
 
     it("encodes a slug with a slash in it", async () => {
-        fetchMock.mockResolvedValue(jsonResponse({ slug: "a/b", path: "" }));
-        await client.wikiGenerate("concepts/gas giant");
+        fetchMock.mockResolvedValue(sseResponse([]));
+        await collect(client.wikiGenerate("concepts/gas giant"));
         expect(fetchMock).toHaveBeenCalledWith(
             `${BASE_URL}/api/wiki/generate/concepts%2Fgas%20giant`,
             expect.objectContaining({ method: "POST" }),
         );
+    });
+
+    it("passes the abort signal so a cancelled write stops streaming", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+        const controller = new AbortController();
+        await collect(client.wikiGenerate("titan", controller.signal));
+        const captured = fetchMock.mock.calls[0][1] as RequestInit;
+        expect(captured.signal).toBeDefined();
     });
 });
 

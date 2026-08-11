@@ -274,7 +274,7 @@
     },
     "/api/wiki/generate/{slug:path}": {
       "POST": {
-        "streams": false
+        "streams": true
       }
     },
     "/api/wiki/index": {
@@ -338,5 +338,5 @@
       }
     }
   },
-  "version": "0.6.90b420.dev732"
+  "version": "0.6.90b420.dev733"
 }

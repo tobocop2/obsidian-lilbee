@@ -1,9 +1,9 @@
 import { ItemView, MarkdownRenderer, Notice, setIcon, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
-import type { WikiPage, WikiPageDetail, WikiStub } from "../types";
-import { CONCEPT_ONLY_WIKI_PAGE_TYPES, INDETERMINATE_PROGRESS, TASK_TYPE, WIKI_PAGE_TYPE } from "../types";
+import type { WikiGenerateResult, WikiPage, WikiPageDetail, WikiStub } from "../types";
+import { CONCEPT_ONLY_WIKI_PAGE_TYPES, INDETERMINATE_PROGRESS, SSE_EVENT, TASK_TYPE, WIKI_PAGE_TYPE } from "../types";
 import { MESSAGES } from "../locales/en";
-import { errorMessage, relativeTime } from "../utils";
+import { errorMessage, extractSseErrorMessage, relativeTime } from "../utils";
 import { CitationModal } from "./citation-modal";
 import { ConfirmModal } from "./confirm-modal";
 
@@ -172,28 +172,43 @@ export class WikiView extends ItemView {
             return;
         }
 
-        // Indeterminate, not 0%. POST /api/wiki/generate answers once, when the
-        // page is finished, so there is no phase or token signal to report
-        // against: a percentage bar would sit at 0 for the whole model call and
-        // then jump to 100, which reads as a hung job rather than a running one.
-        // A real percentage needs the server to stream this the way the wiki
-        // build route already does.
+        // Indeterminate, not 0%. The route streams, but a single page is one
+        // unit of work: wiki_page fires once, at the end, so there is never a
+        // fraction to show. A percentage bar would sit at 0 for the whole model
+        // call and then jump to 100, which reads as a hung job rather than a
+        // running one.
         this.plugin.taskQueue.update(taskId, INDETERMINATE_PROGRESS, MESSAGES.LABEL_WIKI_WRITING);
 
         this.generating = stub.slug;
         this.renderList();
         try {
-            const result = await this.plugin.api.wikiGenerate(stub.slug);
+            // The write streams: a phase, heartbeats while the model works, the
+            // page, then done. Only `done` carries the slug the read route
+            // accepts, so nothing is opened until it arrives.
+            let written: WikiGenerateResult | null = null;
+            for await (const event of this.plugin.api.wikiGenerate(stub.slug)) {
+                if (event.event === SSE_EVENT.ERROR) {
+                    // The payload is the server's text, not an Error, so the
+                    // generic error formatter would drop it for "unknown error".
+                    throw new Error(
+                        extractSseErrorMessage(event.data as { message?: string } | string, MESSAGES.ERROR_UNKNOWN),
+                    );
+                }
+                if (event.event === SSE_EVENT.WIKI_PHASE || event.event === SSE_EVENT.WIKI_PAGE) {
+                    // Still indeterminate: one page emits one wiki_page event,
+                    // at the end, so there is no fraction to show along the way.
+                    // The phase is what can be reported honestly meanwhile.
+                    this.plugin.taskQueue.update(taskId, INDETERMINATE_PROGRESS, MESSAGES.LABEL_WIKI_WRITING);
+                }
+                if (event.event === SSE_EVENT.DONE) {
+                    written = event.data as WikiGenerateResult;
+                }
+            }
+            if (!written) throw new Error(MESSAGES.ERROR_UNKNOWN);
             this.plugin.taskQueue.complete(taskId);
             new Notice(MESSAGES.NOTICE_WIKI_GENERATED(stubName(stub)), NOTICE_DURATION_MS);
             await this.refresh();
-            // The generate route answers with the bare slug it was given, while
-            // pages are addressed by section: GET /api/wiki/cassini is a 404 and
-            // /api/wiki/entities/cassini is the page. Opening the returned slug
-            // directly therefore failed to load the page that had just been
-            // written, so resolve it against the refreshed list first.
-            const page = this.resolveWikiLink(result.slug);
-            this.selectedSlug = page?.slug ?? result.slug;
+            this.selectedSlug = written.slug;
             this.renderList();
             // Land it in the vault too, when the wiki is synced there. Only a
             // full reconcile wrote pages out, so a page written here did not

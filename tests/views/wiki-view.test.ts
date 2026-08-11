@@ -47,6 +47,18 @@ function makePlugin(): LilbeePlugin {
     } as unknown as LilbeePlugin;
 }
 
+/** The generate route streams: a phase, the page, then done carrying the slug
+ * the read route accepts. Mocks yield that rather than resolving a body. */
+function generateStream(done: { slug: string; path: string } | null, opts: { fail?: Error } = {}) {
+    return () =>
+        (async function* () {
+            yield { event: "wiki_phase", data: { phase: "generate", total: 1 } };
+            if (opts.fail) throw opts.fail;
+            yield { event: "wiki_page", data: { label: "x", pages: 1, current: 1, total: 1 } };
+            if (done) yield { event: "done", data: done };
+        })();
+}
+
 function makePage(overrides: Partial<WikiPage> = {}): WikiPage {
     return {
         slug: "summaries/test-page",
@@ -882,10 +894,9 @@ describe("WikiView unwritten subjects", () => {
     it("writes the page when the offer is accepted, then opens it", async () => {
         const plugin = makePlugin();
         (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([makeStub()]);
-        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockResolvedValue({
-            slug: "entities/titan",
-            path: "/w/entities/titan.md",
-        });
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockImplementation(
+            generateStream({ slug: "entities/titan", path: "/w/entities/titan.md" }),
+        );
         const view = new WikiView(makeLeaf(), plugin);
         await view.onOpen();
         await tick();
@@ -928,11 +939,17 @@ describe("WikiView unwritten subjects", () => {
     it("refuses a second write while one is already running", async () => {
         const plugin = makePlugin();
         (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([makeStub()]);
+        // Hold the stream open between events so the write stays in flight.
         let release: (v: unknown) => void = () => {};
-        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockReturnValue(
-            new Promise((r) => {
-                release = r;
-            }),
+        const held = new Promise((r) => {
+            release = r;
+        });
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockImplementation(() =>
+            (async function* () {
+                yield { event: "wiki_phase", data: { phase: "generate", total: 1 } };
+                await held;
+                yield { event: "done", data: { slug: "entities/titan", path: "/w/t.md" } };
+            })(),
         );
         const view = new WikiView(makeLeaf(), plugin);
         await view.onOpen();
@@ -946,13 +963,15 @@ describe("WikiView unwritten subjects", () => {
         el.findAll("lilbee-wiki-stub")[0].trigger("click");
         await tick();
         expect(plugin.api.wikiGenerate).toHaveBeenCalledTimes(1);
-        release({ slug: "entities/titan", path: "/w/t.md" });
+        release(null);
     });
 
     it("surfaces a failed write and clears the busy state", async () => {
         const plugin = makePlugin();
         (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([makeStub()]);
-        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("gpu busy"));
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockImplementation(
+            generateStream(null, { fail: new Error("gpu busy") }),
+        );
         const view = new WikiView(makeLeaf(), plugin);
         await view.onOpen();
         await tick();
@@ -1089,10 +1108,9 @@ describe("WikiView reports generation in the Task Centre", () => {
     it("enqueues a wiki task and completes it", async () => {
         const plugin = makePlugin();
         (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([makeStub()]);
-        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockResolvedValue({
-            slug: "entities/titan",
-            path: "/w/t.md",
-        });
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockImplementation(
+            generateStream({ slug: "entities/titan", path: "/w/t.md" }),
+        );
         const view = new WikiView(makeLeaf(), plugin);
         await view.onOpen();
         await tick();
@@ -1109,7 +1127,9 @@ describe("WikiView reports generation in the Task Centre", () => {
     it("fails the task when the write fails", async () => {
         const plugin = makePlugin();
         (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([makeStub()]);
-        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("gpu busy"));
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockImplementation(
+            generateStream(null, { fail: new Error("gpu busy") }),
+        );
         const view = new WikiView(makeLeaf(), plugin);
         await view.onOpen();
         await tick();
@@ -1142,18 +1162,17 @@ describe("WikiView opens the page it just wrote", () => {
         mockConfirmResult = true;
     });
 
-    it("resolves the bare slug the generate route returns to the sectioned page", async () => {
-        // POST /api/wiki/generate/<slug> answers with the bare slug, but pages
-        // are addressed by section, so opening the returned value directly gave
-        // "failed to load page" for the page that had just been written.
+    it("opens the slug the done event carries, not the one it asked for", async () => {
+        // The caller asks by bare slug; pages are addressed by section. The
+        // done event is the only place the read-route slug appears, so opening
+        // anything else is a 404 for the page just written.
         const plugin = makePlugin();
         (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([
             makeStub({ slug: "cassini", label: "Cassini" }),
         ]);
-        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockResolvedValue({
-            slug: "cassini",
-            path: "/w/entities/cassini.md",
-        });
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockImplementation(
+            generateStream({ slug: "entities/cassini", path: "/w/entities/cassini.md" }),
+        );
         (plugin.api.wikiList as ReturnType<typeof vi.fn>)
             .mockResolvedValueOnce([])
             .mockResolvedValue([makePage({ slug: "entities/cassini", title: "Cassini", page_type: "entity" })]);
@@ -1165,6 +1184,7 @@ describe("WikiView opens the page it just wrote", () => {
         await tick();
         await tick();
 
+        expect(plugin.api.wikiGenerate).toHaveBeenCalledWith("cassini");
         expect(plugin.api.wikiPage).toHaveBeenCalledWith("entities/cassini");
     });
 });
@@ -1182,10 +1202,9 @@ describe("WikiView reports the write as indeterminate", () => {
         (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([
             makeStub({ slug: "cassini", label: "Cassini" }),
         ]);
-        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockResolvedValue({
-            slug: "cassini",
-            path: "/w/entities/cassini.md",
-        });
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockImplementation(
+            generateStream({ slug: "entities/cassini", path: "/w/entities/cassini.md" }),
+        );
 
         const view = new WikiView(makeLeaf(), plugin);
         await view.onOpen();
@@ -1282,10 +1301,9 @@ describe("WikiView writes the generated page into the vault", () => {
         (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([
             makeStub({ slug: "cassini", label: "Cassini" }),
         ]);
-        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockResolvedValue({
-            slug: "cassini",
-            path: "/w/entities/cassini.md",
-        });
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockImplementation(
+            generateStream({ slug: "entities/cassini", path: "/w/entities/cassini.md" }),
+        );
         (plugin.api.wikiList as ReturnType<typeof vi.fn>)
             .mockResolvedValueOnce([])
             .mockResolvedValue([makePage({ slug: "entities/cassini", title: "Cassini", page_type: "entity" })]);
@@ -1309,10 +1327,9 @@ describe("WikiView writes the generated page into the vault", () => {
         (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([
             makeStub({ slug: "cassini", label: "Cassini" }),
         ]);
-        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockResolvedValue({
-            slug: "cassini",
-            path: "/w/entities/cassini.md",
-        });
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockImplementation(
+            generateStream({ slug: "entities/cassini", path: "/w/entities/cassini.md" }),
+        );
         (plugin.api.wikiList as ReturnType<typeof vi.fn>)
             .mockResolvedValueOnce([])
             .mockResolvedValue([makePage({ slug: "entities/cassini", title: "Cassini", page_type: "entity" })]);
@@ -1325,5 +1342,67 @@ describe("WikiView writes the generated page into the vault", () => {
         await tick();
 
         expect(plugin.api.wikiPage).toHaveBeenCalledWith("entities/cassini");
+    });
+});
+
+describe("WikiView generate stream handling", () => {
+    beforeEach(() => {
+        mockConfirmResult = true;
+    });
+
+    it("the mock's events match the client's SSEEvent shape", async () => {
+        // These tests are not typechecked, so a mock that yields the wrong
+        // field name makes every branch it feeds look covered while being dead.
+        // The view switches on `event`; pin that here rather than trusting it.
+        const stream = generateStream({ slug: "entities/x", path: "/w/x.md" })();
+        const first = (await stream.next()).value as Record<string, unknown>;
+        expect(Object.keys(first).sort()).toEqual(["data", "event"]);
+    });
+
+    it("fails the task when the run reports an error mid-stream", async () => {
+        // A stale index entry surfaces as an error event rather than a status
+        // code, because the run discovers it after the stream has opened.
+        const plugin = makePlugin();
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([
+            makeStub({ slug: "cassini", label: "Cassini" }),
+        ]);
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockImplementation(() =>
+            (async function* () {
+                yield { event: "wiki_phase", data: { phase: "generate", total: 1 } };
+                yield { event: "error", data: "index entry for cassini is stale" };
+            })(),
+        );
+
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        (view.contentEl as unknown as MockElement).findAll("lilbee-wiki-stub")[0].trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.taskQueue.fail).toHaveBeenCalledWith("task-1", expect.stringContaining("stale"));
+        expect(plugin.taskQueue.complete).not.toHaveBeenCalled();
+    });
+
+    it("fails the task when the stream ends without a done event", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiStubs as ReturnType<typeof vi.fn>).mockResolvedValue([
+            makeStub({ slug: "cassini", label: "Cassini" }),
+        ]);
+        (plugin.api.wikiGenerate as ReturnType<typeof vi.fn>).mockImplementation(() =>
+            (async function* () {
+                yield { event: "wiki_phase", data: { phase: "generate", total: 1 } };
+            })(),
+        );
+
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        (view.contentEl as unknown as MockElement).findAll("lilbee-wiki-stub")[0].trigger("click");
+        await tick();
+        await tick();
+
+        expect(plugin.taskQueue.fail).toHaveBeenCalled();
+        expect(plugin.api.wikiPage).not.toHaveBeenCalled();
     });
 });
