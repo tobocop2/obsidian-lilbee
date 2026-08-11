@@ -25,7 +25,8 @@ export type LayoutName =
   | "explorer-placement"
   | "placement-full"
   | "wiki-and-tasks"
-  | "explorer-note-claudian";
+  | "explorer-note-claudian"
+  | "explorer-note";
 
 const SHARED_PRELUDE = `
   const app = window.app;
@@ -253,6 +254,26 @@ const LAYOUT_BODY: Record<LayoutName, string> = {
     // CDP drives this window without raising it. When another window of the
     // same Obsidian process was focused last (a second vault), the capture
     // films that one instead. Raise this window at the OS level.
+    try {
+      const w = window.require('@electron/remote').getCurrentWindow();
+      w.show(); w.focus(); w.moveTop();
+    } catch (e) { /* non-Electron test contexts */ }
+    await new Promise(r => setTimeout(r, 500));
+  `,
+  "explorer-note": `
+    // File explorer left, a vault note in the main pane, nothing else. Used
+    // by the claudian tutorial: the agent panel opens on camera, so the
+    // layout must not pre-create it.
+    setLeftCollapsed(false);
+    setRightCollapsed(true);
+    app.workspace.detachLeavesOfType('claudian-view');
+    const explorer = app.workspace.getLeavesOfType('file-explorer')[0];
+    if (explorer) app.workspace.revealLeaf(explorer);
+    const file = app.vault.getAbstractFileByPath('Notes/Crown Vic upgrade log.md');
+    const note = app.workspace.getLeaf(true);
+    if (file) await note.openFile(file, { active: true });
+    await new Promise(r => setTimeout(r, 500));
+    // Same raise as explorer-note-claudian: CDP never raises windows.
     try {
       const w = window.require('@electron/remote').getCurrentWindow();
       w.show(); w.focus(); w.moveTop();
