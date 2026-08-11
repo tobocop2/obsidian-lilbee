@@ -10,6 +10,8 @@ import { ConfirmModal } from "./confirm-modal";
 export const VIEW_TYPE_WIKI = "lilbee-wiki";
 
 const NOTICE_DURATION_MS = 4000;
+/** Pause before re-reading a page that was not served on the first try. */
+const PAGE_RETRY_DELAY_MS = 900;
 
 /** What to call an unwritten subject. The index carries a label for most, and
  * the slug is the fallback for the ones it does not. */
@@ -328,7 +330,7 @@ export class WikiView extends ItemView {
         const loading = this.detailEl.createDiv({ cls: "lilbee-loading" });
 
         try {
-            const page = await this.plugin.api.wikiPage(slug);
+            const page = await this.fetchPageWithRetry(slug);
             if (seq !== this.renderSeq) return;
             loading.remove();
             this.renderDetail(page);
@@ -339,6 +341,27 @@ export class WikiView extends ItemView {
                 text: MESSAGES.ERROR_LOAD_PAGE,
                 cls: "lilbee-empty-state",
             });
+        }
+    }
+
+    /**
+     * Read a page, retrying once after a short pause.
+     *
+     * A page opened immediately after it was written can miss: the write
+     * reports done and the read is briefly not served yet, which surfaced as
+     * "Failed to load page" for the page the user had just asked for, while
+     * the same request succeeded a moment later.
+     */
+    private async fetchPageWithRetry(slug: string): Promise<WikiPageDetail> {
+        try {
+            return await this.plugin.api.wikiPage(slug);
+        } catch (first) {
+            await new Promise((r) => window.setTimeout(r, PAGE_RETRY_DELAY_MS));
+            try {
+                return await this.plugin.api.wikiPage(slug);
+            } catch {
+                throw first;
+            }
         }
     }
 

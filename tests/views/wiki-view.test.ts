@@ -1406,3 +1406,63 @@ describe("WikiView generate stream handling", () => {
         expect(plugin.api.wikiPage).not.toHaveBeenCalled();
     });
 });
+
+describe("WikiView page loading is forgiving of a just-written page", () => {
+    it("retries once when the first read misses, and shows the page", async () => {
+        // A page read straight after it was written can briefly not be served.
+        // Surfacing that as "Failed to load page" strands the user on the page
+        // they just asked for.
+        const plugin = makePlugin();
+        (plugin.api.wikiPage as ReturnType<typeof vi.fn>)
+            .mockRejectedValueOnce(new Error("Server responded 404: "))
+            .mockResolvedValue(makePageDetail({ slug: "entities/cassini", title: "Cassini" }));
+
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await (view as unknown as { showPage: (s: string) => Promise<void> }).showPage("entities/cassini");
+
+        expect(plugin.api.wikiPage).toHaveBeenCalledTimes(2);
+        const detail = (view.contentEl as unknown as MockElement).find("lilbee-wiki-detail")!;
+        expect(collectTexts(detail).some((t) => t.includes("Cassini"))).toBe(true);
+    });
+
+    it("reports the failure when both reads miss", async () => {
+        const plugin = makePlugin();
+        (plugin.api.wikiPage as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("Server responded 404: "));
+
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        await (view as unknown as { showPage: (s: string) => Promise<void> }).showPage("entities/gone");
+
+        expect(plugin.api.wikiPage).toHaveBeenCalledTimes(2);
+        const detail = (view.contentEl as unknown as MockElement).find("lilbee-wiki-detail")!;
+        expect(detail.findAll("lilbee-empty-state").length).toBeGreaterThan(0);
+    });
+});
+
+describe("WikiView drops a stale failure", () => {
+    it("does not blank the current page when an older load finally fails", async () => {
+        // Both attempts of the losing load fail, and by the time it gives up the
+        // newer page is already on screen. Its error must not replace it.
+        const plugin = makePlugin();
+        (plugin.api.wikiPage as ReturnType<typeof vi.fn>).mockImplementation((slug: string) =>
+            slug === "entities/gone"
+                ? Promise.reject(new Error("Server responded 404: "))
+                : Promise.resolve(makePageDetail({ slug, title: "Amazonis Planitia" })),
+        );
+
+        const view = new WikiView(makeLeaf(), plugin);
+        await view.onOpen();
+        await tick();
+        const showPage = (view as unknown as { showPage: (s: string) => Promise<void> }).showPage.bind(view);
+        const losing = showPage("entities/gone");
+        await showPage("entities/amazonis-planitia");
+        await losing;
+
+        const detail = (view.contentEl as unknown as MockElement).find("lilbee-wiki-detail")!;
+        expect(collectTexts(detail).some((t) => t.includes("Amazonis Planitia"))).toBe(true);
+        expect(detail.findAll("lilbee-empty-state")).toHaveLength(0);
+    });
+});
