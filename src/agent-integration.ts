@@ -87,7 +87,11 @@ export function agentModelKey(config: Record<string, unknown>): string | null {
  */
 export function mergeClaudianData(existing: unknown, modelKey: string | null): Record<string, unknown> | null {
     if (!isRecord(existing)) return null;
-    const providerConfigs = existing.providerConfigs;
+    // Claudian prunes default-valued settings from disk, so a virgin install
+    // has no providerConfigs key at all. Absent means "defaults", which is a
+    // shape this merge understands; refuse only a key that exists with a
+    // shape it does not.
+    const providerConfigs = existing.providerConfigs === undefined ? {} : existing.providerConfigs;
     if (!isRecord(providerConfigs)) return null;
 
     const opencode = containerAt(providerConfigs, AGENT_CLIENT.OPENCODE);

@@ -183,8 +183,18 @@ describe("mergeClaudianData", () => {
     it("refuses a file that is not the shape lilbee knows", () => {
         expect(mergeClaudianData(null, "m")).toBeNull();
         expect(mergeClaudianData(["array"], "m")).toBeNull();
-        expect(mergeClaudianData({ somethingElse: 1 }, "m")).toBeNull();
         expect(mergeClaudianData({ providerConfigs: "not an object" }, "m")).toBeNull();
+    });
+
+    it("treats a missing providerConfigs as a virgin install and creates it", () => {
+        // Claudian prunes default-valued settings from disk, so a first-time
+        // install has no providerConfigs key; the bridge must still configure it.
+        const merged = mergeClaudianData({ somethingElse: 1 }, "lilbee/Qwen3-14B");
+        expect(merged).not.toBeNull();
+        const providerConfigs = merged?.providerConfigs as Record<string, Record<string, unknown>>;
+        expect(providerConfigs.opencode.enabled).toBe(true);
+        expect(providerConfigs.opencode.visibleModels).toEqual(["lilbee/Qwen3-14B"]);
+        expect(merged?.somethingElse).toBe(1);
     });
 });
 
