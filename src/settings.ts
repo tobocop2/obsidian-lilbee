@@ -2528,27 +2528,13 @@ export class LilbeeSettingTab extends PluginSettingTab {
             MESSAGES.LABEL_WIKI_AUTO_UPDATE,
             MESSAGES.DESC_WIKI_AUTO_UPDATE,
         );
-        // Not hideable: the whole wiki section is already gated on the wiki being
-        // enabled, so a second layer of hiding would make the row appear and
-        // disappear for reasons the user cannot see.
-        const stubRefs = new Setting(subSettingsContainer)
-            .setName(MESSAGES.LABEL_WIKI_STUB_MAX_CHUNK_REFS)
-            .setDesc(MESSAGES.DESC_WIKI_STUB_MAX_CHUNK_REFS)
-            .addText((text) => {
-                text.onChange(async (value) => {
-                    const trimmed = value.trim();
-                    if (trimmed === "") return;
-                    const num = parseInt(trimmed, 10);
-                    if (!Number.isInteger(num) || num < 1) return;
-                    try {
-                        await this.plugin.api.updateConfig({ wiki_stub_max_chunk_refs: num });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WIKI_STUB_MAX_CHUNK_REFS));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_WIKI_STUB_MAX_CHUNK_REFS));
-                    }
-                });
-                this.serverConfigInputs.set("wiki_stub_max_chunk_refs", text.inputEl);
-            });
+        const stubRefs = this.renderHideableNumberField(
+            subSettingsContainer,
+            "wiki_stub_max_chunk_refs",
+            MESSAGES.LABEL_WIKI_STUB_MAX_CHUNK_REFS,
+            MESSAGES.DESC_WIKI_STUB_MAX_CHUNK_REFS,
+            { integer: true, min: 1 },
+        );
         this.appendResetAffordance(stubRefs, "wiki_stub_max_chunk_refs", MESSAGES.LABEL_WIKI_STUB_MAX_CHUNK_REFS);
 
         const entityPrompt = new Setting(subSettingsContainer)
