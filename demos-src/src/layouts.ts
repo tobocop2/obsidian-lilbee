@@ -24,7 +24,8 @@ export type LayoutName =
   | "explorer-placement-chat"
   | "explorer-placement"
   | "placement-full"
-  | "wiki-and-tasks";
+  | "wiki-and-tasks"
+  | "wiki-and-placement";
 
 const SHARED_PRELUDE = `
   const app = window.app;
@@ -71,6 +72,17 @@ const SHARED_PRELUDE = `
 `;
 
 const LAYOUT_BODY: Record<LayoutName, string> = {
+  "wiki-and-placement": `
+    setLeftCollapsed(true);
+    setRightCollapsed(true);
+    const wiki = app.workspace.getLeaf(true);
+    await wiki.setViewState({ type: 'lilbee-wiki', active: true });
+    const gpu = app.workspace.createLeafBySplit(wiki, 'vertical', false);
+    await gpu.setViewState({ type: 'lilbee-placement', active: false });
+    app.workspace.setActiveLeaf(wiki);
+    await new Promise(r => setTimeout(r, 250));
+    sizeSplitChildren([62, 38]);
+  `,
   "wiki-and-tasks": `
     setLeftCollapsed(true);
     setRightCollapsed(true);

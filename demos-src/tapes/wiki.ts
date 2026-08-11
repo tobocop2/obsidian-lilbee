@@ -1,100 +1,217 @@
 /**
- * wiki demo: the corpus becomes a cited encyclopedia, and refreshing it shows
- * its work.
+ * wiki demo: ten documents become an encyclopedia that lives in your vault.
  *
- * Three beats, in order: browse the pages the corpus produced, open one and read
- * a claim back to the sentence it came from, then refresh the wiki and watch the
- * run report itself source by source in the Task Center.
+ * The arc is index -> browse it natively -> find a gap -> fill it. The middle
+ * act is the point: an earlier cut showed only the plugin's own wiki pane, and
+ * the honest reaction to it was "I thought these would be real notes I could
+ * click through like Wikipedia". They are, so the reel shows that rather than
+ * describing it. The plugin pane still opens and closes the story, because the
+ * index and the write are things the vault cannot do by itself.
  *
- * Recorded against a REMOTE server in external mode, which is the point of the
- * last beat. The plugin holds an SSE stream open across an SSH tunnel for the
- * length of a multi-minute GPU job and renders per-source progress from it. Until
- * recently the plugin read that response as a JSON body and the command threw
- * before doing anything (obsidian-lilbee#214), so this reel is also the thing
- * that would have caught that.
+ * Recorded against a REMOTE server in external mode over an SSH tunnel. Three
+ * beats depend on that being real rather than staged:
+ *   - the wiki notes are the server's pages synced into the vault, so their
+ *     [[links]] resolve through Obsidian's own metadata cache
+ *   - the "not written yet" beat lists subjects the corpus names that nothing
+ *     has written, which the server computes from NER with no model call
+ *   - the write beat generates one of them, live, on the GPU
  *
- * Measured on the recording rig, so the numbers below are not guesses:
- *   Corpus      10 Wikipedia Solar System articles, ~18KB each
- *   Wiki        the same one the wiki-lazy terminal reel browses, served as is
- *               rather than regenerated, so the pages on screen are the shipped
- *               ones: 54 published, 30 drafts, 59 subjects indexed
- *   Server      unsloth Llama-3.3-70B-Instruct UD-Q6_K_XL (the quant that wrote
- *               those pages) + Qwen3-Embedding-0.6B, one H100 80GB, reached over
- *               ssh -L 8080:127.0.0.1:<port>. External mode, genuinely remote.
- *   Refresh     Q6 spends minutes on a single source. The recorded take reached
- *               "1 of 10" and was still on it at 3:38, so a full pass runs well
- *               past an hour. Hence REFRESH_SPEEDUP, and hence a caption that
- *               claims only what one source can show.
+ * Measured on the recording rig, so the timings below are not guesses:
+ *   Corpus    10 Wikipedia Solar System articles, ~18KB each
+ *   Wiki      served exactly as shipped: 54 pages written, 6 subjects the
+ *             corpus names that nothing has written. Nothing is removed or
+ *             seeded for the camera; the server reports those 6 from its own
+ *             index. Synced to the vault as 4 concept and 50 entity notes,
+ *             where 112 links resolve inside the wiki and none leak out of it.
+ *   Server    unsloth Llama-3.3-70B-Instruct UD-Q6_K_XL, the quant that wrote
+ *             those pages, split across three RTX 3090s (72GB) rather than a
+ *             datacentre card. That is the point of the GPU pane: a 70B on
+ *             hardware someone actually owns. Two cards would have fit only a
+ *             Q4, and mixing quants would have shown one page written to a
+ *             different standard than the 54 around it.
+ *   Write     one page is one model call, measured at 34s on this rig. Three
+ *             3090s split the weights roughly 21.6/21.5/20.8 GB, which is what
+ *             the GPU pane shows while it works.
  *
- * The 30 drafts are not a blemish to hide. A page publishes only when its claims
- * tie back to the source; the rest wait for review. That gate is the product.
+ * PAGE and STUB are both real. Nothing here is seeded for the camera: if the
+ * chosen stub has been written since, the tape fails rather than silently
+ * recording a different story.
  */
-import { beat, clickSelector, command, key, sleep, storyboard, type_, waitForSelector } from "../src/lib.ts";
+import {
+  beat,
+  clickSelector,
+  command,
+  runJs,
+  sleep,
+  storyboard,
+  type_,
+  waitForSelector,
+  wheelScroll,
+} from "../src/lib.ts";
 
 const WIKI_CMD = "lilbee:wiki";
-const REFRESH_CMD = "lilbee:wiki-update";
 
-// The refresh beat holds for 150s of real time. At 24x that compresses to a few
-// seconds on screen while the per-source line stays readable, which is the thing
-// worth seeing: it names the file it is on and counts toward the total.
-const REFRESH_SPEEDUP = 24;
+/** A written page that cites its sources and links four other subjects. */
+const PAGE = "lilbee-wiki/entities/saturn.md";
+/** A subject the corpus names that has no page yet, verified against
+ * /api/wiki/stubs before each take.
+ *
+ * Chosen for its name as much as its content. The index also offers
+ * "Saturnian", "Le Verrier's" and "Solar System's": NER picks up adjectival and
+ * possessive forms, which are real entries but read badly as page titles. */
+const STUB = "amazonis planitia";
+/** Where that subject lands once written, as a vault note. */
+const STUB_NOTE = "lilbee-wiki/entities/amazonis-planitia.md";
 
-// Filtered to rather than picked by position. The first page alphabetically is
-// Atmosphere, which is one of 5 pages out of 54 whose body still carries raw
-// >[Chunk N] markers from generation. Opening it under a caption about every
-// claim being cited would have put the counter-example on screen.
+// How long to hold while the page is written. A fixed wait, not a poll: the
+// detail pane still shows the previous article until the new one lands, so
+// there is no "content appeared" selector to wait on.
 //
-// Saturn is one of the 49 clean ones, and it is the better page regardless: it
-// cites a source, quotes the supporting sentence, and cross-links four other
-// subjects, so one screen shows both halves of the wiki layer.
-const PAGE_QUERY = "saturn";
+// Measured, not guessed: one page took 34s on this rig. 60s leaves margin.
+const GEN_WAIT_MS = 60_000;
+// 60s of waiting becomes about 10s on screen: long enough to read the running
+// job and register that real work is happening, short enough not to stall.
+const GEN_SPEEDUP = 6;
+
+/** Open a wiki note the way a reader would: reading view, as a tab beside the
+ * wiki pane, revealed in the file explorer so its folder is visible too.
+ *
+ * Deliberately does NOT tear down the layout. An earlier cut detached the
+ * plugin panes and rebuilt them afterwards, and the rebuilt wiki pane resolved
+ * to a position off the bottom of the window, so the click that opens the write
+ * dialog landed nowhere. Opening a sibling tab leaves the layout untouched, and
+ * closing the tab is all it takes to get back. */
+const openNote = (path: string) => runJs(`
+  const file = app.vault.getAbstractFileByPath(${JSON.stringify(path)});
+  if (!file) throw new Error("missing vault note: " + ${JSON.stringify(path)});
+  const wiki = app.workspace.getLeavesOfType("lilbee-wiki")[0];
+  if (wiki) app.workspace.setActiveLeaf(wiki, { focus: true });
+  const leaf = app.workspace.getLeaf("tab");
+  await leaf.openFile(file, { state: { mode: "preview" } });
+  app.workspace.setActiveLeaf(leaf, { focus: true });
+  const explorer = app.workspace.getLeavesOfType("file-explorer")[0];
+  if (explorer) { app.workspace.revealLeaf(explorer); await explorer.view.revealInFolder?.(file); }
+`);
 
 export default storyboard("wiki", {
   window: [1400, 900],
-  layout: "wiki-and-tasks",
-  clearTaskCenter: true,
-  // Recorded in a vault pointed at a remote server, so it must not bind to
-  // whichever managed-mode window happens to be open on the same CDP endpoint.
+  layout: "wiki-and-placement",
+  // Pointed at a remote server, so it must not bind to a managed-mode window
+  // that happens to share the CDP endpoint.
   vaultMatch: "fresh-verify",
-  // The wiki is prebuilt on the server: a build is a multi-minute GPU job and
-  // is not something a reel can create on camera. The refresh beat is the live
-  // work here.
+  // The wiki is prebuilt: a full build is an hours-long GPU job. The single
+  // page written near the end is the live work.
   skipModelPin: true,
-  caption: "A cited encyclopedia, built from your own documents.",
-  // The article, not the refresh. The refresh is the proof; the cited page is
-  // the thing being sold.
-  moneyShotBeatIndex: 5,
+  caption: "Ten documents in. An encyclopedia out.",
+  // The written page arriving in the vault, not the browse. The browse sets it
+  // up; this is the payload.
+  moneyShotBeatIndex: 21,
   beats: [
-    beat("Open the wiki", command(WIKI_CMD), {
+    // Act 1 - the index. What the plugin knows, before touching the vault.
+    beat("Open the wiki", command(WIKI_CMD), { holdMs: 700 }),
+    beat("Let the list settle", waitForSelector(".lilbee-wiki-page-item"), {
+      holdMs: 1600,
+      caption: "Concepts and entities, grouped. Every subject your documents name.",
+    }),
+    beat("Scroll the library", wheelScroll(".lilbee-wiki-list", 14), {
+      holdMs: 1400,
+      speedup: 2,
+      caption: "Written up from your own documents, not the web.",
+    }),
+    beat("Back to the top", wheelScroll(".lilbee-wiki-list", -14), { holdMs: 600, speedup: 2 }),
+
+    // Act 2 - the same wiki, as plain notes. This is the half the earlier cut
+    // was missing, and the reason it did not read as a wiki.
+    beat("Open the vault copy", openNote(PAGE), {
+      holdMs: 1200,
+      caption: "Not locked in the plugin. Every page is a note in your vault.",
+    }),
+    beat("Read it as a note", waitForSelector(".markdown-preview-view"), {
+      holdMs: 3400,
+      caption: "It records the model that wrote it and the documents behind it.",
+    }),
+    beat("Follow a link", clickSelector(".markdown-preview-view a.internal-link"), {
+      holdMs: 2800,
+      caption: "Click through it like any wiki.",
+    }),
+    beat("And another", clickSelector(".markdown-preview-view a.internal-link"), {
+      holdMs: 2600,
+    }),
+    beat("See how it connects", command("graph:open-local"), {
+      holdMs: 3600,
+      caption: "Backlinks and graph come free, because they really are just notes.",
+    }),
+    beat(
+      "Close the graph",
+      runJs(`app.workspace.getLeavesOfType("localgraph").forEach((l) => l.detach());`),
+      { holdMs: 500 },
+    ),
+
+    // Act 3 - the gap, and filling it.
+    beat(
+      "Back to the wiki",
+      runJs(`
+        app.workspace.detachLeavesOfType("markdown");
+        const wiki = app.workspace.getLeavesOfType("lilbee-wiki")[0];
+        if (wiki) app.workspace.setActiveLeaf(wiki, { focus: true });
+      `),
+      { holdMs: 1000 },
+    ),
+    // Clear and focus rather than click. A second clickSelector on the filter
+    // does not re-focus it (the harness resolves it to a zero-origin box), so
+    // the next keystrokes land nowhere and the box keeps the previous query.
+    beat(
+      "Search for a subject",
+      runJs(`
+        const el = document.querySelector(".lilbee-wiki-search");
+        el.focus();
+        el.value = "";
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      `),
+      { holdMs: 500 },
+    ),
+    beat("Type it", type_(STUB), { holdMs: 900 }),
+    beat("It knows the subject, dimmed", waitForSelector(".lilbee-wiki-stub"), {
+      holdMs: 2600,
+      caption: "It knows every subject, including the ones it has not written.",
+    }),
+    // The Task Centre appears for the job and goes away after. Parking it on
+    // screen for the whole reel would show an empty box through every beat that
+    // has no running work.
+    beat(
+      "Bring up the Task Centre",
+      runJs(`
+        const leaf = app.workspace.createLeafBySplit(
+          app.workspace.getLeavesOfType("lilbee-placement")[0], "horizontal", false);
+        await leaf.setViewState({ type: "lilbee-tasks", active: false });
+      `),
+      { holdMs: 700 },
+    ),
+    beat("Ask for the page", clickSelector(".lilbee-wiki-stub"), { holdMs: 900 }),
+    beat("Confirm", clickSelector(".mod-cta"), {
       holdMs: 900,
-      caption: "Every subject the corpus names, written up and cross-linked.",
+      caption: "Ask, and it writes one.",
     }),
-    beat("Let the page list settle", waitForSelector(".lilbee-wiki-page-item"), { holdMs: 1400 }),
-
-    beat("Search for a subject", clickSelector(".lilbee-wiki-search"), { holdMs: 500 }),
-    beat("Type the subject", type_(PAGE_QUERY), { holdMs: 900 }),
-    beat("Open the page", clickSelector(".lilbee-wiki-page-item"), {
-      holdMs: 800,
+    beat("Watch it write on the GPU", sleep(GEN_WAIT_MS), {
+      holdMs: 1000,
+      speedup: GEN_SPEEDUP,
+      caption: "One page, one model call, on your own GPU.",
     }),
-    beat("Read the article", waitForSelector(".lilbee-wiki-content"), {
-      holdMs: 3800,
-      caption: "Every claim carries a citation back to the sentence it came from.",
+    beat(
+      "Put the Task Centre away",
+      runJs(`app.workspace.getLeavesOfType("lilbee-tasks").forEach((l) => l.detach());`),
+      { holdMs: 600 },
+    ),
+    beat("Read the new page", waitForSelector(".lilbee-wiki-content"), {
+      holdMs: 3000,
+      caption: "Written and cited.",
     }),
-
-    beat("Refresh the wiki", command(REFRESH_CMD), {
-      holdMs: 1200,
-      caption: "Refreshing runs the chat model over every source.",
+    // The close: it is not just in the plugin, it is in the vault with the rest
+    // of the wiki, linked like everything around it.
+    beat("And it is already a note", openNote(STUB_NOTE), { holdMs: 1000 }),
+    beat("Read the new note", waitForSelector(".markdown-preview-view"), {
+      holdMs: 4000,
+      caption: "And it is part of your vault, linked like the rest.",
     }),
-    beat("Follow the run", sleep(150_000), {
-      holdMs: 1200,
-      speedup: REFRESH_SPEEDUP,
-      // Deliberately not "reports each source as it goes". At Q6 a single
-      // source takes minutes, so the clip only ever reaches the first one, and
-      // a caption promising a parade of them would be describing footage that
-      // is not on screen.
-      caption: "It names the source it is on, and stops the moment you ask.",
-    }),
-    beat("Stop it", clickSelector(".lilbee-task-cancel"), { holdMs: 2200 }),
-    beat("Settle", key("Escape"), { holdMs: 900 }),
   ],
 });
