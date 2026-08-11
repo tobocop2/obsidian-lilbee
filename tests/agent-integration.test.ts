@@ -411,11 +411,13 @@ describe("AgentWiring Claudian bridge", () => {
     });
 
     it("skips silently when Claudian's data file is not the expected shape", async () => {
-        files[claudianPath] = JSON.stringify({ settings: { theme: "dark" } });
+        // providerConfigs present but wrong-typed is the unknown-shape case;
+        // an absent key is a virgin install and gets configured instead.
+        files[claudianPath] = JSON.stringify({ providerConfigs: "corrupted" });
         const result = await new AgentWiring(app, api).apply(AGENT_CLIENT.OPENCODE);
 
         expect(result._unsafeUnwrap().claudian).toBe(CLAUDIAN_OUTCOME.SKIPPED);
-        expect(JSON.parse(files[claudianPath])).toEqual({ settings: { theme: "dark" } });
+        expect(JSON.parse(files[claudianPath])).toEqual({ providerConfigs: "corrupted" });
     });
 
     it("skips when Claudian has not written its data file yet", async () => {
