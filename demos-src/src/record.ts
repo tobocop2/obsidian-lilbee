@@ -183,7 +183,9 @@ export async function record(storyboard: Storyboard): Promise<void> {
     const sckPath = `${rawPath}.sck.mp4`;
     // Capture the Obsidian window rather than the display rectangle under it,
     // so nothing that comes forward mid-take can appear in the reel.
-    const sckWindowMatch = storyboard.vaultMatch ?? "Obsidian";
+    // vaultMatch is a path fragment for the CDP page pick; a title may look
+    // nothing like it. Tapes whose window title differs set windowMatch.
+    const sckWindowMatch = storyboard.windowMatch ?? storyboard.vaultMatch ?? "Obsidian";
     const sck = startSck(sckPath, sckWindowMatch);
     trackChild(sck.proc);
     // SCK's first written frame IS recording t=0 (no startup junk to trim,
@@ -595,12 +597,30 @@ function startSck(outPath: string, windowMatch?: string): { proc: ChildProcess; 
   const args = windowMatch ? [outPath, "30", windowMatch] : [outPath, "30"];
   const proc = spawn(bin, args, { stdio: ["ignore", "ignore", "pipe"] });
   let resolveFirst: (ms: number) => void;
-  const firstFrame = new Promise<number>((res) => (resolveFirst = res));
+  let rejectFirst: (e: Error) => void;
+  let started = false;
+  let stderrTail = "";
+  const firstFrame = new Promise<number>((res, rej) => {
+    resolveFirst = res;
+    rejectFirst = rej;
+  });
   proc.stderr?.on("data", (b: Buffer) => {
     const s = b.toString();
+    stderrTail = (stderrTail + s).slice(-500);
     const m = s.match(/sck: firstframe (\d+)/);
-    if (m) resolveFirst(Number(m[1]));
+    if (m) {
+      started = true;
+      resolveFirst(Number(m[1]));
+    }
     if (s.includes("error")) console.error(s.trim());
+  });
+  // A title that matches no window makes the recorder throw and exit. Without
+  // this the harness waits on a first frame that will never arrive and simply
+  // hangs, which reads as a stuck take rather than a bad selector.
+  proc.on("exit", (code) => {
+    if (!started) {
+      rejectFirst(new Error(`recorder exited (code ${code}) before any frame. Last output: ${stderrTail.trim()}`));
+    }
   });
   return { proc, firstFrame };
 }
