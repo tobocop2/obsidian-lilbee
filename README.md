@@ -136,6 +136,16 @@ From then on you search or chat with that copy offline. The citations click back
 
 <p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#crawl"><img alt="crawl a Wikipedia page into the vault, ask a cited question, and jump to the cited section" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl.gif" width="640"></a></p>
 
+### Pair a coding agent with your library
+
+> **Watch it:** [pair a coding agent with lilbee](https://obsidian.lilbee.sh/tutorial/#claudian). One click connects the agent to your models and your library; it crawls a page in, answers a cited question, and writes a note back to your vault.
+
+The rest of the plugin searches and answers with citations. This takes those same local models further: it puts them behind a coding agent that can *act* on your vault, not just answer questions. The agent crawls new pages into your library, searches it, and writes notes and code back — multi-step work on your knowledge base, driven by models you host.
+
+Install a coding-agent plugin like [Claudian](https://obsidian.md/plugins?id=realclaudian) alongside lilbee and pair them in one click from a first-use prompt. The agent thinks on the models lilbee manages and reaches your library through lilbee's tools. No API key, no account, nothing leaves your machine. lilbee writes the agent's config with the live server address and token and keeps it fresh on every start, so the pairing never goes stale. Switch which agent or model it uses any time in Settings.
+
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#claudian"><img alt="pair Claudian with lilbee, crawl a Wikipedia page into the library, ask a cited question, and have the agent write a summary note back to the vault" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/claudian.gif" width="640"></a></p>
+
 ### An encyclopedia of your documents
 
 > **Watch it:** [an encyclopedia of your documents](https://obsidian.lilbee.sh/tutorial/#wiki). Browse the pages as notes, follow a link, then ask for a subject it hasn't written and watch it write one.

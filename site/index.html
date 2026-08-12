@@ -183,6 +183,7 @@
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-vision"    aria-controls="tutorial-pane-vision"    aria-selected="false" tabindex="-1">scanned PDF</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-crawl"     aria-controls="tutorial-pane-crawl"     aria-selected="false" tabindex="-1">crawl</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-crawlsite" aria-controls="tutorial-pane-crawlsite" aria-selected="false" tabindex="-1">crawl a site</button>
+          <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-claudian"  aria-controls="tutorial-pane-claudian"  aria-selected="false" tabindex="-1">coding agent</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-wiki"      aria-controls="tutorial-pane-wiki"      aria-selected="false" tabindex="-1">wiki</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-catalog"   aria-controls="tutorial-pane-catalog"   aria-selected="false" tabindex="-1">catalog</button>
           <button type="button" class="tutorialtab" role="tab" id="tutorial-tab-download"  aria-controls="tutorial-pane-download"  aria-selected="false" tabindex="-1">download a model</button>
@@ -265,6 +266,13 @@
             <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl_site.webm" controls loop muted autoplay playsinline preload="metadata"></video>
           </div>
           <p class="tutorial-caption">Crawl a whole site one link deep into an empty vault, hundreds of pages streaming into the explorer as they index, then ask one multi-part question that only makes sense across all of it. A local model answers with reranking and cites several of the crawled pages.</p>
+        </div>
+
+        <div class="tutorialpane" role="tabpanel" id="tutorial-pane-claudian" aria-labelledby="tutorial-tab-claudian" hidden>
+          <div class="tutorial-clip">
+            <video src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/claudian.webm" controls loop muted autoplay playsinline preload="metadata"></video>
+          </div>
+          <p class="tutorial-caption">The plugin searches and answers with citations; this takes lilbee's models further, putting them behind an agent that <em>acts</em> on your vault instead of just answering. Pair a coding agent in one click, then set it to work on your library: it crawls a Wikipedia page in, answers a cited question about it, takes a grounded follow-up, and writes a summary note back into your vault — on the same local models lilbee manages, shown live on the GPU beside the chat.</p>
         </div>
 
         <div class="tutorialpane" role="tabpanel" id="tutorial-pane-catalog" aria-labelledby="tutorial-tab-catalog" hidden>
