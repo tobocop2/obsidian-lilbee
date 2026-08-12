@@ -100,6 +100,8 @@ function universalResponse(): Response {
 const INVOCATIONS: Record<string, unknown[]> = {
     health: [],
     status: [],
+    getAgentConfigIndex: [],
+    getAgentConfig: ["opencode"],
     search: ["query"],
     chatStream: ["question", []],
     listSessions: [],

@@ -7,6 +7,9 @@ import type { ReleaseInfo } from "./binary-manager";
 /** Community IRC channel for dev-build feedback. */
 const LIBERA_LILBEE_URL = "https://web.libera.chat/#lilbee";
 import {
+    AGENT_CLIENT,
+    AGENT_MIN_CONTEXT_TOKENS,
+    AGENT_SELECTION,
     CAPABILITY,
     CHAT_MODE,
     CONFIG_KEY,
@@ -26,6 +29,9 @@ import {
     VERSION_ACTION,
 } from "./types";
 import type {
+    AgentClient,
+    AgentClientDetection,
+    AgentSelection,
     CatalogEntry,
     ConfigResponse,
     InstalledModel,
@@ -35,11 +41,14 @@ import type {
 } from "./types";
 import { exportDiagnostics } from "./diagnostics-export";
 import { reportForVault } from "./storage-stats";
-import { MESSAGES } from "./locales/en";
+import { AGENT_LABELS, AGENT_LINKS, MESSAGES } from "./locales/en";
+import { CLAUDIAN_OUTCOME, CLAUDIAN_PLUGIN_ID, isClaudianInstalled } from "./agent-integration";
+import { PILL_CLS } from "./components/pill";
 import { displayLabelForRef, extractHfRepo, matchModelOption } from "./utils/model-ref";
 import { versionActionFor, versionButtonLabel, versionDescription } from "./utils/server-version";
 import { CatalogModal } from "./views/catalog-modal";
-import { hostedOptions } from "./views/catalog-helpers";
+import { hostedOptions, KEY_STATUS_PILL_CLASS } from "./views/catalog-helpers";
+import { ModelPickerModal } from "./views/model-picker-modal";
 import { ConfirmModal } from "./views/confirm-modal";
 import { ConfirmPullModal } from "./views/confirm-pull-modal";
 import { SetupWizard } from "./views/setup-wizard";
@@ -54,6 +63,8 @@ import {
     noticeForResultError,
     getRelevantSystemMemoryGB,
     noticeServerUnreachableIfApplicable,
+    openPluginSettingsById,
+    renderExternalLink,
     setDeterminateProgress,
 } from "./utils";
 
@@ -123,6 +134,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private wikiContainerEl: HTMLElement | null = null;
     /** Last successful release-list fetch; failures are not cached, so a retry always refetches. */
     private releasesCache: { at: number; releases: ReleaseInfo[] } | null = null;
+    /** Detected agent CLIs; null until the first probe lands or after it fails. */
+    private agentDetections: AgentClientDetection[] | null = null;
+    private agentBodyEl: HTMLElement | null = null;
 
     constructor(app: App, plugin: LilbeePlugin) {
         super(app, plugin);
@@ -165,6 +179,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.renderCrawlingSettings(this.crawlingContainerEl);
         this.wikiContainerEl = containerEl.createDiv();
         this.renderWikiSettings(this.wikiContainerEl);
+        this.renderAgentIntegration(containerEl);
         this.renderDiagnostics(containerEl);
         this.renderAdvancedSettings(containerEl);
         this.renderFleetSettings(containerEl);
@@ -264,6 +279,180 @@ export class LilbeeSettingTab extends PluginSettingTab {
      * server never starts, even if a binary was put back by hand, until an
      * explicit install clears the flag.
      */
+    private renderAgentIntegration(containerEl: HTMLElement): void {
+        const section = containerEl.createDiv({ cls: "lilbee-settings-section lilbee-agent-section" });
+        new Setting(section).setName(MESSAGES.LABEL_AGENT_SECTION).setHeading().setDesc(MESSAGES.DESC_AGENT_SECTION);
+        this.agentBodyEl = section.createDiv({ cls: "lilbee-agent-body" });
+        void this.loadAgentDetections();
+    }
+
+    /** Probe for agent CLIs, reusing the last result unless the user asked to rescan. */
+    private async loadAgentDetections(force = false): Promise<void> {
+        if (this.agentDetections === null || force) {
+            const index = await this.plugin.api.getAgentConfigIndex();
+            this.agentDetections = index.isOk() ? index.value.clients : null;
+        }
+        this.renderAgentBody();
+    }
+
+    private renderAgentBody(): void {
+        const body = this.agentBodyEl;
+        if (!body) return;
+        body.empty();
+        const detections = this.agentDetections;
+        if (detections === null) {
+            body.createEl("p", { cls: "setting-item-description", text: MESSAGES.AGENT_DETECT_UNAVAILABLE });
+            this.addRescanButton(body);
+            return;
+        }
+        const installed = detections.filter((d) => d.cli_detected).map((d) => d.client);
+        this.renderAgentChoice(body, installed);
+        this.renderSupportedAgents(body);
+        const selected = this.plugin.settings.agentIntegration.agent;
+        if (selected === AGENT_SELECTION.NONE) return;
+        this.renderAgentKeepFresh(body);
+        this.renderAgentModelRow(body);
+        if (selected === AGENT_CLIENT.OPENCODE) this.renderClaudianRow(body);
+        this.renderAgentStatus(body, selected);
+    }
+
+    private addRescanButton(parent: HTMLElement, setting?: Setting): void {
+        const target = setting ?? new Setting(parent).setName(MESSAGES.LABEL_AGENT_SUPPORTED);
+        target.addButton((btn) =>
+            btn.setButtonText(MESSAGES.BUTTON_AGENT_RESCAN).onClick(() => {
+                void this.loadAgentDetections(true);
+            }),
+        );
+    }
+
+    /** A plain links row: the projects a user installs to get a coding agent. */
+    private renderSupportedAgents(body: HTMLElement): void {
+        const setting = new Setting(body).setName(MESSAGES.LABEL_AGENT_SUPPORTED);
+        const links = setting.descEl.createSpan({ cls: "lilbee-agent-links" });
+        AGENT_LINKS.forEach((link, i) => {
+            if (i > 0) links.appendText(" · ");
+            renderExternalLink(links, link.label, link.url);
+        });
+        this.addRescanButton(body, setting);
+    }
+
+    /** The dropdown lists only installed agents, so what shows is what you can pick. */
+    private renderAgentChoice(body: HTMLElement, installed: AgentClient[]): void {
+        new Setting(body)
+            .setName(MESSAGES.LABEL_AGENT_CHOICE)
+            .setDesc(MESSAGES.DESC_AGENT_CHOICE)
+            .addDropdown((dropdown) => {
+                dropdown.addOption(AGENT_SELECTION.NONE, MESSAGES.AGENT_OPTION_NONE);
+                for (const client of installed) {
+                    dropdown.addOption(client, AGENT_LABELS[client]);
+                }
+                dropdown.setValue(this.plugin.settings.agentIntegration.agent);
+                dropdown.onChange(async (value) => {
+                    const agent = value as AgentSelection;
+                    this.plugin.settings.agentIntegration.agent = agent;
+                    this.plugin.settings.agentIntegration.pickerShown = true;
+                    await this.plugin.persistAgentIntegration();
+                    if (agent !== AGENT_SELECTION.NONE) await this.plugin.applyAgentWiring(agent);
+                    this.renderAgentBody();
+                });
+            });
+    }
+
+    private renderAgentKeepFresh(body: HTMLElement): void {
+        new Setting(body)
+            .setName(MESSAGES.LABEL_AGENT_KEEP_FRESH)
+            .setDesc(MESSAGES.DESC_AGENT_KEEP_FRESH)
+            .addToggle((toggle) => {
+                toggle.setValue(this.plugin.settings.agentIntegration.keepConfigFresh);
+                toggle.onChange(async (value) => {
+                    this.plugin.settings.agentIntegration.keepConfigFresh = value;
+                    await this.plugin.persistAgentIntegration();
+                });
+            });
+    }
+
+    /** The agent runs on lilbee's chat model, so this row drives the same selection. */
+    private renderAgentModelRow(body: HTMLElement): void {
+        const setting = new Setting(body)
+            .setName(MESSAGES.LABEL_AGENT_MODEL)
+            .setDesc(displayLabelForRef(this.plugin.activeModel) || MESSAGES.LABEL_NOT_SET)
+            .addButton((btn) =>
+                btn.setButtonText(MESSAGES.BUTTON_AGENT_CHANGE_MODEL).onClick(() => {
+                    new ModelPickerModal(this.app, this.plugin, MODEL_TASK.CHAT).open();
+                }),
+            );
+        // The context pill sits in the control slot, left of the button; the
+        // low-context warning, if any, gets its own note row below.
+        void this.renderAgentContext(setting, body);
+    }
+
+    private async renderAgentContext(setting: Setting, body: HTMLElement): Promise<void> {
+        const health = await this.plugin.api.health();
+        const ctx = health.isOk() ? health.value.chat_ctx : null;
+        if (typeof ctx !== "number") return;
+        const pill = createSpan({
+            cls: `lilbee-key-status-pill ${PILL_CLS.CONTEXT}`,
+            text: MESSAGES.AGENT_CONTEXT_BADGE(ctx),
+        });
+        setting.controlEl.prepend(pill);
+        if (ctx < AGENT_MIN_CONTEXT_TOKENS) {
+            body.createDiv({
+                cls: "lilbee-agent-note setting-item-description is-warning",
+                text: MESSAGES.AGENT_CONTEXT_WARNING,
+            });
+        }
+    }
+
+    private renderClaudianRow(body: HTMLElement): void {
+        const setting = new Setting(body).setName(MESSAGES.LABEL_AGENT_CLAUDIAN);
+        if (!isClaudianInstalled(this.app)) {
+            setting.setDesc(MESSAGES.DESC_AGENT_CLAUDIAN_MISSING);
+            return;
+        }
+        const skipped = this.plugin.lastAgentWrite?.claudian === CLAUDIAN_OUTCOME.SKIPPED;
+        setting.setDesc(skipped ? MESSAGES.DESC_AGENT_CLAUDIAN_SKIPPED : MESSAGES.DESC_AGENT_CLAUDIAN_CONFIGURED);
+        if (!skipped) {
+            setting.controlEl.createSpan({
+                cls: `lilbee-key-status-pill ${KEY_STATUS_PILL_CLASS.READY}`,
+                text: MESSAGES.PILL_AGENT_CLAUDIAN_CONFIGURED,
+            });
+        }
+        setting.addButton((btn) =>
+            btn.setButtonText(MESSAGES.BUTTON_OPEN_CLAUDIAN).onClick(() => {
+                openPluginSettingsById(this.app, CLAUDIAN_PLUGIN_ID);
+            }),
+        );
+    }
+
+    private renderAgentStatus(body: HTMLElement, agent: AgentClient): void {
+        const text =
+            agent === AGENT_CLIENT.HERMES
+                ? MESSAGES.AGENT_STATUS_GLOBAL
+                : this.plugin.lastAgentWrite === null
+                  ? MESSAGES.AGENT_STATUS_PENDING
+                  : MESSAGES.AGENT_STATUS_CONNECTED;
+        const status = body.createDiv({ cls: "lilbee-agent-status setting-item-description" });
+        status.createSpan({ cls: "lilbee-agent-status-dot" });
+        status.createSpan({ text });
+        if (agent === AGENT_CLIENT.HERMES) this.renderHermesConfigBlock(body);
+    }
+
+    /** hermes keeps one global config, so lilbee offers the block rather than writing it. */
+    private renderHermesConfigBlock(body: HTMLElement): void {
+        const setting = new Setting(body).setName(MESSAGES.LABEL_AGENT_COPY_CONFIG);
+        const block = body.createEl("pre", { cls: "lilbee-agent-config-block" });
+        void this.plugin.api.getAgentConfig(AGENT_CLIENT.HERMES).then((result) => {
+            const content = result.isOk() ? (result.value.content ?? "") : "";
+            block.setText(content);
+            setting.addButton((btn) =>
+                btn.setButtonText(MESSAGES.BUTTON_AGENT_COPY).onClick(() => {
+                    void navigator.clipboard.writeText(content);
+                    new Notice(MESSAGES.NOTICE_AGENT_COPIED);
+                }),
+            );
+        });
+    }
+
     private hasManagedServer(): boolean {
         return this.plugin.isServerInstalled() && !this.plugin.isServerUninstalled();
     }

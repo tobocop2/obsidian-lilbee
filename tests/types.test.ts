@@ -73,6 +73,7 @@ describe("DEFAULT_SETTINGS", () => {
         const keys = Object.keys(DEFAULT_SETTINGS).sort();
         const expected = [
             "adaptiveThreshold",
+            "agentIntegration",
             "includeDevBuilds",
             "reasoningDefaulted",
             "manualToken",

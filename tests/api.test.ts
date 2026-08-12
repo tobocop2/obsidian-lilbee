@@ -2733,3 +2733,55 @@ describe("aborting a request is not a server failure", () => {
         expect(outcomes).toContain("unreachable");
     });
 });
+
+describe("agent config", () => {
+    it("GETs the detection index", async () => {
+        const index = {
+            clients: [
+                { client: "claude", cli_detected: true, cli_path: "/usr/local/bin/claude" },
+                { client: "hermes", cli_detected: false, cli_path: null },
+                { client: "opencode", cli_detected: true, cli_path: "/opt/homebrew/bin/opencode" },
+            ],
+        };
+        fetchMock.mockResolvedValue(jsonResponse(index));
+        const result = await client.getAgentConfigIndex();
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/agent-config`, expect.objectContaining({}));
+        expect(result._unsafeUnwrap()).toEqual(index);
+    });
+
+    it("GETs one client's config document", async () => {
+        const document = {
+            client: "opencode",
+            format: "json",
+            surfaces: ["model_provider", "mcp"],
+            config: { provider: { lilbee: {} } },
+        };
+        fetchMock.mockResolvedValue(jsonResponse(document));
+        const result = await client.getAgentConfig("opencode");
+
+        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/agent-config/opencode`, expect.objectContaining({}));
+        expect(result._unsafeUnwrap()).toEqual(document);
+    });
+
+    it("carries hermes's rendered yaml", async () => {
+        fetchMock.mockResolvedValue(
+            jsonResponse({ client: "hermes", format: "yaml", surfaces: ["mcp"], content: "models:\n  - lilbee\n" }),
+        );
+        const result = await client.getAgentConfig("hermes");
+
+        expect(result._unsafeUnwrap().content).toBe("models:\n  - lilbee\n");
+    });
+
+    it("returns the error instead of throwing when the server rejects", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 404,
+            text: () => Promise.resolve("no config for 'zed'"),
+        } as unknown as Response);
+        const result = await client.getAgentConfig("opencode");
+
+        expect(result.isErr()).toBe(true);
+        expect(result._unsafeUnwrapErr().message).toContain("Server responded 404");
+    });
+});

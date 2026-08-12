@@ -143,6 +143,8 @@ function makePlugin(
         catalog: vi.fn().mockResolvedValue(err(new Error("unreachable"))),
         getCapability: vi.fn().mockResolvedValue(true),
         invalidateCapability: vi.fn(),
+        getAgentConfigIndex: vi.fn().mockResolvedValue(err(new Error("unreachable"))),
+        getAgentConfig: vi.fn(),
     };
     const saveSettings = vi.fn().mockResolvedValue(undefined);
     const statusBarEl = { setText: vi.fn(), textContent: "" };

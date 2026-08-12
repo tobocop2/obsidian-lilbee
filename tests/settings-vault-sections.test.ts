@@ -6,6 +6,7 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { App, MockElement, Setting, Notice } from "./__mocks__/obsidian";
 import { LilbeeSettingTab } from "../src/settings";
 import { DEFAULT_SETTINGS, type LilbeeSettings } from "../src/types";
+import { err } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
 import { ErrorJournal } from "../src/error-journal";
 
@@ -90,6 +91,9 @@ function makePlugin(settings: Partial<LilbeeSettings> = {}, registry: any = null
             installedModels: vi.fn().mockResolvedValue({ models: [] }),
             getCapability: vi.fn().mockResolvedValue(true),
             invalidateCapability: vi.fn(),
+            // No agent CLIs installed, so the agent section renders its empty state.
+            getAgentConfigIndex: vi.fn().mockResolvedValue(err(new Error("offline"))),
+            getAgentConfig: vi.fn(),
             setChatModel: vi.fn(),
             setEmbeddingModel: vi.fn(),
             setRerankerModel: vi.fn(),

@@ -1,4 +1,4 @@
-import { MODEL_TASK, type WorkerRole } from "../types";
+import { AGENT_CLIENT, MODEL_TASK, type WorkerRole } from "../types";
 
 // Natural-language noun for each worker role, so tooltips read "embedding
 // worker" rather than the internal "embed".
@@ -1203,7 +1203,73 @@ export const MESSAGES = {
     NOTICE_DIAGNOSTICS_SUMMARY_ONLY: (path: string): string =>
         `Zip creation failed; wrote summary.md to ${path} instead. Review the contents before sharing.`,
     NOTICE_DIAGNOSTICS_FAILED: (detail: string): string => `Diagnostics export failed: ${detail}`,
+
+    // Agent integration
+    LABEL_AGENT_SECTION: "Agent integration",
+    DESC_AGENT_SECTION: "Connect a coding agent to lilbee, so it thinks with your models and can search your vault.",
+    LABEL_AGENT_SUPPORTED: "Supported agents",
+    BUTTON_AGENT_RESCAN: "Rescan",
+    LABEL_AGENT_CHOICE: "Coding agent",
+    DESC_AGENT_CHOICE: "The agent lilbee connects to your models. Installed agents appear here.",
+    AGENT_OPTION_NONE: "None",
+    LABEL_AGENT_KEEP_FRESH: "Keep the agent connected",
+    DESC_AGENT_KEEP_FRESH: "Reconnect the agent to your models automatically after a restart.",
+    LABEL_AGENT_MODEL: "Agent model",
+    BUTTON_AGENT_CHANGE_MODEL: "Change model",
+    AGENT_CONTEXT_BADGE: (tokens: number): string => `${Math.round(tokens / 1000)}k context`,
+    AGENT_CONTEXT_UNKNOWN: "Context window unknown until the model loads.",
+    AGENT_CONTEXT_WARNING: "Coding agents need strong tool calling and a large context window.",
+    LABEL_AGENT_CLAUDIAN: "Claudian panel",
+    DESC_AGENT_CLAUDIAN_CONFIGURED: "Claudian's coding agent now runs on your models.",
+    PILL_AGENT_CLAUDIAN_CONFIGURED: "Connected",
+    BUTTON_OPEN_CLAUDIAN: "Open Claudian",
+    DESC_AGENT_CLAUDIAN_MISSING:
+        "Claudian brings a coding agent into Obsidian. Install it from the community plugin store to chat with the agent without leaving your vault.",
+    DESC_AGENT_CLAUDIAN_SKIPPED: "Finish connecting the agent in Claudian's settings.",
+    AGENT_STATUS_CONNECTED: "Connected to your models",
+    AGENT_STATUS_PENDING: "Connects when the server starts.",
+    AGENT_DETECT_UNAVAILABLE: "lilbee could not check for agents. Make sure the server is running, then rescan.",
+    AGENT_STATUS_GLOBAL: "Hermes uses one global config. Copy the block below into it.",
+    LABEL_AGENT_COPY_CONFIG: "Config to copy",
+    BUTTON_AGENT_COPY: "Copy",
+    NOTICE_AGENT_COPIED: "Config copied.",
+    NOTICE_AGENT_CONNECTED: (agent: string): string => `${agent} is connected to lilbee.`,
+    NOTICE_AGENT_CONNECTED_GLOBAL: (agent: string): string =>
+        `${agent} config is ready to copy from lilbee's settings.`,
+    NOTICE_AGENT_CONFIG_FAILED: (detail: string): string => `lilbee could not connect the agent: ${detail}`,
+    NOTICE_CLAUDIAN_UPDATED: "Reload Claudian to finish connecting.",
+    BUTTON_RELOAD_CLAUDIAN: "Reload Claudian",
+    ERROR_AGENT_CONFIG_UNREADABLE: (path: string): string =>
+        `${path} is not valid JSON, so lilbee left it alone. Fix or delete it and try again.`,
+    ERROR_AGENT_CONFIG_EMPTY: (client: string): string => `The server returned no ${client} config to write.`,
+
+    // Agent picker modal
+    AGENT_PICKER_TITLE: "Connect a coding agent",
+    AGENT_PICKER_SUBTITLE: "lilbee found an agent on this machine. Want it to work with this vault?",
+    AGENT_PICKER_OPENCODE_DESC: "Full pairing: your lilbee models are the agent's brain, vault search included.",
+    AGENT_PICKER_BADGE_CLAUDIAN: "works with Claudian",
+    AGENT_PICKER_CLAUDE_DESC: "Gets lilbee's vault search and wiki tools. Models stay with Anthropic.",
+    AGENT_PICKER_HERMES_DESC: "Runs on your lilbee models with vault search, from its own global config.",
+    AGENT_PICKER_NOT_DETECTED: "Not installed",
+    AGENT_PICKER_REMEMBER: "Remember my choice",
+    BUTTON_AGENT_NOT_NOW: "Not now",
+    BUTTON_AGENT_CONNECT: (agent: string): string => `Connect ${agent}`,
+    BUTTON_AGENT_CONNECT_NONE: "Connect",
 } as const;
+
+/** Product names for the agent clients; the wire values are lowercase ids. */
+export const AGENT_LABELS = {
+    [AGENT_CLIENT.CLAUDE]: "Claude Code",
+    [AGENT_CLIENT.HERMES]: "hermes",
+    [AGENT_CLIENT.OPENCODE]: "OpenCode",
+} as const;
+
+/** Where to get each agent, shown when none is installed. */
+export const AGENT_LINKS: readonly { label: string; url: string }[] = [
+    { label: "opencode.ai", url: "https://opencode.ai" },
+    { label: "hermes-agent.ai", url: "https://hermes-agent.ai" },
+    { label: "claude.com/code", url: "https://claude.com/code" },
+];
 
 export const FILTERS = {
     TASK: {

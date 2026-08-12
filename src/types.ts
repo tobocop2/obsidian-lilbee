@@ -491,6 +491,79 @@ export const MEMORY_CONFIG_KEY = {
     AUTO_EXTRACT: "memory_auto_extract",
 } as const;
 
+// ---------------------------------------------------------------------------
+// Agent integration (`GET /api/agent-config`)
+
+/** An AI coding client lilbee can write a config for. */
+export type AgentClient = "claude" | "hermes" | "opencode";
+
+export const AGENT_CLIENT = {
+    CLAUDE: "claude",
+    HERMES: "hermes",
+    OPENCODE: "opencode",
+} as const satisfies Record<string, AgentClient>;
+
+/** Declaration order of the server's index response; drives the settings badge list. */
+export const AGENT_CLIENTS: readonly AgentClient[] = [AGENT_CLIENT.CLAUDE, AGENT_CLIENT.HERMES, AGENT_CLIENT.OPENCODE];
+
+/** The client the user paired with, or "none" while nothing is wired. */
+export type AgentSelection = AgentClient | "none";
+
+export const AGENT_SELECTION = {
+    NONE: "none",
+    CLAUDE: "claude",
+    HERMES: "hermes",
+    OPENCODE: "opencode",
+} as const satisfies Record<string, AgentSelection>;
+
+/** Which lilbee surface a client's config wires it up to. */
+export type AgentSurface = "model_provider" | "mcp";
+
+/** The serialization a client's own config file is written in. */
+export type AgentConfigFormat = "json" | "yaml";
+
+export interface AgentClientDetection {
+    client: AgentClient;
+    cli_detected: boolean;
+    cli_path: string | null;
+}
+
+export interface AgentConfigIndexResponse {
+    clients: AgentClientDetection[];
+}
+
+/**
+ * `GET /api/agent-config/{client}`. `config` carries the block for a JSON
+ * client and `content` the rendered text for a YAML one. `stdio_config` is the
+ * alternative block for a client that can also run lilbee as a subprocess.
+ */
+export interface AgentConfigResponse {
+    client: AgentClient;
+    format: AgentConfigFormat;
+    surfaces: AgentSurface[];
+    config?: Record<string, unknown> | null;
+    content?: string | null;
+    stdio_config?: Record<string, unknown> | null;
+}
+
+/** Which agent lilbee keeps wired, and whether it rewrites the config each boot. */
+export interface AgentIntegrationSettings {
+    agent: AgentSelection;
+    /** Rewrite the agent's config on every server boot, so its token and port stay current. */
+    keepConfigFresh: boolean;
+    /** Set once the first-use picker has been answered or dismissed. */
+    pickerShown: boolean;
+}
+
+export const DEFAULT_AGENT_INTEGRATION: AgentIntegrationSettings = {
+    agent: "none",
+    keepConfigFresh: true,
+    pickerShown: false,
+};
+
+/** Below this the agent runs out of room mid-task, so the settings row warns. */
+export const AGENT_MIN_CONTEXT_TOKENS = 20_000;
+
 export interface LilbeeSettings {
     serverUrl: string;
     topK: number;
@@ -529,6 +602,8 @@ export interface LilbeeSettings {
      * latest stable release unless the user opts in.
      */
     includeDevBuilds: boolean;
+    /** Which coding agent lilbee keeps wired to this vault. */
+    agentIntegration: AgentIntegrationSettings;
 }
 
 export const DEFAULT_SETTINGS: LilbeeSettings = {
@@ -558,6 +633,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     sharedRoot: "",
     reasoningDefaulted: false,
     includeDevBuilds: false,
+    agentIntegration: { ...DEFAULT_AGENT_INTEGRATION },
 };
 
 /**

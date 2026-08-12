@@ -10,6 +10,16 @@
         "streams": true
       }
     },
+    "/api/agent-config": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/agent-config/{client:str}": {
+      "GET": {
+        "streams": false
+      }
+    },
     "/api/ask": {
       "POST": {
         "streams": false

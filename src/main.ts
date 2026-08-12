@@ -9,6 +9,14 @@ import {
     TFolder,
     type WorkspaceLeaf,
 } from "obsidian";
+import {
+    AgentWiring,
+    CLAUDIAN_OUTCOME,
+    isClaudianInstalled,
+    isClaudianLoaded,
+    reloadClaudian,
+    type AgentWireOutcome,
+} from "./agent-integration";
 import { LilbeeClient, SessionTokenError } from "./api";
 import { BinaryManager, getLatestRelease, checkForUpdate, node } from "./binary-manager";
 import { exportDatasetToDisk, importDatasetFromDisk } from "./dataset-io";
@@ -21,8 +29,11 @@ import { executeUninstall, planUninstall } from "./server-uninstall";
 import { readSessionToken, resolveExternalDataRoot } from "./session-token";
 import { LilbeeSettingTab } from "./settings";
 import { VaultRegistry, computeVaultId, resolveSharedRoot, sharedBinDir, sharedModelsDir } from "./vault-registry";
+import { AGENT_PICKER_RESULT, AgentPickerModal } from "./views/agent-picker-modal";
 import {
+    AGENT_SELECTION,
     CONFIG_KEY,
+    DEFAULT_AGENT_INTEGRATION,
     DEFAULT_SETTINGS,
     DOT_STATE,
     ERROR_NAME,
@@ -37,6 +48,7 @@ import {
     SSE_EVENT,
     TASK_STATUS,
     TASK_TYPE,
+    type AgentClient,
     type BatchProgressPayload,
     type CrawlRenderMode,
     type DiagnosticsContext,
@@ -63,7 +75,7 @@ import {
     type UninstallPlan,
     type VaultAdapter,
 } from "./types";
-import { MESSAGES } from "./locales/en";
+import { AGENT_LABELS, MESSAGES } from "./locales/en";
 import { displayLabelForRef, extractHfRepo } from "./utils/model-ref";
 import {
     errorMessage,
@@ -75,6 +87,7 @@ import {
     NOTICE_DURATION_MS,
     NOTICE_ERROR_DURATION_MS,
     NOTICE_PERMANENT,
+    openPluginSettingsById,
     percentOfBytes,
     sessionTokenInvalidMessage,
     supportsSessions,
@@ -491,6 +504,7 @@ export default class LilbeePlugin extends Plugin {
                 this.configureApi(this.serverManager.serverUrl);
                 void this.fetchActiveModel();
                 void this.configureManagedStorage();
+                void this.runAgentBoot();
                 this.recordReadyState();
                 onProgress?.({ phase: MANAGED_PHASE.READY, message: "" });
             } catch (err) {
@@ -764,6 +778,97 @@ export default class LilbeePlugin extends Plugin {
             addedAt: existing?.addedAt ?? now,
             lastActiveAt: now,
         });
+    }
+
+    /** Wiring state for the settings status line; the token it wrote dies with the server. */
+    lastAgentWrite: AgentWireOutcome | null = null;
+
+    private agentWiring(): AgentWiring {
+        return new AgentWiring(this.app, this.api);
+    }
+
+    /**
+     * Rewrite the paired agent's config, then offer the picker if nothing is
+     * paired yet. Started with `void` during boot, so it absorbs its own
+     * failures rather than surfacing as an unhandled rejection.
+     */
+    private async runAgentBoot(): Promise<void> {
+        try {
+            const { agent, keepConfigFresh } = this.settings.agentIntegration;
+            if (agent !== AGENT_SELECTION.NONE) {
+                if (keepConfigFresh) await this.applyAgentWiring(agent, { silent: true });
+                return;
+            }
+            await this.maybeShowAgentPicker();
+        } catch (err) {
+            this.journal.lifecycle(`agent integration failed: ${errorMessage(err, String(err))}`);
+        }
+    }
+
+    /**
+     * Fetch *client*'s config and write it into the vault. A boot refresh passes
+     * `silent` so a healthy rewrite says nothing; failures always surface.
+     */
+    async applyAgentWiring(client: AgentClient, opts?: { silent?: boolean }): Promise<void> {
+        const result = await this.agentWiring().apply(client);
+        if (result.isErr()) {
+            new Notice(MESSAGES.NOTICE_AGENT_CONFIG_FAILED(errorMessage(result.error, String(result.error))));
+            return;
+        }
+        this.lastAgentWrite = result.value;
+        if (!opts?.silent) {
+            const label = AGENT_LABELS[client];
+            new Notice(
+                result.value.path === null
+                    ? MESSAGES.NOTICE_AGENT_CONNECTED_GLOBAL(label)
+                    : MESSAGES.NOTICE_AGENT_CONNECTED(label),
+            );
+        }
+        if (result.value.claudian === CLAUDIAN_OUTCOME.WRITTEN && isClaudianLoaded(this.app)) {
+            this.offerClaudianReload();
+        }
+        this.refreshSettingsTab();
+    }
+
+    /** Claudian caches its data file at load, so a change only lands after a reload. */
+    private offerClaudianReload(): void {
+        const notice = new Notice(MESSAGES.NOTICE_CLAUDIAN_UPDATED, NOTICE_PERMANENT);
+        const link = notice.messageEl.createEl("a", { text: MESSAGES.BUTTON_RELOAD_CLAUDIAN });
+        link.addEventListener("click", () => {
+            notice.hide();
+            void reloadClaudian(this.app);
+        });
+    }
+
+    /** Offer the picker the first time lilbee sees an agent CLI on this machine. */
+    private async maybeShowAgentPicker(): Promise<void> {
+        if (this.settings.agentIntegration.pickerShown) return;
+        const index = await this.api.getAgentConfigIndex();
+        if (index.isErr()) return;
+        const detections = index.value.clients;
+        if (!detections.some((d) => d.cli_detected)) return;
+        if (this.unloaded) return;
+
+        const modal = new AgentPickerModal(this.app, detections, isClaudianInstalled(this.app));
+        const choice = await modal.openPicker();
+        if (choice.kind === AGENT_PICKER_RESULT.DISMISS) {
+            this.settings.agentIntegration.pickerShown = true;
+            await this.persistAgentIntegration();
+            return;
+        }
+        // An unremembered choice wires this session only, so the picker can return.
+        if (choice.remember) {
+            this.settings.agentIntegration.agent = choice.client;
+            this.settings.agentIntegration.pickerShown = true;
+            await this.persistAgentIntegration();
+        }
+        await this.applyAgentWiring(choice.client);
+    }
+
+    /** Agent settings never change the server mode, so they skip saveSettings' restart logic. */
+    async persistAgentIntegration(): Promise<void> {
+        await this.persistAll();
+        this.refreshSettingsTab();
     }
 
     /**
@@ -1499,6 +1604,9 @@ export default class LilbeePlugin extends Plugin {
     async loadSettings(): Promise<void> {
         const raw = (await this.loadData()) as (LilbeeSettings & { taskHistory?: { history?: unknown[] } }) | null;
         this.settings = Object.assign({}, DEFAULT_SETTINGS, raw ?? {});
+        // Object.assign only merges one level, so a stored agentIntegration would
+        // shadow the defaults of any key added to it later.
+        this.settings.agentIntegration = { ...DEFAULT_AGENT_INTEGRATION, ...(raw?.agentIntegration ?? {}) };
         this.previousServerMode = this.settings.serverMode;
         this.taskQueue.loadFromJSON(raw?.taskHistory as { history?: import("./types").TaskEntry[] } | undefined);
         this.vaultId = computeVaultId(this.getVaultBasePath());
@@ -2400,13 +2508,7 @@ export default class LilbeePlugin extends Plugin {
     }
 
     openPluginSettings(): void {
-        // `app.setting` is an undocumented-but-stable Obsidian API used
-        // widely by community plugins to jump straight to their own tab.
-        const setting = (this.app as unknown as { setting?: { open: () => void; openTabById: (id: string) => void } })
-            .setting;
-        if (!setting) return;
-        setting.open();
-        setting.openTabById(this.manifest.id);
+        openPluginSettingsById(this.app, this.manifest.id);
     }
 
     /**
