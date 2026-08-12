@@ -1,6 +1,6 @@
 {
   "name": "wiki",
-  "layout": "wiki-and-tasks",
+  "layout": "wiki-and-placement",
   "window": {
     "x": 0,
     "y": 38,
@@ -10,104 +10,293 @@
   "leadInMs": 500,
   "tailMs": 1500,
   "ffmpegStartupGapMs": 0,
-  "totalRecordedMs": 180956,
+  "totalRecordedMs": 149198,
   "beats": [
     {
       "index": 0,
       "label": "Open the wiki",
       "kind": "executeCommand",
       "startedAt": 502,
-      "endedAt": 1857,
-      "cursor": null,
-      "caption": "Every subject the corpus names, written up and cross-linked."
+      "endedAt": 1656,
+      "cursor": null
     },
     {
       "index": 1,
-      "label": "Let the page list settle",
+      "label": "Let the list settle",
       "kind": "waitForSelector",
-      "startedAt": 1857,
-      "endedAt": 3282,
-      "cursor": null
+      "startedAt": 1656,
+      "endedAt": 3283,
+      "cursor": null,
+      "caption": "Concepts and entities, grouped. Every subject your documents name."
     },
     {
       "index": 2,
-      "label": "Search for a subject",
-      "kind": "clickSelector",
-      "startedAt": 3283,
-      "endedAt": 8324,
+      "label": "Scroll the library",
+      "kind": "wheelScroll",
+      "startedAt": 3284,
+      "endedAt": 9058,
       "cursor": {
-        "x": 549.19921875,
-        "y": 198.4921875,
-        "cursor": "text"
-      }
+        "x": 566.0390625,
+        "y": 412.79296875,
+        "cursor": "pointer"
+      },
+      "speedup": 2,
+      "caption": "Written up from your own documents, not the web."
     },
     {
       "index": 3,
-      "label": "Type the subject",
-      "kind": "type",
-      "startedAt": 8324,
-      "endedAt": 10645,
-      "cursor": null
+      "label": "Back to the top",
+      "kind": "wheelScroll",
+      "startedAt": 9058,
+      "endedAt": 12261,
+      "cursor": {
+        "x": 566.0390625,
+        "y": 412.79296875,
+        "cursor": "pointer"
+      },
+      "speedup": 2
     },
     {
       "index": 4,
-      "label": "Open the page",
-      "kind": "clickSelector",
-      "startedAt": 10645,
-      "endedAt": 14595,
-      "cursor": {
-        "x": 549.19921875,
-        "y": 291.2734375,
-        "cursor": "pointer"
-      }
+      "label": "Find it in the vault",
+      "kind": "runJs",
+      "startedAt": 12261,
+      "endedAt": 14279,
+      "cursor": null,
+      "caption": "Not locked in the plugin. Every page is a note in your vault."
     },
     {
       "index": 5,
-      "label": "Read the article",
-      "kind": "waitForSelector",
-      "startedAt": 14595,
-      "endedAt": 18406,
-      "cursor": null,
-      "caption": "Every claim carries a citation back to the sentence it came from."
+      "label": "Open the note",
+      "kind": "clickSelector",
+      "startedAt": 14279,
+      "endedAt": 18237,
+      "cursor": {
+        "x": 194,
+        "y": 597.23046875,
+        "cursor": "default"
+      }
     },
     {
       "index": 6,
-      "label": "Refresh the wiki",
-      "kind": "executeCommand",
-      "startedAt": 18407,
-      "endedAt": 20075,
+      "label": "Read it as a note",
+      "kind": "waitForSelector",
+      "startedAt": 18237,
+      "endedAt": 21642,
       "cursor": null,
-      "caption": "Refreshing runs the chat model over every source."
+      "caption": "It records the model that wrote it and the documents behind it."
     },
     {
       "index": 7,
-      "label": "Follow the run",
-      "kind": "sleep",
-      "startedAt": 20075,
-      "endedAt": 171278,
-      "cursor": null,
-      "speedup": 24,
-      "caption": "It names the source it is on, and stops the moment you ask."
+      "label": "Follow a link",
+      "kind": "clickSelector",
+      "startedAt": 21642,
+      "endedAt": 27289,
+      "cursor": {
+        "x": 685.0625,
+        "y": 579.40625,
+        "cursor": "pointer"
+      },
+      "caption": "Click through it like any wiki."
     },
     {
       "index": 8,
-      "label": "Stop it",
+      "label": "And another",
       "kind": "clickSelector",
-      "startedAt": 171278,
-      "endedAt": 177882,
+      "startedAt": 27289,
+      "endedAt": 32629,
       "cursor": {
-        "x": 1695,
-        "y": 223.9765625,
+        "x": 797.84375,
+        "y": 579.40625,
         "cursor": "pointer"
       }
     },
     {
       "index": 9,
-      "label": "Settle",
-      "kind": "key",
-      "startedAt": 177883,
-      "endedAt": 179329,
+      "label": "Back to the wiki",
+      "kind": "clickSelector",
+      "startedAt": 32630,
+      "endedAt": 36752,
+      "cursor": {
+        "x": 462,
+        "y": 61.5,
+        "cursor": "auto"
+      }
+    },
+    {
+      "index": 10,
+      "label": "Search for a subject",
+      "kind": "runJs",
+      "startedAt": 36752,
+      "endedAt": 37259,
       "cursor": null
+    },
+    {
+      "index": 11,
+      "label": "Type it",
+      "kind": "type",
+      "startedAt": 37259,
+      "endedAt": 40325,
+      "cursor": null
+    },
+    {
+      "index": 12,
+      "label": "It knows the subject, dimmed",
+      "kind": "waitForSelector",
+      "startedAt": 40326,
+      "endedAt": 42932,
+      "cursor": null,
+      "caption": "It knows every subject, including the ones it has not written."
+    },
+    {
+      "index": 13,
+      "label": "Ask for the page",
+      "kind": "clickSelector",
+      "startedAt": 42932,
+      "endedAt": 46626,
+      "cursor": {
+        "x": 773.0390625,
+        "y": 291.2734375,
+        "cursor": "pointer"
+      }
+    },
+    {
+      "index": 14,
+      "label": "Confirm",
+      "kind": "clickSelector",
+      "startedAt": 46626,
+      "endedAt": 50274,
+      "cursor": {
+        "x": 640.25,
+        "y": 617.625,
+        "cursor": "default"
+      },
+      "caption": "Ask, and it writes one."
+    },
+    {
+      "index": 15,
+      "label": "Open the command palette",
+      "kind": "runJs",
+      "startedAt": 50274,
+      "endedAt": 50991,
+      "cursor": null,
+      "keyHint": "⌘P"
+    },
+    {
+      "index": 16,
+      "label": "Look for the Task Centre",
+      "kind": "type",
+      "startedAt": 50991,
+      "endedAt": 53782,
+      "cursor": null
+    },
+    {
+      "index": 17,
+      "label": "Open it",
+      "kind": "key",
+      "startedAt": 53782,
+      "endedAt": 55478,
+      "cursor": null,
+      "caption": "The write is a job like any other, so it shows up where jobs do."
+    },
+    {
+      "index": 18,
+      "label": "Watch it write on the GPU",
+      "kind": "sleep",
+      "startedAt": 55479,
+      "endedAt": 116480,
+      "cursor": null,
+      "speedup": 6,
+      "caption": "One page, one model call, on your own GPU."
+    },
+    {
+      "index": 19,
+      "label": "Put the Task Centre away",
+      "kind": "clickSelector",
+      "startedAt": 116481,
+      "endedAt": 121624,
+      "cursor": {
+        "x": 1709,
+        "y": 57.5,
+        "cursor": "default"
+      }
+    },
+    {
+      "index": 20,
+      "label": "Read the new page",
+      "kind": "waitForSelector",
+      "startedAt": 121624,
+      "endedAt": 124633,
+      "cursor": null,
+      "caption": "Written and cited."
+    },
+    {
+      "index": 21,
+      "label": "Find the new page in the vault",
+      "kind": "runJs",
+      "startedAt": 124634,
+      "endedAt": 126544,
+      "cursor": null
+    },
+    {
+      "index": 22,
+      "label": "Open it as a note",
+      "kind": "clickSelector",
+      "startedAt": 126544,
+      "endedAt": 131755,
+      "cursor": {
+        "x": 194,
+        "y": 352.10546875,
+        "cursor": "default"
+      }
+    },
+    {
+      "index": 23,
+      "label": "Read the new note",
+      "kind": "waitForSelector",
+      "startedAt": 131756,
+      "endedAt": 135766,
+      "cursor": null,
+      "caption": "And it is part of your vault, linked like the rest."
+    },
+    {
+      "index": 24,
+      "label": "Open the graph",
+      "kind": "executeCommand",
+      "startedAt": 135766,
+      "endedAt": 137246,
+      "cursor": null
+    },
+    {
+      "index": 25,
+      "label": "Give the graph the room",
+      "kind": "runJs",
+      "startedAt": 137246,
+      "endedAt": 138774,
+      "cursor": null,
+      "caption": "Fifty-five pages, written from ten documents."
+    },
+    {
+      "index": 26,
+      "label": "Zoom into it",
+      "kind": "wheelScroll",
+      "startedAt": 138774,
+      "endedAt": 142620,
+      "cursor": {
+        "x": 773.0390625,
+        "y": 616.77734375,
+        "cursor": "auto"
+      },
+      "speedup": 1
+    },
+    {
+      "index": 27,
+      "label": "Let it settle",
+      "kind": "sleep",
+      "startedAt": 142621,
+      "endedAt": 147623,
+      "cursor": null,
+      "caption": "Everything your documents know, in one picture."
     }
   ]
 }

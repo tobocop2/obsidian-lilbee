@@ -104,6 +104,12 @@ export type Storyboard = {
    * contains this substring (first_start records in the firststart vault
    * while the demo vault window is also open). */
   vaultMatch?: string;
+  /** Substring of the OS window TITLE to capture, for the window-scoped
+   * recorder. Distinct from vaultMatch, which matches the vault's path when
+   * picking a CDP page: a vault at /x/obsidian-lilbee-demo whose folder is
+   * named "vault" has a title of "... - vault - Obsidian", so one value cannot
+   * serve both. Falls back to vaultMatch, then to "Obsidian". */
+  windowMatch?: string;
   /** Apply a global PTS speedup to the final webm. 2 = 2x faster. */
   postSpeedup?: number;
   /** Optional caption overlay drawn at the top-right of the final webm. */
@@ -133,6 +139,8 @@ export type StoryboardOptions = {
   skipServerCheck?: boolean;
   noLilbee?: boolean;
   vaultMatch?: string;
+  /** Window TITLE substring for the capture filter; see Storyboard.windowMatch. */
+  windowMatch?: string;
   postSpeedup?: number;
   caption?: string;
   moneyShotBeatIndex?: number;
@@ -158,6 +166,7 @@ export function storyboard(name: string, opts: StoryboardOptions): Storyboard {
     skipServerCheck: opts.skipServerCheck,
     noLilbee: opts.noLilbee,
     vaultMatch: opts.vaultMatch,
+    windowMatch: opts.windowMatch,
     postSpeedup: opts.postSpeedup,
     caption: opts.caption,
     moneyShotBeatIndex: opts.moneyShotBeatIndex,

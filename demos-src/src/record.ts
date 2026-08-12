@@ -184,7 +184,12 @@ export async function record(storyboard: Storyboard): Promise<void> {
     // committed to disk" moment — the gap between them is dead time
     // that has to be trimmed away in post.
     const sckPath = `${rawPath}.sck.mp4`;
-    const sck = startSck(sckPath);
+    // Capture the Obsidian window rather than the display rectangle under it,
+    // so nothing that comes forward mid-take can appear in the reel.
+    // vaultMatch is a path fragment for the CDP page pick; a title may look
+    // nothing like it. Tapes whose window title differs set windowMatch.
+    const sckWindowMatch = storyboard.windowMatch ?? storyboard.vaultMatch ?? "Obsidian";
+    const sck = startSck(sckPath, sckWindowMatch);
     trackChild(sck.proc);
     // SCK's first written frame IS recording t=0 (no startup junk to trim,
     // unlike avfoundation), so the gap is 0.
@@ -590,16 +595,35 @@ function ensureSckBinary(): string {
 
 /** Spawn the SCK recorder. Resolves firstFrameEpochMs when the first frame
  * is written (the wall-clock moment that maps to video t=0). */
-function startSck(outPath: string): { proc: ChildProcess; firstFrame: Promise<number> } {
+function startSck(outPath: string, windowMatch?: string): { proc: ChildProcess; firstFrame: Promise<number> } {
   const bin = ensureSckBinary();
-  const proc = spawn(bin, [outPath, "30"], { stdio: ["ignore", "ignore", "pipe"] });
+  const args = windowMatch ? [outPath, "30", windowMatch] : [outPath, "30"];
+  const proc = spawn(bin, args, { stdio: ["ignore", "ignore", "pipe"] });
   let resolveFirst: (ms: number) => void;
-  const firstFrame = new Promise<number>((res) => (resolveFirst = res));
+  let rejectFirst: (e: Error) => void;
+  let started = false;
+  let stderrTail = "";
+  const firstFrame = new Promise<number>((res, rej) => {
+    resolveFirst = res;
+    rejectFirst = rej;
+  });
   proc.stderr?.on("data", (b: Buffer) => {
     const s = b.toString();
+    stderrTail = (stderrTail + s).slice(-500);
     const m = s.match(/sck: firstframe (\d+)/);
-    if (m) resolveFirst(Number(m[1]));
+    if (m) {
+      started = true;
+      resolveFirst(Number(m[1]));
+    }
     if (s.includes("error")) console.error(s.trim());
+  });
+  // A title that matches no window makes the recorder throw and exit. Without
+  // this the harness waits on a first frame that will never arrive and simply
+  // hangs, which reads as a stuck take rather than a bad selector.
+  proc.on("exit", (code) => {
+    if (!started) {
+      rejectFirst(new Error(`recorder exited (code ${code}) before any frame. Last output: ${stderrTail.trim()}`));
+    }
   });
   return { proc, firstFrame };
 }
@@ -693,6 +717,10 @@ export async function postProcess(opts: PostOptions): Promise<void> {
     console.warn(`post-process: raw duration unknown (muxer not finalised) — encoding what's readable`);
   }
   // Crop in retina pixels.
+  // Origin of the capture within the screen: the cursor trace is recorded in
+  // screen points and has to be shifted into video space. The window-scoped
+  // capture already starts at the window, so the ffmpeg crop below is the
+  // identity while the halo still shifts by this much.
   const cropX = timeline.window.x * 2;
   const cropY = timeline.window.y * 2;
   const cropW = timeline.window.w * 2;
@@ -817,7 +845,7 @@ export async function postProcess(opts: PostOptions): Promise<void> {
   }
 
   const chain: string[] = [];
-  chain.push(`[0:v]crop=${cropW}:${cropH}:${cropX}:${cropY}[v_crop]`);
+  chain.push(`[0:v]crop=${cropW}:${cropH}:0:0[v_crop]`);
   // Overlay the synthetic cursor at full rate, before the speedup split, so
   // it's decimated together with the screen during sped-up segments.
   chain.push(`[v_crop][${haloInputIdx}:v]overlay=0:0:eof_action=pass[v_crop_h]`);
