@@ -1,6 +1,14 @@
 import type { App } from "obsidian";
 import type { CatalogEntry, CatalogSource, CatalogTab, KeyStatus, ModelTask } from "../types";
-import { CATALOG_SOURCE, CATALOG_TAB, HOSTED_SOURCES, KEY_STATUS, MODEL_TASK } from "../types";
+import {
+    CATALOG_SOURCE,
+    CATALOG_TAB,
+    HARDWARE_FIT,
+    HOSTED_SOURCES,
+    KEY_STATUS,
+    MODEL_COMPAT,
+    MODEL_TASK,
+} from "../types";
 import { MESSAGES } from "../locales/en";
 
 const DISCOVER_RAIL_LIMIT = 12;
@@ -110,31 +118,63 @@ export function tabIdToTask(tab: CatalogTab): ModelTask | null {
     return TAB_TO_TASK[tab] ?? null;
 }
 
+/** Role order for the For You rail, matching the server's own role ordering. */
+const FOR_YOU_ROLE_ORDER: ModelTask[] = [MODEL_TASK.CHAT, MODEL_TASK.EMBEDDING, MODEL_TASK.VISION, MODEL_TASK.RERANK];
+
 /**
- * Featured-first ordering, capped at 12. When the user has an active chat
- * model the chat-task entries float to the top so the rail leads with rows
- * matching what they're already using.
+ * Comfortable fit first, then alphabetical.
+ *
+ * Only ever called on rows `forYouRail` has already kept, so the fit is either
+ * `fits` or `tight` -- there is no rank here for a size that will not run or is
+ * unknown, because such a row never reaches the sort.
  */
-export function forYouRail(entries: CatalogEntry[], activeChatModelRef: string): CatalogEntry[] {
-    const featured = entries.filter((e) => e.featured);
-    const preferChat = activeChatModelRef !== "";
-    const sorted = [...featured].sort((a, b) => {
-        if (preferChat) {
-            const aChat = a.task === MODEL_TASK.CHAT ? 0 : 1;
-            const bChat = b.task === MODEL_TASK.CHAT ? 0 : 1;
-            if (aChat !== bChat) return aChat - bChat;
-        }
-        return b.downloads - a.downloads;
-    });
-    return sorted.slice(0, DISCOVER_RAIL_LIMIT);
+function forYouSortKey(entry: CatalogEntry): [number, string] {
+    return [entry.fit === HARDWARE_FIT.FITS ? 0 : 1, entry.display_name.toLowerCase()];
+}
+
+/**
+ * One runnable pick per role, in role order.
+ *
+ * Featured is not a curated list — the server resolves it from HuggingFace
+ * trending at runtime, so a pick is only as safe as its hardware fit. A row
+ * qualifies only when the engine supports its architecture and the machine can
+ * hold it, which makes every card a one-click install rather than a coin flip.
+ * Rows with no fit chip are excluded outright: an unknown size cannot be
+ * promised.
+ */
+export function forYouRail(entries: CatalogEntry[]): CatalogEntry[] {
+    const runnable = entries.filter(
+        (e) => e.featured && e.compat === MODEL_COMPAT.SUPPORTED && e.fit != null && e.fit !== HARDWARE_FIT.WONT_RUN,
+    );
+    const picks: CatalogEntry[] = [];
+    for (const task of FOR_YOU_ROLE_ORDER) {
+        const best = runnable
+            .filter((e) => e.task === task)
+            .sort((a, b) => {
+                const [aRank, aName] = forYouSortKey(a);
+                const [bRank, bName] = forYouSortKey(b);
+                return aRank !== bRank ? aRank - bRank : aName.localeCompare(bName);
+            })[0];
+        if (best) picks.push(best);
+    }
+    return picks;
 }
 
 export function yourCollectionRail(entries: CatalogEntry[]): CatalogEntry[] {
-    return entries.filter((e) => e.installed);
+    return entries.filter((e) => e.installed).slice(0, DISCOVER_RAIL_LIMIT);
 }
 
+/**
+ * Most-downloaded rows the picks rail did not already claim.
+ *
+ * Featured rows are excluded so Fresh shows what For You did not; without that
+ * the two rails render the same trending models twice.
+ */
 export function freshRail(entries: CatalogEntry[]): CatalogEntry[] {
-    return [...entries].sort((a, b) => b.downloads - a.downloads).slice(0, DISCOVER_RAIL_LIMIT);
+    return entries
+        .filter((e) => !e.featured)
+        .sort((a, b) => b.downloads - a.downloads)
+        .slice(0, DISCOVER_RAIL_LIMIT);
 }
 
 export function deepLinkToApiKeySettings(app: App, provider: string): void {

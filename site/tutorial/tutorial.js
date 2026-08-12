@@ -18,6 +18,13 @@ const groups = [
     ],
   },
   {
+    id: "an-encyclopedia-of-your-own",
+    heading: "An encyclopedia of your own",
+    reels: [
+      { id: "wiki", name: "wiki", title: "An encyclopedia of your documents", desc: "Ten documents in, an encyclopedia out. Browse the pages lilbee wrote from your own sources, then open one as an ordinary note in your vault: same markdown, same [[links]], same graph as everything else you write. Follow a link between pages, then search for a subject your documents name that nothing has written yet, ask for it, and watch a 70B model write and cite that page live on the GPU before it lands in your vault. The whole wiki as a graph closes it out." },
+    ],
+  },
+  {
     id: "models-managed-for-you",
     heading: "Models, managed for you",
     reels: [
@@ -90,3 +97,21 @@ for (const g of groups) {
     list.appendChild(sec);
   }
 }
+
+// Every section on this page is built by the loop above, which runs after the
+// browser has already resolved the URL's hash. So arriving at /tutorial/#wiki
+// left you at the top of the page: the element the hash names did not exist
+// yet. Scroll to it once it does, and keep honouring the hash afterwards.
+function scrollToHash(behavior) {
+  const id = decodeURIComponent(location.hash.slice(1));
+  if (!id) return false;
+  const target = document.getElementById(id);
+  if (!target) return false;
+  target.scrollIntoView({ behavior: behavior, block: "start" });
+  return true;
+}
+
+scrollToHash("auto");
+window.addEventListener("hashchange", function () {
+  scrollToHash("smooth");
+});

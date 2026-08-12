@@ -1,6 +1,13 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
-import { BACKGROUND_TASK_TYPES, TASK_QUEUE, TASK_STATUS, type TaskEntry, type TaskStatus } from "../types";
+import {
+    BACKGROUND_TASK_TYPES,
+    INDETERMINATE_PROGRESS,
+    TASK_QUEUE,
+    TASK_STATUS,
+    type TaskEntry,
+    type TaskStatus,
+} from "../types";
 import { MESSAGES } from "../locales/en";
 import { ConfirmModal } from "./confirm-modal";
 import { FLASH_WINDOW_MS } from "../task-queue";
@@ -206,7 +213,7 @@ export class TaskCenterView extends ItemView {
             state === TASK_STATUS.FAILED ||
             state === TASK_STATUS.CANCELLED ||
             state === TASK_STATUS.WAITING;
-        const isIndeterminate = isActive && task.progress < 0;
+        const isIndeterminate = isActive && task.progress <= INDETERMINATE_PROGRESS;
         const rawPct = Math.max(0, Math.min(100, task.progress));
         const pct = isIndeterminate ? 100 : isActive ? Math.min(rawPct, ACTIVE_PCT_CAP) : rawPct;
 

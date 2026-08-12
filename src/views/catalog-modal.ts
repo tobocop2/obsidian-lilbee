@@ -494,12 +494,11 @@ export class CatalogModal extends Modal {
     private renderDiscoverTab(): void {
         /* v8 ignore next 2 */
         if (!this.resultsEl) return;
-        const activeChatRef = extractHfRepo(this.plugin.activeModel);
         const rails: RailSpec[] = [
             {
                 heading: MESSAGES.RAIL_FOR_YOU,
                 help: MESSAGES.RAIL_FOR_YOU_HELP,
-                rows: forYouRail(this.entries, activeChatRef),
+                rows: forYouRail(this.entries),
             },
             {
                 heading: MESSAGES.RAIL_YOUR_COLLECTION,

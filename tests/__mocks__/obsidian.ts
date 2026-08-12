@@ -256,6 +256,20 @@ export class MockElement {
         return el;
     }
 
+    // Obsidian's HTMLElement.appendText adds a bare text node; model it as a
+    // classless child so it counts toward textContent but not class lookups.
+    appendText(text: string): void {
+        const node = new MockElement("text");
+        node.textContent = text;
+        node.parentElement = this;
+        this.children.push(node);
+    }
+
+    prepend(node: MockElement): void {
+        node.parentElement = this;
+        this.children.unshift(node);
+    }
+
     remove(): void {
         if (this.parentElement) {
             const idx = this.parentElement.children.indexOf(this);
@@ -712,9 +726,22 @@ export class Notice {
 export class Setting {
     private _el: MockElement;
     settingEl: MockElement;
+    infoEl: MockElement;
+    nameEl: MockElement;
+    descEl: MockElement;
+    controlEl: MockElement;
     constructor(el: MockElement) {
         this._el = el;
-        this.settingEl = el;
+        // Obsidian builds a child div per setting; settingEl is that row, not
+        // the container. Aliasing them here meant hiding one field hid its
+        // whole section, so a hideable field dropped every sibling beside it.
+        this.settingEl = el.createDiv({ cls: "setting-item" }) as unknown as MockElement;
+        // Mirror Obsidian's real sub-elements so code that draws into descEl or
+        // controlEl (context pills, link rows) has somewhere to render.
+        this.infoEl = this.settingEl.createDiv({ cls: "setting-item-info" }) as unknown as MockElement;
+        this.nameEl = this.infoEl.createDiv({ cls: "setting-item-name" }) as unknown as MockElement;
+        this.descEl = this.infoEl.createDiv({ cls: "setting-item-description" }) as unknown as MockElement;
+        this.controlEl = this.settingEl.createDiv({ cls: "setting-item-control" }) as unknown as MockElement;
     }
     private _name = "";
     setName(name: string): this {

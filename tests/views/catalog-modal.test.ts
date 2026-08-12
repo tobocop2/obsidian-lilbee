@@ -1901,6 +1901,10 @@ describe("CatalogModal", () => {
                     featured: true,
                     task: "chat",
                     downloads: 1000,
+                    // A pick only reaches the For You rail when the engine can
+                    // load it and the machine can hold it.
+                    compat: "supported",
+                    fit: "fits",
                 }),
                 makeEntry({
                     hf_repo: "feat/embed",
@@ -1908,6 +1912,8 @@ describe("CatalogModal", () => {
                     featured: true,
                     task: "embedding",
                     downloads: 500,
+                    compat: "supported",
+                    fit: "fits",
                 }),
                 makeEntry({
                     hf_repo: "owned/one",
@@ -1934,15 +1940,14 @@ describe("CatalogModal", () => {
             expect(headings).toEqual([MESSAGES.RAIL_FOR_YOU, MESSAGES.RAIL_YOUR_COLLECTION, MESSAGES.RAIL_FRESH]);
         });
 
-        it("For You rail prefers chat-task entries when an active chat model is set", async () => {
-            const plugin = makePlugin({ activeModel: "any/chat-active/file.gguf" });
+        it("For You rail leads with the chat pick, in role order", async () => {
+            const plugin = makePlugin();
             plugin.api.catalog.mockResolvedValue(ok(makeCatalogResponse(makeDiscoverEntries())));
             const modal = await openModal(plugin, CATALOG_TAB.DISCOVER);
             const content = contentEl(modal);
             const rails = content.findAll("lilbee-discover-rail");
             const forYouCards = rails[0].find("lilbee-discover-rail-cards")!.findAll("lilbee-model-card");
-            // Featured chat first, then featured embed.
-            expect(forYouCards[0].dataset.repo).toBe("feat/chat");
+            expect(forYouCards.map((c) => c.dataset.repo)).toEqual(["feat/chat", "feat/embed"]);
         });
 
         it("Fresh rail sorts by downloads descending and caps at 12", async () => {

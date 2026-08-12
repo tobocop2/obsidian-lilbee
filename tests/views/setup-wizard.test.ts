@@ -1102,7 +1102,7 @@ describe("SetupWizard", () => {
                     (t) =>
                         t.includes("Pick an embedding model") ||
                         t.includes("Index your vault") ||
-                        t.includes("Wiki (optional, experimental)"),
+                        t.includes("Wiki (optional)"),
                 ),
             ).toBe(true);
         });
@@ -1380,7 +1380,7 @@ describe("SetupWizard", () => {
 
             // Should have advanced to wiki step
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            expect(texts.some((t) => t.includes("Wiki (optional, experimental)"))).toBe(true);
+            expect(texts.some((t) => t.includes("Wiki (optional)"))).toBe(true);
         });
 
         it("renders BATCH_PROGRESS percent and per-file status during initial sync", async () => {
@@ -1579,7 +1579,7 @@ describe("SetupWizard", () => {
 
             const el = wizard.contentEl as unknown as MockElement;
             const texts = collectTexts(el);
-            expect(texts.some((t) => t.includes("Wiki (optional, experimental)"))).toBe(true);
+            expect(texts.some((t) => t.includes("Wiki (optional)"))).toBe(true);
             expect(texts.some((t) => t.includes("AI-written summaries"))).toBe(true);
             expect(texts.some((t) => t.includes("What it adds"))).toBe(true);
             expect(texts.some((t) => t.includes("Worth knowing"))).toBe(true);
@@ -1587,6 +1587,53 @@ describe("SetupWizard", () => {
             expect(texts.some((t) => t.includes("cross-references"))).toBe(true);
             expect(texts.some((t) => t.includes("LLM compute / API tokens"))).toBe(true);
             expect(texts.some((t) => t.includes("hallucinate"))).toBe(true);
+        });
+
+        it("presents the wiki as optional rather than experimental", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 5;
+            (wizard as any).renderStep();
+
+            const joined = collectTexts(wizard.contentEl as unknown as MockElement).join(" ");
+            expect(joined).not.toMatch(/experimental/i);
+            expect(joined).not.toMatch(/proceed with caution/i);
+        });
+
+        it("says the build is GPU heavy and blocks chat, both on the page and in the tooltip", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 5;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            const joined = collectTexts(el).join(" ");
+            expect(joined).toContain("holds the GPU");
+            expect(joined).toContain("chat is unavailable while it works");
+
+            // The cost has to reach someone who skipped the prose and went
+            // straight for the toggle, so it is on the enable card too.
+            const enable = el.findAll("lilbee-wizard-model-option")[0];
+            const tip = enable?.getAttribute("aria-label") ?? "";
+            expect(tip).toMatch(/GPU heavy/i);
+            expect(tip).toMatch(/drafts/i);
+        });
+
+        it("leaves the wiki off unless the enable card is chosen", () => {
+            const plugin = makePlugin({ settings: { serverMode: "external" } });
+            const wizard = new SetupWizard(plugin.app as any, plugin as any);
+            wizard.open();
+            (wizard as any).step = 5;
+            (wizard as any).renderStep();
+
+            const el = wizard.contentEl as unknown as MockElement;
+            findButtons(el)
+                .find((b) => b.textContent === "Next")!
+                .trigger("click");
+
+            expect(plugin.settings.wikiEnabled).toBe(false);
         });
 
         it("renders enable and disable option cards", () => {
@@ -1977,7 +2024,7 @@ describe("SetupWizard", () => {
             wizard.back();
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            expect(texts.some((t) => t.includes("Wiki (optional, experimental)"))).toBe(true);
+            expect(texts.some((t) => t.includes("Wiki (optional)"))).toBe(true);
         });
     });
 
@@ -2104,7 +2151,7 @@ describe("SetupWizard", () => {
 
             // Step 5: Wiki -> Next (keep disabled)
             el = wizard.contentEl as unknown as MockElement;
-            expect(collectTexts(el).some((t) => t.includes("Wiki (optional, experimental)"))).toBe(true);
+            expect(collectTexts(el).some((t) => t.includes("Wiki (optional)"))).toBe(true);
             findButtons(el)
                 .find((b) => b.textContent === "Next")!
                 .trigger("click");
@@ -2361,7 +2408,7 @@ describe("SetupWizard", () => {
             await tick();
 
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            expect(texts.some((t) => t.includes("Wiki (optional, experimental)"))).toBe(true);
+            expect(texts.some((t) => t.includes("Wiki (optional)"))).toBe(true);
         });
     });
 
@@ -2937,7 +2984,7 @@ describe("SetupWizard", () => {
 
             // Should reach wiki step
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            expect(texts.some((t) => t.includes("Wiki (optional, experimental)"))).toBe(true);
+            expect(texts.some((t) => t.includes("Wiki (optional)"))).toBe(true);
         });
     });
 
@@ -3293,7 +3340,7 @@ describe("SetupWizard", () => {
             await tick();
             // EMBED with no `file` (1033 false) is a no-op; sync still finishes to wiki.
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            expect(texts.some((t) => t.includes("Wiki (optional, experimental)"))).toBe(true);
+            expect(texts.some((t) => t.includes("Wiki (optional)"))).toBe(true);
         });
 
         it("sync that ends without a DONE event still advances and leaves syncResult unset", async () => {
@@ -3312,7 +3359,7 @@ describe("SetupWizard", () => {
             // lastEvent is FILE_START, not DONE (1045 false) → syncResult stays null.
             expect((wizard as any).syncResult ?? null).toBeNull();
             const texts = collectTexts(wizard.contentEl as unknown as MockElement);
-            expect(texts.some((t) => t.includes("Wiki (optional, experimental)"))).toBe(true);
+            expect(texts.some((t) => t.includes("Wiki (optional)"))).toBe(true);
         });
     });
 });

@@ -286,49 +286,69 @@ describe("catalog-helpers", () => {
             expect(tabIdToTask(CATALOG_TAB.LIBRARY)).toBeNull();
         });
 
-        it("forYouRail prefers chat-task entries when active chat ref is set", () => {
+        /** A featured row that is safe to recommend: supported and it fits. */
+        function pick(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
+            return row({ featured: true, compat: "supported", fit: "fits", ...overrides });
+        }
+
+        it("forYouRail returns one pick per role, in role order", () => {
             const rows = [
-                row({ hf_repo: "f/embed", featured: true, task: "embedding", downloads: 100 }),
-                row({ hf_repo: "f/chat", featured: true, task: "chat", downloads: 10 }),
-                row({ hf_repo: "p/plain", featured: false }),
+                pick({ hf_repo: "f/rerank", task: "rerank" }),
+                pick({ hf_repo: "f/chat", task: "chat" }),
+                pick({ hf_repo: "f/vision", task: "vision" }),
+                pick({ hf_repo: "f/embed", task: "embedding" }),
+                pick({ hf_repo: "f/chat-2", task: "chat" }),
             ];
-            const result = forYouRail(rows, "some/active/file.gguf");
-            // Featured chat ranks above featured embed even though embed has more downloads.
-            expect(result[0].hf_repo).toBe("f/chat");
-            expect(result.length).toBe(2);
+            expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/chat", "f/embed", "f/vision", "f/rerank"]);
         });
 
-        it("forYouRail keeps non-chat before chat when ordering swaps and ties on task", () => {
-            // a=embedding (?:1), b=chat (?0) with preferChat active → chat floats up,
-            // and the two embedding rows tie on task so the comparator falls through
-            // to the downloads tiebreak (aChat === bChat branch).
+        it("forYouRail drops a pick the machine cannot hold", () => {
             const rows = [
-                row({ hf_repo: "f/embed-a", featured: true, task: "embedding", downloads: 5 }),
-                row({ hf_repo: "f/chat", featured: true, task: "chat", downloads: 0 }),
-                row({ hf_repo: "f/embed-b", featured: true, task: "embedding", downloads: 9 }),
-                row({ hf_repo: "f/embed-c", featured: true, task: "embedding", downloads: 1 }),
+                pick({ hf_repo: "f/huge", task: "chat", fit: "wont_run" }),
+                pick({ hf_repo: "f/ok", task: "embedding" }),
             ];
-            const result = forYouRail(rows, "active/ref");
-            expect(result.map((r) => r.hf_repo)).toEqual(["f/chat", "f/embed-b", "f/embed-a", "f/embed-c"]);
+            expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/ok"]);
         });
 
-        it("forYouRail falls back to download order when no active chat ref", () => {
+        it("forYouRail drops a pick the engine cannot load", () => {
             const rows = [
-                row({ hf_repo: "f/low", featured: true, task: "embedding", downloads: 5 }),
-                row({ hf_repo: "f/high", featured: true, task: "chat", downloads: 500 }),
+                pick({ hf_repo: "f/exotic", task: "chat", compat: "unsupported" }),
+                pick({ hf_repo: "f/unknown-arch", task: "vision", compat: "unknown" }),
+                pick({ hf_repo: "f/ok", task: "embedding" }),
             ];
-            const result = forYouRail(rows, "");
-            expect(result[0].hf_repo).toBe("f/high");
+            expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/ok"]);
         });
 
-        it("forYouRail caps at 12 entries", () => {
-            const rows = Array.from({ length: 20 }, (_, i) => row({ hf_repo: `f/${i}`, featured: true, downloads: i }));
-            expect(forYouRail(rows, "").length).toBe(12);
+        it("forYouRail excludes a row with no fit chip, since an unknown size cannot be promised", () => {
+            const rows = [
+                pick({ hf_repo: "f/nosize", task: "chat", fit: null }),
+                pick({ hf_repo: "f/ok", task: "chat" }),
+            ];
+            expect(forYouRail(rows).map((r) => r.hf_repo)).toEqual(["f/ok"]);
+        });
+
+        it("forYouRail ignores rows that are not featured", () => {
+            const rows = [row({ hf_repo: "p/plain", compat: "supported", fit: "fits" })];
+            expect(forYouRail(rows)).toEqual([]);
+        });
+
+        it("forYouRail ranks a comfortable fit above a tight one, then alphabetically", () => {
+            const rows = [
+                pick({ hf_repo: "f/tight", display_name: "aaa", task: "chat", fit: "tight" }),
+                pick({ hf_repo: "f/fits-z", display_name: "zzz", task: "chat" }),
+                pick({ hf_repo: "f/fits-b", display_name: "bbb", task: "chat" }),
+            ];
+            expect(forYouRail(rows)[0].hf_repo).toBe("f/fits-b");
         });
 
         it("yourCollectionRail returns only installed entries", () => {
             const rows = [row({ hf_repo: "y/in", installed: true }), row({ hf_repo: "y/out", installed: false })];
             expect(yourCollectionRail(rows).map((r) => r.hf_repo)).toEqual(["y/in"]);
+        });
+
+        it("yourCollectionRail caps the rail at 12", () => {
+            const rows = Array.from({ length: 20 }, (_, i) => row({ hf_repo: `y/${i}`, installed: true }));
+            expect(yourCollectionRail(rows).length).toBe(12);
         });
 
         it("freshRail sorts by downloads desc and caps at 12", () => {
@@ -337,6 +357,14 @@ describe("catalog-helpers", () => {
             expect(result.length).toBe(12);
             expect(result[0].hf_repo).toBe("n/14");
             expect(result[11].hf_repo).toBe("n/3");
+        });
+
+        it("freshRail leaves the picks to the For You rail", () => {
+            const rows = [
+                row({ hf_repo: "n/trending", featured: true, downloads: 999 }),
+                row({ hf_repo: "n/rest", downloads: 1 }),
+            ];
+            expect(freshRail(rows).map((r) => r.hf_repo)).toEqual(["n/rest"]);
         });
 
         it("safely handles a query that finds nothing", async () => {

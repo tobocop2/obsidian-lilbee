@@ -128,35 +128,6 @@ describe("search()", () => {
     });
 });
 
-describe("chat()", () => {
-    it("POSTs to /api/chat with question, history, and top_k", async () => {
-        const history: Message[] = [{ role: "user", content: "hi" }];
-        const data = { answer: "hello", sources: [] };
-        fetchMock.mockResolvedValue(jsonResponse(data));
-
-        const result = await client.chat("follow-up", history, 5);
-
-        expect(fetchMock).toHaveBeenCalledWith(
-            `${BASE_URL}/api/chat`,
-            expect.objectContaining({
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ question: "follow-up", history, top_k: 5 }),
-            }),
-        );
-        expect(result).toEqual(data);
-    });
-
-    it("omits top_k when not provided so the server uses its configured default", async () => {
-        fetchMock.mockResolvedValue(jsonResponse({ answer: "", sources: [] }));
-
-        await client.chat("q", []);
-
-        const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-        expect("top_k" in body).toBe(false);
-    });
-});
-
 describe("session methods", () => {
     const meta = {
         id: "s1",
@@ -1657,7 +1628,7 @@ describe("fetchWithRetry() — token provider + 401/403 retry", () => {
             } as unknown as Response)
             .mockResolvedValueOnce(jsonResponse({ ok: true }));
         // Use chat() since it sends Authorization header
-        await c.chat("hi", []);
+        await c.listModels();
         const headers = (fetchMock.mock.calls[1][1] as RequestInit).headers as Record<string, string>;
         expect(headers.Authorization).toBe("Bearer fresh");
     });
@@ -1838,76 +1809,128 @@ describe("wikiLint()", () => {
 });
 
 describe("wikiUpdate()", () => {
-    it("PATCHes /api/wiki/update and returns the build summary", async () => {
-        const data = { paths: [], entities: 0, count: 0 };
-        fetchMock.mockResolvedValue(jsonResponse(data));
+    it("PATCHes /api/wiki/update and yields the run's progress events", async () => {
+        fetchMock.mockResolvedValue(
+            sseResponse([
+                'event: wiki_phase\ndata: {"phase":"extract","total":0}\n\n',
+                'event: wiki_page\ndata: {"label":"notes.md","pages":2,"current":1,"total":3}\n\n',
+                'event: done\ndata: {"paths":["a.md"],"entities":4,"count":1}\n\n',
+            ]),
+        );
 
-        const result = await client.wikiUpdate();
+        const events = await collect(client.wikiUpdate());
 
         expect(fetchMock).toHaveBeenCalledWith(
             `${BASE_URL}/api/wiki/update`,
             expect.objectContaining({ method: "PATCH" }),
         );
-        expect(result).toEqual(data);
+        expect(events.map((e) => e.event)).toEqual(["wiki_phase", "wiki_page", "done"]);
+        expect(events[2].data).toEqual({ paths: ["a.md"], entities: 4, count: 1 });
+    });
+
+    it("passes the abort signal so a cancelled run releases the server's build mutex", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+        const controller = new AbortController();
+
+        await collect(client.wikiUpdate(controller.signal));
+
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/update`,
+            expect.objectContaining({ method: "PATCH" }),
+        );
     });
 });
 
-describe("wikiStatus()", () => {
-    it("GETs /api/wiki/status and returns the status snapshot", async () => {
-        const data = {
-            wiki_enabled: true,
-            summaries: 4,
-            drafts: 2,
-            pages: 6,
-            lint_errors: 0,
-            lint_warnings: 1,
-        };
+describe("wikiStubs()", () => {
+    it("GETs /api/wiki/stubs and returns the unwritten subjects", async () => {
+        const data = [
+            { slug: "titan", label: "Titan", kind: "entity", type_hint: "LOC", mentions: 4, sources: ["a.txt"] },
+        ];
         fetchMock.mockResolvedValue(jsonResponse(data));
 
-        const result = await client.wikiStatus();
+        const result = await client.wikiStubs();
 
         expect(fetchMock).toHaveBeenCalledWith(
-            `${BASE_URL}/api/wiki/status`,
+            `${BASE_URL}/api/wiki/stubs`,
             expect.not.objectContaining({ method: "POST" }),
         );
         expect(result).toEqual(data);
     });
 
-    it("returns the disabled-wiki shape when wiki is off on the server", async () => {
-        const data = {
-            wiki_enabled: false,
-            summaries: 0,
-            drafts: 0,
-            pages: 0,
-            lint_errors: 0,
-            lint_warnings: 0,
-        };
-        fetchMock.mockResolvedValue(jsonResponse(data));
-        const result = await client.wikiStatus();
-        expect(result.wiki_enabled).toBe(false);
-        expect(result.pages).toBe(0);
+    it("returns an empty list against a server too old to serve the route", async () => {
+        // The route shipped after the plugin did. A 404 means "no stubs to
+        // offer", not "the wiki is broken", so the browse list still renders.
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 404,
+            headers: { get: () => null },
+            text: () => Promise.resolve("not found"),
+        } as unknown as Response);
+
+        await expect(client.wikiStubs()).resolves.toEqual([]);
+    });
+
+    it("still throws on a real failure", async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 500,
+            headers: { get: () => null },
+            text: () => Promise.resolve("boom"),
+        } as unknown as Response);
+
+        await expect(client.wikiStubs()).rejects.toThrow(/500/);
     });
 });
 
-describe("wikiSynthesize()", () => {
-    it("POSTs to /api/wiki/synthesize and returns the synthesis summary", async () => {
-        const data = { paths: ["wiki/synthesis/typing.md"], count: 1 };
-        fetchMock.mockResolvedValue(jsonResponse(data));
+describe("wikiGenerate()", () => {
+    it("POSTs the slug and yields the run's progress, ending with where the page landed", async () => {
+        fetchMock.mockResolvedValue(
+            sseResponse([
+                'event: wiki_phase\ndata: {"phase":"generate","total":1}\n\n',
+                'event: heartbeat\ndata: {"ts":1786419825.03}\n\n',
+                'event: wiki_page\ndata: {"label":"Titan","pages":1,"current":1,"total":1}\n\n',
+                'event: done\ndata: {"slug":"entities/titan","path":"/w/entities/titan.md"}\n\n',
+            ]),
+        );
 
-        const result = await client.wikiSynthesize();
+        const events = await collect(client.wikiGenerate("titan"));
 
         expect(fetchMock).toHaveBeenCalledWith(
-            `${BASE_URL}/api/wiki/synthesize`,
+            `${BASE_URL}/api/wiki/generate/titan`,
             expect.objectContaining({ method: "POST" }),
         );
-        expect(result).toEqual(data);
+        expect(events.map((e) => e.event)).toEqual(["wiki_phase", "heartbeat", "wiki_page", "done"]);
+        // The done slug is the one the read route accepts; the caller asked by
+        // bare slug, which /api/wiki 404s.
+        expect(events[3].data).toEqual({ slug: "entities/titan", path: "/w/entities/titan.md" });
     });
 
-    it("returns the empty-cluster shape when no clusters meet the threshold", async () => {
-        fetchMock.mockResolvedValue(jsonResponse({ paths: [], count: 0 }));
-        const result = await client.wikiSynthesize();
-        expect(result.count).toBe(0);
-        expect(result.paths).toEqual([]);
+    it("reads as a stream, so the 15s timeout never fires on a model call", async () => {
+        // Writing a page took 64s against a 70B. As a plain request this aborted
+        // at 15s and every generate died with "signal aborted without reason"
+        // while the server kept working. Streaming skips the timeout, so no
+        // abort timer is installed at all when the caller passes no signal.
+        fetchMock.mockResolvedValue(sseResponse([]));
+        await collect(client.wikiGenerate("cassini"));
+        const captured = fetchMock.mock.calls[0][1] as RequestInit;
+        expect(captured.signal).toBeUndefined();
+    });
+
+    it("encodes a slug with a slash in it", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+        await collect(client.wikiGenerate("concepts/gas giant"));
+        expect(fetchMock).toHaveBeenCalledWith(
+            `${BASE_URL}/api/wiki/generate/concepts%2Fgas%20giant`,
+            expect.objectContaining({ method: "POST" }),
+        );
+    });
+
+    it("passes the abort signal so a cancelled write stops streaming", async () => {
+        fetchMock.mockResolvedValue(sseResponse([]));
+        const controller = new AbortController();
+        await collect(client.wikiGenerate("titan", controller.signal));
+        const captured = fetchMock.mock.calls[0][1] as RequestInit;
+        expect(captured.signal).toBeDefined();
     });
 });
 
@@ -2022,17 +2045,22 @@ describe("wikiDraftReject()", () => {
 });
 
 describe("wikiPrune()", () => {
-    it("POSTs to /api/wiki/prune and yields SSE events", async () => {
-        fetchMock.mockResolvedValue(sseResponse(['event: wiki_prune_done\ndata: {"archived":3}\n\n']));
+    it("POSTs to /api/wiki/prune and returns the whole report", async () => {
+        const data = {
+            records: [{ wiki_source: "wiki/a.md", action: "archived", reason: "orphaned" }],
+            archived: 3,
+            flagged: 1,
+            reconciled: 2,
+        };
+        fetchMock.mockResolvedValue(jsonResponse(data));
 
-        const events = await collect(client.wikiPrune());
+        const result = await client.wikiPrune();
 
         expect(fetchMock).toHaveBeenCalledWith(
             `${BASE_URL}/api/wiki/prune`,
             expect.objectContaining({ method: "POST" }),
         );
-        expect(events).toHaveLength(1);
-        expect(events[0].event).toBe("wiki_prune_done");
+        expect(result).toEqual(data);
     });
 });
 
@@ -2436,7 +2464,7 @@ describe("RateLimitedError", () => {
 
     it("is thrown when the server responds 429 with a numeric Retry-After header", async () => {
         fetchMock.mockResolvedValue(rateLimitedResponse("7"));
-        await expect(client.chat("hi", [] as Message[])).rejects.toMatchObject({
+        await expect(client.listModels()).rejects.toMatchObject({
             name: "RateLimitedError",
             retryAfterSeconds: 7,
         });
@@ -2444,7 +2472,7 @@ describe("RateLimitedError", () => {
 
     it("leaves retryAfterSeconds null when the Retry-After header is absent", async () => {
         fetchMock.mockResolvedValue(rateLimitedResponse(null));
-        await expect(client.chat("hi", [] as Message[])).rejects.toMatchObject({
+        await expect(client.listModels()).rejects.toMatchObject({
             name: "RateLimitedError",
             retryAfterSeconds: null,
         });
@@ -2452,7 +2480,7 @@ describe("RateLimitedError", () => {
 
     it("leaves retryAfterSeconds null when the Retry-After header is non-numeric", async () => {
         fetchMock.mockResolvedValue(rateLimitedResponse("not-a-number"));
-        await expect(client.chat("hi", [] as Message[])).rejects.toMatchObject({
+        await expect(client.listModels()).rejects.toMatchObject({
             name: "RateLimitedError",
             retryAfterSeconds: null,
         });
@@ -2460,7 +2488,7 @@ describe("RateLimitedError", () => {
 
     it("does not retry on 429 — single fetch attempt before propagating", async () => {
         fetchMock.mockResolvedValue(rateLimitedResponse("3"));
-        await expect(client.chat("hi", [] as Message[])).rejects.toBeInstanceOf(RateLimitedError);
+        await expect(client.listModels()).rejects.toBeInstanceOf(RateLimitedError);
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
@@ -2477,47 +2505,6 @@ const PLACEMENT: PlacementResponse = {
     manual: false,
     spec_json: null,
 };
-
-describe("gpus()", () => {
-    it("GETs /api/gpus and returns the envelope with detected GPUs", async () => {
-        const envelope = { gpus: PLACEMENT.gpus, notice: null };
-        fetchMock.mockResolvedValue(jsonResponse(envelope));
-        const result = await client.gpus();
-        expect(fetchMock).toHaveBeenCalledWith(`${BASE_URL}/api/gpus`, expect.objectContaining({}));
-        expect(result._unsafeUnwrap()).toEqual(envelope);
-    });
-
-    it("wraps a pre-PR-564 bare list in the envelope for backward compat", async () => {
-        fetchMock.mockResolvedValue(jsonResponse(PLACEMENT.gpus));
-        const result = await client.gpus();
-        expect(result._unsafeUnwrap()).toEqual({ gpus: PLACEMENT.gpus, notice: null });
-    });
-
-    it("returns the server-issued Intel util notice when present", async () => {
-        const notice = "install igt-gpu-tools and grant CAP_PERFMON to lilbee";
-        fetchMock.mockResolvedValue(jsonResponse({ gpus: PLACEMENT.gpus, notice }));
-        const result = await client.gpus();
-        expect(result._unsafeUnwrap().notice).toBe(notice);
-    });
-
-    it("returns an empty gpus array and null notice for an unexpected shape", async () => {
-        fetchMock.mockResolvedValue(jsonResponse({ unexpected: true }));
-        const result = await client.gpus();
-        expect(result._unsafeUnwrap()).toEqual({ gpus: [], notice: null });
-    });
-
-    it("returns err when the server responds non-ok", async () => {
-        fetchMock.mockResolvedValue({
-            ok: false,
-            status: 500,
-            text: () => Promise.resolve("boom"),
-            headers: { get: () => null },
-        } as unknown as Response);
-        const result = await client.gpus();
-        expect(result.isErr()).toBe(true);
-        expect(result._unsafeUnwrapErr().message).toContain("500");
-    });
-});
 
 describe("gpuStatsStream()", () => {
     it("GETs /api/gpus/stream and yields parsed gpu_stats events", async () => {

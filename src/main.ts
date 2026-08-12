@@ -64,10 +64,14 @@ import {
     type SetupDonePayload,
     type SetupProgressPayload,
     type SetupStartPayload,
+    INDETERMINATE_PROGRESS,
     type SyncDone,
     type SSEEvent,
     type SyncOptions,
     type TaskEntry,
+    type WikiBuildResult,
+    type WikiPagePayload,
+    type WikiPhasePayload,
     type UninstallPlan,
     type VaultAdapter,
 } from "./types";
@@ -112,10 +116,6 @@ import { StatusModal } from "./views/status-modal";
 import { GatekeeperModal } from "./views/gatekeeper-modal";
 import { TaskQueue, FLASH_WINDOW_MS as TASK_FLASH_WINDOW_MS } from "./task-queue";
 import { WikiSync } from "./wiki-sync";
-
-interface PruneData {
-    archived?: number;
-}
 
 const BYTES_PER_MB = 1_000_000;
 
@@ -1873,17 +1873,25 @@ export default class LilbeePlugin extends Plugin {
         const first = allActive[0];
         const pct = first.progress > 0 ? first.progress : 0;
         const suffix = queued.length > 0 ? ` +${queued.length}` : "";
+        // Writing a wiki page reports no phases, so it runs indeterminate. It
+        // was still being rendered here as "0%", which is the one number that
+        // is certainly wrong for a job that is actively running.
+        const indeterminate = first.progress <= INDETERMINATE_PROGRESS;
 
         if (allActive.length === 1) {
-            const text = MESSAGES.STATUS_TASK_RUNNING_SINGLE.replace("{name}", first.name).replace(
-                "{pct}",
-                String(pct),
-            );
+            const text = indeterminate
+                ? MESSAGES.STATUS_TASK_RUNNING_SINGLE_INDETERMINATE.replace("{name}", first.name)
+                : MESSAGES.STATUS_TASK_RUNNING_SINGLE.replace("{name}", first.name).replace("{pct}", String(pct));
             this.updateStatusBar(`lilbee: ${text}${suffix}`, DOT_STATE.PRIMARY);
         } else {
-            const text = MESSAGES.STATUS_TASKS_RUNNING_PLURAL.replace("{count}", String(allActive.length))
-                .replace("{name}", first.name)
-                .replace("{pct}", String(pct));
+            const text = indeterminate
+                ? MESSAGES.STATUS_TASKS_RUNNING_PLURAL_INDETERMINATE.replace(
+                      "{count}",
+                      String(allActive.length),
+                  ).replace("{name}", first.name)
+                : MESSAGES.STATUS_TASKS_RUNNING_PLURAL.replace("{count}", String(allActive.length))
+                      .replace("{name}", first.name)
+                      .replace("{pct}", String(pct));
             this.updateStatusBar(`lilbee: ${text}${suffix}`, DOT_STATE.PRIMARY);
         }
         this.setStatusClass("lilbee-status-adding");
@@ -2703,8 +2711,12 @@ export default class LilbeePlugin extends Plugin {
     }
 
     /**
-     * Refresh the wiki. The server rebuilds across every ingested source; there
-     * is no per-source generate route, so this cannot be scoped to one note.
+     * Refresh the wiki across every ingested source.
+     *
+     * The run issues per-source LLM calls and can take minutes, so the server
+     * streams its progress and closes with a `done` event carrying the summary.
+     * Aborting stops it at the next source boundary and releases the server's
+     * build mutex, so a cancelled run does not block the other wiki commands.
      */
     async runWikiUpdate(): Promise<void> {
         const taskId = this.taskQueue.enqueue(MESSAGES.TASK_WIKI_UPDATE, TASK_TYPE.WIKI);
@@ -2712,10 +2724,29 @@ export default class LilbeePlugin extends Plugin {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
         }
+        const controller = new AbortController();
+        this.taskQueue.registerAbort(taskId, controller);
         try {
-            const result = await this.api.wikiUpdate();
+            let count = 0;
+            for await (const event of this.api.wikiUpdate(controller.signal)) {
+                if (event.event === SSE_EVENT.WIKI_PAGE) {
+                    const d = event.data as WikiPagePayload;
+                    // A phase with no unit count reports total 0; -1 keeps the
+                    // bar indeterminate rather than dividing by zero.
+                    const pct = d.total > 0 ? Math.round((d.current / d.total) * 100) : -1;
+                    this.taskQueue.update(taskId, pct, MESSAGES.TASK_WIKI_PAGE(d.label, d.current, d.total));
+                } else if (event.event === SSE_EVENT.WIKI_PHASE) {
+                    const d = event.data as WikiPhasePayload;
+                    this.taskQueue.update(taskId, -1, MESSAGES.TASK_WIKI_PHASE(d.phase));
+                } else if (event.event === SSE_EVENT.DONE) {
+                    count = (event.data as WikiBuildResult).count;
+                } else if (event.event === SSE_EVENT.ERROR) {
+                    const d = event.data as { message?: string } | string;
+                    throw new Error(extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN));
+                }
+            }
             this.taskQueue.complete(taskId);
-            new Notice(MESSAGES.NOTICE_WIKI_UPDATE_DONE(result.count), NOTICE_DURATION_MS);
+            new Notice(MESSAGES.NOTICE_WIKI_UPDATE_DONE(count), NOTICE_DURATION_MS);
             this.refreshOpenWikiViews();
             if (this.wikiSync) {
                 void this.reconcileWiki();
@@ -2736,21 +2767,10 @@ export default class LilbeePlugin extends Plugin {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
             return;
         }
-        const controller = new AbortController();
-        this.taskQueue.registerAbort(taskId, controller);
         try {
-            let archived = 0;
-            for await (const event of this.api.wikiPrune(controller.signal)) {
-                if (event.event === SSE_EVENT.WIKI_PRUNE_DONE) {
-                    const d = event.data as PruneData;
-                    archived = d.archived ?? 0;
-                } else if (event.event === SSE_EVENT.ERROR) {
-                    const d = event.data as { message?: string } | string;
-                    throw new Error(extractSseErrorMessage(d, MESSAGES.ERROR_UNKNOWN));
-                }
-            }
+            const result = await this.api.wikiPrune();
             this.taskQueue.complete(taskId);
-            new Notice(MESSAGES.NOTICE_WIKI_PRUNE_DONE(archived), NOTICE_DURATION_MS);
+            new Notice(MESSAGES.NOTICE_WIKI_PRUNE_DONE(result.archived), NOTICE_DURATION_MS);
             this.refreshOpenWikiViews();
             // Reconcile vault after pruning
             if (this.wikiSync) {

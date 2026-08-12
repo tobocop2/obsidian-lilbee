@@ -6,7 +6,7 @@ import { DEFAULT_SETTINGS, type AgentClientDetection, type LilbeeSettings } from
 import { ok, err } from "../src/result";
 import { TaskQueue } from "../src/task-queue";
 import { ErrorJournal } from "../src/error-journal";
-import { AGENT_LABELS, MESSAGES } from "../src/locales/en";
+import { AGENT_LINKS, MESSAGES } from "../src/locales/en";
 
 vi.mock("../src/binary-manager", () => ({
     listReleases: vi.fn(async () => []),
@@ -120,23 +120,17 @@ beforeEach(() => {
 });
 
 describe("agent detection", () => {
-    it("badges each client as installed or not found", async () => {
+    it("lists where to get every supported agent", async () => {
         const { root } = await renderSection(makePlugin());
-        const badges = root.findAll("lilbee-agent-badge-row").map((b) => b.textContent);
-
-        expect(badges[0]).toContain(AGENT_LABELS.claude);
-        expect(badges[0]).toContain(MESSAGES.PILL_AGENT_DETECTED);
-        expect(badges[1]).toContain(MESSAGES.PILL_AGENT_MISSING);
+        expect(root.findAll("lilbee-external-link")).toHaveLength(AGENT_LINKS.length);
     });
 
-    it("shows guidance and links when nothing is installed", async () => {
+    it("offers only none in the dropdown when nothing is installed", async () => {
         const plugin = makePlugin();
         plugin.api.getAgentConfigIndex = vi.fn().mockResolvedValue(ok({ clients: [detection("opencode", false)] }));
-        const { root } = await renderSection(plugin);
+        const { root, captured } = await renderSection(plugin);
 
-        const empty = root.find("lilbee-agent-empty");
-        expect(empty?.textContent).toContain(MESSAGES.AGENT_EMPTY_TITLE);
-        expect(empty?.textContent).toContain(MESSAGES.AGENT_EMPTY_BREW);
+        expect(captured.dropdowns[0].options).toEqual(["none"]);
         expect(root.findAll("lilbee-external-link")).toHaveLength(3);
     });
 
@@ -181,9 +175,9 @@ describe("agent detection", () => {
 });
 
 describe("agent selection", () => {
-    it("offers none plus every client", async () => {
+    it("offers none plus each installed client", async () => {
         const { captured } = await renderSection(makePlugin());
-        expect(captured.dropdowns[0].options).toEqual(["none", "claude", "hermes", "opencode"]);
+        expect(captured.dropdowns[0].options).toEqual(["none", "claude", "opencode"]);
     });
 
     it("wires the agent the user picks", async () => {
@@ -207,7 +201,7 @@ describe("agent selection", () => {
 
     it("hides the per-agent rows until an agent is chosen", async () => {
         const { root, captured } = await renderSection(makePlugin());
-        expect(root.find("lilbee-agent-context")).toBeNull();
+        expect(root.find("lilbee-pill-context")).toBeNull();
         expect(captured.names).not.toContain(MESSAGES.LABEL_AGENT_CLAUDIAN);
     });
 
@@ -224,10 +218,10 @@ describe("agent selection", () => {
 describe("agent model row", () => {
     it("shows the chat model and its context window", async () => {
         const { root } = await renderSection(makePlugin({ agent: "opencode" }));
-        const context = root.find("lilbee-agent-context");
+        const context = root.find("lilbee-pill-context");
 
         expect(context?.textContent).toContain(MESSAGES.AGENT_CONTEXT_BADGE(32768));
-        expect(root.find("lilbee-agent-context-warning")).toBeNull();
+        expect(root.find("lilbee-agent-note")).toBeNull();
     });
 
     it("warns when the window is too small for agent work", async () => {
@@ -235,23 +229,24 @@ describe("agent model row", () => {
         plugin.api.health = vi.fn().mockResolvedValue(ok({ status: "ok", version: "1", chat_ctx: 8192 }));
         const { root } = await renderSection(plugin);
 
-        expect(root.find("lilbee-agent-context-warning")?.textContent).toBe(MESSAGES.AGENT_CONTEXT_WARNING);
+        expect(root.find("lilbee-agent-note")?.textContent).toBe(MESSAGES.AGENT_CONTEXT_WARNING);
     });
 
-    it("says so when the window is not known yet", async () => {
+    it("shows no context pill when the window is unknown", async () => {
         const plugin = makePlugin({ agent: "opencode" });
         plugin.api.health = vi.fn().mockResolvedValue(ok({ status: "ok", version: "1", chat_ctx: null }));
         const { root } = await renderSection(plugin);
 
-        expect(root.find("lilbee-agent-context-note")?.textContent).toBe(MESSAGES.AGENT_CONTEXT_UNKNOWN);
+        expect(root.find("lilbee-pill-context")).toBeNull();
+        expect(root.find("lilbee-agent-note")).toBeNull();
     });
 
-    it("says so when the server cannot be asked", async () => {
+    it("shows no context pill when the server cannot be asked", async () => {
         const plugin = makePlugin({ agent: "opencode" });
         plugin.api.health = vi.fn().mockResolvedValue(err(new Error("offline")));
         const { root } = await renderSection(plugin);
 
-        expect(root.find("lilbee-agent-context-note")).not.toBeNull();
+        expect(root.find("lilbee-pill-context")).toBeNull();
     });
 
     it("changes the model through the existing picker", async () => {
@@ -291,7 +286,8 @@ describe("Claudian row", () => {
         const plugin = makePlugin({ agent: "opencode" }, { lastAgentWrite: { claudian: "skipped" } });
         const { root } = await renderSection(plugin, appWithClaudian(true));
 
-        expect(root.textContent).not.toContain(MESSAGES.PILL_AGENT_CLAUDIAN_CONFIGURED);
+        const pills = root.findAll("lilbee-key-status-pill").map((p) => p.textContent);
+        expect(pills).not.toContain(MESSAGES.PILL_AGENT_CLAUDIAN_CONFIGURED);
     });
 
     it("is not shown for an agent that brings its own models", async () => {
@@ -301,36 +297,14 @@ describe("Claudian row", () => {
 });
 
 describe("config freshness", () => {
-    it("reports when the config was written and on which port", async () => {
+    it("says the agent is connected once its config is written", async () => {
         const plugin = makePlugin(
             { agent: "opencode" },
             { lastAgentWrite: { claudian: "absent", writtenAt: Date.now() } },
         );
         const { root } = await renderSection(plugin);
 
-        expect(root.find("lilbee-agent-status")?.textContent).toBe(MESSAGES.AGENT_STATUS_WRITTEN("just now", "54321"));
-    });
-
-    it("falls back to the configured URL when no managed server is running", async () => {
-        const plugin = makePlugin(
-            { agent: "opencode" },
-            { serverManager: null, lastAgentWrite: { claudian: "absent", writtenAt: Date.now() } },
-        );
-        plugin.settings.serverUrl = "http://127.0.0.1:7433";
-        const { root } = await renderSection(plugin);
-
-        expect(root.find("lilbee-agent-status")?.textContent).toContain("port 7433");
-    });
-
-    it("survives a server URL it cannot parse", async () => {
-        const plugin = makePlugin(
-            { agent: "opencode" },
-            { serverManager: null, lastAgentWrite: { claudian: "absent", writtenAt: Date.now() } },
-        );
-        plugin.settings.serverUrl = "not a url";
-        const { root } = await renderSection(plugin);
-
-        expect(root.find("lilbee-agent-status")?.textContent).not.toContain("port");
+        expect(root.find("lilbee-agent-status")?.textContent).toBe(MESSAGES.AGENT_STATUS_CONNECTED);
     });
 
     it("says the config lands at startup before anything is written", async () => {

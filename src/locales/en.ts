@@ -312,6 +312,10 @@ export const MESSAGES = {
     STATUS_WAITING_ON_SERVER: "Already ingesting on the server — waiting for it to finish",
     STATUS_TASKS_RUNNING_PLURAL: "{count} tasks running · {name} {pct}%",
     STATUS_TASK_RUNNING_SINGLE: "{name} {pct}%",
+    // A job whose length cannot be known reads as stuck when it is labelled 0%,
+    // so those drop the number rather than reporting a false one.
+    STATUS_TASK_RUNNING_SINGLE_INDETERMINATE: "{name}",
+    STATUS_TASKS_RUNNING_PLURAL_INDETERMINATE: "{count} tasks running · {name}",
     STATUS_TASKS_QUEUED_ONLY: "{count} queued",
     STATUS_TASK_DONE_FLASH: "Done · {name}",
     STATUS_TASKS_DONE_FLASH: "{count} tasks done · {name}",
@@ -791,6 +795,14 @@ export const MESSAGES = {
     LABEL_WIKI: "Wiki",
     LABEL_WIKI_SUMMARIES: "Summaries",
     LABEL_WIKI_CONCEPTS: "Concepts",
+    LABEL_WIKI_ENTITIES: "Entities",
+    LABEL_WIKI_UNWRITTEN: (count: number) => `Not written yet (${count})`,
+    LABEL_WIKI_NOT_WRITTEN: "not written yet",
+    LABEL_WIKI_WRITING: "writing...",
+    CONFIRM_WIKI_GENERATE: (name: string) =>
+        `Write a wiki page for "${name}"? This runs the chat model once and can take a few minutes on a large model.`,
+    TASK_WIKI_GENERATE: (name: string) => `Write ${name}`,
+    NOTICE_WIKI_GENERATED: (name: string) => `lilbee: wrote "${name}"`,
     LABEL_WIKI_NO_PAGES: "No wiki pages yet",
     LABEL_WIKI_SOURCES_COUNT: (n: number) => `${n} sources`,
 
@@ -853,6 +865,70 @@ export const MESSAGES = {
     LABEL_LINT_STATUS_MODEL: "model changed",
 
     // Wiki settings
+    // Retrieval quality (server PR #557)
+    LABEL_TITLE_SEARCH: "Match on titles",
+    DESC_TITLE_SEARCH:
+        "Also search document titles, not just their text. Helps when you remember what a file is called but not what it says.",
+    LABEL_TITLE_SEARCH_WEIGHT: "Title weight",
+    DESC_TITLE_SEARCH_WEIGHT: "How much a title match counts next to a body match. Higher favours the title.",
+    LABEL_ADAPTIVE_FUSION: "Adaptive fusion",
+    DESC_ADAPTIVE_FUSION:
+        "Let the server decide per query how much to trust keyword matching against meaning matching.",
+    LABEL_ADAPTIVE_FUSION_MARGIN: "Fusion margin",
+    DESC_ADAPTIVE_FUSION_MARGIN: "How clear a lead one method needs before the server leans on it.",
+    LABEL_LEXICAL_FUSION_WEIGHT: "Keyword weight",
+    DESC_LEXICAL_FUSION_WEIGHT: "How much keyword matching counts when results are combined.",
+    LABEL_NEIGHBOR_EXPANSION: "Include neighbouring text",
+    DESC_NEIGHBOR_EXPANSION:
+        "Pull in this many passages either side of a match, so an answer is not cut off mid-thought. 0 keeps just the match.",
+    LABEL_FILTER_STRUCTURAL_CHUNKS: "Skip boilerplate",
+    DESC_FILTER_STRUCTURAL_CHUNKS: "Drop tables of contents, headers and footers from results.",
+    LABEL_RERANK_MIN_SCORE: "Reranker cutoff",
+    DESC_RERANK_MIN_SCORE:
+        "Discard reranked results below this score. Leave empty to keep everything the reranker returns.",
+    LABEL_FTS_LANGUAGE: "Keyword search language",
+    DESC_FTS_LANGUAGE: "Language used for stemming in keyword search, so 'running' matches 'run'.",
+    LABEL_CONTEXTUAL_ENRICHMENT: "Add context when indexing",
+    DESC_CONTEXTUAL_ENRICHMENT:
+        "Give each passage a short note about where it sits in the document. Makes retrieval better and indexing slower.",
+    LABEL_EMBED_TITLES: "Index titles with text",
+    DESC_EMBED_TITLES: "Fold the document title into each passage as it is indexed.",
+    LABEL_TOKEN_SIZING: "Size passages by tokens",
+    DESC_TOKEN_SIZING:
+        "Split documents on token counts rather than characters, so passages fit the model more predictably.",
+    // Extraction quality (xberg 1.0)
+    LABEL_LAYOUT_DETECTION: "Detect page layout",
+    DESC_LAYOUT_DETECTION:
+        "Work out columns, headings and reading order before extracting. Much better on PDFs with complex layouts, and noticeably slower to ingest, which is why it is off by default.",
+    LABEL_TABLE_EXTRACTION: "Extract tables",
+    DESC_TABLE_EXTRACTION: "Pull tables out as tables instead of flattening them into a run of text.",
+    LABEL_TABLE_MODEL: "Table model",
+    DESC_TABLE_MODEL:
+        "Which model reads tables. Auto suits most documents; the wired and wireless variants suit tables with and without ruling lines.",
+    LABEL_OCR_LANGUAGE: "OCR languages",
+    DESC_OCR_LANGUAGE:
+        "Languages to expect when reading scanned pages, one per line. Three-letter codes, for example eng or deu.",
+    // Wiki
+    LABEL_WIKI_AUTO_UPDATE: "Update the wiki after ingesting",
+    DESC_WIKI_AUTO_UPDATE:
+        "Refresh wiki pages whenever documents are added. This is GPU work, so leave it off if you would rather run it yourself.",
+    LABEL_WIKI_STUB_MAX_CHUNK_REFS: "Passages per page",
+    DESC_WIKI_STUB_MAX_CHUNK_REFS: "How many source passages a generated page may draw on.",
+    LABEL_WIKI_ENTITY_PAGE_PROMPT: "Entity page prompt",
+    DESC_WIKI_ENTITY_PAGE_PROMPT:
+        "The instructions used to write a page about a person, place or thing. Leave empty for the built-in prompt.",
+    // Engine, placement and ingest
+    LABEL_INGEST_PROCESSES: "Ingest workers",
+    DESC_INGEST_PROCESSES: "How many documents are processed at once. 0 lets the server pick based on your machine.",
+    LABEL_SYSTEM_MEMORY_RESERVE_GB: "Memory to leave free",
+    DESC_SYSTEM_MEMORY_RESERVE_GB:
+        "Gigabytes of system memory to keep for everything else, so loading a model does not starve your machine.",
+    LABEL_USABLE_VRAM_FRACTION: "Usable VRAM",
+    DESC_USABLE_VRAM_FRACTION:
+        "Fraction of each card's memory the planner may fill. Lower it if other software shares the GPU.",
+    LABEL_FAST_MODEL_DOWNLOADS: "Fast model downloads",
+    DESC_FAST_MODEL_DOWNLOADS:
+        "Download models over several connections at once. Much faster on a good link, heavier on a weak one.",
     LABEL_WIKI_SECTION: "Wiki (beta)",
     LABEL_WIKI_ENABLE_TOGGLE: "Enable wiki",
     DESC_WIKI_ENABLE_TOGGLE: "Generate AI-written summaries of your documents. This feature is in beta.",
@@ -891,6 +967,16 @@ export const MESSAGES = {
     COMMAND_WIKI_LINT: "Run wiki lint",
     COMMAND_WIKI_UPDATE: "Update wiki",
     TASK_WIKI_UPDATE: "Update wiki",
+    TASK_WIKI_PAGE: (label: string, current: number, total: number) =>
+        total > 0 ? `${label} (${current} of ${total})` : label,
+    TASK_WIKI_PHASE: (phase: string) => {
+        const phases: Record<string, string> = {
+            extract: "Finding entities",
+            generate: "Writing pages",
+            index: "Building the index",
+        };
+        return phases[phase] ?? phase;
+    },
 
     WIZARD_INTRO_DESC: "lilbee turns your Obsidian vault into a searchable knowledge base powered by AI.",
     WIZARD_INTRO_STEPS: "This wizard will help you:",
@@ -923,15 +1009,17 @@ export const MESSAGES = {
     WIZARD_SELECT_MODEL: "Please select a model first.",
 
     // Wiki wizard step
-    WIZARD_WIKI_TITLE: "Wiki (optional, experimental)",
+    WIZARD_WIKI_TITLE: "Wiki (optional)",
     WIZARD_WIKI_DESC:
-        "Wiki pages are AI-written summaries of your documents — think Wikipedia articles derived from what you already have. Generation runs on-demand from the command palette or Settings; enabling it here just unlocks those controls.",
-    WIZARD_WIKI_EXPERIMENTAL_HEADING: "Read this first",
-    WIZARD_WIKI_EXPERIMENTAL_INTRO: "Two caveats before you flip this on:",
-    WIZARD_WIKI_EXPERIMENTAL_QUALITY:
-        "Everything lands as a draft first. Every page is gated by a title/body coherence check and a cosine-similarity score against the source chunks, and ships as a reviewable draft — accept, edit, or reject from the drafts panel before anything becomes a published wiki page.",
-    WIZARD_WIKI_EXPERIMENTAL_SLOW:
-        "Generation takes time and ties up the chat LLM. Pages that share a primary source are batched into one model call, so a 200-page vault over ~30 sources is closer to ~30 batched calls than 200 sequential ones — but it's still blocking. Plan to run it during a break, not in the middle of research.",
+        "Wiki pages are AI-written summaries of your documents, like Wikipedia articles derived from what you already have. Generation runs on demand from the command palette or Settings; enabling it here just unlocks those controls.",
+    WIZARD_WIKI_CAVEATS_HEADING: "Before you turn this on",
+    WIZARD_WIKI_CAVEATS_INTRO: "Two things worth knowing:",
+    WIZARD_WIKI_CAVEAT_QUALITY:
+        "Everything lands as a draft first. Every page is gated by a title/body coherence check and a cosine-similarity score against the source chunks, then ships as a reviewable draft. Accept, edit, or reject it from the drafts panel before it becomes a published page.",
+    WIZARD_WIKI_CAVEAT_COST:
+        "Building the wiki is the heaviest thing lilbee does. It runs your chat model over the whole corpus and holds the GPU for the duration, so chat is unavailable while it works. Pages sharing a primary source are batched into one call, so a 200-page vault over roughly 30 sources costs about 30 calls rather than 200. Run it during a break, not in the middle of research.",
+    TOOLTIP_WIZARD_WIKI_ENABLE:
+        "Turning this on only unlocks the commands. Nothing is generated until you run a build, and a build is GPU heavy: it runs your chat model across every source and blocks chat while it does. Pages arrive as drafts for you to review.",
     WIZARD_WIKI_PROS_HEADING: "What it adds",
     WIZARD_WIKI_PRO_SUMMARIES: "Summarized, structured overviews of your documents",
     WIZARD_WIKI_PRO_CROSSREFS: "Related concepts become discoverable through cross-references",
@@ -943,8 +1031,7 @@ export const MESSAGES = {
     WIZARD_WIKI_CON_COMPLEXITY: "Adds a second index shape to maintain alongside raw embeddings",
     WIZARD_WIKI_ENABLE: "Enable wiki (on-demand generation)",
     WIZARD_WIKI_DISABLE: "Skip for now (recommended)",
-    WIZARD_WIKI_ENABLE_DESC:
-        "Unlocks wiki commands + Settings. Nothing generates automatically. Proceed with caution — this is experimental.",
+    WIZARD_WIKI_ENABLE_DESC: "Unlocks the wiki commands and settings. Nothing generates until you ask for it.",
     WIZARD_WIKI_DISABLE_DESC:
         "Use raw document search only. You can enable the wiki later from Settings → Wiki, or re-open this wizard from Settings → Setup wizard.",
     TITLE_PICK_EMBEDDING: "Pick an embedding model",
@@ -1119,8 +1206,7 @@ export const MESSAGES = {
 
     // Agent integration
     LABEL_AGENT_SECTION: "Agent integration",
-    DESC_AGENT_SECTION:
-        "Connect a coding agent to lilbee, so it thinks with your models and can search your vault.",
+    DESC_AGENT_SECTION: "Connect a coding agent to lilbee, so it thinks with your models and can search your vault.",
     LABEL_AGENT_SUPPORTED: "Supported agents",
     BUTTON_AGENT_RESCAN: "Rescan",
     LABEL_AGENT_CHOICE: "Coding agent",

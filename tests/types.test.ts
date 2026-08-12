@@ -13,7 +13,6 @@ import {
 import type {
     Excerpt,
     DocumentResult,
-    AskResponse,
     Source,
     ModelInfo,
     ModelCatalog,
@@ -192,17 +191,6 @@ describe("Source interface", () => {
         };
         expect(s.page_end).toBe(2);
         expect(s.line_start).toBe(5);
-    });
-});
-
-describe("AskResponse interface", () => {
-    it("holds answer and sources", () => {
-        const r: AskResponse = {
-            answer: "42",
-            sources: [],
-        };
-        expect(r.answer).toBe("42");
-        expect(r.sources).toEqual([]);
     });
 });
 

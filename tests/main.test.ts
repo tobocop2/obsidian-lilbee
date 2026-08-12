@@ -2,7 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { windowStub } from "./window-stub";
 import { Notice, TFile, TFolder } from "obsidian";
 import { App, MockElement, WorkspaceLeaf } from "./__mocks__/obsidian";
-import { DEFAULT_SHARED_CONFIG, SETUP_OUTCOME, SSE_EVENT } from "../src/types";
+import { DEFAULT_SHARED_CONFIG, INDETERMINATE_PROGRESS, SETUP_OUTCOME, SSE_EVENT } from "../src/types";
 import { VaultRegistry } from "../src/vault-registry";
 import { FileProgressTracker } from "../src/main";
 import { MESSAGES } from "../src/locales/en";
@@ -4681,6 +4681,23 @@ describe("LilbeePlugin", () => {
             expect(text).toContain("2 queued");
         });
 
+        it("status bar omits the percentage for an indeterminate task", async () => {
+            // Writing a wiki page reports no phases, so it runs indeterminate.
+            // Rendering that as "0%" was the one number certain to be wrong for
+            // a job that is actively running.
+            const plugin = await createPlugin();
+            await plugin.onload();
+            plugin.activeModel = "";
+
+            const id = plugin.taskQueue.enqueue("Write Amazonis Planitia", "wiki");
+            plugin.taskQueue.update(id!, INDETERMINATE_PROGRESS, "writing...");
+            (plugin as any).updateStatusBarFromQueue();
+
+            const text = (plugin as any).statusBarEl?.textContent as string;
+            expect(text).toContain("Write Amazonis Planitia");
+            expect(text).not.toContain("%");
+        });
+
         it("status bar shows failure flash after a pull fails", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
@@ -6575,7 +6592,15 @@ describe("LilbeePlugin", () => {
 
             const mockRefresh = vi.fn();
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([{ view: { refresh: mockRefresh } }]);
-            plugin.api.wikiUpdate = vi.fn().mockResolvedValue({ paths: ["a.md", "b.md"], entities: 3, count: 2 });
+            async function* updateStream() {
+                yield { event: SSE_EVENT.WIKI_PHASE, data: { phase: "extract", total: 0 } };
+                yield {
+                    event: SSE_EVENT.WIKI_PAGE,
+                    data: { label: "notes.md", pages: 2, current: 1, total: 2 },
+                };
+                yield { event: SSE_EVENT.DONE, data: { paths: ["a.md", "b.md"], entities: 3, count: 2 } };
+            }
+            plugin.api.wikiUpdate = vi.fn().mockReturnValue(updateStream());
 
             await plugin.runWikiUpdate();
 
@@ -6585,10 +6610,50 @@ describe("LilbeePlugin", () => {
             expect(mockRefresh).toHaveBeenCalled();
         });
 
+        it("keeps the bar indeterminate for a phase that reports no unit count", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            async function* updateStream() {
+                yield {
+                    event: SSE_EVENT.WIKI_PAGE,
+                    data: { label: "notes.md", pages: 1, current: 1, total: 0 },
+                };
+                yield { event: SSE_EVENT.DONE, data: { paths: [], entities: 0, count: 0 } };
+            }
+            plugin.api.wikiUpdate = vi.fn().mockReturnValue(updateStream());
+            const spy = vi.spyOn(plugin.taskQueue, "update");
+
+            await plugin.runWikiUpdate();
+
+            expect(spy).toHaveBeenCalledWith(expect.any(String), -1, expect.any(String));
+        });
+
+        it("shows an unrecognised phase verbatim and ignores unrelated events", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            async function* updateStream() {
+                // A phase this build of the plugin has no label for, and an
+                // event belonging to another stream: neither should derail the run.
+                yield { event: SSE_EVENT.WIKI_PHASE, data: { phase: "reconcile", total: 0 } };
+                yield { event: SSE_EVENT.TOKEN, data: "stray" };
+                yield { event: SSE_EVENT.DONE, data: { paths: [], entities: 0, count: 0 } };
+            }
+            plugin.api.wikiUpdate = vi.fn().mockReturnValue(updateStream());
+            const spy = vi.spyOn(plugin.taskQueue, "update");
+
+            await plugin.runWikiUpdate();
+
+            expect(spy).toHaveBeenCalledWith(expect.any(String), -1, "reconcile");
+            expect(plugin.taskQueue.completed.length).toBeGreaterThan(0);
+        });
+
         it("fails the task when the update request throws", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            plugin.api.wikiUpdate = vi.fn().mockRejectedValue(new Error("build broke"));
+            async function* failStream() {
+                throw new Error("build broke");
+            }
+            plugin.api.wikiUpdate = vi.fn().mockReturnValue(failStream());
 
             await plugin.runWikiUpdate();
 
@@ -6598,17 +6663,49 @@ describe("LilbeePlugin", () => {
         it("uses the fallback message for a non-Error throw", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            plugin.api.wikiUpdate = vi.fn().mockRejectedValue("nope");
+            async function* throwStream() {
+                throw "nope";
+            }
+            plugin.api.wikiUpdate = vi.fn().mockReturnValue(throwStream());
 
             await plugin.runWikiUpdate();
 
             expect(plugin.taskQueue.completed.some((t: any) => typeof t.error === "string")).toBe(true);
         });
 
+        it("fails the task on an error event mid-stream", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            async function* errStream() {
+                yield { event: SSE_EVENT.ERROR, data: { message: "build exploded" } };
+            }
+            plugin.api.wikiUpdate = vi.fn().mockReturnValue(errStream());
+
+            await plugin.runWikiUpdate();
+
+            expect(plugin.taskQueue.completed.some((t: any) => t.error === "build exploded")).toBe(true);
+        });
+
+        it("falls back to a generic message for an error event with no message", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+            async function* errStream() {
+                yield { event: SSE_EVENT.ERROR, data: {} };
+            }
+            plugin.api.wikiUpdate = vi.fn().mockReturnValue(errStream());
+
+            await plugin.runWikiUpdate();
+
+            expect(plugin.taskQueue.completed.some((t: any) => t.status === "failed")).toBe(true);
+        });
+
         it("reconciles the vault when wiki sync is on", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
-            plugin.api.wikiUpdate = vi.fn().mockResolvedValue({ paths: [], entities: 0, count: 1 });
+            async function* updateStream() {
+                yield { event: SSE_EVENT.DONE, data: { paths: [], entities: 0, count: 1 } };
+            }
+            plugin.api.wikiUpdate = vi.fn().mockReturnValue(updateStream());
             plugin.wikiSync = {} as any;
             const spy = vi.spyOn(plugin, "reconcileWiki").mockResolvedValue(undefined);
 
@@ -6651,10 +6748,7 @@ describe("LilbeePlugin", () => {
             const mockRefresh = vi.fn();
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([{ view: { refresh: mockRefresh } }]);
 
-            async function* pruneStream() {
-                yield { event: SSE_EVENT.WIKI_PRUNE_DONE, data: { archived: 5 } };
-            }
-            plugin.api.wikiPrune = vi.fn().mockReturnValue(pruneStream());
+            plugin.api.wikiPrune = vi.fn().mockResolvedValue({ records: [], archived: 5, flagged: 1, reconciled: 0 });
 
             await plugin.runWikiPrune();
 
@@ -6668,10 +6762,7 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            async function* failStream() {
-                throw new Error("prune failed");
-            }
-            plugin.api.wikiPrune = vi.fn().mockReturnValue(failStream());
+            plugin.api.wikiPrune = vi.fn().mockRejectedValue(new Error("prune failed"));
 
             await plugin.runWikiPrune();
 
@@ -6683,74 +6774,23 @@ describe("LilbeePlugin", () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            async function* throwStream() {
-                throw 42;
-            }
-            plugin.api.wikiPrune = vi.fn().mockReturnValue(throwStream());
+            plugin.api.wikiPrune = vi.fn().mockRejectedValue(42);
 
             await plugin.runWikiPrune();
 
             expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
         });
 
-        it("handles prune done event with no archived field", async () => {
+        it("reports a run that archived nothing", async () => {
             mockConfirmModalResult = true;
             const plugin = await createPlugin();
             await plugin.onload();
 
-            async function* pruneStream() {
-                yield { event: SSE_EVENT.WIKI_PRUNE_DONE, data: {} };
-            }
-            plugin.api.wikiPrune = vi.fn().mockReturnValue(pruneStream());
+            plugin.api.wikiPrune = vi.fn().mockResolvedValue({ records: [], archived: 0, flagged: 0, reconciled: 0 });
 
             await plugin.runWikiPrune();
 
             expect(Notice.instances.some((n) => n.message.includes("pruned 0 pages"))).toBe(true);
-        });
-
-        it("SSE_EVENT.ERROR with object data fails the task", async () => {
-            mockConfirmModalResult = true;
-            const plugin = await createPlugin();
-            await plugin.onload();
-
-            async function* errStream() {
-                yield { event: SSE_EVENT.ERROR, data: { message: "prune exploded" } };
-            }
-            plugin.api.wikiPrune = vi.fn().mockReturnValue(errStream());
-
-            await plugin.runWikiPrune();
-
-            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
-        });
-
-        it("SSE_EVENT.ERROR with string data fails the task", async () => {
-            mockConfirmModalResult = true;
-            const plugin = await createPlugin();
-            await plugin.onload();
-
-            async function* errStream() {
-                yield { event: SSE_EVENT.ERROR, data: "raw prune error" };
-            }
-            plugin.api.wikiPrune = vi.fn().mockReturnValue(errStream());
-
-            await plugin.runWikiPrune();
-
-            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
-        });
-
-        it("SSE_EVENT.ERROR with empty object uses fallback message", async () => {
-            mockConfirmModalResult = true;
-            const plugin = await createPlugin();
-            await plugin.onload();
-
-            async function* errStream() {
-                yield { event: SSE_EVENT.ERROR, data: {} };
-            }
-            plugin.api.wikiPrune = vi.fn().mockReturnValue(errStream());
-
-            await plugin.runWikiPrune();
-
-            expect(plugin.taskQueue.completed.some((t) => t.status === "failed")).toBe(true);
         });
     });
 
@@ -7099,10 +7139,7 @@ describe("LilbeePlugin", () => {
                 isWikiPath: vi.fn(),
             } as any;
 
-            async function* pruneStream() {
-                yield { event: SSE_EVENT.WIKI_PRUNE_DONE, data: { archived: 1 } };
-            }
-            plugin.api.wikiPrune = vi.fn().mockReturnValue(pruneStream());
+            plugin.api.wikiPrune = vi.fn().mockResolvedValue({ records: [], archived: 1, flagged: 0, reconciled: 0 });
 
             await plugin.runWikiPrune();
             // void reconcileWiki() is fire-and-forget; flush microtasks
@@ -7798,19 +7835,6 @@ describe("LilbeePlugin", () => {
             expect(crawl?.status).toBe("failed");
             expect(syncSpy).not.toHaveBeenCalled();
         });
-
-        it("runWikiPrune ignores unrelated stream events before completing", async () => {
-            mockConfirmModalResult = true;
-            const plugin = await createPlugin();
-            await plugin.onload();
-            async function* pruneStream() {
-                yield { event: SSE_EVENT.PROGRESS, data: {} };
-                yield { event: SSE_EVENT.WIKI_PRUNE_DONE, data: { archived: 1 } };
-            }
-            plugin.api.wikiPrune = vi.fn().mockReturnValue(pruneStream());
-            await plugin.runWikiPrune();
-            expect(plugin.taskQueue.completed.some((t) => t.status === "done")).toBe(true);
-        });
     });
 });
 
@@ -8111,7 +8135,7 @@ describe("agent integration", () => {
     });
 
     describe("connect notices", () => {
-        it("names the file it wrote", async () => {
+        it("confirms the agent is connected", async () => {
             const { plugin } = await agentPlugin();
             plugin.api.getAgentConfig = vi
                 .fn()
@@ -8121,7 +8145,7 @@ describe("agent integration", () => {
 
             await plugin.applyAgentWiring("opencode");
 
-            expect(Notice.instances[0].message).toContain("opencode.json");
+            expect(Notice.instances[0].message).toContain("connected to lilbee");
         });
 
         it("points at the settings block for an agent with no vault file", async () => {
@@ -8152,7 +8176,7 @@ describe("agent integration", () => {
 
             await plugin.applyAgentWiring("opencode");
 
-            const reload = Notice.instances.find((n) => n.message.includes("Reload it"));
+            const reload = Notice.instances.find((n) => n.message.includes("Reload Claudian"));
             expect(reload).toBeDefined();
             reload!.messageEl.children[0].trigger("click");
             await flush();

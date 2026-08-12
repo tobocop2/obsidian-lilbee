@@ -79,7 +79,7 @@ Ask a question in plain English. lilbee answers from your vault, and every citat
 - **Saved chat history.** Every chat is [saved to disk as you go](#saved-chat-history) and titled from your first question. Reopen, rename, or delete any of them from the history button. When a chat outgrows the model's context window, lilbee can [replace the oldest messages with a summary](#replacing-old-messages-with-a-summary-optional) rather than drop them. Off by default.
 - **Runs on your computer.** Server, models, index, and vault all stay local. [Cloud models are opt-in per role](#cloud-models-when-you-want-them), with a persistent indicator when one is active.
 - **Remembers what you tell it.** Turn on memory and lilbee holds onto durable facts about you and how you like your answers. It recalls the relevant ones in later chats, no matter which conversation they came from. Off by default, managed from a Memories view, and never mixed into your citations.
-- **An auto-generated wiki** _([experimental](#experimental))_: linked markdown pages written from what you've indexed. Every page is citation-checked before publish, and lands in your vault's graph alongside your own notes.
+- **An auto-generated wiki** _([off by default](#an-encyclopedia-of-your-documents))_: linked markdown pages written from what you've indexed. Every page is citation-checked before publish, and lands in your vault as ordinary notes, in your graph alongside your own.
 
 ## Why a local search engine for Obsidian
 
@@ -135,6 +135,22 @@ Grab a single page or a whole site. Whole-site crawls follow internal links, wit
 From then on you search or chat with that copy offline. The citations click back to the saved page, even after the site changes or goes down.
 
 <p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#crawl"><img alt="crawl a Wikipedia page into the vault, ask a cited question, and jump to the cited section" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/crawl.gif" width="640"></a></p>
+
+### An encyclopedia of your documents
+
+> **Watch it:** [an encyclopedia of your documents](https://obsidian.lilbee.sh/tutorial/#wiki). Browse the pages as notes, follow a link, then ask for a subject it hasn't written and watch it write one.
+
+lilbee reads everything you have indexed and writes a wiki about it. Pages compound across sources rather than one per document: a concept or a name that recurs gets its own page, cited from every source that mentions it.
+
+The pages are ordinary markdown in a vault folder (default `lilbee-wiki/`), with `[[wiki links]]` between them. So they are not trapped in a plugin panel. You open them like any note, click through them like any wiki, and they show up in Obsidian's graph and backlinks beside your own writing.
+
+It also knows what it has *not* written. Subjects your documents name but no page covers are listed alongside the real ones, dimmed. Ask for one and it writes that page on the spot, on your own GPU, cited like the rest.
+
+Every section is citation-verified and scored for faithfulness before publish. Low-confidence pages land in a drafts queue you can accept, reject, or edit. A lint command surfaces stale or broken citations by page.
+
+Off by default, because building a wiki is real GPU work. Turn it on in the setup wizard or in settings.
+
+<p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#wiki"><img alt="browse an auto-generated wiki as ordinary vault notes, follow a link between pages, then ask for a subject it has not written and watch a 70B model write and cite that page live" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/wiki.gif" width="640"></a></p>
 
 ### Verify every answer at the source
 
@@ -253,19 +269,6 @@ Some roles benefit from a cloud model, such as vision OCR or long-context summar
 With your own key, hosted frontier models appear under the catalog's Hosted tab too. Pick a free-tier Gemini model for chat and keep embedding local. The answer comes from Gemini and still cites your own documents:
 
 <p align="center"><a href="https://obsidian.lilbee.sh/tutorial/#gemini"><img alt="pick a free-tier Gemini model for chat from the Hosted tab while embedding stays local, then get an answer from Gemini that still cites your manual" src="https://raw.githubusercontent.com/tobocop2/obsidian-lilbee/gh-pages/demos/gemini.gif" width="640"></a></p>
-
-## Experimental
-
-<details>
-<summary><strong>Auto-generated wiki</strong>: linked markdown pages written from what you've indexed</summary>
-
-The plugin reads everything you've indexed and writes a wiki about it. Pages compound across sources instead of one per document. Concepts and entities that recur get their own page, with citations from every source that mentions them.
-
-The pages live in a configurable vault folder (default `lilbee/`) as ordinary markdown with `[[wiki links]]`, so Obsidian's graph view picks them up.
-
-Every section is citation-verified and scored for embedding faithfulness before publish. Low-confidence pages land in a drafts queue with a review modal: accept, reject, or edit inline. A lint command surfaces stale or broken citations by page.
-
-</details>
 
 ## Quick start
 

@@ -14,7 +14,6 @@ import type {
     AgentClient,
     AgentConfigIndexResponse,
     AgentConfigResponse,
-    AskResponse,
     Capability,
     CatalogResponse,
     ConfigResponse,
@@ -25,7 +24,6 @@ import type {
     DocumentResult,
     DocumentsResponse,
     GenerationOptions,
-    GpuListResponse,
     HealthResponse,
     InstalledResponse,
     PlacementResponse,
@@ -56,12 +54,11 @@ import type {
     DraftAcceptResponse,
     DraftInfoResponse,
     DraftRejectResponse,
-    WikiBuildResult,
     WikiCitationChain,
     WikiPage,
     WikiPageDetail,
-    WikiStatusResult,
-    WikiSynthesizeResult,
+    WikiStub,
+    WikiPruneResult,
 } from "./types";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const RETRY_COUNT = 2;
@@ -125,18 +122,6 @@ export class RateLimitedError extends Error {
  */
 export function isHttpStatus(error: Error, status: number): boolean {
     return error.message.startsWith(`Server responded ${status}`);
-}
-
-/** Wraps a pre-PR-564 bare-list `GET /api/gpus` response in the new envelope. */
-function normalizeGpuList(parsed: unknown): GpuListResponse {
-    if (Array.isArray(parsed)) {
-        return { gpus: parsed as GpuListResponse["gpus"], notice: null };
-    }
-    const obj = parsed as Partial<GpuListResponse>;
-    return {
-        gpus: Array.isArray(obj?.gpus) ? (obj.gpus as GpuListResponse["gpus"]) : [],
-        notice: typeof obj?.notice === "string" ? obj.notice : null,
-    };
 }
 
 export class LilbeeClient {
@@ -228,7 +213,7 @@ export class LilbeeClient {
     private async fetchResult<T>(
         url: string,
         init?: RequestInit,
-        opts?: { stream?: boolean; signal?: AbortSignal },
+        opts?: { stream?: boolean; signal?: AbortSignal; timeoutMs?: number },
     ): Promise<Result<T, Error>> {
         try {
             const res = await this.fetchWithRetry(url, init, opts);
@@ -248,7 +233,7 @@ export class LilbeeClient {
     async fetchWithRetry(
         url: string,
         init?: RequestInit,
-        opts?: { stream?: boolean; signal?: AbortSignal },
+        opts?: { stream?: boolean; signal?: AbortSignal; timeoutMs?: number },
     ): Promise<Response> {
         // Detect a URL that was pre-interpolated with an empty baseUrl
         // (callers do `${this.baseUrl}/api/...` — when baseUrl is "" the
@@ -295,7 +280,7 @@ export class LilbeeClient {
                 } else if (!opts?.stream) {
                     const controller = new AbortController();
                     fetchInit.signal = controller.signal;
-                    timer = window.setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+                    timer = window.setTimeout(() => controller.abort(), opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
                 }
                 try {
                     const res = await window.fetch(url, fetchInit);
@@ -418,18 +403,6 @@ export class LilbeeClient {
         if (chunkType && chunkType !== SEARCH_CHUNK_TYPE.ALL) params.set("chunk_type", chunkType);
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/search?${params}`);
         return (await res.json()) as DocumentResult[];
-    }
-
-    async chat(question: string, history: Message[], topK?: number): Promise<AskResponse> {
-        // Omitted top_k uses the server's configured default; an explicit 0 disables retrieval.
-        const body: Record<string, unknown> = { question, history };
-        if (topK !== undefined) body.top_k = topK;
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/chat`, {
-            method: "POST",
-            headers: { ...JSON_HEADERS, ...this.authHeaders() },
-            body: JSON.stringify(body),
-        });
-        return (await res.json()) as AskResponse;
     }
 
     async listSessions(): Promise<SessionMeta[]> {
@@ -802,15 +775,6 @@ export class LilbeeClient {
         });
     }
 
-    /** Detected GPUs with current free/total VRAM. Cheaper than placement() for
-     * polling live memory usage (no plan re-resolve of roles). Normalizes the
-     * pre-PR-564 bare-list response to the new envelope shape. */
-    async gpus(): Promise<Result<GpuListResponse, Error>> {
-        const result = await this.fetchResult<unknown>(`${this.baseUrl}/api/gpus`, { headers: this.authHeaders() });
-        if (result.isErr()) return err(result.error);
-        return ok(normalizeGpuList(result.value));
-    }
-
     /** Live per-GPU utilization + free memory, streamed as SSE until aborted. */
     async *gpuStatsStream(signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
         const res = await this.fetchWithRetry(
@@ -872,6 +836,50 @@ export class LilbeeClient {
         return (await res.json()) as WikiPage[];
     }
 
+    /**
+     * The subjects the corpus names that have no page yet.
+     *
+     * Returns `[]` on 404 rather than throwing: the route arrived after the
+     * plugin shipped, so an older server simply has no stubs to offer and the
+     * browse list should render its written pages as before instead of failing.
+     */
+    async wikiStubs(): Promise<WikiStub[]> {
+        try {
+            const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/stubs`, {
+                headers: this.authHeaders(),
+            });
+            return (await res.json()) as WikiStub[];
+        } catch (e) {
+            if (e instanceof Error && isHttpStatus(e, 404)) return [];
+            throw e;
+        }
+    }
+
+    /**
+     * Write one indexed page. Costs a single LLM call and is GPU-heavy.
+     *
+     * Not a stream, but nothing like a normal request either: the server holds
+     * the connection for the whole generation, which is minutes on a large
+     * model. The default 15s timeout aborted every call before the page could
+     * land, so this one names its own.
+     */
+    /**
+     * Write one indexed page, streaming progress.
+     *
+     * The server holds this open for a whole model call, so it streams like the
+     * wiki build rather than answering with a body: wiki_phase, heartbeats
+     * while the GPU works, wiki_page, then done. The done event carries the
+     * slug the read route accepts — the bare slug the caller sends is 404 there.
+     */
+    async *wikiGenerate(slug: string, signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/wiki/generate/${encodeURIComponent(slug)}`,
+            { method: "POST", headers: this.authHeaders() },
+            { stream: true, signal },
+        );
+        yield* this.parseSSE(res);
+    }
+
     async wikiPage(slug: string): Promise<WikiPageDetail> {
         const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/${encodeURIComponent(slug)}`, {
             headers: this.authHeaders(),
@@ -894,27 +902,25 @@ export class LilbeeClient {
         return (await res.json()) as LintResult;
     }
 
-    async wikiUpdate(): Promise<WikiBuildResult> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/update`, {
-            method: "PATCH",
-            headers: this.authHeaders(),
-        });
-        return (await res.json()) as WikiBuildResult;
-    }
-
-    async wikiStatus(): Promise<WikiStatusResult> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/status`, {
-            headers: this.authHeaders(),
-        });
-        return (await res.json()) as WikiStatusResult;
-    }
-
-    async wikiSynthesize(): Promise<WikiSynthesizeResult> {
-        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/synthesize`, {
-            method: "POST",
-            headers: this.authHeaders(),
-        });
-        return (await res.json()) as WikiSynthesizeResult;
+    /**
+     * Refresh the wiki across every ingested source, streaming progress.
+     *
+     * A build issues per-source LLM calls and embeddings and can run for a long
+     * time, so the server streams `wiki_phase` / `wiki_page` events and closes
+     * with a `done` event carrying a {@link WikiBuildResult}. Aborting the
+     * signal stops the run at the next source boundary and releases the
+     * server's build mutex.
+     */
+    async *wikiUpdate(signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
+        const res = await this.fetchWithRetry(
+            `${this.baseUrl}/api/wiki/update`,
+            {
+                method: "PATCH",
+                headers: this.authHeaders(),
+            },
+            { stream: true, signal },
+        );
+        yield* this.parseSSE(res);
     }
 
     /**
@@ -969,16 +975,17 @@ export class LilbeeClient {
         return (await res.json()) as DraftRejectResponse;
     }
 
-    async *wikiPrune(signal?: AbortSignal): AsyncGenerator<SSEEvent, void> {
-        const res = await this.fetchWithRetry(
-            `${this.baseUrl}/api/wiki/prune`,
-            {
-                method: "POST",
-                headers: this.authHeaders(),
-            },
-            { stream: true, signal },
-        );
-        yield* this.parseSSE(res);
+    /**
+     * Prune stale and orphaned wiki pages. The server walks the tree and the
+     * store off its event loop and answers once with the whole report, so this
+     * is a single request rather than a progress stream.
+     */
+    async wikiPrune(): Promise<WikiPruneResult> {
+        const res = await this.fetchWithRetry(`${this.baseUrl}/api/wiki/prune`, {
+            method: "POST",
+            headers: this.authHeaders(),
+        });
+        return (await res.json()) as WikiPruneResult;
     }
 
     private async *parseSSE(response: Response): AsyncGenerator<SSEEvent, void> {
