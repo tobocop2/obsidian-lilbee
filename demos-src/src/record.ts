@@ -894,9 +894,8 @@ export async function postProcess(opts: PostOptions): Promise<void> {
     if (idx === undefined) continue;
     const next = `v_cap${capIdx++}`;
     // Narration captions sit in the lower-middle dead band — below the
-    // placement footer / answer / source-preview modal, above the chat input —
-    // so they never cover meaningful UI text.
-    chain.push(`[${lastLabel}][${idx}:v]overlay=(W-w)/2:H-h-320:enable='${windows.join("+")}'[${next}]`);
+    // answer text, above the chat input — so they never cover meaningful UI.
+    chain.push(`[${lastLabel}][${idx}:v]overlay=(W-w)/2:H-h-430:enable='${windows.join("+")}'[${next}]`);
     lastLabel = next;
   }
 
