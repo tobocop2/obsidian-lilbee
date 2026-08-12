@@ -821,7 +821,7 @@ export default class LilbeePlugin extends Plugin {
             new Notice(
                 result.value.path === null
                     ? MESSAGES.NOTICE_AGENT_CONNECTED_GLOBAL(label)
-                    : MESSAGES.NOTICE_AGENT_CONNECTED(label, result.value.path),
+                    : MESSAGES.NOTICE_AGENT_CONNECTED(label),
             );
         }
         if (result.value.claudian === CLAUDIAN_OUTCOME.WRITTEN && isClaudianLoaded(this.app)) {

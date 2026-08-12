@@ -5050,44 +5050,38 @@ button.lilbee-model-chip-select:focus-visible {
     flex-direction: column;
 }
 
-.lilbee-agent-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--size-4-2, 8px);
-    margin: var(--size-4-1, 4px) 0 var(--size-4-2, 8px);
+.lilbee-agent-links {
+    color: var(--text-faint);
 }
 
-.lilbee-agent-badge-row {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
+.lilbee-agent-links a {
+    color: var(--text-accent);
+    text-decoration: none;
 }
 
-.lilbee-agent-badge-name {
-    font-size: var(--font-small, 13px);
-    color: var(--text-muted);
+.lilbee-agent-links a:hover {
+    text-decoration: underline;
 }
 
-.lilbee-agent-context {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--size-4-1, 4px);
-    margin-top: var(--size-4-1, 4px);
-}
-
-.lilbee-agent-context-note {
-    font-size: var(--font-smaller, 12px);
-    color: var(--text-muted);
-}
-
-.lilbee-agent-context-warning {
-    font-size: var(--font-smaller, 12px);
+/* A low-context caution on its own line, not crammed into a control. */
+.lilbee-agent-note.is-warning {
     color: var(--color-yellow, #d4a841);
+    margin: calc(-1 * var(--size-4-2, 8px)) 0 var(--size-4-2, 8px);
 }
 
 .lilbee-agent-status {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2, 8px);
     margin-top: var(--size-4-2, 8px);
+}
+
+.lilbee-agent-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-green, #3fb37f);
+    flex-shrink: 0;
 }
 
 .lilbee-agent-config-block {
