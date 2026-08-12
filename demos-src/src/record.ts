@@ -1006,13 +1006,14 @@ async function renderHaloFrames(
 }
 
 async function renderCaptionPng(text: string, outPath: string): Promise<void> {
-  // Render with Python PIL: white text on translucent dark box.
+  // The standing title caption, top left. Same reasoning as the narration
+  // banner: sized for a 3456px-wide video rather than for a 1x screenshot.
   const py = `
 import sys
 from PIL import Image, ImageDraw, ImageFont
 text = sys.argv[1]
 out = sys.argv[2]
-font_size = 36
+font_size = 54
 # Try common macOS fonts.
 font = None
 for p in ["/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc", "/Library/Fonts/Arial.ttf"]:
@@ -1038,15 +1039,17 @@ img.save(out)
 }
 
 async function renderBeatCaptionPng(text: string, outPath: string): Promise<void> {
-  // Bottom-centre narration banner: white text, word-wrapped, on a wide
-  // translucent dark pill. Larger and wrappable (unlike the top-left global
-  // caption) so a full sentence of explanation reads cleanly.
+  // Bottom-centre narration banner: amber text, word-wrapped, on a wide
+  // translucent dark pill. Sized for the reel's actual resolution: the video is
+  // 3456px across, so the old 30px read as about 15pt and the narration was
+  // effectively decoration. Amber rather than white to separate the narrator's
+  // voice from Obsidian's own white UI text behind it.
   const py = `
 import sys
 from PIL import Image, ImageDraw, ImageFont
 text = sys.argv[1]
 out = sys.argv[2]
-font_size = 30
+font_size = 62
 font = None
 for p in ["/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc", "/Library/Fonts/Arial.ttf"]:
     try:
@@ -1057,7 +1060,7 @@ for p in ["/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc
 if font is None:
     font = ImageFont.load_default()
 measure = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
-max_text_w = 1100
+max_text_w = 2300
 def line_w(s):
     b = measure.textbbox((0, 0), s, font=font)
     return b[2] - b[0]
@@ -1074,16 +1077,16 @@ if cur:
     lines.append(cur)
 ascent, descent = font.getmetrics()
 line_h = ascent + descent
-gap = 6
-pad_x, pad_y = 26, 16
+gap = 12
+pad_x, pad_y = 44, 28
 text_w = max(line_w(l) for l in lines)
 text_h = line_h * len(lines) + gap * (len(lines) - 1)
-img = Image.new("RGBA", (text_w + 2 * pad_x, text_h + 2 * pad_y), (0, 0, 0, 165))
+img = Image.new("RGBA", (text_w + 2 * pad_x, text_h + 2 * pad_y), (0, 0, 0, 190))
 d = ImageDraw.Draw(img)
 y = pad_y
 for l in lines:
     lw = line_w(l)
-    d.text(((img.width - lw) / 2, y), l, fill=(255, 255, 255, 255), font=font)
+    d.text(((img.width - lw) / 2, y), l, fill=(255, 176, 92, 255), font=font)
     y += line_h + gap
 img.save(out)
 `;
