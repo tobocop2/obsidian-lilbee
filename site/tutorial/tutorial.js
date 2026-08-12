@@ -97,3 +97,21 @@ for (const g of groups) {
     list.appendChild(sec);
   }
 }
+
+// Every section on this page is built by the loop above, which runs after the
+// browser has already resolved the URL's hash. So arriving at /tutorial/#wiki
+// left you at the top of the page: the element the hash names did not exist
+// yet. Scroll to it once it does, and keep honouring the hash afterwards.
+function scrollToHash(behavior) {
+  const id = decodeURIComponent(location.hash.slice(1));
+  if (!id) return false;
+  const target = document.getElementById(id);
+  if (!target) return false;
+  target.scrollIntoView({ behavior: behavior, block: "start" });
+  return true;
+}
+
+scrollToHash("auto");
+window.addEventListener("hashchange", function () {
+  scrollToHash("smooth");
+});
