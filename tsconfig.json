@@ -8,8 +8,16 @@
         "strict": true,
         "outDir": "./dist",
         "sourceMap": false,
-        "lib": ["DOM", "ES2022"],
-        "types": ["node"]
+        "lib": [
+            "DOM",
+            "ES2022"
+        ],
+        "types": [
+            "node"
+        ],
+        "skipLibCheck": true
     },
-    "include": ["src/**/*.ts"]
+    "include": [
+        "src/**/*.ts"
+    ]
 }

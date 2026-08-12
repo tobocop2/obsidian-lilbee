@@ -102,7 +102,10 @@ export class LilbeeSettingTab extends PluginSettingTab {
     plugin: LilbeePlugin;
     /** Total bytes of the shared install, set by the storage report each render. */
     private storageTotalBytes = 0;
-    private serverConfigInputs: Map<string, HTMLInputElement> = new Map();
+    // Textareas live here too: the prompt fields are multi-line but are filled
+    // from a plain string like every other input, and both element types carry
+    // the value and placeholder this map is read for.
+    private serverConfigInputs: Map<string, HTMLInputElement | HTMLTextAreaElement> = new Map();
     private serverConfigToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private memoryToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private serverConfigTextAreas: Map<string, HTMLTextAreaElement> = new Map();
