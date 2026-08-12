@@ -132,6 +132,7 @@ export async function record(storyboard: Storyboard): Promise<void> {
       clearTaskCenter: storyboard.clearTaskCenter,
       clearChat: storyboard.clearChat,
       preloadChatModel: storyboard.preloadChatModel,
+      pinChatModel: storyboard.pinChatModel,
       skipModelPin: storyboard.skipModelPin,
       skipServerCheck: storyboard.skipServerCheck,
       noLilbee: storyboard.noLilbee,
@@ -160,10 +161,12 @@ export async function record(storyboard: Storyboard): Promise<void> {
     // Re-pin the chat model right before recording. The preload step
     // can occasionally cause the plugin to flip active model if a
     // download finishes in the background. Re-pinning here is cheap.
-    // MUST match preflight's DEFAULT_MODEL — pinning a model that isn't
-    // installed (e.g. Qwen3 4B, which the shared registry doesn't have)
-    // overrides the validated preflight pin and makes the on-camera chat
-    // fail with "Internal error" at inference time.
+    // MUST match the model preflight validated and pinned — a tape that
+    // sets pinChatModel records against that model, and re-pinning the
+    // rig default here would silently flip the engine mid-take (the
+    // reload is async, so the on-camera chat errors with "Internal
+    // error" while the engine swaps).
+    const repinModel = storyboard.pinChatModel ?? DEFAULT_MODEL;
     if (!storyboard.noLilbee && !storyboard.skipModelPin) {
       await ctx.page.evaluate(async (model) => {
         const p = (globalThis as unknown as { app: { plugins: { plugins: { lilbee: { settings: { serverUrl: string; manualToken?: string }; api?: { baseUrl: string; token?: string | null }; api?: { baseUrl: string }; fetchActiveModel?: () => Promise<void> } } } } }).app.plugins.plugins.lilbee;
@@ -174,7 +177,7 @@ export async function record(storyboard: Storyboard): Promise<void> {
           body: JSON.stringify({ model }),
         }).catch(() => {});
         if (typeof p.fetchActiveModel === "function") await p.fetchActiveModel();
-      }, DEFAULT_MODEL);
+      }, repinModel);
     }
 
     // Start ffmpeg. Record both the spawn moment AND the "first frame
@@ -919,9 +922,8 @@ export async function postProcess(opts: PostOptions): Promise<void> {
     if (idx === undefined) continue;
     const next = `v_cap${capIdx++}`;
     // Narration captions sit in the lower-middle dead band — below the
-    // placement footer / answer / source-preview modal, above the chat input —
-    // so they never cover meaningful UI text.
-    chain.push(`[${lastLabel}][${idx}:v]overlay=(W-w)/2:H-h-320:enable='${windows.join("+")}'[${next}]`);
+    // answer text, above the chat input — so they never cover meaningful UI.
+    chain.push(`[${lastLabel}][${idx}:v]overlay=(W-w)/2:H-h-430:enable='${windows.join("+")}'[${next}]`);
     lastLabel = next;
   }
 
