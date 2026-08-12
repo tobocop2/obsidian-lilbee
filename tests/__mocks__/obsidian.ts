@@ -695,7 +695,10 @@ export class Setting {
     settingEl: MockElement;
     constructor(el: MockElement) {
         this._el = el;
-        this.settingEl = el;
+        // Obsidian builds a child div per setting; settingEl is that row, not
+        // the container. Aliasing them here meant hiding one field hid its
+        // whole section, so a hideable field dropped every sibling beside it.
+        this.settingEl = el.createDiv({ cls: "setting-item" }) as unknown as MockElement;
     }
     private _name = "";
     setName(name: string): this {

@@ -1086,19 +1086,19 @@ export class SetupWizard extends Modal {
         this.renderStepHeader(step, MESSAGES.WIZARD_WIKI_TITLE);
         step.createEl("p", { text: MESSAGES.WIZARD_WIKI_DESC });
 
-        // Put the "experimental — here's why in plain English" explanation
-        // up front so users who care see it immediately. Two-bullet structure
-        // reads faster than one paragraph and signals "there are exactly two
-        // things to know." Rich pros/cons move to a disclosure below.
-        const experimental = step.createDiv({ cls: "lilbee-wizard-experimental-note" });
-        this.renderSectionHeading(experimental, MESSAGES.WIZARD_WIKI_EXPERIMENTAL_HEADING);
-        experimental.createEl("p", {
-            text: MESSAGES.WIZARD_WIKI_EXPERIMENTAL_INTRO,
-            cls: "lilbee-wizard-experimental-intro",
+        // The two costs that decide this for most people, up front so they are
+        // read before the choice rather than after it. Two bullets read faster
+        // than a paragraph and signal "there are exactly two things to know."
+        // Rich pros/cons move to a disclosure below.
+        const caveats = step.createDiv({ cls: "lilbee-wizard-wiki-caveats" });
+        this.renderSectionHeading(caveats, MESSAGES.WIZARD_WIKI_CAVEATS_HEADING);
+        caveats.createEl("p", {
+            text: MESSAGES.WIZARD_WIKI_CAVEATS_INTRO,
+            cls: "lilbee-wizard-wiki-caveats-intro",
         });
-        const bullets = experimental.createEl("ul", { cls: "lilbee-wizard-experimental-bullets" });
-        bullets.createEl("li", { text: MESSAGES.WIZARD_WIKI_EXPERIMENTAL_QUALITY });
-        bullets.createEl("li", { text: MESSAGES.WIZARD_WIKI_EXPERIMENTAL_SLOW });
+        const bullets = caveats.createEl("ul", { cls: "lilbee-wizard-wiki-caveats-bullets" });
+        bullets.createEl("li", { text: MESSAGES.WIZARD_WIKI_CAVEAT_QUALITY });
+        bullets.createEl("li", { text: MESSAGES.WIZARD_WIKI_CAVEAT_COST });
 
         const tradeoffs = step.createEl("details", { cls: "lilbee-wizard-wiki-tradeoffs" });
         tradeoffs.createEl("summary", { text: MESSAGES.WIZARD_WIKI_TRADEOFFS_LABEL });
@@ -1118,8 +1118,8 @@ export class SetupWizard extends Modal {
         consList.createEl("li", { text: MESSAGES.WIZARD_WIKI_CON_SEARCH });
         consList.createEl("li", { text: MESSAGES.WIZARD_WIKI_CON_COMPLEXITY });
 
-        // Default to Skip for first-time users — experimental features
-        // shouldn't be on by default.
+        // Off unless asked for. A build holds the GPU and blocks chat, so it is
+        // not a cost to opt someone into on their behalf.
         let wikiEnabled = this.plugin.settings.wikiEnabled ?? false;
 
         const enableOption = step.createDiv({
@@ -1127,6 +1127,9 @@ export class SetupWizard extends Modal {
         });
         enableOption.createEl("strong", { text: MESSAGES.WIZARD_WIKI_ENABLE });
         enableOption.createEl("p", { text: MESSAGES.WIZARD_WIKI_ENABLE_DESC });
+        // aria-label only: Obsidian renders its styled tooltip from it, and a
+        // native title attribute would race it with the OS tooltip.
+        enableOption.setAttribute("aria-label", MESSAGES.TOOLTIP_WIZARD_WIKI_ENABLE);
 
         const disableOption = step.createDiv({
             cls: `lilbee-wizard-model-option${!wikiEnabled ? " selected" : ""}`,

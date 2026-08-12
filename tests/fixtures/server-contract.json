@@ -1,0 +1,342 @@
+{
+  "operations": {
+    "/api/add": {
+      "POST": {
+        "streams": true
+      }
+    },
+    "/api/add/upload": {
+      "POST": {
+        "streams": true
+      }
+    },
+    "/api/ask": {
+      "POST": {
+        "streams": false
+      }
+    },
+    "/api/ask/stream": {
+      "POST": {
+        "streams": true
+      }
+    },
+    "/api/chat": {
+      "POST": {
+        "streams": false
+      }
+    },
+    "/api/chat/stream": {
+      "POST": {
+        "streams": true
+      }
+    },
+    "/api/config": {
+      "GET": {
+        "streams": false
+      },
+      "PATCH": {
+        "streams": false
+      }
+    },
+    "/api/config/defaults": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/crawl": {
+      "POST": {
+        "streams": true
+      }
+    },
+    "/api/documents": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/documents/remove": {
+      "POST": {
+        "streams": false
+      }
+    },
+    "/api/export": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/gpus": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/gpus/stream": {
+      "GET": {
+        "streams": true
+      }
+    },
+    "/api/health": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/import": {
+      "POST": {
+        "streams": true
+      }
+    },
+    "/api/memories": {
+      "GET": {
+        "streams": false
+      },
+      "POST": {
+        "streams": false
+      }
+    },
+    "/api/memories/{memory_id:str}": {
+      "DELETE": {
+        "streams": false
+      },
+      "PATCH": {
+        "streams": false
+      }
+    },
+    "/api/models": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/models/catalog": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/models/chat": {
+      "PUT": {
+        "streams": false
+      }
+    },
+    "/api/models/embedding": {
+      "PUT": {
+        "streams": false
+      }
+    },
+    "/api/models/external": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/models/installed": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/models/pull": {
+      "POST": {
+        "streams": true
+      }
+    },
+    "/api/models/reranker": {
+      "PUT": {
+        "streams": false
+      }
+    },
+    "/api/models/show": {
+      "POST": {
+        "streams": false
+      }
+    },
+    "/api/models/vision": {
+      "PUT": {
+        "streams": false
+      }
+    },
+    "/api/models/{model:str}": {
+      "DELETE": {
+        "streams": false
+      }
+    },
+    "/api/placement": {
+      "DELETE": {
+        "streams": false
+      },
+      "GET": {
+        "streams": false
+      },
+      "PUT": {
+        "streams": false
+      }
+    },
+    "/api/placement/preview": {
+      "POST": {
+        "streams": false
+      }
+    },
+    "/api/search": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/sessions": {
+      "GET": {
+        "streams": false
+      },
+      "POST": {
+        "streams": false
+      }
+    },
+    "/api/sessions/{session_id:str}": {
+      "DELETE": {
+        "streams": false
+      },
+      "GET": {
+        "streams": false
+      },
+      "PATCH": {
+        "streams": false
+      }
+    },
+    "/api/sessions/{session_id:str}/claim": {
+      "POST": {
+        "streams": false
+      }
+    },
+    "/api/sessions/{session_id:str}/messages": {
+      "POST": {
+        "streams": false
+      }
+    },
+    "/api/sessions/{session_id:str}/summary": {
+      "PUT": {
+        "streams": false
+      }
+    },
+    "/api/shutdown": {
+      "POST": {
+        "streams": false
+      }
+    },
+    "/api/source": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/status": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/sync": {
+      "POST": {
+        "streams": true
+      }
+    },
+    "/api/warm/stream": {
+      "GET": {
+        "streams": true
+      }
+    },
+    "/api/wiki": {
+      "DELETE": {
+        "streams": false
+      },
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/wiki/build": {
+      "POST": {
+        "streams": true
+      }
+    },
+    "/api/wiki/citations": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/wiki/drafts": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/wiki/drafts/accept/{slug:path}": {
+      "POST": {
+        "streams": false
+      }
+    },
+    "/api/wiki/drafts/diff/{slug:path}": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/wiki/drafts/{slug:path}": {
+      "DELETE": {
+        "streams": false
+      }
+    },
+    "/api/wiki/generate/{slug:path}": {
+      "POST": {
+        "streams": true
+      }
+    },
+    "/api/wiki/index": {
+      "POST": {
+        "streams": false
+      }
+    },
+    "/api/wiki/lint": {
+      "POST": {
+        "streams": false
+      }
+    },
+    "/api/wiki/prune": {
+      "POST": {
+        "streams": false
+      }
+    },
+    "/api/wiki/status": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/wiki/stubs": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/api/wiki/synthesize": {
+      "POST": {
+        "streams": true
+      }
+    },
+    "/api/wiki/update": {
+      "PATCH": {
+        "streams": true
+      }
+    },
+    "/api/wiki/{slug:path}": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/setup/crawler": {
+      "POST": {
+        "streams": true
+      }
+    },
+    "/setup/crawler/status": {
+      "GET": {
+        "streams": false
+      }
+    },
+    "/v1/chat/completions": {
+      "POST": {
+        "streams": true
+      }
+    },
+    "/v1/models": {
+      "GET": {
+        "streams": false
+      }
+    }
+  },
+  "version": "0.6.90b420.dev733"
+}

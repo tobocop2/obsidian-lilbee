@@ -41,7 +41,7 @@ export class WikiSync {
         const pages = await this.api.wikiList();
         const publishedPages = pages.filter((p) => PUBLISHED_WIKI_PAGE_TYPES.has(p.page_type));
 
-        await this.ensureFolders();
+        await this.ensureFolders(publishedPages);
 
         let written = 0;
         for (const page of publishedPages) {
@@ -61,20 +61,26 @@ export class WikiSync {
     async writePage(slug: string): Promise<void> {
         const detail = await this.api.wikiPage(slug);
         const path = pageVaultPath(this.folder, detail);
-        await this.ensureFolders();
+        await this.ensureFolders([detail]);
         await this.vault.write(path, buildFileContent(detail));
     }
 
     async removeStalePages(currentPages: WikiPage[]): Promise<number> {
         const currentPaths = new Set(currentPages.map((p) => pageVaultPath(this.folder, p)));
 
+        // Walk whatever folders are actually there. Naming summaries and
+        // concepts here left every entity page unprunable: a page deleted on
+        // the server stayed in the vault forever, because the folder holding it
+        // was never looked at.
         let removed = 0;
-        for (const subdir of ["summaries", "concepts"]) {
-            const dirPath = `${this.folder}/${subdir}`;
+        const queue: string[] = [this.folder];
+        while (queue.length > 0) {
+            const dirPath = queue.pop()!;
             const dirExists = await this.vault.exists(dirPath);
             if (!dirExists) continue;
 
             const listing = await this.vault.list(dirPath);
+            queue.push(...listing.folders);
             for (const filePath of listing.files) {
                 if (!filePath.endsWith(".md")) continue;
                 if (currentPaths.has(filePath)) continue;
@@ -105,8 +111,27 @@ export class WikiSync {
         return page.created_at === null || match[1].trim() !== page.created_at;
     }
 
-    private async ensureFolders(): Promise<void> {
-        for (const dir of [this.folder, `${this.folder}/summaries`, `${this.folder}/concepts`]) {
+    /**
+     * Create every folder the given pages will be written into.
+     *
+     * Derived from the slugs rather than listed here. The list used to name
+     * summaries and concepts only, so entity pages — fifty of the fifty-four in
+     * a real wiki — were written into a folder that did not exist. `write`
+     * rejects on a missing parent, that aborted the reconcile loop partway, and
+     * the caller treats reconcile as best-effort, so most of the wiki silently
+     * never reached the vault. Synthesis pages had the same problem.
+     */
+    private async ensureFolders(pages: readonly WikiPage[]): Promise<void> {
+        const dirs = new Set<string>([this.folder]);
+        for (const page of pages) {
+            const segments = `${this.folder}/${page.slug}`.split("/");
+            segments.pop(); // drop the file name
+            for (let i = 1; i <= segments.length; i++) {
+                dirs.add(segments.slice(0, i).join("/"));
+            }
+        }
+        // Shallowest first, so a nested folder is never created before its parent.
+        for (const dir of [...dirs].sort((a, b) => a.length - b.length)) {
             const exists = await this.vault.exists(dir);
             if (!exists) {
                 await this.vault.mkdir(dir);

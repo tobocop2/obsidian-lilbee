@@ -14,17 +14,6 @@ export interface DocumentResult {
     best_relevance: number;
 }
 
-export interface AskResponse {
-    answer: string;
-    sources: Source[];
-    /**
-     * Subset of `sources` the answer actually cited. Present on lilbee servers
-     * that distinguish grounded answers from off-corpus ones; absent on older
-     * servers, so always optional.
-     */
-    cited_sources?: Source[];
-}
-
 /** `GET /api/health`. `chat_ready`/`chat_ctx` are absent on older servers. */
 export interface HealthResponse {
     status: string;
@@ -557,7 +546,11 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     wikiPruneRaw: false,
     wikiFaithfulnessThreshold: 0.7,
     searchChunkType: "raw",
-    wikiSyncToVault: false,
+    // On, but only reached once the wiki itself is enabled (which is opt-in).
+    // A wiki you cannot open in the vault is most of the point missing: these
+    // pages carry [[wikilinks]], so as vault notes they get Obsidian's graph,
+    // backlinks and click-through for free.
+    wikiSyncToVault: true,
     wikiVaultFolder: "lilbee-wiki",
     manualToken: "",
     storeContentInVault: true,
@@ -712,7 +705,8 @@ export const SSE_EVENT = {
     CRAWL_PAGE: "crawl_page",
     CRAWL_DONE: "crawl_done",
     CRAWL_ERROR: "crawl_error",
-    WIKI_PRUNE_DONE: "wiki_prune_done",
+    WIKI_PHASE: "wiki_phase",
+    WIKI_PAGE: "wiki_page",
     SETUP_START: "setup_start",
     SETUP_PROGRESS: "setup_progress",
     SETUP_DONE: "setup_done",
@@ -721,6 +715,27 @@ export const SSE_EVENT = {
     MEMORY_EXTRACTED: "memory_extracted",
     GPU_STATS: "gpu_stats",
 } as const;
+
+/** Stage of a wiki build or synthesis run. */
+export type WikiPhase = "extract" | "generate" | "index";
+
+/**
+ * `wiki_phase` event: the run entered a new stage. `total` is the number of
+ * units the phase will process (sources for a build, clusters for synthesis),
+ * and 0 where the phase has no unit count.
+ */
+export interface WikiPhasePayload {
+    phase: WikiPhase;
+    total: number;
+}
+
+/** `wiki_page` event: one source (build) or cluster (synthesis) was written. */
+export interface WikiPagePayload {
+    label: string;
+    pages: number;
+    current: number;
+    total: number;
+}
 
 export interface SetupStartPayload {
     component: string;
@@ -855,6 +870,18 @@ export interface EmbeddingModelResponse {
     model: string;
 }
 
+/** Table extraction backends the server accepts for `table_model`. */
+export const TABLE_MODEL = {
+    DISABLED: "disabled",
+    TATR: "tatr",
+    SLANET_AUTO: "slanet_auto",
+    SLANET_PLUS: "slanet_plus",
+    SLANET_WIRED: "slanet_wired",
+    SLANET_WIRELESS: "slanet_wireless",
+} as const;
+
+export type TableModel = (typeof TABLE_MODEL)[keyof typeof TABLE_MODEL];
+
 export const WIKI_PAGE_TYPE = {
     SUMMARY: "summary",
     SYNTHESIS: "synthesis",
@@ -875,11 +902,49 @@ export const PUBLISHED_WIKI_PAGE_TYPES: ReadonlySet<WikiPageType> = new Set([
 ]);
 
 /** Subset of published types grouped under "Concepts" in the sidebar. */
+/** Concept-flavoured pages only. Entities are listed separately: fifty proper
+ * nouns under a heading reading "Concepts" is not what the server means. */
+export const CONCEPT_ONLY_WIKI_PAGE_TYPES: ReadonlySet<WikiPageType> = new Set([
+    WIKI_PAGE_TYPE.SYNTHESIS,
+    WIKI_PAGE_TYPE.CONCEPT,
+]);
+
 export const CONCEPT_WIKI_PAGE_TYPES: ReadonlySet<WikiPageType> = new Set([
     WIKI_PAGE_TYPE.SYNTHESIS,
     WIKI_PAGE_TYPE.CONCEPT,
     WIKI_PAGE_TYPE.ENTITY,
 ]);
+
+/** Whether an indexed subject is an LLM-curated concept or a proper-noun entity. */
+export type WikiStubKind = "concept" | "entity";
+
+export const WIKI_STUB_KIND = {
+    CONCEPT: "concept",
+    ENTITY: "entity",
+} as const satisfies Record<string, WikiStubKind>;
+
+/**
+ * A subject the corpus names that has no page yet, from `GET /api/wiki/stubs`.
+ *
+ * Naming every entity costs no LLM call, so the browse list can show every page
+ * the wiki *could* have as soon as a sync finishes; a body is written only when
+ * someone asks for that page. `slug` is what `POST /api/wiki/generate/{slug}`
+ * takes.
+ */
+export interface WikiStub {
+    slug: string;
+    label: string;
+    kind: WikiStubKind;
+    type_hint: string;
+    mentions: number;
+    sources: string[];
+}
+
+/** Result of generating one indexed page. */
+export interface WikiGenerateResult {
+    slug: string;
+    path: string;
+}
 
 export interface WikiPage {
     slug: string;
@@ -949,34 +1014,37 @@ export interface LintIssue {
     detail: string;
 }
 
+/** Result of a wiki lint run, whole-wiki or single-page. */
 export interface LintResult {
-    task_id: string;
-    status: "running" | "done" | "failed";
     issues: LintIssue[];
-    checked_at: string | null;
+    total: number;
+    errors: number;
+    warnings: number;
 }
 
-/** Result of a full wiki build/update. Mirrors `WikiBuildResult` on the server. */
+/**
+ * Summary of a wiki build/update, delivered as the `done` event of the
+ * `PATCH /api/wiki/update` stream.
+ */
 export interface WikiBuildResult {
     paths: string[];
     entities: number;
     count: number;
 }
 
-/** Wiki layer status: page counts and recent lint counters. */
-export interface WikiStatusResult {
-    wiki_enabled: boolean;
-    summaries: number;
-    drafts: number;
-    pages: number;
-    lint_errors: number;
-    lint_warnings: number;
+/** A single action taken by a prune run. */
+export interface WikiPruneRecord {
+    wiki_source: string;
+    action: string;
+    reason: string;
 }
 
-/** Result of generating synthesis pages for cross-source clusters. */
-export interface WikiSynthesizeResult {
-    paths: string[];
-    count: number;
+/** Result of pruning stale and orphaned wiki pages. */
+export interface WikiPruneResult {
+    records: WikiPruneRecord[];
+    archived: number;
+    flagged: number;
+    reconciled: number;
 }
 
 /** Obsidian's DataAdapter has these methods but the type declarations are incomplete. */
@@ -1081,12 +1149,6 @@ export interface GpuStatsPayload {
     notice?: GpuNotice;
 }
 
-/** Envelope of `GET /api/gpus` since lilbee PR #564; client normalizes old bare-list responses into it. */
-export interface GpuListResponse {
-    gpus: GpuInfo[];
-    notice: GpuNotice;
-}
-
 /** Where one role's model is placed in the resolved plan. Mirrors RolePlacementResponse. */
 export interface RolePlacement {
     role: WorkerRole;
@@ -1182,6 +1244,11 @@ export const SERVER_VARIANT = {
 
 /** Source of the lilbee server binary; surfaced wherever the unsigned download is explained. */
 export const LILBEE_REPO_URL = "https://github.com/tobocop2/lilbee";
+
+/** Progress value for a job whose length cannot be known: the Task Centre draws
+ * an indeterminate bar instead of a percentage. Use it when the work reports no
+ * phases at all, rather than leaving a percentage bar sitting at zero. */
+export const INDETERMINATE_PROGRESS = -1;
 
 export interface TaskEntry {
     id: string;

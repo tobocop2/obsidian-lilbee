@@ -11,17 +11,18 @@ import {
     CHAT_MODE,
     CONFIG_KEY,
     CRAWL_RENDER_MODE,
+    DEFAULT_SETTINGS,
+    ERROR_NAME,
+    HOSTED_SOURCES,
     KV_CACHE_TYPE,
     MEMORY_CONFIG_KEY,
-    DEFAULT_SETTINGS,
-    HOSTED_SOURCES,
     MODEL_TASK,
     SEARCH_CHUNK_TYPE,
     SERVER_MODE,
     SERVER_STATE,
     SSE_EVENT,
+    TABLE_MODEL,
     TASK_TYPE,
-    ERROR_NAME,
     VERSION_ACTION,
 } from "./types";
 import type {
@@ -1397,6 +1398,72 @@ export class LilbeeSettingTab extends PluginSettingTab {
             cls: "setting-item-description",
         });
 
+        // Extraction quality. layout_detection is off by default server-side
+        // because of what it costs, so the description says so rather than
+        // leaving someone to discover it on a slow ingest.
+        this.renderConfigToggle(
+            details,
+            "layout_detection",
+            MESSAGES.LABEL_LAYOUT_DETECTION,
+            MESSAGES.DESC_LAYOUT_DETECTION,
+        );
+        this.renderConfigToggle(
+            details,
+            "table_extraction",
+            MESSAGES.LABEL_TABLE_EXTRACTION,
+            MESSAGES.DESC_TABLE_EXTRACTION,
+        );
+        const tableModelSetting = new Setting(details)
+            .setName(MESSAGES.LABEL_TABLE_MODEL)
+            .setDesc(MESSAGES.DESC_TABLE_MODEL)
+            .addDropdown((dropdown) => {
+                for (const model of Object.values(TABLE_MODEL)) dropdown.addOption(model, model);
+                dropdown.setValue(TABLE_MODEL.SLANET_AUTO);
+                dropdown.onChange(async (value) => {
+                    try {
+                        await this.plugin.api.updateConfig({ table_model: value });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_TABLE_MODEL));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_TABLE_MODEL));
+                    }
+                });
+                this.serverConfigDropdowns.set("table_model", dropdown);
+            });
+        this.appendResetAffordance(tableModelSetting, "table_model", MESSAGES.LABEL_TABLE_MODEL);
+        this.renderConfigList(details, "ocr_language", MESSAGES.LABEL_OCR_LANGUAGE, MESSAGES.DESC_OCR_LANGUAGE);
+
+        // How much of the machine ingest and the engine may take.
+        const ingestProcesses = this.renderHideableNumberField(
+            details,
+            "ingest_processes",
+            MESSAGES.LABEL_INGEST_PROCESSES,
+            MESSAGES.DESC_INGEST_PROCESSES,
+            { integer: true, min: 0 },
+        );
+        this.appendResetAffordance(ingestProcesses, "ingest_processes", MESSAGES.LABEL_INGEST_PROCESSES);
+        const memReserve = this.renderHideableNumberField(
+            details,
+            "system_memory_reserve_gb",
+            MESSAGES.LABEL_SYSTEM_MEMORY_RESERVE_GB,
+            MESSAGES.DESC_SYSTEM_MEMORY_RESERVE_GB,
+            { integer: false, min: 0 },
+        );
+        this.appendResetAffordance(memReserve, "system_memory_reserve_gb", MESSAGES.LABEL_SYSTEM_MEMORY_RESERVE_GB);
+        const vramFraction = this.renderHideableNumberField(
+            details,
+            "usable_vram_fraction",
+            MESSAGES.LABEL_USABLE_VRAM_FRACTION,
+            MESSAGES.DESC_USABLE_VRAM_FRACTION,
+            { integer: false, min: 0 },
+        );
+        this.appendResetAffordance(vramFraction, "usable_vram_fraction", MESSAGES.LABEL_USABLE_VRAM_FRACTION);
+        this.renderConfigToggle(
+            details,
+            "fast_model_downloads",
+            MESSAGES.LABEL_FAST_MODEL_DOWNLOADS,
+            MESSAGES.DESC_FAST_MODEL_DOWNLOADS,
+        );
+
         const chunkSizeSetting = this.renderHideableNumberField(
             details,
             "chunk_size",
@@ -1529,6 +1596,95 @@ export class LilbeeSettingTab extends PluginSettingTab {
             MESSAGES.LABEL_DIVERSITY_MAX_PER_SOURCE,
         );
 
+        this.renderConfigToggle(details, "title_search", MESSAGES.LABEL_TITLE_SEARCH, MESSAGES.DESC_TITLE_SEARCH);
+        const titleWeight = this.renderHideableNumberField(
+            details,
+            "title_search_weight",
+            MESSAGES.LABEL_TITLE_SEARCH_WEIGHT,
+            MESSAGES.DESC_TITLE_SEARCH_WEIGHT,
+            { integer: false, min: 0 },
+        );
+        this.appendResetAffordance(titleWeight, "title_search_weight", MESSAGES.LABEL_TITLE_SEARCH_WEIGHT);
+
+        this.renderConfigToggle(
+            details,
+            "adaptive_fusion",
+            MESSAGES.LABEL_ADAPTIVE_FUSION,
+            MESSAGES.DESC_ADAPTIVE_FUSION,
+        );
+        const fusionMargin = this.renderHideableNumberField(
+            details,
+            "adaptive_fusion_margin",
+            MESSAGES.LABEL_ADAPTIVE_FUSION_MARGIN,
+            MESSAGES.DESC_ADAPTIVE_FUSION_MARGIN,
+            { integer: false, min: 0 },
+        );
+        this.appendResetAffordance(fusionMargin, "adaptive_fusion_margin", MESSAGES.LABEL_ADAPTIVE_FUSION_MARGIN);
+
+        const lexicalWeight = this.renderHideableNumberField(
+            details,
+            "lexical_fusion_weight",
+            MESSAGES.LABEL_LEXICAL_FUSION_WEIGHT,
+            MESSAGES.DESC_LEXICAL_FUSION_WEIGHT,
+            { integer: false, min: 0 },
+        );
+        this.appendResetAffordance(lexicalWeight, "lexical_fusion_weight", MESSAGES.LABEL_LEXICAL_FUSION_WEIGHT);
+
+        const neighbors = this.renderHideableNumberField(
+            details,
+            "neighbor_expansion",
+            MESSAGES.LABEL_NEIGHBOR_EXPANSION,
+            MESSAGES.DESC_NEIGHBOR_EXPANSION,
+            { integer: true, min: 0 },
+        );
+        this.appendResetAffordance(neighbors, "neighbor_expansion", MESSAGES.LABEL_NEIGHBOR_EXPANSION);
+
+        this.renderConfigToggle(
+            details,
+            "filter_structural_chunks",
+            MESSAGES.LABEL_FILTER_STRUCTURAL_CHUNKS,
+            MESSAGES.DESC_FILTER_STRUCTURAL_CHUNKS,
+        );
+
+        const rerankMin = this.renderHideableNumberField(
+            details,
+            "rerank_min_score",
+            MESSAGES.LABEL_RERANK_MIN_SCORE,
+            MESSAGES.DESC_RERANK_MIN_SCORE,
+            { integer: false, min: 0 },
+        );
+        this.appendResetAffordance(rerankMin, "rerank_min_score", MESSAGES.LABEL_RERANK_MIN_SCORE);
+
+        const ftsLanguage = new Setting(details)
+            .setName(MESSAGES.LABEL_FTS_LANGUAGE)
+            .setDesc(MESSAGES.DESC_FTS_LANGUAGE)
+            .addText((text) => {
+                text.onChange(async (value) => {
+                    const trimmed = value.trim();
+                    if (trimmed === "") return;
+                    try {
+                        await this.plugin.api.updateConfig({ fts_language: trimmed });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_FTS_LANGUAGE));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_FTS_LANGUAGE));
+                    }
+                });
+                this.serverConfigInputs.set("fts_language", text.inputEl);
+            });
+        this.appendResetAffordance(ftsLanguage, "fts_language", MESSAGES.LABEL_FTS_LANGUAGE);
+
+        // Indexing-side quality: these only take effect on documents ingested
+        // after the change, which is why they sit with retrieval rather than
+        // with the ingest controls.
+        this.renderConfigToggle(
+            details,
+            "contextual_enrichment",
+            MESSAGES.LABEL_CONTEXTUAL_ENRICHMENT,
+            MESSAGES.DESC_CONTEXTUAL_ENRICHMENT,
+        );
+        this.renderConfigToggle(details, "embed_titles", MESSAGES.LABEL_EMBED_TITLES, MESSAGES.DESC_EMBED_TITLES);
+        this.renderConfigToggle(details, "token_sizing", MESSAGES.LABEL_TOKEN_SIZING, MESSAGES.DESC_TOKEN_SIZING);
+
         const mmrSetting = this.renderHideableNumberField(
             details,
             "mmr_lambda",
@@ -1537,6 +1693,52 @@ export class LilbeeSettingTab extends PluginSettingTab {
             { integer: false, min: 0 },
         );
         this.appendResetAffordance(mmrSetting, "mmr_lambda", MESSAGES.LABEL_MMR_LAMBDA);
+    }
+
+    /** A server-config boolean, registered so loadServerDefaults can fill it. */
+    private renderConfigToggle(container: HTMLElement, key: string, name: string, desc: string): void {
+        const setting = new Setting(container)
+            .setName(name)
+            .setDesc(desc)
+            .addToggle((toggle) => {
+                toggle.onChange(async (value) => {
+                    if (this.suppressToggleChanges) return;
+                    try {
+                        await this.plugin.api.updateConfig({ [key]: value });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
+                    }
+                });
+                this.serverConfigToggles.set(key, toggle);
+            });
+        this.appendResetAffordance(setting, key, name);
+    }
+
+    /** A server-config list of short strings, one per line (e.g. OCR languages). */
+    private renderConfigList(container: HTMLElement, key: string, name: string, desc: string): void {
+        const setting = new Setting(container)
+            .setName(name)
+            .setDesc(desc)
+            .addTextArea((area) => {
+                area.onChange(async (value) => {
+                    const items = value
+                        .split("\n")
+                        .map((line) => line.trim())
+                        .filter((line) => line !== "");
+                    // An empty box means "use the server default", not "no
+                    // languages" — sending [] would leave OCR unable to read
+                    // anything at all.
+                    try {
+                        await this.plugin.api.updateConfig({ [key]: items.length > 0 ? items : null });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
+                    }
+                });
+                this.serverConfigTextAreas.set(key, area.inputEl);
+            });
+        this.appendResetAffordance(setting, key, name);
     }
 
     private renderHideableNumberField(
@@ -2252,7 +2454,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         this.plugin.settings.wikiFaithfulnessThreshold = value;
                         await this.plugin.saveSettings();
                         try {
-                            await this.plugin.api.updateConfig({ wiki_faithfulness_threshold: value });
+                            await this.plugin.api.updateConfig({ wiki_embedding_faithfulness_threshold: value });
                             new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WIKI_FAITHFULNESS));
                         } catch {
                             new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_WIKI_FAITHFULNESS));
@@ -2261,7 +2463,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
             });
         this.appendDualResetAffordance(
             faithSetting,
-            "wiki_faithfulness_threshold",
+            "wiki_embedding_faithfulness_threshold",
             "wikiFaithfulnessThreshold",
             MESSAGES.LABEL_WIKI_FAITHFULNESS,
         );
@@ -2317,6 +2519,44 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 });
             });
         this.appendLocalResetAffordance(folderSetting, "wikiVaultFolder", MESSAGES.LABEL_WIKI_VAULT_FOLDER);
+
+        // Server-side wiki behaviour. These live under the same disclosure as
+        // the vault options so everything about the wiki is in one place.
+        this.renderConfigToggle(
+            subSettingsContainer,
+            "wiki_auto_update",
+            MESSAGES.LABEL_WIKI_AUTO_UPDATE,
+            MESSAGES.DESC_WIKI_AUTO_UPDATE,
+        );
+        const stubRefs = this.renderHideableNumberField(
+            subSettingsContainer,
+            "wiki_stub_max_chunk_refs",
+            MESSAGES.LABEL_WIKI_STUB_MAX_CHUNK_REFS,
+            MESSAGES.DESC_WIKI_STUB_MAX_CHUNK_REFS,
+            { integer: true, min: 1 },
+        );
+        this.appendResetAffordance(stubRefs, "wiki_stub_max_chunk_refs", MESSAGES.LABEL_WIKI_STUB_MAX_CHUNK_REFS);
+
+        const entityPrompt = new Setting(subSettingsContainer)
+            .setName(MESSAGES.LABEL_WIKI_ENTITY_PAGE_PROMPT)
+            .setDesc(MESSAGES.DESC_WIKI_ENTITY_PAGE_PROMPT)
+            .addTextArea((area) => {
+                area.onChange(async (value) => {
+                    const trimmed = value.trim();
+                    try {
+                        // Empty means "use the built-in prompt", which is null
+                        // rather than an empty prompt the model would be given.
+                        await this.plugin.api.updateConfig({
+                            wiki_entity_page_prompt: trimmed === "" ? null : trimmed,
+                        });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WIKI_ENTITY_PAGE_PROMPT));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_WIKI_ENTITY_PAGE_PROMPT));
+                    }
+                });
+                this.serverConfigInputs.set("wiki_entity_page_prompt", area.inputEl);
+            });
+        this.appendResetAffordance(entityPrompt, "wiki_entity_page_prompt", MESSAGES.LABEL_WIKI_ENTITY_PAGE_PROMPT);
 
         // Run lint button
         new Setting(subSettingsContainer)
