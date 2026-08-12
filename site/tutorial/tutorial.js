@@ -18,6 +18,13 @@ const groups = [
     ],
   },
   {
+    id: "put-your-models-to-work",
+    heading: "Put your models behind an agent",
+    reels: [
+      { id: "claudian", name: "claudian", title: "Pair a coding agent with your library", desc: "The rest of the plugin searches and answers with citations. This takes the same local models further, putting them behind a coding agent that acts on your vault instead of just answering. Pair it in one click from the first-use prompt, pick the model, and set it to work: it crawls a Wikipedia page into your library, answers a cited question about the 1994 Caprice V8 engines, takes a grounded follow-up, and writes a summary note back into your vault. It runs on the same models lilbee manages, shown live on the GPU placement view beside the chat, with no API key and nothing leaving your machine." },
+    ],
+  },
+  {
     id: "an-encyclopedia-of-your-own",
     heading: "An encyclopedia of your own",
     reels: [
