@@ -185,12 +185,21 @@ export function isVersionOlder(current: string, latest: string): boolean {
 }
 
 /** Oldest server with the /api/sessions routes; the 0.6.66 stable line predates them. */
-export const SESSIONS_MIN_SERVER_VERSION = "0.6.90b420";
+const SESSIONS_MIN_SERVER_VERSION = "0.6.90b420";
+
+/** Oldest server with the /api/placement routes; also new in the 0.6.90 line. */
+const PLACEMENT_MIN_SERVER_VERSION = "0.6.90b420";
 
 /** Unknown versions fail open: the chat path already degrades gracefully on a 404. */
 export function supportsSessions(version: string): boolean {
     if (!version) return true;
     return !isVersionOlder(version, SESSIONS_MIN_SERVER_VERSION);
+}
+
+/** Unknown versions fail open: the placement view renders its own explainer on a 404. */
+export function supportsPlacement(version: string): boolean {
+    if (!version) return true;
+    return !isVersionOlder(version, PLACEMENT_MIN_SERVER_VERSION);
 }
 
 /**

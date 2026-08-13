@@ -69,7 +69,6 @@ import {
 } from "./utils";
 
 const CHECK_TIMEOUT_MS = 5000;
-const DEV_BUILDS_FLASH_MS = 2400;
 /** GitHub's unauthenticated releases API allows 60 requests/hour per IP, so renders share one fetch. */
 const RELEASES_CACHE_TTL_MS = 10 * 60 * 1000;
 const CLS_MODELS_CONTAINER = "lilbee-models-container";
@@ -189,18 +188,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
         this.loadServerDefaults();
         this.loadConfigDefaults();
         void this.applyCapabilityGating();
-        this.revealDevBuildsIfRequested(containerEl);
-    }
-
-    /** When the placement prompt routed here, land on the dev-builds toggle itself. */
-    private revealDevBuildsIfRequested(containerEl: HTMLElement): void {
-        if (!this.plugin.revealDevBuildsInSettings) return;
-        this.plugin.revealDevBuildsInSettings = false;
-        const row = containerEl.querySelector<HTMLElement>(".lilbee-dev-builds-setting");
-        if (!row) return;
-        row.scrollIntoView({ block: "center" });
-        row.addClass("lilbee-setting-flash");
-        window.setTimeout(() => row.removeClass("lilbee-setting-flash"), DEV_BUILDS_FLASH_MS);
     }
 
     private async applyCapabilityGating(): Promise<void> {
@@ -642,7 +629,7 @@ export class LilbeeSettingTab extends PluginSettingTab {
 
     /** Opt in to in-development builds. */
     private renderDevBuildsToggle(containerEl: HTMLElement): void {
-        const setting = new Setting(containerEl)
+        new Setting(containerEl)
             .setName(MESSAGES.LABEL_INCLUDE_DEV_BUILDS)
             .setDesc(MESSAGES.DESC_INCLUDE_DEV_BUILDS)
             .addToggle((toggle) =>
@@ -652,7 +639,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     this.render();
                 }),
             );
-        setting.settingEl.addClass("lilbee-dev-builds-setting");
     }
 
     /** Where bug reports go. Rendered at the top of the settings view in both server modes. */

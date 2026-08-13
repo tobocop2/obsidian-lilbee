@@ -524,7 +524,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("open-placement-beside-chat returns false when lilbee is not ready", async () => {
-            const plugin = await createPlugin({ includeDevBuilds: true });
+            const plugin = await createPlugin();
             await plugin.onload();
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(false);
             const cmd = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
@@ -534,7 +534,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("open-placement-beside-chat returns false when no chat view is open", async () => {
-            const plugin = await createPlugin({ includeDevBuilds: true });
+            const plugin = await createPlugin();
             await plugin.onload();
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
             plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
@@ -545,7 +545,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("open-placement-beside-chat splits placement beside the chat leaf", async () => {
-            const plugin = await createPlugin({ includeDevBuilds: true });
+            const plugin = await createPlugin();
             await plugin.onload();
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
             const chatLeaf = new WorkspaceLeaf();
@@ -1216,7 +1216,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("open-placement command activates the placement view", async () => {
-            const plugin = await createPlugin({ includeDevBuilds: true });
+            const plugin = await createPlugin();
             await plugin.onload();
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
             const activate = vi.spyOn(plugin as any, "activatePlacementView").mockResolvedValue(undefined);
@@ -1225,10 +1225,11 @@ describe("LilbeePlugin", () => {
             expect(activate).toHaveBeenCalled();
         });
 
-        it("open-placement without dev builds prompts and continues to Settings", async () => {
+        it("open-placement on a pre-placement server prompts and continues to Settings", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
+            vi.spyOn(plugin, "serverSupportsPlacement").mockReturnValue(false);
             const activate = vi.spyOn(plugin as any, "activatePlacementView").mockResolvedValue(undefined);
             const openSettings = vi.spyOn(plugin as any, "openPluginSettings").mockImplementation(() => {});
             mockConfirmModalResult = true;
@@ -1239,10 +1240,11 @@ describe("LilbeePlugin", () => {
             expect(openSettings).toHaveBeenCalled();
         });
 
-        it("open-placement without dev builds stays put when the prompt is cancelled", async () => {
+        it("open-placement on a pre-placement server stays put when the prompt is cancelled", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(true);
+            vi.spyOn(plugin, "serverSupportsPlacement").mockReturnValue(false);
             const openSettings = vi.spyOn(plugin as any, "openPluginSettings").mockImplementation(() => {});
             mockConfirmModalResult = false;
             findCmd(plugin, "open-placement").checkCallback(false);
@@ -1251,7 +1253,7 @@ describe("LilbeePlugin", () => {
         });
 
         it("open-placement command is gated when lilbee is not ready", async () => {
-            const plugin = await createPlugin({ includeDevBuilds: true });
+            const plugin = await createPlugin();
             await plugin.onload();
             vi.spyOn(plugin as any, "isLilbeeReady").mockReturnValue(false);
             expect(findCmd(plugin, "open-placement").checkCallback(false)).toBe(false);
@@ -3227,6 +3229,31 @@ describe("LilbeePlugin", () => {
                 .mockResolvedValue({ isErr: () => false, isOk: () => true, value: { version: "0.6.66b507" } });
             await (plugin as any).probeServerHealth();
             expect((plugin as any).externalServerVersion).toBe("");
+        });
+    });
+
+    describe("serverSupportsPlacement", () => {
+        it("managed mode gates on the recorded install version", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            const loadConfig = vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                ...DEFAULT_SHARED_CONFIG,
+                lilbeeVersion: "v0.6.66b507",
+            });
+            expect(plugin.serverSupportsPlacement()).toBe(false);
+            loadConfig.mockReturnValue({ ...DEFAULT_SHARED_CONFIG, lilbeeVersion: "v0.6.90b420" });
+            expect(plugin.serverSupportsPlacement()).toBe(true);
+            loadConfig.mockRestore();
+        });
+
+        it("fails open while no version is recorded", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            const loadConfig = vi.spyOn(VaultRegistry.prototype, "loadConfig").mockReturnValue({
+                ...DEFAULT_SHARED_CONFIG,
+            });
+            expect(plugin.serverSupportsPlacement()).toBe(true);
+            loadConfig.mockRestore();
         });
     });
 

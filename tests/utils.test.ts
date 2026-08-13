@@ -27,6 +27,7 @@ import {
     sessionTokenInvalidMessage,
     setDeterminateProgress,
     streamInterruptedMessage,
+    supportsPlacement,
     supportsSessions,
     withIdleTimeout,
 } from "../src/utils";
@@ -213,6 +214,24 @@ describe("supportsSessions", () => {
 
     it("fails open when the version is unknown", () => {
         expect(supportsSessions("")).toBe(true);
+    });
+});
+
+describe("supportsPlacement", () => {
+    it("rejects the 0.6.66 stable line and everything older", () => {
+        expect(supportsPlacement("v0.6.66b507")).toBe(false);
+        expect(supportsPlacement("0.6.66b507")).toBe(false);
+        expect(supportsPlacement("0.6.90b419")).toBe(false);
+    });
+
+    it("accepts the first placement build, its dev builds, and anything newer", () => {
+        expect(supportsPlacement("0.6.90b420")).toBe(true);
+        expect(supportsPlacement("v0.6.90b420.dev724")).toBe(true);
+        expect(supportsPlacement("0.6.91b1")).toBe(true);
+    });
+
+    it("fails open when the version is unknown", () => {
+        expect(supportsPlacement("")).toBe(true);
     });
 });
 

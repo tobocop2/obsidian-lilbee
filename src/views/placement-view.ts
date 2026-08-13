@@ -125,8 +125,8 @@ export class PlacementView extends ItemView {
                 return;
             }
             this.waitingForServer = false;
-            // No /api/placement route: a stable server. The feature ships in the
-            // dev builds for now, so point at the opt-in instead of a raw 404.
+            // No /api/placement route: a pre-0.6.90 server. Point at the server
+            // update instead of a raw 404.
             if (isHttpStatus(result.error, HTTP_NOT_FOUND)) {
                 this.renderMessage(MESSAGES.PLACEMENT_NEEDS_NEWER_SERVER);
                 return;

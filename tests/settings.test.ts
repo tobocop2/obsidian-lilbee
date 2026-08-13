@@ -2355,49 +2355,6 @@ describe("managed mode settings", () => {
         setAttribute.mockRestore();
     });
 
-    it("scrolls to and flashes the dev-builds toggle when the placement prompt routed here", () => {
-        vi.useFakeTimers();
-        try {
-            mockListReleases.mockResolvedValue(RELEASES);
-            const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
-            (plugin as any).revealDevBuildsInSettings = true;
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-            const scrolled = vi.spyOn(MockElement.prototype, "scrollIntoView");
-
-            tab.display();
-
-            expect((plugin as any).revealDevBuildsInSettings).toBe(false);
-            expect(scrolled).toHaveBeenCalled();
-            const row = tab.containerEl.querySelector(".lilbee-dev-builds-setting")!;
-            expect(row.classList.contains("lilbee-setting-flash")).toBe(true);
-            vi.advanceTimersByTime(2500);
-            expect(row.classList.contains("lilbee-setting-flash")).toBe(false);
-            scrolled.mockRestore();
-        } finally {
-            vi.useRealTimers();
-        }
-    });
-    it("leaves the settings scroll alone when the reveal flag is off and when the row is absent", () => {
-        mockListReleases.mockResolvedValue(RELEASES);
-        const plugin = makePlugin({ serverMode: "external" });
-        (plugin as any).revealDevBuildsInSettings = true;
-        mockChatPicker(plugin);
-        const tab = makeTab(plugin);
-        const scrolled = vi.spyOn(MockElement.prototype, "scrollIntoView");
-        // External mode renders no dev-builds row: the flag clears, nothing scrolls.
-        tab.display();
-        expect(scrolled).not.toHaveBeenCalled();
-
-        // Flag off: display leaves everything alone.
-        const plugin2 = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.3.0" });
-        mockChatPicker(plugin2);
-        const tab2 = makeTab(plugin2);
-        tab2.display();
-        expect(scrolled).not.toHaveBeenCalled();
-        scrolled.mockRestore();
-    });
-
     it("version dropdown offers the recent releases newest first", async () => {
         mockListReleases.mockResolvedValue(RELEASES);
         const plugin = makePlugin({ serverMode: "managed", lilbeeVersion: "v0.2.0" });

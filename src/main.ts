@@ -90,6 +90,7 @@ import {
     openPluginSettingsById,
     percentOfBytes,
     sessionTokenInvalidMessage,
+    supportsPlacement,
     supportsSessions,
     STREAM_IDLE_TIMEOUT_MS,
     StreamIdleError,
@@ -302,8 +303,6 @@ export default class LilbeePlugin extends Plugin {
     private openingChatLeaf = false;
     // Same re-entrancy guard for the placement view's main-area tab and beside-chat split.
     private openingPlacementLeaf = false;
-    /** Set by the placement dev-builds prompt so the settings tab scrolls to the toggle. */
-    revealDevBuildsInSettings = false;
     taskQueue: TaskQueue = new TaskQueue();
     /** Paths whose most-recent add failed — retry skips the reindex confirm. */
     private failedAddPaths = new Set<string>();
@@ -2035,15 +2034,22 @@ export default class LilbeePlugin extends Plugin {
         return false;
     }
 
-    /** Saved conversations need the /api/sessions routes, which pre-0.6.90 servers
-     *  don't have. Managed mode knows the install version up front; external mode
-     *  fails open until the first health probe reports one. */
+    /** Saved conversations need the /api/sessions routes, which pre-0.6.90 servers don't have. */
     serverSupportsSessions(): boolean {
-        const version =
-            this.settings.serverMode === SERVER_MODE.MANAGED
-                ? this.getSharedLilbeeVersion()
-                : this.externalServerVersion;
-        return supportsSessions(version);
+        return supportsSessions(this.runningServerVersion());
+    }
+
+    /** GPU placement needs the /api/placement routes, which pre-0.6.90 servers don't have. */
+    serverSupportsPlacement(): boolean {
+        return supportsPlacement(this.runningServerVersion());
+    }
+
+    /** Managed mode knows the install version up front; external mode reports ""
+     *  (which fails open) until the first health probe caches one. */
+    private runningServerVersion(): string {
+        return this.settings.serverMode === SERVER_MODE.MANAGED
+            ? this.getSharedLilbeeVersion()
+            : this.externalServerVersion;
     }
 
     private async confirmReindexIfNeeded(name: string): Promise<boolean> {
@@ -2459,21 +2465,16 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    // TODO: remove this dev-builds gate once the multi-GPU server ships in a stable release.
-    /** GPU placement needs a dev-build server for now. Without the opt-in, explain
-     *  and offer to jump straight to Settings, where both the toggle and the
-     *  version picker live. */
+    /** When the running server predates the /api/placement routes, explain and
+     *  offer to jump straight to Settings, where the version picker lives. */
     private async openPlacementGated(open: () => Promise<void>): Promise<void> {
-        if (this.settings.includeDevBuilds) {
+        if (this.serverSupportsPlacement()) {
             await open();
             return;
         }
-        const modal = new ConfirmModal(this.app, MESSAGES.PLACEMENT_DEV_BUILDS_PROMPT);
+        const modal = new ConfirmModal(this.app, MESSAGES.PLACEMENT_UPDATE_SERVER_PROMPT);
         modal.open();
-        if (await modal.result) {
-            this.revealDevBuildsInSettings = true;
-            this.openPluginSettings();
-        }
+        if (await modal.result) this.openPluginSettings();
     }
 
     /** Open the placement view in a main-area tab (it is wider than the sidebar views). */
