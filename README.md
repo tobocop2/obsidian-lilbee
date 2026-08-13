@@ -216,10 +216,6 @@ Turn reranking on in Settings when answers keep citing almost-right notes. It co
 
 ### Run a model bigger than one card
 
-> **Temporary note.** The multi-GPU features on this page need a lilbee dev build. The multi-GPU server is still being stabilized, which is why it's opt-in for now.
->
-> To try it: open **Settings → lilbee**, turn on **Include dev builds**, then pick the newest dev build under **Server version** and install it. The plugin tracks dev builds for updates from then on, and you can switch back to a stable release from the same picker at any time. This note goes away once the multi-GPU server ships in a stable release.
-
 When a chat model won't fit on one GPU, lilbee spreads it across the cards you have. It places the embedding, vision, and reranking models alongside it.
 
 The plugin's GPU placement view shows it all live: every card's utilization and memory, and which role runs where. The same view works on a single card. The demo at the top of this page is an Apple Silicon Mac with its one GPU doing everything.
