@@ -1309,13 +1309,18 @@ export const ARCH = {
 
 /** The CUDA build tags lilbee ships, newest first. */
 export type CudaTag = "cu121" | "cu124" | "cu125";
-/** Which lilbee server build is installed: the default (Vulkan/CPU) build or a CUDA build. */
-export type ServerVariant = "default" | CudaTag;
+/** The ROCm build tag lilbee ships. Linux x86_64 only. */
+export type RocmTag = "rocm";
+/** A vendor build tag, as it appears in the release asset name. */
+export type GpuTag = CudaTag | RocmTag;
+/** Which lilbee server build is installed: the default (Vulkan/CPU) build or a vendor build. */
+export type ServerVariant = "default" | GpuTag;
 export const SERVER_VARIANT = {
     DEFAULT: "default",
     CU121: "cu121",
     CU124: "cu124",
     CU125: "cu125",
+    ROCM: "rocm",
 } as const satisfies Record<string, ServerVariant>;
 
 /** Source of the lilbee server binary; surfaced wherever the unsigned download is explained. */

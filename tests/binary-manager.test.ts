@@ -11,6 +11,7 @@ import {
     isDevBuild,
     checkForUpdate,
     detectCudaTag,
+    detectAmdGfxTargets,
     BinaryManager,
 } from "../src/binary-manager";
 
@@ -80,6 +81,24 @@ function stubEnoughSpace() {
 /** Mock nvidia-smi as absent (no NVIDIA driver). */
 function stubNoNvidia() {
     return vi.spyOn(node, "execFile").mockRejectedValue(new Error("nvidia-smi not found"));
+}
+
+/** Mock the amdgpu KFD topology: one node per gfx_target_version, plus a CPU node reporting 0. */
+function stubKfdTopology(versions: number[]) {
+    vi.spyOn(node, "existsSync").mockImplementation((path: string) => path === "/dev/kfd");
+    vi.spyOn(node, "readdirSync").mockReturnValue(
+        versions.map((_v, i) => String(i + 1)).concat("0") as unknown as ReturnType<typeof node.readdirSync>,
+    );
+    vi.spyOn(node, "readFileSync").mockImplementation((path: string) => {
+        const index = Number(String(path).split("/").at(-2));
+        const version = index === 0 ? 0 : versions[index - 1];
+        return `cpu_cores_count 8\ngfx_target_version ${version}\nsimd_count 0\n`;
+    });
+}
+
+/** Mock a host with no AMD compute device (no /dev/kfd). */
+function stubNoAmd() {
+    return vi.spyOn(node, "existsSync").mockReturnValue(false);
 }
 
 /* ------------------------------------------------------------------ */
@@ -181,6 +200,80 @@ describe("detectCudaTag", () => {
         restore = stubPlatform("win32", "x64");
         vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "CUDA Version: 11.8", stderr: "" });
         expect(await detectCudaTag()).toBeNull();
+    });
+});
+
+/* ------------------------------------------------------------------ */
+/*  detectAmdGfxTargets                                               */
+/* ------------------------------------------------------------------ */
+
+describe("detectAmdGfxTargets", () => {
+    let restore: () => void;
+    afterEach(() => restore?.());
+
+    it("returns nothing on macOS without touching the filesystem", () => {
+        restore = stubPlatform("darwin", "arm64");
+        const exists = vi.spyOn(node, "existsSync");
+        expect(detectAmdGfxTargets()).toEqual([]);
+        expect(exists).not.toHaveBeenCalled();
+    });
+
+    it("returns nothing when the host exposes no compute device", () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoAmd();
+        expect(detectAmdGfxTargets()).toEqual([]);
+    });
+
+    it("names the gfx target the driver reports", () => {
+        restore = stubPlatform("linux", "x64");
+        stubKfdTopology([110000]);
+        expect(detectAmdGfxTargets()).toEqual(["gfx1100"]);
+    });
+
+    it.each([
+        [90010, "gfx90a"],
+        [90402, "gfx942"],
+        [90006, "gfx906"],
+        [100103, "gfx1013"],
+        [120001, "gfx1201"],
+    ])("prints target version %i as %s", (version, name) => {
+        restore = stubPlatform("linux", "x64");
+        stubKfdTopology([version]);
+        expect(detectAmdGfxTargets()).toEqual([name]);
+    });
+
+    it("reports every card on a multi-GPU host, without duplicates", () => {
+        restore = stubPlatform("linux", "x64");
+        stubKfdTopology([110000, 90006, 110000]);
+        expect(detectAmdGfxTargets()).toEqual(["gfx1100", "gfx906"]);
+    });
+
+    it("ignores CPU nodes, which report no target", () => {
+        restore = stubPlatform("linux", "x64");
+        stubKfdTopology([]);
+        expect(detectAmdGfxTargets()).toEqual([]);
+    });
+
+    it("skips a node whose properties cannot be read", () => {
+        restore = stubPlatform("linux", "x64");
+        stubKfdTopology([110000, 90006]);
+        const readFileSync = node.readFileSync as unknown as ReturnType<typeof vi.fn>;
+        const readable = readFileSync.getMockImplementation()!;
+        readFileSync.mockImplementation((path: string) => {
+            if (String(path).includes("/2/")) throw new Error("EACCES");
+            return readable(path);
+        });
+
+        expect(detectAmdGfxTargets()).toEqual(["gfx1100"]);
+    });
+
+    it("returns nothing when the topology cannot be read", () => {
+        restore = stubPlatform("linux", "x64");
+        vi.spyOn(node, "existsSync").mockReturnValue(true);
+        vi.spyOn(node, "readdirSync").mockImplementation(() => {
+            throw new Error("EACCES");
+        });
+        expect(detectAmdGfxTargets()).toEqual([]);
     });
 });
 
@@ -298,6 +391,150 @@ describe("getLatestRelease", () => {
         });
         // listReleases suppresses the per-release CUDA-fallback warning.
         expect(warn).not.toHaveBeenCalled();
+    });
+
+    /** A release carrying the default build, the ROCm build, and the kernel manifest. */
+    function rocmRelease(tag: string, shipped: string[] | null) {
+        const assets = [
+            {
+                name: "lilbee-linux-x86_64",
+                browser_download_url: "https://e/default",
+                size: 10,
+                digest: "sha256:default",
+            },
+            {
+                name: "lilbee-linux-x86_64-rocm",
+                browser_download_url: "https://e/rocm",
+                size: 20,
+                digest: "sha256:rocm",
+            },
+        ];
+        if (shipped !== null) {
+            assets.push({
+                name: "lilbee-linux-x86_64-rocm.gfx.txt",
+                browser_download_url: "https://e/rocm.gfx.txt",
+                size: 30,
+                digest: "sha256:manifest",
+            });
+        }
+        return { tag_name: tag, assets };
+    }
+
+    /** Answer the release list with *releases*, and the manifest URL with *manifest* text. */
+    function stubReleasesAndManifest(releases: unknown[], manifest: string | null) {
+        vi.spyOn(node, "requestUrl").mockImplementation((async (req: { url: string }) => {
+            if (!req.url.endsWith(".gfx.txt")) return releaseResponse(releases);
+            if (manifest === null) throw new Error("404");
+            return { status: 200, text: manifest, arrayBuffer: new ArrayBuffer(0), headers: {} };
+        }) as unknown as typeof node.requestUrl);
+    }
+
+    it("prefers the ROCm build when the manifest covers the host's card", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        stubKfdTopology([110000]);
+        stubReleasesAndManifest([rocmRelease("v1.0.0", [])], "gfx908\ngfx90a\ngfx1100\ngfx1201\n");
+
+        expect(await getLatestRelease(false)).toEqual({
+            tag: "v1.0.0",
+            assetUrl: "https://e/rocm",
+            variant: "rocm",
+            sizeBytes: 20,
+            digest: "sha256:rocm",
+        });
+    });
+
+    it("keeps the default build when the ROCm build ships no kernels for the card", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        stubKfdTopology([90006]);
+        stubReleasesAndManifest([rocmRelease("v1.0.0", [])], "gfx908\ngfx90a\ngfx1100\n");
+
+        const release = await getLatestRelease(false);
+        expect(release.variant).toBe("default");
+        expect(release.assetUrl).toBe("https://e/default");
+    });
+
+    it("keeps the default build when only one of two cards is covered", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        stubKfdTopology([110000, 90006]);
+        stubReleasesAndManifest([rocmRelease("v1.0.0", [])], "gfx1100\n");
+
+        expect((await getLatestRelease(false)).variant).toBe("default");
+    });
+
+    it("keeps the default build when the release publishes no manifest", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        stubKfdTopology([110000]);
+        stubReleasesAndManifest([rocmRelease("v1.0.0", null)], null);
+
+        expect((await getLatestRelease(false)).variant).toBe("default");
+    });
+
+    it("keeps the default build when the manifest cannot be fetched", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        stubKfdTopology([110000]);
+        stubReleasesAndManifest([rocmRelease("v1.0.0", [])], null);
+
+        expect((await getLatestRelease(false)).variant).toBe("default");
+    });
+
+    it("keeps the default build when the manifest read answers an error status", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        stubKfdTopology([110000]);
+        vi.spyOn(node, "requestUrl").mockImplementation((async (req: { url: string }) => {
+            if (!req.url.endsWith(".gfx.txt")) return releaseResponse([rocmRelease("v1.0.0", [])]);
+            return { status: 404, text: "Not Found", arrayBuffer: new ArrayBuffer(0), headers: {} };
+        }) as unknown as typeof node.requestUrl);
+
+        expect((await getLatestRelease(false)).variant).toBe("default");
+    });
+
+    it("keeps the default build when the manifest is empty", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        stubKfdTopology([110000]);
+        stubReleasesAndManifest([rocmRelease("v1.0.0", [])], "\n \n");
+
+        expect((await getLatestRelease(false)).variant).toBe("default");
+    });
+
+    it("prefers CUDA over ROCm on a host with both vendors", async () => {
+        restore = stubPlatform("linux", "x64");
+        vi.spyOn(node, "execFile").mockResolvedValue({ stdout: "CUDA Version: 12.5", stderr: "" });
+        stubKfdTopology([110000]);
+        const release = rocmRelease("v1.0.0", []);
+        release.assets.push({
+            name: "lilbee-linux-x86_64-cu125",
+            browser_download_url: "https://e/cu125",
+            size: 40,
+            digest: "sha256:cu125",
+        });
+        stubReleasesAndManifest([release], "gfx1100\n");
+
+        expect((await getLatestRelease(false)).variant).toBe("cu125");
+    });
+
+    it("does not read the ROCm manifest on a host with no AMD card", async () => {
+        restore = stubPlatform("linux", "x64");
+        stubNoNvidia();
+        stubNoAmd();
+        const requestUrl = vi.spyOn(node, "requestUrl").mockResolvedValue(releaseResponse([rocmRelease("v1.0.0", [])]));
+
+        expect((await getLatestRelease(false)).variant).toBe("default");
+        expect(requestUrl.mock.calls.some(([req]) => (req as { url: string }).url.endsWith(".gfx.txt"))).toBe(false);
+    });
+
+    it("finds nothing installable on a platform lilbee ships no build for", async () => {
+        restore = stubPlatform("freebsd", "arm");
+        stubNoNvidia();
+        vi.spyOn(node, "requestUrl").mockResolvedValue(releaseResponse([linuxRelease("v1.0.0")]));
+
+        await expect(getLatestRelease(false)).rejects.toThrow("No installable lilbee release was found.");
     });
 
     it("returns the latest stable build, skipping a newer dev build, by default", async () => {
