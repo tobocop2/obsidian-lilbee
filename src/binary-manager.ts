@@ -135,7 +135,7 @@ function gfxTargetName(version: number): string {
 function nodeGfxTarget(nodeName: string): string | null {
     let text: string;
     try {
-        text = node.readFileSync(node.join(KFD_TOPOLOGY_NODES, nodeName, "properties"), "utf-8") as string;
+        text = node.readFileSync(node.join(KFD_TOPOLOGY_NODES, nodeName, "properties"), "utf-8");
     } catch {
         return null;
     }
@@ -159,7 +159,7 @@ export function detectAmdGfxTargets(): string[] {
     if (!node.existsSync(KFD_DEVICE_PATH)) return [];
     let nodes: string[];
     try {
-        nodes = node.readdirSync(KFD_TOPOLOGY_NODES) as unknown as string[];
+        nodes = node.readdirSync(KFD_TOPOLOGY_NODES);
     } catch {
         return [];
     }

@@ -220,6 +220,9 @@ describe("detectAmdGfxTargets", () => {
 
     it("returns nothing when the host exposes no compute device", () => {
         restore = stubPlatform("linux", "x64");
+        // A readable topology naming a real card, with /dev/kfd absent: an empty
+        // result can then only come from that gate, not from unreadable sysfs.
+        stubKfdTopology([110000]);
         stubNoAmd();
         expect(detectAmdGfxTargets()).toEqual([]);
     });
@@ -522,6 +525,9 @@ describe("getLatestRelease", () => {
     it("does not read the ROCm manifest on a host with no AMD card", async () => {
         restore = stubPlatform("linux", "x64");
         stubNoNvidia();
+        // Topology first, then hide /dev/kfd: the manifest stays unread because the
+        // host has no compute device, not because sysfs could not be read.
+        stubKfdTopology([110000]);
         stubNoAmd();
         const requestUrl = vi.spyOn(node, "requestUrl").mockResolvedValue(releaseResponse([rocmRelease("v1.0.0", [])]));
 
