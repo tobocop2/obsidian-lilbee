@@ -7,7 +7,7 @@ vi.mock("../src/binary-manager", async (importOriginal) => {
     return {
         ...actual,
         getLatestRelease: vi.fn(),
-        getPlatformAssetName: vi.fn(actual.getPlatformAssetName),
+        assetNameForVariant: vi.fn(actual.assetNameForVariant),
     };
 });
 
@@ -160,7 +160,7 @@ describe("ManagedConsentModal", () => {
     });
 
     it("falls back to 'lilbee' when the platform has no asset name", async () => {
-        const mockedAssetFn = binMgr.getPlatformAssetName as unknown as MockedReleaseFn;
+        const mockedAssetFn = binMgr.assetNameForVariant as unknown as MockedReleaseFn;
         mockedAssetFn.mockImplementationOnce(() => {
             throw new Error("Unsupported platform");
         });
@@ -173,6 +173,22 @@ describe("ManagedConsentModal", () => {
         const { root } = openModal();
         await flush();
         expect(root.find("lilbee-managed-consent-prov-asset-name")?.textContent).toBe("lilbee");
+    });
+
+    it("names the ROCm asset when the release resolves to the ROCm build", async () => {
+        const mockedAssetFn = binMgr.assetNameForVariant as unknown as MockedReleaseFn;
+        mockedGetLatestRelease.mockResolvedValue({
+            tag: "v0",
+            assetUrl: "",
+            variant: "rocm",
+            sizeBytes: 897_000_000,
+        });
+        const { root } = openModal();
+        await flush();
+
+        // The name and the size both come from the resolved build, so they agree.
+        expect(mockedAssetFn).toHaveBeenCalledWith("rocm");
+        expect(root.find("lilbee-managed-consent-prov-asset-size")?.textContent).toContain("~855 MB");
     });
 
     it("renders '?' when the release reports a negative or missing size", async () => {

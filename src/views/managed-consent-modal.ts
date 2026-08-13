@@ -1,11 +1,11 @@
 import { App, Modal, setIcon } from "obsidian";
 import { MESSAGES } from "../locales/en";
-import { MANAGED_CONSENT_RESULT, type ManagedConsentResult } from "../types";
+import { MANAGED_CONSENT_RESULT, type ManagedConsentResult, type ServerVariant } from "../types";
 import {
     GITHUB_REPO,
     LILBEE_GITHUB_REPO_URL,
     getLatestRelease,
-    getPlatformAssetName,
+    assetNameForVariant,
     type ReleaseInfo,
 } from "../binary-manager";
 
@@ -112,7 +112,7 @@ export class ManagedConsentModal extends Modal {
         const asset = this.provBody.createDiv({ cls: "lilbee-managed-consent-prov-asset" });
         asset.createSpan({
             cls: "lilbee-managed-consent-prov-asset-name",
-            text: safeAssetName(),
+            text: safeAssetName(release.variant),
         });
         asset.createSpan({
             cls: "lilbee-managed-consent-prov-asset-size",
@@ -186,9 +186,10 @@ export class ManagedConsentModal extends Modal {
     }
 }
 
-function safeAssetName(): string {
+/** The file this install downloads. Named from the resolved build, so the name matches the size. */
+function safeAssetName(variant: ServerVariant): string {
     try {
-        return getPlatformAssetName(null);
+        return assetNameForVariant(variant);
     } catch {
         return "lilbee";
     }

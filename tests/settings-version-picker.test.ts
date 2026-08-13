@@ -3,7 +3,7 @@ import { App, Setting } from "obsidian";
 import { MockElement } from "./__mocks__/obsidian";
 import { LilbeeSettingTab } from "../src/settings";
 import { node } from "../src/binary-manager";
-import { DEFAULT_SETTINGS, SERVER_MODE } from "../src/types";
+import { DEFAULT_SETTINGS, SERVER_MODE, SERVER_VARIANT } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import type LilbeePlugin from "../src/main";
 
@@ -127,6 +127,7 @@ describe("server version picker with the real release list", () => {
         const plugin = {
             settings: { ...DEFAULT_SETTINGS, serverMode: SERVER_MODE.MANAGED, includeDevBuilds },
             getSharedLilbeeVersion: () => STABLE_RUN[0],
+            getSharedLilbeeVariant: () => SERVER_VARIANT.DEFAULT,
         } as unknown as LilbeePlugin;
         return new LilbeeSettingTab(new App(), plugin);
     }
@@ -145,6 +146,32 @@ describe("server version picker with the real release list", () => {
         expect(dd.value).toBe(STABLE_RUN[0]);
         expect(dd.disabledStates).toContain(false);
         expect(descs[descs.length - 1]).not.toBe(MESSAGES.DESC_SERVER_VERSION_LOADING);
+    });
+
+    it("says which build is installed, so the download size is accounted for", async () => {
+        const plugin = {
+            settings: { ...DEFAULT_SETTINGS, serverMode: SERVER_MODE.MANAGED, includeDevBuilds: false },
+            getSharedLilbeeVersion: () => STABLE_RUN[0],
+            getSharedLilbeeVariant: () => SERVER_VARIANT.ROCM,
+        } as unknown as LilbeePlugin;
+        const tab = new LilbeeSettingTab(new App(), plugin);
+        (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(descs[descs.length - 1]).toContain("Running the ROCm build.");
+    });
+
+    it("says nothing about the build when the install predates build tracking", async () => {
+        const plugin = {
+            settings: { ...DEFAULT_SETTINGS, serverMode: SERVER_MODE.MANAGED, includeDevBuilds: false },
+            getSharedLilbeeVersion: () => STABLE_RUN[0],
+            getSharedLilbeeVariant: () => "",
+        } as unknown as LilbeePlugin;
+        const tab = new LilbeeSettingTab(new App(), plugin);
+        (tab as any).renderVersionSetting(new MockElement() as unknown as HTMLElement);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(descs[descs.length - 1]).not.toContain("build.");
     });
 
     it("offers dev and stable builds when dev builds are included", async () => {

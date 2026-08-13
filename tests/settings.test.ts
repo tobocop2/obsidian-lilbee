@@ -3,7 +3,7 @@ import { App, Notice, Setting } from "obsidian";
 import { MockElement } from "./__mocks__/obsidian";
 import { LilbeeSettingTab, SEPARATOR_KEY } from "../src/settings";
 import type { CatalogEntry, CatalogResponse, InstalledModel, LilbeeSettings } from "../src/types";
-import { DEFAULT_SETTINGS, MEMORY_CONFIG_KEY, MODEL_TASK, SSE_EVENT, TABLE_MODEL } from "../src/types";
+import { DEFAULT_SETTINGS, MEMORY_CONFIG_KEY, MODEL_TASK, SERVER_VARIANT, SSE_EVENT, TABLE_MODEL } from "../src/types";
 import { MESSAGES } from "../src/locales/en";
 import { ServerStartingError } from "../src/api";
 import { ok, err } from "../src/result";
@@ -177,6 +177,7 @@ function makePlugin(
         wikiSync: null,
         taskQueue: new TaskQueue(),
         getSharedLilbeeVersion: () => sharedVersion,
+        getSharedLilbeeVariant: () => SERVER_VARIANT.DEFAULT,
         setSharedLilbeeVersion: (v: string) => {
             sharedVersion = v;
         },

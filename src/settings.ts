@@ -544,6 +544,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
             const tags = releases.map((r) => r.tag);
             const action = versionActionFor(tags, installed, selectedTag);
             let desc = versionDescription(action, installed, selectedTag, tags[0] === installed);
+            // Which build is installed answers why the download was the size it was.
+            const installedBuild = this.plugin.getSharedLilbeeVariant();
+            if (installed && installedBuild) {
+                desc += MESSAGES.DESC_SERVER_BUILD(MESSAGES.LABEL_SERVER_BUILD(installedBuild));
+            }
             if (newerDevTag) desc += ` ${MESSAGES.DESC_DEV_BUILD_AVAILABLE(newerDevTag)}`;
             setting.setDesc(desc);
             actionBtn.setButtonText(versionButtonLabel(action, selectedTag));

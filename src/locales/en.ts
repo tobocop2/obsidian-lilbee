@@ -1,4 +1,4 @@
-import { AGENT_CLIENT, MODEL_TASK, type WorkerRole } from "../types";
+import { AGENT_CLIENT, MODEL_TASK, SERVER_VARIANT, type ServerVariant, type WorkerRole } from "../types";
 
 // Natural-language noun for each worker role, so tooltips read "embedding
 // worker" rather than the internal "embed".
@@ -391,6 +391,14 @@ export const MESSAGES = {
     DESC_SERVER_VERSION_DOWNGRADE: (installed: string) =>
         `${installed} installed. Downgrading replaces it with an older build and turns off automatic server updates.`,
     DESC_SERVER_VERSION_LOADING: "Reading the release list from GitHub...",
+    /** How a server build is named wherever the user sees one. macOS ships Metal in the
+     *  default build and Linux and Windows ship Vulkan, so the default is named for neither. */
+    LABEL_SERVER_BUILD: (variant: ServerVariant): string => {
+        if (variant === SERVER_VARIANT.ROCM) return "ROCm";
+        if (variant === SERVER_VARIANT.DEFAULT) return "default";
+        return `CUDA ${variant.slice(2, 4)}.${variant.slice(4)}`;
+    },
+    DESC_SERVER_BUILD: (build: string) => ` Running the ${build} build.`,
     DESC_SERVER_VERSION_OFFLINE: (tag: string, reason: string) =>
         `${tag} installed. The release list could not be read from GitHub: ${reason}`,
     DESC_DEV_BUILD_AVAILABLE: (tag: string) =>
@@ -647,6 +655,8 @@ export const MESSAGES = {
     ERROR_FAILED_UPDATE: "lilbee: update failed",
     NOTICE_SERVER_AUTO_UPDATING: (version: string) => `lilbee: updating server to ${version}...`,
     NOTICE_SERVER_AUTO_UPDATED: (version: string) => `lilbee server updated to ${version}`,
+    NOTICE_SERVER_SWITCHING_BUILD: (build: string) => `lilbee: switching to the ${build} build for your GPU...`,
+    NOTICE_SERVER_SWITCHED_BUILD: (build: string) => `lilbee server now runs the ${build} build`,
     NOTICE_SERVER_AUTO_UPDATE_FAILED: "lilbee: automatic server update failed. You can retry from settings.",
     NOTICE_EXTERNAL_SERVER_OUTDATED: (current: string, latest: string): string =>
         `Your lilbee server (${current}) is behind the latest release (${latest}). Update it to get the newest features and fixes.`,

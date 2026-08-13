@@ -1015,10 +1015,22 @@ export default class LilbeePlugin extends Plugin {
         registry.saveConfig({ ...config, lastUpdateCheckPluginVersion: this.manifest.version });
         if (!result.available || !result.release) return;
         const release = result.release;
-        const notice = new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATING(release.tag), NOTICE_PERMANENT);
+        // A build switch keeps the version it already has, so naming the version would
+        // report an update to the version the user is on. Name the build instead.
+        const installedVariant = this.getSharedLilbeeVariant();
+        const build =
+            installedVariant !== "" && installedVariant !== release.variant
+                ? MESSAGES.LABEL_SERVER_BUILD(release.variant)
+                : null;
+        const notice = new Notice(
+            build ? MESSAGES.NOTICE_SERVER_SWITCHING_BUILD(build) : MESSAGES.NOTICE_SERVER_AUTO_UPDATING(release.tag),
+            NOTICE_PERMANENT,
+        );
         try {
             await this.updateServer(release);
-            new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATED(release.tag));
+            new Notice(
+                build ? MESSAGES.NOTICE_SERVER_SWITCHED_BUILD(build) : MESSAGES.NOTICE_SERVER_AUTO_UPDATED(release.tag),
+            );
         } catch {
             new Notice(MESSAGES.NOTICE_SERVER_AUTO_UPDATE_FAILED, NOTICE_ERROR_DURATION_MS);
         } finally {

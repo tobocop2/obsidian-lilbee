@@ -22,7 +22,7 @@ import {
 import { basename, join, resolve, dirname } from "path";
 import { createHash } from "crypto";
 import { promisify } from "util";
-import { ARCH, PLATFORM, SERVER_VARIANT, type CudaTag, type ServerVariant } from "./types";
+import { ARCH, PLATFORM, SERVER_VARIANT, type CudaTag, type GpuTag, type ServerVariant } from "./types";
 import { formatDiskSize } from "./utils";
 
 const execFileAsync = promisify(execFile);
@@ -117,14 +117,85 @@ export async function detectCudaTag(): Promise<CudaTag | null> {
     return pickCudaTag(ceiling);
 }
 
-export function getPlatformAssetName(cudaTag?: CudaTag | null): string {
+/** The amdgpu compute device. Without it ROCm cannot run, whatever else sysfs says. */
+const KFD_DEVICE_PATH = "/dev/kfd";
+
+/** Where the amdgpu driver describes each compute device it exposes. */
+const KFD_TOPOLOGY_NODES = "/sys/class/kfd/kfd/topology/nodes";
+
+/** The gfx name for a KFD `gfx_target_version`; minor and step print as hex (90010 -> gfx90a). */
+function gfxTargetName(version: number): string {
+    const major = Math.floor(version / 10000);
+    const minor = Math.floor((version % 10000) / 100);
+    const step = version % 100;
+    return `gfx${major}${minor.toString(16)}${step.toString(16)}`;
+}
+
+/** The gfx target a KFD node reports, or null for a CPU node (which reports 0) and unreadable ones. */
+function nodeGfxTarget(nodeName: string): string | null {
+    let text: string;
+    try {
+        text = node.readFileSync(node.join(KFD_TOPOLOGY_NODES, nodeName, "properties"), "utf-8") as string;
+    } catch {
+        return null;
+    }
+    for (const line of text.split("\n")) {
+        const [name, value] = line.trim().split(/\s+/);
+        if (name !== "gfx_target_version") continue;
+        const version = Number(value);
+        if (Number.isInteger(version) && version > 0) return gfxTargetName(version);
+    }
+    return null;
+}
+
+/**
+ * The gfx targets of this host's AMD GPUs, read from the amdgpu driver's KFD topology.
+ * Empty on any platform but Linux, when the host has no AMD compute device, and on any
+ * read failure. Read from the driver rather than from rocm-smi or amd-smi: those ship
+ * with ROCm, which the ROCm build bundles, so the host needs only the amdgpu driver.
+ */
+export function detectAmdGfxTargets(): string[] {
+    if (process.platform !== PLATFORM.LINUX) return [];
+    if (!node.existsSync(KFD_DEVICE_PATH)) return [];
+    let nodes: string[];
+    try {
+        nodes = node.readdirSync(KFD_TOPOLOGY_NODES) as unknown as string[];
+    } catch {
+        return [];
+    }
+    const targets = new Set<string>();
+    for (const nodeName of nodes) {
+        const target = nodeGfxTarget(nodeName);
+        if (target) targets.add(target);
+    }
+    return [...targets].sort();
+}
+
+/** What this host can run, resolved once per release check. */
+interface HostGpu {
+    /** The newest CUDA build the NVIDIA driver supports, or null. */
+    cuda: CudaTag | null;
+    /** The gfx targets of the host's AMD GPUs; empty when there are none. */
+    amdGfxTargets: string[];
+}
+
+async function detectHostGpu(): Promise<HostGpu> {
+    return { cuda: await detectCudaTag(), amdGfxTargets: detectAmdGfxTargets() };
+}
+
+export function getPlatformAssetName(gpuTag?: GpuTag | null): string {
     const platform = process.platform;
     const arch = process.arch;
-    const cuda = cudaTag ? `-${cudaTag}` : "";
+    const gpu = gpuTag ? `-${gpuTag}` : "";
     if (platform === PLATFORM.DARWIN && arch === ARCH.ARM64) return "lilbee-macos-arm64";
-    if (platform === PLATFORM.LINUX && arch === ARCH.X64) return `lilbee-linux-x86_64${cuda}`;
-    if (platform === PLATFORM.WIN32 && arch === ARCH.X64) return `lilbee-windows-x86_64${cuda}.exe`;
+    if (platform === PLATFORM.LINUX && arch === ARCH.X64) return `lilbee-linux-x86_64${gpu}`;
+    if (platform === PLATFORM.WIN32 && arch === ARCH.X64) return `lilbee-windows-x86_64${gpu}.exe`;
     throw new Error(`Unsupported platform: ${platform}/${arch}`);
+}
+
+/** The asset name of a build, for showing which file an install downloads. */
+export function assetNameForVariant(variant: ServerVariant): string {
+    return getPlatformAssetName(variant === SERVER_VARIANT.DEFAULT ? null : variant);
 }
 
 interface GitHubAsset {
@@ -151,20 +222,70 @@ export interface ReleaseInfo {
     digest: string | null;
 }
 
-/** Choose the CUDA asset when detected and shipped; otherwise the default build. */
-function selectAsset(data: GitHubRelease, cudaTag: CudaTag | null): { variant: ServerVariant; asset: GitHubAsset } {
-    if (cudaTag) {
-        const cudaAsset = data.assets.find((a) => a.name === getPlatformAssetName(cudaTag));
-        if (cudaAsset) return { variant: cudaTag, asset: cudaAsset };
+/** Suffix of the manifest published beside a ROCm build, listing the targets it ships kernels for. */
+const GFX_MANIFEST_SUFFIX = ".gfx.txt";
+
+/**
+ * The gfx targets a release's ROCm build ships kernels for, or null when it makes no
+ * claim: no manifest, an unreachable one, or an empty one. Null is "unknown", never
+ * "supports nothing" — an unknown keeps the default build rather than risking a build
+ * the server would refuse to start.
+ */
+async function shippedGfxTargets(manifest: GitHubAsset | undefined): Promise<Set<string> | null> {
+    if (!manifest) return null;
+    try {
+        const res = await node.requestUrl({ url: manifest.browser_download_url });
+        if (res.status >= 400) return null;
+        const targets = res.text
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+        return targets.length > 0 ? new Set(targets) : null;
+    } catch {
+        return null;
     }
-    const defaultName = getPlatformAssetName(null);
-    const asset = data.assets.find((a) => a.name === defaultName);
-    if (!asset) throw new Error(`No asset "${defaultName}" in release ${data.tag_name}`);
-    return { variant: SERVER_VARIANT.DEFAULT, asset };
 }
 
-function toReleaseInfo(data: GitHubRelease, cudaTag: CudaTag | null): ReleaseInfo {
-    const { variant, asset } = selectAsset(data, cudaTag);
+/**
+ * Whether the ROCm build serves every AMD GPU on this host. All of them, not any: the
+ * build refuses to start on a card it ships no kernels for, so a host it only partly
+ * covers is better served by the default build, which runs all of them over Vulkan.
+ */
+async function rocmServesHost(data: GitHubRelease, gfxTargets: string[]): Promise<boolean> {
+    const manifestName = `${getPlatformAssetName(SERVER_VARIANT.ROCM)}${GFX_MANIFEST_SUFFIX}`;
+    const shipped = await shippedGfxTargets(data.assets.find((a) => a.name === manifestName));
+    return shipped !== null && gfxTargets.every((target) => shipped.has(target));
+}
+
+/** A release that ships a build for this machine, with the build it falls back to. */
+interface InstallableRelease {
+    data: GitHubRelease;
+    /** The default build, carried from the check that found it, so no later step can miss it. */
+    fallback: GitHubAsset;
+}
+
+/** Choose the vendor asset the host can run and the release ships; otherwise the default build. */
+async function selectAsset(
+    release: InstallableRelease,
+    host: HostGpu,
+): Promise<{ variant: ServerVariant; asset: GitHubAsset }> {
+    const { data } = release;
+    if (host.cuda) {
+        const cudaAsset = data.assets.find((a) => a.name === getPlatformAssetName(host.cuda));
+        if (cudaAsset) return { variant: host.cuda, asset: cudaAsset };
+    }
+    if (host.amdGfxTargets.length > 0) {
+        const rocmAsset = data.assets.find((a) => a.name === getPlatformAssetName(SERVER_VARIANT.ROCM));
+        if (rocmAsset && (await rocmServesHost(data, host.amdGfxTargets))) {
+            return { variant: SERVER_VARIANT.ROCM, asset: rocmAsset };
+        }
+    }
+    return { variant: SERVER_VARIANT.DEFAULT, asset: release.fallback };
+}
+
+async function toReleaseInfo(release: InstallableRelease, host: HostGpu): Promise<ReleaseInfo> {
+    const { variant, asset } = await selectAsset(release, host);
+    const { data } = release;
     return {
         tag: data.tag_name,
         assetUrl: asset.browser_download_url,
@@ -179,6 +300,18 @@ export function isDevBuild(tag: string): boolean {
     return /\.dev\d*$/i.test(tag);
 }
 
+/** The default build for this machine, the asset every install falls back to, or null when
+ *  the release ships none — including on a platform lilbee publishes no build for at all. */
+function platformFallbackAsset(data: GitHubRelease): GitHubAsset | null {
+    let defaultName: string;
+    try {
+        defaultName = getPlatformAssetName(null);
+    } catch {
+        return null; // unsupported platform: no release is installable here
+    }
+    return data.assets.find((a) => a.name === defaultName) ?? null;
+}
+
 /**
  * Published releases that ship a build for this machine, newest first: up to *limit* stable
  * releases, plus up to *limit* dev builds when includeDev is set. The quotas are per kind so a
@@ -186,9 +319,8 @@ export function isDevBuild(tag: string): boolean {
  * and releases without a matching asset are left out. Pages through the releases API until
  * both quotas are filled, a short (final) page arrives, or the page budget is exhausted.
  */
-async function fetchInstallableReleases(limit: number, includeDev: boolean): Promise<ReleaseInfo[]> {
-    const cudaTag = await detectCudaTag();
-    const releases: ReleaseInfo[] = [];
+async function collectInstallableReleases(limit: number, includeDev: boolean): Promise<InstallableRelease[]> {
+    const releases: InstallableRelease[] = [];
     let stableCount = 0;
     let devCount = 0;
     for (let page = 1; page <= RELEASE_PAGE_BUDGET; page++) {
@@ -204,12 +336,9 @@ async function fetchInstallableReleases(limit: number, includeDev: boolean): Pro
             const dev = isDevBuild(data.tag_name);
             if (dev && !includeDev) continue;
             if (dev ? devCount >= limit : stableCount >= limit) continue;
-            try {
-                releases.push(toReleaseInfo(data, cudaTag));
-            } catch {
-                // Release ships no build for this platform; it isn't installable here.
-                continue;
-            }
+            const fallback = platformFallbackAsset(data);
+            if (!fallback) continue;
+            releases.push({ data, fallback });
             if (dev) devCount++;
             else stableCount++;
             if (stableCount >= limit && (!includeDev || devCount >= limit)) return releases;
@@ -217,6 +346,17 @@ async function fetchInstallableReleases(limit: number, includeDev: boolean): Pro
         if (pageData.length < RELEASE_PAGE_SIZE) break; // last page
     }
     return releases;
+}
+
+/**
+ * Installable releases with the build this host should run resolved for each. The releases
+ * resolve together rather than one after another: picking the ROCm build reads a manifest
+ * per release, and a version list would otherwise pay that round trip ten times over.
+ */
+async function fetchInstallableReleases(limit: number, includeDev: boolean): Promise<ReleaseInfo[]> {
+    const host = await detectHostGpu();
+    const candidates = await collectInstallableReleases(limit, includeDev);
+    return Promise.all(candidates.map((release) => toReleaseInfo(release, host)));
 }
 
 /**

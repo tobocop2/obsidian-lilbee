@@ -6390,6 +6390,34 @@ describe("LilbeePlugin", () => {
             expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_SERVER_AUTO_UPDATED(RELEASE.tag));
         });
 
+        it("names the build, not the version, when the update is a build switch", async () => {
+            const rocm = { ...RELEASE, tag: "v0.1.0", variant: "rocm" as const };
+            const plugin = await createPlugin({ serverMode: "managed" });
+            vi.spyOn(plugin, "checkForUpdate").mockResolvedValue({ available: true, release: rocm });
+            vi.spyOn(plugin, "updateServer").mockResolvedValue(undefined);
+            vi.spyOn(plugin as any, "getSharedLilbeeVariant").mockReturnValue("default");
+            seedSharedConfig("");
+            await plugin.onload();
+            await flush();
+
+            const messages = Notice.instances.map((n) => n.message);
+            expect(messages).toContain(MESSAGES.NOTICE_SERVER_SWITCHING_BUILD("ROCm"));
+            expect(messages).toContain(MESSAGES.NOTICE_SERVER_SWITCHED_BUILD("ROCm"));
+            expect(messages).not.toContain(MESSAGES.NOTICE_SERVER_AUTO_UPDATED(rocm.tag));
+        });
+
+        it("names the version when the build is unchanged", async () => {
+            const plugin = await createPlugin({ serverMode: "managed" });
+            vi.spyOn(plugin, "checkForUpdate").mockResolvedValue({ available: true, release: RELEASE });
+            vi.spyOn(plugin, "updateServer").mockResolvedValue(undefined);
+            vi.spyOn(plugin as any, "getSharedLilbeeVariant").mockReturnValue("default");
+            seedSharedConfig("");
+            await plugin.onload();
+            await flush();
+
+            expect(Notice.instances.map((n) => n.message)).toContain(MESSAGES.NOTICE_SERVER_AUTO_UPDATED(RELEASE.tag));
+        });
+
         it("skips the check when this plugin version already checked", async () => {
             const plugin = await createPlugin({ serverMode: "managed" });
             const check = vi.spyOn(plugin, "checkForUpdate");
