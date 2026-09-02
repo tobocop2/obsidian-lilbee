@@ -1,6 +1,7 @@
 import { App, Modal, Notice } from "obsidian";
 import type LilbeePlugin from "../main";
 import type { ModelShowResponse, StatusResponse } from "../types";
+import { DocumentList } from "../components/document-list";
 import { MESSAGES } from "../locales/en";
 import { bindEscapeToClose, noticeForResultError } from "../utils";
 
@@ -30,7 +31,7 @@ export class StatusModal extends Modal {
                 return;
             }
             const status = statusResult.value;
-            this.renderDocuments(contentEl, status);
+            await this.renderDocuments(contentEl, status);
             await this.renderModels(contentEl, status);
             this.renderWiki(contentEl, status);
         } catch {
@@ -39,13 +40,28 @@ export class StatusModal extends Modal {
         }
     }
 
-    private renderDocuments(container: HTMLElement, status: StatusResponse): void {
+    private async renderDocuments(container: HTMLElement, status: StatusResponse): Promise<void> {
         const section = container.createEl("details", { attr: { open: "" } });
         section.createEl("summary", { text: MESSAGES.LABEL_STATUS_DOCUMENTS });
 
         const table = section.createEl("table", { cls: "lilbee-status-table" });
         this.addRow(table, MESSAGES.LABEL_STATUS_DOCUMENTS, String(status.sources.length));
         this.addRow(table, MESSAGES.LABEL_STATUS_CHUNKS, String(status.total_chunks));
+
+        const listEl = section.createDiv({ cls: "lilbee-status-documents" });
+        const list = new DocumentList(listEl, (limit, offset) =>
+            this.plugin.api.listDocuments(undefined, limit, offset),
+        );
+
+        const footer = section.createDiv({ cls: "lilbee-status-documents-footer" });
+        const summary = footer.createDiv({ cls: "lilbee-status-documents-summary" });
+        const button = footer.createEl("button", {
+            text: MESSAGES.BUTTON_LOAD_MORE,
+            cls: "lilbee-status-load-more",
+        });
+        button.addEventListener("click", () => void loadDocumentPage(list, button, summary));
+
+        await loadDocumentPage(list, button, summary);
     }
 
     private async renderModels(container: HTMLElement, status: StatusResponse): Promise<void> {
@@ -133,6 +149,22 @@ export class StatusModal extends Modal {
         cell.setText(shortModelLabel(model));
         cell.setAttribute("title", model);
     }
+}
+
+async function loadDocumentPage(list: DocumentList, button: HTMLButtonElement, summary: HTMLElement): Promise<void> {
+    button.disabled = true;
+    const loaded = await list.loadMore();
+    button.disabled = false;
+    summary.setText(documentSummaryText(list, loaded));
+    if (list.hasMore) button.show();
+    else button.hide();
+}
+
+function documentSummaryText(list: DocumentList, loaded: boolean): string {
+    if (!loaded) return MESSAGES.LABEL_STATUS_DOCUMENTS_FAILED;
+    if (list.total === 0) return MESSAGES.LABEL_STATUS_DOCUMENTS_EMPTY;
+    if (list.hasMore) return MESSAGES.LABEL_STATUS_DOCUMENTS_SHOWING(list.loaded, list.total);
+    return MESSAGES.LABEL_STATUS_DOCUMENTS_COMPLETE(list.total);
 }
 
 function shortModelLabel(model: string): string {

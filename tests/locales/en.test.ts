@@ -32,6 +32,7 @@ describe("MESSAGES", () => {
             expect(MESSAGES.BUTTON_CLEAR_CHAT).toBe("Clear chat");
             expect(MESSAGES.BUTTON_SEND).toBe("Send");
             expect(MESSAGES.BUTTON_OPEN_CHAT).toBe("Open chat");
+            expect(MESSAGES.BUTTON_LOAD_MORE).toBe("Load more");
         });
     });
 
@@ -319,6 +320,20 @@ describe("MESSAGES", () => {
         it("NOTICE_WIKI_PRUNE_DONE produces correct output", () => {
             expect(MESSAGES.NOTICE_WIKI_PRUNE_DONE(5)).toBe("lilbee: pruned 5 pages");
             expect(MESSAGES.NOTICE_WIKI_PRUNE_DONE(0)).toBe("lilbee: pruned 0 pages");
+        });
+
+        it("LABEL_DOCUMENT_CHUNKS produces correct output", () => {
+            expect(MESSAGES.LABEL_DOCUMENT_CHUNKS(10)).toBe("10 chunks");
+            expect(MESSAGES.LABEL_DOCUMENT_CHUNKS(0)).toBe("0 chunks");
+        });
+
+        it("document list summaries produce correct output", () => {
+            expect(MESSAGES.LABEL_STATUS_DOCUMENTS_SHOWING(20, 45)).toBe("Showing 20 of 45.");
+            expect(MESSAGES.LABEL_STATUS_DOCUMENTS_COMPLETE(45)).toBe("Showing all 45.");
+            expect(MESSAGES.LABEL_STATUS_DOCUMENTS_EMPTY).toBe("The index has no documents.");
+            expect(MESSAGES.LABEL_STATUS_DOCUMENTS_FAILED).toBe(
+                "Could not load the document list. Select load more to try again.",
+            );
         });
 
         it("NOTICE_WIKI_SYNC produces correct output", () => {

@@ -375,13 +375,13 @@ describe("DocumentsModal", () => {
 
     it("onScroll bails while a fetch is already in flight", async () => {
         const plugin = makePlugin();
-        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc()], 40));
+        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc()], 40, true));
         const app = new App();
         const modal = new DocumentsModal(app as any, plugin as any);
         modal.open();
         await vi.runAllTimersAsync();
         plugin.api.listDocuments.mockClear();
-        (modal as any).isFetching = true;
+        (modal as any).list.fetching = true;
         const el = (modal as any).resultsEl as MockElement;
         Object.assign(el, { scrollTop: 800, clientHeight: 400, scrollHeight: 1100 });
         (modal as any).onScroll();
@@ -389,15 +389,12 @@ describe("DocumentsModal", () => {
         expect(plugin.api.listDocuments).not.toHaveBeenCalled();
     });
 
-    it("fetchPage is a no-op when already fetching", async () => {
+    it("onScroll bails before the modal has built its list", async () => {
         const plugin = makePlugin();
         const app = new App();
         const modal = new DocumentsModal(app as any, plugin as any);
-        modal.open();
-        await vi.runAllTimersAsync();
-        plugin.api.listDocuments.mockClear();
-        (modal as any).isFetching = true;
-        await (modal as any).fetchPage();
+        (modal as any).resultsEl = new MockElement();
+        expect(() => (modal as any).onScroll()).not.toThrow();
         expect(plugin.api.listDocuments).not.toHaveBeenCalled();
     });
 
@@ -501,14 +498,22 @@ describe("DocumentsModal", () => {
         // Should not throw
     });
 
-    it("resetAndFetch skips empty() when resultsEl is null", async () => {
+    it("resetAndFetch is a no-op before the modal has built its list", async () => {
         const plugin = makePlugin();
         const app = new App();
         const modal = new DocumentsModal(app as any, plugin as any);
-        (modal as any).resultsEl = null;
         expect(() => (modal as any).resetAndFetch()).not.toThrow();
         await vi.runAllTimersAsync();
-        expect(plugin.api.listDocuments).toHaveBeenCalled();
+        expect(plugin.api.listDocuments).not.toHaveBeenCalled();
+    });
+
+    it("updateRemoveBtn returns early before the modal has built its list", () => {
+        const plugin = makePlugin();
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        (modal as any).removeBtn = new MockElement("button");
+        (modal as any).updateRemoveBtn();
+        expect((modal as any).removeBtn.disabled).toBe(false);
     });
 
     it("renderRow omits the date title when ingested_at is empty", async () => {
@@ -524,13 +529,13 @@ describe("DocumentsModal", () => {
         expect(dateCell.attributes["title"]).toBeUndefined();
     });
 
-    it("renderRow returns early when resultsEl is null", () => {
+    it("removeSelected is a no-op before the modal has built its list", async () => {
+        vi.useRealTimers();
         const plugin = makePlugin();
         const app = new App();
         const modal = new DocumentsModal(app as any, plugin as any);
-        (modal as any).resultsEl = null;
-        (modal as any).renderRow(makeDoc());
-        // Should not throw
+        await (modal as any).removeSelected();
+        expect(plugin.api.removeDocuments).not.toHaveBeenCalled();
     });
 
     it("stops paginating when has_more is false, even with offset < total", async () => {
@@ -603,7 +608,7 @@ describe("DocumentsModal", () => {
         const modal = new DocumentsModal(app as any, plugin as any);
         modal.open();
         await vi.runAllTimersAsync();
-        expect((modal as any).hasMore).toBe(false);
+        expect((modal as any).list.hasMore).toBe(false);
 
         const el = modal.contentEl as unknown as MockElement;
         const searchInput = el.find("lilbee-documents-search")!;
