@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf } from "obsidian";
+import { ItemView, setIcon, WorkspaceLeaf } from "obsidian";
 import type LilbeePlugin from "../main";
 import {
     BACKGROUND_TASK_TYPES,
@@ -65,6 +65,13 @@ export class TaskCenterView extends ItemView {
             this.plugin.taskQueue.clearHistory();
             this.render();
         });
+
+        const closeBtn = header.createEl("button", {
+            cls: "lilbee-tasks-close",
+            attr: { "aria-label": MESSAGES.LABEL_CLOSE_TASK_CENTER },
+        });
+        setIcon(closeBtn, "x");
+        closeBtn.addEventListener("click", () => this.leaf.detach());
 
         this.activeSection = contentEl.createDiv({ cls: "lilbee-tasks-section" });
         this.activeSection.createDiv({ cls: "lilbee-tasks-section-header" }).setText(MESSAGES.LABEL_ACTIVE_TASKS);

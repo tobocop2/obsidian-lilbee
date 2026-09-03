@@ -1493,6 +1493,12 @@ export default class LilbeePlugin extends Plugin {
         });
 
         this.addCommand({
+            id: "toggle-task-center",
+            name: MESSAGES.COMMAND_TOGGLE_TASKS,
+            callback: () => this.toggleTaskView(),
+        });
+
+        this.addCommand({
             id: "arrange-views",
             name: "Arrange views",
             callback: () => this.arrangeViews(),
@@ -2450,6 +2456,15 @@ export default class LilbeePlugin extends Plugin {
             await leaf.setViewState({ type: VIEW_TYPE_TASKS, active: true });
             void this.app.workspace.revealLeaf(leaf);
         }
+    }
+
+    async toggleTaskView(): Promise<void> {
+        const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_TASKS);
+        if (existing.length > 0) {
+            for (const leaf of existing) leaf.detach();
+            return;
+        }
+        await this.activateTaskView();
     }
 
     refreshOpenWikiViews(): void {

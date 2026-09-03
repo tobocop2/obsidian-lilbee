@@ -612,6 +612,7 @@ export class WorkspaceLeaf {
         this.app = app ?? new App();
     }
     setViewState = vi.fn();
+    detach = vi.fn();
 }
 
 export class Plugin {

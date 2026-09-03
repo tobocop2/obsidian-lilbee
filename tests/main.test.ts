@@ -454,11 +454,11 @@ describe("LilbeePlugin", () => {
             expect(startSpy).toHaveBeenCalled();
         });
 
-        it("adds all thirty commands", async () => {
+        it("adds all thirty-one commands", async () => {
             const plugin = await createPlugin();
             await plugin.onload();
 
-            expect(plugin.addCommand).toHaveBeenCalledTimes(30);
+            expect(plugin.addCommand).toHaveBeenCalledTimes(31);
             const allIds = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(allIds).toContain("model-picker-chat");
             expect(allIds).toContain("model-picker-embedding");
@@ -466,6 +466,7 @@ describe("LilbeePlugin", () => {
             expect(allIds).toContain("model-info-active-embedding");
             expect(allIds).toContain("take-over");
             expect(allIds).toContain("export-diagnostics");
+            expect(allIds).toContain("toggle-task-center");
             const ids = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0].id);
             expect(ids).toContain("search");
             expect(ids).toContain("chat");
@@ -1865,6 +1866,34 @@ describe("LilbeePlugin", () => {
 
             const activateSpy = vi.spyOn(plugin as any, "activateTaskView").mockResolvedValue(undefined);
             const cb = await getCommandCallback(plugin, "tasks");
+            cb?.();
+
+            expect(activateSpy).toHaveBeenCalled();
+        });
+
+        it("lilbee:toggle-task-center detaches the open task view", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            const leaf = new WorkspaceLeaf(plugin.app as any);
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([leaf]);
+            const activateSpy = vi.spyOn(plugin as any, "activateTaskView").mockResolvedValue(undefined);
+
+            const cb = await getCommandCallback(plugin, "toggle-task-center");
+            cb?.();
+
+            expect(leaf.detach).toHaveBeenCalled();
+            expect(activateSpy).not.toHaveBeenCalled();
+        });
+
+        it("lilbee:toggle-task-center opens the task view when none is open", async () => {
+            const plugin = await createPlugin();
+            await plugin.onload();
+
+            plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+            const activateSpy = vi.spyOn(plugin as any, "activateTaskView").mockResolvedValue(undefined);
+
+            const cb = await getCommandCallback(plugin, "toggle-task-center");
             cb?.();
 
             expect(activateSpy).toHaveBeenCalled();

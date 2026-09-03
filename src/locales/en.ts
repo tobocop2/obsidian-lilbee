@@ -294,6 +294,7 @@ export const MESSAGES = {
         "These settings affect how your documents are processed. Only change if you know what you're doing.",
     LABEL_CLOSE_GLYPH: "\u00D7",
     LABEL_TASK_CENTER: "Task Center",
+    LABEL_CLOSE_TASK_CENTER: "Close task center",
     LABEL_TASK_CAP_PILL: "{active}/{cap} running",
     LABEL_TASK_COUNTERS: "{active} running · {queued} queued · {done} done",
     LABEL_ACTIVE_TASKS: "ACTIVE",
@@ -776,6 +777,7 @@ export const MESSAGES = {
     COMMAND_DOCUMENTS: "Browse documents",
     COMMAND_SETUP: "Run setup wizard",
     COMMAND_TASKS: "Show task center",
+    COMMAND_TOGGLE_TASKS: "Toggle task center",
     COMMAND_STATUS: "Show status",
 
     // Status modal
