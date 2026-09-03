@@ -48,7 +48,7 @@ export class StatusModal extends Modal {
         this.addRow(table, MESSAGES.LABEL_STATUS_CHUNKS, String(status.total_chunks));
     }
 
-    /** /api/status carries no document count, and its `sources` array is a whole record per document. */
+    /** Indexed document count from /api/documents, or "n/a" when that call fails. */
     private async documentCount(): Promise<string> {
         try {
             const page = await this.plugin.api.listDocuments(undefined, 1, 0);
