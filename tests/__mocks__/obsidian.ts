@@ -591,6 +591,18 @@ export class ItemView {
         this.contentEl = new MockElement("div");
     }
 
+    /** Header actions registered through addAction, in registration order. */
+    actions: MockElement[] = [];
+
+    addAction(icon: string, title: string, callback: () => void): MockElement {
+        const el = new MockElement("a");
+        el.attributes["data-icon"] = icon;
+        el.setAttribute("aria-label", title);
+        el.addEventListener("click", callback);
+        this.actions.push(el);
+        return el;
+    }
+
     getViewType(): string {
         return "";
     }

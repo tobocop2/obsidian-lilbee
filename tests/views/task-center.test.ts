@@ -99,10 +99,9 @@ describe("TaskCenterView.onOpen", () => {
         expect(clearBtn!.textContent).toBe("Clear");
     });
 
-    it("renders a close button that detaches the leaf", () => {
-        const closeBtn = contentEl.find("lilbee-tasks-close");
-        expect(closeBtn).not.toBeNull();
-        expect(closeBtn!.attributes["data-icon"]).toBe("x");
+    it("registers a header action that detaches the leaf", () => {
+        const closeBtn = (view as any).actions.find((el: MockElement) => el.attributes["data-icon"] === "x");
+        expect(closeBtn).toBeDefined();
         expect(closeBtn!.getAttribute("aria-label")).toBe("Close task center");
 
         const leaf = (view as any).leaf as WorkspaceLeaf;

@@ -2415,24 +2415,6 @@
     color: var(--text-normal);
 }
 
-.lilbee-tasks-close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: none;
-    border: none;
-    box-shadow: none;
-    cursor: pointer;
-    color: var(--text-muted);
-    padding: 4px;
-    margin-left: var(--size-4-2, 8px);
-    border-radius: 6px;
-}
-
-.lilbee-tasks-close:hover {
-    background-color: var(--background-modifier-hover);
-    color: var(--text-normal);
-}
 
 .lilbee-tasks-section {
     margin-bottom: var(--size-4-3, 12px);
