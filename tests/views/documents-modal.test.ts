@@ -2,6 +2,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import { App, Notice } from "obsidian";
 import { MockElement, MockScope } from "../__mocks__/obsidian";
 import { DocumentsModal } from "../../src/views/documents-modal";
+import { ConfirmModal } from "../../src/views/confirm-modal";
 import type { DocumentEntry, DocumentsResponse } from "../../src/types";
 
 let mockConfirmResult = true;
@@ -231,8 +232,32 @@ describe("DocumentsModal", () => {
         await tick();
         await tick();
 
-        expect(plugin.api.removeDocuments).toHaveBeenCalledWith(["a.md"], true);
+        expect(plugin.api.removeDocuments).toHaveBeenCalledWith(["a.md"]);
         expect(Notice.instances.some((n) => n.message.includes("deleted 1"))).toBe(true);
+    });
+
+    it("confirms removal from the index and promises the files on disk survive", async () => {
+        vi.useRealTimers();
+        vi.mocked(ConfirmModal).mockClear();
+        const plugin = makePlugin();
+        plugin.api.listDocuments.mockResolvedValue(makeDocsResponse([makeDoc({ filename: "a.md" })]));
+        plugin.api.removeDocuments.mockResolvedValue({ removed: 1, not_found: [] });
+        const app = new App();
+        const modal = new DocumentsModal(app as any, plugin as any);
+        modal.open();
+        await tick();
+
+        const el = modal.contentEl as unknown as MockElement;
+        const checkbox = el.findAll("lilbee-documents-checkbox")[0];
+        (checkbox as any).checked = true;
+        checkbox.trigger("change");
+
+        el.find("lilbee-documents-remove")!.trigger("click");
+        await tick();
+        await tick();
+
+        const message = vi.mocked(ConfirmModal).mock.calls[0][1];
+        expect(message).toBe("Remove 1 document(s) from the index? The files on disk stay where they are.");
     });
 
     it("handles remove failure", async () => {

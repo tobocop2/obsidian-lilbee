@@ -620,7 +620,7 @@ export const DEFAULT_SETTINGS: LilbeeSettings = {
     wikiEnabled: false,
     wikiPruneRaw: false,
     wikiFaithfulnessThreshold: 0.7,
-    searchChunkType: "raw",
+    searchChunkType: SEARCH_CHUNK_TYPE.ALL,
     // On, but only reached once the wiki itself is enabled (which is opt-in).
     // A wiki you cannot open in the vault is most of the point missing: these
     // pages carry [[wikilinks]], so as vault notes they get Obsidian's graph,

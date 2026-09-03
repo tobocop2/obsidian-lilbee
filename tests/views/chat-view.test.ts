@@ -3264,6 +3264,28 @@ describe("ChatView.createToolbar — search mode buttons", () => {
         expect(plugin.settings.searchChunkType).toBe("all");
         await view.onClose();
     });
+
+    it("falls back searchChunkType from raw to all when wikiEnabled is false", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.settings.wikiEnabled = false;
+        plugin.settings.searchChunkType = "raw";
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        expect(plugin.settings.searchChunkType).toBe("all");
+        await view.onClose();
+    });
+
+    it("leaves a narrowed searchChunkType alone when wikiEnabled is true", async () => {
+        Notice.clear();
+        const plugin = makePlugin();
+        plugin.settings.wikiEnabled = true;
+        plugin.settings.searchChunkType = "raw";
+        const view = new ChatView(makeLeaf(), plugin);
+        await view.onOpen();
+        expect(plugin.settings.searchChunkType).toBe("raw");
+        await view.onClose();
+    });
 });
 
 describe("ChatView.createToolbar — model chips", () => {

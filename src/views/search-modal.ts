@@ -61,14 +61,15 @@ export class SearchModal extends Modal {
 
     private renderSearchModeToggle(container: HTMLElement): void {
         const wikiEnabled = this.plugin.settings.wikiEnabled;
-        if (!wikiEnabled && this.plugin.settings.searchChunkType === SEARCH_CHUNK_TYPE.WIKI) {
+        // With the toggle hidden, any narrowed scope is a scope the user cannot see or undo.
+        if (!wikiEnabled && this.plugin.settings.searchChunkType !== SEARCH_CHUNK_TYPE.ALL) {
             this.plugin.settings.searchChunkType = SEARCH_CHUNK_TYPE.ALL;
         }
         if (!wikiEnabled) return;
         const modes: { value: SearchChunkType; label: string }[] = [
-            { value: "all", label: MESSAGES.LABEL_SEARCH_ALL },
-            { value: "wiki", label: MESSAGES.LABEL_SEARCH_WIKI },
-            { value: "raw", label: MESSAGES.LABEL_SEARCH_RAW },
+            { value: SEARCH_CHUNK_TYPE.ALL, label: MESSAGES.LABEL_SEARCH_ALL },
+            { value: SEARCH_CHUNK_TYPE.WIKI, label: MESSAGES.LABEL_SEARCH_WIKI },
+            { value: SEARCH_CHUNK_TYPE.RAW, label: MESSAGES.LABEL_SEARCH_RAW },
         ];
         const group = container.createDiv({ cls: "lilbee-search-mode" });
         for (const mode of modes) {

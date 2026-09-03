@@ -756,7 +756,7 @@ export const MESSAGES = {
         "This operation is already in progress on the server. Canceling will hide it from the task center, but it may still complete. Continue?",
     NOTICE_CONFIRM_REMOVE: (model: string) => `Remove ${model}? This deletes the model file from disk.`,
     NOTICE_CONFIRM_DELETE_DOCS: (count: number) =>
-        `Delete ${count} document(s) from index and disk? This cannot be undone.`,
+        `Remove ${count} document(s) from the index? The files on disk stay where they are.`,
 
     COMMAND_SEARCH: "Search knowledge base",
     COMMAND_CHAT: "Open chat",

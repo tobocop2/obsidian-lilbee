@@ -30,7 +30,7 @@ export class StatusModal extends Modal {
                 return;
             }
             const status = statusResult.value;
-            this.renderDocuments(contentEl, status);
+            await this.renderDocuments(contentEl, status);
             await this.renderModels(contentEl, status);
             this.renderWiki(contentEl, status);
         } catch {
@@ -39,13 +39,23 @@ export class StatusModal extends Modal {
         }
     }
 
-    private renderDocuments(container: HTMLElement, status: StatusResponse): void {
+    private async renderDocuments(container: HTMLElement, status: StatusResponse): Promise<void> {
         const section = container.createEl("details", { attr: { open: "" } });
         section.createEl("summary", { text: MESSAGES.LABEL_STATUS_DOCUMENTS });
 
         const table = section.createEl("table", { cls: "lilbee-status-table" });
-        this.addRow(table, MESSAGES.LABEL_STATUS_DOCUMENTS, String(status.sources.length));
+        this.addRow(table, MESSAGES.LABEL_STATUS_DOCUMENTS, await this.documentCount());
         this.addRow(table, MESSAGES.LABEL_STATUS_CHUNKS, String(status.total_chunks));
+    }
+
+    /** /api/status carries no document count, and its `sources` array is a whole record per document. */
+    private async documentCount(): Promise<string> {
+        try {
+            const page = await this.plugin.api.listDocuments(undefined, 1, 0);
+            return String(page.total);
+        } catch {
+            return MESSAGES.LABEL_STATUS_NOT_AVAILABLE;
+        }
     }
 
     private async renderModels(container: HTMLElement, status: StatusResponse): Promise<void> {

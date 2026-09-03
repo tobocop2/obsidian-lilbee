@@ -153,7 +153,7 @@ All of this runs as background jobs in the [Task Center](#the-task-center), so y
 
 ## Browsing your documents
 
-**Browse documents** lists everything indexed in this vault: filename, chunk count, and when it was added. Search to filter, scroll to load more, and select one or more to **Delete Selected** (with a confirmation). Deleting removes a document from the index; it doesn't touch the original file.
+**Browse documents** lists everything indexed in this vault: filename, chunk count, and when it was added. Search to filter, scroll to load more, and select one or more to **Delete selected** (with a confirmation). Deleting removes a document from the index; it doesn't touch the original file.
 
 ---
 

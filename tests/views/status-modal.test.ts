@@ -3,6 +3,7 @@ import { App, Notice } from "obsidian";
 import { ok, err } from "../../src/result";
 import { StatusModal } from "../../src/views/status-modal";
 import { MockElement } from "../__mocks__/obsidian";
+import { MESSAGES } from "../../src/locales/en";
 import type LilbeePlugin from "../../src/main";
 import type { StatusResponse } from "../../src/types";
 
@@ -13,6 +14,13 @@ function makePlugin(overrides: Partial<{ activeModel: string }> = {}): LilbeePlu
             status: vi.fn(),
             showModel: vi.fn(),
             health: vi.fn().mockResolvedValue(ok({ status: "ok", version: "1" })),
+            listDocuments: vi.fn().mockResolvedValue({
+                documents: [],
+                total: 2,
+                limit: 1,
+                offset: 0,
+                has_more: true,
+            }),
         },
     } as unknown as LilbeePlugin;
 }
@@ -44,6 +52,7 @@ describe("StatusModal", () => {
         await vi.waitFor(() => {
             const content = (modal as any).contentEl as MockElement;
             expect(content.find("lilbee-status-modal")).toBeTruthy();
+            expect(content.findAll("lilbee-status-table").length).toBeGreaterThanOrEqual(2);
         });
 
         const content = (modal as any).contentEl as MockElement;
@@ -54,6 +63,50 @@ describe("StatusModal", () => {
         const docTable = tables[0];
         const rows = docTable.findAll("lilbee-status-label");
         expect(rows.length).toBe(2);
+    });
+
+    it("counts documents from the documents endpoint total, not the status sources array", async () => {
+        const plugin = makePlugin();
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus()));
+        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
+        (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockResolvedValue({
+            documents: [],
+            total: 137,
+            limit: 1,
+            offset: 0,
+            has_more: true,
+        });
+
+        const modal = new StatusModal(new App(), plugin);
+        modal.open();
+        await vi.waitFor(() => {
+            const content = (modal as any).contentEl as MockElement;
+            expect(content.findAll("lilbee-status-table").length).toBeGreaterThanOrEqual(2);
+        });
+
+        const content = (modal as any).contentEl as MockElement;
+        const docValues = content.findAll("lilbee-status-table")[0].findAll("lilbee-status-value");
+        expect(docValues[0].textContent).toBe("137");
+        // One row is all the count needs; the sources array never gets fetched.
+        expect(plugin.api.listDocuments).toHaveBeenCalledWith(undefined, 1, 0);
+    });
+
+    it("shows the document count as not available when the documents endpoint fails", async () => {
+        const plugin = makePlugin();
+        (plugin.api.status as ReturnType<typeof vi.fn>).mockResolvedValue(ok(makeStatus()));
+        (plugin.api.showModel as ReturnType<typeof vi.fn>).mockResolvedValue({});
+        (plugin.api.listDocuments as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("offline"));
+
+        const modal = new StatusModal(new App(), plugin);
+        modal.open();
+        await vi.waitFor(() => {
+            const content = (modal as any).contentEl as MockElement;
+            expect(content.findAll("lilbee-status-table").length).toBeGreaterThanOrEqual(2);
+        });
+
+        const content = (modal as any).contentEl as MockElement;
+        const docValues = content.findAll("lilbee-status-table")[0].findAll("lilbee-status-value");
+        expect(docValues[0].textContent).toBe(MESSAGES.LABEL_STATUS_NOT_AVAILABLE);
     });
 
     it("renders model architecture details when available", async () => {

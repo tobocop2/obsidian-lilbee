@@ -65,8 +65,8 @@ describe("DEFAULT_SETTINGS", () => {
         expect(DEFAULT_SETTINGS.wikiEnabled).toBe(false);
     });
 
-    it("has searchChunkType defaulting to raw", () => {
-        expect(DEFAULT_SETTINGS.searchChunkType).toBe("raw");
+    it("has searchChunkType defaulting to all", () => {
+        expect(DEFAULT_SETTINGS.searchChunkType).toBe("all");
     });
 
     it("is a plain object with exactly the expected keys", () => {

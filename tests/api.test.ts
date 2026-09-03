@@ -805,14 +805,14 @@ describe("pullModel()", () => {
         it("POSTs to /api/documents/remove", async () => {
             fetchMock.mockResolvedValue(jsonResponse({ removed: 2, not_found: [] }));
 
-            const result = await client.removeDocuments(["a.md", "b.md"], true);
+            const result = await client.removeDocuments(["a.md", "b.md"]);
 
             expect(fetchMock).toHaveBeenCalledWith(
                 `${BASE_URL}/api/documents/remove`,
                 expect.objectContaining({
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ names: ["a.md", "b.md"], delete_files: true }),
+                    body: JSON.stringify({ names: ["a.md", "b.md"] }),
                 }),
             );
             expect(result.removed).toBe(2);
