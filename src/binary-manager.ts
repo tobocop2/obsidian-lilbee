@@ -22,7 +22,17 @@ import {
 import { basename, join, resolve, dirname } from "path";
 import { createHash } from "crypto";
 import { promisify } from "util";
-import { ARCH, PLATFORM, SERVER_VARIANT, type CudaTag, type GpuTag, type ServerVariant } from "./types";
+import {
+    ARCH,
+    NVIDIA_PROBE_STATUS,
+    PLATFORM,
+    SERVER_VARIANT,
+    type CudaTag,
+    type GpuDetection,
+    type GpuTag,
+    type NvidiaProbe,
+    type ServerVariant,
+} from "./types";
 import { formatDiskSize } from "./utils";
 
 const execFileAsync = promisify(execFile);
@@ -79,14 +89,36 @@ const RATE_LIMIT_STATUSES = new Set([403, 429]);
 
 const GITHUB_RATE_LIMITED = "GitHub's rate limit was reached; release checks reset within the hour.";
 
-/** Run `nvidia-smi` and return its stdout, or null if it is absent or fails. */
-async function runNvidiaSmi(): Promise<string | null> {
-    try {
-        const { stdout } = await node.execFile("nvidia-smi", []);
-        return stdout;
-    } catch {
-        return null;
+/** Windows installers put `nvidia-smi` here but leave it off PATH: DCH drivers use System32,
+ *  older layouts use the NVSMI directory. */
+function windowsNvidiaSmiPaths(): string[] {
+    const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
+    const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
+    return [
+        node.join(systemRoot, "System32", "nvidia-smi.exe"),
+        node.join(programFiles, "NVIDIA Corporation", "NVSMI", "nvidia-smi.exe"),
+    ];
+}
+
+/** Where to look for `nvidia-smi`: PATH first, then the Windows install locations. */
+function nvidiaSmiCandidates(): string[] {
+    const candidates = ["nvidia-smi"];
+    if (process.platform === PLATFORM.WIN32) candidates.push(...windowsNvidiaSmiPaths());
+    return candidates;
+}
+
+/** Run `nvidia-smi` and return its stdout, or the error the PATH lookup failed with. */
+async function runNvidiaSmi(): Promise<{ stdout: string; error: null } | { stdout: null; error: string }> {
+    let firstError = "";
+    for (const command of nvidiaSmiCandidates()) {
+        try {
+            const { stdout } = await node.execFile(command, []);
+            return { stdout, error: null };
+        } catch (e) {
+            if (!firstError) firstError = e instanceof Error ? e.message : String(e);
+        }
     }
+    return { stdout: null, error: firstError };
 }
 
 /** Parse the driver's max CUDA version from `nvidia-smi` output as major*100+minor (12.5 -> 1205). */
@@ -104,17 +136,27 @@ function pickCudaTag(ceiling: number): CudaTag | null {
     return null;
 }
 
+/** Probe the NVIDIA driver, recording why the probe ended where it did. */
+async function probeNvidia(): Promise<NvidiaProbe> {
+    if (process.platform === PLATFORM.DARWIN) return { status: NVIDIA_PROBE_STATUS.SKIPPED };
+    const { stdout, error } = await runNvidiaSmi();
+    if (stdout === null) return { status: NVIDIA_PROBE_STATUS.MISSING, error };
+    const ceiling = parseCudaCeiling(stdout);
+    if (ceiling === null) return { status: NVIDIA_PROBE_STATUS.UNREADABLE };
+    return { status: NVIDIA_PROBE_STATUS.DETECTED, cudaCeiling: ceiling };
+}
+
+/** The CUDA build a probe result calls for, or null when it calls for none. */
+function cudaTagFor(probe: NvidiaProbe): CudaTag | null {
+    return probe.status === NVIDIA_PROBE_STATUS.DETECTED ? pickCudaTag(probe.cudaCeiling) : null;
+}
+
 /**
  * Detect the best CUDA build for this machine, or null to use the default build.
  * Returns null on macOS, when no NVIDIA driver is present, or on any detection failure.
  */
 export async function detectCudaTag(): Promise<CudaTag | null> {
-    if (process.platform === PLATFORM.DARWIN) return null;
-    const stdout = await runNvidiaSmi();
-    if (stdout === null) return null;
-    const ceiling = parseCudaCeiling(stdout);
-    if (ceiling === null) return null;
-    return pickCudaTag(ceiling);
+    return cudaTagFor(await probeNvidia());
 }
 
 /** The amdgpu compute device. Without it ROCm cannot run, whatever else sysfs says. */
@@ -175,12 +217,21 @@ export function detectAmdGfxTargets(): string[] {
 interface HostGpu {
     /** The newest CUDA build the NVIDIA driver supports, or null. */
     cuda: CudaTag | null;
-    /** The gfx targets of the host's AMD GPUs; empty when there are none. */
-    amdGfxTargets: string[];
+    /** Why the probe ended where it did, carried into the journal and the diagnostics bundle. */
+    detection: GpuDetection;
 }
 
-async function detectHostGpu(): Promise<HostGpu> {
-    return { cuda: await detectCudaTag(), amdGfxTargets: detectAmdGfxTargets() };
+/** Probe both vendors and keep the reasoning, so a build choice can be explained after the fact. */
+export async function detectHostGpu(): Promise<HostGpu> {
+    const nvidia = await probeNvidia();
+    return {
+        cuda: cudaTagFor(nvidia),
+        detection: {
+            nvidia,
+            amdGfxTargets: detectAmdGfxTargets(),
+            detectedAt: new Date().toISOString(),
+        },
+    };
 }
 
 export function getPlatformAssetName(gpuTag?: GpuTag | null): string {
@@ -217,6 +268,8 @@ export interface ReleaseInfo {
     tag: string;
     assetUrl: string;
     variant: ServerVariant;
+    /** The GPU probe that chose *variant*. */
+    detection: GpuDetection;
     sizeBytes: number;
     /** GitHub-reported "sha256:<hex>" of the asset, verified against the download bytes. */
     digest: string | null;
@@ -274,9 +327,10 @@ async function selectAsset(
         const cudaAsset = data.assets.find((a) => a.name === getPlatformAssetName(host.cuda));
         if (cudaAsset) return { variant: host.cuda, asset: cudaAsset };
     }
-    if (host.amdGfxTargets.length > 0) {
+    const { amdGfxTargets } = host.detection;
+    if (amdGfxTargets.length > 0) {
         const rocmAsset = data.assets.find((a) => a.name === getPlatformAssetName(SERVER_VARIANT.ROCM));
-        if (rocmAsset && (await rocmServesHost(data, host.amdGfxTargets))) {
+        if (rocmAsset && (await rocmServesHost(data, amdGfxTargets))) {
             return { variant: SERVER_VARIANT.ROCM, asset: rocmAsset };
         }
     }
@@ -290,6 +344,7 @@ async function toReleaseInfo(release: InstallableRelease, host: HostGpu): Promis
         tag: data.tag_name,
         assetUrl: asset.browser_download_url,
         variant,
+        detection: host.detection,
         sizeBytes: asset.size,
         digest: asset.digest,
     };

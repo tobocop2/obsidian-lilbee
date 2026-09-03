@@ -548,6 +548,9 @@ export class LilbeeSettingTab extends PluginSettingTab {
             const installedBuild = this.plugin.getSharedLilbeeVariant();
             if (installed && installedBuild) {
                 desc += MESSAGES.DESC_SERVER_BUILD(MESSAGES.LABEL_SERVER_BUILD(installedBuild));
+                // Why that build, so an NVIDIA machine left on the default build names its own reason.
+                const detection = this.plugin.getSharedGpuDetection();
+                if (detection) desc += ` ${MESSAGES.DESC_GPU_DETECTION(detection)}`;
             }
             if (newerDevTag) desc += ` ${MESSAGES.DESC_DEV_BUILD_AVAILABLE(newerDevTag)}`;
             setting.setDesc(desc);

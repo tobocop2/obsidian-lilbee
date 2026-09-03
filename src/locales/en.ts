@@ -1,4 +1,12 @@
-import { AGENT_CLIENT, MODEL_TASK, SERVER_VARIANT, type ServerVariant, type WorkerRole } from "../types";
+import {
+    AGENT_CLIENT,
+    MODEL_TASK,
+    NVIDIA_PROBE_STATUS,
+    SERVER_VARIANT,
+    type GpuDetection,
+    type ServerVariant,
+    type WorkerRole,
+} from "../types";
 
 // Natural-language noun for each worker role, so tooltips read "embedding
 // worker" rather than the internal "embed".
@@ -9,6 +17,8 @@ const ROLE_NOUN: Record<WorkerRole, string> = {
     rerank: "reranking",
 };
 const roleNoun = (role: WorkerRole): string => ROLE_NOUN[role];
+/** A CUDA ceiling as the driver prints it: 1204 -> "12.4". */
+const cudaVersionLabel = (ceiling: number): string => `${Math.floor(ceiling / 100)}.${ceiling % 100}`;
 const indefinite = (word: string): string => (/^[aeiou]/i.test(word) ? "an" : "a");
 
 export const MESSAGES = {
@@ -399,6 +409,17 @@ export const MESSAGES = {
         return `CUDA ${variant.slice(2, 4)}.${variant.slice(4)}`;
     },
     DESC_SERVER_BUILD: (build: string) => ` Running the ${build} build.`,
+    /** Why that build was chosen, so a machine on the wrong build shows its own reason. */
+    DESC_GPU_DETECTION: (detection: GpuDetection): string => {
+        const { nvidia, amdGfxTargets } = detection;
+        if (nvidia.status === NVIDIA_PROBE_STATUS.SKIPPED) return "lilbee ships one macOS build, so nothing is probed.";
+        const amd = amdGfxTargets.length > 0 ? `AMD targets: ${amdGfxTargets.join(", ")}.` : "No AMD compute device.";
+        if (nvidia.status === NVIDIA_PROBE_STATUS.MISSING) return `nvidia-smi did not run: ${nvidia.error}. ${amd}`;
+        if (nvidia.status === NVIDIA_PROBE_STATUS.UNREADABLE)
+            return `nvidia-smi ran but reported no CUDA version. ${amd}`;
+        return `The NVIDIA driver reports CUDA ${cudaVersionLabel(nvidia.cudaCeiling)}. ${amd}`;
+    },
+    DESC_GPU_DETECTION_NONE: "(none recorded)",
     DESC_SERVER_VERSION_OFFLINE: (tag: string, reason: string) =>
         `${tag} installed. The release list could not be read from GitHub: ${reason}`,
     DESC_DEV_BUILD_AVAILABLE: (tag: string) =>

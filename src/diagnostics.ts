@@ -2,8 +2,8 @@ import { zipSync } from "fflate";
 import { node } from "./binary-manager";
 import { formatJournalEntry } from "./error-journal";
 import { MESSAGES } from "./locales/en";
-import { redactSecrets, redactSettings } from "./redact";
-import { LOG_FILE, LOGS_DIR } from "./types";
+import { redactConfigKeys, redactSecrets, redactSettings } from "./redact";
+import { LOG_FILE, LOGS_DIR, SHARED_PATH } from "./types";
 import type { CollectedFile, DiagnosticsBundle, DiagnosticsContext } from "./types";
 
 export const LOG_TAIL_MAX_BYTES = 1_048_576;
@@ -28,6 +28,19 @@ function collectFile(zipName: string, path: string): CollectedFile {
         return { name: zipName, data: textEncoder.encode(redactSecrets(text)), note };
     } catch (e) {
         return { name: zipName, data: null, note: e instanceof Error ? e.message : String(e) };
+    }
+}
+
+/** Collects the shared root's config.json, blanking its credential fields by key. */
+function collectSharedConfig(sharedRoot: string): CollectedFile {
+    const path = node.join(sharedRoot, SHARED_PATH.CONFIG);
+    try {
+        if (!node.existsSync(path)) return { name: SHARED_PATH.CONFIG, data: null, note: NOTE_NOT_FOUND };
+        const parsed = JSON.parse(node.readFileSync(path, "utf-8")) as Record<string, unknown>;
+        const json = JSON.stringify(redactConfigKeys(parsed), null, 2);
+        return { name: SHARED_PATH.CONFIG, data: textEncoder.encode(json), note: null };
+    } catch (e) {
+        return { name: SHARED_PATH.CONFIG, data: null, note: e instanceof Error ? e.message : String(e) };
     }
 }
 
@@ -74,6 +87,8 @@ export function renderSummary(ctx: DiagnosticsContext, files: CollectedFile[]): 
         "## Environment",
         `- Plugin version: ${ctx.pluginVersion}`,
         `- Server version: ${ctx.serverVersion || "(unknown)"}`,
+        `- Server build: ${ctx.serverVariant ? MESSAGES.LABEL_SERVER_BUILD(ctx.serverVariant) : "(unknown)"}`,
+        `- GPU detection: ${ctx.gpuDetection ? MESSAGES.DESC_GPU_DETECTION(ctx.gpuDetection) : MESSAGES.DESC_GPU_DETECTION_NONE}`,
         `- Platform: ${process.platform} ${process.arch}`,
         `- Server state: ${ctx.serverState}`,
         `- Server URL: ${ctx.serverUrl || "(none)"}`,
@@ -101,6 +116,9 @@ export function collectDiagnostics(ctx: DiagnosticsContext): DiagnosticsBundle {
     const files: CollectedFile[] = collectLogFiles(ctx.dataDir);
     if (ctx.dataDir !== null) {
         files.push(collectFile("config.toml", node.join(ctx.dataDir, "config.toml")));
+    }
+    if (ctx.sharedRoot !== null) {
+        files.push(collectSharedConfig(ctx.sharedRoot));
     }
     files.push({
         name: "settings.json",

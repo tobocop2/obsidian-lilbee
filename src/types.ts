@@ -645,6 +645,8 @@ export interface SharedConfig {
     lilbeeVersion: string;
     /** Which server build is installed. Empty when unknown (e.g. installed before variant tracking). */
     lilbeeVariant: ServerVariant | "";
+    /** The GPU probe that chose `lilbeeVariant`. Null when the install predates detection tracking. */
+    lilbeeDetection: GpuDetection | null;
     hfToken: string;
     /** Plugin version that last ran the automatic server-update check. */
     lastUpdateCheckPluginVersion: string;
@@ -657,6 +659,7 @@ export interface SharedConfig {
 export const DEFAULT_SHARED_CONFIG: SharedConfig = {
     lilbeeVersion: "",
     lilbeeVariant: "",
+    lilbeeDetection: null,
     hfToken: "",
     lastUpdateCheckPluginVersion: "",
     serverAutoUpdate: true,
@@ -755,6 +758,10 @@ export interface DiagnosticsContext {
     journalEntries: readonly JournalEntry[];
     pluginVersion: string;
     serverVersion: string;
+    /** Which server build is installed. Empty when nothing has recorded one. */
+    serverVariant: ServerVariant | "";
+    /** The GPU probe that chose the installed build, or null when none was recorded. */
+    gpuDetection: GpuDetection | null;
     serverState: ServerState;
     serverUrl: string;
     lastOutput: string;
@@ -1322,6 +1329,36 @@ export const SERVER_VARIANT = {
     CU125: "cu125",
     ROCM: "rocm",
 } as const satisfies Record<string, ServerVariant>;
+
+/** How the `nvidia-smi` probe ended. */
+export type NvidiaProbeStatus = "skipped" | "missing" | "unreadable" | "detected";
+export const NVIDIA_PROBE_STATUS = {
+    /** macOS: lilbee ships one build there, so nothing is probed. */
+    SKIPPED: "skipped",
+    /** `nvidia-smi` is absent or exited non-zero at every location tried. */
+    MISSING: "missing",
+    /** `nvidia-smi` ran but its output names no CUDA version. */
+    UNREADABLE: "unreadable",
+    /** The driver named the newest CUDA version it supports. */
+    DETECTED: "detected",
+} as const satisfies Record<string, NvidiaProbeStatus>;
+
+/** What the `nvidia-smi` probe found, and why it ended there. */
+export type NvidiaProbe =
+    | { status: "skipped" }
+    | { status: "missing"; error: string }
+    | { status: "unreadable" }
+    /** The driver's maximum CUDA version as major*100+minor (12.4 -> 1204). */
+    | { status: "detected"; cudaCeiling: number };
+
+/** Why the plugin picked the server build it did. Recorded at every install and update check. */
+export interface GpuDetection {
+    nvidia: NvidiaProbe;
+    /** The gfx targets of the host's AMD GPUs; empty when there are none. */
+    amdGfxTargets: string[];
+    /** When the probe ran, ISO 8601. */
+    detectedAt: string;
+}
 
 /** Source of the lilbee server binary; surfaced wherever the unsigned download is explained. */
 export const LILBEE_REPO_URL = "https://github.com/tobocop2/lilbee";

@@ -146,6 +146,7 @@ describe("VaultRegistry.loadConfig", () => {
         expect(reg.loadConfig()).toEqual({
             lilbeeVersion: "",
             lilbeeVariant: "",
+            lilbeeDetection: null,
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
             serverAutoUpdate: true,
@@ -160,6 +161,7 @@ describe("VaultRegistry.loadConfig", () => {
         expect(new VaultRegistry("/r").loadConfig()).toEqual({
             lilbeeVersion: "v0.5.0",
             lilbeeVariant: "",
+            lilbeeDetection: null,
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
             serverAutoUpdate: true,
@@ -174,6 +176,7 @@ describe("VaultRegistry.loadConfig", () => {
         expect(new VaultRegistry("/r").loadConfig()).toEqual({
             lilbeeVersion: "",
             lilbeeVariant: "",
+            lilbeeDetection: null,
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
             serverAutoUpdate: true,
@@ -212,6 +215,7 @@ describe("VaultRegistry.saveConfig", () => {
         new VaultRegistry("/r").saveConfig({
             lilbeeVersion: "",
             lilbeeVariant: "",
+            lilbeeDetection: null,
             hfToken: "",
             lastUpdateCheckPluginVersion: "",
             serverAutoUpdate: true,

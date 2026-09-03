@@ -294,6 +294,13 @@ vi.mock("../src/server-manager", () => ({
 /** Flush the microtask queue so fire-and-forget promises settle. */
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
+/** The GPU probe every release now carries, as a host without an NVIDIA driver records it. */
+const GPU_DETECTION = {
+    nvidia: { status: "missing", error: "nvidia-smi not found" },
+    amdGfxTargets: [],
+    detectedAt: "2026-01-01T00:00:00.000Z",
+};
+
 async function createPlugin(overrideData?: Record<string, unknown>) {
     const { default: LilbeePlugin } = await import("../src/main");
     const app = new App();
@@ -5825,6 +5832,7 @@ describe("LilbeePlugin", () => {
                 tag: "v0.5.1",
                 assetUrl: "https://example.com",
                 variant: "cu124",
+                detection: GPU_DETECTION,
                 sizeBytes: 100,
             });
 
@@ -5836,7 +5844,11 @@ describe("LilbeePlugin", () => {
             await flush();
 
             expect(setSpy).toHaveBeenCalledWith("v0.5.1");
-            expect(variantSpy).toHaveBeenCalledWith("cu124");
+            expect(variantSpy).toHaveBeenCalledWith("cu124", GPU_DETECTION);
+            expect(plugin.journal.entries.map((e) => e.message)).toContain(
+                "gpu detection at install: CUDA 12.4 build. nvidia-smi did not run: nvidia-smi not found. " +
+                    "No AMD compute device.",
+            );
         });
 
         it("does not overwrite existing shared lilbeeVersion on fresh download", async () => {
@@ -6220,6 +6232,8 @@ describe("LilbeePlugin", () => {
             (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({
                 tag: "v0.2.0",
                 assetUrl: "https://example.com",
+                variant: "default",
+                detection: GPU_DETECTION,
             });
             (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(true);
 
@@ -6238,6 +6252,8 @@ describe("LilbeePlugin", () => {
             (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({
                 tag: "v0.1.0",
                 assetUrl: "https://example.com",
+                variant: "default",
+                detection: GPU_DETECTION,
             });
             (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(false);
 
@@ -6256,6 +6272,7 @@ describe("LilbeePlugin", () => {
                 tag: "v0.1.0",
                 assetUrl: "https://example.com",
                 variant: "cu125",
+                detection: GPU_DETECTION,
                 sizeBytes: 100,
             });
             (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(false); // same version
@@ -6271,12 +6288,35 @@ describe("LilbeePlugin", () => {
             expect(result.release?.variant).toBe("cu125");
         });
 
+        it("journals which build the probe chose and why, at every update check", async () => {
+            const { getLatestRelease, checkForUpdate } = await import("../src/binary-manager");
+            (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({
+                tag: "v0.1.0",
+                assetUrl: "https://example.com",
+                variant: "default",
+                detection: GPU_DETECTION,
+                sizeBytes: 100,
+            });
+            (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(false);
+
+            const plugin = await createPlugin({ serverMode: "managed" });
+            await plugin.onload();
+            await flush();
+            await plugin.checkForUpdate();
+
+            expect(plugin.journal.entries.map((e) => e.message)).toContain(
+                "gpu detection at update check: default build. nvidia-smi did not run: nvidia-smi not found. " +
+                    "No AMD compute device.",
+            );
+        });
+
         it("returns available: false when version and known variant both match", async () => {
             const { getLatestRelease, checkForUpdate } = await import("../src/binary-manager");
             (getLatestRelease as ReturnType<typeof vi.fn>).mockResolvedValue({
                 tag: "v0.1.0",
                 assetUrl: "https://example.com",
                 variant: "cu125",
+                detection: GPU_DETECTION,
                 sizeBytes: 100,
             });
             (checkForUpdate as ReturnType<typeof vi.fn>).mockReturnValue(false);
@@ -7242,6 +7282,7 @@ describe("LilbeePlugin", () => {
                     tag: "v0.3.0",
                     assetUrl: "https://example.com/v0.3.0",
                     variant: "cu125",
+                    detection: GPU_DETECTION,
                     sizeBytes: 256,
                     digest: "sha256:test",
                 },
@@ -7258,7 +7299,7 @@ describe("LilbeePlugin", () => {
                 expect.any(AbortSignal),
             );
             expect(setSpy).toHaveBeenCalledWith("v0.3.0");
-            expect(variantSpy).toHaveBeenCalledWith("cu125");
+            expect(variantSpy).toHaveBeenCalledWith("cu125", GPU_DETECTION);
             expect(progress).toContain("Stopping server...");
             expect(progress).toContain("Downloading...");
             expect(progress).toContain("Starting server...");
@@ -7266,6 +7307,10 @@ describe("LilbeePlugin", () => {
             const journal = plugin.journal.entries.map((e) => e.message);
             expect(journal).toContain("updating server binary: v0.2.9 -> v0.3.0");
             expect(journal).toContain("server binary updated to v0.3.0");
+            expect(journal).toContain(
+                "gpu detection at install: CUDA 12.5 build. nvidia-smi did not run: nvidia-smi not found. " +
+                    "No AMD compute device.",
+            );
         });
 
         it("turns download bytes into a percentage and a human line", async () => {
@@ -7283,7 +7328,14 @@ describe("LilbeePlugin", () => {
 
             const seen: Array<[string, number | undefined]> = [];
             await plugin.updateServer(
-                { tag: "v1", assetUrl: "https://e/dl", variant: "default", sizeBytes: 1, digest: null } as any,
+                {
+                    tag: "v1",
+                    assetUrl: "https://e/dl",
+                    variant: "default",
+                    detection: GPU_DETECTION,
+                    sizeBytes: 1,
+                    digest: null,
+                } as any,
                 (msg, percent) => seen.push([msg, percent]),
             );
 
@@ -7302,7 +7354,14 @@ describe("LilbeePlugin", () => {
 
             const seen: Array<[string, number | undefined]> = [];
             await plugin.updateServer(
-                { tag: "v1", assetUrl: "https://e/dl", variant: "default", sizeBytes: 1, digest: null } as any,
+                {
+                    tag: "v1",
+                    assetUrl: "https://e/dl",
+                    variant: "default",
+                    detection: GPU_DETECTION,
+                    sizeBytes: 1,
+                    digest: null,
+                } as any,
                 (msg, percent) => seen.push([msg, percent]),
             );
 
@@ -7339,6 +7398,7 @@ describe("LilbeePlugin", () => {
                 tag: "v0.3.0",
                 assetUrl: "https://example.com/v0.3.0",
                 variant: "default",
+                detection: GPU_DETECTION,
                 sizeBytes: 100,
                 digest: "sha256:test",
             });
@@ -7357,6 +7417,7 @@ describe("LilbeePlugin", () => {
                 tag: "v0.3.0",
                 assetUrl: "https://example.com",
                 variant: "default",
+                detection: GPU_DETECTION,
                 sizeBytes: 100,
             });
 
@@ -7375,6 +7436,7 @@ describe("LilbeePlugin", () => {
                 tag: "v0.3.0",
                 assetUrl: "https://example.com",
                 variant: "default",
+                detection: GPU_DETECTION,
                 sizeBytes: 100,
             });
 

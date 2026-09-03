@@ -178,6 +178,7 @@ function makePlugin(
         taskQueue: new TaskQueue(),
         getSharedLilbeeVersion: () => sharedVersion,
         getSharedLilbeeVariant: () => SERVER_VARIANT.DEFAULT,
+        getSharedGpuDetection: () => null,
         setSharedLilbeeVersion: (v: string) => {
             sharedVersion = v;
         },
