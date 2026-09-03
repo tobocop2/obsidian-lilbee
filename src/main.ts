@@ -46,6 +46,7 @@ import {
     SERVER_STATE,
     SETUP_OUTCOME,
     SSE_EVENT,
+    SYNC_TRIGGER,
     TASK_STATUS,
     TASK_TYPE,
     type AgentClient,
@@ -68,6 +69,7 @@ import {
     type SyncDone,
     type SSEEvent,
     type SyncOptions,
+    type SyncTrigger,
     type TaskEntry,
     type WikiBuildResult,
     type WikiPagePayload,
@@ -2116,21 +2118,22 @@ export default class LilbeePlugin extends Plugin {
     }
 
     /** Read every file under each path (recursing directories) off disk as
-     *  upload payloads — for external mode, where the server can't read paths. */
+     *  upload payloads — for external mode, where the server can't read paths.
+     *  Name is the path under the picked entry so nested same-named files keep distinct source keys. */
     private readUploadsFromDisk(paths: string[]): UploadPayload[] {
         const out: UploadPayload[] = [];
-        const walk = (p: string): void => {
+        const walk = (p: string, relative: string): void => {
             if (node.statSync(p).isDirectory()) {
-                for (const child of node.readdirSync(p)) walk(node.join(p, child));
+                for (const child of node.readdirSync(p)) walk(node.join(p, child), `${relative}/${child}`);
             } else {
                 const buf = node.readFileSync(p);
                 out.push({
-                    name: node.basename(p),
+                    name: relative,
                     data: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
                 });
             }
         };
-        for (const p of paths) walk(p);
+        for (const p of paths) walk(p, node.basename(p));
         return out;
     }
 
@@ -2239,10 +2242,11 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    /** Read every file under *file* (recursing folders) as upload payloads. */
-    private async collectVaultUploads(file: TAbstractFile): Promise<{ name: string; data: ArrayBuffer }[]> {
+    /** Read every file under *file* (recursing folders) as upload payloads.
+     *  Name is the vault-relative path so nested same-named notes keep distinct source keys. */
+    private async collectVaultUploads(file: TAbstractFile): Promise<UploadPayload[]> {
         const tfiles = file instanceof TFolder ? this.filesInFolder(file) : file instanceof TFile ? [file] : [];
-        return Promise.all(tfiles.map(async (f) => ({ name: f.name, data: await this.app.vault.readBinary(f) })));
+        return Promise.all(tfiles.map(async (f) => ({ name: f.path, data: await this.app.vault.readBinary(f) })));
     }
 
     private filesInFolder(folder: TFolder): TFile[] {
@@ -2865,7 +2869,7 @@ export default class LilbeePlugin extends Plugin {
                         const d = event.data as { pages_crawled?: number };
                         this.taskQueue.complete(taskId);
                         new Notice(MESSAGES.NOTICE_CRAWL_DONE(d.pages_crawled ?? pageCount));
-                        void this.triggerSync();
+                        void this.triggerSync(undefined, SYNC_TRIGGER.AUTOMATIC);
                         return;
                     }
                     case SSE_EVENT.CRAWL_ERROR:
@@ -2893,13 +2897,17 @@ export default class LilbeePlugin extends Plugin {
         }
     }
 
-    async triggerSync(options?: SyncOptions): Promise<void> {
+    async triggerSync(options?: SyncOptions, trigger: SyncTrigger = SYNC_TRIGGER.USER): Promise<void> {
         if (!this.statusBarEl) return;
         // Re-entry guard: if a sync is already active or queued, this trigger
-        // is a no-op. Without it, repeated clicks (sync hint, command palette,
-        // crawler-finished auto-trigger) stack up — and cancelling the active
-        // task just promotes the next queued sync, making cancel feel broken.
-        if (this.taskQueue.hasPending(TASK_TYPE.SYNC)) return;
+        // only reports it. Without it, repeated clicks (sync hint, command
+        // palette, crawler-finished auto-trigger) stack up — and cancelling the
+        // active task just promotes the next queued sync, making cancel feel broken.
+        // An automatic trigger stays silent: the notice answers a click the user didn't make.
+        if (this.taskQueue.hasPending(TASK_TYPE.SYNC)) {
+            if (trigger === SYNC_TRIGGER.USER) new Notice(MESSAGES.NOTICE_SYNC_IN_PROGRESS);
+            return;
+        }
         const taskId = this.taskQueue.enqueue(syncTaskLabel(options), TASK_TYPE.SYNC);
         if (taskId === null) {
             new Notice(MESSAGES.NOTICE_QUEUE_FULL);
