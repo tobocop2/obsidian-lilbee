@@ -4052,7 +4052,7 @@ describe("LilbeePlugin", () => {
         it("skips probing while there are active tasks or while the server is starting", async () => {
             const plugin = await createPlugin({ serverMode: "external" });
             await plugin.onload();
-            plugin.api.health = vi.fn();
+            plugin.api.health = vi.fn().mockResolvedValue({ isErr: () => true, isOk: () => false });
 
             // Enqueue an active task — probe should bail.
             plugin.taskQueue.enqueue("busy", "sync");
