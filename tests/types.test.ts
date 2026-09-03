@@ -235,12 +235,14 @@ describe("ModelsResponse interface", () => {
 });
 
 describe("StatusResponse interface", () => {
-    it("holds config, sources, and total_chunks", () => {
+    it("holds config, document_count, sources, and total_chunks", () => {
         const s: StatusResponse = {
             config: { model: "llama3" },
+            document_count: 1,
             sources: [{ filename: "a.md", chunk_count: 3 }],
             total_chunks: 3,
         };
+        expect(s.document_count).toBe(1);
         expect(s.total_chunks).toBe(3);
         expect(s.sources[0].filename).toBe("a.md");
     });

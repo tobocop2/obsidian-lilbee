@@ -85,6 +85,7 @@ describe("status()", () => {
     it("calls GET /api/status and returns the parsed response", async () => {
         const data = {
             config: { model: "llama3" },
+            document_count: 1,
             sources: [{ filename: "a.md", chunk_count: 3 }],
             total_chunks: 3,
         };

@@ -247,6 +247,7 @@ export const DISCOVER_RAIL = {
 
 export interface StatusResponse {
     config: Record<string, string>;
+    document_count: number;
     sources: { filename: string; chunk_count: number }[];
     total_chunks: number;
     wiki?: {
