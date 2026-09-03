@@ -72,12 +72,10 @@ describe("DEFAULT_SETTINGS", () => {
     it("is a plain object with exactly the expected keys", () => {
         const keys = Object.keys(DEFAULT_SETTINGS).sort();
         const expected = [
-            "adaptiveThreshold",
             "agentIntegration",
             "includeDevBuilds",
             "reasoningDefaulted",
             "manualToken",
-            "maxDistance",
             "searchChunkType",
             "serverMode",
             "serverUrl",
@@ -89,8 +87,6 @@ describe("DEFAULT_SETTINGS", () => {
             "ragSystemPrompt",
             "topK",
             "wikiEnabled",
-            "wikiFaithfulnessThreshold",
-            "wikiPruneRaw",
             "wikiSyncToVault",
             "wikiVaultFolder",
         ].sort();
@@ -99,6 +95,13 @@ describe("DEFAULT_SETTINGS", () => {
 
     it("sharedRoot defaults to empty (use platform default)", () => {
         expect(DEFAULT_SETTINGS.sharedRoot).toBe("");
+    });
+
+    it("no longer carries the settings the server owns", () => {
+        const retired = ["maxDistance", "adaptiveThreshold", "wikiPruneRaw", "wikiFaithfulnessThreshold"];
+        for (const key of retired) {
+            expect(key in DEFAULT_SETTINGS).toBe(false);
+        }
     });
 });
 
@@ -288,8 +291,6 @@ describe("LilbeeSettings interface", () => {
     it("accepts a fully-specified settings object", () => {
         const s: LilbeeSettings = {
             serverUrl: "http://localhost:7433",
-            maxDistance: 0.9,
-            adaptiveThreshold: false,
             topK: 3,
             serverMode: "managed",
             ragSystemPrompt: "",

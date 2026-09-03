@@ -120,10 +120,11 @@ export class LilbeeSettingTab extends PluginSettingTab {
     private memoryToggles: Map<string, { setValue: (v: boolean) => unknown }> = new Map();
     private serverConfigTextAreas: Map<string, HTMLTextAreaElement> = new Map();
     private serverConfigDropdowns: Map<string, { setValue: (v: string) => unknown }> = new Map();
+    private serverConfigSliders: Map<string, { setValue: (v: number) => unknown }> = new Map();
     // Rows hidden until loadServerDefaults sees a defined value for the matching cfg key.
     private serverConfigHideableEls: Map<string, HTMLElement> = new Map();
     private configDefaults: Record<string, unknown> = {};
-    // Guards programmatic toggle.setValue() calls from echoing back to the server.
+    // Guards programmatic toggle.setValue() and slider.setValue() calls from echoing back to the server.
     private suppressToggleChanges = false;
     private chatModeSettingEl: HTMLElement | null = null;
     private chatModeDropdown: { setValue: (v: string) => unknown } | null = null;
@@ -1054,30 +1055,18 @@ export class LilbeeSettingTab extends PluginSettingTab {
             );
         this.appendLocalResetAffordance(topKSetting, "topK", MESSAGES.LABEL_RESULTS_COUNT);
 
-        const maxDistanceSetting = new Setting(containerEl)
-            .setName(MESSAGES.LABEL_MAX_DISTANCE)
-            .setDesc(MESSAGES.DESC_MAX_DISTANCE)
-            .addSlider((slider) =>
-                slider
-                    .setLimits(0.1, 1.0, 0.1)
-                    .setValue(this.plugin.settings.maxDistance ?? 0.9)
-                    .onChange(async (value) => {
-                        this.plugin.settings.maxDistance = value;
-                        await this.plugin.saveSettings();
-                    }),
-            );
-        this.appendLocalResetAffordance(maxDistanceSetting, "maxDistance", MESSAGES.LABEL_MAX_DISTANCE);
+        this.renderConfigSlider(containerEl, "max_distance", MESSAGES.LABEL_MAX_DISTANCE, MESSAGES.DESC_MAX_DISTANCE, {
+            min: 0.05,
+            max: 1.0,
+            step: 0.05,
+        });
 
-        const adaptiveSetting = new Setting(containerEl)
-            .setName(MESSAGES.LABEL_ADAPTIVE_THRESHOLD)
-            .setDesc(MESSAGES.DESC_ADAPTIVE_THRESHOLD)
-            .addToggle((toggle) =>
-                toggle.setValue(this.plugin.settings.adaptiveThreshold ?? false).onChange(async (value) => {
-                    this.plugin.settings.adaptiveThreshold = value;
-                    await this.plugin.saveSettings();
-                }),
-            );
-        this.appendLocalResetAffordance(adaptiveSetting, "adaptiveThreshold", MESSAGES.LABEL_ADAPTIVE_THRESHOLD);
+        this.renderConfigToggle(
+            containerEl,
+            "adaptive_threshold",
+            MESSAGES.LABEL_ADAPTIVE_THRESHOLD,
+            MESSAGES.DESC_ADAPTIVE_THRESHOLD,
+        );
     }
 
     private loadServerDefaults(): void {
@@ -1103,6 +1092,17 @@ export class LilbeeSettingTab extends PluginSettingTab {
                         this.suppressToggleChanges = true;
                         try {
                             toggle.setValue(v);
+                        } finally {
+                            this.suppressToggleChanges = false;
+                        }
+                    }
+                }
+                for (const [key, slider] of this.serverConfigSliders) {
+                    const v = cfg[key];
+                    if (typeof v === "number") {
+                        this.suppressToggleChanges = true;
+                        try {
+                            slider.setValue(v);
                         } finally {
                             this.suppressToggleChanges = false;
                         }
@@ -1215,37 +1215,6 @@ export class LilbeeSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                     new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
                     this.render();
-                }),
-        );
-    }
-
-    /**
-     * Reset affordance for fields that dual-write: PATCH the server default AND mirror it back
-     * into `plugin.settings[localKey]`. Prevents the re-render from picking up a stale local value
-     * via `toggle.setValue(this.plugin.settings[localKey])`.
-     */
-    private appendDualResetAffordance<K extends keyof LilbeeSettings>(
-        setting: Setting,
-        serverKey: string,
-        localKey: K,
-        label: string,
-    ): Setting {
-        return setting.addExtraButton((btn) =>
-            btn
-                .setIcon(ICON_RESET)
-                .setTooltip(MESSAGES.LABEL_RESET_TO_DEFAULT)
-                .onClick(async () => {
-                    if (!(serverKey in this.configDefaults)) return;
-                    const def = this.configDefaults[serverKey];
-                    try {
-                        await this.plugin.api.updateConfig({ [serverKey]: def });
-                        this.plugin.settings[localKey] = def as LilbeeSettings[K];
-                        await this.plugin.saveSettings();
-                        new Notice(MESSAGES.NOTICE_FIELD_RESET(label));
-                        this.render();
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_RESET(label));
-                    }
                 }),
         );
     }
@@ -1895,6 +1864,34 @@ export class LilbeeSettingTab extends PluginSettingTab {
                 });
                 this.serverConfigToggles.set(key, toggle);
             });
+        this.appendResetAffordance(setting, key, name);
+    }
+
+    /** A server-config number on a slider, hidden until loadServerDefaults sees the key. */
+    private renderConfigSlider(
+        container: HTMLElement,
+        key: string,
+        name: string,
+        desc: string,
+        opts: { min: number; max: number; step: number },
+    ): void {
+        const setting = new Setting(container)
+            .setName(name)
+            .setDesc(desc)
+            .addSlider((slider) => {
+                slider.setLimits(opts.min, opts.max, opts.step).onChange(async (value) => {
+                    if (this.suppressToggleChanges) return;
+                    try {
+                        await this.plugin.api.updateConfig({ [key]: value });
+                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(name));
+                    } catch {
+                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(name));
+                    }
+                });
+                this.serverConfigSliders.set(key, slider);
+            });
+        setting.settingEl.hide();
+        this.serverConfigHideableEls.set(key, setting.settingEl);
         this.appendResetAffordance(setting, key, name);
     }
 
@@ -2607,48 +2604,20 @@ export class LilbeeSettingTab extends PluginSettingTab {
         new Setting(subSettingsContainer).setName(MESSAGES.LABEL_WIKI_STATUS).setDesc(statusDesc).setDisabled(true);
 
         // Prune raw chunks
-        const pruneSetting = new Setting(subSettingsContainer)
-            .setName(MESSAGES.LABEL_WIKI_PRUNE_RAW)
-            .setDesc(MESSAGES.DESC_WIKI_PRUNE_RAW)
-            .addToggle((toggle) => {
-                toggle.setValue(this.plugin.settings.wikiPruneRaw);
-                toggle.onChange(async (value) => {
-                    this.plugin.settings.wikiPruneRaw = value;
-                    await this.plugin.saveSettings();
-                    try {
-                        await this.plugin.api.updateConfig({ wiki_prune_raw: value });
-                        new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WIKI_PRUNE_RAW));
-                    } catch {
-                        new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_WIKI_PRUNE_RAW));
-                    }
-                });
-            });
-        this.appendDualResetAffordance(pruneSetting, "wiki_prune_raw", "wikiPruneRaw", MESSAGES.LABEL_WIKI_PRUNE_RAW);
+        this.renderConfigToggle(
+            subSettingsContainer,
+            "wiki_prune_raw",
+            MESSAGES.LABEL_WIKI_PRUNE_RAW,
+            MESSAGES.DESC_WIKI_PRUNE_RAW,
+        );
 
         // Faithfulness threshold
-        const faithSetting = new Setting(subSettingsContainer)
-            .setName(MESSAGES.LABEL_WIKI_FAITHFULNESS)
-            .setDesc(MESSAGES.DESC_WIKI_FAITHFULNESS)
-            .addSlider((slider) => {
-                slider
-                    .setLimits(0, 1, 0.05)
-                    .setValue(this.plugin.settings.wikiFaithfulnessThreshold)
-                    .onChange(async (value) => {
-                        this.plugin.settings.wikiFaithfulnessThreshold = value;
-                        await this.plugin.saveSettings();
-                        try {
-                            await this.plugin.api.updateConfig({ wiki_embedding_faithfulness_threshold: value });
-                            new Notice(MESSAGES.NOTICE_FIELD_UPDATED(MESSAGES.LABEL_WIKI_FAITHFULNESS));
-                        } catch {
-                            new Notice(MESSAGES.NOTICE_FAILED_UPDATE(MESSAGES.LABEL_WIKI_FAITHFULNESS));
-                        }
-                    });
-            });
-        this.appendDualResetAffordance(
-            faithSetting,
+        this.renderConfigSlider(
+            subSettingsContainer,
             "wiki_embedding_faithfulness_threshold",
-            "wikiFaithfulnessThreshold",
             MESSAGES.LABEL_WIKI_FAITHFULNESS,
+            MESSAGES.DESC_WIKI_FAITHFULNESS,
+            { min: 0, max: 1, step: 0.05 },
         );
 
         // Default search mode

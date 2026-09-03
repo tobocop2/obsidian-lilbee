@@ -4589,6 +4589,33 @@ describe("LilbeePlugin", () => {
             expect(plugin.settings.reasoningDefaulted).toBe(true);
         });
 
+        it("loads a settings file holding the retired local keys and patches nothing from them", async () => {
+            // Search strictness and the adaptive threshold live on the server now. A data.json
+            // written by an older plugin still carries the local copies: nothing reads them and
+            // nothing sends them, so the server keeps the values it already has.
+            const { DEFAULT_SETTINGS } = await import("../src/types");
+            const plugin = await createPlugin({
+                serverMode: "external",
+                maxDistance: 0.5,
+                adaptiveThreshold: true,
+                wikiPruneRaw: true,
+                wikiFaithfulnessThreshold: 0.85,
+            });
+            await plugin.onload();
+            const updateConfig = vi.fn();
+            plugin.api.updateConfig = updateConfig;
+            plugin.api.config = vi.fn().mockResolvedValue({});
+            plugin.api.listModels = vi.fn().mockResolvedValue({
+                chat: { active: "x", installed: [], catalog: [] },
+            });
+
+            await plugin.fetchActiveModel();
+
+            expect(updateConfig).not.toHaveBeenCalled();
+            expect(plugin.settings.topK).toBe(DEFAULT_SETTINGS.topK);
+            expect(plugin.settings.serverMode).toBe("external");
+        });
+
         it("status bar shows task name during sync and flashes done after", async () => {
             const plugin = await createPlugin();
             await plugin.onload();

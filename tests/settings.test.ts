@@ -283,6 +283,9 @@ interface Captured {
     toggleByName: Map<string, ToggleOnChange>;
     dropdownByName: Map<string, DropdownOnChange>;
     textAreaByName: Map<string, TextOnChange>;
+    sliderByName: Map<string, SliderOnChange>;
+    /** Every value pushed into a row's slider via setValue, in call order. */
+    sliderSetValuesByName: Map<string, number[]>;
     textOnChanges: TextOnChange[];
     textAreaOnChanges: TextOnChange[];
     blurHandlers: BlurCapture[];
@@ -324,6 +327,8 @@ function captureSettingCallbacks(fn: () => void): Captured {
     const toggleByName = new Map<string, ToggleOnChange>();
     const dropdownByName = new Map<string, DropdownOnChange>();
     const textAreaByName = new Map<string, TextOnChange>();
+    const sliderByName = new Map<string, SliderOnChange>();
+    const sliderSetValuesByName = new Map<string, number[]>();
     let currentName = "";
     const origSetName = Setting.prototype.setName;
     Setting.prototype.setName = function (name: string) {
@@ -392,16 +397,23 @@ function captureSettingCallbacks(fn: () => void): Captured {
     };
 
     Setting.prototype.addSlider = function (cb: (slider: any) => void) {
+        const name = currentName;
+        const setValues: number[] = [];
         const fakeSlider = {
             setLimits: () => fakeSlider,
-            setValue: () => fakeSlider,
+            setValue: (v: number) => {
+                setValues.push(v);
+                return fakeSlider;
+            },
             setDynamicTooltip: () => fakeSlider,
             onChange: (handler: SliderOnChange) => {
                 sliderOnChanges.push(handler);
+                if (name) sliderByName.set(name, handler);
                 return fakeSlider;
             },
         };
         cb(fakeSlider);
+        if (name) sliderSetValuesByName.set(name, setValues);
         return this;
     };
 
@@ -511,6 +523,8 @@ function captureSettingCallbacks(fn: () => void): Captured {
         toggleByName,
         dropdownByName,
         textAreaByName,
+        sliderByName,
+        sliderSetValuesByName,
         textOnChanges,
         textAreaOnChanges,
         blurHandlers,
@@ -652,50 +666,105 @@ describe("LilbeeSettingTab", () => {
         });
     });
 
-    describe("maxDistance slider onChange", () => {
-        it("updates maxDistance and calls saveSettings", async () => {
+    describe("search strictness slider (server-backed max_distance)", () => {
+        it("PATCHes max_distance on change", async () => {
+            Notice.clear();
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { sliderOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { sliderByName } = captureSettingCallbacks(() => tab.display());
 
-            await sliderOnChanges[1](0.8);
-            expect(plugin.settings.maxDistance).toBe(0.8);
-            expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
+            await sliderByName.get(MESSAGES.LABEL_MAX_DISTANCE)!(0.75);
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ max_distance: 0.75 });
+            expect(Notice.instances.some((n) => n.message.includes(MESSAGES.LABEL_MAX_DISTANCE))).toBe(true);
         });
 
-        it("uses default value when maxDistance is undefined", async () => {
-            const plugin = makePlugin({ maxDistance: undefined });
+        it("surfaces a notice when the PATCH fails", async () => {
+            Notice.clear();
+            const plugin = makePlugin();
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            captureSettingCallbacks(() => tab.display());
+            const { sliderByName } = captureSettingCallbacks(() => tab.display());
 
-            // When maxDistance is undefined, setValue should use ?? 0.9 fallback
-            // Just call display to render - this exercises the ?? operator
-            expect(() => tab.display()).not.toThrow();
+            await sliderByName.get(MESSAGES.LABEL_MAX_DISTANCE)!(0.75);
+            expect(Notice.instances.some((n) => n.message.includes("failed to update"))).toBe(true);
+        });
+
+        it("does not echo a programmatic setValue back to the server", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            const tab = makeTab(plugin);
+            const { sliderByName } = captureSettingCallbacks(() => tab.display());
+
+            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
+            (tab as any).suppressToggleChanges = true;
+            await sliderByName.get(MESSAGES.LABEL_MAX_DISTANCE)!(0.75);
+            (tab as any).suppressToggleChanges = false;
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("shows the server's current value once config loads", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ max_distance: 0.62 });
+            const tab = makeTab(plugin);
+            const { sliderSetValuesByName } = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(sliderSetValuesByName.get(MESSAGES.LABEL_MAX_DISTANCE)).toEqual([0.62]);
+        });
+
+        it("ignores a stale local value left behind in the settings file", async () => {
+            const plugin = makePlugin({
+                maxDistance: 0.5,
+                adaptiveThreshold: true,
+            } as unknown as Partial<LilbeeSettings>);
+            mockChatPicker(plugin);
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ max_distance: 0.75 });
+            const tab = makeTab(plugin);
+            const { sliderSetValuesByName } = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            // The row shows what the server has, and rendering sends nothing back.
+            expect(sliderSetValuesByName.get(MESSAGES.LABEL_MAX_DISTANCE)).toEqual([0.75]);
+            expect(plugin.api.updateConfig).not.toHaveBeenCalled();
+        });
+
+        it("stays hidden while the server does not report max_distance", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({});
+            const tab = makeTab(plugin);
+            captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            const row = (tab as any).serverConfigHideableEls.get("max_distance");
+            expect(row.style.display).toBe("none");
+        });
+
+        it("reveals the row once the server reports max_distance", async () => {
+            const plugin = makePlugin();
+            mockChatPicker(plugin);
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({ max_distance: 0.75 });
+            const tab = makeTab(plugin);
+            captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            const row = (tab as any).serverConfigHideableEls.get("max_distance");
+            expect(row.style.display).toBe("");
         });
     });
 
-    describe("adaptiveThreshold toggle onChange", () => {
-        it("updates adaptiveThreshold and calls saveSettings", async () => {
+    describe("adaptive threshold toggle (server-backed adaptive_threshold)", () => {
+        it("PATCHes adaptive_threshold on change", async () => {
             const plugin = makePlugin();
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
-            // [0] auto-update, [1] includeDevBuilds (managed server section), [2] show_reasoning, [3] chat_compaction (Chat), [4] adaptiveThreshold.
             await toggleByName.get(MESSAGES.LABEL_ADAPTIVE_THRESHOLD)!(true);
-            expect(plugin.settings.adaptiveThreshold).toBe(true);
-            expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
-        });
-
-        it("uses default value when adaptiveThreshold is undefined", async () => {
-            const plugin = makePlugin({ adaptiveThreshold: undefined });
-            mockChatPicker(plugin);
-            const tab = makeTab(plugin);
-
-            // When adaptiveThreshold is undefined, setValue should use ?? false fallback
-            expect(() => tab.display()).not.toThrow();
+            expect(plugin.api.updateConfig).toHaveBeenCalledWith({ adaptive_threshold: true });
         });
     });
 
@@ -3356,7 +3425,7 @@ describe("managed mode settings", () => {
             const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
             // Toggle order: [0] auto-update, [1] includeDevBuilds (managed server), [2] show_reasoning,
-            // [3] chat_compaction (Chat), [4] adaptiveThreshold (search/retrieval), [5] worker_pool_eager_start
+            // [3] chat_compaction (Chat), [4] adaptive_threshold (search/retrieval), [5] worker_pool_eager_start
             // (worker-pool), [6] crawl_retry_on_rate_limit (crawling), [7+] wiki toggles.
             await toggleByName.get(MESSAGES.LABEL_CRAWL_RETRY_ON_RATE_LIMIT)!(false);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: false });
@@ -3527,7 +3596,7 @@ describe("managed mode settings", () => {
             (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
             (tab as any).suppressToggleChanges = false;
             // toggleOnChanges[6] is crawl_retry_on_rate_limit; [0]=auto-update, [1]=includeDevBuilds,
-            // [2]=show_reasoning, [3]=chat_compaction, [4]=adaptiveThreshold, [5]=worker_pool_eager_start.
+            // [2]=show_reasoning, [3]=chat_compaction, [4]=adaptive_threshold, [5]=worker_pool_eager_start.
             await toggleByName.get(MESSAGES.LABEL_CRAWL_RETRY_ON_RATE_LIMIT)!(true);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ crawl_retry_on_rate_limit: true });
         });
@@ -3690,7 +3759,7 @@ describe("managed mode settings", () => {
 
     describe("per-row reset-to-default affordance", () => {
         // Reset button order:
-        // 0=serverMode(local) 1=topK 2=maxDistance 3=adaptiveThreshold
+        // 0=serverMode(local) 1=topK 2=max_distance 3=adaptive_threshold
         // 4=ragSystemPrompt(local) 5=generalSystemPrompt(local) 6=temperature 7=top_p
         // 8=top_k_sampling 9=repeat_penalty 10=num_ctx 11=seed ...
         const TEMPERATURE_RESET = 6;
@@ -3744,10 +3813,10 @@ describe("managed mode settings", () => {
         });
     });
 
-    describe("appendDualResetAffordance (server PATCH + plugin.settings mirror)", () => {
-        it("resets wiki_prune_raw by PATCHing the default AND mirroring back to wikiPruneRaw", async () => {
+    describe("wiki row reset affordances", () => {
+        it("resets wiki_prune_raw by PATCHing the server default", async () => {
             Notice.clear();
-            const plugin = makePlugin({ wikiEnabled: true, wikiPruneRaw: true });
+            const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
             mockChatPicker(plugin);
             // configDefaults is re-fetched on each display(); keep it resolving to our seed.
@@ -3755,19 +3824,13 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { extraButtonOnClicks } = captureSettingCallbacks(() => tab.display());
             await new Promise((r) => setTimeout(r, 0));
-            (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
-            // Search for the reset button whose click PATCHes wiki_prune_raw.
             for (let i = 0; i < extraButtonOnClicks.length; i++) {
                 (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mockClear();
                 await extraButtonOnClicks[i]();
                 const call = (plugin.api.updateConfig as ReturnType<typeof vi.fn>).mock.calls[0];
-                if (call && JSON.stringify(call[0]) === JSON.stringify({ wiki_prune_raw: false })) {
-                    expect(plugin.settings.wikiPruneRaw).toBe(false);
-                    expect(plugin.saveSettings).toHaveBeenCalled();
-                    return;
-                }
+                if (call && JSON.stringify(call[0]) === JSON.stringify({ wiki_prune_raw: false })) return;
             }
-            throw new Error("wiki_prune_raw dual-reset button not found");
+            throw new Error("wiki_prune_raw reset button not found");
         });
 
         it("no-ops silently when the key is absent from configDefaults", async () => {
@@ -4326,7 +4389,7 @@ describe("managed mode settings", () => {
             const tab = makeTab(plugin);
             const { toggleOnChanges, buttonOnClicks } = captureSettingCallbacks(() => tab.display());
             // Wiki section adds: 1 toggle (enable) + 1 toggle (prune raw) + 1 slider (faithfulness) + 1 dropdown (search mode) + 2 buttons (lint, prune)
-            // toggleOnChanges: adaptiveThreshold + wikiEnable + wikiPruneRaw + wikiSyncToVault
+            // toggleOnChanges: adaptive_threshold + wikiEnabled + wiki_prune_raw + wikiSyncToVault
             expect(toggleOnChanges.length).toBeGreaterThanOrEqual(3);
             expect(buttonOnClicks.length).toBeGreaterThanOrEqual(2);
         });
@@ -4408,35 +4471,42 @@ describe("managed mode settings", () => {
             expect((subContainer as any).style.display).toBe("");
         });
 
-        it("prune raw toggle calls updateConfig", async () => {
+        it("prune raw toggle PATCHes wiki_prune_raw", async () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
             const { toggleByName } = captureSettingCallbacks(() => tab.display());
 
-            // wiki prune toggle is before the sync-to-vault toggle
             await toggleByName.get(MESSAGES.LABEL_WIKI_PRUNE_RAW)!(true);
-            expect(plugin.settings.wikiPruneRaw).toBe(true);
-            expect(plugin.saveSettings).toHaveBeenCalled();
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({ wiki_prune_raw: true });
         });
 
-        it("faithfulness slider calls updateConfig", async () => {
+        it("faithfulness slider PATCHes wiki_embedding_faithfulness_threshold", async () => {
             const plugin = makePlugin({ wikiEnabled: true });
             (plugin as any).wikiEnabled = true;
             mockChatPicker(plugin);
             const tab = makeTab(plugin);
-            const { sliderOnChanges } = captureSettingCallbacks(() => tab.display());
+            const { sliderByName } = captureSettingCallbacks(() => tab.display());
 
-            // wiki faithfulness slider is the last slider
-            const faithfulnessIdx = sliderOnChanges.length - 1;
-            await sliderOnChanges[faithfulnessIdx](0.85);
-            expect(plugin.settings.wikiFaithfulnessThreshold).toBe(0.85);
-            expect(plugin.saveSettings).toHaveBeenCalled();
+            await sliderByName.get(MESSAGES.LABEL_WIKI_FAITHFULNESS)!(0.85);
             expect(plugin.api.updateConfig).toHaveBeenCalledWith({
                 wiki_embedding_faithfulness_threshold: 0.85,
             });
+        });
+
+        it("faithfulness slider shows the server's current value", async () => {
+            const plugin = makePlugin({ wikiEnabled: true });
+            (plugin as any).wikiEnabled = true;
+            mockChatPicker(plugin);
+            (plugin.api.config as ReturnType<typeof vi.fn>).mockResolvedValue({
+                wiki_embedding_faithfulness_threshold: 0.5,
+            });
+            const tab = makeTab(plugin);
+            const { sliderSetValuesByName } = captureSettingCallbacks(() => tab.display());
+            await new Promise((r) => setTimeout(r, 0));
+
+            expect(sliderSetValuesByName.get(MESSAGES.LABEL_WIKI_FAITHFULNESS)).toEqual([0.5]);
         });
 
         it("search mode dropdown updates settings", async () => {
@@ -6738,7 +6808,7 @@ describe("managed mode settings", () => {
     describe("worker pool settings", () => {
         // Manual mode worker-pool text inputs: [19] worker_pool_call_timeout_s,
         // [20] worker_pool_max_idle_s. Toggle [1] is worker_pool_eager_start
-        // ([0]=adaptiveThreshold).
+        // ([0]=adaptive_threshold).
 
         it("hides each worker-pool row when cfg keys are undefined", async () => {
             const plugin = makePlugin();

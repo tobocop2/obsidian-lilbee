@@ -241,7 +241,7 @@ Settings → Community plugins → **lilbee**. A filter box at the top searches 
 |---------|--------|
 | **Connection** | Server mode (managed/external), re-run setup wizard. Managed: status, start/stop/restart, shared directory, adopt an existing data dir, disk usage, version & updates. External: server URL + test, session token, reset to managed. |
 | **Models** | Active chat, embedding, vision, and reranker models; refresh; open the catalog. |
-| **Search & Retrieval** | **Results count** (1–20, default 5), **Search strictness** (how close a match must be), **Adaptive threshold** (auto-broaden when too few results). |
+| **Search & Retrieval** | **Results count** (1–20, default 12), **Search strictness** (how close a match must be), **Adaptive threshold** (auto-broaden when too few results). Strictness and the adaptive threshold are server settings: they apply to every client that talks to this server, and they carry a per-row reset. |
 | **Generation** *(advanced)* | System prompts for answering with and without documents, **Chat mode**, **Creativity** (temperature), **Top P**, **Top K**, **Repetition penalty**, **Seed**, and caps like max tokens, reasoning length, keep-alive, and GPU memory fraction. Blank means "use the model's default." |
 | **Retrieval (advanced)** | Candidate-pool multiplier, minimum relevance score, max sources per answer, max chunks per source, and the MMR relevance/diversity balance. |
 | **Ingest** | Chunk size and overlap (changing these invalidates the index), and OCR timeouts. |
@@ -250,7 +250,7 @@ Settings → Community plugins → **lilbee**. A filter box at the top searches 
 | **Wiki (beta)** | Enable the wiki, summary accuracy, default search mode, sync-to-vault and its folder, plus health-check and clean-up buttons. |
 | **Advanced** | Store content in vault, rerank candidate count, **AI backend** (auto / local / external), API keys (OpenAI, Anthropic, Gemini, Hugging Face), the external endpoint, and **Reset all** server-backed settings. |
 
-Most knobs in Generation, Retrieval, Ingest, and Worker pool are revealed only when the server reports them, so an older server shows fewer. Server-backed settings have a per-row reset; **Reset all** restores them to defaults while leaving your API keys and local preferences untouched.
+Most knobs in Search & Retrieval, Generation, Retrieval, Ingest, Worker pool, and Wiki are revealed only when the server reports them, so an older server shows fewer. Server-backed settings have a per-row reset; **Reset all** restores them to defaults while leaving your API keys and local preferences untouched.
 
 ---
 
