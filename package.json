@@ -46,7 +46,7 @@
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.1.2",
     "@vitest/coverage-v8": "^4.1.10",
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.28.2",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-obsidianmd": "^0.4.2",
